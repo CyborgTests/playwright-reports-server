@@ -10,7 +10,24 @@ const TMP_FOLDER = path.join(DATA_FOLDER, '.tmp');
 const RESULTS_FOLDER = path.join(DATA_FOLDER, 'results');
 const REPORTS_FOLDER = path.join(DATA_FOLDER, 'reports');
 
+async function initServer() {
+  async function createDirectory(dir: string) {
+    try {
+      await fs.access(dir);
+    } catch {
+      await fs.mkdir(dir, { recursive: true });
+    }
+  }
+
+  await createDirectory(RESULTS_FOLDER);
+  await createDirectory(REPORTS_FOLDER);
+  await createDirectory(TMP_FOLDER);
+}
+
+const foldersInitialized = initServer();
+
 export async function readResults(query?: string) {
+  await foldersInitialized;
   const files = await fs.readdir(RESULTS_FOLDER);
   const jsonFiles = files.filter((file) => path.extname(file) === '.json');
   if (query !== undefined) {
@@ -32,6 +49,7 @@ export async function readResults(query?: string) {
 }
 
 export async function readReports(query?: string) {
+  await foldersInitialized;
   const dirents = await fs.readdir(REPORTS_FOLDER, { withFileTypes: true });
 
   const reports: Report[] = await Promise.all(
@@ -58,10 +76,12 @@ export async function readReports(query?: string) {
 }
 
 export async function deleteResults(resultsIds: string[]) {
+  await foldersInitialized;
   return Promise.allSettled(resultsIds.map((id) => deleteResult(id)));
 }
 
 export async function deleteResult(resultId: string) {
+  await foldersInitialized;
   const resultPath = path.join(RESULTS_FOLDER, resultId);
 
   return Promise.allSettled([
@@ -71,16 +91,19 @@ export async function deleteResult(resultId: string) {
 }
 
 export async function deleteReports(reportsIds: string[]) {
+  await foldersInitialized;
   return Promise.allSettled(reportsIds.map((id) => deleteReport(id)));
 }
 
 export async function deleteReport(reportId: string) {
+  await foldersInitialized;
   const reportPath = path.join(REPORTS_FOLDER, reportId);
 
   return fs.rm(reportPath, { recursive: true, force: true });
 }
 
 export async function saveResult(buffer: Buffer) {
+  await foldersInitialized;
   const resultID = randomUUID();
 
   await fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.zip`), buffer);
@@ -98,6 +121,7 @@ export async function saveResult(buffer: Buffer) {
 }
 
 export async function generateReport(resultsIds: string[]) {
+  await foldersInitialized;
   try {
     await fs.rm(TMP_FOLDER, { recursive: true, force: true });
   } catch (error) {
