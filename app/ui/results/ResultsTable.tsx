@@ -1,5 +1,9 @@
 import Image from 'next/image';
-import { formatDateToLocal, formatCurrency, formatTimeToLocal } from '@/app/lib/utils';
+import {
+  formatDateToLocal,
+  formatCurrency,
+  formatTimeToLocal,
+} from '@/app/lib/utils';
 import { readResults } from '@/app/lib/data';
 
 export default async function ResultsTable({
@@ -33,15 +37,13 @@ export default async function ResultsTable({
                       /> */}
                       <p>{result.resultID}</p>
                     </div>
-                    {/* <p className="text-sm text-gray-500">{result.email}</p> */}
+                    <p className="text-sm text-gray-500">{result.reporter}</p>
                   </div>
                   {/* <InvoiceStatus status={invoice.status} /> */}
                 </div>
                 <div className="flex w-full items-center justify-between pt-4">
                   <div>
-                    {/* <p className="text-xl font-medium">
-                      {formatCurrency(result.amount)}
-                    </p> */}
+                    {<p className="text-xl font-medium">test</p>}
                     <p>{formatDateToLocal(result.createdAt)}</p>
                   </div>
                   {/* <div className="flex justify-end gap-2">
@@ -59,10 +61,10 @@ export default async function ResultsTable({
                   Result Id
                 </th>
                 <th scope="col" className="px-3 py-5 font-medium">
-                  {/* Email */}
+                  Reporter
                 </th>
                 <th scope="col" className="px-3 py-5 font-medium">
-                  {/* Amount */}
+                  Test Run Name
                 </th>
                 <th scope="col" className="px-3 py-5 font-medium">
                   Date
@@ -83,6 +85,7 @@ export default async function ResultsTable({
                 >
                   <td className="whitespace-nowrap py-3 pl-6 pr-3">
                     <div className="flex items-center gap-3">
+                    <input type="checkbox"></input>
                       {/* <Image
                         src={result.image_url}
                         className="rounded-full"
@@ -94,13 +97,14 @@ export default async function ResultsTable({
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-3 py-3">
-                    {/* {result.email} */}
+                    {result.reporter}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3">
-                    {/* {formatCurrency(result.amount)} */}
+                    {result.testRunName}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3">
-                    {formatDateToLocal(result.createdAt)} {formatTimeToLocal(result.createdAt)} 
+                    {formatDateToLocal(result.createdAt)}{' '}
+                    {formatTimeToLocal(result.createdAt)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3">
                     {/* <InvoiceStatus status={result.status} /> */}

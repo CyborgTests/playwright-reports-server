@@ -2,10 +2,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { Result, Report } from './definitions';
 import { randomUUID } from 'node:crypto';
-import { execSync } from 'node:child_process';
+import { exec, execSync } from 'node:child_process';
+import util from 'node:util';
+const execAsync = util.promisify(exec);
 
 const ITEMS_PER_PAGE = 15;
 const DATA_FOLDER = path.join(process.cwd(), 'public/data/');
+const PW_CONFIG = path.join(process.cwd(), 'playwright.config.ts');
 const TMP_FOLDER = path.join(DATA_FOLDER, '.tmp');
 const RESULTS_FOLDER = path.join(DATA_FOLDER, 'results');
 const REPORTS_FOLDER = path.join(DATA_FOLDER, 'reports');
@@ -102,7 +105,10 @@ export async function deleteReport(reportId: string) {
   return fs.rm(reportPath, { recursive: true, force: true });
 }
 
-export async function saveResult(buffer: Buffer) {
+export async function saveResult(
+  buffer: Buffer,
+  resultDetails: { testRunName?: string; reporter?: string },
+) {
   await foldersInitialized;
   const resultID = randomUUID();
 
@@ -111,6 +117,7 @@ export async function saveResult(buffer: Buffer) {
   const metaData = {
     resultID,
     createdAt: new Date().toISOString(),
+    ...resultDetails,
   };
   await fs.writeFile(
     path.join(RESULTS_FOLDER, `${resultID}.json`),
@@ -141,6 +148,8 @@ export async function generateReport(resultsIds: string[]) {
   execSync(`npx playwright merge-reports --reporter html ${TMP_FOLDER}`, {
     env: {
       ...process.env,
+      // Avoid opening the report on server
+      PW_TEST_HTML_REPORT_OPEN: 'never',
       PLAYWRIGHT_HTML_REPORT: path.join(REPORTS_FOLDER, reportId),
     },
   });

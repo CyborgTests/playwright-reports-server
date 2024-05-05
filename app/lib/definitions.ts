@@ -3,7 +3,12 @@
 // For simplicity of teaching, we're manually defining these types.
 // However, these types are generated automatically if you're using an ORM such as Prisma.
 
-export type Result = { resultID: string; createdAt: string };
+export type Result = {
+  resultID: string;
+  createdAt: string;
+  testRunName?: string;
+  reporter?: string;
+};
 
 export type Report = { reportID: string; createdAt: Date };
 

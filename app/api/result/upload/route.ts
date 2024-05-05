@@ -7,12 +7,16 @@ export async function PUT(request: Request) {
 
     const file = formData.get('file') as File;
     // TODO: here is place to define additional fields
-    const name = formData.get('name');
+    const testRunName = formData.get('testRunName')?.toString() ?? undefined;
+    const reporter = formData.get('reporter')?.toString() ?? undefined;
     if (!file) {
       return Response.json({ error: 'No files received.' }, { status: 400 });
     }
     const buffer = Buffer.from(await file.arrayBuffer());
-    const metaData = await saveResult(buffer);
+    const metaData = await saveResult(buffer, {
+      testRunName,
+      reporter,
+    });
     return Response.json({
       message: 'Success',
       data: metaData,
