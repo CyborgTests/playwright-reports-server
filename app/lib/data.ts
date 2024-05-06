@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { Result, Report } from './definitions';
 import { randomUUID } from 'node:crypto';
-import { exec, execSync } from 'node:child_process';
+import { exec } from 'node:child_process';
 import util from 'node:util';
 const execAsync = util.promisify(exec);
 
@@ -144,8 +144,8 @@ export async function generateReport(resultsIds: string[]) {
   }
 
   const reportId = randomUUID();
-  // TODO: Make this async
-  execSync(`npx playwright merge-reports --reporter html ${TMP_FOLDER}`, {
+
+  await execAsync(`npx playwright merge-reports --reporter html ${TMP_FOLDER}`, {
     env: {
       ...process.env,
       // Avoid opening the report on server

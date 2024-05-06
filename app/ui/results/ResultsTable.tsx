@@ -5,6 +5,7 @@ import {
   formatTimeToLocal,
 } from '@/app/lib/utils';
 import { readResults } from '@/app/lib/data';
+import { DeleteResult } from '../invoices/buttons';
 
 export default async function ResultsTable({
   query,
@@ -85,7 +86,7 @@ export default async function ResultsTable({
                 >
                   <td className="whitespace-nowrap py-3 pl-6 pr-3">
                     <div className="flex items-center gap-3">
-                    <input type="checkbox"></input>
+                      <input type="checkbox"></input>
                       {/* <Image
                         src={result.image_url}
                         className="rounded-full"
@@ -111,8 +112,9 @@ export default async function ResultsTable({
                   </td>
                   <td className="whitespace-nowrap py-3 pl-6 pr-3">
                     <div className="flex justify-end gap-3">
-                      {/* <UpdateInvoice id={result.id} />
-                      <DeleteInvoice id={result.id} /> */}
+                      {
+                        // <DeleteResult id={result.resultID}></DeleteResult>
+                      }
                     </div>
                   </td>
                 </tr>
