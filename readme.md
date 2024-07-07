@@ -7,6 +7,15 @@ The Playwright Reports Server provides APIs for managing and generating reports 
 - Merge results into one report from sharded runs together (https://playwright.dev/docs/test-sharding)
 - Store raw results, and agregate them together into one report
 
+## How to run?
+Clone this repo and run:
+```
+npm run build && npm run start
+```
+All data will be stored at `/public/data/` folder. You can backup it, to keep your data safe.
+
+Application will be accessible at `localhost:3000`
+
 ## API Routes
 
 ## `/api/report/list` (GET): 
