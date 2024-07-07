@@ -1,12 +1,20 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { Result, Report } from './definitions';
 import { randomUUID } from 'node:crypto';
 import { exec } from 'node:child_process';
 import util from 'node:util';
+import getFolderSize from 'get-folder-size';
 const execAsync = util.promisify(exec);
 
-const ITEMS_PER_PAGE = 15;
+export type Result = {
+  resultID: string;
+  createdAt: string;
+  // For custom user fields
+  [key: string]: string;
+};
+
+export type Report = { reportID: string; reportUrl: string, createdAt: Date };
+
 const DATA_FOLDER = path.join(process.cwd(), 'public/data/');
 const PW_CONFIG = path.join(process.cwd(), 'playwright.config.ts');
 const TMP_FOLDER = path.join(DATA_FOLDER, '.tmp');
@@ -19,6 +27,7 @@ async function initServer() {
       await fs.access(dir);
     } catch {
       await fs.mkdir(dir, { recursive: true });
+      console.log('Created directory:', dir)
     }
   }
 
@@ -29,17 +38,27 @@ async function initServer() {
 
 const foldersInitialized = initServer();
 
-export async function readResults(query?: string) {
+export async function getServerDataInfo() {
+  await foldersInitialized;
+  const dataFolderSizeinMB = `${(await getFolderSize.loose(DATA_FOLDER) / 1000 / 1000).toFixed(2)} MB`;
+
+  const results = await readResults();
+  const resultsFolderSizeinMB = `${(await getFolderSize.loose(RESULTS_FOLDER) / 1000 / 1000).toFixed(2)} MB`;
+  const reports = await readReports();
+  const reportsFolderSizeinMB = `${(await getFolderSize.loose(REPORTS_FOLDER) / 1000 / 1000).toFixed(2)} MB`;
+  return {
+    dataFolderSizeinMB,
+    numOfResults: results.length,
+    resultsFolderSizeinMB,
+    numOfReports: reports.length,
+    reportsFolderSizeinMB
+  };
+}
+
+export async function readResults() {
   await foldersInitialized;
   const files = await fs.readdir(RESULTS_FOLDER);
   const jsonFiles = files.filter((file) => path.extname(file) === '.json');
-  if (query !== undefined) {
-    const filteredFiles = jsonFiles.filter((file) =>
-      file.toLowerCase().includes(query.toLowerCase()),
-    );
-    jsonFiles.length = 0;
-    jsonFiles.push(...filteredFiles);
-  }
 
   const fileContents: Result[] = await Promise.all(
     jsonFiles.map(async (file) => {
@@ -51,7 +70,7 @@ export async function readResults(query?: string) {
   return fileContents;
 }
 
-export async function readReports(query?: string) {
+export async function readReports() {
   await foldersInitialized;
   const dirents = await fs.readdir(REPORTS_FOLDER, { withFileTypes: true });
 
@@ -64,16 +83,10 @@ export async function readReports(query?: string) {
         return {
           reportID: dirent.name,
           createdAt: stats.birthtime,
+          reportUrl: `/data/reports/${dirent.name}/index.html`,
         };
       }),
   );
-  if (query !== undefined) {
-    const filteredReports = reports.filter((report) =>
-      report.reportID.toLowerCase().includes(query.toLowerCase()),
-    );
-    reports.length = 0;
-    reports.push(...filteredReports);
-  }
 
   return reports;
 }
@@ -107,7 +120,7 @@ export async function deleteReport(reportId: string) {
 
 export async function saveResult(
   buffer: Buffer,
-  resultDetails: { testRunName?: string; reporter?: string },
+  resultDetails: { [key: string]: string },
 ) {
   await foldersInitialized;
   const resultID = randomUUID();
