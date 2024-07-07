@@ -27,6 +27,7 @@ async function initServer() {
       await fs.access(dir);
     } catch {
       await fs.mkdir(dir, { recursive: true });
+      console.log('Created directory:', dir)
     }
   }
 
