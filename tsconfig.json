@@ -1,7 +1,6 @@
 {
   "compilerOptions": {
-    "target": "es5",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "target": "ES2022",
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -19,8 +18,15 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
-    }
+      "@/*": [
+        "./*"
+      ]
+    },
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ]
   },
   "include": [
     "next-env.d.ts",
@@ -30,5 +36,7 @@
     "app/lib/placeholder-data.js",
     "scripts/seed.js"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules"
+  ]
 }

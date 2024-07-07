@@ -4,22 +4,24 @@ export const dynamic = 'force-dynamic'; // defaults to auto
 export async function PUT(request: Request) {
   try {
     const formData = await request.formData();
-
-    const file = formData.get('file') as File;
-    // TODO: here is place to define additional fields
-    const testRunName = formData.get('testRunName')?.toString() ?? undefined;
-    const reporter = formData.get('reporter')?.toString() ?? undefined;
-    if (!file) {
-      return Response.json({ error: 'No files received.' }, { status: 400 });
+    if (!formData.has('file')) {
+      return Response.json({ error: 'Field "file" with result is missing' }, { status: 400 });
     }
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const metaData = await saveResult(buffer, {
-      testRunName,
-      reporter,
-    });
+    const file = formData.get('file') as File;
+    const buffer = Buffer.from(await file.arrayBuffer()); 
+    const resultDetails: { [key: string]: string } = {};
+    for (const [key, value] of formData.entries()) {
+      if (key === 'file') {
+        // already processed
+        continue;
+      }
+      // String values for now
+      resultDetails[key] = value.toString();
+    }
+    const savedResult = await saveResult(buffer, resultDetails);
     return Response.json({
       message: 'Success',
-      data: metaData,
+      data: savedResult,
       status: 201,
     });
   } catch (error) {
