@@ -29,6 +29,7 @@ Returns list of generated reports (can be viewed by Url) on server:
 ```sh
 curl --location --request DELETE 'http://localhost:3000/api/report/delete' \
 --header 'Content-Type: application/json' \
+--header 'Authorization: <api-token>' \
 --data '{
     "reportsIds": [
         "6a615fe1-2452-4867-9ae5-6ee68313aac6"
@@ -60,6 +61,7 @@ Deletes report folder
 ```sh
 curl --location --request DELETE 'http://localhost:3000/api/report/delete' \
 --header 'Content-Type: application/json' \
+--header 'Authorization: <api-token>' \
 --data '{
     "reportsIds": [
         "6a615fe1-2452-4867-9ae5-6ee68313aac6"
@@ -83,6 +85,7 @@ Generates report from provided resultsIds, merges results together into one repo
 ```sh
 curl --location 'http://localhost:3000/api/report/generate' \
 --header 'Content-Type: application/json' \
+--header 'Authorization: <api-token>' \
 --data '{
     "resultsIds": [
         "b1d29907-7efa-48e8-a8d1-db49cf5c2998",
@@ -127,6 +130,7 @@ Accepts .zip archive - output of blob report, details - https://playwright.dev/d
 
 ```sh
 curl --location --request PUT 'http://localhost:3000/api/result/upload' \
+--header 'Authorization: <api-token>' \
 --form 'file=@"/path/to/file"'
 ```
 
@@ -134,6 +138,7 @@ Notice, that you can pass any custom keys with string values as form keys:
 
 ```sh
 curl --location --request PUT 'http://localhost:3000/api/result/upload' \
+--header 'Authorization: <api-token>' \
 --form 'file=@"/path/to/file"' \
 --form 'project="desktop"' \
 --form 'reporter="okhotemskyi"' \
@@ -178,6 +183,4 @@ Response example:
 
 ## Authorization
 
-To pass authorization you should set the API token to the Authorization header
-
-To set authorisation you should put the API_TOKEN environment variable in the .env file before deploy the app. This token will be used for authorization
+To set authorisation token you should put the API_TOKEN environment variable in the .env file before build the app. This token will be used for authorization
