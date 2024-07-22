@@ -5,11 +5,11 @@ import { env } from './app/config/env';
 
 export function middleware(request: NextRequest) {
   if (env.API_TOKEN) {
-    return handleAuth(request, env.API_TOKEN);
+    return returnUnauthorizedResponseIfTokenDoesNotMatch(request, env.API_TOKEN);
   }
 }
 
-function handleAuth(request: NextRequest, apiToken: string) {
+function returnUnauthorizedResponseIfTokenDoesNotMatch(request: NextRequest, apiToken: string) {
   const actualAuthToken = request.headers.get('Authorization');
   const expectedAuthToken = apiToken;
 
