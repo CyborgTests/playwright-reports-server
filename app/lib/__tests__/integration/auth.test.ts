@@ -13,7 +13,7 @@ describe('Auth component', () => {
   };
 
   it('should return success response if the Autorization header is right', async () => {
-    const response = await fetchListOfReports(env.API_TOKEN);
+    const response = await fetchListOfReports(env.API_TOKEN as string);
     expect(response.status).toBe(200);
     expect(await response.text()).not.toBe('Unauthorized');
   });
