@@ -166,7 +166,8 @@ Response example:
 Returns server stats:
 
 ```sh
-curl --location 'http://localhost:3000/api/info'
+curl --location 'http://localhost:3000/api/info' \
+--header 'Authorization: <api-token>' \
 ```
 
 Response example:
