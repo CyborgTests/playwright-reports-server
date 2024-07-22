@@ -184,4 +184,8 @@ Response example:
 
 ## Authorization
 
-To set authorisation token you should put the API_TOKEN environment variable in the .env file before build the app. This token will be used for authorization
+To set authorisation token you should put the API_TOKEN environment variable in the `.env` file before build the app. This token will be used for authorization
+
+```
+API_TOKEN='my-api-token'
+```
