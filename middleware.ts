@@ -11,5 +11,3 @@ export function middleware(request: NextRequest) {
     return CommonResponseFactory.buildUnauthorizedResponse();
   }
 }
-
-export mat
