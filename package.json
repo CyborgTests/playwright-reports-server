@@ -12,7 +12,6 @@
     "test:unit": "jest --testPathPattern=__tests__/unit",
     "test:integration": "jest --testPathPattern=__tests__/integration"
   },
-  "type": "module",
   "dependencies": {
     "@playwright/test": "1.45.1",
     "envalid": "^8.0.0",
