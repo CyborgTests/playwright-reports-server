@@ -175,3 +175,9 @@ Response example:
   "reportsFolderSizeinMB": "0.00 MB"
 }
 ```
+
+## Authorization
+
+To pass authorization you should set the API token to the Authorization header
+
+To set authorisation you should put the API_TOKEN environment variable in the .env file before deploy the app. This token will be used for authorization
