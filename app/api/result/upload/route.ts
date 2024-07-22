@@ -8,7 +8,7 @@ export async function PUT(request: Request) {
       return Response.json({ error: 'Field "file" with result is missing' }, { status: 400 });
     }
     const file = formData.get('file') as File;
-    const buffer = Buffer.from(await file.arrayBuffer()); 
+    const buffer = Buffer.from(await file.arrayBuffer());
     const resultDetails: { [key: string]: string } = {};
     for (const [key, value] of formData.entries()) {
       if (key === 'file') {
