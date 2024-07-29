@@ -1,9 +1,9 @@
-name: Pipline
+name: Pipeline
 
 on: pull_request
 
 jobs:
-  prettier:
+  install-dependencies:
     runs-on: ubuntu-latest
 
     steps:
@@ -15,10 +15,23 @@ jobs:
           node-version: '18'
       - name: Install dependencies
         run: npm ci
+
+  prettier:
+    needs: install-dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
       - name: Run prettier
         run: npm run format:check
 
   unit-tests:
+    needs: install-dependencies
     runs-on: ubuntu-latest
 
     steps:
@@ -28,7 +41,27 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '18'
-      - name: Install dependencies
-        run: npm ci
       - name: Run unit tests
         run: npm run test:unit
+
+  build:
+    needs: [install-dependencies, prettier, unit-tests]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Build with Docker
+        run: docker build -t playwright-reports-server .
+
+  integration-tests:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Run application with Docker
+        run: docker run -d -p 3000:3000 playwright-reports-server
+      - name: Run integration tests
+        run: npm run test:integration

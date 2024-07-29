@@ -5,7 +5,7 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "start": "next start",
+    "start": "node .next/standalone/server.js",
     "format:check": "prettier --ignore-path .gitignore --list-different '**/**/*.{ts,json,md}'",
     "format:fix": "npm run format:check -- --write",
     "test": "jest",
