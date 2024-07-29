@@ -1,22 +1,32 @@
 {
   "name": "playwright-reports-server",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Playwright Reports Server: Can be used to accept blobs, merge them, store and view Playwright reports",
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "start": "next start"
+    "start": "next start",
+    "format:check": "prettier --ignore-path .gitignore --list-different '**/**/*.{ts,json,md}'",
+    "format:fix": "npm run format:check -- --write",
+    "test": "jest",
+    "test:unit": "jest --testPathPattern=__tests__/unit",
+    "test:integration": "jest --testPathPattern=__tests__/integration"
   },
   "dependencies": {
     "@playwright/test": "1.45.1",
+    "envalid": "^8.0.0",
     "get-folder-size": "4.0.0",
     "next": "14.2.4"
   },
   "devDependencies": {
     "@types/get-folder-size": "^3.0.4",
+    "@types/jest": "^29.5.12",
     "@types/node": ">=18.17.0",
     "@types/react": "18.3.3",
     "dotenv": "^16.3.1",
+    "jest": "^29.7.0",
+    "prettier": "^3.3.3",
+    "ts-node": "^10.9.2",
     "typescript": "5.2.2"
   },
   "engines": {

@@ -13,7 +13,7 @@ export type Result = {
   [key: string]: string;
 };
 
-export type Report = { reportID: string; reportUrl: string, createdAt: Date };
+export type Report = { reportID: string; reportUrl: string; createdAt: Date };
 
 const DATA_FOLDER = path.join(process.cwd(), 'public/data/');
 const PW_CONFIG = path.join(process.cwd(), 'playwright.config.ts');
@@ -27,7 +27,7 @@ async function initServer() {
       await fs.access(dir);
     } catch {
       await fs.mkdir(dir, { recursive: true });
-      console.log('Created directory:', dir)
+      console.log('Created directory:', dir);
     }
   }
 
@@ -40,18 +40,18 @@ const foldersInitialized = initServer();
 
 export async function getServerDataInfo() {
   await foldersInitialized;
-  const dataFolderSizeinMB = `${(await getFolderSize.loose(DATA_FOLDER) / 1000 / 1000).toFixed(2)} MB`;
+  const dataFolderSizeinMB = `${((await getFolderSize.loose(DATA_FOLDER)) / 1000 / 1000).toFixed(2)} MB`;
 
   const results = await readResults();
-  const resultsFolderSizeinMB = `${(await getFolderSize.loose(RESULTS_FOLDER) / 1000 / 1000).toFixed(2)} MB`;
+  const resultsFolderSizeinMB = `${((await getFolderSize.loose(RESULTS_FOLDER)) / 1000 / 1000).toFixed(2)} MB`;
   const reports = await readReports();
-  const reportsFolderSizeinMB = `${(await getFolderSize.loose(REPORTS_FOLDER) / 1000 / 1000).toFixed(2)} MB`;
+  const reportsFolderSizeinMB = `${((await getFolderSize.loose(REPORTS_FOLDER)) / 1000 / 1000).toFixed(2)} MB`;
   return {
     dataFolderSizeinMB,
     numOfResults: results.length,
     resultsFolderSizeinMB,
     numOfReports: reports.length,
-    reportsFolderSizeinMB
+    reportsFolderSizeinMB,
   };
 }
 
@@ -100,10 +100,7 @@ export async function deleteResult(resultId: string) {
   await foldersInitialized;
   const resultPath = path.join(RESULTS_FOLDER, resultId);
 
-  return Promise.allSettled([
-    fs.unlink(`${resultPath}.json`),
-    fs.unlink(`${resultPath}.zip`),
-  ]);
+  return Promise.allSettled([fs.unlink(`${resultPath}.json`), fs.unlink(`${resultPath}.zip`)]);
 }
 
 export async function deleteReports(reportsIds: string[]) {
@@ -118,10 +115,7 @@ export async function deleteReport(reportId: string) {
   return fs.rm(reportPath, { recursive: true, force: true });
 }
 
-export async function saveResult(
-  buffer: Buffer,
-  resultDetails: { [key: string]: string },
-) {
+export async function saveResult(buffer: Buffer, resultDetails: { [key: string]: string }) {
   await foldersInitialized;
   const resultID = randomUUID();
 
@@ -132,10 +126,7 @@ export async function saveResult(
     createdAt: new Date().toISOString(),
     ...resultDetails,
   };
-  await fs.writeFile(
-    path.join(RESULTS_FOLDER, `${resultID}.json`),
-    Buffer.from(JSON.stringify(metaData, null, 2)),
-  );
+  await fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.json`), Buffer.from(JSON.stringify(metaData, null, 2)));
 
   return metaData;
 }
@@ -150,10 +141,7 @@ export async function generateReport(resultsIds: string[]) {
   await fs.mkdir(TMP_FOLDER, { recursive: true });
 
   for (const id of resultsIds) {
-    await fs.copyFile(
-      path.join(RESULTS_FOLDER, `${id}.zip`),
-      path.join(TMP_FOLDER, `${id}.zip`),
-    );
+    await fs.copyFile(path.join(RESULTS_FOLDER, `${id}.zip`), path.join(TMP_FOLDER, `${id}.zip`));
   }
 
   const reportId = randomUUID();
