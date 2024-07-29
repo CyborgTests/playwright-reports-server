@@ -1,7 +1,5 @@
 # Playwright Reports Server
 
-# Playwright Reports Server
-
 The Playwright Reports Server provides APIs for managing and generating reports based on Playwright test results. It allows to:
 
 - Store HTML reports and easily view them without downloading locally
