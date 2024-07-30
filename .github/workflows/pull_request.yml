@@ -50,5 +50,3 @@ jobs:
         run: docker run -d -p 3000:3000 playwright-reports-server
       - name: Execute integration tests
         run: npm run test:integration
-      - name: Stop Docker container
-        run: docker stop playwright-reports-server
