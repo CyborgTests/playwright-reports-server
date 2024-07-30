@@ -16,6 +16,7 @@ on:
 
 env:
   IMAGE_NAME: my-docker-hub-namespace/my-docker-hub-repository
+  REGISTRY: docker.io
 
 jobs:
   push_to_registry:
