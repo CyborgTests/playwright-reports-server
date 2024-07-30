@@ -180,6 +180,20 @@ Response example:
 }
 ```
 
+## `/api/ping` (GET)
+
+Returns server stats:
+
+```sh
+curl --location 'http://localhost:3000/api/ping'
+```
+
+Response example:
+
+```
+pong
+```
+
 ## Authorization
 
 Optional authorization can be enabled, by setting `API_TOKEN` environment variable on application start. This token will be required to be passed for every request.
