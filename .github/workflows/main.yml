@@ -33,6 +33,10 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '18'
+      - name: Get artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: node_modules
       - name: Run prettier
         run: npm run format:check
 
@@ -61,6 +65,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+      - name: Get artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: node_modules
       - name: Build Docker image for testing
         run: docker build -t playwrigt-report-server .
       - name: Run Docker container
