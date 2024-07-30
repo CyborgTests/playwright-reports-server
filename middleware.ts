@@ -4,7 +4,7 @@ import { isAuthorized } from './app/lib/auth';
 import { env } from './app/config/env';
 
 export function middleware(request: NextRequest) {
-  if (env.API_TOKEN) {
+  if (env.API_TOKEN && !request.url.endsWith('/ping')) {
     return returnUnauthorizedResponseIfTokenDoesNotMatch(request, env.API_TOKEN);
   }
 }

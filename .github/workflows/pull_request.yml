@@ -1,4 +1,4 @@
-name: Pipline
+name: Pull Request CI
 
 on: pull_request
 
@@ -32,3 +32,21 @@ jobs:
         run: npm ci
       - name: Run unit tests
         run: npm run test:unit
+
+  integration-tests:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Install dependencies
+        run: npm ci
+      - name: Set .env file
+        run: echo "API_TOKEN=TEST" > .env
+      - name: Build Docker image for testing
+        run: docker build -t playwright-reports-server .
+      - name: Run Docker container
+        run: docker run -d -p 3000:3000 playwright-reports-server
+      - name: Execute integration tests
+        run: npm run test:integration
