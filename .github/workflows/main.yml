@@ -91,11 +91,11 @@ jobs:
         with:
           name: docker-image
       - name: Run Docker container
-        run: docker run -d --name my-app ${{ secrets.DOCKER_USERNAME }}/my-app:${{ github.sha }}
+        run: docker run -d --name playwright-reports-server ${{ secrets.DOCKER_USERNAME }}/my-app:${{ github.sha }}
       - name: Execute integration tests
-        run: docker exec my-app npm run test:integration
+        run: npm run test:integration
       - name: Stop Docker container
-        run: docker stop my-app
+        run: docker stop playwright-reports-server
 
   publish-docker-image:
     if: github.ref == 'refs/heads/master'
