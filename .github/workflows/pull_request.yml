@@ -42,6 +42,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Install dependencies
         run: npm ci
+      - name: Set .env file
+        run: echo "API_TOKEN=TEST" > .env
       - name: Build Docker image for testing
         run: docker build -t playwright-reports-server .
       - name: Run Docker container
