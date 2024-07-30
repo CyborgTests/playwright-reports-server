@@ -1,12 +1,6 @@
-name: Pipeline
+name: Pull Request CI
 
-on:
-  pull_request:
-    branches:
-      - '**'
-  push:
-    branches:
-      - master
+on: pull_request
 
 jobs:
   install-dependencies:
@@ -60,58 +54,18 @@ jobs:
       - name: Run unit tests
         run: npm run test:unit
 
-  build-docker-image:
+  integration-tests:
     needs: unit-tests
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-      - name: Build Docker image
-        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/my-app:${{ github.sha }} .
-      - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v2
-        with:
-          name: docker-image
-          path: |
-            ${{ secrets.DOCKER_USERNAME }}/my-app:${{ github.sha }}
-          retention-days: 1
-
-  integration-tests:
-    needs: build-docker-image
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      - name: Download Docker image artifact
-        uses: actions/download-artifact@v2
-        with:
-          name: docker-image
+      - name: Build Docker image for testing
+        run: docker build -t playwrigt-report-server .
       - name: Run Docker container
-        run: docker run -d --name playwright-reports-server ${{ secrets.DOCKER_USERNAME }}/my-app:${{ github.sha }}
+        run: docker run -d --name playwright-reports-server
       - name: Execute integration tests
         run: npm run test:integration
       - name: Stop Docker container
         run: docker stop playwright-reports-server
-
-  publish-docker-image:
-    if: github.ref == 'refs/heads/master'
-    needs: build-docker-image
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-      - name: Publish Docker image
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/my-app:${{ github.sha }}
