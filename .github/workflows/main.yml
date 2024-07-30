@@ -80,6 +80,7 @@ jobs:
           name: docker-image
           path: |
             ${{ secrets.DOCKER_USERNAME }}/my-app:${{ github.sha }}
+          retention-days: 1
 
   integration-tests:
     needs: build-docker-image
