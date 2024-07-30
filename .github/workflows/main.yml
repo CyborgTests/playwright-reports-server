@@ -3,7 +3,7 @@ name: Pull Request CI
 on: pull_request
 
 jobs:
-  install-dependencies:
+  prettier:
     runs-on: ubuntu-latest
 
     steps:
@@ -15,33 +15,10 @@ jobs:
           node-version: '18'
       - name: Install dependencies
         run: npm ci
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: node_modules
-          path: ./node_modules
-          retention-days: 1
-
-  prettier:
-    needs: install-dependencies
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-      - name: Get artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: node_modules
       - name: Run prettier
         run: npm run format:check
 
   unit-tests:
-    needs: install-dependencies
     runs-on: ubuntu-latest
 
     steps:
@@ -51,10 +28,8 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '18'
-      - name: Get artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: node_modules
+      - name: Install dependencies
+        run: npm ci
       - name: Run unit tests
         run: npm run test:unit
 
@@ -65,10 +40,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
-      - name: Get artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: node_modules
+      - name: Install dependencies
+        run: npm ci
       - name: Build Docker image for testing
         run: docker build -t playwrigt-report-server .
       - name: Run Docker container
