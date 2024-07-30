@@ -25,7 +25,8 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: node_modules
-          path: node_modules
+          path: ./node_modules
+          retention-days: 1
 
   prettier:
     needs: install-dependencies
