@@ -196,10 +196,7 @@ pong
 
 ## Authorization
 
-Optional authorization can be enabled, by setting `API_TOKEN` environment variable on application start. This token will be required to be passed for every request.
+Optional authorization can be enabled, by setting `API_TOKEN` environment variable on application start. This token will be required to be passed for every request as header:
+`Authorization: YOUR_TOKEN`
 
-If you do not set a token the system will work without authorization
-
-```
-API_TOKEN='my-api-token'
-```
+If you do not set a token the application will work without authorization.
