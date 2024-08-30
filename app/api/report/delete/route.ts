@@ -6,6 +6,7 @@ export async function DELETE(request: Request) {
 
   try {
     await deleteReports(reqData.reportsIds);
+
     return Response.json({
       message: `Reports deleted successfully`,
       reportsIds: reqData.reportsIds,

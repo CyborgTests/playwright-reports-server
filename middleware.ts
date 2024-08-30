@@ -1,7 +1,12 @@
 import type { NextRequest } from 'next/server';
-import { CommonResponseFactory } from './app/lib/response';
-import { isAuthorized } from './app/lib/auth';
-import { env } from './app/config/env';
+
+import { CommonResponseFactory } from '@/app/lib/response';
+import { isAuthorized } from '@/app/lib/auth';
+import { env } from '@/app/config/env';
+
+export const config = {
+  matcher: '/api/:path*',
+};
 
 export function middleware(request: NextRequest) {
   if (env.API_TOKEN && !request.url.endsWith('/ping')) {

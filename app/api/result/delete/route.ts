@@ -4,9 +4,11 @@ export const dynamic = 'force-dynamic'; // defaults to auto
 
 export async function DELETE(request: Request) {
   const reqData = await request.json();
+
   reqData.resultsIds;
   try {
     await deleteResults(reqData.resultsIds);
+
     return Response.json({
       message: `Results files deleted successfully`,
       resultsIds: reqData.resultsIds,

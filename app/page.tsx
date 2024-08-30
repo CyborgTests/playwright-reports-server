@@ -1,5 +1,9 @@
-export default async function Page() {
-  return (
-    'UI does not exist yet. Will be added in v2.0.0!'
-  );
+import { redirect } from 'next/navigation';
+
+import { env } from '@/app/config/env';
+
+export default async function RootPage() {
+  const apiTokenRequired = !!env.API_TOKEN;
+
+  redirect(apiTokenRequired ? '/login' : '/home');
 }

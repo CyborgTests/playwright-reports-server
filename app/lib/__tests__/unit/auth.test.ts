@@ -5,6 +5,7 @@ describe('isAuthorized', () => {
     const actualAuthToken = 'abc123';
     const expectedAuthToken = 'abc123';
     const result = isAuthorized({ actualAuthToken, expectedAuthToken });
+
     expect(result).toBe(true);
   });
 
@@ -12,6 +13,7 @@ describe('isAuthorized', () => {
     const actualAuthToken = 'abc123';
     const expectedAuthToken = 'def456';
     const result = isAuthorized({ actualAuthToken, expectedAuthToken });
+
     expect(result).toBe(false);
   });
 
@@ -19,6 +21,7 @@ describe('isAuthorized', () => {
     const actualAuthToken = null;
     const expectedAuthToken = 'abc123';
     const result = isAuthorized({ actualAuthToken, expectedAuthToken });
+
     expect(result).toBe(false);
   });
 });
