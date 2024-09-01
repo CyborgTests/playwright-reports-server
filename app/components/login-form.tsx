@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { redirect } from 'next/navigation';
 import { Button, Card, CardBody, CardFooter, CardHeader, Input } from '@nextui-org/react';
 
+import { useApiToken } from '@/app/providers';
 import { getExistingToken, hashToken, setTokenWithExpiry } from '@/app/config/auth';
 import { title } from '@/app/components/primitives';
 
@@ -11,22 +12,26 @@ interface LoginPageProps {
 }
 
 export default function LoginForm({ expectedToken }: Readonly<LoginPageProps>) {
+  const { updateApiToken } = useApiToken();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [apiKey, setApiKey] = useState('');
+  const [input, setInput] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (getExistingToken() === hashToken(expectedToken)) {
+      updateApiToken(expectedToken);
       setIsAuthenticated(true);
+      redirect('/reports');
     }
   });
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    if (apiKey === expectedToken) {
+    if (input === expectedToken) {
       setIsAuthenticated(true);
-      setTokenWithExpiry(apiKey);
+      setTokenWithExpiry(input);
+      updateApiToken(input);
       setError('');
 
       return;
@@ -36,7 +41,7 @@ export default function LoginForm({ expectedToken }: Readonly<LoginPageProps>) {
   };
 
   if (isAuthenticated) {
-    redirect('/home');
+    redirect('/reports');
   }
 
   return (
@@ -54,14 +59,14 @@ export default function LoginForm({ expectedToken }: Readonly<LoginPageProps>) {
               errorMessage={error}
               isInvalid={!!error}
               placeholder="Enter API Key"
-              value={apiKey}
+              value={input}
               onChange={(e) => {
                 const newValue = e.target.value;
 
                 if (!newValue && error) {
                   setError('');
                 }
-                setApiKey(newValue);
+                setInput(newValue);
               }}
             />
           </CardBody>

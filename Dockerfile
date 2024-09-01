@@ -66,6 +66,6 @@ ENV PORT 3000
 
 # server.js is created by next build from the standalone output
 # https://nextjs.org/docs/pages/api-reference/next-config-js/output
-CMD HOSTNAME="0.0.0.0" NODE_OPTIONS='--inspect' node server.js
+CMD HOSTNAME="0.0.0.0" node server.js
 
 HEALTHCHECK --interval=3m --timeout=3s CMD curl -f http://localhost:3000/api/ping || exit 1

@@ -37,12 +37,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <Navbar />
             <main className="container mx-auto max-w-7xl pt-16 px-6 flex-grow">{children}</main>
             <footer className="w-full flex items-center justify-center py-3">
-              <Link
-                isExternal
-                className="flex items-center gap-1 text-current"
-                href="http://localhost:3000"
-                title="nextui.org homepage"
-              >
+              <Link className="flex items-center gap-1 text-current" href="/" title="Home Page">
                 <span className="text-default-600">Powered by</span>
                 <p className="text-primary">CyborgTests</p>
               </Link>

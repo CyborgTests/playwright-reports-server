@@ -23,14 +23,11 @@ const RESULTS_FOLDER = path.join(DATA_FOLDER, 'results');
 const REPORTS_FOLDER = path.join(DATA_FOLDER, 'reports');
 
 async function createDirectoriesIfMissing() {
-  console.log(`initServer`);
   async function createDirectory(dir: string) {
-    console.log(`createDirectory: ${dir}`);
     try {
       await fs.access(dir);
     } catch {
       await fs.mkdir(dir, { recursive: true });
-      console.log('Created directory:', dir);
     }
   }
 
@@ -46,7 +43,6 @@ const getFolderSizeInMb = async (dir: string) => {
 };
 
 export async function getServerDataInfo() {
-  console.log(`getServerDataInfo`);
   await createDirectoriesIfMissing();
   const dataFolderSizeinMB = await getFolderSizeInMb(DATA_FOLDER);
   const results = await readResults();
@@ -64,7 +60,6 @@ export async function getServerDataInfo() {
 }
 
 export async function readResults() {
-  console.log(`readResults`);
   await createDirectoriesIfMissing();
   const files = await fs.readdir(RESULTS_FOLDER);
   const jsonFiles = files.filter((file) => path.extname(file) === '.json');
@@ -82,7 +77,6 @@ export async function readResults() {
 }
 
 export async function readReports() {
-  console.log(`readReports`);
   await createDirectoriesIfMissing();
   const dirents = await fs.readdir(REPORTS_FOLDER, { withFileTypes: true });
 
@@ -101,7 +95,7 @@ export async function readReports() {
       }),
   );
 
-  return reports;
+  return reports.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 }
 
 export async function deleteResults(resultsIds: string[]) {

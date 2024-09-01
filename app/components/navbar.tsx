@@ -15,7 +15,7 @@ import clsx from 'clsx';
 
 import { siteConfig } from '@/app/config/site';
 import { ThemeSwitch } from '@/app/components/theme-switch';
-import { GithubIcon, DiscordIcon, HeartFilledIcon, Logo } from '@/app/components/icons';
+import { GithubIcon, DiscordIcon, HeartFilledIcon, CyborgLogo } from '@/app/components/icons';
 
 export const Navbar = () => {
   return (
@@ -23,7 +23,7 @@ export const Navbar = () => {
       <NavbarContent className="basis-1/5 sm:basis-full" justify="start">
         <NavbarBrand as="li" className="gap-3 max-w-fit">
           <NextLink className="flex justify-start items-center gap-1" href="/">
-            <Logo />
+            <CyborgLogo />
             <p className="font-bold text-inherit">CyborgTests</p>
           </NextLink>
         </NavbarBrand>
@@ -70,6 +70,9 @@ export const Navbar = () => {
       </NavbarContent>
 
       <NavbarContent className="sm:hidden basis-1 pl-4" justify="end">
+        <Link isExternal aria-label="Discord" href={siteConfig.links.discord}>
+          <DiscordIcon className="text-default-500" />
+        </Link>
         <Link isExternal aria-label="Github" href={siteConfig.links.github}>
           <GithubIcon className="text-default-500" />
         </Link>
