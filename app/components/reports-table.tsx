@@ -8,7 +8,7 @@ import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
 import { EyeIcon } from '@/app/components/icons';
 import { type Report } from '@/app/lib/data';
-import { useApiToken } from '@/app/providers';
+import { useApiToken } from '@/app/providers/ApiTokenProvider';
 
 const columns = [
   { name: 'ID', uid: 'reportID' },
@@ -32,7 +32,7 @@ export default function ReportsTable({ reports }: ReportsTableProps) {
           </TableColumn>
         )}
       </TableHeader>
-      <TableBody items={reports}>
+      <TableBody emptyContent="No reports." items={reports}>
         {(item) => (
           <TableRow key={item.reportID}>
             <TableCell className="w-1/2">{item.reportID}</TableCell>

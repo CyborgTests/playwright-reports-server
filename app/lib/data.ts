@@ -28,6 +28,7 @@ async function createDirectoriesIfMissing() {
       await fs.access(dir);
     } catch {
       await fs.mkdir(dir, { recursive: true });
+      console.log('Created directory:', dir);
     }
   }
 
@@ -99,13 +100,10 @@ export async function readReports() {
 }
 
 export async function deleteResults(resultsIds: string[]) {
-  console.log(`deleteResults: ${resultsIds}`);
-
   return Promise.allSettled(resultsIds.map((id) => deleteResult(id)));
 }
 
 export async function deleteResult(resultId: string) {
-  console.log(`deleteResult: ${resultId}`);
   const resultPath = path.join(RESULTS_FOLDER, resultId);
 
   return Promise.allSettled([
@@ -115,20 +113,16 @@ export async function deleteResult(resultId: string) {
 }
 
 export async function deleteReports(reportsIds: string[]) {
-  console.log(`deleteReports: ${reportsIds}`);
-
   return Promise.allSettled(reportsIds.map((id) => deleteReport(id)));
 }
 
 export async function deleteReport(reportId: string) {
-  console.log(`deleteReport: ${reportId}`);
   const reportPath = path.join(REPORTS_FOLDER, reportId);
 
   return fs.rm(reportPath, { recursive: true, force: true });
 }
 
 export async function saveResult(buffer: Buffer, resultDetails: { [key: string]: string }) {
-  console.log(`save Result: ${JSON.stringify(resultDetails, null, 2)}`);
   await createDirectoriesIfMissing();
   const resultID = randomUUID();
 
@@ -140,7 +134,6 @@ export async function saveResult(buffer: Buffer, resultDetails: { [key: string]:
     ...resultDetails,
   };
 
-  console.log(JSON.stringify(metaData, null, 2));
   await fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.json`), Buffer.from(JSON.stringify(metaData, null, 2)));
 
   return metaData;

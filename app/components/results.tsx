@@ -1,10 +1,10 @@
 'use server';
 
 import { readResults } from '@/app/lib/data';
-import ResultsTable from '@/app/components/results-table';
+import ResultsHandler from '@/app/components/results-handler';
 
 export default async function Results() {
   const results = await readResults();
 
-  return <ResultsTable results={results} />;
+  return <ResultsHandler results={results} />;
 }

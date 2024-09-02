@@ -1,21 +1,5 @@
-'use client';
-import React, { useEffect, useMemo, useState } from 'react';
-import { NextUIProvider } from '@nextui-org/system';
-import { ThemeProvider as NextThemesProvider } from 'next-themes';
-import { ThemeProviderProps } from 'next-themes/dist/types';
 import { useRouter } from 'next/navigation';
-
-export const Providers: React.FC<ThemeProviderProps> = ({ children, ...themeProps }) => {
-  const router = useRouter();
-
-  return (
-    <NextUIProvider navigate={router.push}>
-      <NextThemesProvider {...themeProps}>
-        <ApiTokenProvider>{children}</ApiTokenProvider>
-      </NextThemesProvider>
-    </NextUIProvider>
-  );
-};
+import React, { useEffect, useMemo, useState } from 'react';
 
 interface ApiTokenContextType {
   apiToken: string;
@@ -24,7 +8,7 @@ interface ApiTokenContextType {
 
 const ApiTokenContext = React.createContext<ApiTokenContextType | null>(null);
 
-function ApiTokenProvider({ children }: Readonly<{ children: React.ReactNode }>) {
+export function ApiTokenProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [apiToken, setApiToken] = useState<string>('');
   const router = useRouter();
 

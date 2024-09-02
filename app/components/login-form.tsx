@@ -3,7 +3,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { redirect } from 'next/navigation';
 import { Button, Card, CardBody, CardFooter, CardHeader, Input } from '@nextui-org/react';
 
-import { useApiToken } from '@/app/providers';
+import { useApiToken } from '@/app/providers/ApiTokenProvider';
 import { getExistingToken, hashToken, setTokenWithExpiry } from '@/app/config/auth';
 import { title } from '@/app/components/primitives';
 
