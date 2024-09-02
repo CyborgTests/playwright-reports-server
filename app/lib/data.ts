@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { exec } from 'node:child_process';
 import util from 'node:util';
+
 import getFolderSize from 'get-folder-size';
 const execAsync = util.promisify(exec);
 
@@ -15,13 +16,13 @@ export type Result = {
 
 export type Report = { reportID: string; reportUrl: string; createdAt: Date };
 
-const DATA_FOLDER = path.join(process.cwd(), 'public/data/');
+const DATA_FOLDER = path.join(process.cwd(), 'public', 'data');
 const PW_CONFIG = path.join(process.cwd(), 'playwright.config.ts');
 const TMP_FOLDER = path.join(DATA_FOLDER, '.tmp');
 const RESULTS_FOLDER = path.join(DATA_FOLDER, 'results');
 const REPORTS_FOLDER = path.join(DATA_FOLDER, 'reports');
 
-async function initServer() {
+async function createDirectoriesIfMissing() {
   async function createDirectory(dir: string) {
     try {
       await fs.access(dir);
@@ -36,16 +37,20 @@ async function initServer() {
   await createDirectory(TMP_FOLDER);
 }
 
-const foldersInitialized = initServer();
+const getFolderSizeInMb = async (dir: string) => {
+  const sizeBytes = await getFolderSize.loose(dir);
+
+  return `${(sizeBytes / 1000 / 1000).toFixed(2)} MB`;
+};
 
 export async function getServerDataInfo() {
-  await foldersInitialized;
-  const dataFolderSizeinMB = `${((await getFolderSize.loose(DATA_FOLDER)) / 1000 / 1000).toFixed(2)} MB`;
-
+  await createDirectoriesIfMissing();
+  const dataFolderSizeinMB = await getFolderSizeInMb(DATA_FOLDER);
   const results = await readResults();
-  const resultsFolderSizeinMB = `${((await getFolderSize.loose(RESULTS_FOLDER)) / 1000 / 1000).toFixed(2)} MB`;
+  const resultsFolderSizeinMB = await getFolderSizeInMb(RESULTS_FOLDER);
   const reports = await readReports();
-  const reportsFolderSizeinMB = `${((await getFolderSize.loose(REPORTS_FOLDER)) / 1000 / 1000).toFixed(2)} MB`;
+  const reportsFolderSizeinMB = await getFolderSizeInMb(REPORTS_FOLDER);
+
   return {
     dataFolderSizeinMB,
     numOfResults: results.length,
@@ -56,7 +61,7 @@ export async function getServerDataInfo() {
 }
 
 export async function readResults() {
-  await foldersInitialized;
+  await createDirectoriesIfMissing();
   const files = await fs.readdir(RESULTS_FOLDER);
   const jsonFiles = files.filter((file) => path.extname(file) === '.json');
 
@@ -64,14 +69,16 @@ export async function readResults() {
     jsonFiles.map(async (file) => {
       const filePath = path.join(RESULTS_FOLDER, file);
       const content = await fs.readFile(filePath, 'utf-8');
+
       return JSON.parse(content);
     }),
   );
+
   return fileContents;
 }
 
 export async function readReports() {
-  await foldersInitialized;
+  await createDirectoriesIfMissing();
   const dirents = await fs.readdir(REPORTS_FOLDER, { withFileTypes: true });
 
   const reports: Report[] = await Promise.all(
@@ -80,6 +87,7 @@ export async function readReports() {
       .map(async (dirent) => {
         const dirPath = path.join(REPORTS_FOLDER, dirent.name);
         const stats = await fs.stat(dirPath);
+
         return {
           reportID: dirent.name,
           createdAt: stats.birthtime,
@@ -88,35 +96,34 @@ export async function readReports() {
       }),
   );
 
-  return reports;
+  return reports.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 }
 
 export async function deleteResults(resultsIds: string[]) {
-  await foldersInitialized;
   return Promise.allSettled(resultsIds.map((id) => deleteResult(id)));
 }
 
 export async function deleteResult(resultId: string) {
-  await foldersInitialized;
   const resultPath = path.join(RESULTS_FOLDER, resultId);
 
-  return Promise.allSettled([fs.unlink(`${resultPath}.json`), fs.unlink(`${resultPath}.zip`)]);
+  return Promise.allSettled([
+    fs.rm(`${resultPath}.json`, { force: true }),
+    fs.rm(`${resultPath}.zip`, { force: true }),
+  ]);
 }
 
 export async function deleteReports(reportsIds: string[]) {
-  await foldersInitialized;
   return Promise.allSettled(reportsIds.map((id) => deleteReport(id)));
 }
 
 export async function deleteReport(reportId: string) {
-  await foldersInitialized;
   const reportPath = path.join(REPORTS_FOLDER, reportId);
 
   return fs.rm(reportPath, { recursive: true, force: true });
 }
 
 export async function saveResult(buffer: Buffer, resultDetails: { [key: string]: string }) {
-  await foldersInitialized;
+  await createDirectoriesIfMissing();
   const resultID = randomUUID();
 
   await fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.zip`), buffer);
@@ -126,13 +133,14 @@ export async function saveResult(buffer: Buffer, resultDetails: { [key: string]:
     createdAt: new Date().toISOString(),
     ...resultDetails,
   };
+
   await fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.json`), Buffer.from(JSON.stringify(metaData, null, 2)));
 
   return metaData;
 }
 
 export async function generateReport(resultsIds: string[]) {
-  await foldersInitialized;
+  await createDirectoriesIfMissing();
   try {
     await fs.rm(TMP_FOLDER, { recursive: true, force: true });
   } catch (error) {
@@ -154,5 +162,6 @@ export async function generateReport(resultsIds: string[]) {
       PLAYWRIGHT_HTML_REPORT: path.join(REPORTS_FOLDER, reportId),
     },
   });
+
   return reportId;
 }

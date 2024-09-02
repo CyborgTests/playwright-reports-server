@@ -33,7 +33,7 @@ ENV NODE_ENV production
 # ENV NEXT_TELEMETRY_DISABLED 1
 
 RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN adduser --system --uid 1001 --ingroup nodejs nextjs
 
 COPY --from=builder /app/public ./public
 
@@ -56,4 +56,4 @@ ENV PORT 3000
 # https://nextjs.org/docs/pages/api-reference/next-config-js/output
 CMD HOSTNAME="0.0.0.0" node server.js
 
-HEALTHCHECK --interval=3m --timeout=3s CMD curl -f http://localhost:3000/ping || exit 1
+HEALTHCHECK --interval=3m --timeout=3s CMD curl -f http://localhost:3000/api/ping || exit 1
