@@ -1,4 +1,5 @@
 'use client';
+
 import {
   Input,
   Tooltip,
@@ -10,18 +11,19 @@ import {
   useDisclosure,
   Button,
 } from '@nextui-org/react';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import useMutation from '@/app/hooks/useMutation';
+import ErrorMessage from '@/app/components/error-message';
 import { DeleteIcon } from '@/app/components/icons';
 
 interface DeleteProjectButtonProps {
   resultIds: string[];
-  token: string;
+  onDeletedResult?: () => void;
 }
 
-export default function DeleteResultsButton({ resultIds, token }: DeleteProjectButtonProps) {
-  const router = useRouter();
+export default function DeleteResultsButton({ resultIds, onDeletedResult }: DeleteProjectButtonProps) {
+  const { mutate: deleteResult, isLoading, error } = useMutation('/api/result/delete', { method: 'DELETE' });
   const [confirm, setConfirm] = useState('');
 
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
@@ -31,19 +33,9 @@ export default function DeleteResultsButton({ resultIds, token }: DeleteProjectB
       return;
     }
 
-    const headers = !!token
-      ? {
-          Authorization: token,
-        }
-      : undefined;
+    await deleteResult({ resultsIds: resultIds });
 
-    await fetch('/api/result/delete', {
-      method: 'DELETE',
-      body: JSON.stringify({ resultsIds: resultIds }),
-      headers,
-    });
-
-    router.refresh();
+    onDeletedResult?.();
   };
 
   return (
@@ -68,14 +60,15 @@ export default function DeleteResultsButton({ resultIds, token }: DeleteProjectB
                 <Input isRequired label="Confirm" value={confirm} onValueChange={setConfirm} />
               </ModalBody>
               <ModalFooter>
+                {error && <ErrorMessage message={error.message} />}
                 <Button color="primary" variant="light" onPress={onClose}>
                   Close
                 </Button>
                 <Button
                   color="danger"
                   isDisabled={confirm !== resultIds?.at(0)}
+                  isLoading={isLoading}
                   onClick={DeleteResult}
-                  onPress={onClose}
                 >
                   Sure, Delete
                 </Button>

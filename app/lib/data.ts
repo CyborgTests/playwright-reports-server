@@ -16,7 +16,7 @@ export type Result = {
 
 export type Report = { reportID: string; reportUrl: string; createdAt: Date };
 
-const DATA_FOLDER = path.join(process.cwd(), 'public', 'data');
+const DATA_FOLDER = path.join(process.cwd(), 'data');
 const PW_CONFIG = path.join(process.cwd(), 'playwright.config.ts');
 const TMP_FOLDER = path.join(DATA_FOLDER, '.tmp');
 const RESULTS_FOLDER = path.join(DATA_FOLDER, 'results');
@@ -43,7 +43,15 @@ const getFolderSizeInMb = async (dir: string) => {
   return `${(sizeBytes / 1000 / 1000).toFixed(2)} MB`;
 };
 
-export async function getServerDataInfo() {
+export interface ServerDataInfo {
+  dataFolderSizeinMB: string;
+  numOfResults: number;
+  resultsFolderSizeinMB: string;
+  numOfReports: number;
+  reportsFolderSizeinMB: string;
+}
+
+export async function getServerDataInfo(): Promise<ServerDataInfo> {
   await createDirectoriesIfMissing();
   const dataFolderSizeinMB = await getFolderSizeInMb(DATA_FOLDER);
   const results = await readResults();
@@ -58,6 +66,12 @@ export async function getServerDataInfo() {
     numOfReports: reports.length,
     reportsFolderSizeinMB,
   };
+}
+
+export async function readFile(targetPath: string, contentType: string | null) {
+  return await fs.readFile(path.join(REPORTS_FOLDER, targetPath), {
+    encoding: contentType === 'text/html' ? 'utf-8' : null,
+  });
 }
 
 export async function readResults() {
@@ -91,7 +105,7 @@ export async function readReports() {
         return {
           reportID: dirent.name,
           createdAt: stats.birthtime,
-          reportUrl: `/data/reports/${dirent.name}/index.html`,
+          reportUrl: `/api/serve/${dirent.name}/index.html`,
         };
       }),
   );
@@ -106,10 +120,7 @@ export async function deleteResults(resultsIds: string[]) {
 export async function deleteResult(resultId: string) {
   const resultPath = path.join(RESULTS_FOLDER, resultId);
 
-  return Promise.allSettled([
-    fs.rm(`${resultPath}.json`, { force: true }),
-    fs.rm(`${resultPath}.zip`, { force: true }),
-  ]);
+  return Promise.allSettled([fs.unlink(`${resultPath}.json`), fs.unlink(`${resultPath}.zip`)]);
 }
 
 export async function deleteReports(reportsIds: string[]) {

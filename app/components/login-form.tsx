@@ -1,5 +1,6 @@
 'use client';
-import { type FormEvent, useEffect, useState } from 'react';
+
+import { type FormEvent, useLayoutEffect, useState } from 'react';
 import { redirect } from 'next/navigation';
 import { Button, Card, CardBody, CardFooter, CardHeader, Input } from '@nextui-org/react';
 
@@ -17,11 +18,11 @@ export default function LoginForm({ expectedToken }: Readonly<LoginPageProps>) {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (getExistingToken() === hashToken(expectedToken)) {
       updateApiToken(expectedToken);
       setIsAuthenticated(true);
-      redirect('/reports');
+      redirect('/');
     }
   });
 
@@ -41,7 +42,7 @@ export default function LoginForm({ expectedToken }: Readonly<LoginPageProps>) {
   };
 
   if (isAuthenticated) {
-    redirect('/reports');
+    redirect('/');
   }
 
   return (

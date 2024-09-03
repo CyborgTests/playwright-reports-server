@@ -5,7 +5,9 @@ import { isAuthorized } from '@/app/lib/auth';
 import { env } from '@/app/config/env';
 
 export const config = {
-  matcher: '/api/:path*',
+  // match all api routes except /api/serve/
+  // we do not have auth header when opening static files
+  matcher: '/api((?!/serve/).*)',
 };
 
 export function middleware(request: NextRequest) {

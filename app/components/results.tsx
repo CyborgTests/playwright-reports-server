@@ -1,10 +1,37 @@
-'use server';
+'use client';
 
-import { readResults } from '@/app/lib/data';
-import ResultsHandler from '@/app/components/results-handler';
+import { useState } from 'react';
 
-export default async function Results() {
-  const results = await readResults();
+import ResultsTable from '@/app/components/results-table';
+import { title } from '@/app/components/primitives';
+import GenerateReportButton from '@/app/components/generate-report-button';
+import DeleteResultsButton from '@/app/components/delete-results-button';
 
-  return <ResultsHandler results={results} />;
+interface ResultsProps {
+  onChange: () => void;
+}
+
+export default function Results({ onChange }: ResultsProps) {
+  const [selectedResults, setSelectedResults] = useState<string[]>([]);
+
+  const onGeneratedReport = () => {
+    setSelectedResults([]);
+    onChange?.();
+  };
+
+  return (
+    <>
+      <div className="flex w-full">
+        <div className="w-2/3">
+          <h1 className={title()}>Results</h1>
+        </div>
+        <div className="flex gap-2 w-1/3 justify-end mr-7">
+          <GenerateReportButton resultIds={selectedResults} onGeneratedReport={onGeneratedReport} />
+          <DeleteResultsButton resultIds={selectedResults} onDeletedResult={onChange} />
+        </div>
+      </div>
+      <br />
+      <ResultsTable selected={selectedResults} onDeleted={onChange} onSelect={setSelectedResults} />
+    </>
+  );
 }

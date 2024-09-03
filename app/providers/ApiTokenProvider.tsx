@@ -1,5 +1,9 @@
-import { useRouter } from 'next/navigation';
-import React, { useEffect, useMemo, useState } from 'react';
+'use client';
+
+import { usePathname, useRouter } from 'next/navigation';
+import React, { useLayoutEffect, useMemo, useState } from 'react';
+
+import { env } from '@/app/config/env';
 
 interface ApiTokenContextType {
   apiToken: string;
@@ -9,11 +13,12 @@ interface ApiTokenContextType {
 const ApiTokenContext = React.createContext<ApiTokenContextType | null>(null);
 
 export function ApiTokenProvider({ children }: Readonly<{ children: React.ReactNode }>) {
-  const [apiToken, setApiToken] = useState<string>('');
+  const [apiToken, setApiToken] = useState<string>(env.API_TOKEN ?? '');
   const router = useRouter();
+  const pathname = usePathname();
 
-  useEffect(() => {
-    if (!apiToken) {
+  useLayoutEffect(() => {
+    if (!apiToken && pathname !== '/login') {
       router.push('/login');
     }
   }, []);
