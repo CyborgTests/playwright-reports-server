@@ -7,9 +7,13 @@ const useQuery = <ReturnType>(url: string, options?: RequestInit) => {
   const [data, setData] = useState<ReturnType | null>(null);
   const [isLoading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const { apiToken } = useApiToken();
+  const { apiToken, isRequiredAuth } = useApiToken();
 
   const fetchData = useCallback(async () => {
+    if (isRequiredAuth && !apiToken) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -39,14 +43,15 @@ const useQuery = <ReturnType>(url: string, options?: RequestInit) => {
     } finally {
       setLoading(false);
     }
-  }, [url, options]);
+  }, [url, options, apiToken]);
 
   useEffect(() => {
-    if (!apiToken) {
+    if (isRequiredAuth && !apiToken) {
       redirect('/login');
     }
+
     fetchData();
-  }, [fetchData]);
+  }, []);
 
   return { data, isLoading, error, refetch: fetchData };
 };
