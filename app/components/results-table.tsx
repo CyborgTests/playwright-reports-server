@@ -79,11 +79,7 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: ResultsT
             </TableCell>
             <TableCell className="w-1/3">
               {getTags(item).map(([key, value], index) => (
-                <Chip
-                  key={index}
-                  className="m-1 p-5 text-nowrap overflow-x-auto"
-                  color="primary"
-                >{`${key}: ${value}`}</Chip>
+                <Chip key={index} className="m-1 p-5 text-nowrap" color="primary" size="sm">{`${key}: ${value}`}</Chip>
               ))}
             </TableCell>
             <TableCell className="w-1/12">

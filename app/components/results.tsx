@@ -22,10 +22,10 @@ export default function Results({ onChange }: ResultsProps) {
   return (
     <>
       <div className="flex w-full">
-        <div className="w-2/3">
+        <div className="w-1/3">
           <h1 className={title()}>Results</h1>
         </div>
-        <div className="flex gap-2 w-1/3 justify-end mr-7">
+        <div className="flex gap-2 w-2/3 flex-wrap justify-end mr-7">
           <GenerateReportButton resultIds={selectedResults} onGeneratedReport={onGeneratedReport} />
           <DeleteResultsButton resultIds={selectedResults} onDeletedResult={onChange} />
         </div>
