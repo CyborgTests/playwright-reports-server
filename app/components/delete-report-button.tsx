@@ -1,4 +1,5 @@
 'use client';
+
 import {
   Input,
   Tooltip,
@@ -10,18 +11,19 @@ import {
   useDisclosure,
   Button,
 } from '@nextui-org/react';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import useMutation from '@/app/hooks/useMutation';
+import ErrorMessage from '@/app/components/error-message';
 import { DeleteIcon } from '@/app/components/icons';
 
 interface DeleteProjectButtonProps {
-  reportId?: string;
-  token: string;
+  reportId: string;
+  onDeleted: () => void;
 }
 
-export default function DeleteReportButton({ reportId, token }: DeleteProjectButtonProps) {
-  const router = useRouter();
+export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjectButtonProps) {
+  const { mutate: deleteReport, isLoading, error } = useMutation('/api/report/delete', { method: 'DELETE' });
   const [confirm, setConfirm] = useState('');
 
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
@@ -31,19 +33,9 @@ export default function DeleteReportButton({ reportId, token }: DeleteProjectBut
       return;
     }
 
-    const headers = !!token
-      ? {
-          Authorization: token,
-        }
-      : undefined;
+    await deleteReport({ reportsIds: [reportId] });
 
-    await fetch('/api/report/delete', {
-      method: 'DELETE',
-      body: JSON.stringify({ reportsIds: [reportId] }),
-      headers,
-    });
-
-    router.refresh();
+    onDeleted?.();
   };
 
   return (
@@ -69,10 +61,11 @@ export default function DeleteReportButton({ reportId, token }: DeleteProjectBut
                   <Input isRequired label="Confirm" value={confirm} onValueChange={setConfirm} />
                 </ModalBody>
                 <ModalFooter>
+                  {error && <ErrorMessage message={error.message} />}
                   <Button color="primary" variant="light" onPress={onClose}>
                     Close
                   </Button>
-                  <Button color="danger" isDisabled={confirm !== reportId} onClick={DeleteReport} onPress={onClose}>
+                  <Button color="danger" isDisabled={confirm !== reportId} isLoading={isLoading} onClick={DeleteReport}>
                     Sure, Delete
                   </Button>
                 </ModalFooter>

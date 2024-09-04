@@ -36,10 +36,10 @@ export function getExistingToken() {
 
   try {
     const token = JSON.parse(item);
-    const now = new Date();
+    const now = Date.now();
 
-    const isExpired = now.getTime() > token.expiry;
-    const tooMuchTimeRemaining = token.expiry > now.getTime() + hoursToMilliseconds(getTokenExpirationHours());
+    const isExpired = now > token.expiry;
+    const tooMuchTimeRemaining = token.expiry > now + hoursToMilliseconds(getTokenExpirationHours());
 
     if (isExpired || tooMuchTimeRemaining) {
       localStorage.removeItem(tokenName);

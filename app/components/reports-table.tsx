@@ -4,11 +4,12 @@ import React from 'react';
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Tooltip, Button } from '@nextui-org/react';
 import Link from 'next/link';
 
+import useQuery from '@/app/hooks/useQuery';
+import ErrorMessage from '@/app/components/error-message';
 import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
 import { EyeIcon } from '@/app/components/icons';
 import { type Report } from '@/app/lib/data';
-import { useApiToken } from '@/app/providers/ApiTokenProvider';
 
 const columns = [
   { name: 'ID', uid: 'reportID' },
@@ -17,13 +18,20 @@ const columns = [
 ];
 
 interface ReportsTableProps {
-  reports: Report[];
+  onChange: () => void;
 }
 
-export default function ReportsTable({ reports }: ReportsTableProps) {
-  const { apiToken } = useApiToken();
+export default function ReportsTable({ onChange }: ReportsTableProps) {
+  const { data: reports, error, isLoading, refetch } = useQuery<Report[]>('/api/report/list');
 
-  return (
+  const onDeleted = () => {
+    refetch();
+    onChange?.();
+  };
+
+  return error ? (
+    <ErrorMessage message={error.message} />
+  ) : (
     <Table aria-label="Reports">
       <TableHeader columns={columns}>
         {(column) => (
@@ -32,7 +40,7 @@ export default function ReportsTable({ reports }: ReportsTableProps) {
           </TableColumn>
         )}
       </TableHeader>
-      <TableBody emptyContent="No reports." items={reports}>
+      <TableBody emptyContent="No reports." isLoading={isLoading} items={reports ?? []}>
         {(item) => (
           <TableRow key={item.reportID}>
             <TableCell className="w-1/2">{item.reportID}</TableCell>
@@ -40,7 +48,7 @@ export default function ReportsTable({ reports }: ReportsTableProps) {
               <FormattedDate date={item.createdAt} />
             </TableCell>
             <TableCell className="w-1/4">
-              <div className="flex gap-4 justify-center">
+              <div className="flex gap-4 justify-end">
                 <Tooltip color="success" content="Open Report" placement="top">
                   <Link href={item.reportUrl} target="_blank">
                     <Button color="success" size="md">
@@ -48,7 +56,7 @@ export default function ReportsTable({ reports }: ReportsTableProps) {
                     </Button>
                   </Link>
                 </Tooltip>
-                <DeleteReportButton reportId={item.reportID} token={apiToken} />
+                <DeleteReportButton reportId={item.reportID} onDeleted={onDeleted} />
               </div>
             </TableCell>
           </TableRow>

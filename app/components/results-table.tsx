@@ -12,6 +12,8 @@ import {
   type Selection,
 } from '@nextui-org/react';
 
+import useQuery from '@/app/hooks/useQuery';
+import ErrorMessage from '@/app/components/error-message';
 import FormattedDate from '@/app/components/date-format';
 import { type Result } from '@/app/lib/data';
 import DeleteResultsButton from '@/app/components/delete-results-button';
@@ -28,16 +30,22 @@ const getTags = (item: Result) => {
 };
 
 interface ResultsTableProps {
-  results: Result[];
   selected?: string[];
   onSelect?: (keys: string[]) => void;
-  token: string;
+  onDeleted?: () => void;
 }
 
-export default function ResultsTable({ results, onSelect, selected, token }: ResultsTableProps) {
+export default function ResultsTable({ onSelect, onDeleted, selected }: ResultsTableProps) {
+  const { data: results, error, isLoading, refetch } = useQuery<Result[]>('/api/result/list');
+
+  const shouldRefetch = () => {
+    refetch();
+    onDeleted?.();
+  };
+
   const onChangeSelect = (keys: Selection) => {
     if (keys === 'all') {
-      const all = results.map((result) => result.resultID);
+      const all = (results ?? []).map((result) => result.resultID);
 
       onSelect?.(all);
     }
@@ -51,7 +59,9 @@ export default function ResultsTable({ results, onSelect, selected, token }: Res
     onSelect?.(selected);
   };
 
-  return (
+  return error ? (
+    <ErrorMessage message={error.message} />
+  ) : (
     <Table aria-label="Results" selectedKeys={selected} selectionMode="multiple" onSelectionChange={onChangeSelect}>
       <TableHeader columns={columns}>
         {(column) => (
@@ -60,7 +70,7 @@ export default function ResultsTable({ results, onSelect, selected, token }: Res
           </TableColumn>
         )}
       </TableHeader>
-      <TableBody emptyContent="No results" items={results}>
+      <TableBody emptyContent="No results" isLoading={isLoading} items={results ?? []}>
         {(item) => (
           <TableRow key={item.resultID}>
             <TableCell className="w-1/3">{item.resultID}</TableCell>
@@ -69,16 +79,12 @@ export default function ResultsTable({ results, onSelect, selected, token }: Res
             </TableCell>
             <TableCell className="w-1/3">
               {getTags(item).map(([key, value], index) => (
-                <Chip
-                  key={index}
-                  className="m-1 p-5 text-nowrap overflow-x-auto"
-                  color="primary"
-                >{`${key}: ${value}`}</Chip>
+                <Chip key={index} className="m-1 p-5 text-nowrap" color="primary" size="sm">{`${key}: ${value}`}</Chip>
               ))}
             </TableCell>
             <TableCell className="w-1/12">
               <div className="flex gap-4 justify-center">
-                <DeleteResultsButton resultIds={[item.resultID]} token={token} />
+                <DeleteResultsButton resultIds={[item.resultID]} onDeletedResult={shouldRefetch} />
               </div>
             </TableCell>
           </TableRow>

@@ -1,10 +1,20 @@
-'use server';
+'use client';
 
-import { readReports } from '@/app/lib/data';
 import ReportsTable from '@/app/components/reports-table';
+import { title } from '@/app/components/primitives';
 
-export default async function Reports() {
-  const reports = await readReports();
+interface ReportsProps {
+  onChange: () => void;
+}
 
-  return <ReportsTable reports={reports} />;
+export default function Reports({ onChange }: ReportsProps) {
+  return (
+    <>
+      <div>
+        <h1 className={title()}>Reports</h1>
+      </div>
+      <br />
+      <ReportsTable onChange={onChange} />
+    </>
+  );
 }

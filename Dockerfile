@@ -29,13 +29,16 @@ FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV production
+
+RUN apk add --no-cache curl
+
 # Uncomment the following line in case you want to disable telemetry during runtime.
 # ENV NEXT_TELEMETRY_DISABLED 1
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 --ingroup nodejs nextjs
 
-COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 # Set the correct permission for prerender cache
 RUN mkdir .next
@@ -45,6 +48,16 @@ RUN chown nextjs:nodejs .next
 # https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Create folders required for storing results and reports
+ARG DATA_DIR=/app/data
+ARG RESULTS_DIR=${DATA_DIR}/results
+ARG REPORTS_DIR=${DATA_DIR}/reports
+ARG TEMP_DIR=${DATA_DIR}/.tmp
+RUN mkdir -p ${DATA_DIR} && chown -R nextjs:nodejs ${DATA_DIR}
+RUN mkdir -p ${RESULTS_DIR} && chown -R nextjs:nodejs ${RESULTS_DIR}
+RUN mkdir -p ${REPORTS_DIR} && chown -R nextjs:nodejs ${REPORTS_DIR}
+RUN mkdir -p ${TEMP_DIR} && chown -R nextjs:nodejs ${TEMP_DIR}
 
 USER nextjs
 

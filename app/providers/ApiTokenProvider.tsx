@@ -1,19 +1,36 @@
-import { useRouter } from 'next/navigation';
+'use client';
+
+import { usePathname, useRouter } from 'next/navigation';
 import React, { useEffect, useMemo, useState } from 'react';
+
+import { getApiTokenFromEnv } from '@/app/actions/env';
+import { getExistingToken } from '@/app/config/auth';
 
 interface ApiTokenContextType {
   apiToken: string;
+  isRequiredAuth: boolean;
   updateApiToken: (newValue?: string) => void;
 }
 
 const ApiTokenContext = React.createContext<ApiTokenContextType | null>(null);
 
 export function ApiTokenProvider({ children }: Readonly<{ children: React.ReactNode }>) {
+  const [isRequiredAuth, setIsRequiredAuth] = useState(true);
   const [apiToken, setApiToken] = useState<string>('');
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    if (!apiToken) {
+    getApiTokenFromEnv().then((token) => {
+      token && setApiToken(token);
+      setIsRequiredAuth(!token);
+    });
+  }, []);
+
+  useEffect(() => {
+    const hashedClientToken = getExistingToken();
+
+    if (isRequiredAuth && pathname !== '/login' && !hashedClientToken) {
       router.push('/login');
     }
   }, []);
@@ -22,7 +39,7 @@ export function ApiTokenProvider({ children }: Readonly<{ children: React.ReactN
     newValue && setApiToken(newValue);
   };
 
-  const value = useMemo(() => ({ apiToken, updateApiToken }), [apiToken]);
+  const value = useMemo(() => ({ apiToken, updateApiToken, isRequiredAuth }), [apiToken, isRequiredAuth]);
 
   return <ApiTokenContext.Provider value={value}>{children}</ApiTokenContext.Provider>;
 }
