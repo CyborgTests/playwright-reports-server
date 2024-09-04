@@ -6,6 +6,9 @@ The Playwright Reports Server provides APIs for managing and generating reports 
 - Merge results into one report from sharded runs together (https://playwright.dev/docs/test-sharding)
 - Store raw results, and agregate them together into one report
 
+Demo:
+https://familiar-alyss-alex-hot-6926ec9c.koyeb.app/
+
 ## How to run?
 
 Clone this repo and run:
