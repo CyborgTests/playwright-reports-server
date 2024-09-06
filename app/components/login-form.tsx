@@ -13,13 +13,13 @@ interface LoginPageProps {
 }
 
 export default function LoginForm({ expectedToken }: Readonly<LoginPageProps>) {
-  const { updateApiToken } = useApiToken();
+  const { updateApiToken, expirationHours } = useApiToken();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
 
   useLayoutEffect(() => {
-    if (getExistingToken() === hashToken(expectedToken)) {
+    if (getExistingToken(expirationHours) === hashToken(expectedToken)) {
       updateApiToken(expectedToken);
       setIsAuthenticated(true);
       redirect('/');
@@ -31,7 +31,7 @@ export default function LoginForm({ expectedToken }: Readonly<LoginPageProps>) {
 
     if (input === expectedToken) {
       setIsAuthenticated(true);
-      setTokenWithExpiry(input);
+      setTokenWithExpiry(input, expirationHours);
       updateApiToken(input);
       setError('');
 
