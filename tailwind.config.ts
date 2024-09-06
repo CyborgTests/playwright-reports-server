@@ -1,8 +1,9 @@
+import type { Config } from 'tailwindcss';
+
 import { nextui } from '@nextui-org/theme';
 
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  content: ['./app/**/*.{js,ts,jsx,tsx,mdx}', './node_modules/@nextui-org/theme/dist/**/*.{js,ts,jsx,tsx}'],
+const config = {
+  content: ['./app/**/*.{js,ts,tsx,mdx}', './node_modules/@nextui-org/theme/dist/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       fontFamily: {
@@ -13,4 +14,6 @@ module.exports = {
   },
   darkMode: 'class',
   plugins: [nextui()],
-};
+} satisfies Config;
+
+export default config;
