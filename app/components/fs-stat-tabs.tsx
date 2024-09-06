@@ -14,7 +14,7 @@ interface FilesystemStatTabsProps {
   onSelect: (key: string) => void;
 }
 
-export default function FilesystemStatTabs({ info, selected, onSelect, onUpdate }: FilesystemStatTabsProps) {
+export default function FilesystemStatTabs({ info, selected, onSelect, onUpdate }: Readonly<FilesystemStatTabsProps>) {
   const onChangeTab = (key: string | number) => {
     if (typeof key === 'number') {
       return;
@@ -24,46 +24,44 @@ export default function FilesystemStatTabs({ info, selected, onSelect, onUpdate 
   };
 
   return (
-    <>
-      <div className="gap-10">
-        <Tabs
-          aria-label="Options"
-          classNames={{
-            tab: 'h-16',
-            panel: 'w-full',
-          }}
-          selectedKey={selected ?? 'reports'}
-          variant="bordered"
-          onSelectionChange={onChangeTab}
+    <div className="gap-10">
+      <Tabs
+        aria-label="Options"
+        classNames={{
+          tab: 'h-16',
+          panel: 'w-full',
+        }}
+        selectedKey={selected ?? 'reports'}
+        variant="bordered"
+        onSelectionChange={onChangeTab}
+      >
+        <Tab
+          key="reports"
+          title={
+            <Badge color="danger" content={info?.numOfReports} placement="top-left" shape="circle">
+              <ReportIcon />
+              Reports
+              <br />
+              {info?.reportsFolderSizeinMB}
+            </Badge>
+          }
         >
-          <Tab
-            key="reports"
-            title={
-              <Badge color="danger" content={info?.numOfReports} placement="top-left" shape="circle">
-                <ReportIcon />
-                Reports
-                <br />
-                {info?.reportsFolderSizeinMB}
-              </Badge>
-            }
-          >
-            <Reports onChange={onUpdate} />
-          </Tab>
-          <Tab
-            key="results"
-            title={
-              <Badge color="danger" content={info?.numOfResults} placement="top-left" shape="circle">
-                <ResultIcon />
-                Results
-                <br />
-                {info?.resultsFolderSizeinMB}
-              </Badge>
-            }
-          >
-            <Results onChange={onUpdate} />
-          </Tab>
-        </Tabs>
-      </div>
-    </>
+          <Reports onChange={onUpdate} />
+        </Tab>
+        <Tab
+          key="results"
+          title={
+            <Badge color="danger" content={info?.numOfResults} placement="top-left" shape="circle">
+              <ResultIcon />
+              Results
+              <br />
+              {info?.resultsFolderSizeinMB}
+            </Badge>
+          }
+        >
+          <Results onChange={onUpdate} />
+        </Tab>
+      </Tabs>
+    </div>
   );
 }

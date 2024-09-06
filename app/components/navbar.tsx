@@ -79,7 +79,7 @@ export const Navbar = () => {
           <GithubIcon className="text-default-500" />
         </Link>
         <ThemeSwitch />
-        <NavbarMenuToggle />
+        {!!siteConfig.navMenuItems.length && <NavbarMenuToggle />}
       </NavbarContent>
 
       <NavbarMenu>
