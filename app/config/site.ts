@@ -1,5 +1,3 @@
-//export type SiteConfig = typeof siteConfig;
-
 interface NavItem {
   label: string;
   href: string;

@@ -19,13 +19,6 @@ export async function GET(
     params: ReportParams;
   },
 ) {
-  // TODO handle auth
-  // const { token } = getExistingToken();
-
-  // if (!token) {
-  //   return redirect('/login');
-  // }
-
   const { reportId, filePath } = params;
 
   const file = Array.isArray(filePath) ? filePath.join('/') : (filePath ?? '');

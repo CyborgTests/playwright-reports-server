@@ -5,6 +5,9 @@ import { exec } from 'node:child_process';
 import util from 'node:util';
 
 import getFolderSize from 'get-folder-size';
+
+import { serveReportRoute } from '@/app/lib/constants';
+
 const execAsync = util.promisify(exec);
 
 export type Result = {
@@ -105,7 +108,7 @@ export async function readReports() {
         return {
           reportID: dirent.name,
           createdAt: stats.birthtime,
-          reportUrl: `/api/serve/${dirent.name}/index.html`,
+          reportUrl: `${serveReportRoute}/${dirent.name}/index.html`,
         };
       }),
   );
