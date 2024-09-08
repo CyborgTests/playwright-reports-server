@@ -1,5 +1,6 @@
 'use client';
 import { useLayoutEffect, useState } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 
 import useQuery from '@/app/hooks/useQuery';
 import { ServerDataInfo } from '@/app/lib/data';
@@ -19,14 +20,14 @@ const persistSelectedTab = (tab: string) => {
 export default function DashboardPage() {
   const { data: info, error, refetch } = useQuery<ServerDataInfo>('/api/info');
   const [selectedTab, setSelectedTab] = useState<string>(getPersistedSelectedTab() ?? '');
-  const [refreshId, setRefreshId] = useState<string>(crypto.randomUUID());
+  const [refreshId, setRefreshId] = useState<string>(uuidv4());
 
   useLayoutEffect(() => {
     refetch();
   }, [refreshId]);
 
   const updateRefreshId = () => {
-    setRefreshId(crypto.randomUUID());
+    setRefreshId(uuidv4());
   };
 
   const onChangeTab = (key: string | number) => {
