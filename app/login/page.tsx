@@ -4,5 +4,9 @@ import { env } from '@/app/config/env';
 export default function LoginPage() {
   const correctApiToken = env.API_TOKEN;
 
-  return <LoginForm expectedToken={correctApiToken} />;
+  const expiryEnv = env.UI_AUTH_EXPIRE_HOURS;
+
+  const expirationHours = !!expiryEnv ? parseInt(expiryEnv, 10) : 12;
+
+  return <LoginForm expectedToken={correctApiToken} expirationHours={expirationHours} />;
 }

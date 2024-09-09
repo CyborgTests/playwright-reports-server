@@ -10,6 +10,7 @@ interface ApiTokenContextType {
   apiToken: string;
   expirationHours: number;
   isRequiredAuth: boolean;
+  updateExpirationHours: (newValue?: number) => void;
   updateApiToken: (newValue?: string) => void;
 }
 
@@ -42,8 +43,12 @@ export function ApiTokenProvider({ children }: Readonly<{ children: React.ReactN
     newValue && setApiToken(newValue);
   };
 
+  const updateExpirationHours = (newValue?: number) => {
+    !!newValue && setExpirationHours(newValue);
+  };
+
   const value = useMemo(
-    () => ({ apiToken, expirationHours, updateApiToken, isRequiredAuth }),
+    () => ({ apiToken, expirationHours, updateApiToken, updateExpirationHours, isRequiredAuth }),
     [apiToken, isRequiredAuth],
   );
 

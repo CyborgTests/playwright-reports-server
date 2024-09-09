@@ -10,15 +10,18 @@ import { title } from '@/app/components/primitives';
 
 interface LoginPageProps {
   expectedToken?: string;
+  expirationHours: number;
 }
 
-export default function LoginForm({ expectedToken }: Readonly<LoginPageProps>) {
-  const { updateApiToken, expirationHours } = useApiToken();
+export default function LoginForm({ expectedToken, expirationHours }: Readonly<LoginPageProps>) {
+  const { updateApiToken, updateExpirationHours } = useApiToken();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
 
   useLayoutEffect(() => {
+    updateExpirationHours(expirationHours);
+
     if (getExistingToken(expirationHours) === hashToken(expectedToken)) {
       updateApiToken(expectedToken);
       setIsAuthenticated(true);
