@@ -10,6 +10,7 @@ interface SiteConfig {
   links: {
     github: string;
     discord: string;
+    telegram: string;
     sponsor?: string;
   };
 }
@@ -21,6 +22,7 @@ export const siteConfig: SiteConfig = {
   navMenuItems: [],
   links: {
     github: 'https://github.com/CyborgTests/playwright-reports-server',
+    telegram: 'https://t.me/js_for_testing/117838',
     discord: 'https://discord.gg/nuacYsb2yN',
     sponsor: '', //'https://patreon.com/SOMELINKHERE',
   },
