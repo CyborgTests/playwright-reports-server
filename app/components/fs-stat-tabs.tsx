@@ -30,6 +30,7 @@ export default function FilesystemStatTabs({ info, selected, onSelect, onUpdate 
         classNames={{
           tab: 'h-16',
           panel: 'w-full',
+          tabContent: 'w-full',
         }}
         selectedKey={selected ?? 'reports'}
         variant="bordered"
