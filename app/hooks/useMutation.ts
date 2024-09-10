@@ -6,9 +6,9 @@ import { useApiToken } from '@/app/providers/ApiTokenProvider';
 const useMutation = (url: string, options: RequestInit) => {
   const [isLoading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const { apiToken } = useApiToken();
+  const { apiToken, isRequiredAuth } = useApiToken();
 
-  if (!apiToken) {
+  if (isRequiredAuth && !apiToken) {
     redirect('/login');
   }
 

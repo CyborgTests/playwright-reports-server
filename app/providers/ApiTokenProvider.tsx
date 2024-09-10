@@ -26,7 +26,7 @@ export function ApiTokenProvider({ children }: Readonly<{ children: React.ReactN
   useEffect(() => {
     getEnvVariables().then(({ token, expirationHours }) => {
       token && setApiToken(token);
-      setIsRequiredAuth(!token);
+      setIsRequiredAuth(!!token);
       !!expirationHours && setExpirationHours(parseInt(expirationHours, 10));
     });
   }, []);

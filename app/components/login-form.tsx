@@ -14,12 +14,16 @@ interface LoginPageProps {
 }
 
 export default function LoginForm({ expectedToken, expirationHours }: Readonly<LoginPageProps>) {
-  const { updateApiToken, updateExpirationHours } = useApiToken();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { updateApiToken, updateExpirationHours, isRequiredAuth } = useApiToken();
+  const [isAuthenticated, setIsAuthenticated] = useState(!isRequiredAuth);
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
 
   useLayoutEffect(() => {
+    if (isAuthenticated) {
+      return;
+    }
+
     updateExpirationHours(expirationHours);
 
     if (getExistingToken(expirationHours) === hashToken(expectedToken)) {
