@@ -1,11 +1,11 @@
 {
   "name": "playwright-reports-server",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "description": "Playwright Reports Server: Can be used to accept blobs, merge them, store and view Playwright reports",
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "start": "cp -r .next/static .next/standalone/.next/ && node .next/standalone/server.js",
+    "start": "cp -r .next/static .next/standalone/.next/ && cp .env .next/standalone && cp -r ./public .next/standalone/public && node .next/standalone/server.js",
     "format:check": "prettier --ignore-path .gitignore --list-different '**/**/*.{ts,json,md}'",
     "format:fix": "npm run format:check -- --write",
     "lint": "eslint . --ext .ts,.tsx",

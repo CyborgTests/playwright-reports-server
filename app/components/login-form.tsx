@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, useLayoutEffect, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { redirect } from 'next/navigation';
 import { Button, Card, CardBody, CardFooter, CardHeader, Input } from '@nextui-org/react';
 
@@ -14,20 +14,20 @@ interface LoginPageProps {
 }
 
 export default function LoginForm({ expectedToken, expirationHours }: Readonly<LoginPageProps>) {
-  const { updateApiToken, updateExpirationHours, isRequiredAuth } = useApiToken();
-  const [isAuthenticated, setIsAuthenticated] = useState(!isRequiredAuth);
+  const { updateApiToken, updateExpirationHours } = useApiToken();
+  const [isAuthenticated, setIsAuthenticated] = useState(!expectedToken);
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (isAuthenticated) {
       return;
     }
 
+    updateApiToken(expectedToken);
     updateExpirationHours(expirationHours);
 
     if (getExistingToken(expirationHours) === hashToken(expectedToken)) {
-      updateApiToken(expectedToken);
       setIsAuthenticated(true);
       redirect('/');
     }
