@@ -91,7 +91,7 @@ export async function readResults() {
     }),
   );
 
-  return fileContents;
+  return fileContents.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 export async function readReports() {
