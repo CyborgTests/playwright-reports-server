@@ -1,10 +1,9 @@
 'use client';
 
-import { usePathname, useRouter } from 'next/navigation';
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { getEnvVariables } from '@/app/actions/env';
-import { getExistingToken } from '@/app/config/auth';
+import { getExistingToken, hashToken } from '@/app/config/auth';
 
 interface ApiTokenContextType {
   apiToken: string;
@@ -12,6 +11,7 @@ interface ApiTokenContextType {
   isRequiredAuth: boolean;
   updateExpirationHours: (newValue?: number) => void;
   updateApiToken: (newValue?: string) => void;
+  isClientAuthorized: () => boolean;
 }
 
 const ApiTokenContext = React.createContext<ApiTokenContextType | null>(null);
@@ -20,8 +20,6 @@ export function ApiTokenProvider({ children }: Readonly<{ children: React.ReactN
   const [isRequiredAuth, setIsRequiredAuth] = useState(true);
   const [expirationHours, setExpirationHours] = useState(12);
   const [apiToken, setApiToken] = useState<string>('');
-  const router = useRouter();
-  const pathname = usePathname();
 
   useEffect(() => {
     getEnvVariables().then(({ token, expirationHours }) => {
@@ -29,14 +27,6 @@ export function ApiTokenProvider({ children }: Readonly<{ children: React.ReactN
       setIsRequiredAuth(!!token);
       !!expirationHours && setExpirationHours(parseInt(expirationHours, 10));
     });
-  }, []);
-
-  useEffect(() => {
-    const hashedClientToken = getExistingToken(expirationHours);
-
-    if (isRequiredAuth && pathname !== '/login' && !hashedClientToken) {
-      router.push('/login');
-    }
   }, []);
 
   const updateApiToken = (newValue?: string) => {
@@ -47,8 +37,20 @@ export function ApiTokenProvider({ children }: Readonly<{ children: React.ReactN
     !!newValue && setExpirationHours(newValue);
   };
 
+  const isClientAuthorized = () => {
+    if (!isRequiredAuth) {
+      return true;
+    }
+
+    if (!apiToken) {
+      return false;
+    }
+
+    return getExistingToken(expirationHours) === hashToken(apiToken);
+  };
+
   const value = useMemo(
-    () => ({ apiToken, expirationHours, updateApiToken, updateExpirationHours, isRequiredAuth }),
+    () => ({ apiToken, expirationHours, updateApiToken, updateExpirationHours, isClientAuthorized, isRequiredAuth }),
     [apiToken, isRequiredAuth],
   );
 
