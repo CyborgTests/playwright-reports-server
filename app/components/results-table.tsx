@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Table,
   TableHeader,
@@ -30,13 +30,20 @@ const getTags = (item: Result) => {
 };
 
 interface ResultsTableProps {
+  refreshId: string;
   selected?: string[];
   onSelect?: (keys: string[]) => void;
   onDeleted?: () => void;
 }
 
-export default function ResultsTable({ onSelect, onDeleted, selected }: ResultsTableProps) {
+export default function ResultsTable({ refreshId, onSelect, onDeleted, selected }: ResultsTableProps) {
   const { data: results, error, isLoading, refetch } = useQuery<Result[]>('/api/result/list');
+
+  useEffect(() => {
+    if (!isLoading) {
+      refetch();
+    }
+  }, [refreshId]);
 
   const shouldRefetch = () => {
     refetch();
