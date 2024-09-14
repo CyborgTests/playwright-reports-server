@@ -3,9 +3,10 @@
 import { Badge, Tab, Tabs } from '@nextui-org/react';
 
 import { type ServerDataInfo } from '@/app/lib/data';
-import { ReportIcon, ResultIcon } from '@/app/components/icons';
+import { ReportIcon, ResultIcon, TrendIcon } from '@/app/components/icons';
 import Reports from '@/app/components/reports';
 import Results from '@/app/components/results';
+import ReportTrends from '@/app/components/report-trends';
 
 interface FilesystemStatTabsProps {
   info?: ServerDataInfo;
@@ -62,6 +63,19 @@ export default function FilesystemStatTabs({ info, selected, onSelect, onUpdate 
         >
           <Results onChange={onUpdate} />
         </Tab>
+        {!!info?.numOfReports && info?.numOfReports > 1 && (
+          <Tab
+            key="trends"
+            title={
+              <div className="flex flex-col p-5">
+                <TrendIcon />
+                <p>Trends</p>
+              </div>
+            }
+          >
+            <ReportTrends />
+          </Tab>
+        )}
       </Tabs>
     </div>
   );
