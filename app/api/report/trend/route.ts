@@ -3,6 +3,8 @@ import path from 'node:path';
 import { readFile, readReports } from '@/app/lib/data';
 import { parse } from '@/app/lib/parser';
 
+export const dynamic = 'force-dynamic'; // defaults to auto
+
 export async function GET() {
   const reports = await readReports();
 
