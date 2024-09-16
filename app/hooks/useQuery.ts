@@ -1,16 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
-import { redirect } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 
 import { useApiToken } from '@/app/providers/ApiTokenProvider';
 
-const useQuery = <ReturnType>(url: string, options?: RequestInit) => {
+const useQuery = <ReturnType>(path: string, options?: RequestInit) => {
   const [data, setData] = useState<ReturnType | null>(null);
   const [isLoading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const { apiToken, isRequiredAuth } = useApiToken();
+  const { apiToken, isClientAuthorized } = useApiToken();
+
+  const router = useRouter();
 
   const fetchData = useCallback(async () => {
-    if (isRequiredAuth && !apiToken) {
+    // handle missing auth on refetch
+    if (!isClientAuthorized()) {
       return;
     }
 
@@ -24,7 +27,7 @@ const useQuery = <ReturnType>(url: string, options?: RequestInit) => {
           }
         : undefined;
 
-      const response = await fetch(url, {
+      const response = await fetch(path, {
         headers,
         body: options?.body ? JSON.stringify(options.body) : undefined,
         method: options?.method ?? 'GET',
@@ -43,13 +46,14 @@ const useQuery = <ReturnType>(url: string, options?: RequestInit) => {
     } finally {
       setLoading(false);
     }
-  }, [url, options, apiToken]);
+  }, [path, options]);
 
   useEffect(() => {
-    if (isRequiredAuth && !apiToken) {
-      redirect('/login');
-    }
+    if (!isClientAuthorized()) {
+      router.replace('/login');
 
+      return;
+    }
     fetchData();
   }, []);
 
