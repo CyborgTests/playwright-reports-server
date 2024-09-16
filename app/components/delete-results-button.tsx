@@ -61,14 +61,25 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult }: Dele
               </ModalBody>
               <ModalFooter>
                 {error && <ErrorMessage message={error.message} />}
-                <Button color="primary" variant="light" onPress={onClose}>
+                <Button
+                  color="primary"
+                  variant="light"
+                  onPress={() => {
+                    setConfirm('');
+                    onClose();
+                  }}
+                >
                   Close
                 </Button>
                 <Button
                   color="danger"
                   isDisabled={confirm !== resultIds?.at(0)}
                   isLoading={isLoading}
-                  onClick={DeleteResult}
+                  onClick={() => {
+                    DeleteResult();
+                    setConfirm('');
+                    onClose();
+                  }}
                 >
                   Sure, Delete
                 </Button>

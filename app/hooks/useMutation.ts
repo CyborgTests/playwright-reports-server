@@ -1,16 +1,20 @@
-import { useState, useCallback } from 'react';
-import { redirect } from 'next/navigation';
+import { useState, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { useApiToken } from '@/app/providers/ApiTokenProvider';
 
 const useMutation = (url: string, options: RequestInit) => {
   const [isLoading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const { apiToken, isRequiredAuth } = useApiToken();
+  const { apiToken, isClientAuthorized } = useApiToken();
 
-  if (isRequiredAuth && !apiToken) {
-    redirect('/login');
-  }
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isClientAuthorized()) {
+      router.push('/login');
+    }
+  }, []);
 
   const mutate = useCallback(
     async (body?: unknown) => {
