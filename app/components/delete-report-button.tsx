@@ -65,7 +65,15 @@ export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjec
                   <Button color="primary" variant="light" onPress={onClose}>
                     Close
                   </Button>
-                  <Button color="danger" isDisabled={confirm !== reportId} isLoading={isLoading} onClick={DeleteReport}>
+                  <Button
+                    color="danger"
+                    isDisabled={confirm !== reportId}
+                    isLoading={isLoading}
+                    onClick={() => {
+                      DeleteReport();
+                      onClose();
+                    }}
+                  >
                     Sure, Delete
                   </Button>
                 </ModalFooter>
