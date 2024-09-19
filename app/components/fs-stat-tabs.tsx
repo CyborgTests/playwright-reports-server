@@ -30,6 +30,7 @@ export default function FilesystemStatTabs({ info, selected, onSelect, onUpdate 
         aria-label="Options"
         classNames={{
           tab: 'h-16',
+          tabList: 'flex sm:flex-row flex-col',
           panel: 'w-full',
           tabContent: 'w-full',
         }}
@@ -63,19 +64,18 @@ export default function FilesystemStatTabs({ info, selected, onSelect, onUpdate 
         >
           <Results onChange={onUpdate} />
         </Tab>
-        {!!info?.numOfReports && info?.numOfReports > 1 && (
-          <Tab
-            key="trends"
-            title={
-              <div className="flex flex-col p-5">
-                <TrendIcon />
-                <p>Trends</p>
-              </div>
-            }
-          >
-            <ReportTrends />
-          </Tab>
-        )}
+        <Tab
+          key="trends"
+          isDisabled={!info?.numOfReports || info?.numOfReports <= 1}
+          title={
+            <div className="flex flex-col p-5">
+              <TrendIcon />
+              <p>Trends</p>
+            </div>
+          }
+        >
+          <ReportTrends />
+        </Tab>
       </Tabs>
     </div>
   );
