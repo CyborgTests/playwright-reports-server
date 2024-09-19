@@ -76,7 +76,7 @@ export async function readResults() {
     }),
   );
 
-  return fileContents.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return fileContents;
 }
 
 export async function readReports() {
@@ -98,7 +98,7 @@ export async function readReports() {
       }),
   );
 
-  return reports.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  return reports;
 }
 
 export async function deleteResults(resultsIds: string[]) {

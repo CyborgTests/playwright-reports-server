@@ -10,5 +10,5 @@ export async function GET() {
     return new Response(error.message, { status: 400 });
   }
 
-  return Response.json(results);
+  return Response.json(results?.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
 }
