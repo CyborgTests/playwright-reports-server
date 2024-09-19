@@ -1,39 +1,51 @@
-import { saveResult } from '@/app/lib/data';
+import { type ResultDetails, storage } from '@/app/lib/storage';
+import { withError } from '@/app/lib/withError';
 
 export const dynamic = 'force-dynamic'; // defaults to auto
 export async function PUT(request: Request) {
-  try {
-    const formData = await request.formData();
+  const { result: formData, error: formParseError } = await withError(request.formData());
 
-    if (!formData.has('file')) {
-      return Response.json({ error: 'Field "file" with result is missing' }, { status: 400 });
-    }
-    const file = formData.get('file') as File;
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const resultDetails: { [key: string]: string } = {};
-
-    for (const [key, value] of formData.entries()) {
-      if (key === 'file') {
-        // already processed
-        continue;
-      }
-      // String values for now
-      resultDetails[key] = value.toString();
-    }
-    const savedResult = await saveResult(buffer, resultDetails);
-
-    return Response.json({
-      message: 'Success',
-      data: savedResult,
-      status: 201,
-    });
-  } catch (error) {
-    return Response.json({
-      message: 'Failed',
-      data: {
-        error: (error as Error).message,
-      },
-      status: 500,
-    });
+  if (formParseError) {
+    return Response.json({ error: formParseError.message }, { status: 400 });
   }
+
+  if (!formData) {
+    return Response.json({ error: 'Form data is missing' }, { status: 400 });
+  }
+
+  if (!formData.has('file')) {
+    return Response.json({ error: 'Field "file" with result is missing' }, { status: 400 });
+  }
+
+  const file = formData.get('file') as File;
+
+  const { result: arrayBuffer, error: arrayBufferError } = await withError(file.arrayBuffer());
+
+  if (arrayBufferError) {
+    return Response.json({ error: `failed to get array buffer: ${arrayBufferError.message}` }, { status: 400 });
+  }
+
+  const buffer = Buffer.from(arrayBuffer!);
+  const resultDetails: { [key: string]: string } = {};
+
+  for (const [key, value] of formData.entries()) {
+    if (key === 'file') {
+      // already processed
+      continue;
+    }
+    // String values for now
+    resultDetails[key] = value.toString();
+  }
+
+  const { result: savedResult, error } = await withError(storage.saveResult(buffer, resultDetails));
+
+  if (error) {
+    return Response.json({ error: `failed to save results: ${error.message}` }, { status: 500 });
+  }
+
+  return Response.json({
+    message: 'Success',
+    data: savedResult,
+    status: 201,
+  });
 }

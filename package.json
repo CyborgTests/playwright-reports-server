@@ -22,6 +22,7 @@
     "get-folder-size": "4.0.0",
     "mime": "^4.0.4",
     "next": "14.2.7",
+    "minio": "^8.0.1",
     "next-themes": "^0.3.0",
     "uuid": "^10.0.0"
   },

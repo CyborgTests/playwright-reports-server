@@ -10,12 +10,13 @@ import {
   TableCell,
   Chip,
   type Selection,
+  Spinner,
 } from '@nextui-org/react';
 
 import useQuery from '@/app/hooks/useQuery';
 import ErrorMessage from '@/app/components/error-message';
 import FormattedDate from '@/app/components/date-format';
-import { type Result } from '@/app/lib/data';
+import { type Result } from '@/app/lib/storage';
 import DeleteResultsButton from '@/app/components/delete-results-button';
 
 const columns = [
@@ -77,7 +78,7 @@ export default function ResultsTable({ refreshId, onSelect, onDeleted, selected 
           </TableColumn>
         )}
       </TableHeader>
-      <TableBody emptyContent="No results" isLoading={isLoading} items={results ?? []}>
+      <TableBody emptyContent="No results" isLoading={isLoading} items={results ?? []} loadingContent={<Spinner />}>
         {(item) => (
           <TableRow key={item.resultID}>
             <TableCell className="w-1/3">{item.resultID}</TableCell>

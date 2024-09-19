@@ -34,7 +34,7 @@ const useQuery = <ReturnType>(path: string, options?: RequestInit) => {
       });
 
       if (!response.ok) {
-        throw new Error('Network response was not ok');
+        throw new Error(`Network response was not ok: ${await response.text()}`);
       }
       const jsonData = await response.json();
 

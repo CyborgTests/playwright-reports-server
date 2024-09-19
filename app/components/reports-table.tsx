@@ -1,7 +1,17 @@
 'use client';
 
 import React from 'react';
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Tooltip, Button } from '@nextui-org/react';
+import {
+  Table,
+  TableHeader,
+  TableColumn,
+  TableBody,
+  TableRow,
+  TableCell,
+  Tooltip,
+  Button,
+  Spinner,
+} from '@nextui-org/react';
 import Link from 'next/link';
 
 import useQuery from '@/app/hooks/useQuery';
@@ -9,7 +19,7 @@ import ErrorMessage from '@/app/components/error-message';
 import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
 import { EyeIcon } from '@/app/components/icons';
-import { type Report } from '@/app/lib/data';
+import { type Report } from '@/app/lib/storage';
 
 const columns = [
   { name: 'ID', uid: 'reportID' },
@@ -40,7 +50,7 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
           </TableColumn>
         )}
       </TableHeader>
-      <TableBody emptyContent="No reports." isLoading={isLoading} items={reports ?? []}>
+      <TableBody emptyContent="No reports." isLoading={isLoading} items={reports ?? []} loadingContent={<Spinner />}>
         {(item) => (
           <TableRow key={item.reportID}>
             <TableCell className="w-1/2">{item.reportID}</TableCell>

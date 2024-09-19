@@ -1,7 +1,14 @@
-import { getServerDataInfo } from '@/app/lib/data';
+import { storage } from '@/app/lib/storage';
+import { withError } from '@/app/lib/withError';
 
 export const dynamic = 'force-dynamic'; // defaults to auto
 
 export async function GET() {
-  return Response.json(await getServerDataInfo());
+  const { result, error } = await withError(storage.getServerDataInfo());
+
+  if (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+
+  return Response.json(result);
 }

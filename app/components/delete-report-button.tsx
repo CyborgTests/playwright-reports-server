@@ -42,7 +42,7 @@ export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjec
     !!reportId && (
       <>
         <Tooltip color="danger" content="Delete Report" placement="top">
-          <Button color="danger" size="md" onPress={onOpen}>
+          <Button color="danger" isLoading={isLoading} size="md" onPress={onOpen}>
             <DeleteIcon />
           </Button>
         </Tooltip>

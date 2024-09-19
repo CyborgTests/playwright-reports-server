@@ -3,7 +3,7 @@ import { useLayoutEffect, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
 import useQuery from '@/app/hooks/useQuery';
-import { ServerDataInfo } from '@/app/lib/data';
+import { type ServerDataInfo } from '@/app/lib/storage';
 import ErrorMessage from '@/app/components/error-message';
 import FilesystemStatTabs from '@/app/components/fs-stat-tabs';
 
