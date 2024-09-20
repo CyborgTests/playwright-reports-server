@@ -4,12 +4,11 @@ import path from 'node:path';
 
 import { type BucketItem, Client } from 'minio';
 
-import { serveReportRoute } from '../constants';
-
 import { bytesToString } from './format';
 import { REPORTS_FOLDER, TMP_FOLDER, REPORTS_BUCKET, RESULTS_BUCKET } from './constants';
-import { generatePlaywrightReport } from './pw';
 
+import { serveReportRoute } from '@/app/lib/constants';
+import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
 import { type Result, type Report, type ResultDetails, type ServerDataInfo } from '@/app/lib/storage/types';
 import { env } from '@/app/config/env';
@@ -192,7 +191,7 @@ export class S3 {
     const { result, error } = await this.read(targetPath, contentType);
 
     if (error) {
-      console.error(error);
+      console.error(`[s3] failed to read file: ${error.message}`);
       throw new Error(`[s3] failed to read file: ${error.message}`);
     }
 

@@ -6,8 +6,8 @@ import getFolderSize from 'get-folder-size';
 
 import { bytesToString } from './format';
 import { DATA_FOLDER, REPORTS_FOLDER, RESULTS_FOLDER, TMP_FOLDER } from './constants';
-import { generatePlaywrightReport } from './pw';
 
+import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
 import { serveReportRoute } from '@/app/lib/constants';
 import {
