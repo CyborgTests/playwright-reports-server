@@ -119,6 +119,20 @@ export const ResultIcon: React.FC<IconSvgProps> = () => {
   );
 };
 
+export const TrendIcon: React.FC<IconSvgProps> = () => {
+  return (
+    <svg fill="currentColor" height={42} id="Capa_1" viewBox="0 0 30.462 30.461" width={42}>
+      <g>
+        <path
+          d="M16.109,13.997l-4.312-4.479L1.426,20.058L0,18.656L11.812,6.651l4.354,4.522l7.49-7.172l-2.146-2.145h5.603v5.601
+     L25.07,5.415L16.109,13.997z M4.962,28.606h6.75v-9.5h-6.75V28.606z M14.337,28.606h6.75v-12.5h-6.75V28.606z M23.712,9.856v18.75
+     h6.75V9.856H23.712z"
+        />
+      </g>
+    </svg>
+  );
+};
+
 export const DeleteIcon: React.FC<IconSvgProps> = (props) => (
   <svg aria-hidden="true" fill="none" focusable="false" height="1em" viewBox="0 0 20 20" width="1em" {...props}>
     <path
