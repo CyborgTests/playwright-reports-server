@@ -1,3 +1,4 @@
+import { sortReportsByCreatedDate } from '@/app/lib/sort';
 import { storage } from '@/app/lib/storage';
 import { withError } from '@/app/lib/withError';
 
@@ -10,5 +11,5 @@ export async function GET() {
     return new Response(error.message, { status: 400 });
   }
 
-  return Response.json(reports?.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+  return Response.json(sortReportsByCreatedDate(reports!));
 }

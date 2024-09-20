@@ -26,7 +26,7 @@ export async function PUT(request: Request) {
   }
 
   const buffer = Buffer.from(arrayBuffer!);
-  const resultDetails: { [key: string]: string } = {};
+  const resultDetails: ResultDetails = {};
 
   for (const [key, value] of formData.entries()) {
     if (key === 'file') {
