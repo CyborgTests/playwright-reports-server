@@ -2,7 +2,7 @@
 import { Area, AreaChart, XAxis } from 'recharts';
 import Link from 'next/link';
 
-import { type Report } from '@/app/lib/data';
+import { type Report } from '@/app/lib/storage';
 import { type ReportInfo } from '@/app/lib/parser';
 import {
   type ChartConfig,
@@ -42,7 +42,7 @@ interface TrendChartProps {
   reports: TrendReport[];
 }
 
-export function TrendChart({ reports }: TrendChartProps) {
+export function TrendChart({ reports }: Readonly<TrendChartProps>) {
   const getPercentage = (value: number, total: number) => Math.round((value / total) * 100);
 
   const openInNewTab = (url: string) => {
