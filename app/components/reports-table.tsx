@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Table,
   TableHeader,
@@ -11,6 +11,7 @@ import {
   Tooltip,
   Button,
   Spinner,
+  Pagination,
 } from '@nextui-org/react';
 import Link from 'next/link';
 
@@ -32,17 +33,68 @@ interface ReportsTableProps {
 }
 
 export default function ReportsTable({ onChange }: ReportsTableProps) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const { data: reports, error, isLoading, refetch } = useQuery<Report[]>('/api/report/list');
+
+  const getCurrentPage = () => {
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+
+    const view = reports ? reports.slice(startIndex, endIndex) : [];
+
+    return view;
+  };
+
+  const [viewReports, setViewReports] = useState<Report[]>(getCurrentPage());
+
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+    const view = getCurrentPage();
+
+    setViewReports(view);
+  }, [page, reports]);
 
   const onDeleted = () => {
     refetch();
     onChange?.();
   };
 
+  const onPageChange = useCallback(
+    (page: number) => {
+      setPage(page);
+      setViewReports(getCurrentPage());
+    },
+    [page, pageSize],
+  );
+
+  const pages = React.useMemo(() => {
+    return reports?.length ? Math.ceil(reports.length / pageSize) : 0;
+  }, [reports?.length, pageSize]);
+
   return error ? (
     <ErrorMessage message={error.message} />
   ) : (
-    <Table aria-label="Reports">
+    <Table
+      aria-label="Reports"
+      bottomContent={
+        pages > 1 ? (
+          <div className="flex w-full justify-center">
+            <Pagination
+              isCompact
+              showControls
+              showShadow
+              color="primary"
+              page={page}
+              total={pages}
+              onChange={onPageChange}
+            />
+          </div>
+        ) : null
+      }
+    >
       <TableHeader columns={columns}>
         {(column) => (
           <TableColumn key={column.uid} align={column.uid === 'actions' ? 'center' : 'start'}>
@@ -50,7 +102,7 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
           </TableColumn>
         )}
       </TableHeader>
-      <TableBody emptyContent="No reports." isLoading={isLoading} items={reports ?? []} loadingContent={<Spinner />}>
+      <TableBody emptyContent="No reports." isLoading={isLoading} items={viewReports ?? []} loadingContent={<Spinner />}>
         {(item) => (
           <TableRow key={item.reportID}>
             <TableCell className="w-1/2">{item.reportID}</TableCell>
