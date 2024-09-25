@@ -40,7 +40,7 @@ interface TrendChartProps {
 }
 
 export function TrendChart({ reports }: Readonly<TrendChartProps>) {
-  const getPercentage = (value: number, total: number) => Math.round((value / total) * 100);
+  const getPercentage = (value: number, total: number) => (value / total) * 100;
 
   const openInNewTab = (url: string) => {
     typeof window !== 'undefined' && window.open(url, '_blank', 'noopener,noreferrer');
@@ -112,7 +112,7 @@ export function TrendChart({ reports }: Readonly<TrendChartProps>) {
                         `${name}Count`
                       ]
                     }{' '}
-                    ({value}%)
+                    ({Math.round(value as number)}%)
                   </div>
                   {/* Add this after the last item */}
                   {index === 3 && (
