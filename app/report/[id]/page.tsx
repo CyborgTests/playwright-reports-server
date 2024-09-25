@@ -6,12 +6,12 @@ import Link from 'next/link';
 import ReportStatistics from '@/app/components/report-details/report-stats';
 import FileList from '@/app/components/report-details/file-list';
 import useQuery from '@/app/hooks/useQuery';
-import { type ReportInfo } from '@/app/lib/parser';
 import { type ReportHistory } from '@/app/lib/data';
 import { serveReportRoute } from '@/app/lib/constants';
-import { title } from '@/app/components/primitives';
+import { subtitle, title } from '@/app/components/primitives';
 import { useApiToken } from '@/app/providers/ApiTokenProvider';
 import { setReportAuthCookie } from '@/app/config/cookie';
+import FormattedDate from '@/app/components/date-format';
 
 interface ReportDetailProps {
   params: { id: string };
@@ -22,7 +22,7 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
     data: report,
     isLoading: isReportLoading,
     error: reportError,
-  } = useQuery<ReportInfo>(`/api/report/${params.id}`);
+  } = useQuery<ReportHistory>(`/api/report/${params.id}`);
 
   const {
     data: history,
@@ -62,6 +62,11 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
     <>
       <div className="text-center">
         <h1 className={title()}>Report</h1>
+        {report?.createdAt && (
+          <span className={subtitle()}>
+            <FormattedDate date={report.createdAt} />
+          </span>
+        )}
       </div>
       <div className="flex md:flex-row flex-col gap-2">
         <div className="flex flex-col items-center md:w-1/4 max-w-full">

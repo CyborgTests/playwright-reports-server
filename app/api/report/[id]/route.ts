@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import { type NextRequest } from 'next/server';
 
-import { readFile } from '@/app/lib/data';
+import { readFile, readReports } from '@/app/lib/data';
 import { parse } from '@/app/lib/parser';
 import { withError } from '@/app/lib/withError';
 
@@ -36,5 +36,16 @@ export async function GET(
     return new Response(`failed to parse report html file: ${parseError?.message ?? 'unknown error'}`, { status: 400 });
   }
 
-  return Response.json(info);
+  const { result: stats, error: statsError } = await withError(readReports());
+
+  if (statsError || !stats) {
+    return new Response(`failed to read reports: ${statsError?.message ?? 'unknown error'}`, { status: 500 });
+  }
+
+  const reportStats = stats.find((r) => r.reportID === id);
+
+  return Response.json({
+    ...info,
+    ...reportStats,
+  });
 }

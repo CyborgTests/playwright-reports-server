@@ -8,11 +8,10 @@ import { StatChart } from '../stat-chart';
 
 import renderFileSuitesTree from './suite-tree';
 
-import { ReportInfo } from '@/app/lib/parser';
 import { ReportHistory } from '@/app/lib/data';
 
 interface FileListProps {
-  report?: ReportInfo | null;
+  report?: ReportHistory | null;
   history: ReportHistory[];
 }
 
