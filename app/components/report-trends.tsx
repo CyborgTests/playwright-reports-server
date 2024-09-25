@@ -6,11 +6,10 @@ import { TrendChart } from '@/app/components/trend-chart';
 import { title } from '@/app/components/primitives';
 import useQuery from '@/app/hooks/useQuery';
 import ErrorMessage from '@/app/components/error-message';
-import { type Report } from '@/app/lib/data';
-import { type ReportInfo } from '@/app/lib/parser';
+import { type ReportHistory } from '@/app/lib/data';
 
 export default function ReportTrends() {
-  const { data: reports, error, isLoading } = useQuery<(Report & ReportInfo)[]>('/api/report/trend');
+  const { data: reports, error, isLoading } = useQuery<ReportHistory[]>('/api/report/trend');
 
   return (
     <>
