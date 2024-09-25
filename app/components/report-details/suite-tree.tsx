@@ -7,6 +7,7 @@ import TestInfo from './test-info';
 
 import { ReportFile, ReportTest } from '@/app/lib/parser';
 import { ReportHistory } from '@/app/lib/data';
+import { testStatusToColor } from '@/app/lib/tailwind';
 
 interface SuiteNode {
   name: string;
@@ -67,23 +68,30 @@ const renderSuiteNode = (suite: SuiteNode, history: ReportHistory[]) => {
             {renderSuiteNode(child, history)}
           </AccordionItem>
         )),
-        ...suite.tests.map((test) => (
-          <AccordionItem
-            key={test.testId}
-            aria-label={test.title}
-            className="p-2"
-            title={
-              <span className="flex flex-row gap-4 flex-wrap">
-                {`· ${test.title}`}
-                <Chip color="default" size="sm">
-                  {test.projectName}
-                </Chip>
-              </span>
-            }
-          >
-            <TestInfo history={history} test={test} />
-          </AccordionItem>
-        )),
+        ...suite.tests.map((test) => {
+          const status = testStatusToColor(test.outcome);
+
+          return (
+            <AccordionItem
+              key={test.testId}
+              aria-label={test.title}
+              className="p-2"
+              title={
+                <span className="flex flex-row gap-4 flex-wrap">
+                  {`· ${test.title}`}
+                  <Chip color={status.colorName} size="sm">
+                    {status.title}
+                  </Chip>
+                  <Chip color="default" size="sm">
+                    {test.projectName}
+                  </Chip>
+                </span>
+              }
+            >
+              <TestInfo history={history} test={test} />
+            </AccordionItem>
+          );
+        }),
       ]}
     </Accordion>
   );
