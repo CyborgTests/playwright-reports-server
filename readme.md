@@ -57,7 +57,6 @@ Check out the live demo: [familiar-alyss-alex-hot-6926ec9c.koyeb.app](https://fa
 2. The application will be accessible at `http://localhost:3000`.
    All data will be stored at `/data/` folder. You can backup it, to keep your data safe.
 
-
 ## API Routes
 
 ## `/api/report/list` (GET):
