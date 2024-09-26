@@ -7,6 +7,7 @@ import util from 'node:util';
 import getFolderSize from 'get-folder-size';
 
 import { serveReportRoute } from '@/app/lib/constants';
+import { type ReportInfo, type ReportTest } from '@/app/lib/parser';
 
 const execAsync = util.promisify(exec);
 
@@ -18,6 +19,10 @@ export type Result = {
 };
 
 export type Report = { reportID: string; reportUrl: string; createdAt: Date };
+
+export type ReportHistory = Report & ReportInfo;
+
+export type TestHistory = Report & ReportTest;
 
 const DATA_FOLDER = path.join(process.cwd(), 'data');
 const PW_CONFIG = path.join(process.cwd(), 'playwright.config.ts');

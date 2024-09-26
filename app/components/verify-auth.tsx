@@ -1,13 +1,12 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { setCookie } from 'cookies-next';
 import { Spinner } from '@nextui-org/react';
 import { useEffect } from 'react';
 
 import { title } from '@/app/components/primitives';
 import { useApiToken } from '@/app/providers/ApiTokenProvider';
-import { reportAuthCookieName, serveReportRoute } from '@/app/lib/constants';
+import { setReportAuthCookie } from '@/app/config/cookie';
 
 export default function VerifyAuth() {
   const searchParams = useSearchParams();
@@ -19,14 +18,7 @@ export default function VerifyAuth() {
       const url = searchParams.get('callbackUrl') ?? '';
 
       if (url && apiToken) {
-        const cookieAgeSeconds = 10 * 60; // 10 minutes
-
-        setCookie(reportAuthCookieName, apiToken, {
-          maxAge: cookieAgeSeconds,
-          path: serveReportRoute,
-          secure: true,
-          sameSite: 'strict',
-        });
+        setReportAuthCookie(apiToken);
         router.replace(url);
       }
     }
