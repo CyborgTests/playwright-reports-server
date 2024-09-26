@@ -6,7 +6,7 @@ import Link from 'next/link';
 import ReportStatistics from '@/app/components/report-details/report-stats';
 import FileList from '@/app/components/report-details/file-list';
 import useQuery from '@/app/hooks/useQuery';
-import { type ReportHistory } from '@/app/lib/data';
+import { type ReportHistory } from '@/app/lib/storage';
 import { serveReportRoute } from '@/app/lib/constants';
 import { subtitle, title } from '@/app/components/primitives';
 import { useApiToken } from '@/app/providers/ApiTokenProvider';

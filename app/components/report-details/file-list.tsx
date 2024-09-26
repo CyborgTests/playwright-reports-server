@@ -8,7 +8,7 @@ import { StatChart } from '../stat-chart';
 
 import renderFileSuitesTree from './suite-tree';
 
-import { ReportHistory } from '@/app/lib/data';
+import { type ReportHistory } from '@/app/lib/storage';
 
 interface FileListProps {
   report?: ReportHistory | null;
