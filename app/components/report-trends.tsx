@@ -6,7 +6,7 @@ import { TrendChart } from '@/app/components/trend-chart';
 import { title } from '@/app/components/primitives';
 import useQuery from '@/app/hooks/useQuery';
 import ErrorMessage from '@/app/components/error-message';
-import { type ReportHistory } from '@/app/lib/data';
+import { type ReportHistory } from '@/app/lib/storage';
 
 export default function ReportTrends() {
   const { data: reports, error, isLoading } = useQuery<ReportHistory[]>('/api/report/trend');

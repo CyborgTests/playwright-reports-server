@@ -41,7 +41,7 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult }: Dele
   return (
     <>
       <Tooltip color="danger" content="Delete Result" placement="top">
-        <Button color="danger" isDisabled={!resultIds?.length} size="md" onPress={onOpen}>
+        <Button color="danger" isDisabled={!resultIds?.length} isLoading={isLoading} size="md" onPress={onOpen}>
           <DeleteIcon />
         </Button>
       </Tooltip>

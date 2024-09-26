@@ -1,19 +1,23 @@
-import { deleteResults } from '@/app/lib/data';
+import { storage } from '@/app/lib/storage';
+import { withError } from '@/app/lib/withError';
 
 export const dynamic = 'force-dynamic'; // defaults to auto
 
 export async function DELETE(request: Request) {
-  const reqData = await request.json();
+  const { result: reqData, error: reqError } = await withError(request.json());
 
-  reqData.resultsIds;
-  try {
-    await deleteResults(reqData.resultsIds);
-
-    return Response.json({
-      message: `Results files deleted successfully`,
-      resultsIds: reqData.resultsIds,
-    });
-  } catch (err) {
-    return new Response((err as Error).message, { status: 404 });
+  if (reqError) {
+    return new Response(reqError.message, { status: 400 });
   }
+
+  const { error } = await withError(storage.deleteResults(reqData.resultsIds));
+
+  if (error) {
+    return new Response(error.message, { status: 404 });
+  }
+
+  return Response.json({
+    message: `Results files deleted successfully`,
+    resultsIds: reqData.resultsIds,
+  });
 }

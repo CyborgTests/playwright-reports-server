@@ -2,7 +2,7 @@
 
 import { Badge, Tab, Tabs } from '@nextui-org/react';
 
-import { type ServerDataInfo } from '@/app/lib/data';
+import { type ServerDataInfo } from '@/app/lib/storage';
 import { ReportIcon, ResultIcon, TrendIcon } from '@/app/components/icons';
 import Reports from '@/app/components/reports';
 import Results from '@/app/components/results';

@@ -7,7 +7,7 @@ import FormattedDate from '../date-format';
 
 import { subtitle } from '@/app/components/primitives';
 import { parseMilliseconds } from '@/app/lib/time';
-import { TestHistory, type ReportHistory } from '@/app/lib/data';
+import { type TestHistory, type ReportHistory } from '@/app/lib/storage';
 import { type ReportTest } from '@/app/lib/parser/types';
 import { testStatusToColor } from '@/app/lib/tailwind';
 

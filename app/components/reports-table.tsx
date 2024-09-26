@@ -10,6 +10,7 @@ import {
   TableCell,
   Tooltip,
   Button,
+  Spinner,
   Pagination,
   LinkIcon,
 } from '@nextui-org/react';
@@ -20,7 +21,7 @@ import ErrorMessage from '@/app/components/error-message';
 import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
 import { EyeIcon } from '@/app/components/icons';
-import { type Report } from '@/app/lib/data';
+import { type Report } from '@/app/lib/storage';
 
 const columns = [
   { name: 'ID', uid: 'reportID' },
@@ -102,7 +103,7 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
           </TableColumn>
         )}
       </TableHeader>
-      <TableBody emptyContent="No reports." isLoading={isLoading} items={viewReports ?? []}>
+      <TableBody emptyContent="No reports." isLoading={isLoading} items={viewReports ?? []} loadingContent={<Spinner />}>
         {(item) => (
           <TableRow key={item.reportID}>
             <TableCell className="w-1/2">

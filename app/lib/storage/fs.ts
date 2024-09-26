@@ -1,34 +1,16 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { exec } from 'node:child_process';
-import util from 'node:util';
 
 import getFolderSize from 'get-folder-size';
 
+import { bytesToString } from './format';
+import { DATA_FOLDER, REPORTS_FOLDER, RESULTS_FOLDER, TMP_FOLDER } from './constants';
+
+import { generatePlaywrightReport } from '@/app/lib/pw';
+import { withError } from '@/app/lib/withError';
 import { serveReportRoute } from '@/app/lib/constants';
-import { type ReportInfo, type ReportTest } from '@/app/lib/parser';
-
-const execAsync = util.promisify(exec);
-
-export type Result = {
-  resultID: string;
-  createdAt: string;
-  // For custom user fields
-  [key: string]: string;
-};
-
-export type Report = { reportID: string; reportUrl: string; createdAt: Date };
-
-export type ReportHistory = Report & ReportInfo;
-
-export type TestHistory = Report & ReportTest;
-
-const DATA_FOLDER = path.join(process.cwd(), 'data');
-const PW_CONFIG = path.join(process.cwd(), 'playwright.config.ts');
-const TMP_FOLDER = path.join(DATA_FOLDER, '.tmp');
-const RESULTS_FOLDER = path.join(DATA_FOLDER, 'results');
-const REPORTS_FOLDER = path.join(DATA_FOLDER, 'reports');
+import { type Storage, type Report, type Result, type ServerDataInfo, type ResultDetails } from '@/app/lib/storage';
 
 async function createDirectoriesIfMissing() {
   async function createDirectory(dir: string) {
@@ -48,16 +30,8 @@ async function createDirectoriesIfMissing() {
 const getFolderSizeInMb = async (dir: string) => {
   const sizeBytes = await getFolderSize.loose(dir);
 
-  return `${(sizeBytes / 1000 / 1000).toFixed(2)} MB`;
+  return bytesToString(sizeBytes);
 };
-
-export interface ServerDataInfo {
-  dataFolderSizeinMB: string;
-  numOfResults: number;
-  resultsFolderSizeinMB: string;
-  numOfReports: number;
-  reportsFolderSizeinMB: string;
-}
 
 export async function getServerDataInfo(): Promise<ServerDataInfo> {
   await createDirectoriesIfMissing();
@@ -96,7 +70,7 @@ export async function readResults() {
     }),
   );
 
-  return fileContents.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return fileContents;
 }
 
 export async function readReports() {
@@ -118,30 +92,30 @@ export async function readReports() {
       }),
   );
 
-  return reports.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  return reports;
 }
 
 export async function deleteResults(resultsIds: string[]) {
-  return Promise.allSettled(resultsIds.map((id) => deleteResult(id)));
+  await Promise.allSettled(resultsIds.map((id) => deleteResult(id)));
 }
 
 export async function deleteResult(resultId: string) {
   const resultPath = path.join(RESULTS_FOLDER, resultId);
 
-  return Promise.allSettled([fs.unlink(`${resultPath}.json`), fs.unlink(`${resultPath}.zip`)]);
+  await Promise.allSettled([fs.unlink(`${resultPath}.json`), fs.unlink(`${resultPath}.zip`)]);
 }
 
 export async function deleteReports(reportsIds: string[]) {
-  return Promise.allSettled(reportsIds.map((id) => deleteReport(id)));
+  await Promise.allSettled(reportsIds.map((id) => deleteReport(id)));
 }
 
 export async function deleteReport(reportId: string) {
   const reportPath = path.join(REPORTS_FOLDER, reportId);
 
-  return fs.rm(reportPath, { recursive: true, force: true });
+  await fs.rm(reportPath, { recursive: true, force: true });
 }
 
-export async function saveResult(buffer: Buffer, resultDetails: { [key: string]: string }) {
+export async function saveResult(buffer: Buffer, resultDetails: ResultDetails) {
   await createDirectoriesIfMissing();
   const resultID = randomUUID();
 
@@ -160,27 +134,32 @@ export async function saveResult(buffer: Buffer, resultDetails: { [key: string]:
 
 export async function generateReport(resultsIds: string[]) {
   await createDirectoriesIfMissing();
-  try {
-    await fs.rm(TMP_FOLDER, { recursive: true, force: true });
-  } catch (error) {
+
+  const { error } = await withError(fs.rm(TMP_FOLDER, { recursive: true, force: true }));
+
+  if (error) {
     console.log('temp folder not found, creating...');
   }
+
   await fs.mkdir(TMP_FOLDER, { recursive: true });
 
   for (const id of resultsIds) {
     await fs.copyFile(path.join(RESULTS_FOLDER, `${id}.zip`), path.join(TMP_FOLDER, `${id}.zip`));
   }
 
-  const reportId = randomUUID();
-
-  await execAsync(`npx playwright merge-reports --reporter html ${TMP_FOLDER}`, {
-    env: {
-      ...process.env,
-      // Avoid opening the report on server
-      PW_TEST_HTML_REPORT_OPEN: 'never',
-      PLAYWRIGHT_HTML_REPORT: path.join(REPORTS_FOLDER, reportId),
-    },
-  });
+  const { reportId } = await generatePlaywrightReport();
 
   return reportId;
 }
+
+export const FS: Storage = {
+  getFolderSizeInMb,
+  getServerDataInfo,
+  readFile,
+  readResults,
+  readReports,
+  deleteResults,
+  deleteReports,
+  saveResult,
+  generateReport,
+};

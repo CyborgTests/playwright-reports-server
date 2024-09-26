@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import { type NextRequest } from 'next/server';
 
-import { readFile, readReports } from '@/app/lib/data';
+import { storage } from '@/app/lib/storage';
 import { parse } from '@/app/lib/parser';
 import { withError } from '@/app/lib/withError';
 
@@ -24,7 +24,7 @@ export async function GET(
     return new Response('report ID is required', { status: 400 });
   }
 
-  const { result: html, error } = await withError(readFile(path.join(id, 'index.html'), 'text/html'));
+  const { result: html, error } = await withError(storage.readFile(path.join(id, 'index.html'), 'text/html'));
 
   if (error || !html) {
     return new Response(`failed to read report html file: ${error?.message ?? 'unknown error'}`, { status: 404 });
@@ -36,7 +36,7 @@ export async function GET(
     return new Response(`failed to parse report html file: ${parseError?.message ?? 'unknown error'}`, { status: 400 });
   }
 
-  const { result: stats, error: statsError } = await withError(readReports());
+  const { result: stats, error: statsError } = await withError(storage.readReports());
 
   if (statsError || !stats) {
     return new Response(`failed to read reports: ${statsError?.message ?? 'unknown error'}`, { status: 500 });

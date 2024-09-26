@@ -1,31 +1,67 @@
 # Playwright Reports Server
 
-The Playwright Reports Server provides APIs for managing and generating reports based on Playwright test results. It allows to:
+The Playwright Reports Server provides APIs for managing and generating reports based on Playwright test results. It allows you to:
 
 - Store HTML reports and easily view them without downloading locally
-- Merge results into one report from sharded runs together (https://playwright.dev/docs/test-sharding)
-- Store raw results, and agregate them together into one report
+- Merge results into one report from sharded runs together (see [Playwright Sharding](https://playwright.dev/docs/test-sharding))
+- Store raw results, and aggregate them together into one report
+- Check web ui for report trends and test history
+- Basic api token authorization for backend and web ui, reports are secured as well
 
-Demo:
-https://familiar-alyss-alex-hot-6926ec9c.koyeb.app/
+## Demo
 
-## How to run?
+Check out the live demo: [familiar-alyss-alex-hot-6926ec9c.koyeb.app](https://familiar-alyss-alex-hot-6926ec9c.koyeb.app/)
 
-Clone this repo and run:
+## Table of Contents
 
-```
-npm run build && npm run start
-```
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Running the Server](#running-the-server)
+- [API Routes](#api-routes)
+- [Authorization](#authorization)
+- [Storage Options](#storage-options)
+  - [Local File System](#local-file-system-storage)
+  - [S3-Compatible](#s3-compatible-object-storage)
+- [Docker Usage](#docker-usage)
 
-All data will be stored at `/public/data/` folder. You can backup it, to keep your data safe.
+## Getting Started
 
-Application will be accessible at `localhost:3000`
+### Prerequisites
+
+- Node.js (v18 or higher)
+- npm (v9 or higher)
+
+### Installation
+
+1. Clone this repository:
+
+   ```
+   git clone https://github.com/CyborgTests/playwright-reports-server.git
+   cd playwright-reports-server
+   ```
+
+2. Install dependencies:
+   ```
+   npm install
+   ```
+
+### Running the Server
+
+1. Build and start the server:
+
+   ```
+   npm run build && npm run start
+   ```
+
+2. The application will be accessible at `http://localhost:3000`.
+   All data will be stored at `/data/` folder. You can backup it, to keep your data safe.
 
 ## API Routes
 
 ## `/api/report/list` (GET):
 
-Returns list of generated reports (can be viewed by Url) on server:
+Returns list of generated reports and corresponding url on server:
 
 ```sh
 curl --location --request DELETE 'http://localhost:3000/api/report/delete' \
@@ -202,4 +238,70 @@ pong
 Optional authorization can be enabled, by setting `API_TOKEN` environment variable on application start. This token will be required to be passed for every request as header:
 `Authorization: YOUR_TOKEN`
 
+The web ui will require such token to login as well as report serving route.
+
 If you do not set a token the application will work without authorization.
+
+## Storage Options
+
+The Playwright Reports Server uses local file system storage by default. However, it can be configured to use S3-compatible object storage for better scalability and persistence. Here are the details for both options:
+
+### Local File System Storage
+
+By default, all data is stored in the `/data/` (`/app/data/` in the container). This includes both raw test results and generated reports. When using local storage:
+
+- Ensure the application has write permissions to the `/data/` directory.
+- For data persistence when using Docker, mount a volume or host directory to `/app/data/`.
+
+Example Docker run command with a mounted volume:
+
+```sh
+docker run -v /path/on/host:/app/data -p 3000:3000 playwright-reports-server
+```
+
+### S3-Compatible Object Storage
+
+For improved scalability and easier management of persistent storage, you can configure the application to use S3-compatible object storage. This includes services like AWS S3, MinIO, DigitalOcean Spaces, and others.
+
+To enable S3 storage:
+
+1. Set the following environment variables:
+
+   ```
+   DATA_STORAGE=s3
+   S3_ENDPOINT=<your-s3-endpoint> # just a hostname, like my.minio.com
+   S3_REGION=<your-s3-region>
+   S3_ACCESS_KEY=<your-access-key>
+   S3_SECRET_KEY=<your-secret-key>
+   S3_BUCKET=<your-s3-bucket-name> # optional, by default "playwright-reports-server"
+   S3_PORT=9000 # optional, specify if you have self-hosted instance exposed via custom port
+   ```
+
+2. Ensure your S3 provided credentials have read and write access to the bucket.
+
+When S3 storage is configured, all operations that would normally interact with the local file system will instead use the S3 bucket. This includes storing raw test results, generating reports, and serving report files.
+
+Note: When switching from local storage to S3 or vice versa, existing data will not be automatically migrated. Ensure you have a backup of your data before changing storage configurations.
+
+## Docker Usage
+
+Image is available via github public registry.
+
+To run the server using Docker:
+
+```sh
+docker run -p 3000:3000 -v /path/on/host:/app/data ghcr.io/cyborgtests/playwright-reports-server:latest
+```
+
+For external S3 storage, pass the necessary environment variables:
+
+```sh
+docker run -p 3000:3000 \
+  -e STORAGE_TYPE=s3 \
+  -e S3_ENDPOINT="<your-endpoint>" \
+  -e S3_REGION="<your-region>" \
+  -e S3_BUCKET="<your-bucket>" \
+  -e S3_ACCESS_KEY_ID="<your-access-key>" \
+  -e S3_SECRET_ACCESS_KEY="<your-secret-key>" \
+  ghcr.io/cyborgtests/playwright-reports-server:latest
+```

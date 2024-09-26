@@ -2,7 +2,7 @@
 import { Area, AreaChart, XAxis } from 'recharts';
 import Link from 'next/link';
 
-import { type ReportHistory } from '@/app/lib/data';
+import { type ReportHistory } from '@/app/lib/storage';
 import {
   type ChartConfig,
   ChartContainer,

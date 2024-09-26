@@ -5,8 +5,8 @@ import { Accordion, AccordionItem, Chip } from '@nextui-org/react';
 
 import TestInfo from './test-info';
 
-import { ReportFile, ReportTest } from '@/app/lib/parser';
-import { ReportHistory } from '@/app/lib/data';
+import { type ReportFile, type ReportTest } from '@/app/lib/parser';
+import { type ReportHistory } from '@/app/lib/storage';
 import { testStatusToColor } from '@/app/lib/tailwind';
 
 interface SuiteNode {
