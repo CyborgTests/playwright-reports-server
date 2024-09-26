@@ -12,6 +12,7 @@ import {
   Button,
   Spinner,
   Pagination,
+  LinkIcon,
 } from '@nextui-org/react';
 import Link from 'next/link';
 
@@ -105,7 +106,13 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
       <TableBody emptyContent="No reports." isLoading={isLoading} items={viewReports ?? []} loadingContent={<Spinner />}>
         {(item) => (
           <TableRow key={item.reportID}>
-            <TableCell className="w-1/2">{item.reportID}</TableCell>
+            <TableCell className="w-1/2">
+              <Link href={`/report/${item.reportID}`}>
+                <div className="flex flex-row">
+                  {item.reportID} <LinkIcon />
+                </div>
+              </Link>
+            </TableCell>
             <TableCell className="w-1/4">
               <FormattedDate date={item.createdAt} />
             </TableCell>

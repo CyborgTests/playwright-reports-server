@@ -1,4 +1,5 @@
-import { UUID } from '@/app/types';
+import { type UUID } from '@/app/types';
+import { type ReportInfo, type ReportTest } from '@/app/lib/parser/types';
 
 export interface Storage {
   getServerDataInfo: () => Promise<ServerDataInfo>;
@@ -29,6 +30,10 @@ export type Result = {
 } & ResultDetails;
 
 export type Report = { reportID: string; reportUrl: string; createdAt: Date };
+
+export type ReportHistory = Report & ReportInfo;
+
+export type TestHistory = Report & ReportTest;
 
 export interface ServerDataInfo {
   dataFolderSizeinMB: string;

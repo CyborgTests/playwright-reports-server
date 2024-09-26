@@ -10,13 +10,7 @@ import { DATA_FOLDER, REPORTS_FOLDER, RESULTS_FOLDER, TMP_FOLDER } from './const
 import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
 import { serveReportRoute } from '@/app/lib/constants';
-import {
-  type Storage,
-  type Report,
-  type Result,
-  type ServerDataInfo,
-  type ResultDetails,
-} from '@/app/lib/storage/types';
+import { type Storage, type Report, type Result, type ServerDataInfo, type ResultDetails } from '@/app/lib/storage';
 
 async function createDirectoriesIfMissing() {
   async function createDirectory(dir: string) {

@@ -11,7 +11,7 @@ interface ReportMetadata {
   actualWorkers: number;
 }
 
-interface ReportStats {
+export interface ReportStats {
   total: number;
   expected: number;
   unexpected: number;
@@ -20,21 +20,21 @@ interface ReportStats {
   ok: boolean;
 }
 
-enum ReportTestOutcome {
+export enum ReportTestOutcome {
   Expected = 'expected',
   Unexpected = 'unexpected',
   Flaky = 'flaky',
   Skipped = 'skipped',
 }
 
-interface ReportFile {
+export interface ReportFile {
   fileId: string;
   fileName: string;
   tests: ReportTest[];
   stats: ReportStats;
 }
 
-interface ReportTest {
+export interface ReportTest {
   testId: string;
   title: string;
   projectName: string;
@@ -46,6 +46,7 @@ interface ReportTest {
   path: string[];
   ok: boolean;
   results: ReportTestResult[];
+  createdAt?: Date;
 }
 
 interface ReportTestLocation {
