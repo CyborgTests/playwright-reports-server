@@ -24,7 +24,17 @@ export async function GET(
     return new Response('report ID is required', { status: 400 });
   }
 
-  const { result: html, error } = await withError(storage.readFile(path.join(id, 'index.html'), 'text/html'));
+  const { result: stats, error: statsError } = await withError(storage.readReports());
+
+  if (statsError || !stats) {
+    return new Response(`failed to read reports: ${statsError?.message ?? 'unknown error'}`, { status: 500 });
+  }
+
+  const reportStats = stats.find((r) => r.reportID === id);
+
+  const { result: html, error } = await withError(
+    storage.readFile(path.join(reportStats?.project ?? '', id, 'index.html'), 'text/html'),
+  );
 
   if (error || !html) {
     return new Response(`failed to read report html file: ${error?.message ?? 'unknown error'}`, { status: 404 });
@@ -35,14 +45,6 @@ export async function GET(
   if (parseError || !info) {
     return new Response(`failed to parse report html file: ${parseError?.message ?? 'unknown error'}`, { status: 400 });
   }
-
-  const { result: stats, error: statsError } = await withError(storage.readReports());
-
-  if (statsError || !stats) {
-    return new Response(`failed to read reports: ${statsError?.message ?? 'unknown error'}`, { status: 500 });
-  }
-
-  const reportStats = stats.find((r) => r.reportID === id);
 
   return Response.json({
     ...info,

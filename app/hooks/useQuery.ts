@@ -3,7 +3,7 @@ import { useRouter } from 'next/navigation';
 
 import { useApiToken } from '@/app/providers/ApiTokenProvider';
 
-const useQuery = <ReturnType>(path: string, options?: RequestInit) => {
+const useQuery = <ReturnType>(path: string, options?: RequestInit & { dependencies: unknown[] }) => {
   const [data, setData] = useState<ReturnType | null>(null);
   const [isLoading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -46,7 +46,7 @@ const useQuery = <ReturnType>(path: string, options?: RequestInit) => {
     } finally {
       setLoading(false);
     }
-  }, [path, options]);
+  }, [path, options, ...(options?.dependencies ?? [])]);
 
   useEffect(() => {
     if (!isClientAuthorized()) {

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import getFolderSize from 'get-folder-size';
 
 import { bytesToString } from './format';
-import { DATA_FOLDER, REPORTS_FOLDER, RESULTS_FOLDER, TMP_FOLDER } from './constants';
+import { DATA_FOLDER, REPORTS_FOLDER, REPORTS_PATH, RESULTS_FOLDER, TMP_FOLDER } from './constants';
 
 import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
@@ -73,26 +73,31 @@ export async function readResults() {
   return fileContents;
 }
 
-export async function readReports() {
+export async function readReports(): Promise<Report[]> {
   await createDirectoriesIfMissing();
-  const dirents = await fs.readdir(REPORTS_FOLDER, { withFileTypes: true });
+  const entries = await fs.readdir(REPORTS_FOLDER, { withFileTypes: true, recursive: true });
 
-  const reports: Report[] = await Promise.all(
-    dirents
-      .filter((dirent) => dirent.isDirectory())
-      .map(async (dirent) => {
-        const dirPath = path.join(REPORTS_FOLDER, dirent.name);
-        const stats = await fs.stat(dirPath);
-
-        return {
-          reportID: dirent.name,
-          createdAt: stats.birthtime,
-          reportUrl: `${serveReportRoute}/${dirent.name}/index.html`,
-        };
-      }),
+  const reportFiles = entries.filter(
+    (entry) => !entry.isDirectory() && entry.name === 'index.html' && !entry.path.endsWith('trace'),
   );
 
-  return reports;
+  return await Promise.all(
+    reportFiles.map(async (file) => {
+      const id = path.basename(file.path);
+      const parentDir = path.basename(path.dirname(file.path));
+
+      const projectName = parentDir === REPORTS_PATH ? '' : parentDir;
+
+      const stat = await fs.stat(file.path);
+
+      return {
+        reportID: id,
+        project: projectName,
+        createdAt: stat.birthtime,
+        reportUrl: `${serveReportRoute}/${projectName ? encodeURIComponent(projectName) : ''}/${id}/index.html`,
+      };
+    }),
+  );
 }
 
 export async function deleteResults(resultsIds: string[]) {
@@ -106,7 +111,14 @@ export async function deleteResult(resultId: string) {
 }
 
 export async function deleteReports(reportsIds: string[]) {
-  await Promise.allSettled(reportsIds.map((id) => deleteReport(id)));
+  const reports = await readReports();
+
+  const paths = reportsIds
+    .map((id) => reports.find((report) => report.reportID === id))
+    .filter(Boolean)
+    .map((report) => (report?.project ? `${report.project}/${report.reportID}` : report?.reportID));
+
+  await Promise.allSettled(paths.map((path) => deleteReport(path!)));
 }
 
 export async function deleteReport(reportId: string) {
@@ -132,7 +144,7 @@ export async function saveResult(buffer: Buffer, resultDetails: ResultDetails) {
   return metaData;
 }
 
-export async function generateReport(resultsIds: string[]) {
+export async function generateReport(resultsIds: string[], project?: string) {
   await createDirectoriesIfMissing();
 
   const { error } = await withError(fs.rm(TMP_FOLDER, { recursive: true, force: true }));
@@ -147,9 +159,24 @@ export async function generateReport(resultsIds: string[]) {
     await fs.copyFile(path.join(RESULTS_FOLDER, `${id}.zip`), path.join(TMP_FOLDER, `${id}.zip`));
   }
 
-  const { reportId } = await generatePlaywrightReport();
+  const { reportId } = await generatePlaywrightReport(project);
 
   return reportId;
+}
+
+export async function getProjects(): Promise<string[]> {
+  const reports = await readReports();
+
+  return Array.from(new Set(reports.map((r) => r.project))).filter(Boolean);
+}
+
+export async function moveReport(oldPath: string, newPath: string): Promise<void> {
+  const reportPath = path.join(REPORTS_FOLDER, oldPath);
+  const newReportPath = path.join(REPORTS_FOLDER, newPath);
+
+  await fs.mkdir(path.dirname(newReportPath), { recursive: true });
+
+  await fs.rename(reportPath, newReportPath);
 }
 
 export const FS: Storage = {
@@ -162,4 +189,6 @@ export const FS: Storage = {
   deleteReports,
   saveResult,
   generateReport,
+  getProjects,
+  moveReport,
 };
