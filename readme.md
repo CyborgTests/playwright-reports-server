@@ -81,11 +81,13 @@ Response example:
   {
     "reportID": "8e9af87d-1d10-4729-aefd-3e92ee64d06c",
     "createdAt": "2024-05-06T16:52:45.017Z",
+    "project": "regression",
     "reportUrl": "/data/reports/8e9af87d-1d10-4729-aefd-3e92ee64d06c/index.html"
   },
   {
     "reportID": "8fe427ed-783c-4fb9-aacc-ba6fbc5f5667",
     "createdAt": "2024-05-06T16:59:38.814Z",
+    "project": "smoke",
     "reportUrl": "/data/reports/8fe427ed-783c-4fb9-aacc-ba6fbc5f5667/index.html"
   }
 ]
@@ -124,6 +126,7 @@ curl --location 'http://localhost:3000/api/report/generate' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: <api-token>' \
 --data '{
+    "project": "regression",
     "resultsIds": [
         "b1d29907-7efa-48e8-a8d1-db49cf5c2998",
         "a7beb04b-f190-4fbb-bebd-58b2c776e6c3",
@@ -135,6 +138,7 @@ Response example:
 
 ```json
 {
+  "project": "regression",
   "reportId": "8e9af87d-1d10-4729-aefd-3e92ee64d06c",
   "reportUrl": "/data/reports/8e9af87d-1d10-4729-aefd-3e92ee64d06c/index.html"
 }
@@ -155,6 +159,7 @@ Response will contain array of results:
   {
     "resultID": "a7beb04b-f190-4fbb-bebd-58b2c776e6c3",
     "createdAt": "2024-05-06T16:40:33.021Z",
+    "project": "regression",
     "testRunName": "regression-run-v1.10",
     "reporter": "okhotemskyi"
   }

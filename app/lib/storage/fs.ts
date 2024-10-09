@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import getFolderSize from 'get-folder-size';
 
-import { bytesToString } from './format';
+import { bytesToString, getUniqueProjectsList } from './format';
 import { DATA_FOLDER, REPORTS_FOLDER, REPORTS_PATH, RESULTS_FOLDER, TMP_FOLDER } from './constants';
 
 import { generatePlaywrightReport } from '@/app/lib/pw';
@@ -167,7 +167,7 @@ export async function generateReport(resultsIds: string[], project?: string) {
 export async function getProjects(): Promise<string[]> {
   const reports = await readReports();
 
-  return Array.from(new Set(reports.map((r) => r.project))).filter(Boolean);
+  return getUniqueProjectsList(reports);
 }
 
 export async function moveReport(oldPath: string, newPath: string): Promise<void> {

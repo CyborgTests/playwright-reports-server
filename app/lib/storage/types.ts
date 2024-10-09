@@ -29,6 +29,7 @@ export interface ResultDetails {
 export type Result = {
   resultID: UUID;
   createdAt: string;
+  project: string;
 } & ResultDetails;
 
 export type Report = { reportID: string; project: string; reportUrl: string; createdAt: Date };

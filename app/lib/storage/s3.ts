@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { type BucketItem, Client } from 'minio';
 
-import { bytesToString } from './format';
+import { bytesToString, getUniqueProjectsList } from './format';
 import { REPORTS_FOLDER, TMP_FOLDER, REPORTS_BUCKET, RESULTS_BUCKET, REPORTS_PATH } from './constants';
 
 import { serveReportRoute } from '@/app/lib/constants';
@@ -451,7 +451,7 @@ export class S3 {
 
     const reports = await this.readReports();
 
-    return Array.from(new Set(reports.map((r) => r.project))).filter(Boolean);
+    return getUniqueProjectsList(reports);
   }
 
   async moveReport(oldPath: string, newPath: string): Promise<void> {
