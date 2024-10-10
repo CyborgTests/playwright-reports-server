@@ -20,20 +20,21 @@ const persistSelectedTab = (tab: string) => {
 };
 
 export default function DashboardPage() {
-  const session = useSession();
+  const { status } = useSession();
+  const authIsLoading = status === 'loading';
 
   const { data: info, error, refetch } = useQuery<ServerDataInfo>('/api/info');
   const [selectedTab, setSelectedTab] = useState<string>(getPersistedSelectedTab() ?? '');
   const [refreshId, setRefreshId] = useState<string>(uuidv4());
 
   useLayoutEffect(() => {
-    if (session.status === 'loading') {
+    if (authIsLoading) {
       return;
     }
     refetch();
   }, [refreshId]);
 
-  if (session.status === 'loading') {
+  if (authIsLoading) {
     return <Spinner />;
   }
 

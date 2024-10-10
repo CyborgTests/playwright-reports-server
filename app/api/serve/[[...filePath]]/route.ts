@@ -24,7 +24,7 @@ export async function GET(
   const session = await auth();
 
   if (!session?.user?.jwtToken) {
-    redirect(`/login?callbackUrl=${req.nextUrl.pathname}`);
+    redirect(`/login?callbackUrl=${decodeURIComponent(req.nextUrl.pathname)}`);
   }
 
   const { filePath } = params;
