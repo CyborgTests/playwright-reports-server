@@ -23,13 +23,15 @@ export async function GET(
 ) {
   const session = await auth();
 
-  if (!session?.user?.jwtToken) {
-    redirect(`/login?callbackUrl=${decodeURIComponent(req.nextUrl.pathname)}`);
-  }
-
   const { filePath } = params;
 
-  const targetPath = Array.isArray(filePath) ? filePath.join('/') : (filePath ?? '');
+  const uriPath = Array.isArray(filePath) ? filePath.join('/') : (filePath ?? '');
+
+  const targetPath = decodeURI(uriPath);
+
+  if (!session?.user?.jwtToken) {
+    redirect(`/login?callbackUrl=${encodeURI(req.nextUrl.pathname)}`);
+  }
 
   const contentType = mime.getType(path.basename(targetPath));
 

@@ -15,11 +15,12 @@ export default function LoginForm() {
   const searchParams = useSearchParams();
 
   const target = searchParams.get('callbackUrl') ?? '/';
+  const callbackUrl = decodeURI(target);
 
   useEffect(() => {
     // redirect if already authenticated
     if (session.status === 'authenticated') {
-      router.replace(target);
+      router.replace(callbackUrl);
     }
 
     // check if we can sign in automatically
@@ -30,7 +31,7 @@ export default function LoginForm() {
           redirect: false,
         }).then((response) => {
           if (!response?.error && response?.ok) {
-            router.replace(target);
+            router.replace(callbackUrl);
           }
         });
       }
@@ -45,7 +46,7 @@ export default function LoginForm() {
       redirect: false,
     });
 
-    result?.error ? setError(`invalid API key: ${error}`) : router.replace(target);
+    result?.error ? setError(`invalid API key: ${error}`) : router.replace(callbackUrl);
   };
 
   return session.status === 'loading' ? (
