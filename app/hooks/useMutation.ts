@@ -1,20 +1,14 @@
-import { useState, useCallback, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+'use client';
 
-import { useApiToken } from '@/app/providers/ApiTokenProvider';
+import { useState, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 
 const useMutation = (url: string, options: RequestInit) => {
   const [isLoading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const { apiToken, isClientAuthorized } = useApiToken();
+  const session = useSession();
 
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!isClientAuthorized()) {
-      router.push('/login');
-    }
-  }, []);
+  const apiToken = session?.data?.user?.apiToken;
 
   const mutate = useCallback(
     async (body?: unknown) => {

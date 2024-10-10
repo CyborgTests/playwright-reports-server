@@ -245,7 +245,16 @@ Optional authorization can be enabled, by setting `API_TOKEN` environment variab
 
 The web ui will require such token to login as well as report serving route.
 
-If you do not set a token the application will work without authorization.
+For UI it is also recommended to specify `AUTH_SECRET` as jwt token is generated for client side and by default it uses random uuid.
+
+```bash
+# You can generate a new secret on the command line with:
+npm exec auth secret
+# OR
+openssl rand -base64 32
+```
+
+If you do not set a token the application will work without authorization, however jwt token will still be utilized.
 
 ## Storage Options
 
@@ -253,10 +262,17 @@ The Playwright Reports Server uses local file system storage by default. However
 
 ### Local File System Storage
 
-By default, all data is stored in the `/data/` (`/app/data/` in the container). This includes both raw test results and generated reports. When using local storage:
+By default, all data is stored in the `data` folder.
+
+- `npm run start` - `/.next/standalone/data/`
+- `npm run dev` - `/data/`
+- Docker image - `/app/data/`
+
+This includes both raw test results and generated reports. When using local file system:
 
 - Ensure the application has write permissions to the `/data/` directory.
-- For data persistence when using Docker, mount a volume or host directory to `/app/data/`.
+- For data persistence when using Docker image, mount a volume or host directory to `/app/data/`.
+- If you have own Docker setup, please note that by default it will be saved to `.next/standalone/data/` folder, as the executable will be in build resources.
 
 Example Docker run command with a mounted volume:
 

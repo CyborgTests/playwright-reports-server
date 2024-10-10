@@ -16,14 +16,15 @@
   "dependencies": {
     "@nextui-org/react": "^2.4.6",
     "@playwright/test": "1.45.1",
-    "cookies-next": "^4.2.1",
     "envalid": "^8.0.0",
     "framer-motion": "^11.3.31",
     "get-folder-size": "4.0.0",
+    "jsonwebtoken": "^9.0.2",
     "jszip": "^3.10.1",
     "mime": "^4.0.4",
     "next": "14.2.7",
     "minio": "^8.0.1",
+    "next-auth": "^5.0.0-beta.22",
     "next-themes": "^0.3.0",
     "recharts": "^2.12.7",
     "uuid": "^10.0.0"
@@ -31,6 +32,7 @@
   "devDependencies": {
     "@types/get-folder-size": "^3.0.4",
     "@types/jest": "^29.5.12",
+    "@types/jsonwebtoken": "^9.0.7",
     "@types/node": ">=18.17.0",
     "@types/react": "18.3.5",
     "@types/uuid": "^10.0.0",

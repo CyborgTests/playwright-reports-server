@@ -2,15 +2,13 @@
 
 import { Spinner, Button } from '@nextui-org/react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 
 import ReportStatistics from '@/app/components/report-details/report-stats';
 import FileList from '@/app/components/report-details/file-list';
 import useQuery from '@/app/hooks/useQuery';
 import { type ReportHistory } from '@/app/lib/storage';
-import { serveReportRoute } from '@/app/lib/constants';
 import { subtitle, title } from '@/app/components/primitives';
-import { useApiToken } from '@/app/providers/ApiTokenProvider';
-import { setReportAuthCookie } from '@/app/config/cookie';
 import FormattedDate from '@/app/components/date-format';
 
 interface ReportDetailProps {
@@ -18,6 +16,8 @@ interface ReportDetailProps {
 }
 
 function ReportDetail({ params }: Readonly<ReportDetailProps>) {
+  const session = useSession();
+
   const {
     data: report,
     isLoading: isReportLoading,
@@ -28,13 +28,15 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
     data: history,
     isLoading: isHistoryLoading,
     error: historyError,
-  } = useQuery<ReportHistory[]>('/api/report/trend?limit=10');
+  } = useQuery<ReportHistory[]>('/api/report/trend?limit=10', { callback: `/report/${params.id}` });
 
-  const { apiToken } = useApiToken();
-
-  // ensure the report is authenticated when specific test history is opened
-  // otherwise report index page will be loaded
-  setReportAuthCookie(apiToken);
+  if (session.status === 'loading') {
+    return (
+      <div>
+        Loading auth... <Spinner />
+      </div>
+    );
+  }
 
   if (!report && isReportLoading) {
     return (
@@ -72,9 +74,7 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
         <div className="flex flex-col items-center md:w-1/4 max-w-full">
           <ReportStatistics stats={report?.stats} />
           <Link href={report?.reportUrl ?? ''} target="_blank">
-            <Button as="a" color="primary">
-              Open report
-            </Button>
+            <Button color="primary">Open report</Button>
           </Link>
         </div>
         <div className="md:w-3/4 max-w-full">

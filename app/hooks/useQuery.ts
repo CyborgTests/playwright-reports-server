@@ -1,25 +1,24 @@
-import { useState, useEffect, useCallback } from 'react';
+'use client';
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 
-import { useApiToken } from '@/app/providers/ApiTokenProvider';
-
-const useQuery = <ReturnType>(path: string, options?: RequestInit & { dependencies: unknown[] }) => {
+const useQuery = <ReturnType>(
+  path: string,
+  options?: RequestInit & { dependencies?: unknown[]; callback?: string },
+) => {
   const [data, setData] = useState<ReturnType | null>(null);
   const [isLoading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const { apiToken, isClientAuthorized } = useApiToken();
-
+  const session = useSession();
   const router = useRouter();
 
-  const fetchData = useCallback(async () => {
-    // handle missing auth on refetch
-    if (!isClientAuthorized()) {
-      return;
-    }
+  const apiToken = useMemo(() => session?.data?.user?.apiToken, [session]);
 
+  const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-
     try {
       const headers = !!apiToken
         ? {
@@ -46,16 +45,23 @@ const useQuery = <ReturnType>(path: string, options?: RequestInit & { dependenci
     } finally {
       setLoading(false);
     }
-  }, [path, options, ...(options?.dependencies ?? [])]);
+  }, [path, options, apiToken, ...(options?.dependencies ?? [])]);
 
   useEffect(() => {
-    if (!isClientAuthorized()) {
-      router.replace('/login');
+    if (session.status === 'unauthenticated') {
+      const redirectParam = options?.callback ? `?callbackUrl=${encodeURI(options.callback)}` : '';
+
+      router.replace(`/login${redirectParam}`);
 
       return;
     }
+
+    if (session.status === 'loading') {
+      return;
+    }
+
     fetchData();
-  }, []);
+  }, [session.status]);
 
   return { data, isLoading, error, refetch: fetchData };
 };
