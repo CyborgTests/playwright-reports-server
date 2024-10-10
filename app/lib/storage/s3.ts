@@ -4,8 +4,8 @@ import path from 'node:path';
 
 import { type BucketItem, Client } from 'minio';
 
-import { bytesToString } from './format';
-import { REPORTS_FOLDER, TMP_FOLDER, REPORTS_BUCKET, RESULTS_BUCKET } from './constants';
+import { bytesToString, getUniqueProjectsList } from './format';
+import { REPORTS_FOLDER, TMP_FOLDER, REPORTS_BUCKET, RESULTS_BUCKET, REPORTS_PATH } from './constants';
 
 import { serveReportRoute } from '@/app/lib/constants';
 import { generatePlaywrightReport } from '@/app/lib/pw';
@@ -191,7 +191,7 @@ export class S3 {
     const { result, error } = await this.read(targetPath, contentType);
 
     if (error) {
-      console.error(`[s3] failed to read file: ${error.message}`);
+      console.error(`[s3] failed to read file ${targetPath}: ${error.message}`);
       throw new Error(`[s3] failed to read file: ${error.message}`);
     }
 
@@ -283,12 +283,17 @@ export class S3 {
 
         console.log(`[s3] reading report: ${JSON.stringify(file)}`);
 
-        const id = path.basename(path.dirname(file.name));
+        const dir = path.dirname(file.name);
+        const id = path.basename(dir);
+        const parentDir = path.basename(path.dirname(dir));
+
+        const projectName = parentDir === REPORTS_PATH ? '' : parentDir;
 
         reports.push({
           reportID: id,
+          project: projectName,
           createdAt: file.lastModified,
-          reportUrl: `${serveReportRoute}/${id}/index.html`,
+          reportUrl: `${serveReportRoute}/${projectName ? encodeURIComponent(projectName) : ''}/${id}/index.html`,
         });
       });
 
@@ -308,8 +313,8 @@ export class S3 {
     await withError(this.clear(...objects));
   }
 
-  private async getReportObjects(reportId: string): Promise<string[]> {
-    const reportStream = this.client.listObjectsV2(this.bucket, `${REPORTS_BUCKET}/${reportId}`, true);
+  private async getReportObjects(reportsIDs: string[]): Promise<string[]> {
+    const reportStream = this.client.listObjectsV2(this.bucket, REPORTS_BUCKET, true);
 
     const files: string[] = [];
 
@@ -319,7 +324,11 @@ export class S3 {
           return;
         }
 
-        files.push(file.name);
+        const reportID = path.basename(path.dirname(file.name));
+
+        if (reportsIDs.includes(reportID)) {
+          files.push(file.name);
+        }
       });
 
       reportStream.on('error', (err) => {
@@ -333,11 +342,9 @@ export class S3 {
   }
 
   async deleteReports(reportIDs: string[]): Promise<void> {
-    for (const id of reportIDs) {
-      const objects = await this.getReportObjects(id);
+    const objects = await this.getReportObjects(reportIDs);
 
-      await withError(this.clear(...objects));
-    }
+    await withError(this.clear(...objects));
   }
 
   async saveResult(buffer: Buffer, resultDetails: ResultDetails): Promise<{ resultID: UUID; createdAt: string }> {
@@ -375,8 +382,11 @@ export class S3 {
 
       console.log(`[s3] uploading file: ${JSON.stringify(file)}`);
 
+      const projectName = file.path.split(REPORTS_PATH).pop()?.split(reportId).shift();
+
+      console.log(`[s3] project name: ${projectName}`);
       const nestedPath = file.path.split(reportId).pop();
-      const s3Path = `/${REPORTS_BUCKET}/${reportId}/${nestedPath}/${file.name}`;
+      const s3Path = `/${REPORTS_BUCKET}${projectName ?? '/'}${reportId}/${nestedPath}/${file.name}`;
 
       console.log(`[s3] uploading to ${s3Path}`);
 
@@ -395,7 +405,7 @@ export class S3 {
     await withError(fs.rm(REPORTS_FOLDER, { recursive: true, force: true }));
   };
 
-  async generateReport(resultsIds: string[]): Promise<UUID> {
+  async generateReport(resultsIds: string[], project?: string): Promise<UUID> {
     console.log(`[s3] generate report from results: ${JSON.stringify(resultsIds)}`);
     await this.clearTempFolders();
 
@@ -426,7 +436,7 @@ export class S3 {
       }
     }
 
-    const { reportPath, reportId } = await generatePlaywrightReport();
+    const { reportPath, reportId } = await generatePlaywrightReport(project);
 
     console.log(`[s3] report generated: ${reportId} | ${reportPath}`);
 
@@ -434,5 +444,34 @@ export class S3 {
     await this.clearTempFolders();
 
     return reportId;
+  }
+
+  async getProjects(): Promise<string[]> {
+    console.log(`[s3] get projects`);
+
+    const reports = await this.readReports();
+
+    return getUniqueProjectsList(reports);
+  }
+
+  async moveReport(oldPath: string, newPath: string): Promise<void> {
+    console.log(`[s3] move report: ${oldPath} to ${newPath}`);
+
+    const reportPath = path.join(REPORTS_BUCKET, oldPath);
+
+    const objectStream = this.client.listObjectsV2(this.bucket, reportPath, true);
+
+    for await (const obj of objectStream) {
+      if (!obj.name) {
+        return;
+      }
+      const newObjectName = obj.name.replace(oldPath, newPath);
+
+      await this.client.copyObject(this.bucket, newObjectName, `${REPORTS_BUCKET}/${obj.name}`);
+
+      await this.client.removeObject(this.bucket, obj.name);
+    }
+
+    console.log(`Folder renamed from ${oldPath} to ${newPath}`);
   }
 }

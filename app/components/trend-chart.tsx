@@ -2,6 +2,8 @@
 import { Area, AreaChart, XAxis } from 'recharts';
 import Link from 'next/link';
 
+import { defaultProjectName } from '../lib/constants';
+
 import { type ReportHistory } from '@/app/lib/storage';
 import {
   type ChartConfig,
@@ -36,10 +38,13 @@ interface WithTotal {
 }
 
 interface TrendChartProps {
-  reports: ReportHistory[];
+  reportHistory: ReportHistory[];
+  project?: string;
 }
 
-export function TrendChart({ reports }: Readonly<TrendChartProps>) {
+export function TrendChart({ reportHistory, project }: Readonly<TrendChartProps>) {
+  const reports = project === defaultProjectName ? reportHistory : reportHistory.filter((r) => r.project === project);
+
   const getPercentage = (value: number, total: number) => (value / total) * 100;
 
   const openInNewTab = (url: string) => {
@@ -62,98 +67,102 @@ export function TrendChart({ reports }: Readonly<TrendChartProps>) {
 
   return (
     <ChartContainer config={chartConfig}>
-      <AreaChart
-        accessibilityLayer
-        data={chartData.reverse()}
-        margin={{
-          left: 12,
-          right: 12,
-          top: 12,
-        }}
-        onClick={(e) => {
-          const url = e.activePayload?.at(0)?.payload?.reportUrl;
-
-          url && openInNewTab(url);
-        }}
-      >
-        <XAxis
-          axisLine={false}
-          dataKey="date"
-          tickFormatter={(value: number) => {
-            return new Date(value).toLocaleDateString(undefined, {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric',
-            });
+      {reports.length <= 1 ? (
+        <span>Not enough data for trend chart</span>
+      ) : (
+        <AreaChart
+          accessibilityLayer
+          data={chartData.reverse()}
+          margin={{
+            left: 12,
+            right: 12,
+            top: 12,
           }}
-          tickLine={false}
-          tickMargin={10}
-        />
-        <ChartTooltip
-          content={
-            <ChartTooltipContent
-              hideLabel
-              className="w-[250px]"
-              formatter={(value, name, item, index) => (
-                <>
-                  <div
-                    className="h-2.5 w-2.5 shrink-0 rounded-[2px] bg-[--color-bg]"
-                    style={
-                      {
-                        '--color-bg': `var(--color-${name})`,
-                      } as React.CSSProperties
-                    }
-                  />
-                  {chartConfig[name as keyof typeof chartConfig]?.label || name}
-                  <div className="ml-auto flex items-baseline gap-0.5 font-mono font-medium tabular-nums text-foreground">
-                    {
-                      item.payload[
-                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                        `${name}Count`
-                      ]
-                    }{' '}
-                    ({Math.round(value as number)}%)
-                  </div>
-                  {/* Add this after the last item */}
-                  {index === 3 && (
-                    <>
-                      <Link href={'/'} />
-                      <div className="mt-1.5 flex basis-full items-center border-t pt-1.5 text-xs font-medium text-foreground">
-                        Total
-                        <div className="ml-auto flex items-baseline gap-0.5 font-mono font-medium tabular-nums text-foreground">
-                          {(item.payload as WithTotal).total}
-                          <span className="font-normal text-muted-foreground">tests</span>
-                        </div>
-                      </div>
-                      <div className="mt-1.5 flex basis-full items-center border-t pt-1.5 text-xs font-medium text-foreground">
-                        Created At
-                        <div className="ml-auto flex items-baseline gap-0.5 font-mono font-medium tabular-nums text-foreground">
-                          {new Date(
-                            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
-                            item.payload.date,
-                          ).toLocaleString()}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-            />
-          }
-          cursor={true}
-        />
-        {Object.keys(chartConfig).map((key) => (
-          <Area
-            key={key}
-            dataKey={key}
-            fill={`var(--color-${key})`}
-            fillOpacity={0.7}
-            stackId="single"
-            stroke={`var(--color-${key})`}
+          onClick={(e) => {
+            const url = e.activePayload?.at(0)?.payload?.reportUrl;
+
+            url && openInNewTab(url);
+          }}
+        >
+          <XAxis
+            axisLine={false}
+            dataKey="date"
+            tickFormatter={(value: number) => {
+              return new Date(value).toLocaleDateString(undefined, {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+              });
+            }}
+            tickLine={false}
+            tickMargin={10}
           />
-        ))}
-        <ChartLegend content={<ChartLegendContent />} />
-      </AreaChart>
+          <ChartTooltip
+            content={
+              <ChartTooltipContent
+                hideLabel
+                className="w-[250px]"
+                formatter={(value, name, item, index) => (
+                  <>
+                    <div
+                      className="h-2.5 w-2.5 shrink-0 rounded-[2px] bg-[--color-bg]"
+                      style={
+                        {
+                          '--color-bg': `var(--color-${name})`,
+                        } as React.CSSProperties
+                      }
+                    />
+                    {chartConfig[name as keyof typeof chartConfig]?.label || name}
+                    <div className="ml-auto flex items-baseline gap-0.5 font-mono font-medium tabular-nums text-foreground">
+                      {
+                        item.payload[
+                          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                          `${name}Count`
+                        ]
+                      }{' '}
+                      ({Math.round(value as number)}%)
+                    </div>
+                    {/* Add this after the last item */}
+                    {index === 3 && (
+                      <>
+                        <Link href={'/'} />
+                        <div className="mt-1.5 flex basis-full items-center border-t pt-1.5 text-xs font-medium text-foreground">
+                          Total
+                          <div className="ml-auto flex items-baseline gap-0.5 font-mono font-medium tabular-nums text-foreground">
+                            {(item.payload as WithTotal).total}
+                            <span className="font-normal text-muted-foreground">tests</span>
+                          </div>
+                        </div>
+                        <div className="mt-1.5 flex basis-full items-center border-t pt-1.5 text-xs font-medium text-foreground">
+                          Created At
+                          <div className="ml-auto flex items-baseline gap-0.5 font-mono font-medium tabular-nums text-foreground">
+                            {new Date(
+                              // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+                              item.payload.date,
+                            ).toLocaleString()}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              />
+            }
+            cursor={true}
+          />
+          {Object.keys(chartConfig).map((key) => (
+            <Area
+              key={key}
+              dataKey={key}
+              fill={`var(--color-${key})`}
+              fillOpacity={0.7}
+              stackId="single"
+              stroke={`var(--color-${key})`}
+            />
+          ))}
+          <ChartLegend content={<ChartLegendContent />} />
+        </AreaChart>
+      )}
     </ChartContainer>
   );
 }

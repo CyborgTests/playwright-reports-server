@@ -1,7 +1,7 @@
 import path from 'path';
 
 import mime from 'mime';
-import { type NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 import { withError } from '@/app/lib/withError';
 import { storage } from '@/app/lib/storage';
@@ -19,11 +19,9 @@ export async function GET(
     params: ReportParams;
   },
 ) {
-  const { reportId, filePath } = params;
+  const { filePath } = params;
 
-  const file = Array.isArray(filePath) ? filePath.join('/') : (filePath ?? '');
-
-  const targetPath = path.join(reportId, file);
+  const targetPath = Array.isArray(filePath) ? filePath.join('/') : (filePath ?? '');
 
   const contentType = mime.getType(path.basename(targetPath));
 

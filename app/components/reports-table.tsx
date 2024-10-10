@@ -16,6 +16,8 @@ import {
 } from '@nextui-org/react';
 import Link from 'next/link';
 
+import { defaultProjectName } from '../lib/constants';
+
 import useQuery from '@/app/hooks/useQuery';
 import ErrorMessage from '@/app/components/error-message';
 import DeleteReportButton from '@/app/components/delete-report-button';
@@ -25,24 +27,32 @@ import { type Report } from '@/app/lib/storage';
 
 const columns = [
   { name: 'ID', uid: 'reportID' },
+  { name: 'Project', uid: 'project' },
   { name: 'Created At', uid: 'createdAt' },
   { name: 'Actions', uid: 'actions' },
 ];
 
 interface ReportsTableProps {
+  project: string;
   onChange: () => void;
 }
 
-export default function ReportsTable({ onChange }: ReportsTableProps) {
+export default function ReportsTable({ project, onChange }: ReportsTableProps) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const { data: reports, error, isLoading, refetch } = useQuery<Report[]>('/api/report/list');
+  const { data: reportList, error, isLoading, refetch } = useQuery<Report[]>('/api/report/list');
+
+  const reports = React.useMemo(() => {
+    return (reportList ?? []).filter((report) =>
+      project === defaultProjectName ? report : report.project === project,
+    );
+  }, [reportList?.length, project]);
 
   const getCurrentPage = () => {
     const startIndex = (page - 1) * pageSize;
     const endIndex = startIndex + pageSize;
 
-    const view = reports ? reports.slice(startIndex, endIndex) : [];
+    const view = reports.slice(startIndex, endIndex);
 
     return view;
   };
@@ -103,7 +113,12 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
           </TableColumn>
         )}
       </TableHeader>
-      <TableBody emptyContent="No reports." isLoading={isLoading} items={viewReports ?? []} loadingContent={<Spinner />}>
+      <TableBody
+        emptyContent="No reports."
+        isLoading={isLoading}
+        items={viewReports ?? []}
+        loadingContent={<Spinner />}
+      >
         {(item) => (
           <TableRow key={item.reportID}>
             <TableCell className="w-1/2">
@@ -113,6 +128,7 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
                 </div>
               </Link>
             </TableCell>
+            <TableCell className="w-1/4">{item.project}</TableCell>
             <TableCell className="w-1/4">
               <FormattedDate date={item.createdAt} />
             </TableCell>

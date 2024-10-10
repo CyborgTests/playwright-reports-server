@@ -13,7 +13,7 @@ export async function GET() {
 
   const latestReportsInfo = await Promise.all(
     latestReports.map(async (report) => {
-      const html = await storage.readFile(path.join(report.reportID, 'index.html'), 'text/html');
+      const html = await storage.readFile(path.join(report.project ?? '', report.reportID, 'index.html'), 'text/html');
       const info = await parse(html as string);
 
       return {

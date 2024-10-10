@@ -71,7 +71,7 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
       <div className="flex md:flex-row flex-col gap-2">
         <div className="flex flex-col items-center md:w-1/4 max-w-full">
           <ReportStatistics stats={report?.stats} />
-          <Link href={`${serveReportRoute}/${params.id}/index.html`} target="_blank">
+          <Link href={report?.reportUrl ?? ''} target="_blank">
             <Button as="a" color="primary">
               Open report
             </Button>

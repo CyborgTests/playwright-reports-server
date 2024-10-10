@@ -16,7 +16,9 @@ export interface Storage {
     resultID: UUID;
     createdAt: string;
   }>;
-  generateReport: (resultsIds: string[]) => Promise<UUID>;
+  generateReport: (resultsIds: string[], project?: string) => Promise<UUID>;
+  getProjects: () => Promise<string[]>;
+  moveReport: (oldPath: string, newPath: string) => Promise<void>;
 }
 
 // For custom user fields
@@ -27,9 +29,10 @@ export interface ResultDetails {
 export type Result = {
   resultID: UUID;
   createdAt: string;
+  project: string;
 } & ResultDetails;
 
-export type Report = { reportID: string; reportUrl: string; createdAt: Date };
+export type Report = { reportID: string; project: string; reportUrl: string; createdAt: Date };
 
 export type ReportHistory = Report & ReportInfo;
 
