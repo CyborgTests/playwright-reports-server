@@ -49,7 +49,7 @@ const useQuery = <ReturnType>(
 
   useEffect(() => {
     if (session.status === 'unauthenticated') {
-      const redirectParam = options?.callback ? `?callbackUrl=${encodeURI(options.callback)}` : '';
+      const redirectParam = options?.callback ? `?callbackUrl=${encodeURIComponent(options.callback)}` : '';
 
       router.replace(`/login${redirectParam}`);
 
