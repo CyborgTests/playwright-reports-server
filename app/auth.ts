@@ -9,6 +9,10 @@ const useAuth = !!process.env.API_TOKEN;
 // strictly recommended to specify via env var
 const secret = process.env.AUTH_SECRET ?? crypto.randomUUID();
 
+// session expiration for api token auth
+const expirationHours = process.env.UI_AUTH_EXPIRE_HOURS ? parseInt(process.env.UI_AUTH_EXPIRE_HOURS) : 2;
+const expirationSeconds = expirationHours * 60 * 60;
+
 export const authConfig: NextAuthConfig = {
   secret,
   providers: [
@@ -19,11 +23,7 @@ export const authConfig: NextAuthConfig = {
       },
       async authorize(credentials): Promise<User | null> {
         if (credentials?.apiToken === process.env.API_TOKEN) {
-          const expiration = process.env.UI_AUTH_EXPIRE_HOURS ? parseInt(process.env.UI_AUTH_EXPIRE_HOURS) : 2;
-
-          const token = jwt.sign({ authorized: true }, secret, {
-            expiresIn: `${expiration}h`,
-          });
+          const token = jwt.sign({ authorized: true }, secret);
 
           return {
             apiToken: credentials.apiToken as string,
@@ -51,6 +51,10 @@ export const authConfig: NextAuthConfig = {
       return session;
     },
   },
+  session: {
+    strategy: 'jwt',
+    maxAge: expirationSeconds,
+  },
   trustHost: true,
   pages: {
     signIn: '/login',
@@ -58,9 +62,7 @@ export const authConfig: NextAuthConfig = {
 };
 
 const getJwtStubToken = () => {
-  return jwt.sign({ authorized: true }, secret, {
-    expiresIn: '2h',
-  });
+  return jwt.sign({ authorized: true }, secret);
 };
 
 const noAuth = {
@@ -87,6 +89,10 @@ const noAuth = {
     },
   },
   trustHost: true,
+  session: {
+    strategy: 'jwt',
+    maxAge: expirationSeconds,
+  },
   secret,
 } satisfies NextAuthConfig;
 
