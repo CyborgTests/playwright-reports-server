@@ -1,6 +1,8 @@
 'use client';
 import { useLayoutEffect, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { useSession } from 'next-auth/react';
+import { Spinner } from '@nextui-org/react';
 
 import useQuery from '@/app/hooks/useQuery';
 import { type ServerDataInfo } from '@/app/lib/storage';
@@ -18,13 +20,23 @@ const persistSelectedTab = (tab: string) => {
 };
 
 export default function DashboardPage() {
+  const { status } = useSession();
+  const authIsLoading = status === 'loading';
+
   const { data: info, error, refetch } = useQuery<ServerDataInfo>('/api/info');
   const [selectedTab, setSelectedTab] = useState<string>(getPersistedSelectedTab() ?? '');
   const [refreshId, setRefreshId] = useState<string>(uuidv4());
 
   useLayoutEffect(() => {
+    if (authIsLoading) {
+      return;
+    }
     refetch();
   }, [refreshId]);
+
+  if (authIsLoading) {
+    return <Spinner />;
+  }
 
   const updateRefreshId = () => {
     setRefreshId(uuidv4());

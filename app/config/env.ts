@@ -2,7 +2,7 @@ import { cleanEnv, str, num } from 'envalid';
 
 export const env = cleanEnv(process.env, {
   API_TOKEN: str({ desc: 'API token for authorization', default: undefined }),
-  UI_AUTH_EXPIRE_HOURS: str({ desc: 'How much hours are allowed to keep auth session valid', default: '12' }),
+  UI_AUTH_EXPIRE_HOURS: str({ desc: 'How much hours are allowed to keep auth session valid', default: '2' }),
   DATA_STORAGE: str({ desc: 'Where to store data', default: 'fs' }),
   S3_ENDPOINT: str({ desc: 'S3 endpoint', default: undefined }),
   S3_ACCESS_KEY: str({ desc: 'S3 access key', default: undefined }),

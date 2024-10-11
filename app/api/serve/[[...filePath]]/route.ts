@@ -1,10 +1,12 @@
 import path from 'path';
 
 import mime from 'mime';
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
+import { redirect } from 'next/navigation';
 
 import { withError } from '@/app/lib/withError';
 import { storage } from '@/app/lib/storage';
+import { auth } from '@/app/auth';
 
 interface ReportParams {
   reportId: string;
@@ -19,9 +21,17 @@ export async function GET(
     params: ReportParams;
   },
 ) {
+  const session = await auth();
+
   const { filePath } = params;
 
-  const targetPath = Array.isArray(filePath) ? filePath.join('/') : (filePath ?? '');
+  const uriPath = Array.isArray(filePath) ? filePath.join('/') : (filePath ?? '');
+
+  const targetPath = decodeURI(uriPath);
+
+  if (!session?.user?.jwtToken) {
+    redirect(`/login?callbackUrl=${encodeURI(req.nextUrl.pathname)}`);
+  }
 
   const contentType = mime.getType(path.basename(targetPath));
 
@@ -38,6 +48,7 @@ export async function GET(
   const headers = {
     headers: {
       'Content-Type': contentType ?? 'application/octet-stream',
+      Authorization: `Bearer ${session?.user?.apiToken}`,
     },
   };
 
