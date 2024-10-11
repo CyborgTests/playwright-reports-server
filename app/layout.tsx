@@ -8,6 +8,7 @@ import { Providers } from './providers';
 import { siteConfig } from '@/app/config/site';
 import { fontSans } from '@/app/config/fonts';
 import { Navbar } from '@/app/components/navbar';
+import { env } from '@/app/config/env';
 
 export const metadata: Metadata = {
   title: {
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
   },
   description: siteConfig.description,
   icons: {
-    icon: '/favicon.ico',
+    icon: env.APP_FAVICON_PATH ?? '/favicon.ico',
   },
 };
 
@@ -39,7 +40,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <Navbar />
             <main className="container mx-auto max-w-7xl pt-16 px-6 flex-grow">{children}</main>
             <footer className="w-full flex items-center justify-center py-3">
-              <Link className="flex items-center gap-1 text-current" href="/" title="Home Page">
+              <Link
+                className="flex items-center gap-1 text-current"
+                href="https://github.com/CyborgTests/playwright-reports-server"
+                target="_blank"
+                title="Source code link"
+              >
                 <span className="text-default-600">Powered by</span>
                 <p className="text-primary">CyborgTests</p>
               </Link>
