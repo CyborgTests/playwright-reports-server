@@ -33,8 +33,8 @@ export async function GET(
     return NextResponse.next();
   }
 
-  const imageDataPath = path.join(process.cwd(), DATA_FOLDER, targetPath);
-  const imagePublicPath = path.join(process.cwd(), 'public', targetPath);
+  const imageDataPath = path.join(DATA_FOLDER, targetPath);
+  const imagePublicPath = path.join('public', targetPath);
 
   const { error: dataAccessError } = await withError(fs.access(imageDataPath));
 
