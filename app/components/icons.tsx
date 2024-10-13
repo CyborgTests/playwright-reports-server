@@ -73,9 +73,9 @@ export const SunFilledIcon = ({ size = 48, width, height, ...props }: IconSvgPro
   </svg>
 );
 
-export const LinkIcon: React.FC<IconSvgProps> = ({ size = 24, width, height, ...props }) => {
+export const LinkIcon: React.FC<IconSvgProps> = ({ width, height, ...props }) => {
   return (
-    <svg fill="none" height={size || height} viewBox="0 0 24 24" width={size || width} {...props}>
+    <svg fill="none" height={height ?? 18} viewBox="0 0 24 24" width={width ?? 18} {...props}>
       <path
         d="M15.197 3.35462C16.8703 1.67483 19.4476 1.53865 20.9536 3.05046C22.4596 4.56228 22.3239 7.14956 20.6506 8.82935L18.2268 11.2626M10.0464 14C8.54044 12.4882 8.67609 9.90087 10.3494 8.22108L12.5 6.06212"
         stroke="currentColor"

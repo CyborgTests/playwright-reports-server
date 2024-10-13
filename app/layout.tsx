@@ -4,40 +4,46 @@ import { Link } from '@nextui-org/link';
 import clsx from 'clsx';
 
 import { Providers } from './providers';
+import { getConfigWithError } from './config/file';
 
 import { siteConfig } from '@/app/config/site';
 import { fontSans } from '@/app/config/fonts';
 import { Navbar } from '@/app/components/navbar';
-import { env } from '@/app/config/env';
 
-export const metadata: Metadata = {
-  title: {
-    default: siteConfig.name,
-    template: `%s - ${siteConfig.name}`,
-  },
-  description: siteConfig.description,
-  icons: {
-    icon: env.APP_FAVICON_PATH ?? '/favicon.ico',
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { result: config } = await getConfigWithError();
 
-export const viewport: Viewport = {
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: 'white' },
-    { media: '(prefers-color-scheme: dark)', color: 'black' },
-  ],
-};
+  return {
+    title: {
+      default: siteConfig.name,
+      template: `%s - ${siteConfig.name}`,
+    },
+    description: siteConfig.description,
+    icons: {
+      icon: config?.faviconPath ?? '/favicon.ico',
+    },
+  };
+}
 
-export const runtime = 'nodejs';
+export async function generateViewport(): Promise<Viewport> {
+  return {
+    themeColor: [
+      { media: '(prefers-color-scheme: light)', color: 'white' },
+      { media: '(prefers-color-scheme: dark)', color: 'black' },
+    ],
+  };
+}
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const { result: config } = await getConfigWithError();
+
   return (
     <html suppressHydrationWarning lang="en">
       <head />
       <body className={clsx('min-h-screen bg-background font-sans antialiased', fontSans.variable)}>
         <Providers attribute="class" defaultTheme="dark">
           <div className="relative flex flex-col h-screen">
-            <Navbar />
+            <Navbar config={config!} />
             <main className="container mx-auto max-w-7xl pt-16 px-6 flex-grow">{children}</main>
             <footer className="w-full flex items-center justify-center py-3">
               <Link
