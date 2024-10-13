@@ -1,10 +1,8 @@
 import fs from 'node:fs/promises';
-import path from 'node:path';
 
-import { withError } from '../lib/withError';
-import { SiteWhiteLabelConfig } from '../types';
-
-import { defaultLinks } from './site';
+import { withError } from '@/app/lib/withError';
+import { SiteWhiteLabelConfig } from '@/app/types';
+import { defaultLinks } from '@/app/config/site';
 
 export const defaultConfig: SiteWhiteLabelConfig = {
   title: 'Cyborg Tests',
@@ -28,24 +26,6 @@ const isConfigValid = (config: any): config is SiteWhiteLabelConfig => {
   );
 };
 
-// we need to check if logo or favicon images are available in public folder
-// if not - copy from persisted data folder
-const copyToPublicIfMissing = async (configPath: string) => {
-  const fileName = path.basename(configPath);
-  const publicPath = path.join('public', fileName);
-  const { error } = await withError(fs.access(publicPath));
-
-  const missingFile = error && error.message.includes('no such file');
-
-  if (!missingFile) {
-    return;
-  }
-
-  const persistancePath = path.join('data', fileName);
-
-  await withError(fs.copyFile(persistancePath, publicPath));
-};
-
 export const getConfigWithError = async (): Promise<{ result?: SiteWhiteLabelConfig; error: Error | null }> => {
   const { error: accessConfigError } = await withError(fs.access(configPath));
 
@@ -63,11 +43,6 @@ export const getConfigWithError = async (): Promise<{ result?: SiteWhiteLabelCon
     const parsed = JSON.parse(result);
 
     const isValid = isConfigValid(parsed);
-
-    if (isValid) {
-      await copyToPublicIfMissing(parsed.logoPath);
-      await copyToPublicIfMissing(parsed.faviconPath);
-    }
 
     return isValid ? { result: parsed, error: null } : { error: new Error('invalid config') };
   } catch (e) {

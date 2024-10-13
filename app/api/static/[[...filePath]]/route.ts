@@ -4,6 +4,8 @@ import fs from 'node:fs/promises';
 import mime from 'mime';
 import { type NextRequest, NextResponse } from 'next/server';
 
+import { DATA_FOLDER } from '@/app/lib/storage/constants';
+
 export const dynamic = 'force-dynamic'; // defaults to auto
 
 interface ServeParams {
@@ -30,7 +32,7 @@ export async function GET(
     return NextResponse.next();
   }
 
-  const imagePath = path.join(process.cwd(), 'public', targetPath);
+  const imagePath = path.join(process.cwd(), DATA_FOLDER, targetPath);
 
   const imageBuffer = await fs.readFile(imagePath);
 

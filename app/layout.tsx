@@ -4,9 +4,9 @@ import { Link } from '@nextui-org/link';
 import clsx from 'clsx';
 
 import { Providers } from './providers';
-import { getConfigWithError } from './config/file';
 
 import { siteConfig } from '@/app/config/site';
+import { getConfigWithError } from '@/app/config/file';
 import { fontSans } from '@/app/config/fonts';
 import { Navbar } from '@/app/components/navbar';
 

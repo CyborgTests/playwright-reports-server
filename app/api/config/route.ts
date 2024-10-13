@@ -9,12 +9,12 @@ import { DATA_FOLDER } from '@/app/lib/storage/constants';
 
 export const dynamic = 'force-dynamic'; // defaults to auto
 
-const saveFile = async (file: File, subfolder: string) => {
+const saveFile = async (file: File) => {
   const arrayBuffer = await file.arrayBuffer();
 
   const buffer = Buffer.from(arrayBuffer);
 
-  await fs.writeFile(path.join(subfolder, file.name), buffer, { encoding: 'binary' });
+  await fs.writeFile(path.join(DATA_FOLDER, file.name), buffer, { encoding: 'binary' });
 };
 
 const parseHeaderLinks = async (headerLinks: string) => {
@@ -35,28 +35,20 @@ export async function PATCH(request: Request) {
   const logo = formData.get('logo') as File;
 
   if (logo) {
-    const { error: logoError } = await withError(saveFile(logo, DATA_FOLDER));
-    const { error: logoPublicError } = await withError(saveFile(logo, 'public'));
+    const { error: logoError } = await withError(saveFile(logo));
 
-    if (logoError ?? logoPublicError) {
-      return Response.json(
-        { error: `failed to save logo: ${logoError?.message ?? logoPublicError?.message}` },
-        { status: 500 },
-      );
+    if (logoError) {
+      return Response.json({ error: `failed to save logo: ${logoError?.message}` }, { status: 500 });
     }
   }
 
   const favicon = formData.get('favicon') as File;
 
   if (favicon) {
-    const { error: faviconError } = await withError(saveFile(favicon, DATA_FOLDER));
-    const { error: faviconPublicError } = await withError(saveFile(favicon, 'public'));
+    const { error: faviconError } = await withError(saveFile(favicon));
 
-    if (faviconError ?? faviconPublicError) {
-      return Response.json(
-        { error: `failed to save favicon: ${faviconError?.message ?? faviconPublicError?.message}` },
-        { status: 500 },
-      );
+    if (faviconError) {
+      return Response.json({ error: `failed to save favicon: ${faviconError?.message}` }, { status: 500 });
     }
   }
 
