@@ -346,23 +346,24 @@ curl --location --request PATCH 'localhost:3000/api/config' \
 ```
 
 ### Config File
+
 - is saved to `/data/` folder, so it should be persisted to keep your changes be passed to the next build
 - example:
   ```json
-    {
-      "title": "Custom title",
-      "headerLinks": {
-          "someLink": "https://example.com",
-          "github": "https://github.com/YourName",
-      },
-      "logoPath": "/logo.svg",
-      "faviconPath": "/favicon.ico"
-    }
+  {
+    "title": "Custom title",
+    "headerLinks": {
+      "someLink": "https://example.com",
+      "github": "https://github.com/YourName"
+    },
+    "logoPath": "/logo.svg",
+    "faviconPath": "/favicon.ico"
+  }
   ```
 - as an alternative you can manually prepare images and a `config.json` in `/data/` folder
 
 ### Header links
+
 - is an object, where key is a name of the link and value is the external url
 - currently we have logo for `telegram`, `github` and `discord`
 - we will use specific logo for a link name if we have it, otherwise there will be a generic link icon with a link name
-
