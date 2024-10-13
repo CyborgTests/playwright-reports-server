@@ -96,7 +96,7 @@ export async function PATCH(request: Request) {
     return Response.json({ error: `failed to save config: ${saveConfigError.message}` }, { status: 500 });
   }
 
-  revalidatePath('/');
+  revalidatePath('/', 'layout');
 
   return Response.json({ message: 'config saved' });
 }
