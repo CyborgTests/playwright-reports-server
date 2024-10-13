@@ -97,6 +97,7 @@ export async function PATCH(request: Request) {
   }
 
   revalidatePath('/', 'layout');
+  revalidatePath('/login', 'layout');
 
   return Response.json({ message: 'config saved' });
 }
