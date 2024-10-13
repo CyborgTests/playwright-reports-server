@@ -5,6 +5,7 @@ import mime from 'mime';
 import { type NextRequest, NextResponse } from 'next/server';
 
 import { DATA_FOLDER } from '@/app/lib/storage/constants';
+import { withError } from '@/app/lib/withError';
 
 export const dynamic = 'force-dynamic'; // defaults to auto
 
@@ -32,7 +33,12 @@ export async function GET(
     return NextResponse.next();
   }
 
-  const imagePath = path.join(process.cwd(), DATA_FOLDER, targetPath);
+  const imageDataPath = path.join(process.cwd(), DATA_FOLDER, targetPath);
+  const imagePublicPath = path.join(process.cwd(), 'public', targetPath);
+
+  const { error: dataAccessError } = await withError(fs.access(imageDataPath));
+
+  const imagePath = dataAccessError ? imagePublicPath : imageDataPath;
 
   const imageBuffer = await fs.readFile(imagePath);
 
