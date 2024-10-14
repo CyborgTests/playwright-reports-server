@@ -1,8 +1,10 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
 
 import { withError } from '@/app/lib/withError';
 import { SiteWhiteLabelConfig } from '@/app/types';
 import { defaultLinks } from '@/app/config/site';
+import { DATA_PATH } from '@/app/lib/storage/constants';
 
 export const defaultConfig: SiteWhiteLabelConfig = {
   title: 'Cyborg Tests',
@@ -11,7 +13,7 @@ export const defaultConfig: SiteWhiteLabelConfig = {
   faviconPath: '/favicon.ico',
 };
 
-const configPath = './data/config.json';
+const configPath = path.join(DATA_PATH, 'config.json');
 
 export const noConfigErr = 'no config';
 
