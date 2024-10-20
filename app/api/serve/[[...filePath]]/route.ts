@@ -21,6 +21,9 @@ export async function GET(
     params: ReportParams;
   },
 ) {
+  // is not protected by the middleware
+  // as we want to have callbackUrl in the query
+
   const session = await auth();
 
   const { filePath } = params;

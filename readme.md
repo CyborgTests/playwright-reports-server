@@ -82,13 +82,13 @@ Response example:
     "reportID": "8e9af87d-1d10-4729-aefd-3e92ee64d06c",
     "createdAt": "2024-05-06T16:52:45.017Z",
     "project": "regression",
-    "reportUrl": "/data/reports/8e9af87d-1d10-4729-aefd-3e92ee64d06c/index.html"
+    "reportUrl": "/api/serve/regression/8e9af87d-1d10-4729-aefd-3e92ee64d06c/index.html"
   },
   {
     "reportID": "8fe427ed-783c-4fb9-aacc-ba6fbc5f5667",
     "createdAt": "2024-05-06T16:59:38.814Z",
     "project": "smoke",
-    "reportUrl": "/data/reports/8fe427ed-783c-4fb9-aacc-ba6fbc5f5667/index.html"
+    "reportUrl": "/api/serve/smoke/8fe427ed-783c-4fb9-aacc-ba6fbc5f5667/index.html"
   }
 ]
 ```
@@ -140,7 +140,7 @@ Response example:
 {
   "project": "regression",
   "reportId": "8e9af87d-1d10-4729-aefd-3e92ee64d06c",
-  "reportUrl": "/data/reports/8e9af87d-1d10-4729-aefd-3e92ee64d06c/index.html"
+  "reportUrl": "/api/serve/regression/8e9af87d-1d10-4729-aefd-3e92ee64d06c/index.html"
 }
 ```
 
