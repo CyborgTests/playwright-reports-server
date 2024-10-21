@@ -24,6 +24,7 @@ Check out the live demo: [familiar-alyss-alex-hot-6926ec9c.koyeb.app](https://fa
   - [Local File System](#local-file-system-storage)
   - [S3-Compatible](#s3-compatible-object-storage)
 - [Docker Usage](#docker-usage)
+- [UI White-label](#ui-white-label)
 
 ## Getting Started
 
@@ -326,3 +327,43 @@ docker run -p 3000:3000 \
   -e S3_SECRET_ACCESS_KEY="<your-secret-key>" \
   ghcr.io/cyborgtests/playwright-reports-server:latest
 ```
+
+## UI White-label
+
+There is an option to customize application UI logo, favicon, title and header links list.
+
+### API
+
+Patch endpoint that accepts form-data request body to update the configuration:
+
+```sh
+curl --location --request PATCH 'localhost:3000/api/config' \
+  --header 'Authorization: YOUR_TOKEN' \
+  --form 'title="YOUR_TITLE"' \
+  --form 'logo=@"PATH_TO_YOUR_LOGO"' \
+  --form 'favicon=@"PATH_TO_YOUR_FAVICON"' \
+  --form 'headerLinks="{\"someLink\": \"https://example.com\", \"github\": \"https://github.com/CyborgTests\"}"'
+```
+
+### Config File
+
+- is saved to `/data/` folder, so it should be persisted to keep your changes be passed to the next build
+- example:
+  ```json
+  {
+    "title": "Custom title",
+    "headerLinks": {
+      "someLink": "https://example.com",
+      "github": "https://github.com/YourName"
+    },
+    "logoPath": "/logo.svg",
+    "faviconPath": "/favicon.ico"
+  }
+  ```
+- as an alternative you can manually prepare images and a `config.json` in `/data/` folder
+
+### Header links
+
+- is an object, where key is a name of the link and value is the external url
+- currently we have logo for `telegram`, `github` and `discord`
+- we will use specific logo for a link name if we have it, otherwise there will be a generic link icon with a link name
