@@ -152,7 +152,7 @@ export class S3 implements Storage {
           resultCount += 1;
         }
 
-        if (obj.name?.endsWith('index.html') && !obj.name.includes('trace')) {
+        if (obj.name?.endsWith('index.html') && !obj.name.includes('/trace/index.html')) {
           indexCount += 1;
         }
 
