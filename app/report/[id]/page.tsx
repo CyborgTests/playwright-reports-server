@@ -28,7 +28,9 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
     data: history,
     isLoading: isHistoryLoading,
     error: historyError,
-  } = useQuery<ReportHistory[]>('/api/report/trend?limit=10', { callback: `/report/${params.id}` });
+  } = useQuery<ReportHistory[]>(`/api/report/trend?limit=10&project=${report?.project ?? ''}`, {
+    callback: `/report/${params.id}`,
+  });
 
   if (session.status === 'loading') {
     return (

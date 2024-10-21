@@ -17,7 +17,7 @@ import {
 import { withQueryParams } from '@/app/lib/network';
 import { defaultProjectName } from '@/app/lib/constants';
 import TablePaginationOptions from '@/app/components/table-pagination-options';
-import useQuery from '@/app/hooks/useQuery';
+import useMutation from '@/app/hooks/useMutation';
 import ErrorMessage from '@/app/components/error-message';
 import FormattedDate from '@/app/components/date-format';
 import { ReadResultsOutput, type Result } from '@/app/lib/storage';
@@ -46,32 +46,37 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: ResultsT
   const [project, setProject] = useState(defaultProjectName);
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(20);
+
   const getQueryParams = () => ({
     limit: rowsPerPage.toString(),
     offset: ((page - 1) * rowsPerPage).toString(),
     project,
   });
-  const {
-    data: resultsResponse,
-    error,
-    isLoading,
-    refetch,
-  } = useQuery<ReadResultsOutput>(withQueryParams(resultListEndpoint, getQueryParams()));
+
+  const { isLoading, error, mutate } = useMutation(withQueryParams(resultListEndpoint, getQueryParams()), {
+    method: 'GET',
+  });
+
+  const fetchResults = async () => {
+    mutate(null, {
+      path: withQueryParams(resultListEndpoint, getQueryParams()),
+    }).then((res) => setResultsResponse(res));
+  };
+
+  const [resultsResponse, setResultsResponse] = useState<ReadResultsOutput>({ results: [], total: 0 });
 
   useEffect(() => {
     if (isLoading) {
       return;
     }
-    refetch({
-      path: withQueryParams(resultListEndpoint, getQueryParams()),
-    });
+    fetchResults();
   }, [rowsPerPage, project, page]);
 
   const { results, total } = resultsResponse ?? {};
 
   const shouldRefetch = () => {
     onDeleted?.();
-    refetch();
+    fetchResults();
   };
 
   const onPageChange = useCallback(

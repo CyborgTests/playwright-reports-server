@@ -11,7 +11,7 @@ const useMutation = (url: string, options: RequestInit) => {
   const apiToken = session?.data?.user?.apiToken;
 
   const mutate = useCallback(
-    async (body?: unknown) => {
+    async (body?: unknown, opts?: { path: string }) => {
       setLoading(true);
       setError(null);
 
@@ -22,7 +22,7 @@ const useMutation = (url: string, options: RequestInit) => {
             }
           : undefined;
 
-        const response = await fetch(url, {
+        const response = await fetch(opts?.path ?? url, {
           headers,
           body: body ? JSON.stringify(body) : undefined,
           method: options?.method ?? 'GET',

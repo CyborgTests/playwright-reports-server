@@ -310,10 +310,6 @@ export class S3 implements Storage {
           reportUrl: `${serveReportRoute}/${projectName ? encodeURIComponent(projectName) : ''}/${id}/index.html`,
         };
 
-        if (shouldFilterByID) {
-          reportsStream.destroy();
-        }
-
         if (noFilters || shouldFilterByProject || shouldFilterByID) {
           reports.push(report);
         }
@@ -327,8 +323,6 @@ export class S3 implements Storage {
         const getTimestamp = (date?: Date) => date?.getTime() ?? 0;
 
         reports.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
-
-        console.log(JSON.stringify(reports, null, 2));
 
         const currentReports = handlePagination<Report>(reports, input?.pagination);
 

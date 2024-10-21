@@ -20,7 +20,7 @@ import TablePaginationOptions from './table-pagination-options';
 
 import { withQueryParams } from '@/app/lib/network';
 import { defaultProjectName } from '@/app/lib/constants';
-import useQuery from '@/app/hooks/useQuery';
+import useMutation from '@/app/hooks/useMutation';
 import ErrorMessage from '@/app/components/error-message';
 import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
@@ -50,27 +50,30 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
     project,
   });
 
-  const {
-    data: reportResponse,
-    error,
-    isLoading,
-    refetch,
-  } = useQuery<ReadReportsOutput>(withQueryParams(reportListEndpoint, getQueryParams()));
+  const { isLoading, error, mutate } = useMutation(withQueryParams(reportListEndpoint, getQueryParams()), {
+    method: 'GET',
+  });
+
+  const fetchReports = async () => {
+    mutate(null, {
+      path: withQueryParams(reportListEndpoint, getQueryParams()),
+    }).then((res) => setReportResponse(res));
+  };
+
+  const [reportResponse, setReportResponse] = useState<ReadReportsOutput>({ reports: [], total: 0 });
 
   useEffect(() => {
     if (isLoading) {
       return;
     }
-    refetch({
-      path: withQueryParams(reportListEndpoint, getQueryParams()),
-    });
+    fetchReports();
   }, [rowsPerPage, project, page]);
 
   const { reports, total } = reportResponse ?? {};
 
   const onDeleted = () => {
     onChange?.();
-    refetch();
+    fetchReports();
   };
 
   const onPageChange = useCallback(
@@ -133,7 +136,7 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
           {(item) => (
             <TableRow key={item.reportID}>
               <TableCell className="w-1/2">
-                <Link href={`/report/${item.reportID}`}>
+                <Link href={`/report/${item.reportID}`} prefetch={false}>
                   <div className="flex flex-row">
                     {item.reportID} <LinkIcon />
                   </div>
@@ -146,7 +149,7 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
               <TableCell className="w-1/4">
                 <div className="flex gap-4 justify-end">
                   <Tooltip color="success" content="Open Report" placement="top">
-                    <Link href={item.reportUrl} target="_blank">
+                    <Link href={item.reportUrl} prefetch={false} target="_blank">
                       <Button color="success" size="md">
                         <EyeIcon />
                       </Button>
