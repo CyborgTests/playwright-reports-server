@@ -78,20 +78,23 @@ curl --location --request DELETE 'http://localhost:3000/api/report/delete' \
 Response example:
 
 ```json
-[
-  {
-    "reportID": "8e9af87d-1d10-4729-aefd-3e92ee64d06c",
-    "createdAt": "2024-05-06T16:52:45.017Z",
-    "project": "regression",
-    "reportUrl": "/api/serve/regression/8e9af87d-1d10-4729-aefd-3e92ee64d06c/index.html"
-  },
-  {
-    "reportID": "8fe427ed-783c-4fb9-aacc-ba6fbc5f5667",
-    "createdAt": "2024-05-06T16:59:38.814Z",
-    "project": "smoke",
-    "reportUrl": "/api/serve/smoke/8fe427ed-783c-4fb9-aacc-ba6fbc5f5667/index.html"
-  }
-]
+{
+  "reports": [
+    {
+      "reportID": "8e9af87d-1d10-4729-aefd-3e92ee64d06c",
+      "createdAt": "2024-05-06T16:52:45.017Z",
+      "project": "regression",
+      "reportUrl": "/api/serve/regression/8e9af87d-1d10-4729-aefd-3e92ee64d06c/index.html"
+    },
+    {
+      "reportID": "8fe427ed-783c-4fb9-aacc-ba6fbc5f5667",
+      "createdAt": "2024-05-06T16:59:38.814Z",
+      "project": "smoke",
+      "reportUrl": "/api/serve/smoke/8fe427ed-783c-4fb9-aacc-ba6fbc5f5667/index.html"
+    }
+  ],
+  "total": 2
+}
 ```
 
 ## `/api/report/delete` (DELETE):
@@ -156,15 +159,18 @@ curl --location 'http://localhost:3000/api/result/list'
 Response will contain array of results:
 
 ```json
-[
-  {
-    "resultID": "a7beb04b-f190-4fbb-bebd-58b2c776e6c3",
-    "createdAt": "2024-05-06T16:40:33.021Z",
-    "project": "regression",
-    "testRunName": "regression-run-v1.10",
-    "reporter": "okhotemskyi"
-  }
-]
+{
+  "results": [
+    {
+      "resultID": "a7beb04b-f190-4fbb-bebd-58b2c776e6c3",
+      "createdAt": "2024-05-06T16:40:33.021Z",
+      "project": "regression",
+      "testRunName": "regression-run-v1.10",
+      "reporter": "okhotemskyi"
+    }
+  ],
+  "total": 1
+}
 ```
 
 ## `/api/result/upload` (POST):

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 
 import { type Result } from '@/app/lib/storage';
 import ResultsTable from '@/app/components/results-table';
@@ -14,9 +13,8 @@ interface ResultsProps {
   onChange: () => void;
 }
 
-export default function Results({ onChange }: ResultsProps) {
+export default function Results({ onChange }: Readonly<ResultsProps>) {
   const [selectedResults, setSelectedResults] = useState<Result[]>([]);
-  const [refreshId, setRefreshId] = useState<string>(uuidv4());
 
   const selectedResultIds = selectedResults.map((r) => r.resultID);
 
@@ -27,11 +25,6 @@ export default function Results({ onChange }: ResultsProps) {
     onChange?.();
   };
 
-  const onDelete = () => {
-    onListUpdate();
-    setRefreshId(uuidv4());
-  };
-
   return (
     <>
       <div className="flex w-full">
@@ -40,16 +33,11 @@ export default function Results({ onChange }: ResultsProps) {
         </div>
         <div className="flex gap-2 w-2/3 flex-wrap justify-end mr-7">
           <GenerateReportButton projects={projects} results={selectedResults} onGeneratedReport={onListUpdate} />
-          <DeleteResultsButton resultIds={selectedResultIds} onDeletedResult={onDelete} />
+          <DeleteResultsButton resultIds={selectedResultIds} onDeletedResult={onListUpdate} />
         </div>
       </div>
       <br />
-      <ResultsTable
-        refreshId={refreshId}
-        selected={selectedResultIds}
-        onDeleted={onDelete}
-        onSelect={setSelectedResults}
-      />
+      <ResultsTable selected={selectedResultIds} onDeleted={onListUpdate} onSelect={setSelectedResults} />
     </>
   );
 }

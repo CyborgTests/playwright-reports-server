@@ -1,12 +1,13 @@
+import { type Pagination } from './pagination';
+
 import { type UUID } from '@/app/types';
 import { type ReportInfo, type ReportTest } from '@/app/lib/parser/types';
 
 export interface Storage {
   getServerDataInfo: () => Promise<ServerDataInfo>;
-  getFolderSizeInMb: (dir: string) => Promise<string>;
   readFile: (targetPath: string, contentType: string | null) => Promise<string | Buffer>;
-  readResults: () => Promise<Result[]>;
-  readReports: () => Promise<Report[]>;
+  readResults: (input: ReadResultsInput) => Promise<ReadResultsOutput>;
+  readReports: (input?: ReadReportsInput) => Promise<ReadReportsOutput>;
   deleteResults: (resultIDs: string[]) => Promise<void>;
   deleteReports: (reportIDs: string[]) => Promise<void>;
   saveResult: (
@@ -17,8 +18,30 @@ export interface Storage {
     createdAt: string;
   }>;
   generateReport: (resultsIds: string[], project?: string) => Promise<UUID>;
-  getProjects: () => Promise<string[]>;
+  getReportsProjects: () => Promise<string[]>;
+  getResultsProjects: () => Promise<string[]>;
   moveReport: (oldPath: string, newPath: string) => Promise<void>;
+}
+
+export interface ReadResultsInput {
+  pagination?: Pagination;
+  project?: string;
+}
+
+export interface ReadResultsOutput {
+  results: Result[];
+  total: number;
+}
+
+export interface ReadReportsInput {
+  pagination?: Pagination;
+  project?: string;
+  ids?: string[];
+}
+
+export interface ReadReportsOutput {
+  reports: Report[];
+  total: number;
 }
 
 // For custom user fields

@@ -4,8 +4,11 @@ import path from 'node:path';
 
 import { type BucketItem, Client } from 'minio';
 
+import { processBatch } from './batch';
+import { ReadReportsInput, ReadReportsOutput, ReadResultsInput, ReadResultsOutput, Storage } from './types';
 import { bytesToString, getUniqueProjectsList } from './format';
 import { REPORTS_FOLDER, TMP_FOLDER, REPORTS_BUCKET, RESULTS_BUCKET, REPORTS_PATH } from './constants';
+import { handlePagination } from './pagination';
 
 import { serveReportRoute } from '@/app/lib/constants';
 import { generatePlaywrightReport } from '@/app/lib/pw';
@@ -46,7 +49,7 @@ const createClient = () => {
   return client;
 };
 
-export class S3 {
+export class S3 implements Storage {
   private static instance: S3;
   private client: Client;
   private bucket: string;
@@ -198,21 +201,7 @@ export class S3 {
     return result!;
   }
 
-  private async processBatch<T, R>(items: T[], batchSize: number, asyncAction: (item: T) => Promise<R>): Promise<R[]> {
-    const results: R[] = [];
-
-    for (let i = 0; i < items.length; i += batchSize) {
-      const batch = items.slice(i, i + batchSize);
-
-      const batchResults = await Promise.all(batch.map(asyncAction.bind(this)));
-
-      results.push(...batchResults);
-    }
-
-    return results;
-  }
-
-  async readResults(): Promise<Result[]> {
+  async readResults(input?: ReadResultsInput): Promise<ReadResultsOutput> {
     console.log('[s3] reading results');
     const listResultsStream = this.client.listObjectsV2(this.bucket, RESULTS_BUCKET, true);
 
@@ -245,10 +234,22 @@ export class S3 {
     console.log(`[s3] found ${jsonFiles?.length} json files`);
 
     if (!jsonFiles) {
-      return [];
+      return {
+        results: [],
+        total: 0,
+      };
     }
 
-    const results = await this.processBatch<BucketItem, Result>(jsonFiles, this.batchSize, async (file) => {
+    const getTimestamp = (date?: Date) => date?.getTime() ?? 0;
+
+    jsonFiles.sort((a, b) => getTimestamp(b.lastModified) - getTimestamp(a.lastModified));
+
+    // check if we can apply pagination early
+    const noFilters = !input?.project && !input?.project;
+
+    const resultFiles = noFilters ? handlePagination(jsonFiles, input?.pagination) : jsonFiles;
+
+    const results = await processBatch<BucketItem, Result>(this, resultFiles, this.batchSize, async (file) => {
       console.log(`[s3.batch] reading result: ${JSON.stringify(file)}`);
       const dataStream = await this.client.getObject(this.bucket, file.name!);
 
@@ -263,10 +264,17 @@ export class S3 {
       return parsed;
     });
 
-    return results;
+    const byProject = results.filter((file) => (input?.project ? file.project === input.project : file));
+
+    const currentFiles = noFilters ? results : handlePagination(byProject, input?.pagination);
+
+    return {
+      results: currentFiles,
+      total: noFilters ? jsonFiles.length : byProject.length,
+    };
   }
 
-  async readReports(): Promise<Report[]> {
+  async readReports(input?: ReadReportsInput): Promise<ReadReportsOutput> {
     console.log(`[s3] reading reports from minio`);
     const reportsStream = this.client.listObjectsV2(this.bucket, REPORTS_BUCKET, true);
 
@@ -289,12 +297,26 @@ export class S3 {
 
         const projectName = parentDir === REPORTS_PATH ? '' : parentDir;
 
-        reports.push({
+        const noFilters = !input?.project && !input?.ids;
+
+        const shouldFilterByProject = input?.project && projectName === input.project;
+
+        const shouldFilterByID = input?.ids && input.ids.includes(id);
+
+        const report = {
           reportID: id,
           project: projectName,
           createdAt: file.lastModified,
           reportUrl: `${serveReportRoute}/${projectName ? encodeURIComponent(projectName) : ''}/${id}/index.html`,
-        });
+        };
+
+        if (shouldFilterByID) {
+          reportsStream.destroy();
+        }
+
+        if (noFilters || shouldFilterByProject || shouldFilterByID) {
+          reports.push(report);
+        }
       });
 
       reportsStream.on('error', (err) => {
@@ -302,7 +324,15 @@ export class S3 {
       });
 
       reportsStream.on('end', () => {
-        resolve(reports);
+        const getTimestamp = (date?: Date) => date?.getTime() ?? 0;
+
+        reports.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
+
+        console.log(JSON.stringify(reports, null, 2));
+
+        const currentReports = handlePagination<Report>(reports, input?.pagination);
+
+        resolve({ reports: currentReports, total: reports.length });
       });
     });
   }
@@ -375,7 +405,7 @@ export class S3 {
 
     const files = await fs.readdir(reportPath, { recursive: true, withFileTypes: true });
 
-    await this.processBatch(files, this.batchSize, async (file) => {
+    await processBatch(this, files, this.batchSize, async (file) => {
       if (!file.isFile()) {
         return;
       }
@@ -446,12 +476,20 @@ export class S3 {
     return reportId;
   }
 
-  async getProjects(): Promise<string[]> {
-    console.log(`[s3] get projects`);
+  async getReportsProjects(): Promise<string[]> {
+    console.log(`[s3] get reports projects`);
 
-    const reports = await this.readReports();
+    const { reports } = await this.readReports();
 
     return getUniqueProjectsList(reports);
+  }
+
+  async getResultsProjects(): Promise<string[]> {
+    console.log(`[s3] get results projects`);
+
+    const { results } = await this.readResults();
+
+    return getUniqueProjectsList(results);
   }
 
   async moveReport(oldPath: string, newPath: string): Promise<void> {

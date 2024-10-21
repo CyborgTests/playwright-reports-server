@@ -10,10 +10,17 @@ import ErrorMessage from './error-message';
 interface ProjectSelectProps {
   onSelect: (project: string) => void;
   refreshId?: string;
+  entity: 'result' | 'report';
 }
 
-export default function ProjectSelect({ refreshId, onSelect }: Readonly<ProjectSelectProps>) {
-  const { data: projects, error, isLoading } = useQuery<string[]>('/api/project/list', { dependencies: [refreshId] });
+export default function ProjectSelect({ refreshId, onSelect, entity }: Readonly<ProjectSelectProps>) {
+  const {
+    data: projects,
+    error,
+    isLoading,
+  } = useQuery<string[]>(`/api/${entity}/projects`, {
+    dependencies: [refreshId],
+  });
 
   const items = [defaultProjectName, ...(projects ?? [])];
 
@@ -36,12 +43,11 @@ export default function ProjectSelect({ refreshId, onSelect }: Readonly<ProjectS
       {error && <ErrorMessage message={error.message ?? ''} />}
       <Select
         disallowEmptySelection
-        className="pt-1 max-w-[30%]"
+        className="pt-1 w-full"
         defaultSelectedKeys={[defaultProjectName]}
         isDisabled={items.length <= 1}
         isLoading={isLoading}
         label="project"
-        size="lg"
         onSelectionChange={onChange}
       >
         {items.map((project) => (

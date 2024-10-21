@@ -24,13 +24,13 @@ export async function GET(
     return new Response('report ID is required', { status: 400 });
   }
 
-  const { result: stats, error: statsError } = await withError(storage.readReports());
+  const { result: stats, error: statsError } = await withError(storage.readReports({ ids: [id] }));
 
   if (statsError || !stats) {
     return new Response(`failed to read reports: ${statsError?.message ?? 'unknown error'}`, { status: 500 });
   }
 
-  const reportStats = stats.find((r) => r.reportID === id);
+  const reportStats = stats.reports.find((r) => r.reportID === id);
 
   const { result: html, error } = await withError(
     storage.readFile(path.join(reportStats?.project ?? '', id, 'index.html'), 'text/html'),

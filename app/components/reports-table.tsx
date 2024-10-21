@@ -16,14 +16,16 @@ import {
 } from '@nextui-org/react';
 import Link from 'next/link';
 
-import { defaultProjectName } from '../lib/constants';
+import TablePaginationOptions from './table-pagination-options';
 
+import { withQueryParams } from '@/app/lib/network';
+import { defaultProjectName } from '@/app/lib/constants';
 import useQuery from '@/app/hooks/useQuery';
 import ErrorMessage from '@/app/components/error-message';
 import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
 import { EyeIcon } from '@/app/components/icons';
-import { type Report } from '@/app/lib/storage';
+import { ReadReportsOutput } from '@/app/lib/storage';
 
 const columns = [
   { name: 'ID', uid: 'reportID' },
@@ -33,120 +35,130 @@ const columns = [
 ];
 
 interface ReportsTableProps {
-  project: string;
   onChange: () => void;
 }
 
-export default function ReportsTable({ project, onChange }: ReportsTableProps) {
+export default function ReportsTable({ onChange }: ReportsTableProps) {
+  const reportListEndpoint = '/api/report/list';
+  const [project, setProject] = useState(defaultProjectName);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const { data: reportList, error, isLoading, refetch } = useQuery<Report[]>('/api/report/list');
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  const reports = React.useMemo(() => {
-    return (reportList ?? []).filter((report) =>
-      project === defaultProjectName ? report : report.project === project,
-    );
-  }, [reportList?.length, project]);
+  const getQueryParams = () => ({
+    limit: rowsPerPage.toString(),
+    offset: ((page - 1) * rowsPerPage).toString(),
+    project,
+  });
 
-  const getCurrentPage = () => {
-    const startIndex = (page - 1) * pageSize;
-    const endIndex = startIndex + pageSize;
-
-    const view = reports.slice(startIndex, endIndex);
-
-    return view;
-  };
-
-  const [viewReports, setViewReports] = useState<Report[]>(getCurrentPage());
+  const {
+    data: reportResponse,
+    error,
+    isLoading,
+    refetch,
+  } = useQuery<ReadReportsOutput>(withQueryParams(reportListEndpoint, getQueryParams()));
 
   useEffect(() => {
     if (isLoading) {
       return;
     }
-    const view = getCurrentPage();
+    refetch({
+      path: withQueryParams(reportListEndpoint, getQueryParams()),
+    });
+  }, [rowsPerPage, project, page]);
 
-    setViewReports(view);
-  }, [page, reports]);
+  const { reports, total } = reportResponse ?? {};
 
   const onDeleted = () => {
-    refetch();
     onChange?.();
+    refetch();
   };
 
   const onPageChange = useCallback(
     (page: number) => {
       setPage(page);
-      setViewReports(getCurrentPage());
     },
-    [page, pageSize],
+    [page, rowsPerPage],
+  );
+
+  const onProjectChange = useCallback(
+    (project: string) => {
+      setProject(project);
+      setPage(1);
+    },
+    [page, rowsPerPage],
   );
 
   const pages = React.useMemo(() => {
-    return reports?.length ? Math.ceil(reports.length / pageSize) : 0;
-  }, [reports?.length, pageSize]);
+    return total ? Math.ceil(total / rowsPerPage) : 0;
+  }, [project, total, rowsPerPage]);
 
   return error ? (
     <ErrorMessage message={error.message} />
   ) : (
-    <Table
-      aria-label="Reports"
-      bottomContent={
-        pages > 1 ? (
-          <div className="flex w-full justify-center">
-            <Pagination
-              isCompact
-              showControls
-              showShadow
-              color="primary"
-              page={page}
-              total={pages}
-              onChange={onPageChange}
-            />
-          </div>
-        ) : null
-      }
-    >
-      <TableHeader columns={columns}>
-        {(column) => (
-          <TableColumn key={column.uid} align={column.uid === 'actions' ? 'center' : 'start'}>
-            {column.name}
-          </TableColumn>
-        )}
-      </TableHeader>
-      <TableBody
-        emptyContent="No reports."
-        isLoading={isLoading}
-        items={viewReports ?? []}
-        loadingContent={<Spinner />}
+    <>
+      <TablePaginationOptions
+        entity="report"
+        rowsPerPage={rowsPerPage}
+        setPage={setPage}
+        setRowsPerPage={setRowsPerPage}
+        total={total}
+        onProjectChange={onProjectChange}
+      />
+      <Table
+        aria-label="Reports"
+        bottomContent={
+          pages > 1 ? (
+            <div className="flex w-full justify-center">
+              <Pagination
+                isCompact
+                showControls
+                showShadow
+                color="primary"
+                page={page}
+                total={pages}
+                onChange={onPageChange}
+              />
+            </div>
+          ) : null
+        }
       >
-        {(item) => (
-          <TableRow key={item.reportID}>
-            <TableCell className="w-1/2">
-              <Link href={`/report/${item.reportID}`}>
-                <div className="flex flex-row">
-                  {item.reportID} <LinkIcon />
+        <TableHeader columns={columns}>
+          {(column) => (
+            <TableColumn key={column.uid} align={column.uid === 'actions' ? 'center' : 'start'}>
+              {column.name}
+            </TableColumn>
+          )}
+        </TableHeader>
+        <TableBody emptyContent="No reports." isLoading={isLoading} items={reports ?? []} loadingContent={<Spinner />}>
+          {(item) => (
+            <TableRow key={item.reportID}>
+              <TableCell className="w-1/2">
+                <Link href={`/report/${item.reportID}`}>
+                  <div className="flex flex-row">
+                    {item.reportID} <LinkIcon />
+                  </div>
+                </Link>
+              </TableCell>
+              <TableCell className="w-1/4">{item.project}</TableCell>
+              <TableCell className="w-1/4">
+                <FormattedDate date={item.createdAt} />
+              </TableCell>
+              <TableCell className="w-1/4">
+                <div className="flex gap-4 justify-end">
+                  <Tooltip color="success" content="Open Report" placement="top">
+                    <Link href={item.reportUrl} target="_blank">
+                      <Button color="success" size="md">
+                        <EyeIcon />
+                      </Button>
+                    </Link>
+                  </Tooltip>
+                  <DeleteReportButton reportId={item.reportID} onDeleted={onDeleted} />
                 </div>
-              </Link>
-            </TableCell>
-            <TableCell className="w-1/4">{item.project}</TableCell>
-            <TableCell className="w-1/4">
-              <FormattedDate date={item.createdAt} />
-            </TableCell>
-            <TableCell className="w-1/4">
-              <div className="flex gap-4 justify-end">
-                <Tooltip color="success" content="Open Report" placement="top">
-                  <Link href={item.reportUrl} target="_blank">
-                    <Button color="success" size="md">
-                      <EyeIcon />
-                    </Button>
-                  </Link>
-                </Tooltip>
-                <DeleteReportButton reportId={item.reportID} onDeleted={onDeleted} />
-              </div>
-            </TableCell>
-          </TableRow>
-        )}
-      </TableBody>
-    </Table>
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+    </>
   );
 }

@@ -1,3 +1,5 @@
+import { revalidateTag } from 'next/cache';
+
 import { storage } from '@/app/lib/storage';
 import { withError } from '@/app/lib/withError';
 
@@ -15,6 +17,8 @@ export async function DELETE(request: Request) {
   if (error) {
     return new Response(error.message, { status: 404 });
   }
+
+  revalidateTag('projects');
 
   return Response.json({
     message: `Results files deleted successfully`,
