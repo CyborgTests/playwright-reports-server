@@ -1,3 +1,4 @@
+import { serveReportRoute } from '@/app/lib/constants';
 import { storage } from '@/app/lib/storage';
 import { withError } from '@/app/lib/withError';
 
@@ -20,6 +21,6 @@ export async function POST(request: Request) {
   return Response.json({
     reportId,
     project,
-    reportUrl: `/data/reports/${project ? encodeURIComponent(project) : ''}/${reportId}/index.html`,
+    reportUrl: `${serveReportRoute}/${project ? encodeURI(project) : ''}/${reportId}/index.html`,
   });
 }

@@ -2,8 +2,6 @@
 import { Area, AreaChart, XAxis } from 'recharts';
 import Link from 'next/link';
 
-import { defaultProjectName } from '../lib/constants';
-
 import { type ReportHistory } from '@/app/lib/storage';
 import {
   type ChartConfig,
@@ -39,19 +37,16 @@ interface WithTotal {
 
 interface TrendChartProps {
   reportHistory: ReportHistory[];
-  project?: string;
 }
 
-export function TrendChart({ reportHistory, project }: Readonly<TrendChartProps>) {
-  const reports = project === defaultProjectName ? reportHistory : reportHistory.filter((r) => r.project === project);
-
+export function TrendChart({ reportHistory }: Readonly<TrendChartProps>) {
   const getPercentage = (value: number, total: number) => (value / total) * 100;
 
   const openInNewTab = (url: string) => {
     typeof window !== 'undefined' && window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const chartData = reports.map((r) => ({
+  const chartData = reportHistory.map((r) => ({
     date: new Date(r.createdAt).getTime(),
     passed: getPercentage(r.stats.expected, r.stats.total),
     passedCount: r.stats.expected,
@@ -67,7 +62,7 @@ export function TrendChart({ reportHistory, project }: Readonly<TrendChartProps>
 
   return (
     <ChartContainer config={chartConfig}>
-      {reports.length <= 1 ? (
+      {reportHistory.length <= 1 ? (
         <span>Not enough data for trend chart</span>
       ) : (
         <AreaChart

@@ -16,36 +16,39 @@ const useQuery = <ReturnType>(
 
   const apiToken = useMemo(() => session?.data?.user?.apiToken, [session]);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const headers = !!apiToken
-        ? {
-            Authorization: apiToken,
-          }
-        : undefined;
+  const fetchData = useCallback(
+    async (opts?: { path: string }) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const headers = apiToken
+          ? {
+              Authorization: apiToken,
+            }
+          : undefined;
 
-      const response = await fetch(path, {
-        headers,
-        body: options?.body ? JSON.stringify(options.body) : undefined,
-        method: options?.method ?? 'GET',
-      });
+        const response = await fetch(opts?.path ?? path, {
+          headers,
+          body: options?.body ? JSON.stringify(options.body) : undefined,
+          method: options?.method ?? 'GET',
+        });
 
-      if (!response.ok) {
-        throw new Error(`Network response was not ok: ${await response.text()}`);
+        if (!response.ok) {
+          throw new Error(`Network response was not ok: ${await response.text()}`);
+        }
+        const jsonData = await response.json();
+
+        setData(jsonData);
+      } catch (err) {
+        if (err instanceof Error) {
+          setError(err);
+        }
+      } finally {
+        setLoading(false);
       }
-      const jsonData = await response.json();
-
-      setData(jsonData);
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [path, options, apiToken, ...(options?.dependencies ?? [])]);
+    },
+    [path, options, apiToken, ...(options?.dependencies ?? [])],
+  );
 
   useEffect(() => {
     if (session.status === 'unauthenticated') {

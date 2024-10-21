@@ -1,7 +1,7 @@
 'use client';
 
 import { Spinner } from '@nextui-org/react';
-import { useState } from 'react';
+import { useCallback } from 'react';
 
 import { defaultProjectName } from '../lib/constants';
 
@@ -14,18 +14,26 @@ import ErrorMessage from '@/app/components/error-message';
 import { type ReportHistory } from '@/app/lib/storage';
 
 export default function ReportTrends() {
-  const { data: reports, error, isLoading } = useQuery<ReportHistory[]>('/api/report/trend');
-  const [project, setProject] = useState(defaultProjectName);
+  const getProjectQueryParam = (project: string) =>
+    project === defaultProjectName ? '' : `?project=${encodeURIComponent(project)}`;
+
+  const getUrl = (project: string) => `/api/report/trend${getProjectQueryParam(project)}`;
+
+  const { data: reports, error, isLoading, refetch } = useQuery<ReportHistory[]>(getUrl(defaultProjectName));
+
+  const onProjectChange = useCallback((project: string) => {
+    refetch({ path: getUrl(project) });
+  }, []);
 
   return (
     <>
       <div className="flex flex-row justify-between">
         <h1 className={title()}>Trends</h1>
-        <ProjectSelect onSelect={setProject} />
+        {isLoading && <Spinner />}
+        <ProjectSelect onSelect={onProjectChange} />
       </div>
       {error && <ErrorMessage message={error.message} />}
-      {isLoading && <Spinner />}
-      {!!reports?.length && <TrendChart project={project} reportHistory={reports} />}
+      {!!reports?.length && <TrendChart reportHistory={reports} />}
     </>
   );
 }

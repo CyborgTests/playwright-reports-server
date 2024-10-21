@@ -12,7 +12,7 @@ interface ProjectSelectProps {
   refreshId?: string;
 }
 
-export default function ProjectSelect({ refreshId, onSelect }: ProjectSelectProps) {
+export default function ProjectSelect({ refreshId, onSelect }: Readonly<ProjectSelectProps>) {
   const { data: projects, error, isLoading } = useQuery<string[]>('/api/project/list', { dependencies: [refreshId] });
 
   const items = [defaultProjectName, ...(projects ?? [])];
