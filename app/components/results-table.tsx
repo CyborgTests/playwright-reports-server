@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Table,
   TableHeader,
@@ -11,18 +11,17 @@ import {
   Chip,
   type Selection,
   Spinner,
-  Autocomplete,
-  AutocompleteItem,
+  Pagination,
 } from '@nextui-org/react';
 
-import { SearchIcon } from './icons';
-
-import useQuery from '@/app/hooks/useQuery';
+import { withQueryParams } from '@/app/lib/network';
+import { defaultProjectName } from '@/app/lib/constants';
+import TablePaginationOptions from '@/app/components/table-pagination-options';
+import useMutation from '@/app/hooks/useMutation';
 import ErrorMessage from '@/app/components/error-message';
 import FormattedDate from '@/app/components/date-format';
-import { type Result } from '@/app/lib/storage';
+import { ReadResultsOutput, type Result } from '@/app/lib/storage';
 import DeleteResultsButton from '@/app/components/delete-results-button';
-import { getUniqueProjectsList } from '@/app/lib/storage/format';
 
 const columns = [
   { name: 'ID', uid: 'resultID' },
@@ -37,37 +36,67 @@ const getTags = (item: Result) => {
 };
 
 interface ResultsTableProps {
-  refreshId: string;
   selected?: string[];
   onSelect?: (results: Result[]) => void;
   onDeleted?: () => void;
 }
 
-export default function ResultsTable({ refreshId, onSelect, onDeleted, selected }: ResultsTableProps) {
-  const { data: results, error, isLoading, refetch } = useQuery<Result[]>('/api/result/list');
+export default function ResultsTable({ onSelect, onDeleted, selected }: ResultsTableProps) {
+  const resultListEndpoint = '/api/result/list';
+  const [project, setProject] = useState(defaultProjectName);
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(20);
 
-  const projects = getUniqueProjectsList(results ?? []);
+  const getQueryParams = () => ({
+    limit: rowsPerPage.toString(),
+    offset: ((page - 1) * rowsPerPage).toString(),
+    project,
+  });
 
-  const [projectFilter, setProjectFilter] = useState('');
+  const { isLoading, error, mutate } = useMutation(withQueryParams(resultListEndpoint, getQueryParams()), {
+    method: 'GET',
+  });
 
-  const filteredResults = React.useMemo(() => {
-    if (projectFilter) {
-      return results?.filter((r) => r.project?.includes(projectFilter));
-    }
+  const fetchResults = async () => {
+    mutate(null, {
+      path: withQueryParams(resultListEndpoint, getQueryParams()),
+    }).then((res) => setResultsResponse(res));
+  };
 
-    return results;
-  }, [results, projectFilter]);
+  const [resultsResponse, setResultsResponse] = useState<ReadResultsOutput>({ results: [], total: 0 });
 
   useEffect(() => {
-    if (!isLoading) {
-      refetch();
+    if (isLoading) {
+      return;
     }
-  }, [refreshId]);
+    fetchResults();
+  }, [rowsPerPage, project, page]);
+
+  const { results, total } = resultsResponse ?? {};
 
   const shouldRefetch = () => {
-    refetch();
     onDeleted?.();
+    fetchResults();
   };
+
+  const onPageChange = useCallback(
+    (page: number) => {
+      setPage(page);
+    },
+    [page, rowsPerPage],
+  );
+
+  const onProjectChange = useCallback(
+    (project: string) => {
+      setProject(project);
+      setPage(1);
+    },
+    [page, rowsPerPage],
+  );
+
+  const pages = React.useMemo(() => {
+    return total ? Math.ceil(total / rowsPerPage) : 0;
+  }, [project, total, rowsPerPage]);
 
   const onChangeSelect = (keys: Selection) => {
     if (keys === 'all') {
@@ -90,23 +119,36 @@ export default function ResultsTable({ refreshId, onSelect, onDeleted, selected 
     <ErrorMessage message={error.message} />
   ) : (
     <>
-      <Autocomplete
-        allowsCustomValue
-        aria-label="filter by project name"
-        className="pt-1 mb-5 max-w-[30%]"
-        isDisabled={!projects.length}
-        placeholder="filter by project name"
-        size="lg"
-        startContent={<SearchIcon />}
-        value={projectFilter}
-        onInputChange={(value) => setProjectFilter(value)}
-        onSelectionChange={(value) => setProjectFilter(value?.toString() ?? '')}
+      <TablePaginationOptions
+        entity="result"
+        rowPerPageOptions={[20, 40, 80, 120]}
+        rowsPerPage={rowsPerPage}
+        setPage={setPage}
+        setRowsPerPage={setRowsPerPage}
+        total={total}
+        onProjectChange={onProjectChange}
+      />
+      <Table
+        aria-label="Results"
+        bottomContent={
+          pages > 1 ? (
+            <div className="flex w-full justify-center">
+              <Pagination
+                isCompact
+                showControls
+                showShadow
+                color="primary"
+                page={page}
+                total={pages}
+                onChange={onPageChange}
+              />
+            </div>
+          ) : null
+        }
+        selectedKeys={selected}
+        selectionMode="multiple"
+        onSelectionChange={onChangeSelect}
       >
-        {projects.map((project) => (
-          <AutocompleteItem key={project}>{project}</AutocompleteItem>
-        ))}
-      </Autocomplete>
-      <Table aria-label="Results" selectedKeys={selected} selectionMode="multiple" onSelectionChange={onChangeSelect}>
         <TableHeader columns={columns}>
           {(column) => (
             <TableColumn key={column.uid} align={column.uid === 'actions' ? 'center' : 'start'}>
@@ -114,12 +156,7 @@ export default function ResultsTable({ refreshId, onSelect, onDeleted, selected 
             </TableColumn>
           )}
         </TableHeader>
-        <TableBody
-          emptyContent="No results."
-          isLoading={isLoading}
-          items={filteredResults ?? []}
-          loadingContent={<Spinner />}
-        >
+        <TableBody emptyContent="No results." isLoading={isLoading} items={results ?? []} loadingContent={<Spinner />}>
           {(item) => (
             <TableRow key={item.resultID}>
               <TableCell className="w-1/3">{item.resultID}</TableCell>

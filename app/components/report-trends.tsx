@@ -30,7 +30,9 @@ export default function ReportTrends() {
       <div className="flex flex-row justify-between">
         <h1 className={title()}>Trends</h1>
         {isLoading && <Spinner />}
-        <ProjectSelect onSelect={onProjectChange} />
+        <div className="min-w-[30%]">
+          <ProjectSelect entity="report" onSelect={onProjectChange} />
+        </div>
       </div>
       {error && <ErrorMessage message={error.message} />}
       {!!reports?.length && <TrendChart reportHistory={reports} />}

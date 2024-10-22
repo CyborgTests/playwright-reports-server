@@ -22,13 +22,7 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
     data: report,
     isLoading: isReportLoading,
     error: reportError,
-  } = useQuery<ReportHistory>(`/api/report/${params.id}`);
-
-  const {
-    data: history,
-    isLoading: isHistoryLoading,
-    error: historyError,
-  } = useQuery<ReportHistory[]>('/api/report/trend?limit=10', { callback: `/report/${params.id}` });
+  } = useQuery<ReportHistory>(`/api/report/${params.id}`, { callback: `/report/${params.id}` });
 
   if (session.status === 'loading') {
     return (
@@ -46,15 +40,7 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
     );
   }
 
-  if (isHistoryLoading) {
-    return (
-      <div>
-        Loading test history... <Spinner />
-      </div>
-    );
-  }
-
-  const error = reportError || historyError;
+  const error = reportError;
 
   if (error) {
     return <p>Error: {error.message}</p>;
@@ -77,9 +63,7 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
             <Button color="primary">Open report</Button>
           </Link>
         </div>
-        <div className="md:w-3/4 max-w-full">
-          <FileList history={history ?? []} report={report} />
-        </div>
+        <div className="md:w-3/4 max-w-full">{report && <FileList report={report} />}</div>
       </div>
     </>
   );

@@ -25,7 +25,11 @@ interface DeleteProjectButtonProps {
   onGeneratedReport?: () => void;
 }
 
-export default function GenerateReportButton({ results, projects, onGeneratedReport }: DeleteProjectButtonProps) {
+export default function GenerateReportButton({
+  results,
+  projects,
+  onGeneratedReport,
+}: Readonly<DeleteProjectButtonProps>) {
   const { mutate: generateReport, isLoading, error } = useMutation('/api/report/generate', { method: 'POST' });
 
   const [projectName, setProjectName] = useState('');
@@ -61,6 +65,7 @@ export default function GenerateReportButton({ results, projects, onGeneratedRep
                 <Autocomplete
                   allowsCustomValue
                   defaultInputValue={projects.at(0) ?? ''}
+                  isDisabled={isLoading}
                   items={projects.map((project) => ({ label: project, value: project }))}
                   label="Project name"
                   placeholder="leave empty if not required"

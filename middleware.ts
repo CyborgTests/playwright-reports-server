@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { CommonResponseFactory } from '@/app/lib/response';
+import { CommonResponseFactory } from '@/app/lib/network';
 import { isAuthorized } from '@/app/lib/auth';
 import { env } from '@/app/config/env';
 
