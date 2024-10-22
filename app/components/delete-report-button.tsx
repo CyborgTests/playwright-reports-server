@@ -12,10 +12,12 @@ import {
   Button,
 } from '@nextui-org/react';
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import useMutation from '@/app/hooks/useMutation';
 import ErrorMessage from '@/app/components/error-message';
 import { DeleteIcon } from '@/app/components/icons';
+import { invalidateCache } from '@/app/lib/query-cache';
 
 interface DeleteProjectButtonProps {
   reportId: string;
@@ -23,7 +25,15 @@ interface DeleteProjectButtonProps {
 }
 
 export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjectButtonProps) {
-  const { mutate: deleteReport, isLoading, error } = useMutation('/api/report/delete', { method: 'DELETE' });
+  const queryClient = useQueryClient();
+  const {
+    mutate: deleteReport,
+    isPending,
+    error,
+  } = useMutation('/api/report/delete', {
+    method: 'DELETE',
+    onSuccess: () => invalidateCache(queryClient, { queryKeys: ['/api/info'], predicate: '/api/report' }),
+  });
   const [confirm, setConfirm] = useState('');
 
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
@@ -33,7 +43,7 @@ export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjec
       return;
     }
 
-    await deleteReport({ reportsIds: [reportId] });
+    deleteReport({ body: { reportsIds: [reportId] } });
 
     onDeleted?.();
   };
@@ -42,7 +52,7 @@ export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjec
     !!reportId && (
       <>
         <Tooltip color="danger" content="Delete Report" placement="top">
-          <Button color="danger" isLoading={isLoading} size="md" onPress={onOpen}>
+          <Button color="danger" isLoading={isPending} size="md" onPress={onOpen}>
             <DeleteIcon />
           </Button>
         </Tooltip>
@@ -68,7 +78,7 @@ export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjec
                   <Button
                     color="danger"
                     isDisabled={confirm !== reportId}
-                    isLoading={isLoading}
+                    isLoading={isPending}
                     onClick={() => {
                       DeleteReport();
                       onClose();

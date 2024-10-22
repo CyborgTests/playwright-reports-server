@@ -1,60 +1,27 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useQuery as useTanStackQuery, UseQueryOptions } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+
+import { withQueryParams } from '../lib/network';
 
 const useQuery = <ReturnType>(
   path: string,
-  options?: RequestInit & { dependencies?: unknown[]; callback?: string },
+  options?: Omit<UseQueryOptions<ReturnType, Error>, 'queryKey' | 'queryFn'> & {
+    dependencies?: unknown[];
+    callback?: string;
+    method?: string;
+    body?: BodyInit | null;
+  },
 ) => {
-  const [data, setData] = useState<ReturnType | null>(null);
-  const [isLoading, setLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
   const session = useSession();
   const router = useRouter();
 
-  const apiToken = useMemo(() => session?.data?.user?.apiToken, [session]);
-
-  const fetchData = useCallback(
-    async (opts?: { path: string }) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const headers = apiToken
-          ? {
-              Authorization: apiToken,
-            }
-          : undefined;
-
-        const response = await fetch(opts?.path ?? path, {
-          headers,
-          body: options?.body ? JSON.stringify(options.body) : undefined,
-          method: options?.method ?? 'GET',
-        });
-
-        if (!response.ok) {
-          throw new Error(`Network response was not ok: ${await response.text()}`);
-        }
-        const jsonData = await response.json();
-
-        setData(jsonData);
-      } catch (err) {
-        if (err instanceof Error) {
-          setError(err);
-        }
-      } finally {
-        setLoading(false);
-      }
-    },
-    [path, options, apiToken, ...(options?.dependencies ?? [])],
-  );
-
   useEffect(() => {
     if (session.status === 'unauthenticated') {
-      const redirectParam = options?.callback ? `?callbackUrl=${encodeURI(options.callback)}` : '';
-
-      router.replace(`/login${redirectParam}`);
+      router.push(withQueryParams('/login', options?.callback ? { callbackUrl: encodeURI(options.callback) } : {}));
 
       return;
     }
@@ -62,11 +29,32 @@ const useQuery = <ReturnType>(
     if (session.status === 'loading') {
       return;
     }
-
-    fetchData();
   }, [session.status]);
 
-  return { data, isLoading, error, refetch: fetchData };
+  return useTanStackQuery<ReturnType, Error>({
+    queryKey: [path, ...(options?.dependencies ?? [])],
+    queryFn: async () => {
+      const headers: HeadersInit = {};
+
+      if (session.data?.user?.apiToken) {
+        headers.Authorization = session.data.user.apiToken;
+      }
+
+      const response = await fetch(path, {
+        headers,
+        body: options?.body ? JSON.stringify(options.body) : undefined,
+        method: options?.method ?? 'GET',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Network response was not ok: ${await response.text()}`);
+      }
+
+      return response.json();
+    },
+    enabled: session.status === 'authenticated',
+    ...options,
+  });
 };
 
 export default useQuery;
