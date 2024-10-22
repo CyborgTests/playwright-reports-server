@@ -2,6 +2,7 @@
 
 import { useMutation as useTanStackMutation, UseMutationOptions } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
+import { toast } from 'sonner';
 
 type MutationFnParams<TVariables> = {
   body?: TVariables;
@@ -34,6 +35,7 @@ const useMutation = <TData = unknown, TVariables = unknown>(
       });
 
       if (!response.ok) {
+        toast.error(`Network response was not ok: ${await response.text()}`);
         throw new Error(`Network response was not ok: ${await response.text()}`);
       }
 

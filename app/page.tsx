@@ -3,10 +3,10 @@ import { useLayoutEffect, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useSession } from 'next-auth/react';
 import { Spinner } from '@nextui-org/react';
+import { toast } from 'sonner';
 
 import useQuery from '@/app/hooks/useQuery';
 import { type ServerDataInfo } from '@/app/lib/storage';
-import ErrorMessage from '@/app/components/error-message';
 import FilesystemStatTabs from '@/app/components/fs-stat-tabs';
 
 const localStorageTabKey = 'selectedTab';
@@ -50,9 +50,10 @@ export default function DashboardPage() {
     setSelectedTab(key);
   };
 
+  error && toast.error(error.message);
+
   return (
     <>
-      {error && <ErrorMessage message={error.message} />}
       {!!info && (
         <FilesystemStatTabs info={info} selected={selectedTab} onSelect={onChangeTab} onUpdate={updateRefreshId} />
       )}

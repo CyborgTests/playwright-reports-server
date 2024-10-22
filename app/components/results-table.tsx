@@ -14,12 +14,12 @@ import {
   Pagination,
 } from '@nextui-org/react';
 import { keepPreviousData } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 import { withQueryParams } from '@/app/lib/network';
 import { defaultProjectName } from '@/app/lib/constants';
 import TablePaginationOptions from '@/app/components/table-pagination-options';
 import useQuery from '@/app/hooks/useQuery';
-import ErrorMessage from '@/app/components/error-message';
 import FormattedDate from '@/app/components/date-format';
 import { ReadResultsOutput, type Result } from '@/app/lib/storage';
 import DeleteResultsButton from '@/app/components/delete-results-button';
@@ -108,9 +108,9 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: ResultsT
     onSelect?.(selectedResults);
   };
 
-  return error ? (
-    <ErrorMessage message={error.message} />
-  ) : (
+  error && toast.error(error.message);
+
+  return (
     <>
       <TablePaginationOptions
         entity="result"

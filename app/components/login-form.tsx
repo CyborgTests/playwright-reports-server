@@ -46,7 +46,7 @@ export default function LoginForm() {
       redirect: false,
     });
 
-    result?.error ? setError(`invalid API key: ${error}`) : router.replace(callbackUrl);
+    result?.error ? setError('invalid API key') : router.replace(callbackUrl);
   };
 
   return session.status === 'loading' ? (

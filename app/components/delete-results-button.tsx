@@ -13,9 +13,9 @@ import {
 } from '@nextui-org/react';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 import useMutation from '@/app/hooks/useMutation';
-import ErrorMessage from '@/app/components/error-message';
 import { DeleteIcon } from '@/app/components/icons';
 import { invalidateCache } from '@/app/lib/query-cache';
 
@@ -32,7 +32,10 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult }: Read
     error,
   } = useMutation('/api/result/delete', {
     method: 'DELETE',
-    onSuccess: () => invalidateCache(queryClient, { queryKeys: ['/api/info'], predicate: '/api/result' }),
+    onSuccess: () => {
+      invalidateCache(queryClient, { queryKeys: ['/api/info'], predicate: '/api/result' });
+      toast.success(`result${resultIds.length ? '' : 's'} ${resultIds ?? 'are'} deleted`);
+    },
   });
   const [confirm, setConfirm] = useState('');
 
@@ -47,6 +50,8 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult }: Read
 
     onDeletedResult?.();
   };
+
+  error && toast.error(error.message);
 
   return (
     <>
@@ -70,7 +75,6 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult }: Read
                 <Input isRequired label="Confirm" value={confirm} onValueChange={setConfirm} />
               </ModalBody>
               <ModalFooter>
-                {error && <ErrorMessage message={error.message} />}
                 <Button
                   color="primary"
                   variant="light"

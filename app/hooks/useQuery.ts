@@ -4,6 +4,7 @@ import { useQuery as useTanStackQuery, UseQueryOptions } from '@tanstack/react-q
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { toast } from 'sonner';
 
 import { withQueryParams } from '../lib/network';
 
@@ -21,6 +22,7 @@ const useQuery = <ReturnType>(
 
   useEffect(() => {
     if (session.status === 'unauthenticated') {
+      toast.warning('Unauthorized');
       router.push(withQueryParams('/login', options?.callback ? { callbackUrl: encodeURI(options.callback) } : {}));
 
       return;
@@ -47,6 +49,7 @@ const useQuery = <ReturnType>(
       });
 
       if (!response.ok) {
+        toast.error(`Network response was not ok: ${await response.text()}`);
         throw new Error(`Network response was not ok: ${await response.text()}`);
       }
 

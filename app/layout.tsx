@@ -2,6 +2,7 @@ import '@/app/styles/globals.css';
 import { Metadata, Viewport } from 'next';
 import { Link } from '@nextui-org/link';
 import clsx from 'clsx';
+import { Toaster } from 'sonner';
 
 import { Providers } from './providers';
 
@@ -44,7 +45,10 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <Providers attribute="class" defaultTheme="dark">
           <div className="relative flex flex-col h-screen">
             <Navbar config={config!} />
-            <main className="container mx-auto max-w-7xl pt-16 px-6 flex-grow">{children}</main>
+            <main className="container mx-auto max-w-7xl pt-16 px-6 flex-grow">
+              {children}
+              <Toaster closeButton richColors visibleToasts={3} />
+            </main>
             <footer className="w-full flex items-center justify-center py-3">
               <Link
                 className="flex items-center gap-1 text-current"

@@ -1,11 +1,10 @@
 'use client';
 
 import { Select, SelectItem, SharedSelection } from '@nextui-org/react';
+import { toast } from 'sonner';
 
 import useQuery from '../hooks/useQuery';
 import { defaultProjectName } from '../lib/constants';
-
-import ErrorMessage from './error-message';
 
 interface ProjectSelectProps {
   onSelect: (project: string) => void;
@@ -38,9 +37,10 @@ export default function ProjectSelect({ refreshId, onSelect, entity }: Readonly<
     onSelect?.(keys.currentKey);
   };
 
+  error && toast.error(error.message);
+
   return (
     <>
-      {error && <ErrorMessage message={error.message ?? ''} />}
       <Select
         disallowEmptySelection
         className="pt-1 w-full"
