@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Table,
   TableHeader,
@@ -13,11 +13,12 @@ import {
   Spinner,
   Pagination,
 } from '@nextui-org/react';
+import { keepPreviousData } from '@tanstack/react-query';
 
 import { withQueryParams } from '@/app/lib/network';
 import { defaultProjectName } from '@/app/lib/constants';
 import TablePaginationOptions from '@/app/components/table-pagination-options';
-import useMutation from '@/app/hooks/useMutation';
+import useQuery from '@/app/hooks/useQuery';
 import ErrorMessage from '@/app/components/error-message';
 import FormattedDate from '@/app/components/date-format';
 import { ReadResultsOutput, type Result } from '@/app/lib/storage';
@@ -53,30 +54,22 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: ResultsT
     project,
   });
 
-  const { isLoading, error, mutate } = useMutation(withQueryParams(resultListEndpoint, getQueryParams()), {
-    method: 'GET',
+  const {
+    data: resultsResponse,
+    isFetching,
+    isPending,
+    error,
+    refetch,
+  } = useQuery<ReadResultsOutput>(withQueryParams(resultListEndpoint, getQueryParams()), {
+    dependencies: [project, rowsPerPage, page],
+    placeholderData: keepPreviousData,
   });
-
-  const fetchResults = async () => {
-    mutate(null, {
-      path: withQueryParams(resultListEndpoint, getQueryParams()),
-    }).then((res) => setResultsResponse(res));
-  };
-
-  const [resultsResponse, setResultsResponse] = useState<ReadResultsOutput>({ results: [], total: 0 });
-
-  useEffect(() => {
-    if (isLoading) {
-      return;
-    }
-    fetchResults();
-  }, [rowsPerPage, project, page]);
 
   const { results, total } = resultsResponse ?? {};
 
   const shouldRefetch = () => {
     onDeleted?.();
-    fetchResults();
+    refetch();
   };
 
   const onPageChange = useCallback(
@@ -121,7 +114,7 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: ResultsT
     <>
       <TablePaginationOptions
         entity="result"
-        rowPerPageOptions={[20, 40, 80, 120]}
+        rowPerPageOptions={[10, 20, 40, 80, 120]}
         rowsPerPage={rowsPerPage}
         setPage={setPage}
         setRowsPerPage={setRowsPerPage}
@@ -156,7 +149,12 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: ResultsT
             </TableColumn>
           )}
         </TableHeader>
-        <TableBody emptyContent="No results." isLoading={isLoading} items={results ?? []} loadingContent={<Spinner />}>
+        <TableBody
+          emptyContent="No results."
+          isLoading={isFetching || isPending}
+          items={results ?? []}
+          loadingContent={<Spinner />}
+        >
           {(item) => (
             <TableRow key={item.resultID}>
               <TableCell className="w-1/3">{item.resultID}</TableCell>

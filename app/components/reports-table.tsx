@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Table,
   TableHeader,
@@ -15,12 +15,13 @@ import {
   LinkIcon,
 } from '@nextui-org/react';
 import Link from 'next/link';
+import { keepPreviousData } from '@tanstack/react-query';
 
 import TablePaginationOptions from './table-pagination-options';
 
 import { withQueryParams } from '@/app/lib/network';
 import { defaultProjectName } from '@/app/lib/constants';
-import useMutation from '@/app/hooks/useMutation';
+import useQuery from '@/app/hooks/useQuery';
 import ErrorMessage from '@/app/components/error-message';
 import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
@@ -50,30 +51,22 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
     project,
   });
 
-  const { isLoading, error, mutate } = useMutation(withQueryParams(reportListEndpoint, getQueryParams()), {
-    method: 'GET',
+  const {
+    data: reportResponse,
+    isFetching,
+    isPending,
+    error,
+    refetch,
+  } = useQuery<ReadReportsOutput>(withQueryParams(reportListEndpoint, getQueryParams()), {
+    dependencies: [project, rowsPerPage, page],
+    placeholderData: keepPreviousData,
   });
-
-  const fetchReports = async () => {
-    mutate(null, {
-      path: withQueryParams(reportListEndpoint, getQueryParams()),
-    }).then((res) => setReportResponse(res));
-  };
-
-  const [reportResponse, setReportResponse] = useState<ReadReportsOutput>({ reports: [], total: 0 });
-
-  useEffect(() => {
-    if (isLoading) {
-      return;
-    }
-    fetchReports();
-  }, [rowsPerPage, project, page]);
 
   const { reports, total } = reportResponse ?? {};
 
   const onDeleted = () => {
     onChange?.();
-    fetchReports();
+    refetch();
   };
 
   const onPageChange = useCallback(
@@ -132,7 +125,12 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
             </TableColumn>
           )}
         </TableHeader>
-        <TableBody emptyContent="No reports." isLoading={isLoading} items={reports ?? []} loadingContent={<Spinner />}>
+        <TableBody
+          emptyContent="No reports."
+          isLoading={isFetching || isPending}
+          items={reports ?? []}
+          loadingContent={<Spinner />}
+        >
           {(item) => (
             <TableRow key={item.reportID}>
               <TableCell className="w-1/2">

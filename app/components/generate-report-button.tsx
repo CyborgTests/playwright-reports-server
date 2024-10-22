@@ -13,11 +13,13 @@ import {
   AutocompleteItem,
 } from '@nextui-org/react';
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { type Result } from '../lib/storage';
 
 import useMutation from '@/app/hooks/useMutation';
 import ErrorMessage from '@/app/components/error-message';
+import { invalidateCache } from '@/app/lib/query-cache';
 
 interface DeleteProjectButtonProps {
   results: Result[];
@@ -30,7 +32,15 @@ export default function GenerateReportButton({
   projects,
   onGeneratedReport,
 }: Readonly<DeleteProjectButtonProps>) {
-  const { mutate: generateReport, isLoading, error } = useMutation('/api/report/generate', { method: 'POST' });
+  const queryClient = useQueryClient();
+  const {
+    mutate: generateReport,
+    isPending,
+    error,
+  } = useMutation('/api/report/generate', {
+    method: 'POST',
+    onSuccess: () => invalidateCache(queryClient, { queryKeys: ['/api/info'], predicate: '/api/report' }),
+  });
 
   const [projectName, setProjectName] = useState('');
 
@@ -41,7 +51,7 @@ export default function GenerateReportButton({
       return;
     }
 
-    await generateReport({ resultsIds: results.map((r) => r.resultID), project: projectName });
+    generateReport({ body: { resultsIds: results.map((r) => r.resultID), project: projectName } });
 
     setProjectName('');
     onClose();
@@ -52,7 +62,7 @@ export default function GenerateReportButton({
     <>
       {error && <ErrorMessage message={error.message} />}
       <Tooltip color="secondary" content="Generate Report" placement="top">
-        <Button color="secondary" isDisabled={!results?.length} isLoading={isLoading} size="md" onClick={onOpen}>
+        <Button color="secondary" isDisabled={!results?.length} isLoading={isPending} size="md" onClick={onOpen}>
           Generate Report
         </Button>
       </Tooltip>
@@ -65,7 +75,7 @@ export default function GenerateReportButton({
                 <Autocomplete
                   allowsCustomValue
                   defaultInputValue={projects.at(0) ?? ''}
-                  isDisabled={isLoading}
+                  isDisabled={isPending}
                   items={projects.map((project) => ({ label: project, value: project }))}
                   label="Project name"
                   placeholder="leave empty if not required"
@@ -76,10 +86,10 @@ export default function GenerateReportButton({
                 </Autocomplete>
               </ModalBody>
               <ModalFooter>
-                <Button color="danger" isDisabled={isLoading} onClick={onClose}>
+                <Button color="danger" isDisabled={isPending} onClick={onClose}>
                   Close
                 </Button>
-                <Button color="success" isLoading={isLoading} type="submit" onClick={GenerateReport}>
+                <Button color="success" isLoading={isPending} type="submit" onClick={GenerateReport}>
                   Generate
                 </Button>
               </ModalFooter>

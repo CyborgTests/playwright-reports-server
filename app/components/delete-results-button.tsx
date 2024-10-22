@@ -12,18 +12,28 @@ import {
   Button,
 } from '@nextui-org/react';
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import useMutation from '@/app/hooks/useMutation';
 import ErrorMessage from '@/app/components/error-message';
 import { DeleteIcon } from '@/app/components/icons';
+import { invalidateCache } from '@/app/lib/query-cache';
 
 interface DeleteProjectButtonProps {
   resultIds: string[];
   onDeletedResult?: () => void;
 }
 
-export default function DeleteResultsButton({ resultIds, onDeletedResult }: DeleteProjectButtonProps) {
-  const { mutate: deleteResult, isLoading, error } = useMutation('/api/result/delete', { method: 'DELETE' });
+export default function DeleteResultsButton({ resultIds, onDeletedResult }: Readonly<DeleteProjectButtonProps>) {
+  const queryClient = useQueryClient();
+  const {
+    mutate: deleteResult,
+    isPending,
+    error,
+  } = useMutation('/api/result/delete', {
+    method: 'DELETE',
+    onSuccess: () => invalidateCache(queryClient, { queryKeys: ['/api/info'], predicate: '/api/result' }),
+  });
   const [confirm, setConfirm] = useState('');
 
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
@@ -33,7 +43,7 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult }: Dele
       return;
     }
 
-    await deleteResult({ resultsIds: resultIds });
+    deleteResult({ body: { resultsIds: resultIds } });
 
     onDeletedResult?.();
   };
@@ -41,7 +51,7 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult }: Dele
   return (
     <>
       <Tooltip color="danger" content="Delete Result" placement="top">
-        <Button color="danger" isDisabled={!resultIds?.length} isLoading={isLoading} size="md" onPress={onOpen}>
+        <Button color="danger" isDisabled={!resultIds?.length} isLoading={isPending} size="md" onPress={onOpen}>
           <DeleteIcon />
         </Button>
       </Tooltip>
@@ -74,7 +84,7 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult }: Dele
                 <Button
                   color="danger"
                   isDisabled={confirm !== resultIds?.at(0)}
-                  isLoading={isLoading}
+                  isLoading={isPending}
                   onClick={() => {
                     DeleteResult();
                     setConfirm('');

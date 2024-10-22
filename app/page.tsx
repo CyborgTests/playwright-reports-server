@@ -23,7 +23,7 @@ export default function DashboardPage() {
   const { status } = useSession();
   const authIsLoading = status === 'loading';
 
-  const { data: info, error, refetch } = useQuery<ServerDataInfo>('/api/info');
+  const { data: info, error, refetch, isLoading: isInfoLoading } = useQuery<ServerDataInfo>('/api/info');
   const [selectedTab, setSelectedTab] = useState<string>(getPersistedSelectedTab() ?? '');
   const [refreshId, setRefreshId] = useState<string>(uuidv4());
 
@@ -34,7 +34,7 @@ export default function DashboardPage() {
     refetch();
   }, [refreshId]);
 
-  if (authIsLoading) {
+  if (authIsLoading || isInfoLoading) {
     return <Spinner />;
   }
 

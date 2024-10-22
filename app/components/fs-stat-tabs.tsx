@@ -68,7 +68,7 @@ export default function FilesystemStatTabs({ info, selected, onSelect, onUpdate 
           key="trends"
           isDisabled={!info?.numOfReports || info?.numOfReports <= 1}
           title={
-            <div className="flex flex-col p-5">
+            <div className="flex flex-col w-20 items-center">
               <TrendIcon />
               <p>Trends</p>
             </div>
