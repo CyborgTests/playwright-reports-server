@@ -3,6 +3,7 @@
 import { Spinner, Button } from '@nextui-org/react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
+import { toast } from 'sonner';
 
 import ReportStatistics from '@/app/components/report-details/report-stats';
 import FileList from '@/app/components/report-details/file-list';
@@ -40,11 +41,7 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
     );
   }
 
-  const error = reportError;
-
-  if (error) {
-    return <p>Error: {error.message}</p>;
-  }
+  reportError && toast.error(reportError.message);
 
   return (
     <>

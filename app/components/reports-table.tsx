@@ -16,13 +16,13 @@ import {
 } from '@nextui-org/react';
 import Link from 'next/link';
 import { keepPreviousData } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 import TablePaginationOptions from './table-pagination-options';
 
 import { withQueryParams } from '@/app/lib/network';
 import { defaultProjectName } from '@/app/lib/constants';
 import useQuery from '@/app/hooks/useQuery';
-import ErrorMessage from '@/app/components/error-message';
 import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
 import { EyeIcon } from '@/app/components/icons';
@@ -88,9 +88,9 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
     return total ? Math.ceil(total / rowsPerPage) : 0;
   }, [project, total, rowsPerPage]);
 
-  return error ? (
-    <ErrorMessage message={error.message} />
-  ) : (
+  error && toast.error(error.message);
+
+  return (
     <>
       <TablePaginationOptions
         entity="report"

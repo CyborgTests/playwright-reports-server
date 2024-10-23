@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Accordion, AccordionItem, Spinner } from '@nextui-org/react';
+import { toast } from 'sonner';
 
 import { subtitle } from '../primitives';
 import { StatChart } from '../stat-chart';
@@ -30,7 +31,7 @@ const FileList: React.FC<FileListProps> = ({ report }) => {
   }
 
   if (historyError) {
-    return <p>Error: {historyError.message}</p>;
+    toast.error(historyError.message);
   }
 
   return isHistoryLoading ? (

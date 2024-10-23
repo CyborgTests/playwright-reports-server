@@ -13,9 +13,9 @@ import {
 } from '@nextui-org/react';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 import useMutation from '@/app/hooks/useMutation';
-import ErrorMessage from '@/app/components/error-message';
 import { DeleteIcon } from '@/app/components/icons';
 import { invalidateCache } from '@/app/lib/query-cache';
 
@@ -32,7 +32,10 @@ export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjec
     error,
   } = useMutation('/api/report/delete', {
     method: 'DELETE',
-    onSuccess: () => invalidateCache(queryClient, { queryKeys: ['/api/info'], predicate: '/api/report' }),
+    onSuccess: () => {
+      invalidateCache(queryClient, { queryKeys: ['/api/info'], predicate: '/api/report' });
+      toast.success(`report "${reportId}" deleted`);
+    },
   });
   const [confirm, setConfirm] = useState('');
 
@@ -47,6 +50,8 @@ export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjec
 
     onDeleted?.();
   };
+
+  error && toast.error(error.message);
 
   return (
     !!reportId && (
@@ -71,7 +76,6 @@ export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjec
                   <Input isRequired label="Confirm" value={confirm} onValueChange={setConfirm} />
                 </ModalBody>
                 <ModalFooter>
-                  {error && <ErrorMessage message={error.message} />}
                   <Button color="primary" variant="light" onPress={onClose}>
                     Close
                   </Button>

@@ -14,11 +14,11 @@ import {
 } from '@nextui-org/react';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 import { type Result } from '../lib/storage';
 
 import useMutation from '@/app/hooks/useMutation';
-import ErrorMessage from '@/app/components/error-message';
 import { invalidateCache } from '@/app/lib/query-cache';
 
 interface DeleteProjectButtonProps {
@@ -39,7 +39,10 @@ export default function GenerateReportButton({
     error,
   } = useMutation('/api/report/generate', {
     method: 'POST',
-    onSuccess: () => invalidateCache(queryClient, { queryKeys: ['/api/info'], predicate: '/api/report' }),
+    onSuccess: (data: { reportId: string }) => {
+      invalidateCache(queryClient, { queryKeys: ['/api/info'], predicate: '/api/report' });
+      toast.success(`report ${data?.reportId} is generated`);
+    },
   });
 
   const [projectName, setProjectName] = useState('');
@@ -58,9 +61,10 @@ export default function GenerateReportButton({
     onGeneratedReport?.();
   };
 
+  error && toast.error(error.message);
+
   return (
     <>
-      {error && <ErrorMessage message={error.message} />}
       <Tooltip color="secondary" content="Generate Report" placement="top">
         <Button color="secondary" isDisabled={!results?.length} isLoading={isPending} size="md" onClick={onOpen}>
           Generate Report
