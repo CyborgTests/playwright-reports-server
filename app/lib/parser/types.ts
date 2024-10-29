@@ -64,3 +64,8 @@ interface ReportTestAttachment {
 interface ReportTestResult {
   attachments: ReportTestAttachment[];
 }
+
+export interface ReportTestFilters {
+  outcomes?: ReportTestOutcome[];
+  name?: string;
+}
