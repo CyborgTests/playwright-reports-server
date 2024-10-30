@@ -22,7 +22,7 @@ export const generatePlaywrightReport = async (
 
   console.log(`[pw] merging reports from ${TMP_FOLDER}`);
 
-  const { error } = await withError(
+  const { result, error } = await withError(
     execAsync(`npx playwright merge-reports --reporter html ${TMP_FOLDER}`, {
       env: {
         ...process.env,
@@ -33,8 +33,8 @@ export const generatePlaywrightReport = async (
     }),
   );
 
-  if (error) {
-    console.error(JSON.stringify(error, null, 4));
+  if (error ?? result?.stderr) {
+    console.error(error ? JSON.stringify(error, null, 4) : result?.stderr);
   }
 
   return {
