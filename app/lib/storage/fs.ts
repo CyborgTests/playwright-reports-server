@@ -195,7 +195,11 @@ export async function saveResult(buffer: Buffer, resultDetails: ResultDetails) {
   await createDirectoriesIfMissing();
   const resultID = randomUUID();
 
-  await fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.zip`), buffer);
+  const { error: writeZipError } = await withError(fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.zip`), buffer));
+
+  if (writeZipError) {
+    throw new Error(`failed to save result ${resultID} zip file: ${writeZipError.message}`);
+  }
 
   const metaData = {
     resultID,
@@ -203,7 +207,13 @@ export async function saveResult(buffer: Buffer, resultDetails: ResultDetails) {
     ...resultDetails,
   };
 
-  await fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.json`), Buffer.from(JSON.stringify(metaData, null, 2)));
+  const { error: writeJsonError } = await withError(
+    fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.json`), Buffer.from(JSON.stringify(metaData, null, 2))),
+  );
+
+  if (writeJsonError) {
+    throw new Error(`failed to save result ${resultID} json file: ${writeJsonError.message}`);
+  }
 
   return metaData;
 }
@@ -217,7 +227,11 @@ export async function generateReport(resultsIds: string[], project?: string) {
     console.log('temp folder not found, creating...');
   }
 
-  await fs.mkdir(TMP_FOLDER, { recursive: true });
+  const { error: mkdirTempError } = await withError(fs.mkdir(TMP_FOLDER, { recursive: true }));
+
+  if (mkdirTempError) {
+    throw new Error(`failed to create temp folder to generate report: ${mkdirTempError.message}`);
+  }
 
   for (const id of resultsIds) {
     await fs.copyFile(path.join(RESULTS_FOLDER, `${id}.zip`), path.join(TMP_FOLDER, `${id}.zip`));

@@ -1,3 +1,4 @@
+import { isBufferZipResult } from '@/app/lib/parser/validate';
 import { type ResultDetails, storage } from '@/app/lib/storage';
 import { withError } from '@/app/lib/withError';
 
@@ -35,6 +36,12 @@ export async function PUT(request: Request) {
     }
     // String values for now
     resultDetails[key] = value.toString();
+  }
+
+  const { error: bufferValidationError } = await withError(isBufferZipResult(buffer));
+
+  if (bufferValidationError) {
+    return Response.json({ error: `invalid result file: ${bufferValidationError.message}` }, { status: 400 });
   }
 
   const { result: savedResult, error } = await withError(storage.saveResult(buffer, resultDetails));
