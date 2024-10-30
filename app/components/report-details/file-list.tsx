@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Accordion, AccordionItem, Spinner } from '@nextui-org/react';
 import { toast } from 'sonner';
 
@@ -8,9 +8,11 @@ import { subtitle } from '../primitives';
 import { StatChart } from '../stat-chart';
 
 import renderFileSuitesTree from './suite-tree';
+import ReportFilters from './tests-filters';
 
 import { type ReportHistory } from '@/app/lib/storage';
 import useQuery from '@/app/hooks/useQuery';
+import { pluralize } from '@/app/lib/transformers';
 
 interface FileListProps {
   report?: ReportHistory | null;
@@ -26,6 +28,8 @@ const FileList: React.FC<FileListProps> = ({ report }) => {
     dependencies: [report?.reportID],
   });
 
+  const [filteredTests, setFilteredTests] = useState<ReportHistory | undefined>(report!);
+
   if (!report) {
     return <>Loading...</>;
   }
@@ -40,20 +44,38 @@ const FileList: React.FC<FileListProps> = ({ report }) => {
     </div>
   ) : (
     <div>
-      <h2 className={subtitle()}>File list</h2>
-      <Accordion variant="bordered">
-        {(report?.files ?? []).map((file) => (
-          <AccordionItem key={file.fileId} aria-label={file.fileName} title={file.fileName}>
-            <div className="file-details">
-              <StatChart stats={file.stats} />
-              <div className="file-tests">
-                <h4 className={subtitle()}>Tests</h4>
-                {renderFileSuitesTree(file, history ?? [])}
+      <div className="flex flex-row justify-between">
+        <h2 className={subtitle()}>File list</h2>
+        <ReportFilters report={report!} onChangeFilters={setFilteredTests} />
+      </div>
+      {!filteredTests?.files?.length ? (
+        <p>No files found</p>
+      ) : (
+        <Accordion variant="bordered">
+          {(filteredTests?.files ?? []).map((file) => (
+            <AccordionItem
+              key={file.fileId}
+              aria-label={file.fileName}
+              title={
+                <p className="flex flex-row gap-5">
+                  {file.fileName}
+                  <span className="text-gray-500">
+                    {file.tests.length} {pluralize(file.tests.length, 'test', 'tests')}
+                  </span>
+                </p>
+              }
+            >
+              <div className="file-details">
+                <StatChart stats={file.stats} />
+                <div className="file-tests">
+                  <h4 className={subtitle()}>Tests</h4>
+                  {renderFileSuitesTree(file, history ?? [])}
+                </div>
               </div>
-            </div>
-          </AccordionItem>
-        ))}
-      </Accordion>
+            </AccordionItem>
+          ))}
+        </Accordion>
+      )}
     </div>
   );
 };
