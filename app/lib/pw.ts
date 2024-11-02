@@ -1,6 +1,6 @@
 import { exec } from 'node:child_process';
 import util from 'node:util';
-import { randomUUID, type UUID } from 'node:crypto';
+import { type UUID } from 'node:crypto';
 import path from 'node:path';
 
 import { withError } from './withError';
@@ -9,21 +9,21 @@ import { REPORTS_FOLDER, TMP_FOLDER } from './storage/constants';
 const execAsync = util.promisify(exec);
 
 export const generatePlaywrightReport = async (
+  reportId: UUID,
   projectName?: string,
-): Promise<{ reportId: UUID; reportPath: string }> => {
-  console.log(`[pw] generating Playwright report`);
-  const reportId = randomUUID();
-
-  console.log(`[pw] report ID: ${reportId}`);
+): Promise<{ reportPath: string }> => {
+  console.log(`[pw] generating Playwright report ${reportId}`);
 
   const reportPath = path.join(REPORTS_FOLDER, projectName ?? '', reportId);
 
   console.log(`[pw] report path: ${reportPath}`);
 
-  console.log(`[pw] merging reports from ${TMP_FOLDER}`);
+  const tempFolder = path.join(TMP_FOLDER, reportId);
+
+  console.log(`[pw] merging reports from ${tempFolder}`);
 
   const { result, error } = await withError(
-    execAsync(`npx playwright merge-reports --reporter html ${TMP_FOLDER}`, {
+    execAsync(`npx playwright merge-reports --reporter html ${tempFolder}`, {
       env: {
         ...process.env,
         // Avoid opening the report on server
@@ -38,7 +38,6 @@ export const generatePlaywrightReport = async (
   }
 
   return {
-    reportId,
     reportPath,
   };
 };
