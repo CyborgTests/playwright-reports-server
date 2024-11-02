@@ -12,7 +12,7 @@ import {
   Autocomplete,
   AutocompleteItem,
 } from '@nextui-org/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -47,9 +47,13 @@ export default function GenerateReportButton({
 
   const [projectName, setProjectName] = useState('');
 
+  useEffect(() => {
+    !projectName && setProjectName(projects?.at(0) ?? '');
+  }, [projects]);
+
   const { isOpen, onOpen, onClose, onOpenChange } = useDisclosure();
 
-  const GenerateReport = async () => {
+  const GenerateReport = () => {
     if (!results?.length) {
       return;
     }
@@ -78,13 +82,13 @@ export default function GenerateReportButton({
               <ModalBody>
                 <Autocomplete
                   allowsCustomValue
-                  defaultInputValue={projects.at(0) ?? ''}
+                  inputValue={projectName}
                   isDisabled={isPending}
                   items={projects.map((project) => ({ label: project, value: project }))}
                   label="Project name"
                   placeholder="leave empty if not required"
                   onInputChange={(value) => setProjectName(value)}
-                  onSelectionChange={(value) => setProjectName(value?.toString() ?? '')}
+                  onSelectionChange={(value) => value && setProjectName(value?.toString() ?? '')}
                 >
                   {(item) => <AutocompleteItem key={item.value}>{item.label}</AutocompleteItem>}
                 </Autocomplete>
