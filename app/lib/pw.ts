@@ -4,7 +4,9 @@ import { randomUUID, type UUID } from 'node:crypto';
 import path from 'node:path';
 
 import { withError } from './withError';
-import { REPORTS_FOLDER, TMP_FOLDER } from './storage/constants';
+import { REPORTS_FOLDER, TMP_FOLDER, TEMP_REPORTS_FOLDER } from './storage/constants';
+import fs from 'node:fs/promises';
+import { recursiveCopyFiles } from './storage/overrides';
 
 const execAsync = util.promisify(exec);
 
@@ -17,6 +19,7 @@ export const generatePlaywrightReport = async (
   console.log(`[pw] report ID: ${reportId}`);
 
   const reportPath = path.join(REPORTS_FOLDER, projectName ?? '', reportId);
+  const tempReportPath = path.join(TEMP_REPORTS_FOLDER, projectName ?? '', reportId)
 
   console.log(`[pw] report path: ${reportPath}`);
 
@@ -28,10 +31,15 @@ export const generatePlaywrightReport = async (
         ...process.env,
         // Avoid opening the report on server
         PW_TEST_HTML_REPORT_OPEN: 'never',
-        PLAYWRIGHT_HTML_REPORT: reportPath,
+        PLAYWRIGHT_HTML_REPORT: tempReportPath,
       },
     }),
   );
+
+  if (!error) {
+    await recursiveCopyFiles(tempReportPath, reportPath);
+    await fs.rm(tempReportPath, { recursive: true })
+  }
 
   if (error ?? result?.stderr) {
     console.error(error ? JSON.stringify(error, null, 4) : result?.stderr);

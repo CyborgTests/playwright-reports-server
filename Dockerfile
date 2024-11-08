@@ -53,8 +53,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 ARG DATA_DIR=/app/data
 ARG RESULTS_DIR=${DATA_DIR}/results
 ARG REPORTS_DIR=${DATA_DIR}/reports
+ARG TEMP_REPORTS_DIR=/app/temp_reports
 ARG TEMP_DIR=${DATA_DIR}/.tmp
 RUN mkdir -p ${DATA_DIR} && chown -R nextjs:nodejs ${DATA_DIR}
+RUN mkdir -p ${TEMP_REPORTS_DIR} && chown -R nextjs:nodejs ${TEMP_REPORTS_DIR}
 RUN mkdir -p ${RESULTS_DIR} && chown -R nextjs:nodejs ${RESULTS_DIR}
 RUN mkdir -p ${REPORTS_DIR} && chown -R nextjs:nodejs ${REPORTS_DIR}
 RUN mkdir -p ${TEMP_DIR} && chown -R nextjs:nodejs ${TEMP_DIR}
