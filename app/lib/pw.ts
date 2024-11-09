@@ -19,7 +19,7 @@ export const generatePlaywrightReport = async (
   console.log(`[pw] report ID: ${reportId}`);
 
   const reportPath = path.join(REPORTS_FOLDER, projectName ?? '', reportId);
-  const tempReportPath = path.join(TEMP_REPORTS_FOLDER, projectName ?? '', reportId)
+  const tempReportPath = path.join(TEMP_REPORTS_FOLDER, projectName ?? '', reportId);
 
   console.log(`[pw] report path: ${reportPath}`);
 
@@ -38,7 +38,7 @@ export const generatePlaywrightReport = async (
 
   if (!error) {
     await recursiveCopyFiles(tempReportPath, reportPath);
-    await fs.rm(tempReportPath, { recursive: true })
+    await fs.rm(tempReportPath, { recursive: true });
   }
 
   if (error ?? result?.stderr) {
