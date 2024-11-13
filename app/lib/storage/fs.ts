@@ -221,23 +221,26 @@ export async function saveResult(buffer: Buffer, resultDetails: ResultDetails) {
 export async function generateReport(resultsIds: string[], project?: string) {
   await createDirectoriesIfMissing();
 
-  const { error } = await withError(fs.rm(TMP_FOLDER, { recursive: true, force: true }));
+  const reportId = randomUUID();
+  const tempFolder = path.join(TMP_FOLDER, reportId);
 
-  if (error) {
-    console.log('temp folder not found, creating...');
-  }
-
-  const { error: mkdirTempError } = await withError(fs.mkdir(TMP_FOLDER, { recursive: true }));
+  const { error: mkdirTempError } = await withError(fs.mkdir(tempFolder, { recursive: true }));
 
   if (mkdirTempError) {
     throw new Error(`failed to create temp folder to generate report: ${mkdirTempError.message}`);
   }
 
   for (const id of resultsIds) {
-    await fs.copyFile(path.join(RESULTS_FOLDER, `${id}.zip`), path.join(TMP_FOLDER, `${id}.zip`));
+    await fs.copyFile(path.join(RESULTS_FOLDER, `${id}.zip`), path.join(tempFolder, `${id}.zip`));
   }
 
-  const { reportId } = await generatePlaywrightReport(project);
+  await generatePlaywrightReport(reportId, project);
+
+  const { error } = await withError(fs.rm(tempFolder, { recursive: true, force: true }));
+
+  if (error) {
+    console.log(`failed to remove temp folder: ${error.message}`);
+  }
 
   return reportId;
 }

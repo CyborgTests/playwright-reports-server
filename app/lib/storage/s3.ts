@@ -51,9 +51,9 @@ const createClient = () => {
 
 export class S3 implements Storage {
   private static instance: S3;
-  private client: Client;
-  private bucket: string;
-  private batchSize: number;
+  private readonly client: Client;
+  private readonly bucket: string;
+  private readonly batchSize: number;
 
   private constructor() {
     this.client = createClient();
@@ -69,7 +69,7 @@ export class S3 implements Storage {
     return S3.instance;
   }
 
-  private ensureBucketExist = async () => {
+  private async ensureBucketExist() {
     const { result: exist, error } = await withError(this.client.bucketExists(this.bucket));
 
     if (exist && !error) {
@@ -85,7 +85,7 @@ export class S3 implements Storage {
     if (bucketError) {
       console.error(bucketError);
     }
-  };
+  }
 
   private async write(dir: string, files: { name: string; content: string | Buffer }[]) {
     await this.ensureBucketExist();
@@ -394,7 +394,7 @@ export class S3 implements Storage {
     return metaData;
   }
 
-  private uploadReport = async (reportId: string, reportPath: string) => {
+  private async uploadReport(reportId: string, reportPath: string) {
     console.log(`[s3] upload report: ${reportPath}`);
 
     const files = await fs.readdir(reportPath, { recursive: true, withFileTypes: true });
@@ -421,21 +421,34 @@ export class S3 implements Storage {
         throw new Error(`[s3] failed to upload report: ${error.message}`);
       }
     });
-  };
+  }
 
-  private clearTempFolders = async () => {
-    console.log(`[s3] clear temp folders`);
-    await withError(fs.rm(TMP_FOLDER, { recursive: true, force: true }));
+  private async clearTempFolders(id?: string) {
+    const withReportPathMaybe = id ? ` for report ${id}` : '';
+    console.log(`[s3] clear temp folders${withReportPathMaybe}`);
+
+    await withError(fs.rm(path.join(TMP_FOLDER, id ?? ''), { recursive: true, force: true }));
     await withError(fs.rm(REPORTS_FOLDER, { recursive: true, force: true }));
-  };
+  }
 
   async generateReport(resultsIds: string[], project?: string): Promise<UUID> {
     console.log(`[s3] generate report from results: ${JSON.stringify(resultsIds)}`);
-    await this.clearTempFolders();
-
     console.log(`[s3] create temp folders`);
     await fs.mkdir(REPORTS_FOLDER, { recursive: true });
-    await fs.mkdir(TMP_FOLDER, { recursive: true });
+    const { error: mkdirReportsError } = await withError(fs.mkdir(REPORTS_FOLDER, { recursive: true }));
+
+    if (mkdirReportsError) {
+      console.error(`[s3] failed to create reports folder: ${mkdirReportsError.message}`);
+    }
+
+    const reportId = randomUUID();
+    const tempFolder = path.join(TMP_FOLDER, reportId);
+
+    const { error: mkdirTempError } = await withError(fs.mkdir(tempFolder, { recursive: true }));
+
+    if (mkdirTempError) {
+      console.error(`[s3] failed to create temporary folder: ${mkdirTempError.message}`);
+    }
 
     const resultsStream = this.client.listObjects(this.bucket, RESULTS_BUCKET, true);
 
@@ -448,7 +461,7 @@ export class S3 implements Storage {
 
       if (resultsIds.includes(id)) {
         console.log(`[s3] file id is in target results, downloading...`);
-        const localFilePath = path.join(TMP_FOLDER, fileName);
+        const localFilePath = path.join(tempFolder, fileName);
 
         const { error } = await withError(this.client.fGetObject(this.bucket, result.name, localFilePath));
 
@@ -460,12 +473,12 @@ export class S3 implements Storage {
       }
     }
 
-    const { reportPath, reportId } = await generatePlaywrightReport(project);
+    const { reportPath } = await generatePlaywrightReport(reportId, project);
 
     console.log(`[s3] report generated: ${reportId} | ${reportPath}`);
 
     await this.uploadReport(reportId, reportPath);
-    await this.clearTempFolders();
+    await this.clearTempFolders(reportId);
 
     return reportId;
   }
