@@ -173,7 +173,7 @@ Response will contain array of results:
 }
 ```
 
-## `/api/result/upload` (POST):
+## `/api/result/upload` (PUT):
 
 Accepts .zip archive - output of blob report, details - https://playwright.dev/docs/test-reporters#blob-reporter:
 
