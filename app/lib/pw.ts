@@ -25,18 +25,20 @@ export const generatePlaywrightReport = async (
 
   console.log(`[pw] merging reports from ${TMP_FOLDER}`);
 
+  const { IS_AZURE_FILE_STORAGE } = process.env
+
   const { result, error } = await withError(
     execAsync(`npx playwright merge-reports --reporter html ${TMP_FOLDER}`, {
       env: {
         ...process.env,
         // Avoid opening the report on server
         PW_TEST_HTML_REPORT_OPEN: 'never',
-        PLAYWRIGHT_HTML_REPORT: tempReportPath,
+        PLAYWRIGHT_HTML_REPORT: IS_AZURE_FILE_STORAGE ? tempReportPath : reportPath,
       },
     }),
   );
 
-  if (!error) {
+  if (!error && IS_AZURE_FILE_STORAGE) {
     await recursiveCopyFiles(tempReportPath, reportPath);
     await fs.rm(tempReportPath, { recursive: true });
   }
