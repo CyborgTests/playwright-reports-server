@@ -84,12 +84,14 @@ Response example:
       "reportID": "8e9af87d-1d10-4729-aefd-3e92ee64d06c",
       "createdAt": "2024-05-06T16:52:45.017Z",
       "project": "regression",
+      "size": "6.97 MB",
       "reportUrl": "/api/serve/regression/8e9af87d-1d10-4729-aefd-3e92ee64d06c/index.html"
     },
     {
       "reportID": "8fe427ed-783c-4fb9-aacc-ba6fbc5f5667",
       "createdAt": "2024-05-06T16:59:38.814Z",
       "project": "smoke",
+      "size": "1.53 MB",
       "reportUrl": "/api/serve/smoke/8fe427ed-783c-4fb9-aacc-ba6fbc5f5667/index.html"
     }
   ],
@@ -164,6 +166,7 @@ Response will contain array of results:
     {
       "resultID": "a7beb04b-f190-4fbb-bebd-58b2c776e6c3",
       "createdAt": "2024-05-06T16:40:33.021Z",
+      "size": "1.93 MB",
       "project": "regression",
       "testRunName": "regression-run-v1.10",
       "reporter": "okhotemskyi"
@@ -204,7 +207,8 @@ Response example:
     "createdAt": "2024-07-07T13:35:57.382Z",
     "project": "desktop",
     "reporter": "okhotemskyi",
-    "appVersion": "1.2.2"
+    "appVersion": "1.2.2",
+    "size": "1.2 MB"
   },
   "status": 201
 }

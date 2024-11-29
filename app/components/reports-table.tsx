@@ -32,6 +32,7 @@ const columns = [
   { name: 'ID', uid: 'reportID' },
   { name: 'Project', uid: 'project' },
   { name: 'Created At', uid: 'createdAt' },
+  { name: 'Size', uid: 'size' },
   { name: 'Actions', uid: 'actions' },
 ];
 
@@ -144,6 +145,7 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
               <TableCell className="w-1/4">
                 <FormattedDate date={item.createdAt} />
               </TableCell>
+              <TableCell className="w-1/4">{item.size}</TableCell>
               <TableCell className="w-1/4">
                 <div className="flex gap-4 justify-end">
                   <Tooltip color="success" content="Open Report" placement="top">
