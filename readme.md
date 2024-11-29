@@ -65,7 +65,7 @@ Check out the live demo: [familiar-alyss-alex-hot-6926ec9c.koyeb.app](https://fa
 Returns list of generated reports and corresponding url on server:
 
 ```sh
-curl --location --request DELETE 'http://localhost:3000/api/report/delete' \
+curl --location --request GET 'http://localhost:3000/api/report/list' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: <api-token>' \
 --data '{
@@ -126,7 +126,7 @@ Response example:
 Generates report from provided resultsIds, merges results together into one report, using https://playwright.dev/docs/test-sharding#merge-reports-cli
 
 ```sh
-curl --location 'http://localhost:3000/api/report/generate' \
+curl --location --request POST 'http://localhost:3000/api/report/generate' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: <api-token>' \
 --data '{
