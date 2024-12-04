@@ -16,6 +16,7 @@ export interface Storage {
   ) => Promise<{
     resultID: UUID;
     createdAt: string;
+    size: string;
   }>;
   generateReport: (resultsIds: string[], project?: string) => Promise<UUID>;
   getReportsProjects: () => Promise<string[]>;
@@ -53,9 +54,16 @@ export type Result = {
   resultID: UUID;
   createdAt: string;
   project: string;
+  size: string;
 } & ResultDetails;
 
-export type Report = { reportID: string; project: string; reportUrl: string; createdAt: Date };
+export type Report = {
+  reportID: string;
+  project: string;
+  reportUrl: string;
+  createdAt: Date;
+  size: string;
+};
 
 export type ReportHistory = Report & ReportInfo;
 

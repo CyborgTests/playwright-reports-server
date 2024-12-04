@@ -29,11 +29,12 @@ const columns = [
   { name: 'Project', uid: 'project' },
   { name: 'Created At', uid: 'createdAt' },
   { name: 'Tags', uid: 'tags' },
+  { name: 'Size', uid: 'size' },
   { name: 'Actions', uid: 'actions' },
 ];
 
 const getTags = (item: Result) => {
-  return Object.entries(item).filter(([key]) => !['resultID', 'createdAt', 'project'].includes(key));
+  return Object.entries(item).filter(([key]) => !['resultID', 'createdAt', 'size', 'project'].includes(key));
 };
 
 interface ResultsTableProps {
@@ -172,6 +173,7 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: ResultsT
                   >{`${key}: ${value}`}</Chip>
                 ))}
               </TableCell>
+              <TableCell className="w-1/4">{item.size}</TableCell>
               <TableCell className="w-1/12">
                 <div className="flex gap-4 justify-center">
                   <DeleteResultsButton resultIds={[item.resultID]} onDeletedResult={shouldRefetch} />

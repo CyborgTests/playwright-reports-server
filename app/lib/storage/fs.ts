@@ -148,7 +148,9 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
   const reports = await Promise.all(
     paginatedFiles.map(async (file) => {
       const id = path.basename(file.filePath);
-      const parentDir = path.basename(path.dirname(file.filePath));
+      const reportPath = path.dirname(file.filePath);
+      const parentDir = path.basename(reportPath);
+      const size = await getFolderSizeInMb(path.join(reportPath, id));
 
       const projectName = parentDir === REPORTS_PATH ? '' : parentDir;
 
@@ -156,6 +158,7 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
         reportID: id,
         project: projectName,
         createdAt: file.birthtime,
+        size,
         reportUrl: `${serveReportRoute}/${projectName ? encodeURIComponent(projectName) : ''}/${id}/index.html`,
       };
     }),
@@ -194,8 +197,11 @@ export async function deleteReport(reportId: string) {
 export async function saveResult(buffer: Buffer, resultDetails: ResultDetails) {
   await createDirectoriesIfMissing();
   const resultID = randomUUID();
+  const resultPath = path.join(RESULTS_FOLDER, `${resultID}.zip`);
 
-  const { error: writeZipError } = await withError(fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.zip`), buffer));
+  const { error: writeZipError } = await withError(fs.writeFile(resultPath, buffer));
+
+  const size = await getFolderSizeInMb(resultPath);
 
   if (writeZipError) {
     throw new Error(`failed to save result ${resultID} zip file: ${writeZipError.message}`);
@@ -204,6 +210,7 @@ export async function saveResult(buffer: Buffer, resultDetails: ResultDetails) {
   const metaData = {
     resultID,
     createdAt: new Date().toISOString(),
+    size,
     ...resultDetails,
   };
 

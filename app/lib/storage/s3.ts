@@ -15,6 +15,7 @@ import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
 import { type Result, type Report, type ResultDetails, type ServerDataInfo } from '@/app/lib/storage/types';
 import { env } from '@/app/config/env';
+import { getFileReportID } from './file';
 
 const createClient = () => {
   const endPoint = env.S3_ENDPOINT;
@@ -279,12 +280,20 @@ export class S3 implements Storage {
     const reportsStream = this.client.listObjectsV2(this.bucket, REPORTS_BUCKET, true);
 
     const reports: Report[] = [];
+    const reportSizes = new Map<string, number>();
 
     return new Promise((resolve, reject) => {
       reportsStream.on('data', (file) => {
         if (!file?.name) {
           return;
         }
+
+        const reportID = getFileReportID(file.name);
+
+        const newSize = (reportSizes.get(reportID) ?? 0) + file.size;
+
+        reportSizes.set(reportID, newSize);
+
         if (!file.name.endsWith('index.html') || file.name.includes('trace')) {
           return;
         }
@@ -308,6 +317,7 @@ export class S3 implements Storage {
           project: projectName,
           createdAt: file.lastModified,
           reportUrl: `${serveReportRoute}/${projectName ? encodeURIComponent(projectName) : ''}/${id}/index.html`,
+          size: '',
         };
 
         if (noFilters || shouldFilterByProject || shouldFilterByID) {
@@ -326,7 +336,13 @@ export class S3 implements Storage {
 
         const currentReports = handlePagination<Report>(reports, input?.pagination);
 
-        resolve({ reports: currentReports, total: reports.length });
+        resolve({
+          reports: currentReports.map((report) => ({
+            ...report,
+            size: bytesToString(reportSizes.get(report.reportID) ?? 0),
+          })),
+          total: reports.length,
+        });
       });
     });
   }
@@ -371,11 +387,13 @@ export class S3 implements Storage {
     await withError(this.clear(...objects));
   }
 
-  async saveResult(buffer: Buffer, resultDetails: ResultDetails): Promise<{ resultID: UUID; createdAt: string }> {
+  async saveResult(buffer: Buffer, resultDetails: ResultDetails) {
     const resultID = randomUUID();
+    const size = bytesToString(buffer.length);
 
     const metaData = {
       resultID,
+      size,
       createdAt: new Date().toISOString(),
       ...resultDetails,
     };
