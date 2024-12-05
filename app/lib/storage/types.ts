@@ -45,6 +45,11 @@ export interface ReadReportsOutput {
   total: number;
 }
 
+export interface ReadReportsHistory {
+  reports: ReportHistory[];
+  total: number;
+}
+
 // For custom user fields
 export interface ResultDetails {
   [key: string]: string;

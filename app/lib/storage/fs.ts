@@ -38,7 +38,7 @@ async function createDirectoriesIfMissing() {
   await createDirectory(TMP_FOLDER);
 }
 
-const getFolderSizeInMb = async (dir: string) => {
+const getSizeInMb = async (dir: string) => {
   const sizeBytes = await getFolderSize.loose(dir);
 
   return bytesToString(sizeBytes);
@@ -46,11 +46,11 @@ const getFolderSizeInMb = async (dir: string) => {
 
 export async function getServerDataInfo(): Promise<ServerDataInfo> {
   await createDirectoriesIfMissing();
-  const dataFolderSizeinMB = await getFolderSizeInMb(DATA_FOLDER);
+  const dataFolderSizeinMB = await getSizeInMb(DATA_FOLDER);
   const resultsCount = await getResultsCount();
-  const resultsFolderSizeinMB = await getFolderSizeInMb(RESULTS_FOLDER);
+  const resultsFolderSizeinMB = await getSizeInMb(RESULTS_FOLDER);
   const { total: reportsCount } = await readReports();
-  const reportsFolderSizeinMB = await getFolderSizeInMb(REPORTS_FOLDER);
+  const reportsFolderSizeinMB = await getSizeInMb(REPORTS_FOLDER);
 
   return {
     dataFolderSizeinMB,
@@ -77,24 +77,31 @@ export async function readResults(input?: ReadResultsInput) {
   await createDirectoriesIfMissing();
   const files = await fs.readdir(RESULTS_FOLDER);
 
-  const stats = await processBatch<string, Stats & { filePath: string }>({}, files, 20, async (file) => {
-    const filePath = path.join(RESULTS_FOLDER, file);
+  const stats = await processBatch<string, Stats & { filePath: string; size: string }>(
+    {},
+    files.filter((file) => file.endsWith('.json')),
+    20,
+    async (file) => {
+      const filePath = path.join(RESULTS_FOLDER, file);
 
-    const stat = await fs.stat(filePath);
+      const stat = await fs.stat(filePath);
 
-    return Object.assign(stat, { filePath });
-  });
+      const size = await getSizeInMb(filePath.replace('.json', '.zip'));
 
-  const jsonFiles = stats
-    .filter((stat) => stat.isFile() && path.extname(stat.filePath) === '.json')
-    .sort((a, b) => b.birthtimeMs - a.birthtimeMs)
-    .map((stat) => stat.filePath);
+      return Object.assign(stat, { filePath, size });
+    },
+  );
+
+  const jsonFiles = stats.sort((a, b) => b.birthtimeMs - a.birthtimeMs);
 
   const fileContents: Result[] = await Promise.all(
-    jsonFiles.map(async (filePath) => {
-      const content = await fs.readFile(filePath, 'utf-8');
+    jsonFiles.map(async (entry) => {
+      const content = await fs.readFile(entry.filePath, 'utf-8');
 
-      return JSON.parse(content);
+      return {
+        size: entry.size,
+        ...JSON.parse(content),
+      };
     }),
   );
 
@@ -105,7 +112,9 @@ export async function readResults(input?: ReadResultsInput) {
   const paginatedResults = handlePagination(resultsByProject, input?.pagination);
 
   return {
-    results: paginatedResults,
+    results: paginatedResults.map((result) => ({
+      ...result,
+    })),
     total: resultsByProject.length,
   };
 }
@@ -150,7 +159,7 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
       const id = path.basename(file.filePath);
       const reportPath = path.dirname(file.filePath);
       const parentDir = path.basename(reportPath);
-      const size = await getFolderSizeInMb(path.join(reportPath, id));
+      const size = await getSizeInMb(path.join(reportPath, id));
 
       const projectName = parentDir === REPORTS_PATH ? '' : parentDir;
 
@@ -201,7 +210,7 @@ export async function saveResult(buffer: Buffer, resultDetails: ResultDetails) {
 
   const { error: writeZipError } = await withError(fs.writeFile(resultPath, buffer));
 
-  const size = await getFolderSizeInMb(resultPath);
+  const size = await getSizeInMb(resultPath);
 
   if (writeZipError) {
     throw new Error(`failed to save result ${resultID} zip file: ${writeZipError.message}`);
