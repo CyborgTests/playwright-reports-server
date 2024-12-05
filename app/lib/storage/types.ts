@@ -41,6 +41,11 @@ export interface ReadReportsInput {
 }
 
 export interface ReadReportsOutput {
+  reports: Report[];
+  total: number;
+}
+
+export interface ReadReportsHistory {
   reports: ReportHistory[];
   total: number;
 }

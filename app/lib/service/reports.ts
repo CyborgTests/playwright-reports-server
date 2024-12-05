@@ -69,6 +69,10 @@ class ReportsService {
 
     const report = reports.find((report) => report.reportID === id);
 
+    if (!report) {
+      throw new Error(`report with id ${id} not found`);
+    }
+
     if (isReportHistory(report)) {
       return report;
     }

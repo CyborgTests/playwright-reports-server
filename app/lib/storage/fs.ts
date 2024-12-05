@@ -77,7 +77,7 @@ export async function readResults(input?: ReadResultsInput) {
   await createDirectoriesIfMissing();
   const files = await fs.readdir(RESULTS_FOLDER);
 
-  const stats = await processBatch<string, Stats & { filePath: string, size: string }>(
+  const stats = await processBatch<string, Stats & { filePath: string; size: string }>(
     {},
     files.filter((file) => file.endsWith('.json')),
     20,
@@ -92,7 +92,7 @@ export async function readResults(input?: ReadResultsInput) {
     },
   );
 
-  const jsonFiles = stats.sort((a, b) => b.birthtimeMs - a.birthtimeMs)
+  const jsonFiles = stats.sort((a, b) => b.birthtimeMs - a.birthtimeMs);
 
   const fileContents: Result[] = await Promise.all(
     jsonFiles.map(async (entry) => {
