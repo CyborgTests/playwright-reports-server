@@ -1,4 +1,4 @@
-import { storage } from '@/app/lib/storage';
+import { reportService } from '@/app/lib/service';
 import { withError } from '@/app/lib/withError';
 
 export const dynamic = 'force-dynamic'; // defaults to auto
@@ -9,7 +9,7 @@ export async function DELETE(request: Request) {
     return new Response(reqError.message, { status: 400 });
   }
 
-  const { error } = await withError(storage.deleteReports(reqData.reportsIds));
+  const { error } = await withError(reportService.deleteReports(reqData.reportsIds));
 
   if (error) {
     return new Response(error.message, { status: 404 });
