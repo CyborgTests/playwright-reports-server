@@ -9,13 +9,13 @@ import { ReadReportsInput, ReadReportsOutput, ReadResultsInput, ReadResultsOutpu
 import { bytesToString, getUniqueProjectsList } from './format';
 import { REPORTS_FOLDER, TMP_FOLDER, REPORTS_BUCKET, RESULTS_BUCKET, REPORTS_PATH } from './constants';
 import { handlePagination } from './pagination';
+import { getFileReportID } from './file';
 
 import { serveReportRoute } from '@/app/lib/constants';
 import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
 import { type Result, type Report, type ResultDetails, type ServerDataInfo } from '@/app/lib/storage/types';
 import { env } from '@/app/config/env';
-import { getFileReportID } from './file';
 
 const createClient = () => {
   const endPoint = env.S3_ENDPOINT;
@@ -110,9 +110,9 @@ export class S3 implements Storage {
     }
 
     const readStream = new Promise<Buffer>((resolve, reject) => {
-      const chunks: Buffer[] = [];
+      const chunks: Uint8Array[] = [];
 
-      stream.on('data', (chunk: Buffer) => {
+      stream.on('data', (chunk: Uint8Array) => {
         chunks.push(chunk);
       });
 
@@ -207,11 +207,18 @@ export class S3 implements Storage {
     const listResultsStream = this.client.listObjectsV2(this.bucket, RESULTS_BUCKET, true);
 
     const files: BucketItem[] = [];
+    const resultSizes = new Map<string, number>();
 
     const findJsonFiles = new Promise<BucketItem[]>((resolve, reject) => {
       listResultsStream.on('data', async (file) => {
         if (!file?.name) {
           return;
+        }
+
+        if (file.name.endsWith('.zip')) {
+          const resultID = path.basename(file.name, '.zip');
+
+          resultSizes.set(resultID, file.size);
         }
 
         if (!file.name.endsWith('.json')) {
@@ -246,7 +253,7 @@ export class S3 implements Storage {
     jsonFiles.sort((a, b) => getTimestamp(b.lastModified) - getTimestamp(a.lastModified));
 
     // check if we can apply pagination early
-    const noFilters = !input?.project && !input?.project;
+    const noFilters = !input?.project && !input?.pagination;
 
     const resultFiles = noFilters ? handlePagination(jsonFiles, input?.pagination) : jsonFiles;
 
@@ -270,7 +277,10 @@ export class S3 implements Storage {
     const currentFiles = noFilters ? results : handlePagination(byProject, input?.pagination);
 
     return {
-      results: currentFiles,
+      results: currentFiles.map((result) => ({
+        ...result,
+        size: result.size ?? bytesToString(resultSizes.get(result.resultID) ?? 0),
+      })),
       total: noFilters ? jsonFiles.length : byProject.length,
     };
   }
@@ -443,6 +453,7 @@ export class S3 implements Storage {
 
   private async clearTempFolders(id?: string) {
     const withReportPathMaybe = id ? ` for report ${id}` : '';
+
     console.log(`[s3] clear temp folders${withReportPathMaybe}`);
 
     await withError(fs.rm(path.join(TMP_FOLDER, id ?? ''), { recursive: true, force: true }));
