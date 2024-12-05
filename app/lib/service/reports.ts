@@ -44,7 +44,7 @@ class ReportsService {
 
       return {
         reports: currentReports,
-        total: cached.length,
+        total: reports.length,
       };
     }
 
