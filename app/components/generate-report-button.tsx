@@ -93,7 +93,7 @@ export default function GenerateReportButton({
                   inputValue={projectName}
                   isDisabled={isPending}
                   isLoading={isResultProjectsLoading}
-                  items={[...projects, ...(resultProjects ?? [])].map((project) => ({
+                  items={Array.from(new Set([...projects, ...(resultProjects ?? [])])).map((project) => ({
                     label: project,
                     value: project,
                   }))}
