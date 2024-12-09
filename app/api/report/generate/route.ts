@@ -1,5 +1,5 @@
 import { serveReportRoute } from '@/app/lib/constants';
-import { reportService } from '@/app/lib/service';
+import { service } from '@/app/lib/service';
 import { withError } from '@/app/lib/withError';
 
 export const dynamic = 'force-dynamic'; // defaults to auto
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     return new Response(reqError.message, { status: 400 });
   }
 
-  const { result: reportId, error } = await withError(reportService.generateReport(resultsIds, project));
+  const { result: reportId, error } = await withError(service.generateReport(resultsIds, project));
 
   if (error) {
     return new Response(error.message, { status: 404 });

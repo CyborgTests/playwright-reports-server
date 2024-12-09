@@ -220,6 +220,7 @@ export async function saveResult(buffer: Buffer, resultDetails: ResultDetails) {
     resultID,
     createdAt: new Date().toISOString(),
     size,
+    project: resultDetails?.project ?? '',
     ...resultDetails,
   };
 
@@ -261,18 +262,6 @@ export async function generateReport(resultsIds: string[], project?: string) {
   return reportId;
 }
 
-export async function getReportsProjects(): Promise<string[]> {
-  const { reports } = await readReports();
-
-  return getUniqueProjectsList(reports);
-}
-
-export async function getResultsProjects(): Promise<string[]> {
-  const { results } = await readResults();
-
-  return getUniqueProjectsList(results);
-}
-
 export async function moveReport(oldPath: string, newPath: string): Promise<void> {
   const reportPath = path.join(REPORTS_FOLDER, oldPath);
   const newReportPath = path.join(REPORTS_FOLDER, newPath);
@@ -291,7 +280,5 @@ export const FS: Storage = {
   deleteReports,
   saveResult,
   generateReport,
-  getReportsProjects,
-  getResultsProjects,
   moveReport,
 };

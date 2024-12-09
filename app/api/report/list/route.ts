@@ -2,7 +2,7 @@ import { type NextRequest } from 'next/server';
 
 import { withError } from '@/app/lib/withError';
 import { parseFromRequest } from '@/app/lib/storage/pagination';
-import { reportService } from '@/app/lib/service';
+import { service } from '@/app/lib/service';
 
 export const dynamic = 'force-dynamic'; // defaults to auto
 
@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   const pagination = parseFromRequest(searchParams);
   const project = searchParams.get('project') ?? '';
 
-  const { result: reports, error } = await withError(reportService.getReports({ pagination, project }));
+  const { result: reports, error } = await withError(service.getReports({ pagination, project }));
 
   if (error) {
     return new Response(error.message, { status: 400 });
