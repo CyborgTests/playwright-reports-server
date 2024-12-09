@@ -405,6 +405,7 @@ export class S3 implements Storage {
       resultID,
       size,
       createdAt: new Date().toISOString(),
+      project: resultDetails?.project ?? '',
       ...resultDetails,
     };
 
@@ -510,22 +511,6 @@ export class S3 implements Storage {
     await this.clearTempFolders(reportId);
 
     return reportId;
-  }
-
-  async getReportsProjects(): Promise<string[]> {
-    console.log(`[s3] get reports projects`);
-
-    const { reports } = await this.readReports();
-
-    return getUniqueProjectsList(reports);
-  }
-
-  async getResultsProjects(): Promise<string[]> {
-    console.log(`[s3] get results projects`);
-
-    const { results } = await this.readResults();
-
-    return getUniqueProjectsList(results);
   }
 
   async moveReport(oldPath: string, newPath: string): Promise<void> {

@@ -1,6 +1,7 @@
 import { isBufferZipResult } from '@/app/lib/parser/validate';
-import { type ResultDetails, storage } from '@/app/lib/storage';
+import { type ResultDetails } from '@/app/lib/storage';
 import { withError } from '@/app/lib/withError';
+import { service } from '@/app/lib/service';
 
 export const dynamic = 'force-dynamic'; // defaults to auto
 export async function PUT(request: Request) {
@@ -44,7 +45,7 @@ export async function PUT(request: Request) {
     return Response.json({ error: `invalid result file: ${bufferValidationError.message}` }, { status: 400 });
   }
 
-  const { result: savedResult, error } = await withError(storage.saveResult(buffer, resultDetails));
+  const { result: savedResult, error } = await withError(service.saveResult(buffer, resultDetails));
 
   if (error) {
     return Response.json({ error: `failed to save results: ${error.message}` }, { status: 500 });

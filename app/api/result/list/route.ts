@@ -1,6 +1,6 @@
 import { type NextRequest } from 'next/server';
 
-import { storage } from '@/app/lib/storage';
+import { service } from '@/app/lib/service';
 import { withError } from '@/app/lib/withError';
 import { parseFromRequest } from '@/app/lib/storage/pagination';
 
@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   const pagination = parseFromRequest(searchParams);
   const project = searchParams.get('project') ?? '';
 
-  const { result, error } = await withError(storage.readResults({ pagination, project }));
+  const { result, error } = await withError(service.getResults({ pagination, project }));
 
   if (error) {
     return new Response(error.message, { status: 400 });
