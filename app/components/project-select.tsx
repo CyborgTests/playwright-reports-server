@@ -40,20 +40,18 @@ export default function ProjectSelect({ refreshId, onSelect, entity }: Readonly<
   error && toast.error(error.message);
 
   return (
-    <>
-      <Select
-        disallowEmptySelection
-        className="pt-1 w-full"
-        defaultSelectedKeys={[defaultProjectName]}
-        isDisabled={items.length <= 1}
-        isLoading={isLoading}
-        label="project"
-        onSelectionChange={onChange}
-      >
-        {items.map((project) => (
-          <SelectItem key={project}>{project}</SelectItem>
-        ))}
-      </Select>
-    </>
+    <Select
+      disallowEmptySelection
+      className="pt-1 w-full"
+      defaultSelectedKeys={[defaultProjectName]}
+      isDisabled={items.length <= 1}
+      isLoading={isLoading}
+      label="project"
+      onSelectionChange={onChange}
+    >
+      {items.map((project) => (
+        <SelectItem key={project}>{project}</SelectItem>
+      ))}
+    </Select>
   );
 }
