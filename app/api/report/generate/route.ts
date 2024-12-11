@@ -18,6 +18,10 @@ export async function POST(request: Request) {
     return new Response(error.message, { status: 404 });
   }
 
+  if (!reportId) {
+    return new Response('failed to generate report', { status: 400 });
+  }
+
   return Response.json({
     reportId,
     project,

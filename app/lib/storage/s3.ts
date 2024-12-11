@@ -308,8 +308,6 @@ export class S3 implements Storage {
           return;
         }
 
-        console.log(`[s3] reading report: ${JSON.stringify(file)}`);
-
         const dir = path.dirname(file.name);
         const id = path.basename(dir);
         const parentDir = path.basename(path.dirname(dir));
@@ -486,7 +484,6 @@ export class S3 implements Storage {
     for await (const result of resultsStream) {
       const fileName = path.basename(result.name);
 
-      console.log(`[s3] checking file ${fileName}`);
       const id = fileName.replace(path.extname(fileName), '');
 
       if (resultsIds.includes(id)) {
