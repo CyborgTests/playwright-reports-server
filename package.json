@@ -1,6 +1,6 @@
 {
   "name": "playwright-reports-server",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "Playwright Reports Server: Can be used to accept blobs, merge them, store and view Playwright reports",
   "scripts": {
     "build": "next build",
@@ -24,7 +24,7 @@
     "jsonwebtoken": "^9.0.2",
     "jszip": "^3.10.1",
     "mime": "^4.0.4",
-    "minio": "^8.0.1",
+    "minio": "^8.0.2",
     "next-auth": "^5.0.0-beta.22",
     "next": "14.2.15",
     "next-themes": "^0.3.0",
@@ -36,7 +36,7 @@
   "devDependencies": {
     "@types/jest": "^29.5.12",
     "@types/jsonwebtoken": "^9.0.7",
-    "@types/node": ">=18.17.0",
+    "@types/node": ">=22.10.2",
     "@types/react": "18.3.11",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "8.3.0",

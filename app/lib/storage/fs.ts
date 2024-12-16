@@ -1,11 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { type Dirent, type Stats } from 'node:fs';
+import { createWriteStream, type Dirent, type Stats } from 'node:fs';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 import getFolderSize from 'get-folder-size';
 
-import { bytesToString, getUniqueProjectsList } from './format';
+import { bytesToString } from './format';
 import { DATA_FOLDER, REPORTS_FOLDER, REPORTS_PATH, RESULTS_FOLDER, TMP_FOLDER } from './constants';
 import { processBatch } from './batch';
 import { handlePagination } from './pagination';
@@ -203,29 +205,34 @@ export async function deleteReport(reportId: string) {
   await fs.rm(reportPath, { recursive: true, force: true });
 }
 
-export async function saveResult(buffer: Buffer, resultDetails: ResultDetails) {
+export async function saveResult(stream: ReadableStream<Uint8Array>, size: number, resultDetails: ResultDetails) {
   await createDirectoriesIfMissing();
   const resultID = randomUUID();
   const resultPath = path.join(RESULTS_FOLDER, `${resultID}.zip`);
 
-  const { error: writeZipError } = await withError(fs.writeFile(resultPath, buffer));
+  const streamOptions = { highWaterMark: 8 * 1024 }; // 8 Kb buffer
 
-  const size = await getSizeInMb(resultPath);
+  const readable = Readable.fromWeb(stream as any, { ...streamOptions, encoding: 'binary' });
+  const writeable = createWriteStream(resultPath, { ...streamOptions, encoding: 'binary' });
 
-  if (writeZipError) {
-    throw new Error(`failed to save result ${resultID} zip file: ${writeZipError.message}`);
+  const { error: writeStreamError } = await withError(pipeline(readable, writeable));
+
+  if (writeStreamError) {
+    throw new Error(`failed stream pipeline: ${writeStreamError.message}`);
   }
 
   const metaData = {
     resultID,
     createdAt: new Date().toISOString(),
-    size,
+    size: bytesToString(size),
     project: resultDetails?.project ?? '',
     ...resultDetails,
   };
 
   const { error: writeJsonError } = await withError(
-    fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.json`), Buffer.from(JSON.stringify(metaData, null, 2))),
+    fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.json`), JSON.stringify(metaData, null, 2), {
+      encoding: 'utf-8',
+    }),
   );
 
   if (writeJsonError) {

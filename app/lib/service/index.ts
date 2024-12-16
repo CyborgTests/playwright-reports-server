@@ -167,14 +167,15 @@ class Service {
   }
 
   public async saveResult(
-    buffer: Buffer,
+    stream: ReadableStream<Uint8Array>,
+    size: number,
     resultDetails: ResultDetails,
   ): Promise<{
     resultID: UUID;
     createdAt: string;
     size: string;
   }> {
-    const result = await storage.saveResult(buffer, resultDetails);
+    const result = await storage.saveResult(stream, size, resultDetails);
 
     resultCache.onCreated(result);
 

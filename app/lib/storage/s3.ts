@@ -1,15 +1,17 @@
 import { randomUUID, type UUID } from 'crypto';
 import fs from 'fs/promises';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 
 import { type BucketItem, Client } from 'minio';
 
 import { processBatch } from './batch';
 import { ReadReportsInput, ReadReportsOutput, ReadResultsInput, ReadResultsOutput, Storage } from './types';
-import { bytesToString, getUniqueProjectsList } from './format';
+import { bytesToString } from './format';
 import { REPORTS_FOLDER, TMP_FOLDER, REPORTS_BUCKET, RESULTS_BUCKET, REPORTS_PATH } from './constants';
 import { handlePagination } from './pagination';
 import { getFileReportID } from './file';
+import { transformStreamToReadable } from './stream';
 
 import { serveReportRoute } from '@/app/lib/constants';
 import { generatePlaywrightReport } from '@/app/lib/pw';
@@ -88,13 +90,13 @@ export class S3 implements Storage {
     }
   }
 
-  private async write(dir: string, files: { name: string; content: string | Buffer }[]) {
+  private async write(dir: string, files: { name: string; content: Readable | Buffer | string; size?: number }[]) {
     await this.ensureBucketExist();
     for (const file of files) {
       console.log(`[s3] writing ${file.name}`);
       const path = `${dir}/${file.name}`;
 
-      await this.client.putObject(this.bucket, path, file.content);
+      await this.client.putObject(this.bucket, path, file.content, file.size);
     }
   }
 
@@ -395,13 +397,12 @@ export class S3 implements Storage {
     await withError(this.clear(...objects));
   }
 
-  async saveResult(buffer: Buffer, resultDetails: ResultDetails) {
+  async saveResult(stream: ReadableStream<Uint8Array>, size: number, resultDetails: ResultDetails) {
     const resultID = randomUUID();
-    const size = bytesToString(buffer.length);
 
     const metaData = {
       resultID,
-      size,
+      size: bytesToString(size),
       createdAt: new Date().toISOString(),
       project: resultDetails?.project ?? '',
       ...resultDetails,
@@ -414,7 +415,8 @@ export class S3 implements Storage {
       },
       {
         name: `${resultID}.zip`,
-        content: buffer,
+        content: transformStreamToReadable(stream),
+        size,
       },
     ]);
 
