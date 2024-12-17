@@ -11,7 +11,6 @@ import { bytesToString } from './format';
 import { REPORTS_FOLDER, TMP_FOLDER, REPORTS_BUCKET, RESULTS_BUCKET, REPORTS_PATH } from './constants';
 import { handlePagination } from './pagination';
 import { getFileReportID } from './file';
-import { transformStreamToReadable } from './stream';
 
 import { serveReportRoute } from '@/app/lib/constants';
 import { generatePlaywrightReport } from '@/app/lib/pw';
@@ -415,7 +414,7 @@ export class S3 implements Storage {
       },
       {
         name: `${resultID}.zip`,
-        content: transformStreamToReadable(stream),
+        content: Readable.fromWeb(stream as any, { highWaterMark: 32 * 1024 }),
         size,
       },
     ]);
