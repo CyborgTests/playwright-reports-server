@@ -1,21 +1,23 @@
 import { randomUUID, type UUID } from 'crypto';
 import fs from 'fs/promises';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 
 import { type BucketItem, Client } from 'minio';
 
 import { processBatch } from './batch';
 import { ReadReportsInput, ReadReportsOutput, ReadResultsInput, ReadResultsOutput, Storage } from './types';
-import { bytesToString, getUniqueProjectsList } from './format';
+import { bytesToString } from './format';
 import { REPORTS_FOLDER, TMP_FOLDER, REPORTS_BUCKET, RESULTS_BUCKET, REPORTS_PATH } from './constants';
 import { handlePagination } from './pagination';
+import { getFileReportID } from './file';
+import { transformStreamToReadable } from './stream';
 
 import { serveReportRoute } from '@/app/lib/constants';
 import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
 import { type Result, type Report, type ResultDetails, type ServerDataInfo } from '@/app/lib/storage/types';
 import { env } from '@/app/config/env';
-import { getFileReportID } from './file';
 
 const createClient = () => {
   const endPoint = env.S3_ENDPOINT;
@@ -88,13 +90,17 @@ export class S3 implements Storage {
     }
   }
 
-  private async write(dir: string, files: { name: string; content: string | Buffer }[]) {
+  private async write(dir: string, files: { name: string; content: Readable | Buffer | string; size?: number }[]) {
     await this.ensureBucketExist();
     for (const file of files) {
       console.log(`[s3] writing ${file.name}`);
       const path = `${dir}/${file.name}`;
 
-      await this.client.putObject(this.bucket, path, file.content);
+      const content = typeof file.content === 'string' ? Buffer.from(file.content) : file.content;
+
+      const contentSize = file.size ?? (Buffer.isBuffer(content) ? content.length : undefined);
+
+      await this.client.putObject(this.bucket, path, content, contentSize);
     }
   }
 
@@ -110,9 +116,9 @@ export class S3 implements Storage {
     }
 
     const readStream = new Promise<Buffer>((resolve, reject) => {
-      const chunks: Buffer[] = [];
+      const chunks: Uint8Array[] = [];
 
-      stream.on('data', (chunk: Buffer) => {
+      stream.on('data', (chunk: Uint8Array) => {
         chunks.push(chunk);
       });
 
@@ -207,11 +213,18 @@ export class S3 implements Storage {
     const listResultsStream = this.client.listObjectsV2(this.bucket, RESULTS_BUCKET, true);
 
     const files: BucketItem[] = [];
+    const resultSizes = new Map<string, number>();
 
     const findJsonFiles = new Promise<BucketItem[]>((resolve, reject) => {
       listResultsStream.on('data', async (file) => {
         if (!file?.name) {
           return;
+        }
+
+        if (file.name.endsWith('.zip')) {
+          const resultID = path.basename(file.name, '.zip');
+
+          resultSizes.set(resultID, file.size);
         }
 
         if (!file.name.endsWith('.json')) {
@@ -246,7 +259,7 @@ export class S3 implements Storage {
     jsonFiles.sort((a, b) => getTimestamp(b.lastModified) - getTimestamp(a.lastModified));
 
     // check if we can apply pagination early
-    const noFilters = !input?.project && !input?.project;
+    const noFilters = !input?.project && !input?.pagination;
 
     const resultFiles = noFilters ? handlePagination(jsonFiles, input?.pagination) : jsonFiles;
 
@@ -270,7 +283,10 @@ export class S3 implements Storage {
     const currentFiles = noFilters ? results : handlePagination(byProject, input?.pagination);
 
     return {
-      results: currentFiles,
+      results: currentFiles.map((result) => ({
+        ...result,
+        size: result.size ?? bytesToString(resultSizes.get(result.resultID) ?? 0),
+      })),
       total: noFilters ? jsonFiles.length : byProject.length,
     };
   }
@@ -297,8 +313,6 @@ export class S3 implements Storage {
         if (!file.name.endsWith('index.html') || file.name.includes('trace')) {
           return;
         }
-
-        console.log(`[s3] reading report: ${JSON.stringify(file)}`);
 
         const dir = path.dirname(file.name);
         const id = path.basename(dir);
@@ -387,25 +401,26 @@ export class S3 implements Storage {
     await withError(this.clear(...objects));
   }
 
-  async saveResult(buffer: Buffer, resultDetails: ResultDetails) {
+  async saveResult(stream: ReadableStream<Uint8Array>, size: number, resultDetails: ResultDetails) {
     const resultID = randomUUID();
-    const size = bytesToString(buffer.length);
 
     const metaData = {
       resultID,
-      size,
+      size: bytesToString(size),
       createdAt: new Date().toISOString(),
+      project: resultDetails?.project ?? '',
       ...resultDetails,
     };
 
     await this.write(RESULTS_BUCKET, [
       {
-        name: `${resultID}.json`,
-        content: JSON.stringify(metaData),
+        name: `${resultID}.zip`,
+        content: transformStreamToReadable(stream),
+        size,
       },
       {
-        name: `${resultID}.zip`,
-        content: buffer,
+        name: `${resultID}.json`,
+        content: JSON.stringify(metaData),
       },
     ]);
 
@@ -443,6 +458,7 @@ export class S3 implements Storage {
 
   private async clearTempFolders(id?: string) {
     const withReportPathMaybe = id ? ` for report ${id}` : '';
+
     console.log(`[s3] clear temp folders${withReportPathMaybe}`);
 
     await withError(fs.rm(path.join(TMP_FOLDER, id ?? ''), { recursive: true, force: true }));
@@ -474,7 +490,6 @@ export class S3 implements Storage {
     for await (const result of resultsStream) {
       const fileName = path.basename(result.name);
 
-      console.log(`[s3] checking file ${fileName}`);
       const id = fileName.replace(path.extname(fileName), '');
 
       if (resultsIds.includes(id)) {
@@ -499,22 +514,6 @@ export class S3 implements Storage {
     await this.clearTempFolders(reportId);
 
     return reportId;
-  }
-
-  async getReportsProjects(): Promise<string[]> {
-    console.log(`[s3] get reports projects`);
-
-    const { reports } = await this.readReports();
-
-    return getUniqueProjectsList(reports);
-  }
-
-  async getResultsProjects(): Promise<string[]> {
-    console.log(`[s3] get results projects`);
-
-    const { results } = await this.readResults();
-
-    return getUniqueProjectsList(results);
   }
 
   async moveReport(oldPath: string, newPath: string): Promise<void> {

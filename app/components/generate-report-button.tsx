@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 
 import { type Result } from '../lib/storage';
 
+import useQuery from '@/app/hooks/useQuery';
 import useMutation from '@/app/hooks/useMutation';
 import { invalidateCache } from '@/app/lib/query-cache';
 
@@ -45,6 +46,12 @@ export default function GenerateReportButton({
     },
   });
 
+  const {
+    data: resultProjects,
+    error: resultProjectsError,
+    isLoading: isResultProjectsLoading,
+  } = useQuery<string[]>(`/api/result/projects`);
+
   const [projectName, setProjectName] = useState('');
 
   useEffect(() => {
@@ -53,7 +60,7 @@ export default function GenerateReportButton({
 
   const { isOpen, onOpen, onClose, onOpenChange } = useDisclosure();
 
-  const GenerateReport = () => {
+  const GenerateReport = async () => {
     if (!results?.length) {
       return;
     }
@@ -82,9 +89,14 @@ export default function GenerateReportButton({
               <ModalBody>
                 <Autocomplete
                   allowsCustomValue
+                  errorMessage={resultProjectsError?.message}
                   inputValue={projectName}
                   isDisabled={isPending}
-                  items={projects.map((project) => ({ label: project, value: project }))}
+                  isLoading={isResultProjectsLoading}
+                  items={Array.from(new Set([...projects, ...(resultProjects ?? [])])).map((project) => ({
+                    label: project,
+                    value: project,
+                  }))}
                   label="Project name"
                   placeholder="leave empty if not required"
                   onInputChange={(value) => setProjectName(value)}
