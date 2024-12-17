@@ -210,24 +210,41 @@ export async function saveResult(stream: ReadableStream<Uint8Array>, size: numbe
   const resultID = randomUUID();
   const resultPath = path.join(RESULTS_FOLDER, `${resultID}.zip`);
 
-  const streamOptions = { highWaterMark: 64 * 1024 }; // 64 Kb buffer
+  const streamOptions = { highWaterMark: 32 * 1024, encoding: 'binary' as BufferEncoding }; // 32 Kb buffer
 
-  const readable = Readable.fromWeb(stream as any, { ...streamOptions, encoding: 'binary' });
-  const writeable = createWriteStream(resultPath, { ...streamOptions, encoding: 'binary' });
+  const readable = Readable.fromWeb(stream as any, streamOptions);
+  const writeable = createWriteStream(resultPath, streamOptions);
 
-  readable.on('error', (error) => {
-    console.log(`readable stream error: ${error.message}`);
-  });
+  /**
+   * additional backpressure handling
+   * https://nodejs.org/en/learn/modules/backpressuring-in-streams
+   */
+  readable
+    .on('data', (chunk) => {
+      if (!writeable.write(chunk)) {
+        readable.pause();
+      }
+    })
+    .on('error', (error) => {
+      console.log(`readable stream error: ${error.message}`);
+    });
 
-  writeable.on('error', (error) => {
-    console.log(`writeable stream error: ${error.message}`);
-  });
+  writeable
+    .on('drain', () => {
+      readable.resume();
+    })
+    .on('error', (error) => {
+      console.log(`writeable stream error: ${error.message}`);
+    });
 
   const { error: writeStreamError } = await withError(pipeline(readable, writeable));
 
   if (writeStreamError) {
     throw new Error(`failed stream pipeline: ${writeStreamError.message}`);
   }
+
+  // ensure writable stream is closed
+  writeable.end();
 
   const metaData = {
     resultID,
