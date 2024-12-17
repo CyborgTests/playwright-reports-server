@@ -210,10 +210,18 @@ export async function saveResult(stream: ReadableStream<Uint8Array>, size: numbe
   const resultID = randomUUID();
   const resultPath = path.join(RESULTS_FOLDER, `${resultID}.zip`);
 
-  const streamOptions = { highWaterMark: 8 * 1024 }; // 8 Kb buffer
+  const streamOptions = { highWaterMark: 64 * 1024 }; // 64 Kb buffer
 
   const readable = Readable.fromWeb(stream as any, { ...streamOptions, encoding: 'binary' });
   const writeable = createWriteStream(resultPath, { ...streamOptions, encoding: 'binary' });
+
+  readable.on('error', (error) => {
+    console.log(`readable stream error: ${error.message}`);
+  });
+
+  writeable.on('error', (error) => {
+    console.log(`writeable stream error: ${error.message}`);
+  });
 
   const { error: writeStreamError } = await withError(pipeline(readable, writeable));
 

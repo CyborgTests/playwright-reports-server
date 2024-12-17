@@ -30,8 +30,8 @@ Check out the live demo: [familiar-alyss-alex-hot-6926ec9c.koyeb.app](https://fa
 
 ### Prerequisites
 
-- Node.js (v18 or higher)
-- npm (v9 or higher)
+- Node.js (v20 or higher)
+- npm (v10 or higher)
 
 ### Installation
 
