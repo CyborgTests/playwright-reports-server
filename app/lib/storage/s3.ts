@@ -11,6 +11,7 @@ import { bytesToString } from './format';
 import { REPORTS_FOLDER, TMP_FOLDER, REPORTS_BUCKET, RESULTS_BUCKET, REPORTS_PATH } from './constants';
 import { handlePagination } from './pagination';
 import { getFileReportID } from './file';
+import { transformStreamToReadable } from './stream';
 
 import { serveReportRoute } from '@/app/lib/constants';
 import { generatePlaywrightReport } from '@/app/lib/pw';
@@ -95,7 +96,11 @@ export class S3 implements Storage {
       console.log(`[s3] writing ${file.name}`);
       const path = `${dir}/${file.name}`;
 
-      await this.client.putObject(this.bucket, path, file.content, file.size);
+      const content = typeof file.content === 'string' ? Buffer.from(file.content) : file.content;
+
+      const contentSize = file.size ?? (Buffer.isBuffer(content) ? content.length : undefined);
+
+      await this.client.putObject(this.bucket, path, content, contentSize);
     }
   }
 
@@ -409,13 +414,13 @@ export class S3 implements Storage {
 
     await this.write(RESULTS_BUCKET, [
       {
-        name: `${resultID}.json`,
-        content: JSON.stringify(metaData),
+        name: `${resultID}.zip`,
+        content: transformStreamToReadable(stream),
+        size,
       },
       {
-        name: `${resultID}.zip`,
-        content: Readable.fromWeb(stream as any, { highWaterMark: 32 * 1024 }),
-        size,
+        name: `${resultID}.json`,
+        content: JSON.stringify(metaData),
       },
     ]);
 
