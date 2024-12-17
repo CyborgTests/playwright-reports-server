@@ -95,7 +95,9 @@ export class S3 implements Storage {
       console.log(`[s3] writing ${file.name}`);
       const path = `${dir}/${file.name}`;
 
-      await this.client.putObject(this.bucket, path, file.content, file.size);
+      const content = file.content instanceof Readable ? file.content : Buffer.from(file.content);
+
+      await this.client.putObject(this.bucket, path, content, file.size);
     }
   }
 
@@ -409,13 +411,13 @@ export class S3 implements Storage {
 
     await this.write(RESULTS_BUCKET, [
       {
-        name: `${resultID}.json`,
-        content: JSON.stringify(metaData),
-      },
-      {
         name: `${resultID}.zip`,
         content: Readable.fromWeb(stream as any, { highWaterMark: 32 * 1024 }),
         size,
+      },
+      {
+        name: `${resultID}.json`,
+        content: JSON.stringify(metaData),
       },
     ]);
 
