@@ -401,7 +401,7 @@ export class S3 implements Storage {
     await withError(this.clear(...objects));
   }
 
-  async saveResult(stream: ReadableStream<Uint8Array>, size: number, resultDetails: ResultDetails) {
+  async saveResult(file: Blob, size: number, resultDetails: ResultDetails) {
     const resultID = randomUUID();
 
     const metaData = {
@@ -415,7 +415,7 @@ export class S3 implements Storage {
     await this.write(RESULTS_BUCKET, [
       {
         name: `${resultID}.zip`,
-        content: transformStreamToReadable(stream),
+        content: transformStreamToReadable(file.stream()),
         size,
       },
       {

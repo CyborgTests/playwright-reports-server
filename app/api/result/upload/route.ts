@@ -32,7 +32,7 @@ export async function PUT(request: Request) {
     resultDetails[key] = value.toString();
   }
 
-  const { result: savedResult, error } = await withError(service.saveResult(file.stream(), file.size, resultDetails));
+  const { result: savedResult, error } = await withError(service.saveResult(file, file.size, resultDetails));
 
   if (error) {
     return Response.json({ error: `failed to save results: ${error.message}` }, { status: 500 });

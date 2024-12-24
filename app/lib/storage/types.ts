@@ -10,7 +10,7 @@ export interface Storage {
   readReports: (input?: ReadReportsInput) => Promise<ReadReportsOutput>;
   deleteResults: (resultIDs: string[]) => Promise<void>;
   deleteReports: (reportIDs: string[]) => Promise<void>;
-  saveResult: (stream: ReadableStream<Uint8Array>, size: number, resultDetails: ResultDetails) => Promise<Result>;
+  saveResult: (file: Blob, size: number, resultDetails: ResultDetails) => Promise<Result>;
   generateReport: (resultsIds: string[], project?: string) => Promise<UUID>;
   moveReport: (oldPath: string, newPath: string) => Promise<void>;
 }

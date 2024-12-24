@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createWriteStream, type Dirent, type Stats } from 'node:fs';
-import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import getFolderSize from 'get-folder-size';
@@ -11,6 +10,7 @@ import { bytesToString } from './format';
 import { DATA_FOLDER, REPORTS_FOLDER, REPORTS_PATH, RESULTS_FOLDER, TMP_FOLDER } from './constants';
 import { processBatch } from './batch';
 import { handlePagination } from './pagination';
+import { defaultStreamingOptions, transformStreamToReadable } from './stream';
 
 import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
@@ -205,15 +205,13 @@ export async function deleteReport(reportId: string) {
   await fs.rm(reportPath, { recursive: true, force: true });
 }
 
-export async function saveResult(stream: ReadableStream<Uint8Array>, size: number, resultDetails: ResultDetails) {
+export async function saveResult(file: Blob, size: number, resultDetails: ResultDetails) {
   await createDirectoriesIfMissing();
   const resultID = randomUUID();
   const resultPath = path.join(RESULTS_FOLDER, `${resultID}.zip`);
 
-  const streamOptions = { highWaterMark: 32 * 1024, encoding: 'binary' as BufferEncoding }; // 32 Kb buffer
-
-  const readable = Readable.fromWeb(stream as any, streamOptions);
-  const writeable = createWriteStream(resultPath, streamOptions);
+  const readable = transformStreamToReadable(file.stream());
+  const writeable = createWriteStream(resultPath, defaultStreamingOptions);
 
   /**
    * additional backpressure handling

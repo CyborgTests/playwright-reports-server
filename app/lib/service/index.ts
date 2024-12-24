@@ -167,7 +167,7 @@ class Service {
   }
 
   public async saveResult(
-    stream: ReadableStream<Uint8Array>,
+    file: Blob,
     size: number,
     resultDetails: ResultDetails,
   ): Promise<{
@@ -175,7 +175,7 @@ class Service {
     createdAt: string;
     size: string;
   }> {
-    const result = await storage.saveResult(stream, size, resultDetails);
+    const result = await storage.saveResult(file, size, resultDetails);
 
     resultCache.onCreated(result);
 
