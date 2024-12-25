@@ -11,6 +11,8 @@ export interface Storage {
   deleteResults: (resultIDs: string[]) => Promise<void>;
   deleteReports: (reportIDs: string[]) => Promise<void>;
   saveResult: (file: Blob, size: number, resultDetails: ResultDetails) => Promise<Result>;
+  saveResultPartially: (resultID: string, upload: ResultPartialUpload, headers?: Headers) => Promise<void>;
+  saveResultMetadata: (resultID: string, metadata: ResultDetails) => Promise<void>;
   generateReport: (resultsIds: string[], project?: string) => Promise<UUID>;
   moveReport: (oldPath: string, newPath: string) => Promise<void>;
 }
@@ -52,6 +54,12 @@ export type Result = {
   project: string;
   size: string;
 } & ResultDetails;
+
+export interface ResultPartialUpload {
+  part: Blob;
+  chunkIndex: number;
+  totalChunks: number;
+}
 
 export type Report = {
   reportID: string;

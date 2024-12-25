@@ -1,7 +1,7 @@
 import path from 'node:path';
 
 import { withError } from '../withError';
-import { getUniqueProjectsList } from '../storage/format';
+import { bytesToString, getUniqueProjectsList } from '../storage/format';
 
 import { reportCache, resultCache } from './cache';
 
@@ -11,6 +11,7 @@ import {
   ReadResultsOutput,
   ReportHistory,
   ResultDetails,
+  ResultPartialUpload,
   isReportHistory,
   storage,
 } from '@/app/lib/storage';
@@ -162,6 +163,28 @@ class Service {
     }
 
     resultCache.onDeleted(resultIDs);
+
+    return;
+  }
+
+  public async saveResultPartially(resultID: string, upload: ResultPartialUpload, headers: Headers): Promise<void> {
+    await storage.saveResultPartially(resultID, upload, headers);
+
+    return;
+  }
+
+  public async saveResultMetadata(resultID: string, resultDetails: ResultDetails): Promise<void> {
+    const metadata = {
+      resultID: resultID as UUID,
+      createdAt: resultDetails.createdAt ?? new Date().toISOString(),
+      project: resultDetails.project,
+      size: bytesToString(parseInt(resultDetails.size ?? 0, 10)),
+      ...resultDetails,
+    };
+
+    await storage.saveResultMetadata(resultID, metadata);
+
+    resultCache.onCreated(metadata);
 
     return;
   }

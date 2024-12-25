@@ -23,6 +23,7 @@ import {
   ReadReportsOutput,
   ReadReportsInput,
   ReadResultsInput,
+  ResultPartialUpload,
 } from '@/app/lib/storage';
 
 async function createDirectoriesIfMissing() {
@@ -265,6 +266,55 @@ export async function saveResult(file: Blob, size: number, resultDetails: Result
   return metaData;
 }
 
+export async function saveResultPartially(resultID: string, upload: ResultPartialUpload): Promise<void> {
+  await createDirectoriesIfMissing();
+
+  const resultPath = path.join(RESULTS_FOLDER, `${resultID}.zip`);
+
+  const { error: accessError } = await withError(fs.access(resultPath));
+
+  const isNewPart = !!accessError;
+
+  const writeable = createWriteStream(resultPath, {
+    ...defaultStreamingOptions,
+    flags: isNewPart ? 'w' : 'a',
+  });
+
+  console.log(`[fs] uploading result ${resultID} [${upload.chunkIndex + 1}/${upload.totalChunks}]`);
+
+  const { error: writeStreamError } = await withError(
+    pipeline(transformStreamToReadable(upload.part.stream()), writeable),
+  );
+
+  if (writeStreamError) {
+    throw new Error(`failed stream pipeline: ${writeStreamError.message}`);
+  }
+
+  writeable.end();
+
+  return;
+}
+
+export async function saveResultMetadata(resultID: string, metadata: ResultDetails): Promise<void> {
+  await createDirectoriesIfMissing();
+  const metaData = {
+    resultID,
+    createdAt: new Date().toISOString(),
+    project: metadata?.project ?? '',
+    ...metadata,
+  };
+
+  const { error: writeJsonError } = await withError(
+    fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.json`), JSON.stringify(metaData, null, 2), {
+      encoding: 'utf-8',
+    }),
+  );
+
+  if (writeJsonError) {
+    throw new Error(`failed to save result ${resultID} json file: ${writeJsonError.message}`);
+  }
+}
+
 export async function generateReport(resultsIds: string[], project?: string) {
   await createDirectoriesIfMissing();
 
@@ -309,6 +359,8 @@ export const FS: Storage = {
   deleteResults,
   deleteReports,
   saveResult,
+  saveResultPartially,
+  saveResultMetadata,
   generateReport,
   moveReport,
 };

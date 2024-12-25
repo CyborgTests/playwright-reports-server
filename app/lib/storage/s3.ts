@@ -2,16 +2,25 @@ import { randomUUID, type UUID } from 'crypto';
 import fs from 'fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { createWriteStream } from 'node:fs';
 
 import { type BucketItem, Client } from 'minio';
 
 import { processBatch } from './batch';
-import { ReadReportsInput, ReadReportsOutput, ReadResultsInput, ReadResultsOutput, Storage } from './types';
+import {
+  ReadReportsInput,
+  ReadReportsOutput,
+  ReadResultsInput,
+  ReadResultsOutput,
+  ResultPartialUpload,
+  Storage,
+} from './types';
 import { bytesToString } from './format';
 import { REPORTS_FOLDER, TMP_FOLDER, REPORTS_BUCKET, RESULTS_BUCKET, REPORTS_PATH } from './constants';
 import { handlePagination } from './pagination';
 import { getFileReportID } from './file';
-import { transformStreamToReadable } from './stream';
+import { defaultStreamingOptions, transformStreamToReadable } from './stream';
 
 import { serveReportRoute } from '@/app/lib/constants';
 import { generatePlaywrightReport } from '@/app/lib/pw';
@@ -96,6 +105,8 @@ export class S3 implements Storage {
       console.log(`[s3] writing ${file.name}`);
       const path = `${dir}/${file.name}`;
 
+      console.log(`[s3] writing to ${path}, type ${typeof file.content}`);
+
       const content = typeof file.content === 'string' ? Buffer.from(file.content) : file.content;
 
       const contentSize = file.size ?? (Buffer.isBuffer(content) ? content.length : undefined);
@@ -163,7 +174,7 @@ export class S3 implements Storage {
           indexCount += 1;
         }
 
-        totalSize += obj.size;
+        totalSize += obj.size ?? 0;
       });
 
       stream.on('error', (err) => {
@@ -425,6 +436,66 @@ export class S3 implements Storage {
     ]);
 
     return metaData;
+  }
+
+  async saveResultPartially(resultID: string, upload: ResultPartialUpload) {
+    const tempFolder = path.join(TMP_FOLDER, resultID);
+
+    const { error: mkdirTempError } = await withError(fs.mkdir(tempFolder, { recursive: true }));
+
+    if (mkdirTempError) {
+      console.error(`[s3] failed to create temporary folder: ${mkdirTempError.message}`);
+    }
+
+    const resultPath = path.join(tempFolder, `${resultID}.zip`);
+
+    const { error: accessError } = await withError(fs.access(resultPath));
+
+    const isNewPart = !!accessError;
+
+    const writeable = createWriteStream(resultPath, {
+      ...defaultStreamingOptions,
+      flags: isNewPart ? 'w' : 'a',
+    });
+
+    console.log(`[s3] saving temporarily result ${resultID} [${upload.chunkIndex + 1}/${upload.totalChunks}]`);
+
+    const { error: writeStreamError } = await withError(
+      pipeline(transformStreamToReadable(upload.part.stream()), writeable),
+    );
+
+    if (writeStreamError) {
+      throw new Error(`failed stream pipeline: ${writeStreamError.message}`);
+    }
+
+    writeable.end();
+
+    if (upload.chunkIndex + 1 < upload.totalChunks) {
+      return;
+    }
+
+    console.log(`[s3] got last part, uploading from fs...`);
+
+    const { error } = await withError(
+      this.client.fPutObject(this.bucket, `${RESULTS_BUCKET}/${resultID}.zip`, resultPath),
+    );
+
+    if (error) {
+      throw new Error(`failed to upload result ${resultID}: ${error.message}`);
+    }
+
+    await withError(fs.rm(tempFolder, { recursive: true, force: true }));
+
+    return;
+  }
+
+  async saveResultMetadata(resultID: string, metadata: ResultDetails): Promise<void> {
+    await this.write(RESULTS_BUCKET, [
+      {
+        name: `${resultID}.json`,
+        content: JSON.stringify(metadata),
+      },
+    ]);
   }
 
   private async uploadReport(reportId: string, reportPath: string) {
