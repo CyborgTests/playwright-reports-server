@@ -301,6 +301,7 @@ export async function saveResultMetadata(resultID: string, metadata: ResultDetai
     resultID,
     createdAt: new Date().toISOString(),
     project: metadata?.project ?? '',
+    size: typeof metadata.size === 'number' ? bytesToString(metadata.size) : metadata.size,
     ...metadata,
   };
 

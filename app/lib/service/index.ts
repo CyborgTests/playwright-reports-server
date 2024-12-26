@@ -175,11 +175,11 @@ class Service {
 
   public async saveResultMetadata(resultID: string, resultDetails: ResultDetails): Promise<void> {
     const metadata = {
+      ...resultDetails,
       resultID: resultID as UUID,
       createdAt: resultDetails.createdAt ?? new Date().toISOString(),
       project: resultDetails.project,
       size: bytesToString(parseInt(resultDetails.size ?? 0, 10)),
-      ...resultDetails,
     };
 
     await storage.saveResultMetadata(resultID, metadata);
