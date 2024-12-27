@@ -35,8 +35,10 @@ const useMutation = <TData = unknown, TVariables = unknown>(
       });
 
       if (!response.ok) {
-        toast.error(`Network response was not ok: ${await response.text()}`);
-        throw new Error(`Network response was not ok: ${await response.text()}`);
+        const message = await response.text();
+
+        toast.error(`Network response was not ok: ${message}`);
+        throw new Error(`Network response was not ok: ${message}`);
       }
 
       return response.json();
