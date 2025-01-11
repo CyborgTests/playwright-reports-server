@@ -12,6 +12,7 @@ import {
   ReportHistory,
   ResultDetails,
   ResultPartialUpload,
+  ServerDataInfo,
   isReportHistory,
   storage,
 } from '@/app/lib/storage';
@@ -35,13 +36,13 @@ class Service {
     console.log(`[service] getReports`);
     const cached = reportCache.getAll();
 
-    const shouldUseCache = !input || !input.ids;
+    const shouldUseCache = !input?.ids;
 
     if (cached.length && shouldUseCache) {
       console.log(`[service] using cached reports`);
       const noFilters = !input?.project && !input?.ids;
       const shouldFilterByProject = (report: ReportHistory) => input?.project && report.project === input.project;
-      const shouldFilterByID = (report: ReportHistory) => input?.ids && input.ids.includes(report.reportID);
+      const shouldFilterByID = (report: ReportHistory) => input?.ids?.includes(report.reportID);
 
       const reports = cached.filter((report) => noFilters || shouldFilterByProject(report) || shouldFilterByID(report));
 
@@ -120,8 +121,6 @@ class Service {
     }
 
     reportCache.onDeleted(reportIDs);
-
-    return;
   }
 
   public async getReportsProjects(): Promise<string[]> {
@@ -163,8 +162,6 @@ class Service {
     }
 
     resultCache.onDeleted(resultIDs);
-
-    return;
   }
 
   public async saveResultPartially(resultID: string, upload: ResultPartialUpload, headers: Headers): Promise<void> {
@@ -197,6 +194,7 @@ class Service {
     resultID: UUID;
     createdAt: string;
     size: string;
+    sizeBytes: number;
   }> {
     const result = await storage.saveResult(file, size, resultDetails);
 
@@ -212,6 +210,33 @@ class Service {
     const reportProjects = await this.getReportsProjects();
 
     return Array.from(new Set([...projects, ...reportProjects]));
+  }
+
+  public async getServerInfo(): Promise<ServerDataInfo> {
+    console.log(`[service] getServerInfo`);
+    const canCalculateFromCache = reportCache.initialized && resultCache.initialized;
+
+    if (!canCalculateFromCache) {
+      return await storage.getServerDataInfo();
+    }
+
+    const reports = reportCache.getAll();
+    const results = resultCache.getAll();
+
+    const getTotalSizeBytes = <T extends { sizeBytes: number }[]>(entity: T) =>
+      entity.reduce((total, item) => total + item.sizeBytes, 0);
+
+    const reportsFolderSize = getTotalSizeBytes(reports);
+    const resultsFolderSize = getTotalSizeBytes(results);
+    const dataFolderSize = reportsFolderSize + resultsFolderSize;
+
+    return {
+      dataFolderSizeinMB: bytesToString(dataFolderSize),
+      numOfResults: results.length,
+      resultsFolderSizeinMB: bytesToString(resultsFolderSize),
+      numOfReports: reports.length,
+      reportsFolderSizeinMB: bytesToString(reportsFolderSize),
+    };
   }
 }
 

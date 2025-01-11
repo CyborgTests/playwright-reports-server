@@ -13,7 +13,7 @@ type ReportsMap = Map<string, ReportHistory>;
 export class ReportCache {
   private static instance: ReportCache;
   public initialized = false;
-  private reports: ReportsMap;
+  private readonly reports: ReportsMap;
 
   private constructor() {
     this.reports = new Map();
@@ -49,7 +49,7 @@ export class ReportCache {
   }
 
   public async init() {
-    if (this.initialized) {
+    if (this.initialized || !env.USE_SERVER_CACHE) {
       return;
     }
 
@@ -66,12 +66,21 @@ export class ReportCache {
   }
 
   public async onDeleted(reportIds: string[]) {
+
+    if (!env.USE_SERVER_CACHE) {
+      return;
+    }
+
     for (const id of reportIds) {
       this.reports.delete(id);
     }
   }
 
   public async onCreated(report: ReportHistory) {
+    if (!env.USE_SERVER_CACHE) {
+      return;
+    }
+    
     this.reports.set(report.reportID, report);
   }
 

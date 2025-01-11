@@ -33,8 +33,10 @@ const columns = [
   { name: 'Actions', uid: 'actions' },
 ];
 
+const notMetadataKeys = ['resultID', 'createdAt', 'size', 'sizeBytes', 'project'];
+
 const getTags = (item: Result) => {
-  return Object.entries(item).filter(([key]) => !['resultID', 'createdAt', 'size', 'project'].includes(key));
+  return Object.entries(item).filter(([key]) => !notMetadataKeys.includes(key));
 };
 
 interface ResultsTableProps {

@@ -1,13 +1,14 @@
 import { storage } from '@/app/lib/storage';
 import { type Result } from '@/app/lib/storage/types';
 import { isBuildStage } from '@/app/config/runtime';
+import { env } from '@/app/config/env';
 
 type ResultsMap = Map<string, Result>;
 
 export class ResultCache {
   private static instance: ResultCache;
   public initialized = false;
-  private results: ResultsMap;
+  private readonly results: ResultsMap;
 
   private constructor() {
     this.results = new Map();
@@ -22,7 +23,7 @@ export class ResultCache {
   }
 
   public async init() {
-    if (this.initialized) {
+    if (this.initialized || !env.USE_SERVER_CACHE) {
       return;
     }
 
@@ -39,12 +40,20 @@ export class ResultCache {
   }
 
   public async onDeleted(resultIds: string[]) {
+    if (!env.USE_SERVER_CACHE) {
+      return;
+    }
+
     for (const id of resultIds) {
       this.results.delete(id);
     }
   }
 
   public async onCreated(result: Result) {
+    if (!env.USE_SERVER_CACHE) {
+      return;
+    }
+
     this.results.set(result.resultID, result);
   }
 
