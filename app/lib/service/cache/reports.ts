@@ -66,12 +66,19 @@ export class ReportCache {
   }
 
   public async onDeleted(reportIds: string[]) {
+    if (!env.USE_SERVER_CACHE) {
+      return;
+    }
+
     for (const id of reportIds) {
       this.reports.delete(id);
     }
   }
 
   public async onCreated(report: ReportHistory) {
+    if (!env.USE_SERVER_CACHE) {
+      return;
+    }
     this.reports.set(report.reportID, report);
   }
 

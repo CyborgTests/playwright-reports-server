@@ -40,12 +40,20 @@ export class ResultCache {
   }
 
   public async onDeleted(resultIds: string[]) {
+    if (!env.USE_SERVER_CACHE) {
+      return;
+    }
+
     for (const id of resultIds) {
       this.results.delete(id);
     }
   }
 
   public async onCreated(result: Result) {
+    if (!env.USE_SERVER_CACHE) {
+      return;
+    }
+
     this.results.set(result.resultID, result);
   }
 
