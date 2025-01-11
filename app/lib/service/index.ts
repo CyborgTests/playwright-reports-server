@@ -10,7 +10,9 @@ import {
   ReadResultsInput,
   ReadResultsOutput,
   ReportHistory,
+  Result,
   ResultDetails,
+  ResultPartialUpload,
   ServerDataInfo,
   isReportHistory,
   storage,
@@ -138,7 +140,7 @@ class Service {
 
       cached.sort((a, b) => getTimestamp(new Date(b.createdAt)) - getTimestamp(new Date(a.createdAt)));
 
-      const byProject = input?.project
+      const byProject = !!input?.project
         ? cached.filter((file) => (input?.project ? file.project === input.project : file))
         : cached;
 
@@ -161,6 +163,27 @@ class Service {
     }
 
     resultCache.onDeleted(resultIDs);
+  }
+
+  public async saveResultPartially(resultID: string, upload: ResultPartialUpload, headers: Headers): Promise<void> {
+    await storage.saveResultPartially(resultID, upload, headers);
+  }
+
+  public async saveResultMetadata(resultID: string, resultDetails: ResultDetails): Promise<void> {
+    const sizeBytes = parseInt(resultDetails.size ?? 0, 10);
+
+    const metadata = {
+      ...resultDetails,
+      resultID: resultID as UUID,
+      createdAt: resultDetails.createdAt ?? new Date().toISOString(),
+      project: resultDetails.project,
+      sizeBytes,
+      size: bytesToString(sizeBytes),
+    } as Result;
+
+    await storage.saveResultMetadata(resultID, metadata);
+
+    resultCache.onCreated(metadata);
   }
 
   public async saveResult(

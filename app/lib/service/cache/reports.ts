@@ -79,6 +79,7 @@ export class ReportCache {
     if (!env.USE_SERVER_CACHE) {
       return;
     }
+
     this.reports.set(report.reportID, report);
   }
 
