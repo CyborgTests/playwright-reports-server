@@ -79,7 +79,7 @@ export async function readResults(input?: ReadResultsInput) {
   await createDirectoriesIfMissing();
   const files = await fs.readdir(RESULTS_FOLDER);
 
-  const stats = await processBatch<string, Stats & { filePath: string; size: string }>(
+  const stats = await processBatch<string, Stats & { filePath: string; size: string; sizeBytes: number }>(
     {},
     files.filter((file) => file.endsWith('.json')),
     20,
@@ -88,9 +88,11 @@ export async function readResults(input?: ReadResultsInput) {
 
       const stat = await fs.stat(filePath);
 
-      const size = await getSizeInMb(filePath.replace('.json', '.zip'));
+      const sizeBytes = await getFolderSize.loose(filePath.replace('.json', '.zip'));
 
-      return Object.assign(stat, { filePath, size });
+      const size = bytesToString(sizeBytes);
+
+      return Object.assign(stat, { filePath, size, sizeBytes });
     },
   );
 
@@ -102,6 +104,7 @@ export async function readResults(input?: ReadResultsInput) {
 
       return {
         size: entry.size,
+        sizeBytes: entry.sizeBytes,
         ...JSON.parse(content),
       };
     }),
@@ -161,7 +164,8 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
       const id = path.basename(file.filePath);
       const reportPath = path.dirname(file.filePath);
       const parentDir = path.basename(reportPath);
-      const size = await getSizeInMb(path.join(reportPath, id));
+      const sizeBytes = await getFolderSize.loose(path.join(reportPath, id));
+      const size = bytesToString(sizeBytes);
 
       const projectName = parentDir === REPORTS_PATH ? '' : parentDir;
 
@@ -170,6 +174,7 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
         project: projectName,
         createdAt: file.birthtime,
         size,
+        sizeBytes,
         reportUrl: `${serveReportRoute}/${projectName ? encodeURIComponent(projectName) : ''}/${id}/index.html`,
       };
     }),
@@ -247,9 +252,10 @@ export async function saveResult(file: Blob, size: number, resultDetails: Result
   const metaData = {
     resultID,
     createdAt: new Date().toISOString(),
-    size: bytesToString(size),
     project: resultDetails?.project ?? '',
     ...resultDetails,
+    size: bytesToString(size),
+    sizeBytes: size,
   };
 
   const { error: writeJsonError } = await withError(
@@ -262,7 +268,7 @@ export async function saveResult(file: Blob, size: number, resultDetails: Result
     throw new Error(`failed to save result ${resultID} json file: ${writeJsonError.message}`);
   }
 
-  return metaData;
+  return metaData as Result;
 }
 
 export async function generateReport(resultsIds: string[], project?: string) {

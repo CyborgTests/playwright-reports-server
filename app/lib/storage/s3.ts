@@ -283,10 +283,15 @@ export class S3 implements Storage {
     const currentFiles = noFilters ? results : handlePagination(byProject, input?.pagination);
 
     return {
-      results: currentFiles.map((result) => ({
-        ...result,
-        size: result.size ?? bytesToString(resultSizes.get(result.resultID) ?? 0),
-      })),
+      results: currentFiles.map((result) => {
+        const sizeBytes = resultSizes.get(result.resultID) ?? 0;
+
+        return {
+          ...result,
+          sizeBytes,
+          size: result.size ?? bytesToString(sizeBytes),
+        };
+      }) as Result[],
       total: noFilters ? jsonFiles.length : byProject.length,
     };
   }
@@ -332,6 +337,7 @@ export class S3 implements Storage {
           createdAt: file.lastModified,
           reportUrl: `${serveReportRoute}/${projectName ? encodeURIComponent(projectName) : ''}/${id}/index.html`,
           size: '',
+          sizeBytes: 0,
         };
 
         if (noFilters || shouldFilterByProject || shouldFilterByID) {
@@ -351,10 +357,15 @@ export class S3 implements Storage {
         const currentReports = handlePagination<Report>(reports, input?.pagination);
 
         resolve({
-          reports: currentReports.map((report) => ({
-            ...report,
-            size: bytesToString(reportSizes.get(report.reportID) ?? 0),
-          })),
+          reports: currentReports.map((report) => {
+            const sizeBytes = reportSizes.get(report.reportID) ?? 0;
+
+            return {
+              ...report,
+              sizeBytes,
+              size: bytesToString(sizeBytes),
+            };
+          }),
           total: reports.length,
         });
       });
@@ -406,10 +417,11 @@ export class S3 implements Storage {
 
     const metaData = {
       resultID,
-      size: bytesToString(size),
       createdAt: new Date().toISOString(),
       project: resultDetails?.project ?? '',
       ...resultDetails,
+      size: bytesToString(size),
+      sizeBytes: size,
     };
 
     await this.write(RESULTS_BUCKET, [
@@ -424,7 +436,7 @@ export class S3 implements Storage {
       },
     ]);
 
-    return metaData;
+    return metaData as Result;
   }
 
   private async uploadReport(reportId: string, reportPath: string) {

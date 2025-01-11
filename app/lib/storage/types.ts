@@ -51,6 +51,7 @@ export type Result = {
   createdAt: string;
   project: string;
   size: string;
+  sizeBytes: number;
 } & ResultDetails;
 
 export type Report = {
@@ -59,6 +60,7 @@ export type Report = {
   reportUrl: string;
   createdAt: Date;
   size: string;
+  sizeBytes: number;
 };
 
 export type ReportHistory = Report & ReportInfo;
