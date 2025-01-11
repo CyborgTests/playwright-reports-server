@@ -10,6 +10,7 @@ import {
   ReadResultsInput,
   ReadResultsOutput,
   ReportHistory,
+  Result,
   ResultDetails,
   ResultPartialUpload,
   ServerDataInfo,
@@ -166,24 +167,23 @@ class Service {
 
   public async saveResultPartially(resultID: string, upload: ResultPartialUpload, headers: Headers): Promise<void> {
     await storage.saveResultPartially(resultID, upload, headers);
-
-    return;
   }
 
   public async saveResultMetadata(resultID: string, resultDetails: ResultDetails): Promise<void> {
+    const sizeBytes = parseInt(resultDetails.size ?? 0, 10);
+
     const metadata = {
       ...resultDetails,
       resultID: resultID as UUID,
       createdAt: resultDetails.createdAt ?? new Date().toISOString(),
       project: resultDetails.project,
-      size: bytesToString(parseInt(resultDetails.size ?? 0, 10)),
-    };
+      sizeBytes,
+      size: bytesToString(sizeBytes),
+    } as Result;
 
     await storage.saveResultMetadata(resultID, metadata);
 
     resultCache.onCreated(metadata);
-
-    return;
   }
 
   public async saveResult(

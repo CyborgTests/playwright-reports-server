@@ -12,7 +12,7 @@ export interface Storage {
   deleteReports: (reportIDs: string[]) => Promise<void>;
   saveResult: (file: Blob, size: number, resultDetails: ResultDetails) => Promise<Result>;
   saveResultPartially: (resultID: string, upload: ResultPartialUpload, headers?: Headers) => Promise<void>;
-  saveResultMetadata: (resultID: string, metadata: ResultDetails) => Promise<void>;
+  saveResultMetadata: (resultID: string, metadata: Result) => Promise<void>;
   generateReport: (resultsIds: string[], project?: string) => Promise<UUID>;
   moveReport: (oldPath: string, newPath: string) => Promise<void>;
 }
