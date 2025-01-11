@@ -25,7 +25,7 @@ import { ReadResultsOutput, type Result } from '@/app/lib/storage';
 import DeleteResultsButton from '@/app/components/delete-results-button';
 
 const columns = [
-  { name: 'ID', uid: 'resultID' },
+  { name: 'Title', uid: 'title' },
   { name: 'Project', uid: 'project' },
   { name: 'Created At', uid: 'createdAt' },
   { name: 'Tags', uid: 'tags' },
@@ -33,7 +33,7 @@ const columns = [
   { name: 'Actions', uid: 'actions' },
 ];
 
-const notMetadataKeys = ['resultID', 'createdAt', 'size', 'sizeBytes', 'project'];
+const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'];
 
 const getTags = (item: Result) => {
   return Object.entries(item).filter(([key]) => !notMetadataKeys.includes(key));
@@ -160,7 +160,7 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
         >
           {(item) => (
             <TableRow key={item.resultID}>
-              <TableCell className="w-1/3">{item.resultID}</TableCell>
+              <TableCell className="w-1/3">{item.title ?? item.resultID}</TableCell>
               <TableCell className="w-1/6">{item.project}</TableCell>
               <TableCell className="w-1/12">
                 <FormattedDate date={new Date(item.createdAt)} />

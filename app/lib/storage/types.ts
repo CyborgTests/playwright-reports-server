@@ -48,6 +48,7 @@ export interface ResultDetails {
 
 export type Result = {
   resultID: UUID;
+  title?: string;
   createdAt: string;
   project: string;
   size: string;
@@ -56,6 +57,7 @@ export type Result = {
 
 export type Report = {
   reportID: string;
+  title?: string;
   project: string;
   reportUrl: string;
   createdAt: Date;
