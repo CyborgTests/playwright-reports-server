@@ -1,13 +1,14 @@
 import { storage } from '@/app/lib/storage';
 import { type Result } from '@/app/lib/storage/types';
 import { isBuildStage } from '@/app/config/runtime';
+import { env } from '@/app/config/env';
 
 type ResultsMap = Map<string, Result>;
 
 export class ResultCache {
   private static instance: ResultCache;
   public initialized = false;
-  private results: ResultsMap;
+  private readonly results: ResultsMap;
 
   private constructor() {
     this.results = new Map();
@@ -22,7 +23,7 @@ export class ResultCache {
   }
 
   public async init() {
-    if (this.initialized) {
+    if (this.initialized || !env.USE_SERVER_CACHE) {
       return;
     }
 

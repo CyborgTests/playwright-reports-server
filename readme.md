@@ -18,6 +18,7 @@ Check out the live demo: [familiar-alyss-alex-hot-6926ec9c.koyeb.app](https://fa
   - [Prerequisites](#prerequisites)
   - [Installation](#installation)
   - [Running the Server](#running-the-server)
+  - [Configuration options](#configuration-options)
 - [API Routes](#api-routes)
 - [Authorization](#authorization)
 - [Storage Options](#storage-options)
@@ -57,6 +58,18 @@ Check out the live demo: [familiar-alyss-alex-hot-6926ec9c.koyeb.app](https://fa
 
 2. The application will be accessible at `http://localhost:3000`.
    All data will be stored at `/data/` folder. You can backup it, to keep your data safe.
+
+### Configuration options
+
+The app is configured with environment variables, so it could be specified as `.env` file as well, however there are no mandatory options.
+
+| Name                   | Description                                                                                      | Default |
+| ---------------------- | ------------------------------------------------------------------------------------------------ | ------- |
+| `API_TOKEN`            | API token for [Authorization](#authorization)                                                    |         |
+| `AUTH_SECRET`          | Secret to encrypt JWT                                                                            |         |
+| `UI_AUTH_EXPIRE_HOURS` | Duration of auth session                                                                         | `"2"`   |
+| `USE_SERVER_CACHE`     | Use server side indexed cache for backend queries, improves UX, reduces impact on a backend / s3 | `false` |
+| `DATA_STORAGE`         | Where to store data, check for additional configuration [Storage Options](#storage-options)      | `"fs"`  |
 
 ## API Routes
 
@@ -307,6 +320,7 @@ To enable S3 storage:
    S3_SECRET_KEY=<your-secret-key>
    S3_BUCKET=<your-s3-bucket-name> # optional, by default "playwright-reports-server"
    S3_PORT=9000 # optional, specify if you have self-hosted instance exposed via custom port
+   S3_BATCH_SIZE=10 # optional, a number of concurrent requests to s3
    ```
 
 2. Ensure your S3 provided credentials have read and write access to the bucket.
