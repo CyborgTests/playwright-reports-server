@@ -26,7 +26,7 @@ import useQuery from '@/app/hooks/useQuery';
 import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
 import { EyeIcon } from '@/app/components/icons';
-import { ReadReportsOutput } from '@/app/lib/storage';
+import { ReadReportsHistory } from '@/app/lib/storage';
 
 const columns = [
   { name: 'ID', uid: 'reportID' },
@@ -58,7 +58,7 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
     isPending,
     error,
     refetch,
-  } = useQuery<ReadReportsOutput>(withQueryParams(reportListEndpoint, getQueryParams()), {
+  } = useQuery<ReadReportsHistory>(withQueryParams(reportListEndpoint, getQueryParams()), {
     dependencies: [project, rowsPerPage, page],
     placeholderData: keepPreviousData,
   });

@@ -6,21 +6,12 @@ import { type ReportInfo, type ReportTest } from '@/app/lib/parser/types';
 export interface Storage {
   getServerDataInfo: () => Promise<ServerDataInfo>;
   readFile: (targetPath: string, contentType: string | null) => Promise<string | Buffer>;
-  readResults: (input: ReadResultsInput) => Promise<ReadResultsOutput>;
+  readResults: (input?: ReadResultsInput) => Promise<ReadResultsOutput>;
   readReports: (input?: ReadReportsInput) => Promise<ReadReportsOutput>;
   deleteResults: (resultIDs: string[]) => Promise<void>;
   deleteReports: (reportIDs: string[]) => Promise<void>;
-  saveResult: (
-    buffer: Buffer,
-    resultDetails: ResultDetails,
-  ) => Promise<{
-    resultID: UUID;
-    createdAt: string;
-    size: string;
-  }>;
+  saveResult: (file: Blob, size: number, resultDetails: ResultDetails) => Promise<Result>;
   generateReport: (resultsIds: string[], project?: string) => Promise<UUID>;
-  getReportsProjects: () => Promise<string[]>;
-  getResultsProjects: () => Promise<string[]>;
   moveReport: (oldPath: string, newPath: string) => Promise<void>;
 }
 
@@ -45,6 +36,11 @@ export interface ReadReportsOutput {
   total: number;
 }
 
+export interface ReadReportsHistory {
+  reports: ReportHistory[];
+  total: number;
+}
+
 // For custom user fields
 export interface ResultDetails {
   [key: string]: string;
@@ -55,6 +51,7 @@ export type Result = {
   createdAt: string;
   project: string;
   size: string;
+  sizeBytes: number;
 } & ResultDetails;
 
 export type Report = {
@@ -63,9 +60,13 @@ export type Report = {
   reportUrl: string;
   createdAt: Date;
   size: string;
+  sizeBytes: number;
 };
 
 export type ReportHistory = Report & ReportInfo;
+
+export const isReportHistory = (report: Report | ReportHistory | undefined): report is ReportHistory =>
+  !!report && typeof report === 'object' && 'stats' in report;
 
 export type TestHistory = Report & ReportTest;
 

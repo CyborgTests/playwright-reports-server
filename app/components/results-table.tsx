@@ -33,8 +33,10 @@ const columns = [
   { name: 'Actions', uid: 'actions' },
 ];
 
+const notMetadataKeys = ['resultID', 'createdAt', 'size', 'sizeBytes', 'project'];
+
 const getTags = (item: Result) => {
-  return Object.entries(item).filter(([key]) => !['resultID', 'createdAt', 'size', 'project'].includes(key));
+  return Object.entries(item).filter(([key]) => !notMetadataKeys.includes(key));
 };
 
 interface ResultsTableProps {
@@ -43,7 +45,7 @@ interface ResultsTableProps {
   onDeleted?: () => void;
 }
 
-export default function ResultsTable({ onSelect, onDeleted, selected }: ResultsTableProps) {
+export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly<ResultsTableProps>) {
   const resultListEndpoint = '/api/result/list';
   const [project, setProject] = useState(defaultProjectName);
   const [page, setPage] = useState(1);
@@ -166,7 +168,7 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: ResultsT
               <TableCell className="w-1/3">
                 {getTags(item).map(([key, value], index) => (
                   <Chip
-                    key={index}
+                    key={`${key}-${index}`}
                     className="m-1 p-5 text-nowrap"
                     color="primary"
                     size="sm"

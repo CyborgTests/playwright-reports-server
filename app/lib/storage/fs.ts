@@ -1,14 +1,16 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { type Dirent, type Stats } from 'node:fs';
+import { createWriteStream, type Dirent, type Stats } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 
 import getFolderSize from 'get-folder-size';
 
-import { bytesToString, getUniqueProjectsList } from './format';
+import { bytesToString } from './format';
 import { DATA_FOLDER, REPORTS_FOLDER, REPORTS_PATH, RESULTS_FOLDER, TMP_FOLDER } from './constants';
 import { processBatch } from './batch';
 import { handlePagination } from './pagination';
+import { defaultStreamingOptions, transformStreamToReadable } from './stream';
 
 import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
@@ -38,7 +40,7 @@ async function createDirectoriesIfMissing() {
   await createDirectory(TMP_FOLDER);
 }
 
-const getFolderSizeInMb = async (dir: string) => {
+const getSizeInMb = async (dir: string) => {
   const sizeBytes = await getFolderSize.loose(dir);
 
   return bytesToString(sizeBytes);
@@ -46,11 +48,11 @@ const getFolderSizeInMb = async (dir: string) => {
 
 export async function getServerDataInfo(): Promise<ServerDataInfo> {
   await createDirectoriesIfMissing();
-  const dataFolderSizeinMB = await getFolderSizeInMb(DATA_FOLDER);
+  const dataFolderSizeinMB = await getSizeInMb(DATA_FOLDER);
   const resultsCount = await getResultsCount();
-  const resultsFolderSizeinMB = await getFolderSizeInMb(RESULTS_FOLDER);
+  const resultsFolderSizeinMB = await getSizeInMb(RESULTS_FOLDER);
   const { total: reportsCount } = await readReports();
-  const reportsFolderSizeinMB = await getFolderSizeInMb(REPORTS_FOLDER);
+  const reportsFolderSizeinMB = await getSizeInMb(REPORTS_FOLDER);
 
   return {
     dataFolderSizeinMB,
@@ -77,24 +79,34 @@ export async function readResults(input?: ReadResultsInput) {
   await createDirectoriesIfMissing();
   const files = await fs.readdir(RESULTS_FOLDER);
 
-  const stats = await processBatch<string, Stats & { filePath: string }>({}, files, 20, async (file) => {
-    const filePath = path.join(RESULTS_FOLDER, file);
+  const stats = await processBatch<string, Stats & { filePath: string; size: string; sizeBytes: number }>(
+    {},
+    files.filter((file) => file.endsWith('.json')),
+    20,
+    async (file) => {
+      const filePath = path.join(RESULTS_FOLDER, file);
 
-    const stat = await fs.stat(filePath);
+      const stat = await fs.stat(filePath);
 
-    return Object.assign(stat, { filePath });
-  });
+      const sizeBytes = await getFolderSize.loose(filePath.replace('.json', '.zip'));
 
-  const jsonFiles = stats
-    .filter((stat) => stat.isFile() && path.extname(stat.filePath) === '.json')
-    .sort((a, b) => b.birthtimeMs - a.birthtimeMs)
-    .map((stat) => stat.filePath);
+      const size = bytesToString(sizeBytes);
+
+      return Object.assign(stat, { filePath, size, sizeBytes });
+    },
+  );
+
+  const jsonFiles = stats.sort((a, b) => b.birthtimeMs - a.birthtimeMs);
 
   const fileContents: Result[] = await Promise.all(
-    jsonFiles.map(async (filePath) => {
-      const content = await fs.readFile(filePath, 'utf-8');
+    jsonFiles.map(async (entry) => {
+      const content = await fs.readFile(entry.filePath, 'utf-8');
 
-      return JSON.parse(content);
+      return {
+        size: entry.size,
+        sizeBytes: entry.sizeBytes,
+        ...JSON.parse(content),
+      };
     }),
   );
 
@@ -105,7 +117,9 @@ export async function readResults(input?: ReadResultsInput) {
   const paginatedResults = handlePagination(resultsByProject, input?.pagination);
 
   return {
-    results: paginatedResults,
+    results: paginatedResults.map((result) => ({
+      ...result,
+    })),
     total: resultsByProject.length,
   };
 }
@@ -150,7 +164,8 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
       const id = path.basename(file.filePath);
       const reportPath = path.dirname(file.filePath);
       const parentDir = path.basename(reportPath);
-      const size = await getFolderSizeInMb(path.join(reportPath, id));
+      const sizeBytes = await getFolderSize.loose(path.join(reportPath, id));
+      const size = bytesToString(sizeBytes);
 
       const projectName = parentDir === REPORTS_PATH ? '' : parentDir;
 
@@ -159,6 +174,7 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
         project: projectName,
         createdAt: file.birthtime,
         size,
+        sizeBytes,
         reportUrl: `${serveReportRoute}/${projectName ? encodeURIComponent(projectName) : ''}/${id}/index.html`,
       };
     }),
@@ -194,35 +210,65 @@ export async function deleteReport(reportId: string) {
   await fs.rm(reportPath, { recursive: true, force: true });
 }
 
-export async function saveResult(buffer: Buffer, resultDetails: ResultDetails) {
+export async function saveResult(file: Blob, size: number, resultDetails: ResultDetails) {
   await createDirectoriesIfMissing();
   const resultID = randomUUID();
   const resultPath = path.join(RESULTS_FOLDER, `${resultID}.zip`);
 
-  const { error: writeZipError } = await withError(fs.writeFile(resultPath, buffer));
+  const readable = transformStreamToReadable(file.stream());
+  const writeable = createWriteStream(resultPath, defaultStreamingOptions);
 
-  const size = await getFolderSizeInMb(resultPath);
+  /**
+   * additional backpressure handling
+   * https://nodejs.org/en/learn/modules/backpressuring-in-streams
+   */
+  readable
+    .on('data', (chunk) => {
+      if (!writeable.write(chunk)) {
+        readable.pause();
+      }
+    })
+    .on('error', (error) => {
+      console.log(`readable stream error: ${error.message}`);
+    });
 
-  if (writeZipError) {
-    throw new Error(`failed to save result ${resultID} zip file: ${writeZipError.message}`);
+  writeable
+    .on('drain', () => {
+      readable.resume();
+    })
+    .on('error', (error) => {
+      console.log(`writeable stream error: ${error.message}`);
+    });
+
+  const { error: writeStreamError } = await withError(pipeline(readable, writeable));
+
+  if (writeStreamError) {
+    throw new Error(`failed stream pipeline: ${writeStreamError.message}`);
   }
+
+  // ensure writable stream is closed
+  writeable.end();
 
   const metaData = {
     resultID,
     createdAt: new Date().toISOString(),
-    size,
+    project: resultDetails?.project ?? '',
     ...resultDetails,
+    size: bytesToString(size),
+    sizeBytes: size,
   };
 
   const { error: writeJsonError } = await withError(
-    fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.json`), Buffer.from(JSON.stringify(metaData, null, 2))),
+    fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.json`), JSON.stringify(metaData, null, 2), {
+      encoding: 'utf-8',
+    }),
   );
 
   if (writeJsonError) {
     throw new Error(`failed to save result ${resultID} json file: ${writeJsonError.message}`);
   }
 
-  return metaData;
+  return metaData as Result;
 }
 
 export async function generateReport(resultsIds: string[], project?: string) {
@@ -252,18 +298,6 @@ export async function generateReport(resultsIds: string[], project?: string) {
   return reportId;
 }
 
-export async function getReportsProjects(): Promise<string[]> {
-  const { reports } = await readReports();
-
-  return getUniqueProjectsList(reports);
-}
-
-export async function getResultsProjects(): Promise<string[]> {
-  const { results } = await readResults();
-
-  return getUniqueProjectsList(results);
-}
-
 export async function moveReport(oldPath: string, newPath: string): Promise<void> {
   const reportPath = path.join(REPORTS_FOLDER, oldPath);
   const newReportPath = path.join(REPORTS_FOLDER, newPath);
@@ -282,7 +316,5 @@ export const FS: Storage = {
   deleteReports,
   saveResult,
   generateReport,
-  getReportsProjects,
-  getResultsProjects,
   moveReport,
 };
