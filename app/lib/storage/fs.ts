@@ -89,9 +89,11 @@ export async function readResults(input?: ReadResultsInput) {
 
       const stat = await fs.stat(filePath);
 
-      const size = await getSizeInMb(filePath.replace('.json', '.zip'));
+      const sizeBytes = await getFolderSize.loose(filePath.replace('.json', '.zip'));
 
-      return Object.assign(stat, { filePath, size });
+      const size = bytesToString(sizeBytes);
+
+      return Object.assign(stat, { filePath, size, sizeBytes });
     },
   );
 
@@ -237,7 +239,6 @@ export async function saveResult(file: Blob, size: number, resultDetails: Result
     .on('error', (error) => {
       console.log(`writeable stream error: ${error.message}`);
     });
-
 
   const { error: writeStreamError } = await withError(pipeline(readable, writeable));
 
