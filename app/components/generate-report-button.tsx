@@ -11,6 +11,7 @@ import {
   ModalFooter,
   Autocomplete,
   AutocompleteItem,
+  Input,
 } from '@nextui-org/react';
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -53,6 +54,7 @@ export default function GenerateReportButton({
   } = useQuery<string[]>(`/api/result/projects`);
 
   const [projectName, setProjectName] = useState('');
+  const [customName, setCustomName] = useState('');
 
   useEffect(() => {
     !projectName && setProjectName(projects?.at(0) ?? '');
@@ -65,9 +67,10 @@ export default function GenerateReportButton({
       return;
     }
 
-    generateReport({ body: { resultsIds: results.map((r) => r.resultID), project: projectName } });
+    generateReport({ body: { resultsIds: results.map((r) => r.resultID), project: projectName, title: customName } });
 
     setProjectName('');
+    setCustomName('');
     onClose();
     onGeneratedReport?.();
   };
@@ -104,6 +107,15 @@ export default function GenerateReportButton({
                 >
                   {(item) => <AutocompleteItem key={item.value}>{item.label}</AutocompleteItem>}
                 </Autocomplete>
+                <Input
+                  fullWidth
+                  isClearable
+                  maxLength={36}
+                  placeholder="Custom report name"
+                  value={customName}
+                  onChange={(e: { target: { value: any } }) => setCustomName(e.target.value ?? '')}
+                  onClear={() => setCustomName('')}
+                />
               </ModalBody>
               <ModalFooter>
                 <Button color="danger" isDisabled={isPending} onClick={onClose}>
