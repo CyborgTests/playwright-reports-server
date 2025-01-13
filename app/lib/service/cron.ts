@@ -41,14 +41,18 @@ export class CronService {
       {
         name: 'reports',
         cron: this.clearReportsJob,
+        expireDays: env.REPORT_EXPIRE_DAYS,
+        expression: env.REPORT_EXPIRE_CRON_SCHEDULE,
       },
       {
         name: 'results',
         cron: this.clearResultsJob,
+        expireDays: env.RESULT_EXPIRE_DAYS,
+        expression: env.RESULT_EXPIRE_CRON_SCHEDULE,
       },
     ]) {
       const message = schedule.cron
-        ? `found expiration task for ${schedule.name}, starting...`
+        ? `found expiration task for ${schedule.name} older than ${schedule.expireDays} day(s) at "${schedule.expression}", starting...`
         : `no expiration task for ${schedule.name}, skipping...`;
 
       console.log(`[cron-job] ${message}`);
@@ -86,9 +90,9 @@ export class CronService {
 
       console.log(`[cron-job] found ${outdated.length} outdated reports`);
 
-      const outDatedIds = outdated.map((report) => report.reportID);
+      const outdatedIds = outdated.map((report) => report.reportID);
 
-      const { error } = await withError(service.deleteReports(outDatedIds));
+      const { error } = await withError(service.deleteReports(outdatedIds));
 
       if (error) console.error(`[cron-job] error deleting outdated results: ${error}`);
     });
@@ -111,9 +115,9 @@ export class CronService {
 
       console.log(`[cron-job] found ${outdated.length} outdated results`);
 
-      const outDatedIds = outdated.map((result) => result.resultID);
+      const outdatedIds = outdated.map((result) => result.resultID);
 
-      const { error } = await withError(service.deleteResults(outDatedIds));
+      const { error } = await withError(service.deleteResults(outdatedIds));
 
       if (error) console.error(`[cron-job] error deleting outdated results: ${error}`);
     });
