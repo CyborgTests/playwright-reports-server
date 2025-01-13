@@ -24,6 +24,7 @@ Check out the live demo: [familiar-alyss-alex-hot-6926ec9c.koyeb.app](https://fa
 - [Storage Options](#storage-options)
   - [Local File System](#local-file-system-storage)
   - [S3-Compatible](#s3-compatible-object-storage)
+  - [Expiration Task](#expiration-task)
 - [Docker Usage](#docker-usage)
 - [UI White-label](#ui-white-label)
 
@@ -328,6 +329,21 @@ To enable S3 storage:
 When S3 storage is configured, all operations that would normally interact with the local file system will instead use the S3 bucket. This includes storing raw test results, generating reports, and serving report files.
 
 Note: When switching from local storage to S3 or vice versa, existing data will not be automatically migrated. Ensure you have a backup of your data before changing storage configurations.
+
+### Expiration task
+
+You can specify how much days to keep your report or result files in order to cleanup old records.  
+Feature is configurable via environment variables.  
+If days variable is not specified - the task registration will be skipped.
+
+| Name                          | Description                       | Default                              |
+| ----------------------------- | --------------------------------- | ------------------------------------ |
+| `RESULT_EXPIRE_DAYS`          | How much days to keep results     |                                      |
+| `RESULT_EXPIRE_CRON_SCHEDULE` | Cron schedule for results cleanup | `"33 3 * * *"` (at 03:33, every day) |
+| `REPORT_EXPIRE_DAYS`          | How much days to keep reports     |                                      |
+| `REPORT_EXPIRE_CRON_SCHEDULE` | Cron schedule for reports cleanup | `"44 4 * * *"` (at 04:44, every day) |
+
+if you want more granular expiration time than day - the decimal values are supported, so for example 6 hours will be `6/24 = 0.25`.  
 
 ## Docker Usage
 
