@@ -11,7 +11,7 @@ export interface Storage {
   deleteResults: (resultIDs: string[]) => Promise<void>;
   deleteReports: (reportIDs: string[]) => Promise<void>;
   saveResult: (file: Blob, size: number, resultDetails: ResultDetails) => Promise<Result>;
-  generateReport: (resultsIds: string[], project?: string) => Promise<UUID>;
+  generateReport: (resultsIds: string[], metadata?: ReportMetadata) => Promise<UUID>;
   moveReport: (oldPath: string, newPath: string) => Promise<void>;
 }
 
@@ -32,7 +32,7 @@ export interface ReadReportsInput {
 }
 
 export interface ReadReportsOutput {
-  reports: Report[];
+  reports: ReportHistory[];
   total: number;
 }
 
@@ -48,6 +48,7 @@ export interface ResultDetails {
 
 export type Result = {
   resultID: UUID;
+  title?: string;
   createdAt: string;
   project: string;
   size: string;
@@ -56,6 +57,7 @@ export type Result = {
 
 export type Report = {
   reportID: string;
+  title?: string;
   project: string;
   reportUrl: string;
   createdAt: Date;
@@ -69,6 +71,8 @@ export const isReportHistory = (report: Report | ReportHistory | undefined): rep
   !!report && typeof report === 'object' && 'stats' in report;
 
 export type TestHistory = Report & ReportTest;
+
+export type ReportMetadata = Partial<{ title: string; project: string }> & Record<string, string>;
 
 export interface ServerDataInfo {
   dataFolderSizeinMB: string;

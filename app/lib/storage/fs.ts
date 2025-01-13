@@ -7,11 +7,19 @@ import { pipeline } from 'node:stream/promises';
 import getFolderSize from 'get-folder-size';
 
 import { bytesToString } from './format';
-import { DATA_FOLDER, REPORTS_FOLDER, REPORTS_PATH, RESULTS_FOLDER, TMP_FOLDER } from './constants';
+import {
+  DATA_FOLDER,
+  REPORT_METADATA_FILE,
+  REPORTS_FOLDER,
+  REPORTS_PATH,
+  RESULTS_FOLDER,
+  TMP_FOLDER,
+} from './constants';
 import { processBatch } from './batch';
 import { handlePagination } from './pagination';
 import { defaultStreamingOptions, transformStreamToReadable } from './stream';
 
+import { parse } from '@/app/lib/parser';
 import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
 import { serveReportRoute } from '@/app/lib/constants';
@@ -23,6 +31,8 @@ import {
   ReadReportsOutput,
   ReadReportsInput,
   ReadResultsInput,
+  ReportMetadata,
+  ReportHistory,
 } from '@/app/lib/storage';
 
 async function createDirectoriesIfMissing() {
@@ -124,6 +134,43 @@ export async function readResults(input?: ReadResultsInput) {
   };
 }
 
+function isMissingFileError(error?: Error | null) {
+  return error?.message.includes('ENOENT');
+}
+
+async function readOrParseReportMetadata(id: string, projectName: string): Promise<ReportMetadata> {
+  console.log(`checking metadata for report ${projectName}/${id}`);
+  const { result: metadataContent, error: metadataError } = await withError(
+    readFile(path.join(projectName, id, REPORT_METADATA_FILE), 'utf-8'),
+  );
+
+  if (metadataError) console.error(`failed to read metadata for ${id}: ${metadataError.message}`);
+
+  const metadata = metadataContent && !metadataError ? JSON.parse(metadataContent.toString()) : {};
+
+  if (!isMissingFileError(metadataError)) {
+    return metadata;
+  }
+
+  console.log(`metadata file not found for ${id}, creating new metadata`);
+  try {
+    const parsed = await parseReportMetadata(id, path.join(REPORTS_FOLDER, projectName, id), {
+      project: projectName,
+      reportID: id,
+    });
+
+    console.log(`parsed metadata for ${id}`);
+
+    await saveReportMetadata(path.join(REPORTS_FOLDER, projectName, id), parsed);
+
+    Object.assign(metadata, parsed);
+  } catch (e) {
+    console.error(`failed to create metadata for ${id}: ${(e as Error).message}`);
+  }
+
+  return metadata;
+}
+
 export async function readReports(input?: ReadReportsInput): Promise<ReadReportsOutput> {
   await createDirectoriesIfMissing();
   const entries = await fs.readdir(REPORTS_FOLDER, { withFileTypes: true, recursive: true });
@@ -169,6 +216,8 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
 
       const projectName = parentDir === REPORTS_PATH ? '' : parentDir;
 
+      const metadata = await readOrParseReportMetadata(id, projectName);
+
       return {
         reportID: id,
         project: projectName,
@@ -176,11 +225,12 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
         size,
         sizeBytes,
         reportUrl: `${serveReportRoute}/${projectName ? encodeURIComponent(projectName) : ''}/${id}/index.html`,
+        ...metadata,
       };
     }),
   );
 
-  return { reports, total: reportsWithProject.length };
+  return { reports: reports as ReportHistory[], total: reportsWithProject.length };
 }
 
 export async function deleteResults(resultsIds: string[]) {
@@ -271,7 +321,7 @@ export async function saveResult(file: Blob, size: number, resultDetails: Result
   return metaData as Result;
 }
 
-export async function generateReport(resultsIds: string[], project?: string) {
+export async function generateReport(resultsIds: string[], metadata?: ReportMetadata) {
   await createDirectoriesIfMissing();
 
   const reportId = randomUUID();
@@ -287,7 +337,22 @@ export async function generateReport(resultsIds: string[], project?: string) {
     await fs.copyFile(path.join(RESULTS_FOLDER, `${id}.zip`), path.join(tempFolder, `${id}.zip`));
   }
 
-  await generatePlaywrightReport(reportId, project);
+  const { error: generateReportError, result: generated } = await withError(
+    generatePlaywrightReport(reportId, metadata?.project),
+  );
+
+  const { error: parsedMetadataError, result: info } = await withError(
+    parseReportMetadata(reportId, generated?.reportPath ?? '', metadata),
+  );
+
+  if (parsedMetadataError) console.error(`failed to parse metadata: ${parsedMetadataError.message}`);
+
+  if (!generateReportError && info) {
+    const { error: writeJsonError } = await withError(saveReportMetadata(generated?.reportPath ?? '', info));
+
+    if (writeJsonError)
+      console.error(`failed to save metadata file for ${reportId} json file: ${writeJsonError.message}`);
+  }
 
   const { error } = await withError(fs.rm(tempFolder, { recursive: true, force: true }));
 
@@ -296,6 +361,32 @@ export async function generateReport(resultsIds: string[], project?: string) {
   }
 
   return reportId;
+}
+
+async function parseReportMetadata(
+  reportID: string,
+  reportPath: string,
+  metadata?: ReportMetadata,
+): Promise<ReportMetadata> {
+  const html = await fs.readFile(path.join(reportPath, 'index.html'), 'utf-8');
+  const info = await parse(html as string);
+
+  const content = Object.assign(
+    info,
+    {
+      reportID,
+      createdAt: new Date().toISOString(),
+    },
+    metadata ?? {},
+  );
+
+  return content;
+}
+
+async function saveReportMetadata(reportPath: string, info: ReportMetadata) {
+  return fs.writeFile(path.join(reportPath, REPORT_METADATA_FILE), JSON.stringify(info, null, 2), {
+    encoding: 'utf-8',
+  });
 }
 
 export async function moveReport(oldPath: string, newPath: string): Promise<void> {

@@ -14,3 +14,5 @@ export const PW_CONFIG = path.join(CWD, 'playwright.config.ts');
 export const TMP_FOLDER = path.join(CWD, '.tmp');
 export const RESULTS_FOLDER = path.join(DATA_FOLDER, RESULTS_PATH);
 export const REPORTS_FOLDER = path.join(DATA_FOLDER, REPORTS_PATH);
+
+export const REPORT_METADATA_FILE = 'report-server-metadata.json';

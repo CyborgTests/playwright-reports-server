@@ -81,12 +81,7 @@ Returns list of generated reports and corresponding url on server:
 ```sh
 curl --location --request GET 'http://localhost:3000/api/report/list' \
 --header 'Content-Type: application/json' \
---header 'Authorization: <api-token>' \
---data '{
-    "reportsIds": [
-        "6a615fe1-2452-4867-9ae5-6ee68313aac6"
-    ]
-}'
+--header 'Authorization: <api-token>'
 ```
 
 Response example:
@@ -100,6 +95,7 @@ Response example:
       "project": "regression",
       "size": "6.97 MB",
       "reportUrl": "/api/serve/regression/8e9af87d-1d10-4729-aefd-3e92ee64d06c/index.html"
+      //...parsed info
     },
     {
       "reportID": "8fe427ed-783c-4fb9-aacc-ba6fbc5f5667",
@@ -107,6 +103,7 @@ Response example:
       "project": "smoke",
       "size": "1.53 MB",
       "reportUrl": "/api/serve/smoke/8fe427ed-783c-4fb9-aacc-ba6fbc5f5667/index.html"
+      //...parsed info
     }
   ],
   "total": 2

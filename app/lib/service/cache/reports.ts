@@ -1,11 +1,6 @@
-import path from 'node:path';
-
 import { storage } from '@/app/lib/storage';
-import { type Report, type ReportHistory } from '@/app/lib/storage/types';
-import { withError } from '@/app/lib/withError';
-import { processBatch } from '@/app/lib/storage/batch';
+import { type ReportHistory } from '@/app/lib/storage/types';
 import { env } from '@/app/config/env';
-import { parse } from '@/app/lib/parser';
 import { isBuildStage } from '@/app/config/runtime';
 
 type ReportsMap = Map<string, ReportHistory>;
@@ -27,27 +22,6 @@ export class ReportCache {
     return ReportCache.instance;
   }
 
-  private async getStats(report: Report): Promise<ReportHistory> {
-    const { result: html, error } = await withError(
-      storage.readFile(path.join(report?.project ?? '', report.reportID, 'index.html'), 'text/html'),
-    );
-
-    if (error || !html) {
-      return report as ReportHistory;
-    }
-
-    const { result: info, error: parseError } = await withError(parse(html as string));
-
-    if (parseError || !info) {
-      return report as ReportHistory;
-    }
-
-    return {
-      ...report,
-      ...info,
-    };
-  }
-
   public async init() {
     if (this.initialized || !env.USE_SERVER_CACHE) {
       return;
@@ -56,9 +30,7 @@ export class ReportCache {
     console.log('[report cache] initializing cache');
     const { reports } = await storage.readReports();
 
-    const withStats = await processBatch<Report, ReportHistory>({}, reports, env.S3_BATCH_SIZE ?? 10, this.getStats);
-
-    for (const report of withStats) {
+    for (const report of reports) {
       ReportCache.getInstance().reports.set(report.reportID, report);
     }
 

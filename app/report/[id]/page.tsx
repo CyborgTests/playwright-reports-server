@@ -46,7 +46,7 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
   return (
     <>
       <div className="text-center">
-        <h1 className={title()}>Report</h1>
+        <h1 className={title()}>{report?.title || 'Report'}</h1>
         {report?.createdAt && (
           <span className={subtitle()}>
             <FormattedDate date={report.createdAt} />
