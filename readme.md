@@ -343,7 +343,7 @@ If days variable is not specified - the task registration will be skipped.
 | `REPORT_EXPIRE_DAYS`          | How much days to keep reports     |                                      |
 | `REPORT_EXPIRE_CRON_SCHEDULE` | Cron schedule for reports cleanup | `"44 4 * * *"` (at 04:44, every day) |
 
-if you want more granular expiration time than day - the decimal values are supported, so for example 6 hours will be `6/24 = 0.25`.  
+if you want more granular expiration time than day - the decimal values are supported, so for example 6 hours will be `6/24 = 0.25`.
 
 ## Docker Usage
 
