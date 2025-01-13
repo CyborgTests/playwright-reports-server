@@ -24,6 +24,9 @@ class Service {
     console.log(`[service] get instance`);
     if (!Service.instance) {
       Service.instance = new Service();
+
+      // register cleanup cron jobs
+      import('@/app/lib/service/cron');
     }
 
     return Service.instance;
