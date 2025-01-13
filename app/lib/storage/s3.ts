@@ -6,13 +6,30 @@ import { Readable } from 'node:stream';
 import { type BucketItem, Client } from 'minio';
 
 import { processBatch } from './batch';
-import { ReadReportsInput, ReadReportsOutput, ReadResultsInput, ReadResultsOutput, Storage } from './types';
+import {
+  isReportHistory,
+  ReadReportsInput,
+  ReadReportsOutput,
+  ReadResultsInput,
+  ReadResultsOutput,
+  ReportHistory,
+  ReportMetadata,
+  Storage,
+} from './types';
 import { bytesToString } from './format';
-import { REPORTS_FOLDER, TMP_FOLDER, REPORTS_BUCKET, RESULTS_BUCKET, REPORTS_PATH } from './constants';
+import {
+  REPORTS_FOLDER,
+  TMP_FOLDER,
+  REPORTS_BUCKET,
+  RESULTS_BUCKET,
+  REPORTS_PATH,
+  REPORT_METADATA_FILE,
+} from './constants';
 import { handlePagination } from './pagination';
 import { getFileReportID } from './file';
 import { transformStreamToReadable } from './stream';
 
+import { parse } from '@/app/lib/parser';
 import { serveReportRoute } from '@/app/lib/constants';
 import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
@@ -93,8 +110,9 @@ export class S3 implements Storage {
   private async write(dir: string, files: { name: string; content: Readable | Buffer | string; size?: number }[]) {
     await this.ensureBucketExist();
     for (const file of files) {
-      console.log(`[s3] writing ${file.name}`);
       const path = `${dir}/${file.name}`;
+
+      console.log(`[s3] writing ${path}`);
 
       const content = typeof file.content === 'string' ? Buffer.from(file.content) : file.content;
 
@@ -107,9 +125,10 @@ export class S3 implements Storage {
   private async read(targetPath: string, contentType?: string | null) {
     await this.ensureBucketExist();
     console.log(`[s3] read ${targetPath}`);
-    const { result: stream, error } = await withError(
-      this.client.getObject(this.bucket, `${REPORTS_BUCKET}/${targetPath}`),
-    );
+
+    const remotePath = targetPath.includes(REPORTS_BUCKET) ? targetPath : `${REPORTS_BUCKET}/${targetPath}`;
+
+    const { result: stream, error } = await withError(this.client.getObject(this.bucket, remotePath));
 
     if (error ?? !stream) {
       return { result: null, error };
@@ -329,7 +348,7 @@ export class S3 implements Storage {
 
         const shouldFilterByProject = input?.project && projectName === input.project;
 
-        const shouldFilterByID = input?.ids && input.ids.includes(id);
+        const shouldFilterByID = input?.ids?.includes(id);
 
         const report = {
           reportID: id,
@@ -349,15 +368,17 @@ export class S3 implements Storage {
         reject(err);
       });
 
-      reportsStream.on('end', () => {
+      reportsStream.on('end', async () => {
         const getTimestamp = (date?: Date) => date?.getTime() ?? 0;
 
         reports.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
 
         const currentReports = handlePagination<Report>(reports, input?.pagination);
 
+        const withMetadata = await this.getReportsMetadata(currentReports as ReportHistory[]);
+
         resolve({
-          reports: currentReports.map((report) => {
+          reports: withMetadata.map((report) => {
             const sizeBytes = reportSizes.get(report.reportID) ?? 0;
 
             return {
@@ -370,6 +391,75 @@ export class S3 implements Storage {
         });
       });
     });
+  }
+
+  async getReportsMetadata(reports: ReportHistory[]): Promise<ReportHistory[]> {
+    return await processBatch<ReportHistory, ReportHistory>(this, reports, this.batchSize, async (report) => {
+      console.log(`[s3.batch] reading report ${report.reportID} metadata`);
+
+      const { result: metadata, error: metadataError } = await withError(
+        this.readOrParseReportMetadata(report.reportID, report.project),
+      );
+
+      if (metadataError) {
+        console.error(`[s3] failed to read or create metadata for ${report.reportID}: ${metadataError.message}`);
+
+        return report;
+      }
+
+      if (!metadata) {
+        return report;
+      }
+
+      return Object.assign(metadata, report);
+    });
+  }
+
+  async readOrParseReportMetadata(id: string, projectName: string): Promise<ReportHistory> {
+    console.log(`[s3] checking metadata for report ${projectName}/${id}`);
+
+    const { result: metadataContent, error: metadataError } = await withError(
+      this.readFile(path.join(REPORTS_BUCKET, projectName, id, REPORT_METADATA_FILE), 'utf-8'),
+    );
+
+    if (metadataError) console.error(`[s3] failed to read metadata for ${id}: ${metadataError.message}`);
+
+    const metadata = metadataContent && !metadataError ? JSON.parse(metadataContent.toString()) : {};
+
+    if (isReportHistory(metadata)) {
+      console.log(`metadata found for report ${id}`);
+
+      return metadata;
+    }
+
+    console.log(`metadata file not found for ${id}, creating new metadata`);
+    try {
+      const { result: htmlContent, error: htmlError } = await withError(
+        this.readFile(path.join(REPORTS_BUCKET, projectName, id, 'index.html'), 'utf-8'),
+      );
+
+      if (htmlError) console.error(`[s3] failed to read index.html for ${id}: ${htmlError.message}`);
+
+      const created = await this.parseReportMetadata(
+        id,
+        path.join(REPORTS_FOLDER, projectName, id),
+        {
+          project: projectName,
+          reportID: id,
+        },
+        htmlContent?.toString(),
+      );
+
+      console.log(`metadata object created for ${id}: ${JSON.stringify(created)}`);
+
+      await this.saveReportMetadata(id, path.join(REPORTS_FOLDER, projectName, id), created);
+
+      Object.assign(metadata, created);
+    } catch (e) {
+      console.error(`failed to create metadata for ${id}: ${(e as Error).message}`);
+    }
+
+    return metadata;
   }
 
   async deleteResults(resultIDs: string[]): Promise<void> {
@@ -439,7 +529,7 @@ export class S3 implements Storage {
     return metaData as Result;
   }
 
-  private async uploadReport(reportId: string, reportPath: string) {
+  private async uploadReport(reportId: string, reportPath: string, remotePath: string) {
     console.log(`[s3] upload report: ${reportPath}`);
 
     const files = await fs.readdir(reportPath, { recursive: true, withFileTypes: true });
@@ -451,21 +541,32 @@ export class S3 implements Storage {
 
       console.log(`[s3] uploading file: ${JSON.stringify(file)}`);
 
-      const projectName = file.path.split(REPORTS_PATH).pop()?.split(reportId).shift();
-
-      console.log(`[s3] project name: ${projectName}`);
       const nestedPath = file.path.split(reportId).pop();
-      const s3Path = `/${REPORTS_BUCKET}${projectName ?? '/'}${reportId}/${nestedPath}/${file.name}`;
+      const s3Path = `/${remotePath}/${nestedPath}/${file.name}`;
 
       console.log(`[s3] uploading to ${s3Path}`);
 
-      const { error } = await withError(this.client.fPutObject(this.bucket, s3Path, path.join(file.path, file.name)));
+      const { error } = await withError(this.uploadFileWithRetry(s3Path, path.join(file.path, file.name)));
 
       if (error) {
         console.error(`[s3] failed to upload report: ${error.message}`);
         throw new Error(`[s3] failed to upload report: ${error.message}`);
       }
     });
+  }
+
+  private async uploadFileWithRetry(remotePath: string, filePath: string, attempt = 1): Promise<void> {
+    if (attempt > 3) {
+      throw new Error(`[s3] failed to upload file after ${attempt} attempts: ${filePath}`);
+    }
+    const { error } = await withError(this.client.fPutObject(this.bucket, remotePath, filePath));
+
+    if (error) {
+      console.error(`[s3] failed to upload file: ${error.message}`);
+      console.log(`[s3] will retry in 3s...`);
+
+      return await this.uploadFileWithRetry(remotePath, filePath, attempt + 1);
+    }
   }
 
   private async clearTempFolders(id?: string) {
@@ -477,10 +578,9 @@ export class S3 implements Storage {
     await withError(fs.rm(REPORTS_FOLDER, { recursive: true, force: true }));
   }
 
-  async generateReport(resultsIds: string[], project?: string): Promise<UUID> {
+  async generateReport(resultsIds: string[], metadata?: ReportMetadata): Promise<UUID> {
     console.log(`[s3] generate report from results: ${JSON.stringify(resultsIds)}`);
     console.log(`[s3] create temp folders`);
-    await fs.mkdir(REPORTS_FOLDER, { recursive: true });
     const { error: mkdirReportsError } = await withError(fs.mkdir(REPORTS_FOLDER, { recursive: true }));
 
     if (mkdirReportsError) {
@@ -518,14 +618,64 @@ export class S3 implements Storage {
       }
     }
 
-    const { reportPath } = await generatePlaywrightReport(reportId, project);
+    const { reportPath } = await generatePlaywrightReport(reportId, metadata?.project);
 
     console.log(`[s3] report generated: ${reportId} | ${reportPath}`);
 
-    await this.uploadReport(reportId, reportPath);
+    const { result: info, error: parseReportMetadataError } = await withError(
+      this.parseReportMetadata(reportId, reportPath, metadata),
+    );
+
+    if (parseReportMetadataError) console.error(parseReportMetadataError.message);
+
+    const remotePath = path.join(REPORTS_BUCKET, metadata?.project ?? '', reportId);
+
+    const { error: uploadError } = await withError(this.uploadReport(reportId, reportPath, remotePath));
+
+    if (uploadError) {
+      console.error(`[s3] failed to upload report: ${uploadError.message}`);
+    } else {
+      const { error } = await withError(this.saveReportMetadata(reportId, reportPath, info ?? metadata ?? {}));
+
+      if (error) console.error(`[s3] failed to save report metadata: ${error.message}`);
+    }
+
     await this.clearTempFolders(reportId);
 
     return reportId;
+  }
+
+  private async saveReportMetadata(reportId: string, reportPath: string, metadata: ReportMetadata) {
+    console.log(`[s3] report uploaded: ${reportId}, uploading metadata to ${reportPath}`);
+    const { error: metadataError } = await withError(
+      this.write(path.join(REPORTS_BUCKET, metadata.project ?? '', reportId), [
+        {
+          name: REPORT_METADATA_FILE,
+          content: JSON.stringify(metadata),
+        },
+      ]),
+    );
+
+    if (metadataError) console.error(`[s3] failed to upload report metadata: ${metadataError.message}`);
+  }
+
+  private async parseReportMetadata(
+    reportId: string,
+    reportPath: string,
+    metadata?: Record<string, string>,
+    htmlContent?: string, // to pass file content if stored on s3
+  ): Promise<ReportMetadata> {
+    console.log(`[s3] creating report metadata for ${reportId} and ${reportPath}`);
+    const html = htmlContent ?? (await fs.readFile(path.join(reportPath, 'index.html'), 'utf-8'));
+
+    const info = await parse(html as string);
+
+    const content = Object.assign(info, metadata, {
+      reportId,
+      createdAt: new Date().toISOString(),
+    });
+
+    return content;
   }
 
   async moveReport(oldPath: string, newPath: string): Promise<void> {

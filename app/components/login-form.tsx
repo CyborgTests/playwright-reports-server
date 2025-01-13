@@ -63,10 +63,10 @@ export default function LoginForm() {
             <Input
               fullWidth
               isRequired
-              type='password'
               errorMessage={error}
               isInvalid={!!error}
               placeholder="Enter API Key"
+              type="password"
               value={input}
               onChange={(e) => {
                 const newValue = e.target.value;

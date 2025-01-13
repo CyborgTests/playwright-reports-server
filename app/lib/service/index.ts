@@ -1,5 +1,3 @@
-import path from 'node:path';
-
 import { withError } from '../withError';
 import { bytesToString, getUniqueProjectsList } from '../storage/format';
 
@@ -10,12 +8,12 @@ import {
   ReadResultsInput,
   ReadResultsOutput,
   ReportHistory,
+  ReportMetadata,
   ResultDetails,
   ServerDataInfo,
   isReportHistory,
   storage,
 } from '@/app/lib/storage';
-import { parse } from '@/app/lib/parser';
 import { handlePagination } from '@/app/lib/storage/pagination';
 import { UUID } from '@/app/types';
 
@@ -81,29 +79,11 @@ class Service {
       throw new Error(`report with id ${id} not found`);
     }
 
-    if (isReportHistory(report)) {
-      return report;
-    }
-
-    const { result: html, error: readHtmlError } = await withError(
-      storage.readFile(path.join(report?.project ?? '', id, 'index.html'), 'text/html'),
-    );
-
-    if (readHtmlError || !html) {
-      throw new Error(`failed to read report html file: ${readHtmlError?.message ?? 'unknown error'}`);
-    }
-
-    const { result: info, error: parseError } = await withError(parse(html as string));
-
-    if (parseError || !info) {
-      throw new Error(`failed to parse report html file: ${parseError?.message ?? 'unknown error'}`);
-    }
-
-    return { ...report!, ...info };
+    return report;
   }
 
-  public async generateReport(resultsIds: string[], project?: string): Promise<string> {
-    const reportId = await storage.generateReport(resultsIds, project);
+  public async generateReport(resultsIds: string[], metadata?: ReportMetadata): Promise<string> {
+    const reportId = await storage.generateReport(resultsIds, metadata);
 
     const report = await this.getReport(reportId);
 

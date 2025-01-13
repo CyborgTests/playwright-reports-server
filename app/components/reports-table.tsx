@@ -29,7 +29,7 @@ import { EyeIcon } from '@/app/components/icons';
 import { ReadReportsHistory } from '@/app/lib/storage';
 
 const columns = [
-  { name: 'ID', uid: 'reportID' },
+  { name: 'Title', uid: 'title' },
   { name: 'Project', uid: 'project' },
   { name: 'Created At', uid: 'createdAt' },
   { name: 'Size', uid: 'size' },
@@ -40,7 +40,7 @@ interface ReportsTableProps {
   onChange: () => void;
 }
 
-export default function ReportsTable({ onChange }: ReportsTableProps) {
+export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) {
   const reportListEndpoint = '/api/report/list';
   const [project, setProject] = useState(defaultProjectName);
   const [page, setPage] = useState(1);
@@ -137,7 +137,7 @@ export default function ReportsTable({ onChange }: ReportsTableProps) {
               <TableCell className="w-1/2">
                 <Link href={`/report/${item.reportID}`} prefetch={false}>
                   <div className="flex flex-row">
-                    {item.reportID} <LinkIcon />
+                    {item.title || item.reportID} <LinkIcon />
                   </div>
                 </Link>
               </TableCell>

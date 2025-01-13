@@ -6,7 +6,7 @@ import { withError } from '@/app/lib/withError';
 
 export * from './types';
 
-export const parse = async (html: string) => {
+export const parse = async (html: string): Promise<ReportInfo> => {
   const base64Prefix = 'data:application/zip;base64,';
   const start = html.indexOf('window.playwrightReportBase64 = "') + 'window.playwrightReportBase64 = "'.length;
   const end = html.indexOf('";', start);
@@ -36,12 +36,12 @@ export const parse = async (html: string) => {
 
   const reportJson = await reportFile.async('string');
 
-  return JSON.parse(reportJson) as ReportInfo;
+  return JSON.parse(reportJson);
 };
 
 export const parseHtmlReport = async (html: string) => {
   try {
-    return parse(html);
+    return await parse(html);
   } catch (e: unknown) {
     if (e instanceof Error) {
       console.error(e.message);
