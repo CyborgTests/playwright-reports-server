@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { withError } from './withError';
 import { REPORTS_FOLDER, TMP_FOLDER } from './storage/constants';
+import { createDirectory } from './storage/folders';
 
 const execAsync = util.promisify(exec);
 
@@ -15,6 +16,8 @@ export const generatePlaywrightReport = async (
   console.log(`[pw] generating Playwright report ${reportId}`);
 
   const reportPath = path.join(REPORTS_FOLDER, projectName ?? '', reportId);
+
+  await createDirectory(reportPath);
 
   console.log(`[pw] report path: ${reportPath}`);
 

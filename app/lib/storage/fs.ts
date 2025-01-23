@@ -17,7 +17,8 @@ import {
 } from './constants';
 import { processBatch } from './batch';
 import { handlePagination } from './pagination';
-import { defaultStreamingOptions, transformStreamToReadable } from './stream';
+import { defaultStreamingOptions, transformBlobToReadable } from './stream';
+import { createDirectory } from './folders';
 
 import { parse } from '@/app/lib/parser';
 import { generatePlaywrightReport } from '@/app/lib/pw';
@@ -36,15 +37,6 @@ import {
 } from '@/app/lib/storage';
 
 async function createDirectoriesIfMissing() {
-  async function createDirectory(dir: string) {
-    try {
-      await fs.access(dir);
-    } catch {
-      await fs.mkdir(dir, { recursive: true });
-      console.log('Created directory:', dir);
-    }
-  }
-
   await createDirectory(RESULTS_FOLDER);
   await createDirectory(REPORTS_FOLDER);
   await createDirectory(TMP_FOLDER);
@@ -265,7 +257,7 @@ export async function saveResult(file: Blob, size: number, resultDetails: Result
   const resultID = randomUUID();
   const resultPath = path.join(RESULTS_FOLDER, `${resultID}.zip`);
 
-  const readable = transformStreamToReadable(file.stream());
+  const readable = transformBlobToReadable(file);
   const writeable = createWriteStream(resultPath, defaultStreamingOptions);
 
   /**
