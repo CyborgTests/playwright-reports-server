@@ -27,7 +27,7 @@ import {
 } from './constants';
 import { handlePagination } from './pagination';
 import { getFileReportID } from './file';
-import { transformStreamToReadable } from './stream';
+import { transformBlobToReadable } from './stream';
 
 import { parse } from '@/app/lib/parser';
 import { serveReportRoute } from '@/app/lib/constants';
@@ -110,15 +110,15 @@ export class S3 implements Storage {
   private async write(dir: string, files: { name: string; content: Readable | Buffer | string; size?: number }[]) {
     await this.ensureBucketExist();
     for (const file of files) {
-      const path = `${dir}/${file.name}`;
+      const filePath = path.join(dir, file.name);
 
-      console.log(`[s3] writing ${path}`);
+      console.log(`[s3] writing ${filePath}`);
 
       const content = typeof file.content === 'string' ? Buffer.from(file.content) : file.content;
 
       const contentSize = file.size ?? (Buffer.isBuffer(content) ? content.length : undefined);
 
-      await this.client.putObject(this.bucket, path, content, contentSize);
+      await this.client.putObject(this.bucket, path.normalize(filePath), content, contentSize);
     }
   }
 
@@ -182,7 +182,7 @@ export class S3 implements Storage {
           indexCount += 1;
         }
 
-        totalSize += obj.size;
+        totalSize += obj?.size ?? 0;
       });
 
       stream.on('error', (err) => {
@@ -316,7 +316,7 @@ export class S3 implements Storage {
   }
 
   async readReports(input?: ReadReportsInput): Promise<ReadReportsOutput> {
-    console.log(`[s3] reading reports from minio`);
+    console.log(`[s3] reading reports from external storage`);
     const reportsStream = this.client.listObjectsV2(this.bucket, REPORTS_BUCKET, true);
 
     const reports: Report[] = [];
@@ -517,7 +517,7 @@ export class S3 implements Storage {
     await this.write(RESULTS_BUCKET, [
       {
         name: `${resultID}.zip`,
-        content: transformStreamToReadable(file.stream()),
+        content: transformBlobToReadable(file),
         size,
       },
       {
@@ -542,7 +542,7 @@ export class S3 implements Storage {
       console.log(`[s3] uploading file: ${JSON.stringify(file)}`);
 
       const nestedPath = file.path.split(reportId).pop();
-      const s3Path = `/${remotePath}/${nestedPath}/${file.name}`;
+      const s3Path = path.join(remotePath, nestedPath ?? '', file.name);
 
       console.log(`[s3] uploading to ${s3Path}`);
 
@@ -559,7 +559,7 @@ export class S3 implements Storage {
     if (attempt > 3) {
       throw new Error(`[s3] failed to upload file after ${attempt} attempts: ${filePath}`);
     }
-    const { error } = await withError(this.client.fPutObject(this.bucket, remotePath, filePath));
+    const { error } = await withError(this.client.fPutObject(this.bucket, remotePath, filePath, {}));
 
     if (error) {
       console.error(`[s3] failed to upload file: ${error.message}`);
@@ -611,6 +611,8 @@ export class S3 implements Storage {
         const { error } = await withError(this.client.fGetObject(this.bucket, result.name, localFilePath));
 
         if (error) {
+          console.error(`[s3] failed to download ${result.name}: ${error.message}`);
+
           throw new Error(`failed to download ${result.name}: ${error.message}`);
         }
 

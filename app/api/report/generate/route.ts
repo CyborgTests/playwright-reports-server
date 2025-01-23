@@ -15,6 +15,8 @@ export async function POST(request: Request) {
   const { result: reportId, error } = await withError(service.generateReport(resultsIds, { project, ...rest }));
 
   if (error) {
+    console.error(error);
+
     return new Response(error.message, { status: 404 });
   }
 
@@ -22,9 +24,12 @@ export async function POST(request: Request) {
     return new Response('failed to generate report', { status: 400 });
   }
 
+  const projectPath = project ? `${encodeURI(project)}/` : '';
+  const reportUrl = `${serveReportRoute}/${projectPath}${reportId}/index.html`;
+
   return Response.json({
     reportId,
     project,
-    reportUrl: `${serveReportRoute}/${project ? encodeURI(project) : ''}/${reportId}/index.html`,
+    reportUrl,
   });
 }

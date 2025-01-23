@@ -1,4 +1,5 @@
 import { Readable, type ReadableOptions } from 'node:stream';
+import { ReadableStream } from 'node:stream/web';
 
 /**
  * convert a formData file multipart stream to a readable node stream
@@ -7,24 +8,8 @@ import { Readable, type ReadableOptions } from 'node:stream';
  * Web stream: https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream
  * Node stream: https://nodejs.org/docs/latest-v20.x/api/stream.html#readable-streams
  */
-export const transformStreamToReadable = (stream: ReadableStream<Uint8Array>, opts?: ReadableOptions): Readable => {
-  return Readable.from(
-    (async function* () {
-      const reader = stream.getReader();
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-
-          if (done) break;
-          yield value;
-        }
-      } finally {
-        reader.releaseLock();
-      }
-    })(),
-    opts ?? defaultStreamingOptions,
-  );
+export const transformBlobToReadable = (blob: Blob, opts?: ReadableOptions): Readable => {
+  return Readable.fromWeb(blob.stream() as ReadableStream<never>, opts);
 };
 
 export const defaultStreamingOptions: ReadableOptions = {
