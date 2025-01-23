@@ -228,6 +228,8 @@ export class S3 implements Storage {
   }
 
   async readResults(input?: ReadResultsInput): Promise<ReadResultsOutput> {
+    await this.ensureBucketExist();
+
     console.log('[s3] reading results');
     const listResultsStream = this.client.listObjectsV2(this.bucket, RESULTS_BUCKET, true);
 
@@ -264,7 +266,7 @@ export class S3 implements Storage {
 
     const { result: jsonFiles } = await withError(findJsonFiles);
 
-    console.log(`[s3] found ${jsonFiles?.length} json files`);
+    console.log(`[s3] found ${(jsonFiles ?? [])?.length} json files`);
 
     if (!jsonFiles) {
       return {
@@ -316,6 +318,8 @@ export class S3 implements Storage {
   }
 
   async readReports(input?: ReadReportsInput): Promise<ReadReportsOutput> {
+    await this.ensureBucketExist();
+
     console.log(`[s3] reading reports from external storage`);
     const reportsStream = this.client.listObjectsV2(this.bucket, REPORTS_BUCKET, true);
 
