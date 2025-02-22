@@ -14,19 +14,33 @@ Check out the live demo: [familiar-alyss-alex-hot-6926ec9c.koyeb.app](https://fa
 
 ## Table of Contents
 
-- [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-  - [Running the Server](#running-the-server)
-  - [Configuration options](#configuration-options)
-- [API Routes](#api-routes)
-- [Authorization](#authorization)
-- [Storage Options](#storage-options)
-  - [Local File System](#local-file-system-storage)
-  - [S3-Compatible](#s3-compatible-object-storage)
-  - [Expiration Task](#expiration-task)
-- [Docker Usage](#docker-usage)
-- [UI White-label](#ui-white-label)
+- [Playwright Reports Server](#playwright-reports-server)
+  - [Demo](#demo)
+  - [Table of Contents](#table-of-contents)
+  - [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Installation](#installation)
+    - [Running the Server](#running-the-server)
+    - [Configuration options](#configuration-options)
+  - [API Routes](#api-routes)
+  - [`/api/report/list` (GET):](#apireportlist-get)
+  - [`/api/report/delete` (DELETE):](#apireportdelete-delete)
+  - [`/api/result/delete` (DELETE):](#apiresultdelete-delete)
+  - [`/api/report/generate` (POST):](#apireportgenerate-post)
+  - [`/api/result/list` (GET):](#apiresultlist-get)
+  - [`/api/result/upload` (PUT):](#apiresultupload-put)
+  - [`/api/info` (GET)](#apiinfo-get)
+  - [`/api/ping` (GET)](#apiping-get)
+  - [Authorization](#authorization)
+  - [Storage Options](#storage-options)
+    - [Local File System Storage](#local-file-system-storage)
+    - [S3-Compatible Object Storage](#s3-compatible-object-storage)
+    - [Expiration task](#expiration-task)
+  - [Docker Usage](#docker-usage)
+  - [UI White-label](#ui-white-label)
+    - [API](#api)
+    - [Config File](#config-file)
+    - [Header links](#header-links)
 
 ## Getting Started
 
@@ -131,6 +145,30 @@ Response example:
 {
   "message": "Reports deleted successfully",
   "reportsIds": ["6a615fe1-2452-4867-9ae5-6ee68313aac6"]
+}
+```
+
+## `/api/result/delete` (DELETE):
+
+Delete result by ids
+
+```sh
+curl --location --request DELETE 'http://localhost:3000/api/result/delete' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: <api-token>' \
+--data '{
+    "resultsIds": [
+        "6a615fe1-2452-4867-9ae5-6ee68313aac6"
+    ]
+}'
+```
+
+Response example:
+
+```json
+{
+  "message": "Results files deleted successfully",
+  "resultsIds": ["6a615fe1-2452-4867-9ae5-6ee68313aac6"]
 }
 ```
 
