@@ -1,6 +1,6 @@
 import { Link } from '@nextui-org/link';
 
-import { GithubIcon, DiscordIcon, TelegramIcon, LinkIcon } from '@/app/components/icons';
+import { GithubIcon, DiscordIcon, TelegramIcon, LinkIcon, BitbucketIcon } from '@/app/components/icons';
 import { SiteWhiteLabelConfig } from '@/app/types';
 
 interface HeaderLinksProps {
@@ -14,6 +14,7 @@ export const HeaderLinks: React.FC<HeaderLinksProps> = async ({ config }) => {
     { name: 'telegram', Icon: TelegramIcon },
     { name: 'discord', Icon: DiscordIcon },
     { name: 'github', Icon: GithubIcon },
+    { name: 'bitbucket', Icon: BitbucketIcon },
   ];
 
   const socialLinks = Object.entries(links).map(([name, href]) => {
