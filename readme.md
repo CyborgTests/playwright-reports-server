@@ -150,7 +150,7 @@ Response example:
 
 ## `/api/result/delete` (DELETE):
 
-Deletes result folder
+Delete result by ids
 
 ```sh
 curl --location --request DELETE 'http://localhost:3000/api/result/delete' \
@@ -167,13 +167,10 @@ Response example:
 
 ```json
 {
-    "message": "Results files deleted successfully",
-    "resultsIds": [
-        "1e6000d0-78cf-4b4a-ac73-3fb48cb42877"
-    ]
+  "message": "Results files deleted successfully",
+  "resultsIds": ["6a615fe1-2452-4867-9ae5-6ee68313aac6"]
 }
 ```
-
 
 ## `/api/report/generate` (POST):
 
