@@ -1,6 +1,6 @@
 import '@/app/styles/globals.css';
 import { Metadata, Viewport } from 'next';
-import { Link } from '@nextui-org/link';
+import Link from 'next/link';
 import clsx from 'clsx';
 import { Toaster } from 'sonner';
 
