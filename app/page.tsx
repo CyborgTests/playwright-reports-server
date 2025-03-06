@@ -1,5 +1,6 @@
 'use client';
-import { useLayoutEffect, useState } from 'react';
+
+import { useLayoutEffect, useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useSession } from 'next-auth/react';
 import { Spinner } from '@heroui/react';
@@ -20,22 +21,28 @@ const persistSelectedTab = (tab: string) => {
 };
 
 export default function DashboardPage() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const authIsLoading = status === 'loading';
 
   const { data: info, error, refetch, isLoading: isInfoLoading } = useQuery<ServerDataInfo>('/api/info');
   const [selectedTab, setSelectedTab] = useState<string>(getPersistedSelectedTab() ?? '');
   const [refreshId, setRefreshId] = useState<string>(uuidv4());
 
+  useEffect(() => {
+    if (!authIsLoading && !session) {
+      toast.error('You are not authenticated');
+    }
+  }, [authIsLoading, session]);
+
   useLayoutEffect(() => {
-    if (authIsLoading) {
+    if (authIsLoading || !session) {
       return;
     }
     refetch();
-  }, [refreshId]);
+  }, [refreshId, session]);
 
   if (authIsLoading || isInfoLoading) {
-    return <Spinner />;
+    return <Spinner className="flex justify-center items-center" />;
   }
 
   const updateRefreshId = () => {
@@ -50,7 +57,10 @@ export default function DashboardPage() {
     setSelectedTab(key);
   };
 
-  error && toast.error(error.message);
+  if (error) {
+    toast.error(error.message);
+    return <div>Error loading data: {error.message}</div>;
+  }
 
   return (
     <>

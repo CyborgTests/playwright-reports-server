@@ -1,7 +1,4 @@
-'use client';
-
-import React from 'react';
-import { Accordion, AccordionItem, Chip } from "@heroui/react";
+import { Accordion, AccordionItem, Chip } from '@heroui/react';
 
 import TestInfo from './test-info';
 

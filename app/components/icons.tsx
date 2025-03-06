@@ -1,8 +1,8 @@
-import * as React from 'react';
+import { FC } from 'react';
 
 import { IconSvgProps } from '@/app/types';
 
-export const DiscordIcon: React.FC<IconSvgProps> = ({ size = 48, width, height, ...props }) => {
+export const DiscordIcon: FC<IconSvgProps> = ({ size = 48, width, height, ...props }) => {
   return (
     <svg height={size || height} viewBox="0 0 24 24" width={size || width} {...props}>
       <path
@@ -13,7 +13,7 @@ export const DiscordIcon: React.FC<IconSvgProps> = ({ size = 48, width, height, 
   );
 };
 
-export const GithubIcon: React.FC<IconSvgProps> = ({ size = 48, width, height, ...props }) => {
+export const GithubIcon: FC<IconSvgProps> = ({ size = 48, width, height, ...props }) => {
   return (
     <svg height={size || height} viewBox="0 0 24 24" width={size || width} {...props}>
       <path
@@ -26,7 +26,7 @@ export const GithubIcon: React.FC<IconSvgProps> = ({ size = 48, width, height, .
   );
 };
 
-export const BitbucketIcon: React.FC<IconSvgProps> = ({ size = 48, width, height, ...props }) => {
+export const BitbucketIcon: FC<IconSvgProps> = ({ size = 48, width, height, ...props }) => {
   return (
     <svg
       fill="currentColor"
@@ -45,7 +45,7 @@ export const BitbucketIcon: React.FC<IconSvgProps> = ({ size = 48, width, height
   );
 };
 
-export const TelegramIcon: React.FC<IconSvgProps> = ({ size = 40, width, height, ...props }) => {
+export const TelegramIcon: FC<IconSvgProps> = ({ size = 40, width, height, ...props }) => {
   return (
     <svg fill="none" height={size || height} viewBox="0 0 24 24" width={size || width} {...props}>
       <path
@@ -92,7 +92,7 @@ export const SunFilledIcon = ({ size = 48, width, height, ...props }: IconSvgPro
   </svg>
 );
 
-export const LinkIcon: React.FC<IconSvgProps> = ({ width, height, ...props }) => {
+export const LinkIcon: FC<IconSvgProps> = ({ width, height, ...props }) => {
   return (
     <svg fill="none" height={height ?? 18} viewBox="0 0 24 24" width={width ?? 18} {...props}>
       <path
@@ -111,7 +111,7 @@ export const LinkIcon: React.FC<IconSvgProps> = ({ width, height, ...props }) =>
   );
 };
 
-export const ReportIcon: React.FC<IconSvgProps> = () => {
+export const ReportIcon: FC<IconSvgProps> = () => {
   return (
     <svg height={48} id="Layer_1" version="1.1" viewBox="0 0 96.17 122.88" width={48} x="0px" y="0px">
       <g>
@@ -124,7 +124,7 @@ export const ReportIcon: React.FC<IconSvgProps> = () => {
   );
 };
 
-export const ResultIcon: React.FC<IconSvgProps> = () => {
+export const ResultIcon: FC<IconSvgProps> = () => {
   return (
     <svg height={48} id="Layer_1" version="1.1" viewBox="0 0 97.88 122.88" width={48} x="0px" y="0px">
       <g>
@@ -137,7 +137,7 @@ export const ResultIcon: React.FC<IconSvgProps> = () => {
   );
 };
 
-export const TrendIcon: React.FC<IconSvgProps> = () => {
+export const TrendIcon: FC<IconSvgProps> = () => {
   return (
     <svg fill="currentColor" height={42} id="Capa_1" viewBox="0 0 30.462 30.461" width={42}>
       <g>
@@ -151,7 +151,7 @@ export const TrendIcon: React.FC<IconSvgProps> = () => {
   );
 };
 
-export const DeleteIcon: React.FC<IconSvgProps> = (props) => (
+export const DeleteIcon: FC<IconSvgProps> = (props) => (
   <svg aria-hidden="true" fill="none" focusable="false" height="1em" viewBox="0 0 20 20" width="1em" {...props}>
     <path
       d="M17.5 4.98332C14.725 4.70832 11.9333 4.56665 9.15 4.56665C7.5 4.56665 5.85 4.64998 4.2 4.81665L2.5 4.98332"
@@ -191,7 +191,7 @@ export const DeleteIcon: React.FC<IconSvgProps> = (props) => (
   </svg>
 );
 
-export const EyeIcon: React.FC<IconSvgProps> = (props) => (
+export const EyeIcon: FC<IconSvgProps> = (props) => (
   <svg aria-hidden="true" fill="none" focusable="false" height="1em" viewBox="0 0 20 20" width="1em" {...props}>
     <path
       d="M12.9833 10C12.9833 11.65 11.65 12.9833 10 12.9833C8.35 12.9833 7.01666 11.65 7.01666 10C7.01666 8.35 8.35 7.01666 10 7.01666C11.65 7.01666 12.9833 8.35 12.9833 10Z"
@@ -210,7 +210,7 @@ export const EyeIcon: React.FC<IconSvgProps> = (props) => (
   </svg>
 );
 
-export const SearchIcon: React.FC<IconSvgProps> = (props) => (
+export const SearchIcon: FC<IconSvgProps> = (props) => (
   <svg
     aria-hidden="true"
     fill="none"

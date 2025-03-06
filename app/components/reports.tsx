@@ -1,4 +1,3 @@
-'use client';
 import ReportsTable from '@/app/components/reports-table';
 import { title } from '@/app/components/primitives';
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import {
   Table,
   TableHeader,
@@ -85,7 +85,7 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
     [page, rowsPerPage],
   );
 
-  const pages = React.useMemo(() => {
+  const pages = useMemo(() => {
     return total ? Math.ceil(total / rowsPerPage) : 0;
   }, [project, total, rowsPerPage]);
 

@@ -1,6 +1,4 @@
-'use client';
-
-import React from 'react';
+import { FC } from 'react';
 import { Link, LinkIcon, Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/react";
 
 import FormattedDate from '../date-format';
@@ -41,13 +39,13 @@ const getTestHistory = (testId: string, history: ReportHistory[]) => {
     .filter(Boolean) as unknown as TestHistory[];
 };
 
-const TestInfo: React.FC<TestInfoProps> = ({ test, history }: TestInfoProps) => {
+const TestInfo: FC<TestInfoProps> = ({ test, history }: TestInfoProps) => {
   const formatted = testStatusToColor(test.outcome);
 
   const testHistory = getTestHistory(test.testId, history);
 
   return (
-    <div className=" shadow-md rounded-lg p-6">
+    <div className="shadow-md rounded-lg p-6">
       <div className="mb-4">
         <p>
           Outcome: <span className={formatted.color}>{formatted.title}</span>
