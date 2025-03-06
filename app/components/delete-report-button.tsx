@@ -10,7 +10,7 @@ import {
   ModalHeader,
   useDisclosure,
   Button,
-} from '@nextui-org/react';
+} from "@heroui/react";
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';

@@ -1,4 +1,4 @@
-import { Link } from '@nextui-org/link';
+import { Link } from "@heroui/link";
 
 import { GithubIcon, DiscordIcon, TelegramIcon, LinkIcon, BitbucketIcon } from '@/app/components/icons';
 import { SiteWhiteLabelConfig } from '@/app/types';

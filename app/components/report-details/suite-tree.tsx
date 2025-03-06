@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Accordion, AccordionItem, Chip } from '@nextui-org/react';
+import { Accordion, AccordionItem, Chip } from "@heroui/react";
 
 import TestInfo from './test-info';
 

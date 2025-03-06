@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge, Tab, Tabs } from '@nextui-org/react';
+import { Badge, Tab, Tabs } from "@heroui/react";
 
 import { type ServerDataInfo } from '@/app/lib/storage';
 import { ReportIcon, ResultIcon, TrendIcon } from '@/app/components/icons';

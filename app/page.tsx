@@ -2,7 +2,7 @@
 import { useLayoutEffect, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useSession } from 'next-auth/react';
-import { Spinner } from '@nextui-org/react';
+import { Spinner } from '@heroui/react';
 import { toast } from 'sonner';
 
 import useQuery from '@/app/hooks/useQuery';

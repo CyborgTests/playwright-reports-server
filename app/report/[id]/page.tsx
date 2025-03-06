@@ -1,6 +1,6 @@
 'use client';
 
-import { Spinner, Button } from '@nextui-org/react';
+import { Spinner, Button } from "@heroui/react";
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';

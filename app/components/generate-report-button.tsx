@@ -12,7 +12,7 @@ import {
   Autocomplete,
   AutocompleteItem,
   Input,
-} from '@nextui-org/react';
+} from "@heroui/react";
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';

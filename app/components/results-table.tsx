@@ -12,7 +12,7 @@ import {
   type Selection,
   Spinner,
   Pagination,
-} from '@nextui-org/react';
+} from "@heroui/react";
 import { keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 

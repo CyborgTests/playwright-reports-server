@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Link, LinkIcon, Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from '@nextui-org/react';
+import { Link, LinkIcon, Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/react";
 
 import FormattedDate from '../date-format';
 

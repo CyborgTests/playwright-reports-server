@@ -14,12 +14,12 @@
     "test:integration": "jest --testPathPattern=__tests__/integration"
   },
   "dependencies": {
-    "@nextui-org/link": "^2.2.7",
-    "@nextui-org/navbar": "^2.2.8",
-    "@nextui-org/react": "^2.4.8",
-    "@nextui-org/switch": "^2.2.8",
-    "@nextui-org/system": "^2.4.6",
-    "@nextui-org/theme": "^2.4.5",
+    "@heroui/link": "2.2.12",
+    "@heroui/navbar": "2.2.13",
+    "@heroui/react": "2.7.4",
+    "@heroui/switch": "2.2.13",
+    "@heroui/system": "2.4.11",
+    "@heroui/theme": "2.4.11",
     "@playwright/test": "1.45.1",
     "@react-aria/ssr": "^3.9.7",
     "@react-aria/visually-hidden": "^3.8.19",

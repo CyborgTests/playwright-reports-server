@@ -13,7 +13,7 @@ import {
   Spinner,
   Pagination,
   LinkIcon,
-} from '@nextui-org/react';
+} from "@heroui/react";
 import Link from 'next/link';
 import { keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
