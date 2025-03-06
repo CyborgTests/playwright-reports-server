@@ -53,7 +53,7 @@ export default function TablePaginationOptions({
           onChange={onRowsPerPageChange}
         >
           {rowPerPageItems.map((item) => (
-            <SelectItem key={item} textValue={item.toString()} value={item}>
+            <SelectItem key={item} textValue={item.toString()}>
               {item}
             </SelectItem>
           ))}
