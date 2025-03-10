@@ -1,6 +1,6 @@
 'use client';
 
-import { Select, SelectItem, SharedSelection } from '@nextui-org/react';
+import { Select, SelectItem, SharedSelection } from "@heroui/react";
 import { toast } from 'sonner';
 
 import useQuery from '../hooks/useQuery';

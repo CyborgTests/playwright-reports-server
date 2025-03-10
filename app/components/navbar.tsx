@@ -6,10 +6,10 @@ import {
   NavbarBrand,
   NavbarItem,
   NavbarMenuItem,
-} from '@nextui-org/navbar';
+} from "@heroui/navbar";
 import Image from 'next/image';
-import { Link } from '@nextui-org/link';
-import { link as linkStyles } from '@nextui-org/theme';
+import { Link } from "@heroui/link";
+import { link as linkStyles } from "@heroui/theme";
 import NextLink from 'next/link';
 import clsx from 'clsx';
 

@@ -1,9 +1,9 @@
 import type { Config } from 'tailwindcss';
 
-import { nextui } from '@nextui-org/theme';
+import { heroui } from '@heroui/theme';
 
 const config = {
-  content: ['./app/**/*.{js,ts,tsx,mdx}', './node_modules/@nextui-org/theme/dist/**/*.{js,ts,jsx,tsx}'],
+  content: ['./app/**/*.{js,ts,tsx,mdx}', './node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       fontFamily: {
@@ -13,7 +13,7 @@ const config = {
     },
   },
   darkMode: 'class',
-  plugins: [nextui()],
+  plugins: [heroui()],
 } satisfies Config;
 
 export default config;

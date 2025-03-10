@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Accordion, AccordionItem, Spinner } from '@nextui-org/react';
+import { Accordion, AccordionItem, Spinner } from "@heroui/react";
 import { toast } from 'sonner';
 
 import { subtitle } from '../primitives';

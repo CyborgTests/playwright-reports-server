@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Accordion, AccordionItem, Checkbox, CheckboxGroup, Input } from '@nextui-org/react';
+import { Accordion, AccordionItem, Checkbox, CheckboxGroup, Input } from "@heroui/react";
 
 import { ReportTestOutcome } from '@/app/lib/parser/types';
 import { type ReportHistory } from '@/app/lib/storage/types';

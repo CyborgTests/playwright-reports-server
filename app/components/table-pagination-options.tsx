@@ -1,7 +1,7 @@
 'use client';
 
 import React, { ChangeEvent, useCallback } from 'react';
-import { Select, SelectItem } from '@nextui-org/react';
+import { Select, SelectItem } from "@heroui/react";
 
 import ProjectSelect from '@/app/components/project-select';
 
@@ -53,7 +53,7 @@ export default function TablePaginationOptions({
           onChange={onRowsPerPageChange}
         >
           {rowPerPageItems.map((item) => (
-            <SelectItem key={item} textValue={item.toString()} value={item}>
+            <SelectItem key={item} textValue={item.toString()}>
               {item}
             </SelectItem>
           ))}

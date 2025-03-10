@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { NextUIProvider } from '@nextui-org/system';
+import { HeroUIProvider } from "@heroui/system";
 import { ThemeProvider as NextThemesProvider } from 'next-themes';
 import { ThemeProviderProps } from 'next-themes/dist/types';
 import { SessionProvider } from 'next-auth/react';
@@ -21,13 +21,13 @@ export const Providers: React.FC<ThemeProviderProps> = ({ children, ...themeProp
   );
 
   return (
-    <NextUIProvider>
+    <HeroUIProvider>
       <NextThemesProvider {...themeProps}>
         <QueryClientProvider client={queryClient}>
           <SessionProvider>{children}</SessionProvider>
           <ReactQueryDevtools initialIsOpen={false} />
         </QueryClientProvider>
       </NextThemesProvider>
-    </NextUIProvider>
+    </HeroUIProvider>
   );
 };

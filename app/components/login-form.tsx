@@ -2,7 +2,7 @@
 
 import { type FormEvent, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button, Card, CardBody, CardFooter, CardHeader, Input, Spinner } from '@nextui-org/react';
+import { Button, Card, CardBody, CardFooter, CardHeader, Input, Spinner } from "@heroui/react";
 import { getProviders, signIn, useSession } from 'next-auth/react';
 
 import { title } from '@/app/components/primitives';
