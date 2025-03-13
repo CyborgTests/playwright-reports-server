@@ -6,23 +6,23 @@ import {
   NavbarBrand,
   NavbarItem,
   NavbarMenuItem,
-} from "@heroui/navbar";
+} from '@heroui/navbar';
 import Image from 'next/image';
-import { Link } from "@heroui/link";
-import { link as linkStyles } from "@heroui/theme";
+import { Link } from '@heroui/link';
+import { link as linkStyles } from '@heroui/theme';
 import NextLink from 'next/link';
 import clsx from 'clsx';
 
+import { getConfigWithError } from '@/app/lib/actions';
 import { HeaderLinks } from '@/app/components/header-links';
 import { siteConfig } from '@/app/config/site';
 import { ThemeSwitch } from '@/app/components/theme-switch';
 import { SiteWhiteLabelConfig } from '@/app/types';
-interface NavbarProps {
-  config: SiteWhiteLabelConfig;
-}
 
-export const Navbar: React.FC<NavbarProps> = async ({ config }) => {
-  const title = config?.title;
+
+export const Navbar: React.FC = async () => {
+  const { result: config }: { result?: SiteWhiteLabelConfig } = await getConfigWithError();
+  const title = config?.title ?? siteConfig.name;
 
   return (
     <NextUINavbar
@@ -66,14 +66,14 @@ export const Navbar: React.FC<NavbarProps> = async ({ config }) => {
 
       <NavbarContent className="hidden sm:flex basis-1/5 sm:basis-full" justify="end">
         <NavbarItem className="hidden sm:flex gap-4">
-          <HeaderLinks config={config} />
+          {config ? <HeaderLinks config={config} /> : null}
           <ThemeSwitch />
         </NavbarItem>
       </NavbarContent>
 
       {/* mobile view fallback */}
       <NavbarContent className="sm:hidden basis-1 md:min-w-fit min-w-full sm:justify-center justify-end pb-14">
-        <HeaderLinks config={config} />
+        {config && <HeaderLinks config={config} />}
         <ThemeSwitch />
         {!!siteConfig.navMenuItems.length && <NavbarMenuToggle />}
       </NavbarContent>
