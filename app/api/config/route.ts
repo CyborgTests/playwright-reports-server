@@ -4,7 +4,7 @@ import path from 'node:path';
 import { revalidatePath } from 'next/cache';
 
 import { withError } from '@/app/lib/withError';
-import { getConfigWithError, writeConfig } from '@/app/config/file';
+import { getConfigWithError, writeConfig } from '@/app/lib/actions';
 import { DATA_FOLDER } from '@/app/lib/storage/constants';
 
 export const dynamic = 'force-dynamic'; // defaults to auto

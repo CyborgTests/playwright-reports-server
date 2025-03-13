@@ -1,6 +1,4 @@
-'use client';
-
-import React from 'react';
+import { FC } from 'react';
 
 import { StatChart } from '../stat-chart';
 
@@ -11,7 +9,7 @@ interface StatisticsProps {
   stats?: ReportStats;
 }
 
-const ReportStatistics: React.FC<StatisticsProps> = ({ stats }) => {
+const ReportStatistics: FC<StatisticsProps> = ({ stats }) => {
   if (!stats || Object.keys(stats).length === 0) {
     return <div>No statistics available</div>;
   }

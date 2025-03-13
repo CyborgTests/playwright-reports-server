@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import { FC, useEffect, useState } from 'react';
 import { Accordion, AccordionItem, Spinner } from "@heroui/react";
 import { toast } from 'sonner';
 
@@ -18,7 +18,7 @@ interface FileListProps {
   report?: ReportHistory | null;
 }
 
-const FileList: React.FC<FileListProps> = ({ report }) => {
+const FileList: FC<FileListProps> = ({ report }) => {
   const {
     data: history,
     isLoading: isHistoryLoading,
@@ -30,18 +30,18 @@ const FileList: React.FC<FileListProps> = ({ report }) => {
 
   const [filteredTests, setFilteredTests] = useState<ReportHistory | undefined>(report!);
 
-  if (!report) {
-    return <>Loading...</>;
-  }
+  useEffect(() => {
+    if (historyError) {
+      toast.error(historyError.message);
+    }
+  }, [historyError]);
 
-  if (historyError) {
-    toast.error(historyError.message);
+  if (!report) {
+    return <Spinner color="primary" label="Loading..." />;
   }
 
   return isHistoryLoading ? (
-    <div>
-      Loading test history... <Spinner />
-    </div>
+    <Spinner color="primary" label="Loading test history..." />
   ) : (
     <div>
       <div className="flex flex-row justify-between">

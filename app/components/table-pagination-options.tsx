@@ -1,7 +1,6 @@
-'use client';
 
-import React, { ChangeEvent, useCallback } from 'react';
-import { Select, SelectItem } from "@heroui/react";
+import { type ChangeEvent, useCallback } from 'react';
+import { Select, SelectItem } from '@heroui/react';
 
 import ProjectSelect from '@/app/components/project-select';
 

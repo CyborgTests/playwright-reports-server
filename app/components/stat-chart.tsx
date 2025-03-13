@@ -1,5 +1,3 @@
-'use client';
-import * as React from 'react';
 import { Label, Pie, PieChart } from 'recharts';
 
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/app/components/ui/chart';

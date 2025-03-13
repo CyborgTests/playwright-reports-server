@@ -1,6 +1,6 @@
 'use client';
 
-import { Spinner, Button } from "@heroui/react";
+import { Spinner, Button } from '@heroui/react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
@@ -26,19 +26,11 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
   } = useQuery<ReportHistory>(`/api/report/${params.id}`, { callback: `/report/${params.id}` });
 
   if (session.status === 'loading') {
-    return (
-      <div>
-        Loading auth... <Spinner />
-      </div>
-    );
+    return <Spinner label="Loading auth..." />;
   }
 
   if (!report && isReportLoading) {
-    return (
-      <div>
-        Loading report... <Spinner />
-      </div>
-    );
+    return <Spinner label="Loading report..." />;
   }
 
   reportError && toast.error(reportError.message);
