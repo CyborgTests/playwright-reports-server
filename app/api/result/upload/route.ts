@@ -38,9 +38,42 @@ export async function PUT(request: Request) {
     return Response.json({ error: `failed to save results: ${error.message}` }, { status: 500 });
   }
 
+  let generatedReport = null;
+
+  if (resultDetails.shardCurrent && resultDetails.shardTotal && resultDetails.triggerReportGeneration === 'true') {
+    const { result: results, error: resultsError } = await withError(
+      service.getResults({
+        testRun: resultDetails.testRun,
+      }),
+    );
+
+    if (resultsError) {
+      return Response.json({ error: `failed to generate report: ${resultsError.message}` }, { status: 500 });
+    }
+
+    // Checking if all shards are uploaded
+    if (results?.results.length === parseInt(resultDetails.shardTotal)) {
+      const ids = results.results.map((result) => result.resultID);
+
+      console.log('triggerReportGeneration for', resultDetails.testRun, ids);
+      const { result, error } = await withError(
+        service.generateReport(ids, {
+          project: resultDetails.project,
+          testRun: resultDetails.testRun,
+        }),
+      );
+
+      if (error) {
+        return Response.json({ error: `failed to generate report: ${error.message}` }, { status: 500 });
+      }
+
+      generatedReport = result;
+    }
+  }
+
   return Response.json({
     message: 'Success',
-    data: savedResult,
+    data: { ...savedResult, generatedReport },
     status: 201,
   });
 }

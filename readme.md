@@ -257,11 +257,29 @@ Response example:
     "project": "desktop",
     "reporter": "okhotemskyi",
     "appVersion": "1.2.2",
-    "size": "1.2 MB"
+    "size": "1.2 MB",
+    "generatedReport": {
+      "reportId": "e7ed1c2a-6b24-421a-abb6-095fb62f9957",
+      "reportUrl": "/api/serve/desktop/8e9af87d-1d10-4729-aefd-3e92ee64d06c/index.html",
+      "metadata": { "title": "title", "project": "desktop" }
+    }
   },
   "status": 201
 }
 ```
+
+Auto-generation reports once all shards completed is supported, you need to pass `testRun`, `shardCurrent`, `shardTotal` and `triggerReportGeneration=true` as form keys, example:
+
+```sh
+curl --location --request PUT 'http://localhost:3000/api/result/upload' \
+--header 'Authorization: <api-token>' \
+--form 'file=@"/path/to/file"' \
+--form 'shardCurrent="1"' \
+--form 'shardTotal="4"' \
+--form 'triggerReportGeneration="true"'
+```
+
+Server will automatically trigger report generation when all shards for this testRun will report their blob file
 
 ## `/api/info` (GET)
 

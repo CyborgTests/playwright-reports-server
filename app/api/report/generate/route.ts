@@ -1,4 +1,3 @@
-import { serveReportRoute } from '@/app/lib/constants';
 import { service } from '@/app/lib/service';
 import { withError } from '@/app/lib/withError';
 
@@ -12,7 +11,7 @@ export async function POST(request: Request) {
     return new Response(reqError.message, { status: 400 });
   }
 
-  const { result: reportId, error } = await withError(service.generateReport(resultsIds, { project, ...rest }));
+  const { result, error } = await withError(service.generateReport(resultsIds, { project, ...rest }));
 
   if (error) {
     console.error(error);
@@ -20,16 +19,9 @@ export async function POST(request: Request) {
     return new Response(error.message, { status: 404 });
   }
 
-  if (!reportId) {
+  if (!result?.reportId) {
     return new Response('failed to generate report', { status: 400 });
   }
 
-  const projectPath = project ? `${encodeURI(project)}/` : '';
-  const reportUrl = `${serveReportRoute}/${projectPath}${reportId}/index.html`;
-
-  return Response.json({
-    reportId,
-    project,
-    reportUrl,
-  });
+  return Response.json(result);
 }
