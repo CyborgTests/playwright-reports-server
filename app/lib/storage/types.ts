@@ -18,6 +18,7 @@ export interface Storage {
 export interface ReadResultsInput {
   pagination?: Pagination;
   project?: string;
+  testRun?: string;
 }
 
 export interface ReadResultsOutput {

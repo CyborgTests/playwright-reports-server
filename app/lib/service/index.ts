@@ -16,6 +16,7 @@ import {
 } from '@/app/lib/storage';
 import { handlePagination } from '@/app/lib/storage/pagination';
 import { UUID } from '@/app/types';
+import { serveReportRoute } from '../constants';
 
 class Service {
   private static instance: Service;
@@ -85,14 +86,20 @@ class Service {
     return report;
   }
 
-  public async generateReport(resultsIds: string[], metadata?: ReportMetadata): Promise<string> {
+  public async generateReport(
+    resultsIds: string[],
+    metadata?: ReportMetadata,
+  ): Promise<{ reportId: string; reportUrl: string; metadata: ReportMetadata }> {
     const reportId = await storage.generateReport(resultsIds, metadata);
 
     const report = await this.getReport(reportId);
 
     reportCache.onCreated(report);
 
-    return report.reportID;
+    const projectPath = metadata?.project ? `${encodeURI(metadata.project)}/` : '';
+    const reportUrl = `${serveReportRoute}/${projectPath}${reportId}/index.html`;
+
+    return { reportId, reportUrl, metadata: metadata ?? {} };
   }
 
   public async deleteReports(reportIDs: string[]) {
@@ -121,15 +128,19 @@ class Service {
 
       cached.sort((a, b) => getTimestamp(new Date(b.createdAt)) - getTimestamp(new Date(a.createdAt)));
 
-      const byProject = input?.project
+      let filtered = input?.project
         ? cached.filter((file) => (input?.project ? file.project === input.project : file))
         : cached;
 
-      const results = !input?.pagination ? byProject : handlePagination(byProject, input?.pagination);
+      if (input?.testRun) {
+        filtered = filtered.filter((file) => file.testRun === input.testRun);
+      }
+
+      const results = !input?.pagination ? filtered : handlePagination(filtered, input?.pagination);
 
       return {
         results,
-        total: byProject.length,
+        total: filtered.length,
       };
     }
 
