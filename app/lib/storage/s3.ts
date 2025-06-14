@@ -275,7 +275,11 @@ export class S3 implements Storage {
       };
     }
 
-    const getTimestamp = (date?: Date) => date?.getTime() ?? 0;
+    const getTimestamp = (date?: Date | string) => {
+      if (!date) return 0;
+      if (typeof date === 'string') return new Date(date).getTime();
+      return date.getTime();
+    };
 
     jsonFiles.sort((a, b) => getTimestamp(b.lastModified) - getTimestamp(a.lastModified));
 
@@ -373,7 +377,11 @@ export class S3 implements Storage {
       });
 
       reportsStream.on('end', async () => {
-        const getTimestamp = (date?: Date) => date?.getTime() ?? 0;
+        const getTimestamp = (date?: Date | string) => {
+          if (!date) return 0;
+          if (typeof date === 'string') return new Date(date).getTime();
+          return date.getTime();
+        };
 
         reports.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
 
