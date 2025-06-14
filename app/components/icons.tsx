@@ -231,3 +231,31 @@ export const SearchIcon: FC<IconSvgProps> = (props) => (
     <path d="M22 22L20 20" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
   </svg>
 );
+
+export const BranchIcon: FC<IconSvgProps> = ({ width, height, ...props }) => {
+  return (
+    <svg fill="none" height={height ?? 14} viewBox="0 0 24 24" width={width ?? 14} {...props}>
+      <path
+        d="M7 4a3 3 0 0 1 6 0c0 1.11-.6 2.08-1.5 2.61l-.5.33v2.12a4 4 0 0 1 4 3.94v1a3 3 0 1 1-2 0v-1a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v1a3 3 0 1 1-2 0v-1a4 4 0 0 1 4-3.94V7.94l-.5-.33A3 3 0 0 1 7 4z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+};
+
+export const FolderIcon: FC<IconSvgProps> = ({ width, height, ...props }) => {
+  return (
+    <svg fill="none" height={height ?? 14} viewBox="0 0 24 24" width={width ?? 14} {...props}>
+      <path
+        d="M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+};
