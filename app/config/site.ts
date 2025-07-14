@@ -23,7 +23,25 @@ export const defaultLinks: HeaderLinks = {
 export const siteConfig: SiteConfig = {
   name: 'Playwright Reports Server',
   description: 'A server for Playwright Reports',
-  navItems: [],
-  navMenuItems: [],
+  navItems: [
+    {
+      label: 'Reports',
+      href: '/reports',
+    },
+    {
+      label: 'Results',
+      href: '/results',
+    },
+  ],
+  navMenuItems: [
+    {
+      label: 'Reports',
+      href: '/reports',
+    },
+    {
+      label: 'Results',
+      href: '/results',
+    },
+  ],
   links: defaultLinks,
 };

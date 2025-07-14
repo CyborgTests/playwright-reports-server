@@ -10,6 +10,7 @@ import { siteConfig } from '@/app/config/site';
 import { getConfigWithError } from '@/app/lib/actions';
 import { fontSans } from '@/app/config/fonts';
 import { Navbar } from '@/app/components/navbar';
+import { Aside } from '@/app/components/aside';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { result: config } = await getConfigWithError();
@@ -36,7 +37,6 @@ export async function generateViewport(): Promise<Viewport> {
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-
   return (
     <html suppressHydrationWarning lang="en">
       <head />
@@ -44,10 +44,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <Providers attribute="class" defaultTheme="dark">
           <div className="relative flex flex-col h-screen">
             <Navbar />
-            <main className="container mx-auto max-w-7xl pt-16 px-6 flex-grow">
-              {children}
-              <Toaster closeButton richColors visibleToasts={3} />
-            </main>
+            <div className="flex flex-1">
+              <Aside />
+              <main className="flex-1 p-6">
+                {children}
+                <Toaster closeButton richColors visibleToasts={3} />
+              </main>
+            </div>
             <footer className="w-full flex items-center justify-center py-4 bg-[#F9FAFB] dark:bg-background">
               <Link
                 className="flex items-center gap-1 text-current"

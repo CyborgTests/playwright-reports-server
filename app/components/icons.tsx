@@ -121,9 +121,18 @@ export const LinkIcon: FC<IconSvgProps> = ({ width, height, ...props }) => {
   );
 };
 
-export const ReportIcon: FC<IconSvgProps> = () => {
+export const ReportIcon: FC<IconSvgProps> = ({ size = 40, width, height, ...props }) => {
   return (
-    <svg height={48} id="Layer_1" version="1.1" viewBox="0 0 96.17 122.88" width={48} x="0px" y="0px">
+    <svg
+      height={size || height}
+      id="Layer_1"
+      version="1.1"
+      viewBox="0 0 96.17 122.88"
+      width={size || width}
+      x="0px"
+      y="0px"
+      {...props}
+    >
       <g>
         <path
           className="fill-black dark:fill-white"
@@ -134,9 +143,18 @@ export const ReportIcon: FC<IconSvgProps> = () => {
   );
 };
 
-export const ResultIcon: FC<IconSvgProps> = () => {
+export const ResultIcon: FC<IconSvgProps> = ({ size = 40, width, height, ...props }) => {
   return (
-    <svg height={48} id="Layer_1" version="1.1" viewBox="0 0 97.88 122.88" width={48} x="0px" y="0px">
+    <svg
+      height={size || height}
+      id="Layer_1"
+      version="1.1"
+      viewBox="0 0 97.88 122.88"
+      width={size || width}
+      x="0px"
+      y="0px"
+      {...props}
+    >
       <g>
         <path
           className="st0 fill-black dark:fill-white"
