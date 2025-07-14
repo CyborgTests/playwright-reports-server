@@ -9,9 +9,7 @@ import {
 } from '@heroui/navbar';
 import Image from 'next/image';
 import { Link } from '@heroui/link';
-import { link as linkStyles } from '@heroui/theme';
 import NextLink from 'next/link';
-import clsx from 'clsx';
 
 import { getConfigWithError } from '@/app/lib/actions';
 import { HeaderLinks } from '@/app/components/header-links';
@@ -25,7 +23,7 @@ export const Navbar: React.FC = async () => {
   return (
     <NextUINavbar
       classNames={{
-        wrapper: 'flex flex-row flex-wrap bg-[#F9FAFB] dark:bg-background',
+        wrapper: 'flex flex-row flex-wrap bg-[#F9FAFB] dark:bg-background border-b border-gray-200 dark:border-gray-800',
       }}
       height="3.75rem"
       maxWidth="xl"

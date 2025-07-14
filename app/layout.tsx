@@ -51,7 +51,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <Toaster closeButton richColors visibleToasts={3} />
               </main>
             </div>
-            <footer className="w-full flex items-center justify-center py-4 bg-[#F9FAFB] dark:bg-background">
+            <footer className="w-full flex items-center justify-center py-4 bg-[#F9FAFB] dark:bg-background border-t border-gray-200 dark:border-gray-800">
               <Link
                 className="flex items-center gap-1 text-current"
                 href="https://github.com/CyborgTests/playwright-reports-server"
