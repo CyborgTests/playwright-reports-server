@@ -25,12 +25,11 @@ export const Navbar: React.FC = async () => {
   return (
     <NextUINavbar
       classNames={{
-        wrapper: 'flex flex-row flex-wrap',
+        wrapper: 'flex flex-row flex-wrap bg-[#F9FAFB] dark:bg-background',
       }}
       height="3.75rem"
       maxWidth="xl"
       position="sticky"
-      style={{ backgroundColor: '#F9FAFB' }}
     >
       <NavbarContent className="basis-1/5 sm:basis-full" justify="start">
         <NavbarBrand as="li" className="gap-3 max-w-fit">
@@ -38,7 +37,7 @@ export const Navbar: React.FC = async () => {
             <Image
               unoptimized
               alt="Logo"
-              className="min-w-10"
+              className="min-w-10 dark:invert"
               height="31"
               src={`/api/static${config?.logoPath}`}
               width="174"
