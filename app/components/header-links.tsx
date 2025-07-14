@@ -24,7 +24,7 @@ export const HeaderLinks: React.FC<HeaderLinksProps> = async ({ config }) => {
 
     return href ? (
       <Link key={name} isExternal aria-label={name} href={href}>
-        <Icon className="text-default-500" size={48} />
+        <Icon className="text-default-500" size={40} />
         {!availableLink && <p className="ml-1">{name}</p>}
       </Link>
     ) : null;

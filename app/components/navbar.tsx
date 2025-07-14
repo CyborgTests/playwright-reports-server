@@ -19,18 +19,18 @@ import { siteConfig } from '@/app/config/site';
 import { ThemeSwitch } from '@/app/components/theme-switch';
 import { SiteWhiteLabelConfig } from '@/app/types';
 
-
 export const Navbar: React.FC = async () => {
   const { result: config }: { result?: SiteWhiteLabelConfig } = await getConfigWithError();
-  const title = config?.title ?? siteConfig.name;
 
   return (
     <NextUINavbar
       classNames={{
         wrapper: 'flex flex-row flex-wrap',
       }}
+      height="3.75rem"
       maxWidth="xl"
       position="sticky"
+      style={{ backgroundColor: '#F9FAFB' }}
     >
       <NavbarContent className="basis-1/5 sm:basis-full" justify="start">
         <NavbarBrand as="li" className="gap-3 max-w-fit">
@@ -39,11 +39,10 @@ export const Navbar: React.FC = async () => {
               unoptimized
               alt="Logo"
               className="min-w-10"
-              height="42"
+              height="31"
               src={`/api/static${config?.logoPath}`}
-              width="42"
+              width="174"
             />
-            <p className="font-bold text-inherit text-3xl">{title}</p>
           </NextLink>
         </NavbarBrand>
         <ul className="hidden lg:flex gap-4 justify-start ml-2">
