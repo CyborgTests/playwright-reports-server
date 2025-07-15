@@ -39,8 +39,10 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
     <>
       <h1 className={title()}>{report?.title || 'Report'}</h1>
       {report?.createdAt && (
-        <span className={`${subtitle()} mt-4 mb-6`}>
-          <FormattedDate date={report.createdAt} />
+        <span className={`${subtitle()} mt-4 mb-6 text-right`}>
+          <span className="text-sm">
+            <FormattedDate date={report.createdAt} />
+          </span>
         </span>
       )}
       <div className="flex md:flex-row flex-col gap-2">
