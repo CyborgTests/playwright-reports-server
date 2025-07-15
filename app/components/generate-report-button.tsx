@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  Tooltip,
   Button,
   Modal,
   ModalContent,
@@ -79,11 +78,9 @@ export default function GenerateReportButton({
 
   return (
     <>
-      <Tooltip color="secondary" content="Generate Report" placement="top">
-        <Button color="secondary" isDisabled={!results?.length} isLoading={isPending} size="md" onClick={onOpen}>
-          Generate Report
-        </Button>
-      </Tooltip>
+      <Button color="primary" isDisabled={!results?.length} isLoading={isPending} size="md" onClick={onOpen}>
+        Generate Report
+      </Button>
       <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
         <ModalContent>
           {(onClose) => (

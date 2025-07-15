@@ -11,7 +11,6 @@ import { type ServerDataInfo } from '@/app/lib/storage';
 
 interface PageLayoutProps {
   render: (props: { info: ServerDataInfo; onUpdate: () => void }) => React.ReactNode;
-  title: string;
 }
 
 export default function PageLayout({ render }: PageLayoutProps) {
@@ -44,6 +43,7 @@ export default function PageLayout({ render }: PageLayoutProps) {
 
   if (error) {
     toast.error(error.message);
+
     return <div>Error loading data: {error.message}</div>;
   }
 
@@ -56,4 +56,4 @@ export default function PageLayout({ render }: PageLayoutProps) {
       )}
     </>
   );
-} 
+}

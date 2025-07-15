@@ -39,14 +39,21 @@ export async function generateViewport(): Promise<Viewport> {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html suppressHydrationWarning lang="en">
-      <head />
+      <head>
+        <link href="https://fonts.googleapis.com" rel="preconnect" />
+        <link crossOrigin="anonymous" href="https://fonts.gstatic.com" rel="preconnect" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body className={clsx('min-h-screen bg-background font-sans antialiased', fontSans.variable)}>
         <Providers attribute="class" defaultTheme="dark">
           <div className="relative flex flex-col h-screen">
             <Navbar />
             <div className="flex flex-1">
               <Aside />
-              <main className="flex-1 p-6">
+              <main className="flex-1 px-6 py-12">
                 {children}
                 <Toaster closeButton richColors visibleToasts={3} />
               </main>

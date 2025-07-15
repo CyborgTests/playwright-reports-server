@@ -1,7 +1,7 @@
 'use client';
 
 import { FC, useEffect, useState } from 'react';
-import { Accordion, AccordionItem, Spinner } from "@heroui/react";
+import { Accordion, AccordionItem, Spinner } from '@heroui/react';
 import { toast } from 'sonner';
 
 import { subtitle } from '../primitives';

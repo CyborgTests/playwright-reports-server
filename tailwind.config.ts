@@ -7,13 +7,37 @@ const config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['var(--font-sans)'],
+        sans: ['Inter', 'var(--font-sans)'],
         mono: ['var(--font-mono)'],
       },
     },
   },
   darkMode: 'class',
-  plugins: [heroui()],
+  plugins: [
+    heroui({
+      layout: {
+        borderWidth: {
+          small: '1px',
+          medium: '1px',
+          large: '2px',
+        },
+        radius: {
+          small: '4px',
+          medium: '6px',
+          large: '8px',
+        },
+      },
+      themes: {
+        light: {
+          colors: {
+            primary: {
+              DEFAULT: '#2C5677',
+            },
+          },
+        },
+      },
+    }),
+  ],
 } satisfies Config;
 
 export default config;

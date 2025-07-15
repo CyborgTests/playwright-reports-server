@@ -23,7 +23,8 @@ export const Navbar: React.FC = async () => {
   return (
     <NextUINavbar
       classNames={{
-        wrapper: 'flex flex-row flex-wrap bg-[#F9FAFB] dark:bg-background border-b border-gray-200 dark:border-gray-800',
+        wrapper:
+          'flex flex-row flex-wrap bg-[#F9FAFB] dark:bg-background border-b border-gray-200 dark:border-gray-800 max-w-full',
       }}
       height="3.75rem"
       maxWidth="xl"

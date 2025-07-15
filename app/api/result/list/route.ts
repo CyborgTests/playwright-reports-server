@@ -10,8 +10,10 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const pagination = parseFromRequest(searchParams);
   const project = searchParams.get('project') ?? '';
+  const tags = searchParams.get('tags')?.split(',').filter(Boolean) ?? [];
+  const search = searchParams.get('search') ?? '';
 
-  const { result, error } = await withError(service.getResults({ pagination, project }));
+  const { result, error } = await withError(service.getResults({ pagination, project, tags, search }));
 
   if (error) {
     return new Response(error.message, { status: 400 });

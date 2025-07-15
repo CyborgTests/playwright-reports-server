@@ -1,16 +1,6 @@
 'use client';
 
-import {
-  Input,
-  Tooltip,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  useDisclosure,
-  Button,
-} from "@heroui/react";
+import { Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, useDisclosure, Button } from '@heroui/react';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -56,11 +46,17 @@ export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjec
   return (
     !!reportId && (
       <>
-        <Tooltip color="danger" content="Delete Report" placement="top">
-          <Button color="danger" isLoading={isPending} size="md" onPress={onOpen}>
-            <DeleteIcon />
-          </Button>
-        </Tooltip>
+        <Button
+          className="p-0 min-w-10"
+          color="primary"
+          isLoading={isPending}
+          size="md"
+          title="Delete report"
+          variant="light"
+          onPress={onOpen}
+        >
+          <DeleteIcon size={24} />
+        </Button>
         <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
           <ModalContent>
             {(onClose) => (
