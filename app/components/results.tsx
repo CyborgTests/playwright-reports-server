@@ -31,7 +31,7 @@ export default function Results({ onChange }: Readonly<ResultsProps>) {
         <div className="w-1/3">
           <h1 className={title()}>Results</h1>
         </div>
-        <div className="flex gap-2 w-2/3 flex-wrap justify-end items-center mr-7">
+        <div className="flex gap-2 w-2/3 flex-wrap justify-end items-center ml-2">
           {selectedResults.length > 0 && (
             <div className="text-sm pr-3 text-primary">Results selected: {selectedResults.length}</div>
           )}

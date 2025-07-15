@@ -2,7 +2,7 @@
 
 import { type FormEvent, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button, Card, CardBody, CardFooter, CardHeader, Input, Spinner } from "@heroui/react";
+import { Button, Card, CardBody, CardFooter, CardHeader, Input, Spinner } from '@heroui/react';
 import { getProviders, signIn, useSession } from 'next-auth/react';
 
 import { title } from '@/app/components/primitives';
@@ -50,7 +50,7 @@ export default function LoginForm() {
   };
 
   return session.status === 'loading' ? (
-    <Spinner />
+    <Spinner className="w-full" />
   ) : (
     <div className="grid col-span-6 justify-center">
       <h1 className={title()}>Login</h1>

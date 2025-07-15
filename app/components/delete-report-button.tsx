@@ -69,7 +69,15 @@ export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjec
                     <strong className="break-all">&quot;{reportId}&quot;</strong>
                     &nbsp;to confirm:
                   </p>
-                  <Input isRequired label="Confirm" value={confirm} onValueChange={setConfirm} />
+                  <Input
+                    isRequired
+                    label="Confirm"
+                    labelPlacement="outside"
+                    placeholder={reportId}
+                    value={confirm}
+                    variant="bordered"
+                    onValueChange={setConfirm}
+                  />
                 </ModalBody>
                 <ModalFooter>
                   <Button color="primary" variant="light" onPress={onClose}>

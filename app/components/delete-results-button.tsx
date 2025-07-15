@@ -70,7 +70,15 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult, label 
                   <strong className="break-all">&quot;{resultIds?.at(0)}&quot;</strong>
                   &nbsp;to confirm:
                 </p>
-                <Input isRequired label="Confirm" value={confirm} onValueChange={setConfirm} />
+                <Input
+                  isRequired
+                  label="Confirm"
+                  labelPlacement="outside"
+                  placeholder={resultIds?.at(0)}
+                  value={confirm}
+                  variant="bordered"
+                  onValueChange={setConfirm}
+                />
               </ModalBody>
               <ModalFooter>
                 <Button
