@@ -79,7 +79,7 @@ export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjec
                     color="danger"
                     isDisabled={confirm !== reportId}
                     isLoading={isPending}
-                    onClick={() => {
+                    onPress={() => {
                       DeleteReport();
                       onClose();
                     }}

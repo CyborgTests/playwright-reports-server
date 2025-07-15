@@ -87,7 +87,7 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult, label 
                   color="danger"
                   isDisabled={confirm !== resultIds?.at(0)}
                   isLoading={isPending}
-                  onClick={() => {
+                  onPress={() => {
                     DeleteResult();
                     setConfirm('');
                     onClose();

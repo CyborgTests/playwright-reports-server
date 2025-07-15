@@ -78,7 +78,7 @@ export default function GenerateReportButton({
 
   return (
     <>
-      <Button color="primary" isDisabled={!results?.length} isLoading={isPending} size="md" onClick={onOpen}>
+      <Button color="primary" isDisabled={!results?.length} isLoading={isPending} size="md" onPress={onOpen}>
         Generate Report
       </Button>
       <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
@@ -115,10 +115,10 @@ export default function GenerateReportButton({
                 />
               </ModalBody>
               <ModalFooter>
-                <Button color="danger" isDisabled={isPending} onClick={onClose}>
+                <Button color="danger" isDisabled={isPending} onPress={onClose}>
                   Close
                 </Button>
-                <Button color="success" isLoading={isPending} type="submit" onClick={GenerateReport}>
+                <Button color="success" isLoading={isPending} type="submit" onPress={GenerateReport}>
                   Generate
                 </Button>
               </ModalFooter>
