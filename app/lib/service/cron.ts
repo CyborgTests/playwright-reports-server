@@ -86,7 +86,10 @@ export class CronService {
       console.log('[cron-job] starting outdated reports lookup...');
       const reportsOutput = await service.getReports();
 
-      const outdated = reportsOutput.reports.filter((report) => this.isExpired(report.createdAt, expireDays));
+      const outdated = reportsOutput.reports.filter((report) => {
+        const createdDate = typeof report.createdAt === 'string' ? new Date(report.createdAt) : report.createdAt;
+        return this.isExpired(createdDate, expireDays);
+      });
 
       console.log(`[cron-job] found ${outdated.length} outdated reports`);
 
