@@ -11,7 +11,9 @@ import Image from 'next/image';
 import { Link } from '@heroui/link';
 import NextLink from 'next/link';
 
-import { getConfigWithError } from '@/app/lib/actions';
+import { subtitle } from './primitives';
+
+import { defaultConfig, getConfigWithError } from '@/app/lib/actions';
 import { HeaderLinks } from '@/app/components/header-links';
 import { siteConfig } from '@/app/config/site';
 import { ThemeSwitch } from '@/app/components/theme-switch';
@@ -19,6 +21,9 @@ import { SiteWhiteLabelConfig } from '@/app/types';
 
 export const Navbar: React.FC = async () => {
   const { result: config }: { result?: SiteWhiteLabelConfig } = await getConfigWithError();
+
+  const isCustomLogo = config?.logoPath !== defaultConfig.logoPath;
+  const isCustomTitle = config?.title !== defaultConfig.title;
 
   return (
     <NextUINavbar
@@ -36,12 +41,13 @@ export const Navbar: React.FC = async () => {
             <Image
               unoptimized
               alt="Logo"
-              className="min-w-10 dark:invert"
+              className={`min-w-10 dark:invert ${isCustomLogo ? 'max-w-10' : ''}`}
               height="31"
               src={`/api/static${config?.logoPath}`}
               width="174"
             />
           </NextLink>
+          {isCustomTitle && <h1 className={subtitle()}>{config?.title}</h1>}
         </NavbarBrand>
       </NavbarContent>
 

@@ -1,7 +1,7 @@
 'use client';
 
-import  { FC, useState } from 'react';
-import { HeroUIProvider } from "@heroui/system";
+import { FC, useState } from 'react';
+import { HeroUIProvider } from '@heroui/system';
 import { ThemeProvider as NextThemesProvider } from 'next-themes';
 import { ThemeProviderProps } from 'next-themes/dist/types';
 import { SessionProvider } from 'next-auth/react';
@@ -22,7 +22,14 @@ export const Providers: FC<ThemeProviderProps> = ({ children, ...themeProps }) =
 
   return (
     <HeroUIProvider>
-      <NextThemesProvider {...themeProps}>
+      <NextThemesProvider
+        {...themeProps}
+        // additional mapping to handle theme names from playwright trace view
+        value={{
+          'light-mode': 'light',
+          'dark-mode': 'dark',
+        }}
+      >
         <QueryClientProvider client={queryClient}>
           <SessionProvider>{children}</SessionProvider>
           <ReactQueryDevtools initialIsOpen={false} />
