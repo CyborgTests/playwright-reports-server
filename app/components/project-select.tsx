@@ -41,12 +41,13 @@ export default function ProjectSelect({ refreshId, onSelect, entity }: Readonly<
 
   return (
     <Select
-      disallowEmptySelection
-      className="pt-1 w-full"
+      className="w-36 min-w-36 bg-transparent"
       defaultSelectedKeys={[defaultProjectName]}
       isDisabled={items.length <= 1}
       isLoading={isLoading}
-      label="project"
+      label="Project"
+      labelPlacement="outside"
+      variant="bordered"
       onSelectionChange={onChange}
     >
       {items.map((project) => (

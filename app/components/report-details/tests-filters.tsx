@@ -1,7 +1,7 @@
 'use client';
 
 import { FC, useCallback, useEffect, useState } from 'react';
-import { Accordion, AccordionItem, Checkbox, CheckboxGroup, Input } from "@heroui/react";
+import { Accordion, AccordionItem, Checkbox, CheckboxGroup, Input } from '@heroui/react';
 
 import { ReportTestOutcome } from '@/app/lib/parser/types';
 import { type ReportHistory } from '@/app/lib/storage/types';
@@ -48,7 +48,7 @@ const ReportFilters: FC<ReportFiltersProps> = ({ report, onChangeFilters }) => {
   const currentState = currentFilterState();
 
   return (
-    <Accordion className="mb-5 ">
+    <Accordion className="mb-5">
       <AccordionItem
         key="filter"
         aria-label="Test Filters"

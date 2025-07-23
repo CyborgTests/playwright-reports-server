@@ -10,6 +10,7 @@ import { siteConfig } from '@/app/config/site';
 import { getConfigWithError } from '@/app/lib/actions';
 import { fontSans } from '@/app/config/fonts';
 import { Navbar } from '@/app/components/navbar';
+import { Aside } from '@/app/components/aside';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { result: config } = await getConfigWithError();
@@ -36,19 +37,28 @@ export async function generateViewport(): Promise<Viewport> {
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-
   return (
     <html suppressHydrationWarning lang="en">
-      <head />
+      <head>
+        <link href="https://fonts.googleapis.com" rel="preconnect" />
+        <link crossOrigin="anonymous" href="https://fonts.gstatic.com" rel="preconnect" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body className={clsx('min-h-screen bg-background font-sans antialiased', fontSans.variable)}>
         <Providers attribute="class" defaultTheme="dark">
           <div className="relative flex flex-col h-screen">
             <Navbar />
-            <main className="container mx-auto max-w-7xl pt-16 px-6 flex-grow">
-              {children}
-              <Toaster closeButton richColors visibleToasts={3} />
-            </main>
-            <footer className="w-full flex items-center justify-center py-3">
+            <div className="flex flex-1">
+              <Aside />
+              <main className="flex-1 px-6 py-12">
+                {children}
+                <Toaster closeButton richColors visibleToasts={3} />
+              </main>
+            </div>
+            <footer className="w-full flex items-center justify-center py-4 bg-[#F9FAFB] dark:bg-background border-t border-gray-200 dark:border-gray-800">
               <Link
                 className="flex items-center gap-1 text-current"
                 href="https://github.com/CyborgTests/playwright-reports-server"

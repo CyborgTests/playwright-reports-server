@@ -19,6 +19,8 @@ export interface ReadResultsInput {
   pagination?: Pagination;
   project?: string;
   testRun?: string;
+  tags?: string[];
+  search?: string;
 }
 
 export interface ReadResultsOutput {
@@ -30,6 +32,7 @@ export interface ReadReportsInput {
   pagination?: Pagination;
   project?: string;
   ids?: string[];
+  search?: string;
 }
 
 export interface ReadReportsOutput {

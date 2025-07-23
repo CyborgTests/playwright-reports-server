@@ -1,30 +1,21 @@
 'use client';
 
-import {
-  Input,
-  Tooltip,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  useDisclosure,
-  Button,
-} from "@heroui/react";
+import { Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, useDisclosure, Button } from '@heroui/react';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import useMutation from '@/app/hooks/useMutation';
-import { DeleteIcon } from '@/app/components/icons';
 import { invalidateCache } from '@/app/lib/query-cache';
+import { DeleteIcon } from '@/app/components/icons';
 
 interface DeleteProjectButtonProps {
   resultIds: string[];
   onDeletedResult?: () => void;
+  label?: string;
 }
 
-export default function DeleteResultsButton({ resultIds, onDeletedResult }: Readonly<DeleteProjectButtonProps>) {
+export default function DeleteResultsButton({ resultIds, onDeletedResult, label }: Readonly<DeleteProjectButtonProps>) {
   const queryClient = useQueryClient();
   const {
     mutate: deleteResult,
@@ -55,11 +46,18 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult }: Read
 
   return (
     <>
-      <Tooltip color="danger" content="Delete Result" placement="top">
-        <Button color="danger" isDisabled={!resultIds?.length} isLoading={isPending} size="md" onPress={onOpen}>
-          <DeleteIcon />
-        </Button>
-      </Tooltip>
+      <Button
+        className={`${!label ? 'p-0 min-w-10' : ''}`}
+        color="primary"
+        isDisabled={!resultIds?.length}
+        isLoading={isPending}
+        size="md"
+        title="Delete results"
+        variant="light"
+        onPress={onOpen}
+      >
+        {label || <DeleteIcon size={24} />}
+      </Button>
       <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
         <ModalContent>
           {(onClose) => (
@@ -72,7 +70,15 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult }: Read
                   <strong className="break-all">&quot;{resultIds?.at(0)}&quot;</strong>
                   &nbsp;to confirm:
                 </p>
-                <Input isRequired label="Confirm" value={confirm} onValueChange={setConfirm} />
+                <Input
+                  isRequired
+                  label="Confirm"
+                  labelPlacement="outside"
+                  placeholder={resultIds?.at(0)}
+                  value={confirm}
+                  variant="bordered"
+                  onValueChange={setConfirm}
+                />
               </ModalBody>
               <ModalFooter>
                 <Button
@@ -89,7 +95,7 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult }: Read
                   color="danger"
                   isDisabled={confirm !== resultIds?.at(0)}
                   isLoading={isPending}
-                  onClick={() => {
+                  onPress={() => {
                     DeleteResult();
                     setConfirm('');
                     onClose();

@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  Tooltip,
   Button,
   Modal,
   ModalContent,
@@ -79,11 +78,9 @@ export default function GenerateReportButton({
 
   return (
     <>
-      <Tooltip color="secondary" content="Generate Report" placement="top">
-        <Button color="secondary" isDisabled={!results?.length} isLoading={isPending} size="md" onClick={onOpen}>
-          Generate Report
-        </Button>
-      </Tooltip>
+      <Button color="primary" isDisabled={!results?.length} isLoading={isPending} size="md" onPress={onOpen}>
+        Generate Report
+      </Button>
       <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
         <ModalContent>
           {(onClose) => (
@@ -101,7 +98,9 @@ export default function GenerateReportButton({
                     value: project,
                   }))}
                   label="Project name"
+                  labelPlacement="outside"
                   placeholder="leave empty if not required"
+                  variant="bordered"
                   onInputChange={(value) => setProjectName(value)}
                   onSelectionChange={(value) => value && setProjectName(value?.toString() ?? '')}
                 >
@@ -110,18 +109,21 @@ export default function GenerateReportButton({
                 <Input
                   fullWidth
                   isClearable
+                  label="Custom report name"
+                  labelPlacement="outside"
                   maxLength={36}
-                  placeholder="Custom report name"
+                  placeholder="leave empty if not required"
                   value={customName}
+                  variant="bordered"
                   onChange={(e: { target: { value: any } }) => setCustomName(e.target.value ?? '')}
                   onClear={() => setCustomName('')}
                 />
               </ModalBody>
               <ModalFooter>
-                <Button color="danger" isDisabled={isPending} onClick={onClose}>
+                <Button color="primary" isDisabled={isPending} variant="light" onPress={onClose}>
                   Close
                 </Button>
-                <Button color="success" isLoading={isPending} type="submit" onClick={GenerateReport}>
+                <Button color="primary" isLoading={isPending} type="submit" onPress={GenerateReport}>
                   Generate
                 </Button>
               </ModalFooter>

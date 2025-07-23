@@ -303,9 +303,41 @@ export class S3 implements Storage {
       return parsed;
     });
 
-    const byProject = results.filter((file) => (input?.project ? file.project === input.project : file));
+    let filteredResults = results.filter((file) => (input?.project ? file.project === input.project : file));
 
-    const currentFiles = noFilters ? results : handlePagination(byProject, input?.pagination);
+    // Filter by tags if provided
+    if (input?.tags && input.tags.length > 0) {
+      const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'];
+
+      filteredResults = filteredResults.filter((result) => {
+        const resultTags = Object.entries(result)
+          .filter(([key]) => !notMetadataKeys.includes(key))
+          .map(([key, value]) => `${key}: ${value}`);
+
+        return input.tags!.some((selectedTag) => resultTags.includes(selectedTag));
+      });
+    }
+
+    // Filter by search if provided
+    if (input?.search && input.search.trim()) {
+      const searchTerm = input.search.toLowerCase().trim();
+
+      filteredResults = filteredResults.filter((result) => {
+        // Search in title, resultID, project, and all metadata fields
+        const searchableFields = [
+          result.title,
+          result.resultID,
+          result.project,
+          ...Object.entries(result)
+            .filter(([key]) => !['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'].includes(key))
+            .map(([key, value]) => `${key}: ${value}`),
+        ].filter(Boolean);
+
+        return searchableFields.some((field) => field?.toLowerCase().includes(searchTerm));
+      });
+    }
+
+    const currentFiles = noFilters ? results : handlePagination(filteredResults, input?.pagination);
 
     return {
       results: currentFiles.map((result) => {
@@ -317,7 +349,7 @@ export class S3 implements Storage {
           size: result.size ?? bytesToString(sizeBytes),
         };
       }) as Result[],
-      total: noFilters ? jsonFiles.length : byProject.length,
+      total: noFilters ? jsonFiles.length : filteredResults.length,
     };
   }
 
@@ -389,8 +421,36 @@ export class S3 implements Storage {
 
         const withMetadata = await this.getReportsMetadata(currentReports as ReportHistory[]);
 
+        let filteredReports = withMetadata;
+
+        // Filter by search if provided
+        if (input?.search && input.search.trim()) {
+          const searchTerm = input.search.toLowerCase().trim();
+
+          filteredReports = filteredReports.filter((report) => {
+            // Search in title, reportID, project, and all metadata fields
+            const searchableFields = [
+              report.title,
+              report.reportID,
+              report.project,
+              ...Object.entries(report)
+                .filter(
+                  ([key]) =>
+                    !['reportID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'reportUrl', 'stats'].includes(
+                      key,
+                    ),
+                )
+                .map(([key, value]) => `${key}: ${value}`),
+            ].filter(Boolean);
+
+            return searchableFields.some((field) => field?.toLowerCase().includes(searchTerm));
+          });
+        }
+
+        const finalReports = handlePagination(filteredReports, input?.pagination);
+
         resolve({
-          reports: withMetadata.map((report) => {
+          reports: finalReports.map((report) => {
             const sizeBytes = reportSizes.get(report.reportID) ?? 0;
 
             return {
@@ -399,7 +459,7 @@ export class S3 implements Storage {
               size: bytesToString(sizeBytes),
             };
           }),
-          total: reports.length,
+          total: filteredReports.length,
         });
       });
     });
@@ -553,12 +613,12 @@ export class S3 implements Storage {
 
       console.log(`[s3] uploading file: ${JSON.stringify(file)}`);
 
-      const nestedPath = file.path.split(reportId).pop();
+      const nestedPath = (file as any).path.split(reportId).pop();
       const s3Path = path.join(remotePath, nestedPath ?? '', file.name);
 
       console.log(`[s3] uploading to ${s3Path}`);
 
-      const { error } = await withError(this.uploadFileWithRetry(s3Path, path.join(file.path, file.name)));
+      const { error } = await withError(this.uploadFileWithRetry(s3Path, path.join((file as any).path, file.name)));
 
       if (error) {
         console.error(`[s3] failed to upload report: ${error.message}`);

@@ -12,7 +12,7 @@ import {
   type Selection,
   Spinner,
   Pagination,
-} from "@heroui/react";
+} from '@heroui/react';
 import { keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -27,10 +27,10 @@ import DeleteResultsButton from '@/app/components/delete-results-button';
 const columns = [
   { name: 'Title', uid: 'title' },
   { name: 'Project', uid: 'project' },
-  { name: 'Created At', uid: 'createdAt' },
+  { name: 'Created at', uid: 'createdAt' },
   { name: 'Tags', uid: 'tags' },
   { name: 'Size', uid: 'size' },
-  { name: 'Actions', uid: 'actions' },
+  { name: '', uid: 'actions' },
 ];
 
 const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'];
@@ -48,13 +48,17 @@ interface ResultsTableProps {
 export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly<ResultsTableProps>) {
   const resultListEndpoint = '/api/result/list';
   const [project, setProject] = useState(defaultProjectName);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(20);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   const getQueryParams = () => ({
     limit: rowsPerPage.toString(),
     offset: ((page - 1) * rowsPerPage).toString(),
     project,
+    ...(selectedTags.length > 0 && { tags: selectedTags.join(',') }),
+    ...(search.trim() && { search: search.trim() }),
   });
 
   const {
@@ -64,7 +68,7 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
     error,
     refetch,
   } = useQuery<ReadResultsOutput>(withQueryParams(resultListEndpoint, getQueryParams()), {
-    dependencies: [project, rowsPerPage, page],
+    dependencies: [project, selectedTags, search, rowsPerPage, page],
     placeholderData: keepPreviousData,
   });
 
@@ -89,6 +93,16 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
     },
     [page, rowsPerPage],
   );
+
+  const onTagsChange = useCallback((tags: string[]) => {
+    setSelectedTags(tags);
+    setPage(1);
+  }, []);
+
+  const onSearchChange = useCallback((searchTerm: string) => {
+    setSearch(searchTerm);
+    setPage(1);
+  }, []);
 
   const pages = useMemo(() => {
     return total ? Math.ceil(total / rowsPerPage) : 0;
@@ -123,6 +137,8 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
         setRowsPerPage={setRowsPerPage}
         total={total}
         onProjectChange={onProjectChange}
+        onSearchChange={onSearchChange}
+        onTagsChange={onTagsChange}
       />
       <Table
         aria-label="Results"
@@ -133,21 +149,40 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
                 isCompact
                 showControls
                 showShadow
+                classNames={{
+                  base: 'm-0',
+                  wrapper: 'shadow-none',
+                  item: '!rounded-full mr-4',
+                  cursor: '!rounded-full',
+                  next: '!rounded-full',
+                  prev: '!rounded-full mr-4',
+                }}
                 color="primary"
                 page={page}
+                radius="none"
                 total={pages}
+                variant="bordered"
                 onChange={onPageChange}
               />
             </div>
           ) : null
         }
+        classNames={{
+          wrapper: 'p-0 border-none shadow-none',
+          tr: 'border-b-1 rounded-0',
+        }}
+        radius="none"
         selectedKeys={selected}
         selectionMode="multiple"
         onSelectionChange={onChangeSelect}
       >
         <TableHeader columns={columns}>
           {(column) => (
-            <TableColumn key={column.uid} align={column.uid === 'actions' ? 'center' : 'start'}>
+            <TableColumn
+              key={column.uid}
+              align={column.uid === 'actions' ? 'center' : 'start'}
+              className="px-3 py-6 text-md text-black dark:text-white font-medium"
+            >
               {column.name}
             </TableColumn>
           )}
@@ -169,15 +204,14 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
                 {getTags(item).map(([key, value], index) => (
                   <Chip
                     key={`${key}-${index}`}
-                    className="m-1 p-5 text-nowrap"
-                    color="primary"
+                    className="m-1 p-3 text-nowrap bg-[#DAE7F8] dark:bg-[#1E3A8A]"
                     size="sm"
                   >{`${key}: ${value}`}</Chip>
                 ))}
               </TableCell>
               <TableCell className="w-1/4">{item.size}</TableCell>
               <TableCell className="w-1/12">
-                <div className="flex gap-4 justify-center">
+                <div className="flex justify-center">
                   <DeleteResultsButton resultIds={[item.resultID]} onDeletedResult={shouldRefetch} />
                 </div>
               </TableCell>

@@ -112,17 +112,47 @@ export async function readResults(input?: ReadResultsInput) {
     }),
   );
 
-  const resultsByProject = fileContents.filter((result) =>
-    input?.project ? result.project === input.project : result,
-  );
+  let filteredResults = fileContents.filter((result) => (input?.project ? result.project === input.project : result));
 
-  const paginatedResults = handlePagination(resultsByProject, input?.pagination);
+  // Filter by tags if provided
+  if (input?.tags && input.tags.length > 0) {
+    const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'];
+
+    filteredResults = filteredResults.filter((result) => {
+      const resultTags = Object.entries(result)
+        .filter(([key]) => !notMetadataKeys.includes(key))
+        .map(([key, value]) => `${key}: ${value}`);
+
+      return input.tags!.some((selectedTag) => resultTags.includes(selectedTag));
+    });
+  }
+
+  // Filter by search if provided
+  if (input?.search && input.search.trim()) {
+    const searchTerm = input.search.toLowerCase().trim();
+
+    filteredResults = filteredResults.filter((result) => {
+      // Search in title, resultID, project, and all metadata fields
+      const searchableFields = [
+        result.title,
+        result.resultID,
+        result.project,
+        ...Object.entries(result)
+          .filter(([key]) => !['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'].includes(key))
+          .map(([key, value]) => `${key}: ${value}`),
+      ].filter(Boolean);
+
+      return searchableFields.some((field) => field?.toLowerCase().includes(searchTerm));
+    });
+  }
+
+  const paginatedResults = handlePagination(filteredResults, input?.pagination);
 
   return {
     results: paginatedResults.map((result) => ({
       ...result,
     })),
-    total: resultsByProject.length,
+    total: filteredResults.length,
   };
 }
 
@@ -168,18 +198,18 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
   const entries = await fs.readdir(REPORTS_FOLDER, { withFileTypes: true, recursive: true });
 
   const reportEntries = entries
-    .filter((entry) => !entry.isDirectory() && entry.name === 'index.html' && !entry.path.endsWith('trace'))
-    .filter((entry) => (input?.ids ? input.ids.some((id) => entry.path.includes(id)) : entry))
-    .filter((entry) => (input?.project ? entry.path.includes(input.project) : entry));
+    .filter((entry) => !entry.isDirectory() && entry.name === 'index.html' && !(entry as any).path.endsWith('trace'))
+    .filter((entry) => (input?.ids ? input.ids.some((id) => (entry as any).path.includes(id)) : entry))
+    .filter((entry) => (input?.project ? (entry as any).path.includes(input.project) : entry));
 
   const stats = await processBatch<Dirent, Stats & { filePath: string; createdAt: Date }>(
     {},
     reportEntries,
     20,
     async (file) => {
-      const stat = await fs.stat(file.path);
+      const stat = await fs.stat((file as any).path);
 
-      return Object.assign(stat, { filePath: file.path, createdAt: stat.birthtime });
+      return Object.assign(stat, { filePath: (file as any).path, createdAt: stat.birthtime });
     },
   );
 
@@ -196,10 +226,8 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
     })
     .filter((report) => (input?.project ? input.project === report.project : report));
 
-  const paginatedFiles = handlePagination(reportsWithProject, input?.pagination);
-
-  const reports = await Promise.all(
-    paginatedFiles.map(async (file) => {
+  const allReports = await Promise.all(
+    reportsWithProject.map(async (file) => {
       const id = path.basename(file.filePath);
       const reportPath = path.dirname(file.filePath);
       const parentDir = path.basename(reportPath);
@@ -222,7 +250,33 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
     }),
   );
 
-  return { reports: reports as ReportHistory[], total: reportsWithProject.length };
+  let filteredReports = allReports as ReportHistory[];
+
+  // Filter by search if provided
+  if (input?.search && input.search.trim()) {
+    const searchTerm = input.search.toLowerCase().trim();
+
+    filteredReports = filteredReports.filter((report) => {
+      // Search in title, reportID, project, and all metadata fields
+      const searchableFields = [
+        report.title,
+        report.reportID,
+        report.project,
+        ...Object.entries(report)
+          .filter(
+            ([key]) =>
+              !['reportID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'reportUrl', 'stats'].includes(key),
+          )
+          .map(([key, value]) => `${key}: ${value}`),
+      ].filter(Boolean);
+
+      return searchableFields.some((field) => field?.toLowerCase().includes(searchTerm));
+    });
+  }
+
+  const paginatedReports = handlePagination(filteredReports, input?.pagination);
+
+  return { reports: paginatedReports as ReportHistory[], total: filteredReports.length };
 }
 
 export async function deleteResults(resultsIds: string[]) {

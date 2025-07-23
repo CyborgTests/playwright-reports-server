@@ -8,13 +8,12 @@ import {
   TableBody,
   TableRow,
   TableCell,
-  Tooltip,
   Button,
   Spinner,
   Pagination,
   LinkIcon,
   Chip,
-} from "@heroui/react";
+} from '@heroui/react';
 import Link from 'next/link';
 import { keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -26,44 +25,60 @@ import { defaultProjectName } from '@/app/lib/constants';
 import useQuery from '@/app/hooks/useQuery';
 import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
-import { EyeIcon, BranchIcon, FolderIcon } from '@/app/components/icons';
+import { BranchIcon, FolderIcon } from '@/app/components/icons';
 import { ReadReportsHistory, ReportHistory } from '@/app/lib/storage';
 
 const columns = [
   { name: 'Title', uid: 'title' },
   { name: 'Project', uid: 'project' },
-  { name: 'Created At', uid: 'createdAt' },
+  { name: 'Created at', uid: 'createdAt' },
   { name: 'Size', uid: 'size' },
-  { name: 'Actions', uid: 'actions' },
+  { name: '', uid: 'actions' },
 ];
 
-const coreFields = ['reportID', 'title', 'project', 'createdAt', 'size', 'sizeBytes', 'reportUrl', 'metadata', 'startTime', 'duration', 'files', 'projectNames', 'stats', 'errors'];
+const coreFields = [
+  'reportID',
+  'title',
+  'project',
+  'createdAt',
+  'size',
+  'sizeBytes',
+  'reportUrl',
+  'metadata',
+  'startTime',
+  'duration',
+  'files',
+  'projectNames',
+  'stats',
+  'errors',
+];
 
 const getMetadataItems = (item: ReportHistory) => {
-  const metadata: Array<{key: string, value: any, icon?: React.ReactNode}> = [];
-  
+  const metadata: Array<{ key: string; value: any; icon?: React.ReactNode }> = [];
+
   // Cast to any to access dynamic properties that come from resultDetails
   const itemWithMetadata = item as any;
-  
+
   // Add specific fields in preferred order
   if (itemWithMetadata.environment) {
     metadata.push({ key: 'environment', value: itemWithMetadata.environment });
   }
   if (itemWithMetadata.workingDir) {
     const dirName = itemWithMetadata.workingDir.split('/').pop() || itemWithMetadata.workingDir;
+
     metadata.push({ key: 'workingDir', value: dirName, icon: <FolderIcon /> });
   }
   if (itemWithMetadata.branch) {
     metadata.push({ key: 'branch', value: itemWithMetadata.branch, icon: <BranchIcon /> });
   }
-  
+
   // Add any other metadata fields
   Object.entries(itemWithMetadata).forEach(([key, value]) => {
     if (!coreFields.includes(key) && !['environment', 'workingDir', 'branch'].includes(key)) {
       metadata.push({ key, value });
     }
   });
-  
+
   return metadata;
 };
 
@@ -74,6 +89,7 @@ interface ReportsTableProps {
 export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) {
   const reportListEndpoint = '/api/report/list';
   const [project, setProject] = useState(defaultProjectName);
+  const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -81,6 +97,7 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
     limit: rowsPerPage.toString(),
     offset: ((page - 1) * rowsPerPage).toString(),
     project,
+    ...(search.trim() && { search: search.trim() }),
   });
 
   const {
@@ -90,7 +107,7 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
     error,
     refetch,
   } = useQuery<ReadReportsHistory>(withQueryParams(reportListEndpoint, getQueryParams()), {
-    dependencies: [project, rowsPerPage, page],
+    dependencies: [project, search, rowsPerPage, page],
     placeholderData: keepPreviousData,
   });
 
@@ -116,6 +133,11 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
     [page, rowsPerPage],
   );
 
+  const onSearchChange = useCallback((searchTerm: string) => {
+    setSearch(searchTerm);
+    setPage(1);
+  }, []);
+
   const pages = useMemo(() => {
     return total ? Math.ceil(total / rowsPerPage) : 0;
   }, [project, total, rowsPerPage]);
@@ -131,6 +153,7 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
         setRowsPerPage={setRowsPerPage}
         total={total}
         onProjectChange={onProjectChange}
+        onSearchChange={onSearchChange}
       />
       <Table
         aria-label="Reports"
@@ -149,10 +172,15 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
             </div>
           ) : null
         }
+        classNames={{
+          wrapper: 'p-0 border-none shadow-none',
+          tr: 'border-b-1 rounded-0',
+        }}
+        radius="none"
       >
         <TableHeader columns={columns}>
           {(column) => (
-            <TableColumn key={column.uid} align={column.uid === 'actions' ? 'center' : 'start'}>
+            <TableColumn key={column.uid} className="px-3 py-6 text-md text-black dark:text-white font-medium">
               {column.name}
             </TableColumn>
           )}
@@ -173,7 +201,7 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
                       {item.title || item.reportID} <LinkIcon />
                     </div>
                   </Link>
-                  
+
                   {/* Metadata chips below title */}
                   <div className="flex flex-wrap gap-1 mt-1">
                     {getMetadataItems(item).map(({ key, value, icon }, index) => (
@@ -201,13 +229,11 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
               <TableCell className="w-1/4">{item.size}</TableCell>
               <TableCell className="w-1/4">
                 <div className="flex gap-4 justify-end">
-                  <Tooltip color="success" content="Open Report" placement="top">
-                    <Link href={item.reportUrl} prefetch={false} target="_blank">
-                      <Button color="success" size="md">
-                        <EyeIcon />
-                      </Button>
-                    </Link>
-                  </Tooltip>
+                  <Link href={item.reportUrl} prefetch={false} target="_blank">
+                    <Button color="primary" size="md">
+                      Open report
+                    </Button>
+                  </Link>
                   <DeleteReportButton reportId={item.reportID} onDeleted={onDeleted} />
                 </div>
               </TableCell>

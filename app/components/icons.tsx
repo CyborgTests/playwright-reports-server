@@ -2,7 +2,7 @@ import { FC } from 'react';
 
 import { IconSvgProps } from '@/app/types';
 
-export const DiscordIcon: FC<IconSvgProps> = ({ size = 48, width, height, ...props }) => {
+export const DiscordIcon: FC<IconSvgProps> = ({ size = 40, width, height, ...props }) => {
   return (
     <svg height={size || height} viewBox="0 0 24 24" width={size || width} {...props}>
       <path
@@ -13,7 +13,7 @@ export const DiscordIcon: FC<IconSvgProps> = ({ size = 48, width, height, ...pro
   );
 };
 
-export const GithubIcon: FC<IconSvgProps> = ({ size = 48, width, height, ...props }) => {
+export const GithubIcon: FC<IconSvgProps> = ({ size = 40, width, height, ...props }) => {
   return (
     <svg height={size || height} viewBox="0 0 24 24" width={size || width} {...props}>
       <path
@@ -26,7 +26,7 @@ export const GithubIcon: FC<IconSvgProps> = ({ size = 48, width, height, ...prop
   );
 };
 
-export const BitbucketIcon: FC<IconSvgProps> = ({ size = 48, width, height, ...props }) => {
+export const BitbucketIcon: FC<IconSvgProps> = ({ size = 40, width, height, ...props }) => {
   return (
     <svg
       fill="currentColor"
@@ -45,6 +45,16 @@ export const BitbucketIcon: FC<IconSvgProps> = ({ size = 48, width, height, ...p
   );
 };
 
+export const CyborgTestIcon: FC<IconSvgProps> = ({ size = 40, width, height, ...props }) => {
+  return (
+    <svg fill="currentColor" height={size || height} viewBox="0 0 32 32" width={size || width} {...props}>
+      <g mask="url(#mask0_18_970)">
+        <path d="M4.49989 28.8333V21.8666C4.49989 20.9731 4.801 20.2219 5.40322 19.613C6.00544 19.0043 6.74878 18.7 7.63322 18.7H24.3666C25.2601 18.7 26.0113 19.0043 26.6202 19.613C27.2289 20.2219 27.5332 20.9731 27.5332 21.8666V28.8333H4.49989ZM11.5722 17.3666C9.61289 17.3666 7.93878 16.6772 6.54989 15.2983C5.161 13.9192 4.46655 12.2414 4.46655 10.265C4.46655 8.2883 5.161 6.60552 6.54989 5.21663C7.93878 3.82775 9.61289 3.1333 11.5722 3.1333H20.3999C22.3852 3.1333 24.0704 3.82508 25.4556 5.20863C26.8407 6.59219 27.5332 8.27552 27.5332 10.2586C27.5332 12.2417 26.8407 13.9222 25.4556 15.3C24.0704 16.6777 22.3852 17.3666 20.3999 17.3666H11.5722ZM11.5726 11.7C11.9908 11.7 12.3388 11.5582 12.6166 11.2746C12.8943 10.9909 13.0332 10.652 13.0332 10.258C13.0332 9.86374 12.8923 9.52219 12.6106 9.2333C12.329 8.94441 11.9846 8.79997 11.5772 8.79997C11.1701 8.79997 10.8277 8.94397 10.5499 9.23197C10.2721 9.52019 10.1332 9.86463 10.1332 10.2653C10.1332 10.6662 10.2748 11.0055 10.5579 11.2833C10.841 11.5611 11.1792 11.7 11.5726 11.7ZM20.4086 11.7C20.8028 11.7 21.1443 11.5582 21.4332 11.2746C21.7221 10.9909 21.8666 10.652 21.8666 10.258C21.8666 9.86374 21.7226 9.52219 21.4346 9.2333C21.1463 8.94441 20.8019 8.79997 20.4012 8.79997C20.0003 8.79997 19.661 8.94397 19.3832 9.23197C19.1054 9.52019 18.9666 9.86463 18.9666 10.2653C18.9666 10.6662 19.1083 11.0055 19.3919 11.2833C19.6757 11.5611 20.0146 11.7 20.4086 11.7Z" />
+      </g>
+    </svg>
+  );
+};
+
 export const TelegramIcon: FC<IconSvgProps> = ({ size = 40, width, height, ...props }) => {
   return (
     <svg fill="none" height={size || height} viewBox="0 0 24 24" width={size || width} {...props}>
@@ -58,7 +68,7 @@ export const TelegramIcon: FC<IconSvgProps> = ({ size = 40, width, height, ...pr
   );
 };
 
-export const MoonFilledIcon = ({ size = 48, width, height, ...props }: IconSvgProps) => (
+export const MoonFilledIcon = ({ size = 40, width, height, ...props }: IconSvgProps) => (
   <svg
     aria-hidden="true"
     focusable="false"
@@ -75,7 +85,7 @@ export const MoonFilledIcon = ({ size = 48, width, height, ...props }: IconSvgPr
   </svg>
 );
 
-export const SunFilledIcon = ({ size = 48, width, height, ...props }: IconSvgProps) => (
+export const SunFilledIcon = ({ size = 40, width, height, ...props }: IconSvgProps) => (
   <svg
     aria-hidden="true"
     focusable="false"
@@ -111,9 +121,18 @@ export const LinkIcon: FC<IconSvgProps> = ({ width, height, ...props }) => {
   );
 };
 
-export const ReportIcon: FC<IconSvgProps> = () => {
+export const ReportIcon: FC<IconSvgProps> = ({ size = 40, width, height, ...props }) => {
   return (
-    <svg height={48} id="Layer_1" version="1.1" viewBox="0 0 96.17 122.88" width={48} x="0px" y="0px">
+    <svg
+      height={size || height}
+      id="Layer_1"
+      version="1.1"
+      viewBox="0 0 96.17 122.88"
+      width={size || width}
+      x="0px"
+      y="0px"
+      {...props}
+    >
       <g>
         <path
           className="fill-black dark:fill-white"
@@ -124,9 +143,18 @@ export const ReportIcon: FC<IconSvgProps> = () => {
   );
 };
 
-export const ResultIcon: FC<IconSvgProps> = () => {
+export const ResultIcon: FC<IconSvgProps> = ({ size = 40, width, height, ...props }) => {
   return (
-    <svg height={48} id="Layer_1" version="1.1" viewBox="0 0 97.88 122.88" width={48} x="0px" y="0px">
+    <svg
+      height={size || height}
+      id="Layer_1"
+      version="1.1"
+      viewBox="0 0 97.88 122.88"
+      width={size || width}
+      x="0px"
+      y="0px"
+      {...props}
+    >
       <g>
         <path
           className="st0 fill-black dark:fill-white"

@@ -1,5 +1,6 @@
 import { withError } from '../withError';
 import { bytesToString, getUniqueProjectsList } from '../storage/format';
+import { serveReportRoute } from '../constants';
 
 import { reportCache, resultCache } from './cache';
 
@@ -16,7 +17,6 @@ import {
 } from '@/app/lib/storage';
 import { handlePagination } from '@/app/lib/storage/pagination';
 import { UUID } from '@/app/types';
-import { serveReportRoute } from '../constants';
 
 class Service {
   private static instance: Service;
@@ -45,7 +45,31 @@ class Service {
       const shouldFilterByProject = (report: ReportHistory) => input?.project && report.project === input.project;
       const shouldFilterByID = (report: ReportHistory) => input?.ids?.includes(report.reportID);
 
-      const reports = cached.filter((report) => noFilters || shouldFilterByProject(report) || shouldFilterByID(report));
+      let reports = cached.filter((report) => noFilters || shouldFilterByProject(report) || shouldFilterByID(report));
+
+      // Filter by search if provided
+      if (input?.search && input.search.trim()) {
+        const searchTerm = input.search.toLowerCase().trim();
+
+        reports = reports.filter((report) => {
+          // Search in title, reportID, project, and all metadata fields
+          const searchableFields = [
+            report.title,
+            report.reportID,
+            report.project,
+            ...Object.entries(report)
+              .filter(
+                ([key]) =>
+                  !['reportID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'reportUrl', 'stats'].includes(
+                    key,
+                  ),
+              )
+              .map(([key, value]) => `${key}: ${value}`),
+          ].filter(Boolean);
+
+          return searchableFields.some((field) => field?.toLowerCase().includes(searchTerm));
+        });
+      }
 
       const getTimestamp = (date?: Date | string) => {
         if (!date) return 0;
@@ -144,6 +168,38 @@ class Service {
         filtered = filtered.filter((file) => file.testRun === input.testRun);
       }
 
+      // Filter by tags if provided
+      if (input?.tags && input.tags.length > 0) {
+        const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'];
+
+        filtered = filtered.filter((result) => {
+          const resultTags = Object.entries(result)
+            .filter(([key]) => !notMetadataKeys.includes(key))
+            .map(([key, value]) => `${key}: ${value}`);
+
+          return input.tags!.some((selectedTag) => resultTags.includes(selectedTag));
+        });
+      }
+
+      // Filter by search if provided
+      if (input?.search && input.search.trim()) {
+        const searchTerm = input.search.toLowerCase().trim();
+
+        filtered = filtered.filter((result) => {
+          // Search in title, resultID, project, and all metadata fields
+          const searchableFields = [
+            result.title,
+            result.resultID,
+            result.project,
+            ...Object.entries(result)
+              .filter(([key]) => !['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'].includes(key))
+              .map(([key, value]) => `${key}: ${value}`),
+          ].filter(Boolean);
+
+          return searchableFields.some((field) => field?.toLowerCase().includes(searchTerm));
+        });
+      }
+
       const results = !input?.pagination ? filtered : handlePagination(filtered, input?.pagination);
 
       return {
@@ -189,6 +245,23 @@ class Service {
     const reportProjects = await this.getReportsProjects();
 
     return Array.from(new Set([...projects, ...reportProjects]));
+  }
+
+  public async getResultsTags(project?: string): Promise<string[]> {
+    const { results } = await this.getResults(project ? { project } : undefined);
+
+    const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'];
+    const allTags = new Set<string>();
+
+    results.forEach((result) => {
+      Object.entries(result).forEach(([key, value]) => {
+        if (!notMetadataKeys.includes(key) && value !== undefined && value !== null) {
+          allTags.add(`${key}: ${value}`);
+        }
+      });
+    });
+
+    return Array.from(allTags).sort();
   }
 
   public async getServerInfo(): Promise<ServerDataInfo> {

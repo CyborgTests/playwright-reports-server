@@ -30,21 +30,21 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
   }
 
   if (!report && isReportLoading) {
-    return <Spinner label="Loading report..." />;
+    return <Spinner className="w-full" label="Loading report..." />;
   }
 
   reportError && toast.error(reportError.message);
 
   return (
     <>
-      <div className="text-center">
-        <h1 className={title()}>{report?.title || 'Report'}</h1>
-        {report?.createdAt && (
-          <span className={subtitle()}>
+      <h1 className={title()}>{report?.title || 'Report'}</h1>
+      {report?.createdAt && (
+        <span className={`${subtitle()} mt-4 mb-6 text-right`}>
+          <span className="text-sm">
             <FormattedDate date={report.createdAt} />
           </span>
-        )}
-      </div>
+        </span>
+      )}
       <div className="flex md:flex-row flex-col gap-2">
         <div className="flex flex-col items-center md:w-1/4 max-w-full">
           <ReportStatistics stats={report?.stats} />

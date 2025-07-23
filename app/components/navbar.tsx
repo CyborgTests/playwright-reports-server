@@ -9,9 +9,7 @@ import {
 } from '@heroui/navbar';
 import Image from 'next/image';
 import { Link } from '@heroui/link';
-import { link as linkStyles } from '@heroui/theme';
 import NextLink from 'next/link';
-import clsx from 'clsx';
 
 import { getConfigWithError } from '@/app/lib/actions';
 import { HeaderLinks } from '@/app/components/header-links';
@@ -19,16 +17,16 @@ import { siteConfig } from '@/app/config/site';
 import { ThemeSwitch } from '@/app/components/theme-switch';
 import { SiteWhiteLabelConfig } from '@/app/types';
 
-
 export const Navbar: React.FC = async () => {
   const { result: config }: { result?: SiteWhiteLabelConfig } = await getConfigWithError();
-  const title = config?.title ?? siteConfig.name;
 
   return (
     <NextUINavbar
       classNames={{
-        wrapper: 'flex flex-row flex-wrap',
+        wrapper:
+          'flex flex-row flex-wrap bg-[#F9FAFB] dark:bg-background border-b border-gray-200 dark:border-gray-800 max-w-full',
       }}
+      height="3.75rem"
       maxWidth="xl"
       position="sticky"
     >
@@ -38,30 +36,13 @@ export const Navbar: React.FC = async () => {
             <Image
               unoptimized
               alt="Logo"
-              className="min-w-10"
-              height="42"
+              className="min-w-10 dark:invert"
+              height="31"
               src={`/api/static${config?.logoPath}`}
-              width="42"
+              width="174"
             />
-            <p className="font-bold text-inherit text-3xl">{title}</p>
           </NextLink>
         </NavbarBrand>
-        <ul className="hidden lg:flex gap-4 justify-start ml-2">
-          {siteConfig.navItems.map((item) => (
-            <NavbarItem key={item.href}>
-              <NextLink
-                className={clsx(
-                  linkStyles({ color: 'foreground' }),
-                  'data-[active=true]:text-primary data-[active=true]:font-medium',
-                )}
-                color="foreground"
-                href={item.href}
-              >
-                {item.label}
-              </NextLink>
-            </NavbarItem>
-          ))}
-        </ul>
       </NavbarContent>
 
       <NavbarContent className="hidden sm:flex basis-1/5 sm:basis-full" justify="end">
