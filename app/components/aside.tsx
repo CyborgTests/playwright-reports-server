@@ -22,7 +22,7 @@ export const Aside: React.FC = () => {
     dependencies: [],
   });
 
-  const isAuthenticated = session.status === 'unauthenticated';
+  const isAuthenticated = session.status === 'authenticated';
 
   return (
     <Card className="w-16 h-full rounded-none border-r border-gray-200 dark:border-gray-800 dark:bg-black shadow-none">
@@ -48,7 +48,7 @@ export const Aside: React.FC = () => {
                     : 'hover:bg-[#EEF7FC] dark:hover:bg-black'
                 }`}
                 href={item.href}
-                isDisabled={isAuthenticated}
+                isDisabled={!isAuthenticated}
                 title={item.label}
               >
                 {count !== undefined && count > 0 ? (
