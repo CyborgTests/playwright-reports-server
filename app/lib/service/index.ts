@@ -71,7 +71,11 @@ class Service {
         });
       }
 
-      const getTimestamp = (date?: Date) => date?.getTime() ?? 0;
+      const getTimestamp = (date?: Date | string) => {
+        if (!date) return 0;
+        if (typeof date === 'string') return new Date(date).getTime();
+        return date.getTime();
+      };
 
       reports.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
       const currentReports = handlePagination<ReportHistory>(reports, input?.pagination);
@@ -148,9 +152,13 @@ class Service {
     const cached = resultCache.getAll();
 
     if (cached.length) {
-      const getTimestamp = (date?: Date) => date?.getTime() ?? 0;
+      const getTimestamp = (date?: Date | string) => {
+        if (!date) return 0;
+        if (typeof date === 'string') return new Date(date).getTime();
+        return date.getTime();
+      };
 
-      cached.sort((a, b) => getTimestamp(new Date(b.createdAt)) - getTimestamp(new Date(a.createdAt)));
+      cached.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
 
       let filtered = input?.project
         ? cached.filter((file) => (input?.project ? file.project === input.project : file))

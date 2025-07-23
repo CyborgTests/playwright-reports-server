@@ -11,6 +11,8 @@ import {
   Button,
   Spinner,
   Pagination,
+  LinkIcon,
+  Chip,
 } from '@heroui/react';
 import Link from 'next/link';
 import { keepPreviousData } from '@tanstack/react-query';
@@ -23,7 +25,8 @@ import { defaultProjectName } from '@/app/lib/constants';
 import useQuery from '@/app/hooks/useQuery';
 import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
-import { ReadReportsHistory } from '@/app/lib/storage';
+import { BranchIcon, FolderIcon } from '@/app/components/icons';
+import { ReadReportsHistory, ReportHistory } from '@/app/lib/storage';
 
 const columns = [
   { name: 'Title', uid: 'title' },
@@ -32,6 +35,52 @@ const columns = [
   { name: 'Size', uid: 'size' },
   { name: '', uid: 'actions' },
 ];
+
+const coreFields = [
+  'reportID',
+  'title',
+  'project',
+  'createdAt',
+  'size',
+  'sizeBytes',
+  'reportUrl',
+  'metadata',
+  'startTime',
+  'duration',
+  'files',
+  'projectNames',
+  'stats',
+  'errors',
+];
+
+const getMetadataItems = (item: ReportHistory) => {
+  const metadata: Array<{ key: string; value: any; icon?: React.ReactNode }> = [];
+
+  // Cast to any to access dynamic properties that come from resultDetails
+  const itemWithMetadata = item as any;
+
+  // Add specific fields in preferred order
+  if (itemWithMetadata.environment) {
+    metadata.push({ key: 'environment', value: itemWithMetadata.environment });
+  }
+  if (itemWithMetadata.workingDir) {
+    const dirName = itemWithMetadata.workingDir.split('/').pop() || itemWithMetadata.workingDir;
+
+    metadata.push({ key: 'workingDir', value: dirName, icon: <FolderIcon /> });
+  }
+  if (itemWithMetadata.branch) {
+    metadata.push({ key: 'branch', value: itemWithMetadata.branch, icon: <BranchIcon /> });
+  }
+
+  // Add any other metadata fields
+  Object.entries(itemWithMetadata).forEach(([key, value]) => {
+    if (!coreFields.includes(key) && !['environment', 'workingDir', 'branch'].includes(key)) {
+      metadata.push({ key, value });
+    }
+  });
+
+  return metadata;
+};
 
 interface ReportsTableProps {
   onChange: () => void;
@@ -145,9 +194,33 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
           {(item) => (
             <TableRow key={item.reportID}>
               <TableCell className="w-1/2">
-                <Link href={`/report/${item.reportID}`} prefetch={false}>
-                  <div className="flex flex-row underline">{item.title || item.reportID}</div>
-                </Link>
+                <div className="flex flex-col">
+                  {/* Main title and link */}
+                  <Link href={`/report/${item.reportID}`} prefetch={false}>
+                    <div className="flex flex-row items-center">
+                      {item.title || item.reportID} <LinkIcon />
+                    </div>
+                  </Link>
+
+                  {/* Metadata chips below title */}
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {getMetadataItems(item).map(({ key, value, icon }, index) => (
+                      <Chip
+                        key={`${key}-${index}`}
+                        className="text-xs h-5"
+                        color="default"
+                        size="sm"
+                        startContent={icon}
+                        title={`${key}: ${value}`}
+                        variant="flat"
+                      >
+                        <span className="max-w-[150px] truncate">
+                          {key === 'branch' || key === 'workingDir' ? value : `${key}: ${value}`}
+                        </span>
+                      </Chip>
+                    ))}
+                  </div>
+                </div>
               </TableCell>
               <TableCell className="w-1/4">{item.project}</TableCell>
               <TableCell className="w-1/4">
