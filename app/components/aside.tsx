@@ -3,6 +3,7 @@
 import { Card, CardBody, Link, Badge } from '@heroui/react';
 import NextLink from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 
 import { ReportIcon, ResultIcon } from '@/app/components/icons';
 import { siteConfig } from '@/app/config/site';
@@ -15,10 +16,13 @@ interface ServerInfo {
 
 export const Aside: React.FC = () => {
   const pathname = usePathname();
+  const session = useSession();
 
   const { data: serverInfo } = useQuery<ServerInfo>('/api/info', {
     dependencies: [],
   });
+
+  const isAuthenticated = session.status === 'unauthenticated';
 
   return (
     <Card className="w-16 h-full rounded-none border-r border-gray-200 dark:border-gray-800 dark:bg-black shadow-none">
@@ -44,6 +48,7 @@ export const Aside: React.FC = () => {
                     : 'hover:bg-[#EEF7FC] dark:hover:bg-black'
                 }`}
                 href={item.href}
+                isDisabled={isAuthenticated}
                 title={item.label}
               >
                 {count !== undefined && count > 0 ? (
