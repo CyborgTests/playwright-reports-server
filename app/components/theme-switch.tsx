@@ -2,7 +2,7 @@
 
 import { FC } from 'react';
 import { VisuallyHidden } from '@react-aria/visually-hidden';
-import { SwitchProps, useSwitch } from "@heroui/switch";
+import { SwitchProps, useSwitch } from '@heroui/switch';
 import { useTheme } from 'next-themes';
 import { useIsSSR } from '@react-aria/ssr';
 import clsx from 'clsx';
@@ -15,11 +15,14 @@ export interface ThemeSwitchProps {
 }
 
 export const ThemeSwitch: FC<ThemeSwitchProps> = ({ className, classNames }) => {
-  const { theme, setTheme } = useTheme();
+  const { theme: themeName, setTheme } = useTheme();
   const isSSR = useIsSSR();
 
+  // normalize theme name for compatibility with theme picker from playwright trace view
+  const theme = themeName?.replace('-mode', '');
+
   const onChange = () => {
-    theme === 'light' ? setTheme('dark') : setTheme('light');
+    theme === 'light' ? setTheme('dark-mode') : setTheme('light-mode');
   };
 
   const { Component, slots, isSelected, getBaseProps, getInputProps, getWrapperProps } = useSwitch({
