@@ -1,13 +1,14 @@
-import { Link } from "@heroui/link";
+import { Link } from '@heroui/link';
 
 import { GithubIcon, DiscordIcon, TelegramIcon, LinkIcon, BitbucketIcon, CyborgTestIcon } from '@/app/components/icons';
 import { SiteWhiteLabelConfig } from '@/app/types';
 
 interface HeaderLinksProps {
   config: SiteWhiteLabelConfig;
+  withTitle?: boolean;
 }
 
-export const HeaderLinks: React.FC<HeaderLinksProps> = async ({ config }) => {
+export const HeaderLinks: React.FC<HeaderLinksProps> = async ({ config, withTitle = false }) => {
   const links = config?.headerLinks;
 
   const availableSocialLinkIcons = [
@@ -27,7 +28,7 @@ export const HeaderLinks: React.FC<HeaderLinksProps> = async ({ config }) => {
     return href ? (
       <Link key={name} isExternal aria-label={title} href={href} title={title}>
         <Icon className="text-default-500" size={40} />
-        {!availableLink && <p className="ml-1">{name}</p>}
+        {withTitle && <p className="ml-2">{title}</p>}
       </Link>
     ) : null;
   });

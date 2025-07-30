@@ -5,17 +5,14 @@ import {
   NavbarMenuToggle,
   NavbarBrand,
   NavbarItem,
-  NavbarMenuItem,
 } from '@heroui/navbar';
 import Image from 'next/image';
-import { Link } from '@heroui/link';
 import NextLink from 'next/link';
 
 import { subtitle } from './primitives';
 
 import { defaultConfig, getConfigWithError } from '@/app/lib/actions';
 import { HeaderLinks } from '@/app/components/header-links';
-import { siteConfig } from '@/app/config/site';
 import { ThemeSwitch } from '@/app/components/theme-switch';
 import { SiteWhiteLabelConfig } from '@/app/types';
 
@@ -59,26 +56,13 @@ export const Navbar: React.FC = async () => {
       </NavbarContent>
 
       {/* mobile view fallback */}
-      <NavbarContent className="sm:hidden basis-1 md:min-w-fit min-w-full sm:justify-center justify-end pb-14">
-        {config && <HeaderLinks config={config} />}
+      <NavbarContent className="sm:hidden basis-1 !justify-end">
         <ThemeSwitch />
-        {!!siteConfig.navMenuItems.length && <NavbarMenuToggle />}
+        {!!config && <NavbarMenuToggle />}
       </NavbarContent>
 
       <NavbarMenu>
-        <div className="mx-4 mt-2 flex flex-col gap-2">
-          {siteConfig.navMenuItems.map((item, index) => (
-            <NavbarMenuItem key={`${item.label}-${index}`}>
-              <Link
-                color={index === 2 ? 'primary' : index === siteConfig.navMenuItems.length - 1 ? 'danger' : 'foreground'}
-                href="#"
-                size="lg"
-              >
-                {item.label}
-              </Link>
-            </NavbarMenuItem>
-          ))}
-        </div>
+        <div className="mx-4 mt-2 flex flex-col gap-2">{config ? <HeaderLinks withTitle config={config} /> : null}</div>
       </NavbarMenu>
     </NextUINavbar>
   );

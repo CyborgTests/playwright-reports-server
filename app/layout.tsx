@@ -53,7 +53,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <Navbar />
             <div className="flex flex-1">
               <Aside />
-              <main className="flex-1 px-6 py-12">
+              <main className="w-[calc(100%-4rem)] px-6 py-12">
                 {children}
                 <Toaster closeButton richColors visibleToasts={3} />
               </main>
