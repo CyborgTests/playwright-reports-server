@@ -7,6 +7,7 @@ import ResultsTable from '@/app/components/results-table';
 import { title } from '@/app/components/primitives';
 import GenerateReportButton from '@/app/components/generate-report-button';
 import DeleteResultsButton from '@/app/components/delete-results-button';
+import UploadResultsButton from '@/app/components/upload-results-button';
 import { getUniqueProjectsList } from '@/app/lib/storage/format';
 
 interface ResultsProps {
@@ -36,6 +37,7 @@ export default function Results({ onChange }: Readonly<ResultsProps>) {
             <div className="text-sm pr-3 text-primary">Results selected: {selectedResults.length}</div>
           )}
           <GenerateReportButton projects={projects} results={selectedResults} onGeneratedReport={onListUpdate} />
+          <UploadResultsButton onUploadedResult={onListUpdate} />
           <DeleteResultsButton label="Delete" resultIds={selectedResultIds} onDeletedResult={onListUpdate} />
         </div>
       </div>
