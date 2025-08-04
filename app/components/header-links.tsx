@@ -8,7 +8,7 @@ interface HeaderLinksProps {
   withTitle?: boolean;
 }
 
-export const HeaderLinks: React.FC<HeaderLinksProps> = async ({ config, withTitle = false }) => {
+export const HeaderLinks: React.FC<HeaderLinksProps> = ({ config, withTitle = false }) => {
   const links = config?.headerLinks;
 
   const availableSocialLinkIcons = [
