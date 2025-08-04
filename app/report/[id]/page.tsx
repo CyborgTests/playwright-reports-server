@@ -26,7 +26,7 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
   } = useQuery<ReportHistory>(`/api/report/${params.id}`, { callback: `/report/${params.id}` });
 
   if (session.status === 'loading') {
-    return <Spinner label="Loading auth..." />;
+    return <Spinner className="w-full" label="Loading auth..." />;
   }
 
   if (!report && isReportLoading) {

@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { subtitle } from '../primitives';
 import { StatChart } from '../stat-chart';
 
-import renderFileSuitesTree from './suite-tree';
+import FileSuitesTree from './suite-tree';
 import ReportFilters from './tests-filters';
 
 import { type ReportHistory } from '@/app/lib/storage';
@@ -69,7 +69,7 @@ const FileList: FC<FileListProps> = ({ report }) => {
                 <StatChart stats={file.stats} />
                 <div className="file-tests">
                   <h4 className={subtitle()}>Tests</h4>
-                  {renderFileSuitesTree(file, history ?? [])}
+                  <FileSuitesTree file={file} history={history ?? []} reportId={report?.reportID} />
                 </div>
               </div>
             </AccordionItem>
