@@ -1,5 +1,6 @@
 import { withError } from '@/app/lib/withError';
 import { JiraService } from '@/app/lib/service/jira';
+import { service } from '@/app/lib/service';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,12 +17,12 @@ interface CreateTicketRequest {
     line: number;
     column: number;
   };
+  reportId: string;
   testAttachments?: Array<{
     name: string;
     path: string;
     contentType: string;
   }>;
-  reportId?: string;
 }
 
 export async function POST(request: Request) {
@@ -37,14 +38,16 @@ export async function POST(request: Request) {
 
   const ticketData = data as CreateTicketRequest;
 
-  // Add project name and reportId prefix to attachment paths since they are relative to the report folder
-  if (ticketData.reportId) {
+  try {
+    const report = await service.getReport(ticketData.reportId);
+    const projectPath = report.project ? `${report.project}/` : '';
+
     ticketData.testAttachments = ticketData.testAttachments?.map((att) => ({
       ...att,
-      path: `Fail/${ticketData.reportId}/${att.path}`,
+      path: `${projectPath}${ticketData.reportId}/${att.path}`,
     }));
-  } else {
-    console.error('reportId is missing from ticketData');
+  } catch (error) {
+    console.error(`Failed to get report ${ticketData.reportId}:`, error);
   }
 
   try {

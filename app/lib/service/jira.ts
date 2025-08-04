@@ -236,7 +236,7 @@ export class JiraService {
 
       const formData = Buffer.concat([
         Buffer.from(`--${boundary}\r\n`),
-        Buffer.from(`Content-Disposition: form-data; name="file"; filename="${attachment.name}"\r\n`),
+        Buffer.from(`Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n`),
         Buffer.from(`Content-Type: ${attachment.contentType}\r\n\r\n`),
         fileBuffer,
         Buffer.from(`\r\n--${boundary}--\r\n`),
