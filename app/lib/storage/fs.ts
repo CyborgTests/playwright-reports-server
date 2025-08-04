@@ -435,15 +435,6 @@ async function saveReportMetadata(reportPath: string, info: ReportMetadata) {
   });
 }
 
-export async function moveReport(oldPath: string, newPath: string): Promise<void> {
-  const reportPath = path.join(REPORTS_FOLDER, oldPath);
-  const newReportPath = path.join(REPORTS_FOLDER, newPath);
-
-  await fs.mkdir(path.dirname(newReportPath), { recursive: true });
-
-  await fs.rename(reportPath, newReportPath);
-}
-
 export const FS: Storage = {
   getServerDataInfo,
   readFile,
@@ -453,5 +444,4 @@ export const FS: Storage = {
   deleteReports,
   saveResult,
   generateReport,
-  moveReport,
 };

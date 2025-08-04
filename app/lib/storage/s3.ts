@@ -751,25 +751,4 @@ export class S3 implements Storage {
 
     return content;
   }
-
-  async moveReport(oldPath: string, newPath: string): Promise<void> {
-    console.log(`[s3] move report: ${oldPath} to ${newPath}`);
-
-    const reportPath = path.join(REPORTS_BUCKET, oldPath);
-
-    const objectStream = this.client.listObjectsV2(this.bucket, reportPath, true);
-
-    for await (const obj of objectStream) {
-      if (!obj.name) {
-        return;
-      }
-      const newObjectName = obj.name.replace(oldPath, newPath);
-
-      await this.client.copyObject(this.bucket, newObjectName, `${REPORTS_BUCKET}/${obj.name}`);
-
-      await this.client.removeObject(this.bucket, obj.name);
-    }
-
-    console.log(`Folder renamed from ${oldPath} to ${newPath}`);
-  }
 }

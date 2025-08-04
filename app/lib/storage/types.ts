@@ -12,7 +12,6 @@ export interface Storage {
   deleteReports: (reportIDs: string[]) => Promise<void>;
   saveResult: (file: Blob, size: number, resultDetails: ResultDetails) => Promise<Result>;
   generateReport: (resultsIds: string[], metadata?: ReportMetadata) => Promise<UUID>;
-  moveReport: (oldPath: string, newPath: string) => Promise<void>;
 }
 
 export interface ReadResultsInput {
