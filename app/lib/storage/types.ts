@@ -1,6 +1,6 @@
 import { type Pagination } from './pagination';
 
-import { type UUID } from '@/app/types';
+import { type SiteWhiteLabelConfig, type UUID } from '@/app/types';
 import { type ReportInfo, type ReportTest } from '@/app/lib/parser/types';
 
 export interface Storage {
@@ -12,6 +12,10 @@ export interface Storage {
   deleteReports: (reportIDs: string[]) => Promise<void>;
   saveResult: (file: Blob, size: number, resultDetails: ResultDetails) => Promise<Result>;
   generateReport: (resultsIds: string[], metadata?: ReportMetadata) => Promise<UUID>;
+  readConfigFile: () => Promise<{ result?: SiteWhiteLabelConfig; error: Error | null }>;
+  saveConfigFile: (
+    config: Partial<SiteWhiteLabelConfig>,
+  ) => Promise<{ result: SiteWhiteLabelConfig; error: Error | null }>;
 }
 
 export interface ReadResultsInput {
