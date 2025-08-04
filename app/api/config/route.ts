@@ -4,8 +4,8 @@ import path from 'node:path';
 import { revalidatePath } from 'next/cache';
 
 import { withError } from '@/app/lib/withError';
-import { getConfigWithError, writeConfig } from '@/app/lib/actions';
 import { DATA_FOLDER } from '@/app/lib/storage/constants';
+import { service } from '@/app/lib/service';
 
 export const dynamic = 'force-dynamic'; // defaults to auto
 
@@ -17,7 +17,7 @@ const saveFile = async (file: File) => {
   await fs.writeFile(path.join(DATA_FOLDER, file.name), buffer, { encoding: 'binary' });
 };
 
-const parseHeaderLinks = async (headerLinks: string) => {
+const parseHeaderLinks = async (headerLinks: string): Promise<Record<string, string>> => {
   return JSON.parse(headerLinks);
 };
 
@@ -55,13 +55,13 @@ export async function PATCH(request: Request) {
   const title = formData.get('title');
   const headerLinks = formData.get('headerLinks');
 
-  const { result: config } = await getConfigWithError();
+  const config = await service.getConfig();
 
   if (!config) {
     return Response.json({ error: `failed to get config` }, { status: 500 });
   }
 
-  if (!!title) config.title = title.toString();
+  if (title) config.title = title.toString();
 
   if (headerLinks) {
     const { result: parsedHeaderLinks, error: parseHeaderLinksError } = await withError(
@@ -75,14 +75,13 @@ export async function PATCH(request: Request) {
       );
     }
 
-    if (!!parsedHeaderLinks) config.headerLinks = parsedHeaderLinks;
+    if (parsedHeaderLinks) config.headerLinks = parsedHeaderLinks;
   }
 
-  if (!!logo) config.logoPath = `/${logo.name}`;
+  if (logo) config.logoPath = `/${logo.name}`;
+  if (favicon) config.faviconPath = `/${favicon.name}`;
 
-  if (!!favicon) config.faviconPath = `/${favicon.name}`;
-
-  const { error: saveConfigError } = await withError(writeConfig(config));
+  const { error: saveConfigError } = await withError(service.updateConfig(config));
 
   if (saveConfigError) {
     return Response.json({ error: `failed to save config: ${saveConfigError.message}` }, { status: 500 });
@@ -92,4 +91,14 @@ export async function PATCH(request: Request) {
   revalidatePath('/login', 'layout');
 
   return Response.json({ message: 'config saved' });
+}
+
+export async function GET() {
+  const config = await service.getConfig();
+
+  if (!config) {
+    return Response.json({ error: 'Config not found' }, { status: 404 });
+  }
+
+  return Response.json(config, { status: 200 });
 }
