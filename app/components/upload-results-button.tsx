@@ -10,6 +10,7 @@ import {
   Button,
   Autocomplete,
   AutocompleteItem,
+  Input,
 } from '@heroui/react';
 import { useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -38,6 +39,8 @@ export default function UploadResultsButton({
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
   const [file, setFile] = useState<File | null>(null);
   const [project, setProject] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [currentTag, setCurrentTag] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,6 +61,14 @@ export default function UploadResultsButton({
       if (project) {
         formData.append('project', project);
       }
+
+      tags.forEach((tag) => {
+        const [key, value] = tag.split(': ');
+
+        if (key && value) {
+          formData.append(key.trim(), value.trim());
+        }
+      });
 
       const response = await fetch('/api/result/upload', {
         method: 'PUT',
@@ -94,6 +105,39 @@ export default function UploadResultsButton({
 
   const handleFileButtonClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleAddTag = () => {
+    if (currentTag.trim() && currentTag.includes(': ')) {
+      setTags([...tags, currentTag.trim()]);
+      setCurrentTag('');
+    } else if (currentTag.trim()) {
+      toast.error('Tag must be in format "key: value"');
+    }
+  };
+
+  const handleTagInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+
+    if (value.includes(':') && !value.includes(': ')) {
+      const colonIndex = value.indexOf(':');
+      const newValue = value.slice(0, colonIndex + 1) + ' ' + value.slice(colonIndex + 1);
+
+      setCurrentTag(newValue);
+    } else {
+      setCurrentTag(value);
+    }
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    setTags(tags.filter((tag) => tag !== tagToRemove));
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddTag();
+    }
   };
 
   return (
@@ -148,6 +192,55 @@ export default function UploadResultsButton({
                   >
                     {(item) => <AutocompleteItem key={item.value}>{item.label}</AutocompleteItem>}
                   </Autocomplete>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium" htmlFor="tag-input">
+                      Tags (optional)
+                    </label>
+                    <div className="flex gap-2">
+                      <Input
+                        className="flex-1"
+                        id="tag-input"
+                        isDisabled={isUploading}
+                        placeholder="Enter tag (e.g., 'key:value' or 'key: value')"
+                        value={currentTag}
+                        variant="bordered"
+                        onChange={handleTagInputChange}
+                        onKeyDown={handleKeyPress}
+                      />
+                      <Button
+                        color="primary"
+                        isDisabled={isUploading || !currentTag.trim()}
+                        size="sm"
+                        style={{ height: '40px' }}
+                        variant="solid"
+                        onPress={handleAddTag}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    {tags.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {tags.map((tag, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center gap-1 bg-default-100 dark:bg-default-200 px-2 py-1 rounded-md"
+                          >
+                            <span className="text-sm">{tag}</span>
+                            <Button
+                              className="min-w-0 p-0 h-auto w-4"
+                              color="danger"
+                              isDisabled={isUploading}
+                              size="sm"
+                              variant="light"
+                              onPress={() => handleRemoveTag(tag)}
+                            >
+                              ×
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </ModalBody>
               <ModalFooter>
@@ -157,6 +250,8 @@ export default function UploadResultsButton({
                   onPress={() => {
                     setFile(null);
                     setProject('');
+                    setTags([]);
+                    setCurrentTag('');
                     onClose();
                   }}
                 >
@@ -170,6 +265,8 @@ export default function UploadResultsButton({
                     handleUpload();
                     setFile(null);
                     setProject('');
+                    setTags([]);
+                    setCurrentTag('');
                     onClose();
                   }}
                 >
