@@ -18,7 +18,7 @@ import {
   storage,
 } from '@/app/lib/storage';
 import { handlePagination } from '@/app/lib/storage/pagination';
-import { SiteWhiteLabelConfig, UUID } from '@/app/types';
+import { SiteWhiteLabelConfig } from '@/app/types';
 import { defaultConfig } from '@/app/lib/config';
 
 class Service {
