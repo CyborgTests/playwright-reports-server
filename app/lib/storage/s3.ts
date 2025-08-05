@@ -1,12 +1,16 @@
 import { randomUUID, type UUID } from 'crypto';
 import fs from 'fs/promises';
 import path from 'node:path';
-import { Readable } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 
 import { type BucketItem, Client } from 'minio';
 
 import { processBatch } from './batch';
 import {
+  Result,
+  Report,
+  ResultDetails,
+  ServerDataInfo,
   isReportHistory,
   ReadReportsInput,
   ReadReportsOutput,
@@ -30,13 +34,11 @@ import {
 } from './constants';
 import { handlePagination } from './pagination';
 import { getFileReportID } from './file';
-import { transformBlobToReadable } from './stream';
 
 import { parse } from '@/app/lib/parser';
 import { serveReportRoute } from '@/app/lib/constants';
 import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
-import { type Result, type Report, type ResultDetails, type ServerDataInfo } from '@/app/lib/storage/types';
 import { env } from '@/app/config/env';
 import { SiteWhiteLabelConfig } from '@/app/types';
 import { defaultConfig, isConfigValid } from '@/app/lib/config';
@@ -583,9 +585,20 @@ export class S3 implements Storage {
     await withError(this.clear(...objects));
   }
 
-  async saveResult(file: Blob, size: number, resultDetails: ResultDetails) {
+  async saveResult(stream: PassThrough) {
     const resultID = randomUUID();
 
+    await this.write(RESULTS_BUCKET, [
+      {
+        name: `${resultID}.zip`,
+        content: stream,
+      },
+    ]);
+
+    return resultID;
+  }
+
+  async saveResultDetails(resultID: string, resultDetails: ResultDetails, size: number): Promise<Result> {
     const metaData = {
       resultID,
       createdAt: new Date().toISOString(),
@@ -596,11 +609,6 @@ export class S3 implements Storage {
     };
 
     await this.write(RESULTS_BUCKET, [
-      {
-        name: `${resultID}.zip`,
-        content: transformBlobToReadable(file),
-        size,
-      },
       {
         name: `${resultID}.json`,
         content: JSON.stringify(metaData),
