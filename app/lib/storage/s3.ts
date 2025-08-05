@@ -24,6 +24,9 @@ import {
   RESULTS_BUCKET,
   REPORTS_PATH,
   REPORT_METADATA_FILE,
+  APP_CONFIG_S3,
+  DATA_PATH,
+  DATA_FOLDER,
 } from './constants';
 import { handlePagination } from './pagination';
 import { getFileReportID } from './file';
@@ -35,6 +38,8 @@ import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
 import { type Result, type Report, type ResultDetails, type ServerDataInfo } from '@/app/lib/storage/types';
 import { env } from '@/app/config/env';
+import { SiteWhiteLabelConfig } from '@/app/types';
+import { defaultConfig, isConfigValid } from '@/app/lib/config';
 
 const createClient = () => {
   const endPoint = env.S3_ENDPOINT;
@@ -127,6 +132,8 @@ export class S3 implements Storage {
     console.log(`[s3] read ${targetPath}`);
 
     const remotePath = targetPath.includes(REPORTS_BUCKET) ? targetPath : `${REPORTS_BUCKET}/${targetPath}`;
+
+    console.log(`[s3] reading from remote path: ${remotePath}`);
 
     const { result: stream, error } = await withError(this.client.getObject(this.bucket, remotePath));
 
@@ -278,6 +285,7 @@ export class S3 implements Storage {
     const getTimestamp = (date?: Date | string) => {
       if (!date) return 0;
       if (typeof date === 'string') return new Date(date).getTime();
+
       return date.getTime();
     };
 
@@ -412,6 +420,7 @@ export class S3 implements Storage {
         const getTimestamp = (date?: Date | string) => {
           if (!date) return 0;
           if (typeof date === 'string') return new Date(date).getTime();
+
           return date.getTime();
         };
 
@@ -752,24 +761,110 @@ export class S3 implements Storage {
     return content;
   }
 
-  async moveReport(oldPath: string, newPath: string): Promise<void> {
-    console.log(`[s3] move report: ${oldPath} to ${newPath}`);
+  async readConfigFile(): Promise<{ result?: SiteWhiteLabelConfig; error: Error | null }> {
+    console.log(`[s3] checking config file`);
 
-    const reportPath = path.join(REPORTS_BUCKET, oldPath);
+    const { result: stream, error } = await withError(this.client.getObject(this.bucket, APP_CONFIG_S3));
 
-    const objectStream = this.client.listObjectsV2(this.bucket, reportPath, true);
+    if (error) {
+      console.error(`[s3] failed to read config file: ${error.message}`);
 
-    for await (const obj of objectStream) {
-      if (!obj.name) {
-        return;
-      }
-      const newObjectName = obj.name.replace(oldPath, newPath);
-
-      await this.client.copyObject(this.bucket, newObjectName, `${REPORTS_BUCKET}/${obj.name}`);
-
-      await this.client.removeObject(this.bucket, obj.name);
+      return { error };
     }
 
-    console.log(`Folder renamed from ${oldPath} to ${newPath}`);
+    let existingConfig = '';
+
+    for await (const chunk of stream ?? []) {
+      existingConfig += chunk.toString();
+    }
+
+    try {
+      const parsed = JSON.parse(existingConfig);
+
+      const isValid = isConfigValid(parsed);
+
+      if (!isValid) {
+        return { error: new Error('invalid config') };
+      }
+
+      // ensure custom images available locally in data folder
+      for (const image of [
+        { path: parsed.faviconPath, default: defaultConfig.faviconPath },
+        { path: parsed.logoPath, default: defaultConfig.logoPath },
+      ]) {
+        if (!image) continue;
+        if (image.path === image.default) continue;
+
+        const localPath = path.join(DATA_FOLDER, image.path);
+        const { error: accessError } = await withError(fs.access(localPath));
+
+        if (accessError) {
+          const remotePath = path.join(DATA_PATH, image.path);
+
+          console.log(`[s3] downloading config image: ${remotePath} to ${localPath}`);
+          await this.client.fGetObject(this.bucket, remotePath, localPath);
+        }
+      }
+
+      return { result: parsed, error: null };
+    } catch (e) {
+      return { error: new Error(`failed to parse config: ${e instanceof Error ? e.message : e}`) };
+    }
+  }
+
+  async saveConfigFile(config: Partial<SiteWhiteLabelConfig>) {
+    console.log(`[s3] writing config file`);
+
+    const { result: existingConfig, error: readExistingConfigError } = await this.readConfigFile();
+
+    if (readExistingConfigError) {
+      console.error(`[s3] failed to read existing config file: ${readExistingConfigError.message}`);
+    }
+
+    await this.clear(APP_CONFIG_S3);
+
+    const uploadConfig = { ...(existingConfig ?? {}), ...config } as SiteWhiteLabelConfig;
+
+    if (config.logoPath && config.logoPath !== existingConfig?.logoPath && config.logoPath !== defaultConfig.logoPath) {
+      await this.uploadConfigImage(config.logoPath);
+    }
+
+    if (
+      config.faviconPath &&
+      config.faviconPath !== existingConfig?.faviconPath &&
+      config.faviconPath !== defaultConfig.faviconPath
+    ) {
+      await this.uploadConfigImage(config.faviconPath);
+    }
+
+    const { error } = await withError(
+      this.write(DATA_PATH, [
+        {
+          name: 'config.json',
+          content: JSON.stringify(uploadConfig, null, 2),
+        },
+      ]),
+    );
+
+    if (error) console.error(`[s3] failed to write config file: ${error.message}`);
+
+    return { result: uploadConfig, error };
+  }
+
+  private async uploadConfigImage(imagePath: string): Promise<Error | null> {
+    console.log(`[s3] uploading config image: ${imagePath}`);
+
+    const localPath = path.join(DATA_FOLDER, imagePath);
+    const remotePath = path.join(DATA_PATH, imagePath);
+
+    const { error } = await withError(this.uploadFileWithRetry(remotePath, localPath));
+
+    if (error) {
+      console.error(`[s3] failed to upload config image: ${error.message}`);
+
+      return error;
+    }
+
+    return null;
   }
 }

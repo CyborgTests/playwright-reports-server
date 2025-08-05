@@ -48,7 +48,7 @@ const useQuery = <ReturnType>(
         method: options?.method ?? 'GET',
       });
 
-      if (!response.ok) {
+      if (!response.ok && response.status !== 401) {
         toast.error(`Network response was not ok: ${await response.text()}`);
         throw new Error(`Network response was not ok: ${await response.text()}`);
       }
