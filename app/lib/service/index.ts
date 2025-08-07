@@ -2,7 +2,7 @@ import { withError } from '../withError';
 import { bytesToString, getUniqueProjectsList } from '../storage/format';
 import { serveReportRoute } from '../constants';
 
-import { reportCache, resultCache } from './cache';
+import { configCache, reportCache, resultCache } from './cache';
 
 import {
   type ReadReportsInput,
@@ -16,7 +16,8 @@ import {
   storage,
 } from '@/app/lib/storage';
 import { handlePagination } from '@/app/lib/storage/pagination';
-import { UUID } from '@/app/types';
+import { SiteWhiteLabelConfig, UUID } from '@/app/types';
+import { defaultConfig } from '@/app/lib/config';
 
 class Service {
   private static instance: Service;
@@ -74,6 +75,7 @@ class Service {
       const getTimestamp = (date?: Date | string) => {
         if (!date) return 0;
         if (typeof date === 'string') return new Date(date).getTime();
+
         return date.getTime();
       };
 
@@ -155,6 +157,7 @@ class Service {
       const getTimestamp = (date?: Date | string) => {
         if (!date) return 0;
         if (typeof date === 'string') return new Date(date).getTime();
+
         return date.getTime();
       };
 
@@ -289,6 +292,35 @@ class Service {
       numOfReports: reports.length,
       reportsFolderSizeinMB: bytesToString(reportsFolderSize),
     };
+  }
+
+  public async getConfig() {
+    const cached = configCache.config;
+
+    if (cached) {
+      console.log(`[service] using cached config`);
+
+      return cached;
+    }
+
+    const { result, error } = await storage.readConfigFile();
+
+    if (error) console.error(`[service] getConfig | error: ${error.message}`);
+
+    return { ...defaultConfig, ...(result ?? {}) };
+  }
+
+  public async updateConfig(config: Partial<SiteWhiteLabelConfig>) {
+    console.log(`[service] updateConfig`, config);
+    const { result, error } = await storage.saveConfigFile(config);
+
+    if (error) {
+      throw error;
+    }
+
+    configCache.onChanged(result);
+
+    return result;
   }
 }
 

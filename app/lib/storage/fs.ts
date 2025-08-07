@@ -8,6 +8,7 @@ import getFolderSize from 'get-folder-size';
 
 import { bytesToString } from './format';
 import {
+  APP_CONFIG,
   DATA_FOLDER,
   REPORT_METADATA_FILE,
   REPORTS_FOLDER,
@@ -20,6 +21,7 @@ import { handlePagination } from './pagination';
 import { defaultStreamingOptions, transformBlobToReadable } from './stream';
 import { createDirectory } from './folders';
 
+import { defaultConfig, isConfigValid, noConfigErr } from '@/app/lib/config';
 import { parse } from '@/app/lib/parser';
 import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
@@ -35,6 +37,7 @@ import {
   ReportMetadata,
   ReportHistory,
 } from '@/app/lib/storage';
+import { SiteWhiteLabelConfig } from '@/app/types';
 
 async function createDirectoriesIfMissing() {
   await createDirectory(RESULTS_FOLDER);
@@ -128,7 +131,7 @@ export async function readResults(input?: ReadResultsInput) {
   }
 
   // Filter by search if provided
-  if (input?.search && input.search.trim()) {
+  if (input?.search?.trim()) {
     const searchTerm = input.search.toLowerCase().trim();
 
     filteredResults = filteredResults.filter((result) => {
@@ -435,13 +438,48 @@ async function saveReportMetadata(reportPath: string, info: ReportMetadata) {
   });
 }
 
-export async function moveReport(oldPath: string, newPath: string): Promise<void> {
-  const reportPath = path.join(REPORTS_FOLDER, oldPath);
-  const newReportPath = path.join(REPORTS_FOLDER, newPath);
+async function readConfigFile() {
+  const { error: accessConfigError } = await withError(fs.access(APP_CONFIG));
 
-  await fs.mkdir(path.dirname(newReportPath), { recursive: true });
+  if (accessConfigError) {
+    return { result: defaultConfig, error: new Error(noConfigErr) };
+  }
 
-  await fs.rename(reportPath, newReportPath);
+  const { result, error } = await withError(fs.readFile(APP_CONFIG, 'utf-8'));
+
+  if (error || !result) {
+    return { error };
+  }
+
+  try {
+    const parsed = JSON.parse(result);
+
+    const isValid = isConfigValid(parsed);
+
+    return isValid ? { result: parsed, error: null } : { error: new Error('invalid config') };
+  } catch (e) {
+    return { error: new Error(`failed to parse config: ${e instanceof Error ? e.message : e}`) };
+  }
+}
+
+async function saveConfigFile(config: Partial<SiteWhiteLabelConfig>) {
+  const { result: existingConfig, error: configError } = await readConfigFile();
+
+  const isConfigFailed = !!configError && configError?.message !== noConfigErr && !existingConfig;
+
+  if (isConfigFailed) {
+    throw new Error(`failed to save config: ${configError.message}`);
+  }
+
+  const previousConfig = existingConfig ?? defaultConfig;
+  const uploadConfig = { ...previousConfig, ...config };
+
+  const { error } = await withError(fs.writeFile(APP_CONFIG, JSON.stringify(uploadConfig, null, 2), { flag: 'w+' }));
+
+  return {
+    result: uploadConfig,
+    error,
+  };
 }
 
 export const FS: Storage = {
@@ -453,5 +491,6 @@ export const FS: Storage = {
   deleteReports,
   saveResult,
   generateReport,
-  moveReport,
+  readConfigFile,
+  saveConfigFile,
 };

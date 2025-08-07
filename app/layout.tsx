@@ -7,13 +7,13 @@ import { Toaster } from 'sonner';
 import { Providers } from './providers';
 
 import { siteConfig } from '@/app/config/site';
-import { getConfigWithError } from '@/app/lib/actions';
 import { fontSans } from '@/app/config/fonts';
 import { Navbar } from '@/app/components/navbar';
 import { Aside } from '@/app/components/aside';
+import { service } from '@/app/lib/service';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const { result: config } = await getConfigWithError();
+  const config = await service.getConfig();
 
   return {
     title: {
