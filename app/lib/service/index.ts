@@ -250,7 +250,7 @@ class Service {
     return '';
   }
 
-  public async saveResult(filename: string, stream: PassThrough, presignedUrl?: string) {
+  public async saveResult(filename: string, stream: PassThrough, presignedUrl?: string, contentLength?: string) {
     if (!presignedUrl) {
       console.log(`[service] saving result`);
 
@@ -259,18 +259,26 @@ class Service {
 
     console.log(`[service] using direct upload via presigned URL`, presignedUrl);
 
-    await fetch(presignedUrl, {
-      method: 'PUT',
-      body: Readable.toWeb(stream, {
-        strategy: {
-          highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
+    const { error } = await withError(
+      fetch(presignedUrl, {
+        method: 'PUT',
+        body: Readable.toWeb(stream, {
+          strategy: {
+            highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
+          },
+        }),
+        headers: {
+          'Content-Type': 'application/zip',
+          'Content-Length': contentLength,
         },
-      }),
-      headers: {
-        'Content-Type': 'application/zip',
-      },
-      duplex: 'half',
-    } as RequestInit);
+        duplex: 'half',
+      } as RequestInit),
+    );
+
+    if (error) {
+      console.error(`[s3] saveResult | error: ${error.message}`);
+      throw error;
+    }
   }
 
   public async saveResultDetails(resultID: string, resultDetails: ResultDetails, size: number) {

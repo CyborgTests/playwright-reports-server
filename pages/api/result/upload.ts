@@ -19,13 +19,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  const contentLength = (req.query['fileContentLength'] as string) ?? '';
+
+  if (!contentLength || !parseInt(contentLength, 10)) {
+    console.warn(
+      `[upload] fileContentLength query parameter is not provided or invalid: ${contentLength}, ignoring presigned URL flow`,
+    );
+  }
+
   const resultID = randomUUID();
   const fileName = `${resultID}.zip`;
 
   const resultDetails: Record<string, string> = {};
   let fileSize = 0;
 
-  const presignedUrl = await service.getPresignedUrl(resultID);
+  // if there is fileContentLength query parameter we can use presigned URL for direct upload
+  const presignedUrl = contentLength ? await service.getPresignedUrl(resultID) : '';
 
   const filePassThrough = new PassThrough({
     highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
@@ -48,9 +57,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     bb.on('file', (_, fileStream) => {
       fileReceived = true;
 
-      saveResultPromise = service.saveResult(fileName, filePassThrough, presignedUrl).catch((error: Error) => {
-        reject(error);
-      });
+      console.log(`[bb] on file, checking resultDetails`);
+      console.log(resultDetails);
+
+      saveResultPromise = service
+        .saveResult(fileName, filePassThrough, presignedUrl, contentLength)
+        .catch((error: Error) => {
+          reject(error);
+        });
 
       fileStream.on('data', (chunk) => {
         fileSize += chunk.length;
