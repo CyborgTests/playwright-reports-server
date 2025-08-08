@@ -14,6 +14,7 @@ import {
 } from '@heroui/react';
 import { useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
 
 import useQuery from '@/app/hooks/useQuery';
@@ -29,6 +30,7 @@ export default function UploadResultsButton({
   label = 'Upload Results',
 }: Readonly<UploadResultsButtonProps>) {
   const queryClient = useQueryClient();
+  const session = useSession();
 
   const {
     data: resultProjects,
@@ -73,6 +75,9 @@ export default function UploadResultsButton({
       const response = await fetch('/api/result/upload', {
         method: 'PUT',
         body: formData,
+        headers: {
+          authorization: session.data?.user?.apiToken ?? '',
+        },
       });
 
       if (!response.ok) {

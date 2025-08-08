@@ -88,6 +88,7 @@ export class CronService {
 
       const outdated = reportsOutput.reports.filter((report) => {
         const createdDate = typeof report.createdAt === 'string' ? new Date(report.createdAt) : report.createdAt;
+
         return this.isExpired(createdDate, expireDays);
       });
 

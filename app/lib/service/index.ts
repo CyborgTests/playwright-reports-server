@@ -1,3 +1,5 @@
+import { PassThrough } from 'node:stream';
+
 import { withError } from '../withError';
 import { bytesToString, getUniqueProjectsList } from '../storage/format';
 import { serveReportRoute } from '../constants';
@@ -16,7 +18,7 @@ import {
   storage,
 } from '@/app/lib/storage';
 import { handlePagination } from '@/app/lib/storage/pagination';
-import { SiteWhiteLabelConfig, UUID } from '@/app/types';
+import { SiteWhiteLabelConfig } from '@/app/types';
 import { defaultConfig } from '@/app/lib/config';
 
 class Service {
@@ -49,7 +51,7 @@ class Service {
       let reports = cached.filter((report) => noFilters || shouldFilterByProject(report) || shouldFilterByID(report));
 
       // Filter by search if provided
-      if (input?.search && input.search.trim()) {
+      if (input?.search?.trim()) {
         const searchTerm = input.search.toLowerCase().trim();
 
         reports = reports.filter((report) => {
@@ -224,17 +226,14 @@ class Service {
     resultCache.onDeleted(resultIDs);
   }
 
-  public async saveResult(
-    file: Blob,
-    size: number,
-    resultDetails: ResultDetails,
-  ): Promise<{
-    resultID: UUID;
-    createdAt: string;
-    size: string;
-    sizeBytes: number;
-  }> {
-    const result = await storage.saveResult(file, size, resultDetails);
+  public async saveResult(file: PassThrough): Promise<string> {
+    const resultID = await storage.saveResult(file);
+
+    return resultID;
+  }
+
+  public async saveResultDetails(resultID: string, resultDetails: ResultDetails, size: number) {
+    const result = await storage.saveResultDetails(resultID, resultDetails, size);
 
     resultCache.onCreated(result);
 
