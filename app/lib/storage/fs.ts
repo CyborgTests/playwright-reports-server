@@ -310,10 +310,9 @@ export async function deleteReport(reportId: string) {
   await fs.rm(reportPath, { recursive: true, force: true });
 }
 
-export async function saveResult(stream: PassThrough) {
+export async function saveResult(filename: string, stream: PassThrough) {
   await createDirectoriesIfMissing();
-  const resultID = randomUUID();
-  const resultPath = path.join(RESULTS_FOLDER, `${resultID}.zip`);
+  const resultPath = path.join(RESULTS_FOLDER, filename);
 
   const writeable = createWriteStream(resultPath, {
     encoding: 'binary',
@@ -325,8 +324,6 @@ export async function saveResult(stream: PassThrough) {
   if (writeStreamError) {
     throw new Error(`failed stream pipeline: ${writeStreamError.message}`);
   }
-
-  return resultID;
 }
 
 export async function saveResultDetails(resultID: string, resultDetails: ResultDetails, size: number): Promise<Result> {

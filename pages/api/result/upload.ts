@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 
 import { pipeline } from 'node:stream/promises';
 import { PassThrough } from 'node:stream';
+import { randomUUID } from 'node:crypto';
 
 import Busboy from 'busboy';
 
@@ -18,8 +19,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  const resultID = randomUUID();
+  const fileName = `${resultID}.zip`;
+
   const resultDetails: Record<string, string> = {};
   let fileSize = 0;
+
+  const presignedUrl = await service.getPresignedUrl(resultID);
 
   const filePassThrough = new PassThrough({
     highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
@@ -34,22 +40,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     fileHwm: DEFAULT_STREAM_CHUNK_SIZE,
   });
 
-  let saveResultPromise: Promise<string> | Promise<void>;
+  let saveResultPromise: Promise<void>;
 
-  const uploadPromise = new Promise<string>((resolve, reject) => {
+  const uploadPromise = new Promise<void>((resolve, reject) => {
     let fileReceived = false;
 
     bb.on('file', (_, fileStream) => {
       fileReceived = true;
 
-      saveResultPromise = service
-        .saveResult(filePassThrough)
-        .then((result) => {
-          resolve(result);
-        })
-        .catch((error: Error) => {
-          reject(error);
-        });
+      saveResultPromise = service.saveResult(fileName, filePassThrough, presignedUrl).catch((error: Error) => {
+        reject(error);
+      });
 
       fileStream.on('data', (chunk) => {
         fileSize += chunk.length;
@@ -90,11 +91,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       if (saveResultPromise) {
-        try {
-          await saveResultPromise;
-        } catch (error) {
-          reject(error as Error);
+        const { error } = await withError(saveResultPromise);
+
+        if (error) {
+          reject(error);
         }
+
+        resolve();
       }
     });
   });
@@ -107,7 +110,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const { result: resultID, error: uploadError } = await withError(uploadPromise);
+  const { error: uploadError } = await withError(uploadPromise);
 
   if (uploadError) {
     if (!filePassThrough.destroyed) {

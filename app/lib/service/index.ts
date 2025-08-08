@@ -1,8 +1,9 @@
-import { PassThrough } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 
 import { withError } from '../withError';
 import { bytesToString, getUniqueProjectsList } from '../storage/format';
 import { serveReportRoute } from '../constants';
+import { DEFAULT_STREAM_CHUNK_SIZE } from '../storage/constants';
 
 import { configCache, reportCache, resultCache } from './cache';
 
@@ -20,6 +21,8 @@ import {
 import { handlePagination } from '@/app/lib/storage/pagination';
 import { SiteWhiteLabelConfig } from '@/app/types';
 import { defaultConfig } from '@/app/lib/config';
+import { env } from '@/app/config/env';
+import { type S3 } from '@/app/lib/storage/s3';
 
 class Service {
   private static instance: Service;
@@ -226,10 +229,48 @@ class Service {
     resultCache.onDeleted(resultIDs);
   }
 
-  public async saveResult(file: PassThrough): Promise<string> {
-    const resultID = await storage.saveResult(file);
+  public async getPresignedUrl(resultID: string): Promise<string | undefined> {
+    console.log(`[service] getPresignedUrl for ${resultID}`);
+    if (env.DATA_STORAGE === 's3') {
+      console.log(`[service] s3 detected, generating presigned URL`);
 
-    return resultID;
+      const { result: presignedUrl, error } = await withError((storage as S3).generatePresignedUploadUrl(resultID));
+
+      if (error) {
+        console.error(`[service] getPresignedUrl | error: ${error.message}`);
+
+        return '';
+      }
+
+      return presignedUrl!;
+    }
+
+    console.log(`[service] fs storage detected, no presigned URL needed`);
+
+    return '';
+  }
+
+  public async saveResult(filename: string, stream: PassThrough, presignedUrl?: string) {
+    if (!presignedUrl) {
+      console.log(`[service] saving result`);
+
+      return await storage.saveResult(filename, stream);
+    }
+
+    console.log(`[service] using direct upload via presigned URL`, presignedUrl);
+
+    await fetch(presignedUrl, {
+      method: 'PUT',
+      body: Readable.toWeb(stream, {
+        strategy: {
+          highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
+        },
+      }),
+      headers: {
+        'Content-Type': 'application/zip',
+      },
+      duplex: 'half',
+    } as RequestInit);
   }
 
   public async saveResultDetails(resultID: string, resultDetails: ResultDetails, size: number) {
