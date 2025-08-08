@@ -57,9 +57,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     bb.on('file', (_, fileStream) => {
       fileReceived = true;
 
-      console.log(`[bb] on file, checking resultDetails`);
-      console.log(resultDetails);
-
       saveResultPromise = service
         .saveResult(fileName, filePassThrough, presignedUrl, contentLength)
         .catch((error: Error) => {
