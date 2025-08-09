@@ -585,17 +585,21 @@ export class S3 implements Storage {
     await withError(this.clear(...objects));
   }
 
-  async saveResult(stream: PassThrough) {
-    const resultID = randomUUID();
+  async generatePresignedUploadUrl(fileName: string) {
+    await this.ensureBucketExist();
+    const objectKey = path.join(RESULTS_BUCKET, fileName);
+    const expiry = 30 * 60; // 30 minutes
 
-    await this.write(RESULTS_BUCKET, [
+    return this.client.presignedPutObject(this.bucket, objectKey, expiry);
+  }
+
+  async saveResult(filename: string, stream: PassThrough) {
+    return await this.write(RESULTS_BUCKET, [
       {
-        name: `${resultID}.zip`,
+        name: filename,
         content: stream,
       },
     ]);
-
-    return resultID;
   }
 
   async saveResultDetails(resultID: string, resultDetails: ResultDetails, size: number): Promise<Result> {

@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 
 import { pipeline } from 'node:stream/promises';
 import { PassThrough } from 'node:stream';
+import { randomUUID } from 'node:crypto';
 
 import Busboy from 'busboy';
 
@@ -18,8 +19,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  const contentLength = (req.query['fileContentLength'] as string) ?? '';
+
+  if (!contentLength || !parseInt(contentLength, 10)) {
+    console.warn(
+      `[upload] fileContentLength query parameter is not provided or invalid: ${contentLength}, ignoring presigned URL flow`,
+    );
+  }
+
+  const resultID = randomUUID();
+  const fileName = `${resultID}.zip`;
+
   const resultDetails: Record<string, string> = {};
   let fileSize = 0;
+
+  // if there is fileContentLength query parameter we can use presigned URL for direct upload
+  const presignedUrl = contentLength ? await service.getPresignedUrl(resultID) : '';
 
   const filePassThrough = new PassThrough({
     highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
@@ -34,19 +49,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     fileHwm: DEFAULT_STREAM_CHUNK_SIZE,
   });
 
-  let saveResultPromise: Promise<string> | Promise<void>;
+  let saveResultPromise: Promise<void>;
 
-  const uploadPromise = new Promise<string>((resolve, reject) => {
+  const uploadPromise = new Promise<void>((resolve, reject) => {
     let fileReceived = false;
 
     bb.on('file', (_, fileStream) => {
       fileReceived = true;
 
       saveResultPromise = service
-        .saveResult(filePassThrough)
-        .then((result) => {
-          resolve(result);
-        })
+        .saveResult(fileName, filePassThrough, presignedUrl, contentLength)
         .catch((error: Error) => {
           reject(error);
         });
@@ -90,11 +102,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       if (saveResultPromise) {
-        try {
-          await saveResultPromise;
-        } catch (error) {
-          reject(error as Error);
+        const { error } = await withError(saveResultPromise);
+
+        if (error) {
+          reject(error);
         }
+
+        resolve();
       }
     });
   });
@@ -107,7 +121,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const { result: resultID, error: uploadError } = await withError(uploadPromise);
+  const { error: uploadError } = await withError(uploadPromise);
 
   if (uploadError) {
     if (!filePassThrough.destroyed) {

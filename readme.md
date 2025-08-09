@@ -250,6 +250,17 @@ curl --location --request PUT 'http://localhost:3000/api/result/upload' \
 --form 'appVersion="1.2.2"'
 ```
 
+If you have **s3 storage** configured, you can pass `fileContentLength` query parameter to use **presigned URL** for **direct upload**:
+
+```sh
+curl --location --request PUT 'http://localhost:3000/api/result/upload?fileContentLength=10738538' \
+--header 'Authorization: <api-token>' \
+--form 'file=@"/path/to/file"' \
+--form 'project="desktop"' \
+--form 'reporter="okhotemskyi"' \
+--form 'appVersion="1.2.2"'
+```
+
 Response example:
 
 ```json

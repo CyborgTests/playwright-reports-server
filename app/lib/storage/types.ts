@@ -12,7 +12,7 @@ export interface Storage {
   readReports: (input?: ReadReportsInput) => Promise<ReadReportsOutput>;
   deleteResults: (resultIDs: string[]) => Promise<void>;
   deleteReports: (reportIDs: string[]) => Promise<void>;
-  saveResult: (stream: PassThrough) => Promise<string>;
+  saveResult: (filename: string, stream: PassThrough) => Promise<void>;
   saveResultDetails: (resultID: string, resultDetails: ResultDetails, size: number) => Promise<Result>;
   generateReport: (resultsIds: string[], metadata?: ReportMetadata) => Promise<UUID>;
   readConfigFile: () => Promise<{ result?: SiteWhiteLabelConfig; error: Error | null }>;
