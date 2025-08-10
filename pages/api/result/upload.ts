@@ -34,7 +34,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   let fileSize = 0;
 
   // if there is fileContentLength query parameter we can use presigned URL for direct upload
-  const presignedUrl = contentLength ? await service.getPresignedUrl(resultID) : '';
+  const presignedUrl = contentLength ? await service.getPresignedUrl(fileName) : '';
 
   const filePassThrough = new PassThrough({
     highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
