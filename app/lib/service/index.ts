@@ -229,12 +229,12 @@ class Service {
     resultCache.onDeleted(resultIDs);
   }
 
-  public async getPresignedUrl(resultID: string): Promise<string | undefined> {
-    console.log(`[service] getPresignedUrl for ${resultID}`);
+  public async getPresignedUrl(fileName: string): Promise<string | undefined> {
+    console.log(`[service] getPresignedUrl for ${fileName}`);
     if (env.DATA_STORAGE === 's3') {
       console.log(`[service] s3 detected, generating presigned URL`);
 
-      const { result: presignedUrl, error } = await withError((storage as S3).generatePresignedUploadUrl(resultID));
+      const { result: presignedUrl, error } = await withError((storage as S3).generatePresignedUploadUrl(fileName));
 
       if (error) {
         console.error(`[service] getPresignedUrl | error: ${error.message}`);
