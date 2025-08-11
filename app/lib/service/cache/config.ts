@@ -1,5 +1,4 @@
 import { storage } from '@/app/lib/storage';
-import { isBuildStage } from '@/app/config/runtime';
 import { env } from '@/app/config/env';
 import { SiteWhiteLabelConfig } from '@/app/types';
 import { defaultConfig } from '@/app/lib/config';
@@ -27,14 +26,16 @@ export class ConfigCache {
     console.log('[config cache] initializing cache');
     const { result, error } = await storage.readConfigFile();
 
-    const cache = ConfigCache.getInstance();
-
     if (error) {
       console.error('[config cache] failed to read config file:', error);
       console.warn('[config cache] using default config');
+
+      return;
     }
 
-    cache.config = result || defaultConfig;
+    const cache = ConfigCache.getInstance();
+
+    cache.config = result ?? defaultConfig;
     console.log('[config cache] initialized with config:', cache.config);
 
     this.initialized = true;
@@ -50,7 +51,3 @@ export class ConfigCache {
 }
 
 export const configCache = ConfigCache.getInstance();
-
-if (!configCache.initialized && !isBuildStage) {
-  await configCache.init();
-}

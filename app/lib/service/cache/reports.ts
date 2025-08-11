@@ -1,7 +1,7 @@
 import { storage } from '@/app/lib/storage';
 import { type ReportHistory } from '@/app/lib/storage/types';
 import { env } from '@/app/config/env';
-import { isBuildStage } from '@/app/config/runtime';
+import { withError } from '../../withError';
 
 type ReportsMap = Map<string, ReportHistory>;
 
@@ -28,9 +28,19 @@ export class ReportCache {
     }
 
     console.log('[report cache] initializing cache');
-    const { reports } = await storage.readReports();
+    const { result, error } = await withError(storage.readReports());
 
-    for (const report of reports) {
+    if (error) {
+      console.error('[report cache] failed to read reports:', error);
+
+      return;
+    }
+
+    if (!result?.reports?.length) {
+      return;
+    }
+
+    for (const report of result.reports) {
       ReportCache.getInstance().reports.set(report.reportID, report);
     }
 
@@ -64,7 +74,3 @@ export class ReportCache {
 }
 
 export const reportCache = ReportCache.getInstance();
-
-if (!reportCache.initialized && !isBuildStage) {
-  await reportCache.init();
-}
