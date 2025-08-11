@@ -837,16 +837,27 @@ export class S3 implements Storage {
 
     const uploadConfig = { ...(existingConfig ?? {}), ...config } as SiteWhiteLabelConfig;
 
-    if (config.logoPath && config.logoPath !== existingConfig?.logoPath && config.logoPath !== defaultConfig.logoPath) {
-      await this.uploadConfigImage(config.logoPath);
+    const isDefaultImage = (key: keyof SiteWhiteLabelConfig) => config[key] && config[key] === defaultConfig[key];
+
+    const shouldBeUploaded = async (key: keyof SiteWhiteLabelConfig) => {
+      if (!config[key]) return false;
+      if (isDefaultImage(key)) return false;
+
+      const { result } = await withError(this.client.statObject(this.bucket, uploadConfig.logoPath));
+
+      if (!result) {
+        return true;
+      }
+
+      return false;
+    };
+
+    if (await shouldBeUploaded('logoPath')) {
+      await this.uploadConfigImage(uploadConfig.logoPath);
     }
 
-    if (
-      config.faviconPath &&
-      config.faviconPath !== existingConfig?.faviconPath &&
-      config.faviconPath !== defaultConfig.faviconPath
-    ) {
-      await this.uploadConfigImage(config.faviconPath);
+    if (await shouldBeUploaded('faviconPath')) {
+      await this.uploadConfigImage(uploadConfig.faviconPath);
     }
 
     const { error } = await withError(
