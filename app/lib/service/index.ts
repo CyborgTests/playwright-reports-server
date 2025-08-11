@@ -42,7 +42,7 @@ class Service {
 
   public async getReports(input?: ReadReportsInput) {
     console.log(`[service] getReports`);
-    const cached = this.shouldUseServerCache() ? reportCache.getAll() : [];
+    const cached = this.shouldUseServerCache() && reportCache.initialized ? reportCache.getAll() : [];
 
     const shouldUseCache = !input?.ids;
 
@@ -101,7 +101,7 @@ class Service {
 
   public async getReport(id: string): Promise<ReportHistory> {
     console.log(`[service] getReport ${id}`);
-    const cached = this.shouldUseServerCache() ? reportCache.getByID(id) : undefined;
+    const cached = this.shouldUseServerCache() && reportCache.initialized ? reportCache.getByID(id) : undefined;
 
     if (isReportHistory(cached)) {
       console.log(`[service] using cached report`);
@@ -157,67 +157,67 @@ class Service {
 
   public async getResults(input?: ReadResultsInput): Promise<ReadResultsOutput> {
     console.log(`[results service] getResults`);
-    const cached = resultCache.getAll();
+    const cached = this.shouldUseServerCache() && resultCache.initialized ? resultCache.getAll() : [];
 
-    if (cached.length) {
-      const getTimestamp = (date?: Date | string) => {
-        if (!date) return 0;
-        if (typeof date === 'string') return new Date(date).getTime();
-
-        return date.getTime();
-      };
-
-      cached.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
-
-      let filtered = input?.project
-        ? cached.filter((file) => (input?.project ? file.project === input.project : file))
-        : cached;
-
-      if (input?.testRun) {
-        filtered = filtered.filter((file) => file.testRun === input.testRun);
-      }
-
-      // Filter by tags if provided
-      if (input?.tags && input.tags.length > 0) {
-        const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'];
-
-        filtered = filtered.filter((result) => {
-          const resultTags = Object.entries(result)
-            .filter(([key]) => !notMetadataKeys.includes(key))
-            .map(([key, value]) => `${key}: ${value}`);
-
-          return input.tags!.some((selectedTag) => resultTags.includes(selectedTag));
-        });
-      }
-
-      // Filter by search if provided
-      if (input?.search && input.search.trim()) {
-        const searchTerm = input.search.toLowerCase().trim();
-
-        filtered = filtered.filter((result) => {
-          // Search in title, resultID, project, and all metadata fields
-          const searchableFields = [
-            result.title,
-            result.resultID,
-            result.project,
-            ...Object.entries(result)
-              .filter(([key]) => !['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'].includes(key))
-              .map(([key, value]) => `${key}: ${value}`),
-          ].filter(Boolean);
-
-          return searchableFields.some((field) => field?.toLowerCase().includes(searchTerm));
-        });
-      }
-
-      const results = !input?.pagination ? filtered : handlePagination(filtered, input?.pagination);
-
-      return {
-        results,
-        total: filtered.length,
-      };
+    if (!cached.length) {
+      return await storage.readResults(input);
     }
 
-    return await storage.readResults(input);
+    const getTimestamp = (date?: Date | string) => {
+      if (!date) return 0;
+      if (typeof date === 'string') return new Date(date).getTime();
+
+      return date.getTime();
+    };
+
+    cached.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
+
+    let filtered = input?.project
+      ? cached.filter((file) => (input?.project ? file.project === input.project : file))
+      : cached;
+
+    if (input?.testRun) {
+      filtered = filtered.filter((file) => file.testRun === input.testRun);
+    }
+
+    // Filter by tags if provided
+    if (input?.tags && input.tags.length > 0) {
+      const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'];
+
+      filtered = filtered.filter((result) => {
+        const resultTags = Object.entries(result)
+          .filter(([key]) => !notMetadataKeys.includes(key))
+          .map(([key, value]) => `${key}: ${value}`);
+
+        return input.tags!.some((selectedTag) => resultTags.includes(selectedTag));
+      });
+    }
+
+    // Filter by search if provided
+    if (input?.search?.trim()) {
+      const searchTerm = input.search.toLowerCase().trim();
+
+      filtered = filtered.filter((result) => {
+        // Search in title, resultID, project, and all metadata fields
+        const searchableFields = [
+          result.title,
+          result.resultID,
+          result.project,
+          ...Object.entries(result)
+            .filter(([key]) => !['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'].includes(key))
+            .map(([key, value]) => `${key}: ${value}`),
+        ].filter(Boolean);
+
+        return searchableFields.some((field) => field?.toLowerCase().includes(searchTerm));
+      });
+    }
+
+    const results = !input?.pagination ? filtered : handlePagination(filtered, input?.pagination);
+
+    return {
+      results,
+      total: filtered.length,
+    };
   }
 
   public async deleteResults(resultIDs: string[]): Promise<void> {
@@ -232,23 +232,24 @@ class Service {
 
   public async getPresignedUrl(fileName: string): Promise<string | undefined> {
     console.log(`[service] getPresignedUrl for ${fileName}`);
-    if (env.DATA_STORAGE === 's3') {
-      console.log(`[service] s3 detected, generating presigned URL`);
 
-      const { result: presignedUrl, error } = await withError((storage as S3).generatePresignedUploadUrl(fileName));
+    if (env.DATA_STORAGE !== 's3') {
+      console.log(`[service] fs storage detected, no presigned URL needed`);
 
-      if (error) {
-        console.error(`[service] getPresignedUrl | error: ${error.message}`);
-
-        return '';
-      }
-
-      return presignedUrl!;
+      return '';
     }
 
-    console.log(`[service] fs storage detected, no presigned URL needed`);
+    console.log(`[service] s3 detected, generating presigned URL`);
 
-    return '';
+    const { result: presignedUrl, error } = await withError((storage as S3).generatePresignedUploadUrl(fileName));
+
+    if (error) {
+      console.error(`[service] getPresignedUrl | error: ${error.message}`);
+
+      return '';
+    }
+
+    return presignedUrl!;
   }
 
   public async saveResult(filename: string, stream: PassThrough, presignedUrl?: string, contentLength?: string) {
@@ -318,7 +319,7 @@ class Service {
 
   public async getServerInfo(): Promise<ServerDataInfo> {
     console.log(`[service] getServerInfo`);
-    const canCalculateFromCache = reportCache.initialized && resultCache.initialized;
+    const canCalculateFromCache = this.shouldUseServerCache() && reportCache.initialized && resultCache.initialized;
 
     if (!canCalculateFromCache) {
       return await storage.getServerDataInfo();
@@ -344,7 +345,7 @@ class Service {
   }
 
   public async getConfig() {
-    const cached = this.shouldUseServerCache() ? configCache.config : undefined;
+    const cached = this.shouldUseServerCache() && configCache.initialized ? configCache.config : undefined;
 
     if (cached) {
       console.log(`[service] using cached config`);
