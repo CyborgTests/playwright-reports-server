@@ -64,7 +64,3 @@ export class ReportCache {
 }
 
 export const reportCache = ReportCache.getInstance();
-
-if (!reportCache.initialized && !isBuildStage) {
-  await reportCache.init();
-}

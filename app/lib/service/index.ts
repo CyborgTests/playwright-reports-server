@@ -5,8 +5,8 @@ import { bytesToString, getUniqueProjectsList } from '../storage/format';
 import { serveReportRoute } from '../constants';
 import { DEFAULT_STREAM_CHUNK_SIZE } from '../storage/constants';
 
-import { configCache, reportCache, resultCache } from './cache';
-
+import { lifecycle } from '@/app/lib/service/lifecycle';
+import { configCache, reportCache, resultCache } from '@/app/lib/service/cache';
 import {
   type ReadReportsInput,
   ReadResultsInput,
@@ -31,17 +31,18 @@ class Service {
     console.log(`[service] get instance`);
     if (!Service.instance) {
       Service.instance = new Service();
-
-      // register cleanup cron jobs
-      import('@/app/lib/service/cron');
     }
 
     return Service.instance;
   }
 
+  private shouldUseServerCache(): boolean {
+    return env.USE_SERVER_CACHE && lifecycle.isInitialized();
+  }
+
   public async getReports(input?: ReadReportsInput) {
     console.log(`[service] getReports`);
-    const cached = reportCache.getAll();
+    const cached = this.shouldUseServerCache() ? reportCache.getAll() : [];
 
     const shouldUseCache = !input?.ids;
 
@@ -100,7 +101,7 @@ class Service {
 
   public async getReport(id: string): Promise<ReportHistory> {
     console.log(`[service] getReport ${id}`);
-    const cached = reportCache.getByID(id);
+    const cached = this.shouldUseServerCache() ? reportCache.getByID(id) : undefined;
 
     if (isReportHistory(cached)) {
       console.log(`[service] using cached report`);
@@ -343,7 +344,7 @@ class Service {
   }
 
   public async getConfig() {
-    const cached = configCache.config;
+    const cached = this.shouldUseServerCache() ? configCache.config : undefined;
 
     if (cached) {
       console.log(`[service] using cached config`);

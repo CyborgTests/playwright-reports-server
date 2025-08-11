@@ -34,7 +34,7 @@ export class ConfigCache {
       console.warn('[config cache] using default config');
     }
 
-    cache.config = result || defaultConfig;
+    cache.config = result ?? defaultConfig;
     console.log('[config cache] initialized with config:', cache.config);
 
     this.initialized = true;
@@ -50,7 +50,3 @@ export class ConfigCache {
 }
 
 export const configCache = ConfigCache.getInstance();
-
-if (!configCache.initialized && !isBuildStage) {
-  await configCache.init();
-}

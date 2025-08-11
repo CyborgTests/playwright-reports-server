@@ -67,7 +67,3 @@ export class ResultCache {
 }
 
 export const resultCache = ResultCache.getInstance();
-
-if (!resultCache.initialized && !isBuildStage) {
-  await resultCache.init();
-}
