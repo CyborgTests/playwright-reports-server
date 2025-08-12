@@ -10,7 +10,7 @@ The Playwright Reports Server provides APIs for managing and generating reports 
 
 ## Demo
 
-Check out the live demo: [familiar-alyss-alex-hot-6926ec9c.koyeb.app](https://familiar-alyss-alex-hot-6926ec9c.koyeb.app/)
+[Check out the live demo!](https://overwhelming-jsandye-cyborg-tests-d6a8367f.koyeb.app/reports)
 
 ## Table of Contents
 
