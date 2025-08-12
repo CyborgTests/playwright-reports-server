@@ -398,6 +398,14 @@ When S3 storage is configured, all operations that would normally interact with 
 
 Note: When switching from local storage to S3 or vice versa, existing data will not be automatically migrated. Ensure you have a backup of your data before changing storage configurations.
 
+3. Google cloud storage specifics
+
+As GCP has quite limited S3 API support, you need to ensure that:
+
+- a bucket with the name `playwright-reports-server` is created or just specify your own bucket name via `S3_BUCKET` environment variable.
+- you set the `S3_REGION` env variable to `auto`, as it does not support custom regions.
+- error message in logs `S3Error: The specified location constraint is not valid.` could mean that you do not have a bucket or not specified the `S3_REGION` env variable.
+
 ### Expiration task
 
 You can specify how much days to keep your report or result files in order to cleanup old records.  

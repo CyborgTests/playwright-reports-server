@@ -449,7 +449,7 @@ async function saveConfigFile(config: Partial<SiteWhiteLabelConfig>) {
   const isConfigFailed = !!configError && configError?.message !== noConfigErr && !existingConfig;
 
   if (isConfigFailed) {
-    throw new Error(`failed to save config: ${configError.message}`);
+    console.error(`failed to read existing config: ${configError.message}`);
   }
 
   const previousConfig = existingConfig ?? defaultConfig;

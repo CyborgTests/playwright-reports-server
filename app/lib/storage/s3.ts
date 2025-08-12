@@ -172,7 +172,11 @@ export class S3 implements Storage {
 
   async clear(...path: string[]) {
     console.log(`[s3] clearing ${path}`);
-    await this.client.removeObjects(this.bucket, path);
+    // avoid using "removeObjects" as it is not supported by every S3-compatible provider
+    // for example, Google Cloud Storage.
+    await processBatch<string, void>(this, path, this.batchSize, async (object) => {
+      await this.client.removeObject(this.bucket, object);
+    });
   }
 
   async getFolderSize(folderPath: string): Promise<{ size: number; resultCount: number; indexCount: number }> {
@@ -774,6 +778,7 @@ export class S3 implements Storage {
   }
 
   async readConfigFile(): Promise<{ result?: SiteWhiteLabelConfig; error: Error | null }> {
+    await this.ensureBucketExist();
     console.log(`[s3] checking config file`);
 
     const { result: stream, error } = await withError(this.client.getObject(this.bucket, APP_CONFIG_S3));
@@ -833,7 +838,11 @@ export class S3 implements Storage {
       console.error(`[s3] failed to read existing config file: ${readExistingConfigError.message}`);
     }
 
-    await this.clear(APP_CONFIG_S3);
+    const { error: clearExistingConfigError } = await withError(this.clear(APP_CONFIG_S3));
+
+    if (clearExistingConfigError) {
+      console.error(`[s3] failed to clear existing config file: ${clearExistingConfigError.message}`);
+    }
 
     const uploadConfig = { ...(existingConfig ?? {}), ...config } as SiteWhiteLabelConfig;
 
