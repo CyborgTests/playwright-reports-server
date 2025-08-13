@@ -48,7 +48,7 @@ export class ResultCache {
     this.initialized = true;
   }
 
-  public async onDeleted(resultIds: string[]) {
+  public onDeleted(resultIds: string[]) {
     if (!env.USE_SERVER_CACHE) {
       return;
     }
@@ -58,7 +58,7 @@ export class ResultCache {
     }
   }
 
-  public async onCreated(result: Result) {
+  public onCreated(result: Result) {
     if (!env.USE_SERVER_CACHE) {
       return;
     }

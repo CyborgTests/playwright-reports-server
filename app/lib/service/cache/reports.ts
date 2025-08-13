@@ -47,7 +47,7 @@ export class ReportCache {
     this.initialized = true;
   }
 
-  public async onDeleted(reportIds: string[]) {
+  public onDeleted(reportIds: string[]) {
     if (!env.USE_SERVER_CACHE) {
       return;
     }
@@ -57,7 +57,7 @@ export class ReportCache {
     }
   }
 
-  public async onCreated(report: ReportHistory) {
+  public onCreated(report: ReportHistory) {
     if (!env.USE_SERVER_CACHE) {
       return;
     }

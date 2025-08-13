@@ -157,9 +157,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ error: `failed to generate report: ${resultsError.message}` });
     }
 
+    const testRunResults = results?.results.filter(
+      (result) => result.testRun === resultDetails.testRun && result.project === resultDetails.project,
+    );
+
     // Checking if all shards are uploaded
-    if (results?.results.length === parseInt(resultDetails.shardTotal)) {
-      const ids = results.results.map((result) => result.resultID);
+    if (testRunResults?.length === parseInt(resultDetails.shardTotal)) {
+      const ids = testRunResults.map((result) => result.resultID);
 
       console.log('triggerReportGeneration for', resultDetails.testRun, ids);
       const { result, error } = await withError(
