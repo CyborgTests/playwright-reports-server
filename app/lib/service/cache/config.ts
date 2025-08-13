@@ -41,7 +41,7 @@ export class ConfigCache {
     this.initialized = true;
   }
 
-  public async onChanged(config: SiteWhiteLabelConfig) {
+  public onChanged(config: SiteWhiteLabelConfig) {
     if (!env.USE_SERVER_CACHE) {
       return;
     }

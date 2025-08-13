@@ -333,7 +333,7 @@ export class S3 implements Storage {
     }
 
     // Filter by search if provided
-    if (input?.search && input.search.trim()) {
+    if (input?.search?.trim()) {
       const searchTerm = input.search.toLowerCase().trim();
 
       filteredResults = filteredResults.filter((result) => {
