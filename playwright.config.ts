@@ -14,23 +14,24 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: 'html',
+  reporter: [
+    // ['html', { open: 'never' }],
+    ['list', { printSteps: true }],
+  ],
   use: {
     trace: 'on-first-retry',
   },
-
-  /* Configure projects for major browsers */
   projects: [
     {
-      name: 'chromium',
+      name: 'api',
+      testDir: './tests/api',
       use: { baseURL: 'http://localhost:3000', ...devices['Desktop Chrome'] },
     },
   ],
-
   /* Run your local dev server before starting the tests */
-  // webServer: {
-  //   command: 'npm run start',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  // },
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:3000',
+    reuseExistingServer: !process.env.CI,
+  },
 });

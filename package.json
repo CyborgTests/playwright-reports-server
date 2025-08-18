@@ -9,9 +9,8 @@
     "format:check": "prettier --ignore-path .gitignore --list-different '**/**/*.{ts,json,md}'",
     "format:fix": "npm run format:check -- --write",
     "lint": "eslint . --ext .ts,.tsx",
-    "test": "jest",
-    "test:unit": "jest --testPathPattern=__tests__/unit",
-    "test:integration": "jest --testPathPattern=__tests__/integration"
+    "test:unit": "jest",
+    "test:api": "npx playwright test --project=api"
   },
   "dependencies": {
     "@heroui/link": "2.2.12",
