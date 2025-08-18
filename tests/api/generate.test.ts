@@ -10,17 +10,16 @@ test('/api/result/upload should accept correct zip blob', async ({ request }) =>
       file: { name: 'blob.zip', mimeType: 'application/zip', buffer: zip },
       project: 'Smoke',
       tag: 'api-smoke',
-    }
+    },
   });
   expect(newResult.status()).toBe(200);
 
   const body = await newResult.json();
-  expect(body.message).toBe('Success')
-  expect(body.data).toHaveProperty("resultID");
-  expect(body.data).toHaveProperty("createdAt");
-  expect(body.data.project).toBe("Smoke");
-  expect(body.data).toHaveProperty("size");
-  expect(body.data).toHaveProperty("sizeBytes");
-  expect(body.data).toHaveProperty("generatedReport");
-    
+  expect(body.message).toBe('Success');
+  expect(body.data).toHaveProperty('resultID');
+  expect(body.data).toHaveProperty('createdAt');
+  expect(body.data.project).toBe('Smoke');
+  expect(body.data).toHaveProperty('size');
+  expect(body.data).toHaveProperty('sizeBytes');
+  expect(body.data).toHaveProperty('generatedReport');
 });
