@@ -48,13 +48,13 @@ test('/api/report/generate should generate report', async ({ request }) => {
     },
   });
 
-  const reportBody = await newReport.json();
-  const projectReport = reportBody.project ?? reportBody.metadata?.project;
-  console.log(reportBody);
+  const repBody = await newReport.json();
+  const projectReport = repBody.project ?? repBody.metadata?.project;
+  console.log(repBody);
 
   expect(newReport.status()).toBe(200);
-  expect(reportBody.reportId).toBeTruthy();
-  expect(reportBody.reportUrl).toContain(`/api/serve/${project}/${reportBody.reportId}/`);
+  expect(repBody.reportId).toBeTruthy();
+  expect(repBody.reportUrl).toContain(`/api/serve/${project}/${repBody.reportId}/`);
   expect(projectReport).toBe(project);
 
 });
