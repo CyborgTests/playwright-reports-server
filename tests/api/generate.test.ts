@@ -38,9 +38,9 @@ test('/api/report/generate should generate report', async ({ request }) => {
   const resBody = await newResult.json();
   const project = resBody.data?.project ?? resBody.results?.[0]?.project;
   const resultID = resBody.data?.resultID ?? resBody.results?.[0]?.resultID;
-   expect(project).toBeTruthy();
-   expect(resultID).toBeTruthy();
-  
+  expect(project).toBeTruthy();
+  expect(resultID).toBeTruthy();
+
   const newReport = await request.post('/api/report/generate', {
     data: {
       project: project,
@@ -56,5 +56,4 @@ test('/api/report/generate should generate report', async ({ request }) => {
   expect(repBody.reportId).toBeTruthy();
   expect(repBody.reportUrl).toContain(`/api/serve/${project}/${repBody.reportId}/`);
   expect(projectReport).toBe(project);
-
 });
