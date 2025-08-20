@@ -6,11 +6,22 @@ import { withError } from '@/app/lib/withError';
 
 export * from './types';
 
+/**
+ *
+ * @param html HTML string of the Playwright report
+ * @description Parses the HTML report to extract the base64 encoded report data, decodes it
+ * There are two possible formats (at the moment):
+ * @example <script>window.playwrightReportBase64 = "...";</script>
+ * @example <script id="playwrightReportBase64" type="application/zip">"..."</script>
+ * @returns
+ */
+
 export const parse = async (html: string): Promise<ReportInfo> => {
   const base64Prefix = 'data:application/zip;base64,';
-  const start = html.indexOf('window.playwrightReportBase64 = "') + 'window.playwrightReportBase64 = "'.length;
-  const end = html.indexOf('";', start);
-  const base64String = html.substring(start, end).trim().replace(base64Prefix, '');
+  const pattern = new RegExp(`${base64Prefix}([^";\\s]+)(?=[";\\s]|$)`);
+  const matches = RegExp(pattern).exec(html);
+  const match = matches?.at(0) ?? '';
+  const base64String = match.replace(base64Prefix, '').replace('</script>', '').trim();
 
   if (!base64String) {
     throw Error('[report parser] no data found in the html report');

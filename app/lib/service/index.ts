@@ -23,6 +23,7 @@ import { SiteWhiteLabelConfig } from '@/app/types';
 import { defaultConfig } from '@/app/lib/config';
 import { env } from '@/app/config/env';
 import { type S3 } from '@/app/lib/storage/s3';
+import { isValidPlaywrightVersion } from '@/app/lib/pw';
 
 class Service {
   private static instance: Service;
@@ -122,11 +123,62 @@ class Service {
     return report;
   }
 
+  private async findLatestPlaywrightVersionFromResults(resultIds: string[]) {
+    for (const resultId of resultIds) {
+      const { result: results, error } = await withError(this.getResults({ search: resultId }));
+
+      if (error || !results) {
+        continue;
+      }
+
+      const [latestResult] = results.results;
+
+      if (!latestResult) {
+        continue;
+      }
+
+      const latestVersion = latestResult?.playwrightVersion;
+
+      if (latestVersion) {
+        return latestVersion;
+      }
+    }
+  }
+
+  private async findLatestPlaywrightVersion(resultIds: string[]) {
+    const versionFromResults = await this.findLatestPlaywrightVersionFromResults(resultIds);
+
+    if (versionFromResults) {
+      return versionFromResults;
+    }
+
+    // just in case version not found in results, we can try to get it from latest reports
+    const { result: reportsArray, error } = await withError(this.getReports({ pagination: { limit: 10, offset: 0 } }));
+
+    if (error || !reportsArray) {
+      return '';
+    }
+
+    const reportWithVersion = reportsArray.reports.find((report) => !!report.metadata?.playwrightVersion);
+
+    if (!reportWithVersion) {
+      return '';
+    }
+
+    return reportWithVersion.metadata.playwrightVersion;
+  }
+
   public async generateReport(
     resultsIds: string[],
     metadata?: ReportMetadata,
   ): Promise<{ reportId: string; reportUrl: string; metadata: ReportMetadata }> {
-    const reportId = await storage.generateReport(resultsIds, metadata);
+    const version = isValidPlaywrightVersion(metadata?.playwrightVersion)
+      ? metadata?.playwrightVersion
+      : await this.findLatestPlaywrightVersion(resultsIds);
+
+    const metadataWithVersion = { ...(metadata ?? {}), playwrightVersion: version ?? '' };
+
+    const reportId = await storage.generateReport(resultsIds, metadataWithVersion);
 
     const report = await this.getReport(reportId);
 
@@ -135,7 +187,7 @@ class Service {
     const projectPath = metadata?.project ? `${encodeURI(metadata.project)}/` : '';
     const reportUrl = `${serveReportRoute}/${projectPath}${reportId}/index.html`;
 
-    return { reportId, reportUrl, metadata: metadata ?? {} };
+    return { reportId, reportUrl, metadata: metadataWithVersion };
   }
 
   public async deleteReports(reportIDs: string[]) {

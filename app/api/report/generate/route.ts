@@ -5,13 +5,15 @@ export const dynamic = 'force-dynamic'; // defaults to auto
 export async function POST(request: Request) {
   const { result: reqBody, error: reqError } = await withError(request.json());
 
-  const { resultsIds, project, ...rest } = reqBody;
+  const { resultsIds, project, playwrightVersion, ...rest } = reqBody;
 
   if (reqError) {
     return new Response(reqError.message, { status: 400 });
   }
 
-  const { result, error } = await withError(service.generateReport(resultsIds, { project, ...rest }));
+  const { result, error } = await withError(
+    service.generateReport(resultsIds, { project, playwrightVersion, ...rest }),
+  );
 
   if (error) {
     console.error(error);

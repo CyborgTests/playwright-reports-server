@@ -6,16 +6,26 @@ import path from 'node:path';
 import { withError } from './withError';
 import { REPORTS_FOLDER, TMP_FOLDER } from './storage/constants';
 import { createDirectory } from './storage/folders';
+import { ReportMetadata } from './storage/types';
 
 const execAsync = util.promisify(exec);
 
+export const isValidPlaywrightVersion = (version?: string): boolean => {
+  // stupid-simple validation to check that version follows semantic version format major.minor.patch
+  const versionPattern = /^\d+\.\d+\.\d+$/;
+
+  return versionPattern.test(version ?? '');
+};
+
 export const generatePlaywrightReport = async (
   reportId: UUID,
-  projectName?: string,
+  metadata: ReportMetadata,
 ): Promise<{ reportPath: string }> => {
+  const { project, playwrightVersion } = metadata;
+
   console.log(`[pw] generating Playwright report ${reportId}`);
 
-  const reportPath = path.join(REPORTS_FOLDER, projectName ?? '', reportId);
+  const reportPath = path.join(REPORTS_FOLDER, project ?? '', reportId);
 
   await createDirectory(reportPath);
 
@@ -25,8 +35,12 @@ export const generatePlaywrightReport = async (
 
   console.log(`[pw] merging reports from ${tempFolder}`);
 
+  const versionTag = isValidPlaywrightVersion(playwrightVersion) ? `@${playwrightVersion}` : '';
+
+  console.log(`[pw] using playwright version tag: "${versionTag}"`);
+
   const { result, error } = await withError(
-    execAsync(`npx playwright merge-reports --reporter html ${tempFolder}`, {
+    execAsync(`npx playwright${versionTag} merge-reports --reporter html ${tempFolder}`, {
       env: {
         ...process.env,
         // Avoid opening the report on server
@@ -39,6 +53,8 @@ export const generatePlaywrightReport = async (
   if (error ?? result?.stderr) {
     console.error(error ? JSON.stringify(error, null, 4) : result?.stderr);
   }
+
+  console.log(`[pw] ${result?.stdout ?? ''}`);
 
   return {
     reportPath,
