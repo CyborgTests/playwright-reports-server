@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createWriteStream, type Dirent, type Stats } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
+import { PassThrough } from 'node:stream';
 
 import getFolderSize from 'get-folder-size';
 
@@ -10,6 +11,7 @@ import { bytesToString } from './format';
 import {
   APP_CONFIG,
   DATA_FOLDER,
+  DEFAULT_STREAM_CHUNK_SIZE,
   REPORT_METADATA_FILE,
   REPORTS_FOLDER,
   REPORTS_PATH,
@@ -18,7 +20,6 @@ import {
 } from './constants';
 import { processBatch } from './batch';
 import { handlePagination } from './pagination';
-import { defaultStreamingOptions, transformBlobToReadable } from './stream';
 import { createDirectory } from './folders';
 
 import { defaultConfig, isConfigValid, noConfigErr } from '@/app/lib/config';
@@ -309,44 +310,24 @@ export async function deleteReport(reportId: string) {
   await fs.rm(reportPath, { recursive: true, force: true });
 }
 
-export async function saveResult(file: Blob, size: number, resultDetails: ResultDetails) {
+export async function saveResult(filename: string, stream: PassThrough) {
   await createDirectoriesIfMissing();
-  const resultID = randomUUID();
-  const resultPath = path.join(RESULTS_FOLDER, `${resultID}.zip`);
+  const resultPath = path.join(RESULTS_FOLDER, filename);
 
-  const readable = transformBlobToReadable(file);
-  const writeable = createWriteStream(resultPath, defaultStreamingOptions);
+  const writeable = createWriteStream(resultPath, {
+    encoding: 'binary',
+    highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
+  });
 
-  /**
-   * additional backpressure handling
-   * https://nodejs.org/en/learn/modules/backpressuring-in-streams
-   */
-  readable
-    .on('data', (chunk) => {
-      if (!writeable.write(chunk)) {
-        readable.pause();
-      }
-    })
-    .on('error', (error) => {
-      console.log(`readable stream error: ${error.message}`);
-    });
-
-  writeable
-    .on('drain', () => {
-      readable.resume();
-    })
-    .on('error', (error) => {
-      console.log(`writeable stream error: ${error.message}`);
-    });
-
-  const { error: writeStreamError } = await withError(pipeline(readable, writeable));
+  const { error: writeStreamError } = await withError(pipeline(stream, writeable));
 
   if (writeStreamError) {
     throw new Error(`failed stream pipeline: ${writeStreamError.message}`);
   }
+}
 
-  // ensure writable stream is closed
-  writeable.end();
+export async function saveResultDetails(resultID: string, resultDetails: ResultDetails, size: number): Promise<Result> {
+  await createDirectoriesIfMissing();
 
   const metaData = {
     resultID,
@@ -468,7 +449,7 @@ async function saveConfigFile(config: Partial<SiteWhiteLabelConfig>) {
   const isConfigFailed = !!configError && configError?.message !== noConfigErr && !existingConfig;
 
   if (isConfigFailed) {
-    throw new Error(`failed to save config: ${configError.message}`);
+    console.error(`failed to read existing config: ${configError.message}`);
   }
 
   const previousConfig = existingConfig ?? defaultConfig;
@@ -490,6 +471,7 @@ export const FS: Storage = {
   deleteResults,
   deleteReports,
   saveResult,
+  saveResultDetails,
   generateReport,
   readConfigFile,
   saveConfigFile,

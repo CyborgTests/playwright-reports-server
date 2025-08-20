@@ -11,7 +11,7 @@ The Playwright Reports Server provides APIs for managing and generating reports 
 
 ## Demo
 
-Check out the live demo: [familiar-alyss-alex-hot-6926ec9c.koyeb.app](https://familiar-alyss-alex-hot-6926ec9c.koyeb.app/)
+[Check out the live demo!](https://overwhelming-jsandye-cyborg-tests-d6a8367f.koyeb.app/reports)
 
 ## Table of Contents
 
@@ -256,6 +256,17 @@ curl --location --request PUT 'http://localhost:3000/api/result/upload' \
 --form 'appVersion="1.2.2"'
 ```
 
+If you have **s3 storage** configured, you can pass `fileContentLength` query parameter to use **presigned URL** for **direct upload**:
+
+```sh
+curl --location --request PUT 'http://localhost:3000/api/result/upload?fileContentLength=10738538' \
+--header 'Authorization: <api-token>' \
+--form 'file=@"/path/to/file"' \
+--form 'project="desktop"' \
+--form 'reporter="okhotemskyi"' \
+--form 'appVersion="1.2.2"'
+```
+
 Response example:
 
 ```json
@@ -413,6 +424,14 @@ To enable S3 storage:
 When S3 storage is configured, all operations that would normally interact with the local file system will instead use the S3 bucket. This includes storing raw test results, generating reports, and serving report files.
 
 Note: When switching from local storage to S3 or vice versa, existing data will not be automatically migrated. Ensure you have a backup of your data before changing storage configurations.
+
+3. Google cloud storage specifics
+
+As GCP has quite limited S3 API support, you need to ensure that:
+
+- a bucket with the name `playwright-reports-server` is created or just specify your own bucket name via `S3_BUCKET` environment variable.
+- you set the `S3_REGION` env variable to `auto`, as it does not support custom regions.
+- error message in logs `S3Error: The specified location constraint is not valid.` could mean that you do not have a bucket or not specified the `S3_REGION` env variable.
 
 ### Expiration task
 

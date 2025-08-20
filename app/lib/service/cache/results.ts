@@ -1,7 +1,7 @@
 import { storage } from '@/app/lib/storage';
 import { type Result } from '@/app/lib/storage/types';
-import { isBuildStage } from '@/app/config/runtime';
 import { env } from '@/app/config/env';
+import { withError } from '../../withError';
 
 type ResultsMap = Map<string, Result>;
 
@@ -28,18 +28,27 @@ export class ResultCache {
     }
 
     console.log('[result cache] initializing cache');
-    const { results } = await storage.readResults();
+    const { result: resultsResponse, error } = await withError(storage.readResults());
+
+    if (error) {
+      console.error('[result cache] failed to read results:', error);
+      return;
+    }
+
+    if (!resultsResponse?.results?.length) {
+      return;
+    }
 
     const cache = ResultCache.getInstance();
 
-    for (const result of results) {
+    for (const result of resultsResponse.results) {
       cache.results.set(result.resultID, result);
     }
 
     this.initialized = true;
   }
 
-  public async onDeleted(resultIds: string[]) {
+  public onDeleted(resultIds: string[]) {
     if (!env.USE_SERVER_CACHE) {
       return;
     }
@@ -49,7 +58,7 @@ export class ResultCache {
     }
   }
 
-  public async onCreated(result: Result) {
+  public onCreated(result: Result) {
     if (!env.USE_SERVER_CACHE) {
       return;
     }
@@ -67,7 +76,3 @@ export class ResultCache {
 }
 
 export const resultCache = ResultCache.getInstance();
-
-if (!resultCache.initialized && !isBuildStage) {
-  await resultCache.init();
-}

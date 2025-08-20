@@ -1,12 +1,16 @@
 import { randomUUID, type UUID } from 'crypto';
 import fs from 'fs/promises';
 import path from 'node:path';
-import { Readable } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 
 import { type BucketItem, Client } from 'minio';
 
 import { processBatch } from './batch';
 import {
+  Result,
+  Report,
+  ResultDetails,
+  ServerDataInfo,
   isReportHistory,
   ReadReportsInput,
   ReadReportsOutput,
@@ -30,13 +34,11 @@ import {
 } from './constants';
 import { handlePagination } from './pagination';
 import { getFileReportID } from './file';
-import { transformBlobToReadable } from './stream';
 
 import { parse } from '@/app/lib/parser';
 import { serveReportRoute } from '@/app/lib/constants';
 import { generatePlaywrightReport } from '@/app/lib/pw';
 import { withError } from '@/app/lib/withError';
-import { type Result, type Report, type ResultDetails, type ServerDataInfo } from '@/app/lib/storage/types';
 import { env } from '@/app/config/env';
 import { SiteWhiteLabelConfig } from '@/app/types';
 import { defaultConfig, isConfigValid } from '@/app/lib/config';
@@ -170,7 +172,11 @@ export class S3 implements Storage {
 
   async clear(...path: string[]) {
     console.log(`[s3] clearing ${path}`);
-    await this.client.removeObjects(this.bucket, path);
+    // avoid using "removeObjects" as it is not supported by every S3-compatible provider
+    // for example, Google Cloud Storage.
+    await processBatch<string, void>(this, path, this.batchSize, async (object) => {
+      await this.client.removeObject(this.bucket, object);
+    });
   }
 
   async getFolderSize(folderPath: string): Promise<{ size: number; resultCount: number; indexCount: number }> {
@@ -327,7 +333,7 @@ export class S3 implements Storage {
     }
 
     // Filter by search if provided
-    if (input?.search && input.search.trim()) {
+    if (input?.search?.trim()) {
       const searchTerm = input.search.toLowerCase().trim();
 
       filteredResults = filteredResults.filter((result) => {
@@ -583,9 +589,24 @@ export class S3 implements Storage {
     await withError(this.clear(...objects));
   }
 
-  async saveResult(file: Blob, size: number, resultDetails: ResultDetails) {
-    const resultID = randomUUID();
+  async generatePresignedUploadUrl(fileName: string) {
+    await this.ensureBucketExist();
+    const objectKey = path.join(RESULTS_BUCKET, fileName);
+    const expiry = 30 * 60; // 30 minutes
 
+    return this.client.presignedPutObject(this.bucket, objectKey, expiry);
+  }
+
+  async saveResult(filename: string, stream: PassThrough) {
+    return await this.write(RESULTS_BUCKET, [
+      {
+        name: filename,
+        content: stream,
+      },
+    ]);
+  }
+
+  async saveResultDetails(resultID: string, resultDetails: ResultDetails, size: number): Promise<Result> {
     const metaData = {
       resultID,
       createdAt: new Date().toISOString(),
@@ -596,11 +617,6 @@ export class S3 implements Storage {
     };
 
     await this.write(RESULTS_BUCKET, [
-      {
-        name: `${resultID}.zip`,
-        content: transformBlobToReadable(file),
-        size,
-      },
       {
         name: `${resultID}.json`,
         content: JSON.stringify(metaData),
@@ -762,6 +778,7 @@ export class S3 implements Storage {
   }
 
   async readConfigFile(): Promise<{ result?: SiteWhiteLabelConfig; error: Error | null }> {
+    await this.ensureBucketExist();
     console.log(`[s3] checking config file`);
 
     const { result: stream, error } = await withError(this.client.getObject(this.bucket, APP_CONFIG_S3));
@@ -821,20 +838,35 @@ export class S3 implements Storage {
       console.error(`[s3] failed to read existing config file: ${readExistingConfigError.message}`);
     }
 
-    await this.clear(APP_CONFIG_S3);
+    const { error: clearExistingConfigError } = await withError(this.clear(APP_CONFIG_S3));
+
+    if (clearExistingConfigError) {
+      console.error(`[s3] failed to clear existing config file: ${clearExistingConfigError.message}`);
+    }
 
     const uploadConfig = { ...(existingConfig ?? {}), ...config } as SiteWhiteLabelConfig;
 
-    if (config.logoPath && config.logoPath !== existingConfig?.logoPath && config.logoPath !== defaultConfig.logoPath) {
-      await this.uploadConfigImage(config.logoPath);
+    const isDefaultImage = (key: keyof SiteWhiteLabelConfig) => config[key] && config[key] === defaultConfig[key];
+
+    const shouldBeUploaded = async (key: keyof SiteWhiteLabelConfig) => {
+      if (!config[key]) return false;
+      if (isDefaultImage(key)) return false;
+
+      const { result } = await withError(this.client.statObject(this.bucket, uploadConfig.logoPath));
+
+      if (!result) {
+        return true;
+      }
+
+      return false;
+    };
+
+    if (await shouldBeUploaded('logoPath')) {
+      await this.uploadConfigImage(uploadConfig.logoPath);
     }
 
-    if (
-      config.faviconPath &&
-      config.faviconPath !== existingConfig?.faviconPath &&
-      config.faviconPath !== defaultConfig.faviconPath
-    ) {
-      await this.uploadConfigImage(config.faviconPath);
+    if (await shouldBeUploaded('faviconPath')) {
+      await this.uploadConfigImage(uploadConfig.faviconPath);
     }
 
     const { error } = await withError(

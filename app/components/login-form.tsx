@@ -14,7 +14,7 @@ export default function LoginForm() {
   const session = useSession();
   const searchParams = useSearchParams();
 
-  const target = searchParams.get('callbackUrl') ?? '/';
+  const target = searchParams?.get('callbackUrl') ?? '/';
   const callbackUrl = decodeURI(target);
 
   useEffect(() => {

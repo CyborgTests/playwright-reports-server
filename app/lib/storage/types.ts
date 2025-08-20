@@ -1,3 +1,5 @@
+import { PassThrough } from 'node:stream';
+
 import { type Pagination } from './pagination';
 
 import { type SiteWhiteLabelConfig, type UUID } from '@/app/types';
@@ -10,7 +12,8 @@ export interface Storage {
   readReports: (input?: ReadReportsInput) => Promise<ReadReportsOutput>;
   deleteResults: (resultIDs: string[]) => Promise<void>;
   deleteReports: (reportIDs: string[]) => Promise<void>;
-  saveResult: (file: Blob, size: number, resultDetails: ResultDetails) => Promise<Result>;
+  saveResult: (filename: string, stream: PassThrough) => Promise<void>;
+  saveResultDetails: (resultID: string, resultDetails: ResultDetails, size: number) => Promise<Result>;
   generateReport: (resultsIds: string[], metadata?: ReportMetadata) => Promise<UUID>;
   readConfigFile: () => Promise<{ result?: SiteWhiteLabelConfig; error: Error | null }>;
   saveConfigFile: (
