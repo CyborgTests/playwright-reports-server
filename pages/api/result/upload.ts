@@ -170,6 +170,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         service.generateReport(ids, {
           project: resultDetails.project,
           testRun: resultDetails.testRun,
+          playwrightVersion: resultDetails.playwrightVersion,
         }),
       );
 

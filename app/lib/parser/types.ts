@@ -9,6 +9,7 @@ export interface ReportInfo {
 
 interface ReportMetadata {
   actualWorkers: number;
+  playwrightVersion?: string;
 }
 
 export interface ReportStats {
