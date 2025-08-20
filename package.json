@@ -45,7 +45,7 @@
     "uuid": "^10.0.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.54.2",
+    "@playwright/test": "^1.55.0",
     "@types/busboy": "^1.5.4",
     "@types/jest": "^29.5.12",
     "@types/jsonwebtoken": "^9.0.7",
