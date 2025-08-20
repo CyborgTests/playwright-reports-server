@@ -50,7 +50,6 @@ test('/api/report/generate should generate report', async ({ request }) => {
 
   const repBody = await newReport.json();
   const projectReport = repBody.project ?? repBody.metadata?.project;
-  console.log(repBody);
 
   expect(newReport.status()).toBe(200);
   expect(repBody.reportId).toBeTruthy();
