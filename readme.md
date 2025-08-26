@@ -7,6 +7,7 @@ The Playwright Reports Server provides APIs for managing and generating reports 
 - Store raw results, and aggregate them together into one report
 - Check web ui for report trends and test history
 - Basic api token authorization for backend and web ui, reports are secured as well
+- Create Jira tickets directly with attachments
 
 ## Demo
 
@@ -32,6 +33,7 @@ The Playwright Reports Server provides APIs for managing and generating reports 
   - [`/api/info` (GET)](#apiinfo-get)
   - [`/api/ping` (GET)](#apiping-get)
   - [Authorization](#authorization)
+  - [Jira Integration](#jira-integration)
   - [Storage Options](#storage-options)
     - [Local File System Storage](#local-file-system-storage)
     - [S3-Compatible Object Storage](#s3-compatible-object-storage)
@@ -89,6 +91,10 @@ The app is configured with environment variables, so it could be specified as `.
 | `UI_AUTH_EXPIRE_HOURS` | Duration of auth session                                                                         | `"2"`   |
 | `USE_SERVER_CACHE`     | Use server side indexed cache for backend queries, improves UX, reduces impact on a backend / s3 | `false` |
 | `DATA_STORAGE`         | Where to store data, check for additional configuration [Storage Options](#storage-options)      | `"fs"`  |
+| `JIRA_BASE_URL`        | Jira instance URL (e.g., https://your-domain.atlassian.net)                                      |         |
+| `JIRA_EMAIL`           | Jira account email address                                                                       |         |
+| `JIRA_API_TOKEN`       | Jira API token for authentication                                                                |         |
+| `JIRA_PROJECT_KEY`     | Default Jira project key for ticket creation                                                     |         |
 
 ## API Routes
 
@@ -348,6 +354,27 @@ openssl rand -base64 32
 ```
 
 If you do not set a token the application will work without authorization, however jwt token will still be utilized.
+
+## Jira Integration
+
+The Playwright Reports Server includes built-in Jira integration that allows you to create Jira tickets directly from tests. This feature automatically captures test failure details, screenshots, videos, and other attachments.
+
+### Configuration
+
+To enable Jira integration, set the following environment variables:
+
+```bash
+JIRA_BASE_URL=https://your-domain.atlassian.net
+JIRA_EMAIL=your-email@example.com
+JIRA_API_TOKEN=your-api-token
+JIRA_PROJECT_KEY=YOUR_PROJECT_KEY (optional)
+```
+
+### Usage
+
+1. **From Test Reports**: Navigate to any test in the web UI and click "Create Jira Ticket"
+2. **Customize Ticket**: Modify the summary, description, issue type, and project key as needed
+3. **Submit**: The ticket will be created in Jira with all test information and attachments
 
 ## Storage Options
 

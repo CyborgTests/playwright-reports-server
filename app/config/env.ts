@@ -17,4 +17,9 @@ export const env = cleanEnv(process.env, {
   RESULT_EXPIRE_CRON_SCHEDULE: str({ desc: 'Cron schedule for results cleanup', default: '33 3 * * *' }),
   REPORT_EXPIRE_DAYS: num({ desc: 'How much days to keep reports', default: undefined }),
   REPORT_EXPIRE_CRON_SCHEDULE: str({ desc: 'Cron schedule for reports cleanup', default: '44 4 * * *' }),
+  // Jira API Configuration
+  JIRA_BASE_URL: str({ desc: 'Jira base URL (e.g., https://your-domain.atlassian.net)', default: undefined }),
+  JIRA_EMAIL: str({ desc: 'Jira user email', default: undefined }),
+  JIRA_API_TOKEN: str({ desc: 'Jira API token', default: undefined }),
+  JIRA_PROJECT_KEY: str({ desc: 'Default Jira project key (optional)', default: undefined }),
 });
