@@ -158,8 +158,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const testRunResults = results?.results.filter(
-      (result) => result.testRun === resultDetails.testRun && result.project === resultDetails.project,
+      (result) =>
+        result.testRun === resultDetails.testRun &&
+        (resultDetails.project ? result.project === resultDetails.project : true),
     );
+
+    console.log(`found ${testRunResults?.length} results for the test run ${resultDetails.testRun}`);
 
     // Checking if all shards are uploaded
     if (testRunResults?.length === parseInt(resultDetails.shardTotal)) {
