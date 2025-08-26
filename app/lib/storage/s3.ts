@@ -717,7 +717,7 @@ export class S3 implements Storage {
       }
     }
 
-    const { reportPath } = await generatePlaywrightReport(reportId, metadata?.project);
+    const { reportPath } = await generatePlaywrightReport(reportId, metadata!);
 
     console.log(`[s3] report generated: ${reportId} | ${reportPath}`);
 

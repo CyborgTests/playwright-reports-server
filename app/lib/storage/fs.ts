@@ -368,7 +368,7 @@ export async function generateReport(resultsIds: string[], metadata?: ReportMeta
   }
 
   const { error: generateReportError, result: generated } = await withError(
-    generatePlaywrightReport(reportId, metadata?.project),
+    generatePlaywrightReport(reportId, metadata!),
   );
 
   const { error: parsedMetadataError, result: info } = await withError(
