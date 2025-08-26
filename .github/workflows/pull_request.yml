@@ -45,8 +45,9 @@ jobs:
   #       run: npm ci
   #     - name: Run unit tests
   #       run: npm run test:unit
-  
+
   api-tests:
+    needs: [prettier, eslint]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
