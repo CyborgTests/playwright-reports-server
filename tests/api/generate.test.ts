@@ -24,6 +24,22 @@ test('/api/result/upload should accept correct zip blob', async ({ request }) =>
   expect(body.data).toHaveProperty('generatedReport');
 });
 
+test('/api/result/list shows result list', async ({ request }) => {
+  const resultList = await request.get('/api/result/list');
+  expect(resultList.status()).toBe(200);
+  const body = await resultList.json();
+  expect(body).toHaveProperty('results');
+  expect(body).toHaveProperty('total');
+
+  if (body.results.length > 0) {
+    const result = body.results[0];
+    expect(result).toHaveProperty('resultID');
+    expect(result).toHaveProperty('createdAt');
+    expect(result).toHaveProperty('size');
+    expect(result).toHaveProperty('project');
+  }
+});
+
 test('/api/report/generate should generate report', async ({ request }) => {
   const filePath = path.resolve(process.cwd(), './tests/testdata/blob.zip');
   const zip = await readFile(filePath);
@@ -55,4 +71,21 @@ test('/api/report/generate should generate report', async ({ request }) => {
   expect(repBody.reportId).toBeTruthy();
   expect(repBody.reportUrl).toContain(`/api/serve/${project}/${repBody.reportId}/`);
   expect(projectReport).toBe(project);
+});
+
+test('/api/report/list shows report list', async ({ request }) => {
+  const reportList = await request.get('/api/report/list');
+  expect(reportList.status()).toBe(200);
+  const body = await reportList.json();
+  expect(body).toHaveProperty('reports');
+  expect(body).toHaveProperty('total');
+
+  if (body.reports.length > 0) {
+    const reports = body.reports[0];
+    expect(reports).toHaveProperty('reportID');
+    expect(reports).toHaveProperty('createdAt');
+    expect(reports).toHaveProperty('project');
+    expect(reports).toHaveProperty('size');
+    expect(reports).toHaveProperty('reportUrl');
+  }
 });
