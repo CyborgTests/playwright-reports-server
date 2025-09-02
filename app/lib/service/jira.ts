@@ -1,4 +1,5 @@
 import { env } from '@/app/config/env';
+import { JiraConfig } from '@/app/types';
 
 export interface JiraIssueFields {
   summary: string;
@@ -40,26 +41,37 @@ export class JiraService {
   private baseUrl: string;
   private auth: string;
 
-  private constructor() {
-    this.baseUrl = env.JIRA_BASE_URL || '';
-    const email = env.JIRA_EMAIL || '';
-    const apiToken = env.JIRA_API_TOKEN || '';
+  private constructor(jiraConfig?: JiraConfig) {
+    // Use config if provided, otherwise fall back to environment variables
+    const config = jiraConfig || {
+      baseUrl: env.JIRA_BASE_URL,
+      email: env.JIRA_EMAIL,
+      apiToken: env.JIRA_API_TOKEN,
+      projectKey: env.JIRA_PROJECT_KEY,
+    };
+
+    this.baseUrl = config.baseUrl || '';
+    const email = config.email || '';
+    const apiToken = config.apiToken || '';
 
     if (!this.baseUrl || !email || !apiToken) {
       throw new Error(
-        'Jira configuration is incomplete. Please set JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN environment variables.',
+        'Jira configuration is incomplete. Please configure Jira settings in the admin panel or set JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN environment variables.',
       );
     }
 
     this.auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
   }
 
-  public static getInstance(): JiraService {
+  public static getInstance(jiraConfig?: JiraConfig): JiraService {
     if (!JiraService.instance) {
-      JiraService.instance = new JiraService();
+      JiraService.instance = new JiraService(jiraConfig);
     }
-
     return JiraService.instance;
+  }
+
+  public static resetInstance(): void {
+    JiraService.instance = undefined as any;
   }
 
   private async makeRequest<T>(

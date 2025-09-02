@@ -60,7 +60,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const jiraService = JiraService.getInstance();
+    const config = await service.getConfig();
+    const jiraService = JiraService.getInstance(config.jira);
 
     const jiraResponse = await jiraService.createIssue(
       ticketData.summary,
