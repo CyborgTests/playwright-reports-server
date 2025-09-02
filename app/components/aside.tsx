@@ -5,7 +5,7 @@ import NextLink from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 
-import { ReportIcon, ResultIcon } from '@/app/components/icons';
+import { ReportIcon, ResultIcon, SettingsIcon } from '@/app/components/icons';
 import { siteConfig } from '@/app/config/site';
 import useQuery from '@/app/hooks/useQuery';
 
@@ -13,6 +13,12 @@ interface ServerInfo {
   numOfReports: number;
   numOfResults: number;
 }
+
+const iconst = [
+  { href: '/reports', icon: ReportIcon },
+  { href: '/results', icon: ResultIcon },
+  { href: '/settings', icon: SettingsIcon },
+];
 
 export const Aside: React.FC = () => {
   const pathname = usePathname();
@@ -30,7 +36,7 @@ export const Aside: React.FC = () => {
         <div className="space-y-2">
           {siteConfig.navItems.map((item) => {
             const isActive = pathname === item.href;
-            const Icon = item.href === '/reports' ? ReportIcon : item.href === '/results' ? ResultIcon : null;
+            const Icon = iconst.find((icon) => icon.href === item.href)?.icon;
             const count =
               item.href === '/reports'
                 ? serverInfo?.numOfReports

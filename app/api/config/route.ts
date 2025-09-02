@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { withError } from '@/app/lib/withError';
 import { DATA_FOLDER } from '@/app/lib/storage/constants';
 import { service } from '@/app/lib/service';
+import { JiraService } from '@/app/lib/service/jira';
 
 export const dynamic = 'force-dynamic'; // defaults to auto
 
@@ -53,7 +54,18 @@ export async function PATCH(request: Request) {
   }
 
   const title = formData.get('title');
+  const logoPath = formData.get('logoPath');
+  const faviconPath = formData.get('faviconPath');
+  const reporterPaths = formData.get('reporterPaths');
   const headerLinks = formData.get('headerLinks');
+  const jiraBaseUrl = formData.get('jiraBaseUrl');
+  const jiraEmail = formData.get('jiraEmail');
+  const jiraApiToken = formData.get('jiraApiToken');
+  const jiraProjectKey = formData.get('jiraProjectKey');
+  const resultExpireDays = formData.get('resultExpireDays');
+  const resultExpireCronSchedule = formData.get('resultExpireCronSchedule');
+  const reportExpireDays = formData.get('reportExpireDays');
+  const reportExpireCronSchedule = formData.get('reportExpireCronSchedule');
 
   const config = await service.getConfig();
 
@@ -61,7 +73,29 @@ export async function PATCH(request: Request) {
     return Response.json({ error: `failed to get config` }, { status: 500 });
   }
 
-  if (title) config.title = title.toString();
+  if (title !== null) {
+    config.title = title.toString();
+  }
+
+  if (logo) {
+    config.logoPath = `/${logo.name}`;
+  } else if (logoPath !== null) {
+    config.logoPath = logoPath.toString();
+  }
+
+  if (favicon) {
+    config.faviconPath = `/${favicon.name}`;
+  } else if (faviconPath !== null) {
+    config.faviconPath = faviconPath.toString();
+  }
+
+  if (reporterPaths !== null) {
+    try {
+      config.reporterPaths = JSON.parse(reporterPaths.toString());
+    } catch {
+      config.reporterPaths = [reporterPaths.toString()];
+    }
+  }
 
   if (headerLinks) {
     const { result: parsedHeaderLinks, error: parseHeaderLinksError } = await withError(
@@ -78,8 +112,35 @@ export async function PATCH(request: Request) {
     if (parsedHeaderLinks) config.headerLinks = parsedHeaderLinks;
   }
 
-  if (logo) config.logoPath = `/${logo.name}`;
-  if (favicon) config.faviconPath = `/${favicon.name}`;
+  if (!config.jira) {
+    config.jira = {};
+  }
+
+  if (jiraBaseUrl !== null) config.jira.baseUrl = jiraBaseUrl.toString();
+  if (jiraEmail !== null) config.jira.email = jiraEmail.toString();
+  if (jiraApiToken !== null) config.jira.apiToken = jiraApiToken.toString();
+  if (jiraProjectKey !== null) config.jira.projectKey = jiraProjectKey.toString();
+
+  if (jiraBaseUrl || jiraEmail || jiraApiToken || jiraProjectKey) {
+    JiraService.resetInstance();
+  }
+
+  if (!config.cron) {
+    config.cron = {};
+  }
+
+  if (resultExpireDays !== null) {
+    config.cron.resultExpireDays = parseInt(resultExpireDays.toString());
+  }
+  if (resultExpireCronSchedule !== null) {
+    config.cron.resultExpireCronSchedule = resultExpireCronSchedule.toString();
+  }
+  if (reportExpireDays !== null) {
+    config.cron.reportExpireDays = parseInt(reportExpireDays.toString());
+  }
+  if (reportExpireCronSchedule !== null) {
+    config.cron.reportExpireCronSchedule = reportExpireCronSchedule.toString();
+  }
 
   const { error: saveConfigError } = await withError(service.updateConfig(config));
 

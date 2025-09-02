@@ -32,6 +32,10 @@ export const siteConfig: SiteConfig = {
       label: 'Results',
       href: '/results',
     },
+    {
+      label: 'Settings',
+      href: '/settings',
+    },
   ],
   navMenuItems: [
     {
@@ -41,6 +45,10 @@ export const siteConfig: SiteConfig = {
     {
       label: 'Results',
       href: '/results',
+    },
+    {
+      label: 'Settings',
+      href: '/settings',
     },
   ],
   links: defaultLinks,

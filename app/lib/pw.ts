@@ -2,11 +2,14 @@ import { exec } from 'node:child_process';
 import util from 'node:util';
 import { type UUID } from 'node:crypto';
 import path from 'node:path';
+import fs from 'node:fs';
 
 import { withError } from './withError';
 import { REPORTS_FOLDER, TMP_FOLDER } from './storage/constants';
 import { createDirectory } from './storage/folders';
 import { ReportMetadata } from './storage/types';
+import { defaultConfig } from './config';
+import { storage } from './storage';
 
 const execAsync = util.promisify(exec);
 
@@ -39,15 +42,49 @@ export const generatePlaywrightReport = async (
 
   console.log(`[pw] using playwright version tag: "${versionTag}"`);
 
+  const { result: config } = await storage.readConfigFile();
+  const customReporters = config?.reporterPaths || defaultConfig.reporterPaths || [];
+
+  const reporterArgs = ['html'];
+
+  if (customReporters.length > 0) {
+    const resolvedReporters = customReporters
+      .map((reporterPath) => {
+        if (path.isAbsolute(reporterPath)) {
+          return reporterPath;
+        }
+
+        return path.resolve(process.cwd(), reporterPath);
+      })
+      .filter((reporterPath) => {
+        if (fs.existsSync(reporterPath)) {
+          return true;
+        }
+        console.warn(`[pw] reporter file not found: ${reporterPath}`);
+
+        return false;
+      });
+
+    if (resolvedReporters.length > 0) {
+      reporterArgs.push(...resolvedReporters);
+      console.log(`[pw] using custom reporters: ${resolvedReporters.join(', ')}`);
+    } else {
+      console.warn(`[pw] no valid custom reporters found, using only html reporter`);
+    }
+  }
+
   const { result, error } = await withError(
-    execAsync(`npx playwright${versionTag} merge-reports --reporter html ${tempFolder}`, {
-      env: {
-        ...process.env,
-        // Avoid opening the report on server
-        PW_TEST_HTML_REPORT_OPEN: 'never',
-        PLAYWRIGHT_HTML_REPORT: reportPath,
+    execAsync(
+      `npx playwright${versionTag} merge-reports --reporter ${reporterArgs.join(' --reporter ')} ${tempFolder}`,
+      {
+        env: {
+          ...process.env,
+          // Avoid opening the report on server
+          PW_TEST_HTML_REPORT_OPEN: 'never',
+          PLAYWRIGHT_HTML_REPORT: reportPath,
+        },
       },
-    }),
+    ),
   );
 
   if (error ?? result?.stderr) {

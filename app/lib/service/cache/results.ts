@@ -1,7 +1,8 @@
+import { withError } from '../../withError';
+
 import { storage } from '@/app/lib/storage';
 import { type Result } from '@/app/lib/storage/types';
 import { env } from '@/app/config/env';
-import { withError } from '../../withError';
 
 type ResultsMap = Map<string, Result>;
 
@@ -32,6 +33,7 @@ export class ResultCache {
 
     if (error) {
       console.error('[result cache] failed to read results:', error);
+
       return;
     }
 
