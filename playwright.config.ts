@@ -15,7 +15,17 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: [
-    // ['html', { open: 'never' }],
+    ['blob', { outputFile: 'test-results/blob.zip' }],
+    [
+      '@cyborgtests/reporter-playwright-reports-server',
+      {
+        url: 'https://overwhelming-jsandye-cyborg-tests-d6a8367f.koyeb.app',
+        reportPath: 'test-results/blob.zip',
+        resultDetails: {
+          testsType: 'API',
+        },
+      },
+    ],
     ['list', { printSteps: true }],
   ],
   use: {
@@ -31,7 +41,7 @@ export default defineConfig({
   /* Run your local dev server before starting the tests */
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:3000',
+    url: 'http://localhost:3000/api/info',
     reuseExistingServer: !process.env.CI,
   },
 });
