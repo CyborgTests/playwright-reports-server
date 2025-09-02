@@ -165,7 +165,7 @@ export default function CronConfiguration({
               }}
             />
             <p className="text-xs text-gray-500 mt-1">
-              Cron expression for when to run report cleanup (e.g., "0 3 * * *" for daily at 3 AM)
+              Cron expression for when to run report cleanup (e.g., &quot;0 3 * * *&quot; for daily at 3 AM)
             </p>
           </div>
 

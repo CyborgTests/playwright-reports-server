@@ -67,6 +67,7 @@ export class JiraService {
     if (!JiraService.instance) {
       JiraService.instance = new JiraService(jiraConfig);
     }
+
     return JiraService.instance;
   }
 
