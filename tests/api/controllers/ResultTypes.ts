@@ -1,7 +1,6 @@
-
 export type UploadResultResponse = {
   message: string;
-  status: number; 
+  status: number;
   data: {
     resultID: string;
     createdAt: string;
