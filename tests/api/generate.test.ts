@@ -1,27 +1,19 @@
 import { test, expect } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
+import { ResultController } from './controllers/ResultController';
 
 test('/api/result/upload should accept correct zip blob', async ({ request }) => {
-  const filePath = path.resolve(process.cwd(), './tests/testdata/blob.zip');
-  const zip = await readFile(filePath);
-  const newResult = await request.put('/api/result/upload', {
-    multipart: {
-      file: { name: 'blob.zip', mimeType: 'application/zip', buffer: zip },
-      project: 'Smoke',
-      tag: 'api-smoke',
-    },
-  });
-  expect(newResult.status()).toBe(200);
+  const resultController = new ResultController(request);
 
-  const body = await newResult.json();
-  expect(body.message).toBe('Success');
-  expect(body.data).toHaveProperty('resultID');
-  expect(body.data).toHaveProperty('createdAt');
-  expect(body.data.project).toBe('Smoke');
-  expect(body.data).toHaveProperty('size');
-  expect(body.data).toHaveProperty('sizeBytes');
-  expect(body.data).toHaveProperty('generatedReport');
+  const { resp, json } = await resultController.upload('./tests/testdata/blob.zip', 'Smoke', 'api-smoke');
+  expect(resp.status()).toBe(200);
+  expect(json.message).toBe('Success');
+
+  expect(json.data).toHaveProperty('resultID');
+  expect(json.data).toHaveProperty('createdAt');
+  expect(json.data.project).toBe('Smoke');
+  expect(json.data).toHaveProperty('size');
+  expect(json.data).toHaveProperty('sizeBytes');
+  expect(json.data).toHaveProperty('generatedReport');
 });
 
 test('/api/result/list shows result list', async ({ request }) => {
@@ -41,36 +33,28 @@ test('/api/result/list shows result list', async ({ request }) => {
 });
 
 test('/api/report/generate should generate report', async ({ request }) => {
-  const filePath = path.resolve(process.cwd(), './tests/testdata/blob.zip');
-  const zip = await readFile(filePath);
-  const newResult = await request.put('/api/result/upload', {
-    multipart: {
-      file: { name: 'blob.zip', mimeType: 'application/zip', buffer: zip },
-      project: 'Smoke',
-      tag: 'api-smoke',
-    },
-  });
+  const resultController = new ResultController(request);
+  const { resp, json } = await resultController.upload('./tests/testdata/blob.zip', 'Smoke', 'api-smoke');
 
-  const resBody = await newResult.json();
-  const project = resBody.data?.project ?? resBody.results?.[0]?.project;
-  const resultID = resBody.data?.resultID ?? resBody.results?.[0]?.resultID;
+  const project = json.data?.project;
+  const resultID = json.data?.resultID;
+
   expect(project).toBeTruthy();
   expect(resultID).toBeTruthy();
 
   const newReport = await request.post('/api/report/generate', {
     data: {
-      project: project,
+      project,
       resultsIds: [resultID],
     },
   });
 
   const repBody = await newReport.json();
-  const projectReport = repBody.project ?? repBody.metadata?.project;
 
   expect(newReport.status()).toBe(200);
   expect(repBody.reportId).toBeTruthy();
   expect(repBody.reportUrl).toContain(`/api/serve/${project}/${repBody.reportId}/`);
-  expect(projectReport).toBe(project);
+  expect(repBody.project ?? repBody.metadata?.project).toBe(project);
 });
 
 test('/api/report/list shows report list', async ({ request }) => {
