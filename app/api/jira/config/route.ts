@@ -1,39 +1,41 @@
 import { JiraService } from '@/app/lib/service/jira';
-import { env } from '@/app/config/env';
+import { service } from '@/app/lib/service';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const isConfigured = !!(env.JIRA_BASE_URL && env.JIRA_EMAIL && env.JIRA_API_TOKEN);
+    const config = await service.getConfig();
+    const jiraConfig = config.jira;
+
+    const isConfigured = !!(jiraConfig?.baseUrl && jiraConfig?.email && jiraConfig?.apiToken);
 
     if (!isConfigured) {
       return Response.json({
         configured: false,
-        message:
-          'Jira is not configured. Please set JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN environment variables.',
-        requiredEnvVars: ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_TOKEN'],
+        message: 'Jira is not configured. Please configure Jira settings in the admin panel.',
+        config: jiraConfig || {},
       });
     }
 
-    const jiraService = JiraService.getInstance();
+    const jiraService = JiraService.getInstance(jiraConfig);
 
-    let issueTypes = null;
+    let issueTypes = [];
 
-    if (env.JIRA_PROJECT_KEY) {
+    if (jiraConfig?.projectKey) {
       try {
-        const project = await jiraService.getProject(env.JIRA_PROJECT_KEY);
+        const project = await jiraService.getProject(jiraConfig.projectKey);
 
         issueTypes = project.issueTypes || [];
       } catch (error) {
-        console.warn(`Could not fetch project-specific issue types for ${env.JIRA_PROJECT_KEY}:`, error);
+        console.warn(`Could not fetch project-specific issue types for ${jiraConfig.projectKey}:`, error);
       }
     }
 
     return Response.json({
       configured: true,
-      baseUrl: env.JIRA_BASE_URL,
-      defaultProjectKey: env.JIRA_PROJECT_KEY,
+      baseUrl: jiraConfig.baseUrl,
+      defaultProjectKey: jiraConfig.projectKey,
       issueTypes: issueTypes.map((type: any) => ({
         id: type.id,
         name: type.name,
