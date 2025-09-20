@@ -4,7 +4,11 @@ import { ResultController } from './controllers/ResultController';
 test('/api/result/upload should accept correct zip blob', async ({ request }) => {
   const resultController = new ResultController(request);
 
-  const { resp, json } = await resultController.upload('./tests/testdata/blob.zip', 'Smoke', 'api-smoke');
+  const { resp, json } = await resultController.upload({
+    filePath: './tests/testdata/blob.zip',
+    project: 'Smoke',
+    tag: 'api-smoke',
+  });
   expect(resp.status()).toBe(200);
   expect(json.message).toBe('Success');
 
@@ -34,8 +38,11 @@ test('/api/result/list shows result list', async ({ request }) => {
 
 test('/api/report/generate should generate report', async ({ request }) => {
   const resultController = new ResultController(request);
-  const { resp, json } = await resultController.upload('./tests/testdata/blob.zip', 'Smoke', 'api-smoke');
-
+  const { resp, json } = await resultController.upload({
+    filePath: './tests/testdata/blob.zip',
+    project: 'Smoke',
+    tag: 'api-smoke',
+  });
   const project = json.data?.project;
   const resultID = json.data?.resultID;
 

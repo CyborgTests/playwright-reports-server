@@ -5,17 +5,23 @@ import { readFile } from 'node:fs/promises';
 import type { APIResponse } from '@playwright/test';
 
 export class ResultController extends BaseController {
-  async upload(
-    filePath: string,
-    project?: string,
-    tag?: string,
-  ): Promise<{ resp: APIResponse; json: UploadResultResponse }> {
+  async upload(options: {
+    filePath: string;
+    project?: string;
+    tag?: string;
+  }): Promise<{ resp: APIResponse; json: UploadResultResponse }> {
+    const { filePath, project, tag } = options;
+
     const absPath = path.resolve(process.cwd(), filePath);
     const zipBuffer = await readFile(absPath);
 
     const resp = await this.request.put('/api/result/upload', {
       multipart: {
-        file: { name: path.basename(absPath), mimeType: 'application/zip', buffer: zipBuffer },
+        file: {
+          name: path.basename(absPath),
+          mimeType: 'application/zip',
+          buffer: zipBuffer,
+        },
         ...(project ? { project } : {}),
         ...(tag ? { tag } : {}),
       },
