@@ -1,20 +1,17 @@
 import { test, expect } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
+import { ResultController } from './controllers/ResultController';
 
 test('/api/result/delete delete result', async ({ request }) => {
-  const filePath = path.resolve(process.cwd(), './tests/testdata/blob.zip');
-  const zip = await readFile(filePath);
-  const newResult = await request.put('/api/result/upload', {
-    multipart: {
-      file: { name: 'blob.zip', mimeType: 'application/zip', buffer: zip },
-      project: 'Smoke',
-      tag: 'api-smoke',
-    },
+  const resultController = new ResultController(request);
+  const { resp, json } = await resultController.upload({
+    filePath: './tests/testdata/blob.zip',
+    project: 'Smoke',
+    tag: 'api-smoke',
   });
-  const resBody = await newResult.json();
-  const resultID = resBody.data?.resultID ?? resBody.results?.[0]?.resultID;
-  expect(newResult.status()).toBe(200);
+  expect(resp.status()).toBe(200);
+  expect(json.data?.resultID).toBeTruthy();
+
+  const resultID = json.data?.resultID;
 
   const deleteRes = await request.delete('/api/result/delete', {
     data: {
@@ -30,19 +27,14 @@ test('/api/result/delete delete result', async ({ request }) => {
 });
 
 test('/api/report/delete delete report', async ({ request }) => {
-  const filePath = path.resolve(process.cwd(), './tests/testdata/blob.zip');
-  const zip = await readFile(filePath);
-  const newResult = await request.put('/api/result/upload', {
-    multipart: {
-      file: { name: 'blob.zip', mimeType: 'application/zip', buffer: zip },
-      project: 'Smoke',
-      tag: 'api-smoke',
-    },
+  const resultController = new ResultController(request);
+  const { resp, json } = await resultController.upload({
+    filePath: './tests/testdata/blob.zip',
+    project: 'Smoke',
+    tag: 'api-smoke',
   });
-
-  const resBody = await newResult.json();
-  const project = resBody.data?.project ?? resBody.results?.[0]?.project;
-  const resultID = resBody.data?.resultID ?? resBody.results?.[0]?.resultID;
+  const project = json.data?.project;
+  const resultID = json.data?.resultID;
 
   const newReport = await request.post('/api/report/generate', {
     data: {
