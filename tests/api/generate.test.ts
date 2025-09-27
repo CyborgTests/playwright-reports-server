@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test } from './fixtures/base';
 import { ResultController } from './controllers/ResultController';
 
 test('/api/result/upload should accept correct zip blob', async ({ request }) => {
@@ -36,19 +37,10 @@ test('/api/result/list shows result list', async ({ request }) => {
   }
 });
 
-test('/api/report/generate should generate report', async ({ request }) => {
-  const resultController = new ResultController(request);
-  const { resp, json } = await resultController.upload({
-    filePath: './tests/testdata/blob.zip',
-    project: 'Smoke',
-    tag: 'api-smoke',
-  });
+test('/api/report/generate should generate report', async ({ request, uploadedResult }) => {
+  const { json } = uploadedResult;
   const project = json.data?.project;
   const resultID = json.data?.resultID;
-
-  expect(project).toBeTruthy();
-  expect(resultID).toBeTruthy();
-
   const newReport = await request.post('/api/report/generate', {
     data: {
       project,
