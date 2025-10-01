@@ -72,3 +72,25 @@ test('/api/report/list shows report list', async ({ request }) => {
     expect(reports).toHaveProperty('reportUrl');
   }
 });
+
+test('/api/result/upload without file should fail', async ({ request }) => {
+  const resp = await request.put('/api/result/upload', {
+    multipart: { project: 'Smoke', tag: 'no-file' },
+  });
+  expect(resp.status()).toBe(400);
+  const body = await resp.json();
+  expect(body.error).toBe('upload result failed: No file received');
+});
+
+test('/api/report/generate with invalid result id should fail', async ({ request, uploadedResult }) => {
+  const { json } = uploadedResult;
+  const project = json.data?.project;
+  const newReport = await request.post('/api/report/generate', {
+    data: {
+      project,
+      resultsIds: '435453434343',
+    },
+  });
+
+  expect(newReport.status()).toBe(404);
+});
