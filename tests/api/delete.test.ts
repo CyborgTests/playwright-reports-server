@@ -1,16 +1,8 @@
-import { test, expect } from '@playwright/test';
-import { ResultController } from './controllers/ResultController';
+import { expect } from '@playwright/test';
+import { test } from './fixtures/base';
 
-test('/api/result/delete delete result', async ({ request }) => {
-  const resultController = new ResultController(request);
-  const { resp, json } = await resultController.upload({
-    filePath: './tests/testdata/blob.zip',
-    project: 'Smoke',
-    tag: 'api-smoke',
-  });
-  expect(resp.status()).toBe(200);
-  expect(json.data?.resultID).toBeTruthy();
-
+test('/api/result/delete delete result', async ({ request, uploadedResult }) => {
+  const { json } = uploadedResult;
   const resultID = json.data?.resultID;
 
   const deleteRes = await request.delete('/api/result/delete', {
@@ -26,26 +18,9 @@ test('/api/result/delete delete result', async ({ request }) => {
   expect(deleteBody.resultsIds).toContain(resultID);
 });
 
-test('/api/report/delete delete report', async ({ request }) => {
-  const resultController = new ResultController(request);
-  const { resp, json } = await resultController.upload({
-    filePath: './tests/testdata/blob.zip',
-    project: 'Smoke',
-    tag: 'api-smoke',
-  });
-  const project = json.data?.project;
-  const resultID = json.data?.resultID;
-
-  const newReport = await request.post('/api/report/generate', {
-    data: {
-      project: project,
-      resultsIds: [resultID],
-    },
-  });
-
-  const repBody = await newReport.json();
-  const reportId = repBody.reportId;
-
+test('/api/report/delete delete report', async ({ request, generatedReport }) => {
+  const { json } = generatedReport;
+  const reportId = json.reportId;
   const deleteReport = await request.delete('/api/report/delete', {
     data: {
       reportsIds: [reportId],

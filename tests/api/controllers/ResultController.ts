@@ -1,4 +1,4 @@
-import { BaseController } from '../BaseController';
+import { BaseController } from './BaseController';
 import { UploadResultResponse } from './ResultTypes';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';

@@ -1,14 +1,8 @@
-import { test, expect } from '@playwright/test';
-import { ResultController } from './controllers/ResultController';
+import { expect } from '@playwright/test';
+import { test } from './fixtures/base';
 
-test('/api/result/upload should accept correct zip blob', async ({ request }) => {
-  const resultController = new ResultController(request);
-
-  const { resp, json } = await resultController.upload({
-    filePath: './tests/testdata/blob.zip',
-    project: 'Smoke',
-    tag: 'api-smoke',
-  });
+test('/api/result/upload should accept correct zip blob', async ({ uploadedResult }) => {
+  const { resp, json } = uploadedResult;
   expect(resp.status()).toBe(200);
   expect(json.message).toBe('Success');
 
@@ -36,19 +30,10 @@ test('/api/result/list shows result list', async ({ request }) => {
   }
 });
 
-test('/api/report/generate should generate report', async ({ request }) => {
-  const resultController = new ResultController(request);
-  const { resp, json } = await resultController.upload({
-    filePath: './tests/testdata/blob.zip',
-    project: 'Smoke',
-    tag: 'api-smoke',
-  });
+test('/api/report/generate should generate report', async ({ request, uploadedResult }) => {
+  const { json } = uploadedResult;
   const project = json.data?.project;
   const resultID = json.data?.resultID;
-
-  expect(project).toBeTruthy();
-  expect(resultID).toBeTruthy();
-
   const newReport = await request.post('/api/report/generate', {
     data: {
       project,
@@ -79,4 +64,26 @@ test('/api/report/list shows report list', async ({ request }) => {
     expect(reports).toHaveProperty('size');
     expect(reports).toHaveProperty('reportUrl');
   }
+});
+
+test('/api/result/upload without file should fail', async ({ request }) => {
+  const resp = await request.put('/api/result/upload', {
+    multipart: { project: 'Smoke', tag: 'no-file' },
+  });
+  expect(resp.status()).toBe(400);
+  const body = await resp.json();
+  expect(body.error).toBe('upload result failed: No file received');
+});
+
+test('/api/report/generate with invalid result id should fail', async ({ request, uploadedResult }) => {
+  const { json } = uploadedResult;
+  const project = json.data?.project;
+  const newReport = await request.post('/api/report/generate', {
+    data: {
+      project,
+      resultsIds: '435453434343',
+    },
+  });
+
+  expect(newReport.status()).toBe(404);
 });
