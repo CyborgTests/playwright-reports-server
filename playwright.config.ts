@@ -35,6 +35,7 @@ export default defineConfig({
     {
       name: 'api',
       testDir: './tests/api',
+      testMatch: /.*\.test\.ts/,
       use: { baseURL: 'http://localhost:3000', ...devices['Desktop Chrome'] },
     },
   ],

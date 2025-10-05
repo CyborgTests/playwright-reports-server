@@ -1,5 +1,4 @@
-import { test as base } from '@playwright/test';
-import type { APIResponse } from '@playwright/test';
+import { test as base, type APIResponse } from '@playwright/test';
 import { ResultController } from '../controllers/ResultController';
 import type { UploadResultResponse } from '../controllers/ResultTypes';
 import { ReportController } from '../controllers/ReportController';

@@ -1,6 +1,5 @@
 import { expect } from '@playwright/test';
 import { test } from './fixtures/base';
-import { ResultController } from './controllers/ResultController';
 
 test('/api/result/delete delete result', async ({ request, uploadedResult }) => {
   const { json } = uploadedResult;

@@ -1,15 +1,8 @@
 import { expect } from '@playwright/test';
 import { test } from './fixtures/base';
-import { ResultController } from './controllers/ResultController';
 
-test('/api/result/upload should accept correct zip blob', async ({ request }) => {
-  const resultController = new ResultController(request);
-
-  const { resp, json } = await resultController.upload({
-    filePath: './tests/testdata/blob.zip',
-    project: 'Smoke',
-    tag: 'api-smoke',
-  });
+test('/api/result/upload should accept correct zip blob', async ({ uploadedResult }) => {
+  const { resp, json } = uploadedResult;
   expect(resp.status()).toBe(200);
   expect(json.message).toBe('Success');
 
