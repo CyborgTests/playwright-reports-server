@@ -38,6 +38,12 @@ export default defineConfig({
       testMatch: /.*\.test\.ts/,
       use: { baseURL: 'http://localhost:3000', ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'ui',
+      testDir: './tests/ui',
+      testMatch: /.*\.test\.ts/,
+      use: { baseURL: 'http://localhost:3000', ...devices['Desktop Chrome'] },
+    },
   ],
   /* Run your local dev server before starting the tests */
   webServer: {
