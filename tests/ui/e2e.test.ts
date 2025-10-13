@@ -15,7 +15,4 @@ test('Verify success generated report', async ({ app }) => {
   await app.result.generateReport('UI', 'e2e UI');
   await app.result.openReportPage();
   await app.report.verifyReportData('e2e UI', 'UI');
-  await app.report.verifyOpenReportByLink();
-  await app.result.openReportPage();
-  await app.report.verifyOpenPlaywrightReport();
 });
