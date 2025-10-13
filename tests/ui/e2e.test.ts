@@ -8,14 +8,14 @@ test('Verify success upload result', async ({ app }) => {
   await app.result.verifyResultData('UI', 'tag: e2e');
 });
 
-// test.fixme.('Verify success generated report', async ({ app }) => {
-//   await app.result.navigateTo();
-//   await app.result.selectResult();
-//   await app.result.verifySelectionCount();
-//   await app.result.generateReport('UI', 'e2e UI');
-//   await app.result.openReportPage();
-//   await app.report.verifyReportData('e2e UI', 'UI');
-//   await app.report.verifyOpenReportByLink();
-//   await app.result.openReportPage();
-//   await app.report.verifyOpenPlaywrightReport();
-// });
+test('Verify success generated report', async ({ app }) => {
+  await app.result.navigateTo();
+  await app.result.selectResult();
+  await app.result.verifySelectionCount();
+  await app.result.generateReport('UI', 'e2e UI');
+  await app.result.openReportPage();
+  await app.report.verifyReportData('e2e UI', 'UI');
+  await app.report.verifyOpenReportByLink();
+  await app.result.openReportPage();
+  await app.report.verifyOpenPlaywrightReport();
+});
