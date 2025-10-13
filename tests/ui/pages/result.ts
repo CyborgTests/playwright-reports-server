@@ -21,7 +21,7 @@ export class ResultPage extends BasePage {
     await this.page.goto('/results');
   }
   async verifyPageElementsVisible() {
-    await this.page.waitForLoadState('load')
+    await this.page.waitForLoadState('load');
     await this.title.isVisible();
     await this.generateReportButton.isVisible();
     await this.uploadResultbutton.isVisible();
