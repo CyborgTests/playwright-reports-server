@@ -28,6 +28,7 @@ export class ResultPage extends BasePage {
     await this.search.isVisible();
   }
   async uploadResult() {
+    await this.uploadResultbutton.isVisible();
     await this.uploadResultbutton.click();
     await this.uploadPopup.uploadResult();
     await this.successUploadPopup.isVisible();
