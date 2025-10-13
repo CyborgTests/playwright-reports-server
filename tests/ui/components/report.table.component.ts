@@ -2,7 +2,7 @@ import { BaseComponent } from './base.component.js';
 import { expect } from '@playwright/test';
 
 export class ReportTable extends BaseComponent {
-  private titleCell = this.page.locator('tbody tr').first().getByRole('link').first();
+  private titleCell = this.page.locator('tbody tr').getByRole('link').first();
   private projectCell = this.page.getByRole('gridcell').nth(0);
   private createdAtCell = this.page.getByRole('gridcell').nth(1);
   private sizeCell = this.page.getByRole('gridcell').nth(2);
