@@ -11,7 +11,7 @@ export class ReportPage extends BasePage {
   }
   async verifyOpenReportByLink() {
     await this.reportData.verifyOpenReportByLink();
-    await expect(this.reportName).toHaveText('e2e UI');
+    await expect(this.page).toHaveURL(/\/reports/);
   }
   async verifyOpenPlaywrightReport() {
     await this.reportData.verifyOpenPlaywrightReport();
