@@ -10,7 +10,7 @@ export class ReportTable extends BaseComponent {
   private openReportButton = this.page.getByRole('button', { name: 'Open report' }).nth(4);
 
   async verifyReportColumnData(title: string, project: string) {
-    await this.titleCell.isVisible({ timeout: 20_000 });
+    await this.titleCell.isVisible();
     await expect(this.titleCell).toHaveText(title);
     await expect(this.projectCell).toHaveText(project);
     await this.createdAtCell.isVisible();
@@ -23,7 +23,7 @@ export class ReportTable extends BaseComponent {
     await this.titleCell.click();
   }
   async verifyOpenPlaywrightReport() {
-    await this.titleCell.isVisible({ timeout: 15_000 });
+    await this.titleCell.isVisible();
     await this.openReportButton.click();
   }
 }
