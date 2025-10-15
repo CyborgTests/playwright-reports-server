@@ -62,23 +62,9 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult, label 
         <ModalContent>
           {(onClose) => (
             <>
-              <ModalHeader className="flex flex-col gap-1">Are you absolutely sure?</ModalHeader>
+              <ModalHeader className="flex flex-col gap-1">Are you sure?</ModalHeader>
               <ModalBody>
-                <p>This action cannot be undone. This will permanently delete your results files.</p>
-                <p>
-                  Please type {resultIds?.length > 1 ? 'first' : ''} result id&nbsp;
-                  <strong className="break-all">&quot;{resultIds?.at(0)}&quot;</strong>
-                  &nbsp;to confirm:
-                </p>
-                <Input
-                  isRequired
-                  label="Confirm"
-                  labelPlacement="outside"
-                  placeholder={resultIds?.at(0)}
-                  value={confirm}
-                  variant="bordered"
-                  onValueChange={setConfirm}
-                />
+                <p>This will permanently delete your results files.</p>
               </ModalBody>
               <ModalFooter>
                 <Button
@@ -93,7 +79,6 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult, label 
                 </Button>
                 <Button
                   color="danger"
-                  isDisabled={confirm !== resultIds?.at(0)}
                   isLoading={isPending}
                   onPress={() => {
                     DeleteResult();

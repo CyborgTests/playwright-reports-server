@@ -61,23 +61,9 @@ export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjec
           <ModalContent>
             {(onClose) => (
               <>
-                <ModalHeader className="flex flex-col gap-1">Are you absolutely sure?</ModalHeader>
+                <ModalHeader className="flex flex-col gap-1">Are you sure?</ModalHeader>
                 <ModalBody>
-                  <p>This action cannot be undone. This will permanently delete your report.</p>
-                  <p>
-                    Please type report id&nbsp;
-                    <strong className="break-all">&quot;{reportId}&quot;</strong>
-                    &nbsp;to confirm:
-                  </p>
-                  <Input
-                    isRequired
-                    label="Confirm"
-                    labelPlacement="outside"
-                    placeholder={reportId}
-                    value={confirm}
-                    variant="bordered"
-                    onValueChange={setConfirm}
-                  />
+                  <p>This will permanently delete your report</p>
                 </ModalBody>
                 <ModalFooter>
                   <Button color="primary" variant="light" onPress={onClose}>
@@ -85,14 +71,13 @@ export default function DeleteReportButton({ reportId, onDeleted }: DeleteProjec
                   </Button>
                   <Button
                     color="danger"
-                    isDisabled={confirm !== reportId}
                     isLoading={isPending}
                     onPress={() => {
                       DeleteReport();
                       onClose();
                     }}
                   >
-                    Sure, Delete
+                    Delete Report
                   </Button>
                 </ModalFooter>
               </>
