@@ -1,11 +1,11 @@
 import { expect } from '@playwright/test';
 import { test } from './fixtures/base';
+import { ResultController } from './controllers/ResultController';
 
 test('/api/result/upload should accept correct zip blob', async ({ uploadedResult }) => {
   const { resp, json } = uploadedResult;
   expect(resp.status()).toBe(200);
   expect(json.message).toBe('Success');
-
   expect(json.data).toHaveProperty('resultID');
   expect(json.data).toHaveProperty('createdAt');
   expect(json.data.project).toBe('Smoke');
@@ -86,4 +86,37 @@ test('/api/report/generate with invalid result id should fail', async ({ request
   });
 
   expect(newReport.status()).toBe(404);
+});
+
+test('/api/report/list filter by Project', async ({ request }) => {
+  const api = new ResultController(request);
+  const { response, json } = await api.list({ project: 'Smoke', limit: 100 });
+  expect(response.status()).toBe(200);
+  for (const response of json.results) expect(response.project).toBe('Smoke');
+});
+
+test('/api/report/list filter by Tag', async ({ request }) => {
+  const api = new ResultController(request);
+  const { response, json } = await api.list({ tags: 'tag: api-smoke', limit: 100 });
+  expect(response.status()).toBe(200);
+  for (const response of json.results) expect(response.tag).toBe('api-smoke');
+});
+
+test('/api/report/list page per row return proper data count', async ({ request }) => {
+  const api = new ResultController(request);
+  const limits = [10, 20, 50];
+  for (const limit of limits) {
+    const { response, json } = await api.list({ limit });
+    expect(response.status()).toBe(200);
+    expect((json.results ?? []).length).toBeLessThanOrEqual(limit);
+  }
+});
+
+test('/api/report/list search retrun valid data by existing reportId', async ({ request, uploadedResult }) => {
+  const { json } = uploadedResult;
+  const resultID = json.data?.resultID;
+  const api = new ResultController(request);
+  const { response } = await api.list({ search: resultID });
+  expect(response.status()).toBe(200);
+  expect(resultID).toBeTruthy();
 });

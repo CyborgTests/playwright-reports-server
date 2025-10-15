@@ -3,6 +3,7 @@ import { UploadResultResponse } from './ResultTypes';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { APIResponse } from '@playwright/test';
+import { ListParams } from './ListTypes';
 
 export class ResultController extends BaseController {
   async upload(options: {
@@ -29,5 +30,11 @@ export class ResultController extends BaseController {
 
     const json = (await resp.json()) as UploadResultResponse;
     return { resp, json };
+  }
+
+  async list(params: ListParams = {}) {
+    const response = await this.request.get('/api/result/list', { params });
+    const json = await response.json();
+    return { response, json };
   }
 }
