@@ -2,7 +2,7 @@ import { exec } from 'node:child_process';
 import util from 'node:util';
 import { type UUID } from 'node:crypto';
 import path from 'node:path';
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 
 import { withError } from './withError';
 import { REPORTS_FOLDER, TMP_FOLDER } from './storage/constants';
@@ -88,6 +88,8 @@ export const generatePlaywrightReport = async (
   );
 
   if (error ?? result?.stderr) {
+    // Making sure to remove empty report folder if the report generation fails.
+    await fs.rm(reportPath, { recursive: true, force: true });
     console.error(error ? JSON.stringify(error, null, 4) : result?.stderr);
   }
 
