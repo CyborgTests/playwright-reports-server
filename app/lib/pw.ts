@@ -2,9 +2,9 @@ import { exec } from 'node:child_process';
 import util from 'node:util';
 import { type UUID } from 'node:crypto';
 import path from 'node:path';
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 
-import { withError } from './withError';
 import { REPORTS_FOLDER, TMP_FOLDER } from './storage/constants';
 import { createDirectory } from './storage/folders';
 import { ReportMetadata } from './storage/types';
@@ -57,7 +57,7 @@ export const generatePlaywrightReport = async (
         return path.resolve(process.cwd(), reporterPath);
       })
       .filter((reporterPath) => {
-        if (fs.existsSync(reporterPath)) {
+        if (existsSync(reporterPath)) {
           return true;
         }
         console.warn(`[pw] reporter file not found: ${reporterPath}`);
@@ -73,8 +73,8 @@ export const generatePlaywrightReport = async (
     }
   }
 
-  const { result, error } = await withError(
-    execAsync(
+  try {
+    const result = await execAsync(
       `npx playwright${versionTag} merge-reports --reporter ${reporterArgs.join(' --reporter ')} ${tempFolder}`,
       {
         env: {
@@ -84,16 +84,19 @@ export const generatePlaywrightReport = async (
           PLAYWRIGHT_HTML_REPORT: reportPath,
         },
       },
-    ),
-  );
+    );
 
-  if (error ?? result?.stderr) {
-    console.error(error ? JSON.stringify(error, null, 4) : result?.stderr);
+    if (result?.stderr) {
+      // got STDERR output while generating report - throwing error since we don't know what went wrong.
+      throw new Error(result?.stderr);
+    }
+
+    return {
+      reportPath,
+    };
+  } catch (error) {
+    await fs.rm(reportPath, { recursive: true, force: true });
+    console.log(`[pw] got error while generating report: ${error}`);
+    throw error;
   }
-
-  console.log(`[pw] ${result?.stdout ?? ''}`);
-
-  return {
-    reportPath,
-  };
 };
