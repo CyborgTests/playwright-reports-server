@@ -20,4 +20,4 @@ export const REPORTS_FOLDER = path.join(DATA_FOLDER, REPORTS_PATH);
 
 export const REPORT_METADATA_FILE = 'report-server-metadata.json';
 
-export const DEFAULT_STREAM_CHUNK_SIZE = 16 * 1024; // 16KB
+export const DEFAULT_STREAM_CHUNK_SIZE = 512 * 1024; // 512KB
