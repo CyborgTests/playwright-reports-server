@@ -21,9 +21,10 @@ export const test = base.extend<{
   generatedReport: async ({ request, uploadedResult }, use) => {
     const project = uploadedResult.json.data?.project!;
     const resultID = uploadedResult.json.data?.resultID!;
+    const title = 'Smoke Test';
 
     const reportController = new ReportController(request);
-    const generatedRep = await reportController.generateReport(project, [resultID]);
+    const generatedRep = await reportController.generateReport(project, [resultID], title);
 
     await use(generatedRep);
   },

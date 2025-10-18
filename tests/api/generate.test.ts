@@ -1,6 +1,7 @@
 import { expect } from '@playwright/test';
 import { test } from './fixtures/base';
 import { ResultController } from './controllers/ResultController';
+import { ReportController } from './controllers/ReportController';
 
 test('/api/result/upload should accept correct zip blob', async ({ uploadedResult }) => {
   const { resp, json } = uploadedResult;
@@ -38,6 +39,7 @@ test('/api/report/generate should generate report', async ({ request, uploadedRe
     data: {
       project,
       resultsIds: [resultID],
+      title: 'Smoke test',
     },
   });
 
@@ -88,21 +90,21 @@ test('/api/report/generate with invalid result id should fail', async ({ request
   expect(newReport.status()).toBe(404);
 });
 
-test('/api/report/list filter by Project', async ({ request }) => {
+test('/api/result/list filter by Project', async ({ request }) => {
   const api = new ResultController(request);
   const { response, json } = await api.list({ project: 'Smoke', limit: 100 });
   expect(response.status()).toBe(200);
   for (const response of json.results) expect(response.project).toBe('Smoke');
 });
 
-test('/api/report/list filter by Tag', async ({ request }) => {
+test('/api/result/list filter by Tag', async ({ request }) => {
   const api = new ResultController(request);
   const { response, json } = await api.list({ tags: 'tag: api-smoke', limit: 100 });
   expect(response.status()).toBe(200);
   for (const response of json.results) expect(response.tag).toBe('api-smoke');
 });
 
-test('/api/report/list page per row return proper data count', async ({ request }) => {
+test('/api/result/list page per row return proper data count', async ({ request }) => {
   const api = new ResultController(request);
   const limits = [10, 20, 50];
   for (const limit of limits) {
@@ -112,11 +114,51 @@ test('/api/report/list page per row return proper data count', async ({ request 
   }
 });
 
-test('/api/report/list search retrun valid data by existing reportId', async ({ request, uploadedResult }) => {
-  const { json } = uploadedResult;
-  const resultID = json.data?.resultID;
+test('/api/result/list search return valid data by existing reportId', async ({ request, uploadedResult }) => {
+  const resultID = uploadedResult.json.data?.resultID;
   const api = new ResultController(request);
-  const { response } = await api.list({ search: resultID });
+  const { response, json } = await api.list({ search: resultID });
   expect(response.status()).toBe(200);
-  expect(resultID).toBeTruthy();
+  expect(json.results.map((r: any) => r.resultID)).toContain(resultID);
+});
+
+test('/api/result/list search return No Result by not existing reportId', async ({ request }) => {
+  const resultID = 'еуіе45789';
+  const api = new ResultController(request);
+  const { response, json } = await api.list({ search: resultID });
+  expect(response.status()).toBe(200);
+  expect(json).toEqual({ results: [], total: 0 });
+});
+
+test('/api/report/list filter by Project', async ({ request }) => {
+  const api = new ReportController(request);
+  const { response, json } = await api.list({ project: 'Smoke', limit: 100 });
+  expect(response.status()).toBe(200);
+  for (const response of json.reports) expect(response.project).toBe('Smoke');
+});
+
+test('/api/report/list page per row return proper data count', async ({ request }) => {
+  const api = new ReportController(request);
+  const limits = [10, 20, 50];
+  for (const limit of limits) {
+    const { response, json } = await api.list({ limit });
+    expect(response.status()).toBe(200);
+    expect((json.report ?? []).length).toBeLessThanOrEqual(limit);
+  }
+});
+
+test('/api/report/list search return valid data by existing reportId', async ({ request, generatedReport }) => {
+  const title = generatedReport.json.metadata?.title;
+  const api = new ReportController(request);
+  const { response, json } = await api.list({ search: title });
+  expect(response.status()).toBe(200);
+  expect(json.reports.map((r: any) => r.title)).toContain(title);
+});
+
+test('/api/report/list search return No Result  by not existing reportId', async ({ request }) => {
+  const title = 'еуіе';
+  const api = new ReportController(request);
+  const { response, json } = await api.list({ search: title });
+  expect(response.status()).toBe(200);
+  expect(json).toEqual({ reports: [], total: 0 });
 });
