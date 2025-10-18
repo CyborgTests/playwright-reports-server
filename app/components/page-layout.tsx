@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 
 import useQuery from '@/app/hooks/useQuery';
 import { type ServerDataInfo } from '@/app/lib/storage';
+import { SiteWhiteLabelConfig } from '@/app/types';
 
 interface PageLayoutProps {
   render: (props: { info: ServerDataInfo; onUpdate: () => void }) => React.ReactNode;
@@ -16,22 +17,48 @@ interface PageLayoutProps {
 export default function PageLayout({ render }: PageLayoutProps) {
   const { data: session, status } = useSession();
   const authIsLoading = status === 'loading';
+  const [authRequired, setAuthRequired] = useState<boolean | null>(null);
 
   const { data: info, error, refetch, isLoading: isInfoLoading } = useQuery<ServerDataInfo>('/api/info');
   const [refreshId, setRefreshId] = useState<string>(uuidv4());
 
+  // Check if auth is required
   useEffect(() => {
-    if (!authIsLoading && !session) {
+    fetch('/api/config')
+      .then((res) => res.json())
+      .then((config: SiteWhiteLabelConfig) => {
+        setAuthRequired(config.authRequired ?? false);
+      })
+      .catch(() => {
+        // Fallback: assume auth is required if we can't fetch config
+        setAuthRequired(true);
+      });
+  }, []);
+
+  useEffect(() => {
+    // Only show error if auth is required
+    if (authRequired === false) {
+      return;
+    }
+
+    if (!authIsLoading && !session && authRequired === true) {
       toast.error('You are not authenticated');
     }
-  }, [authIsLoading, session]);
+  }, [authIsLoading, session, authRequired]);
 
   useLayoutEffect(() => {
+    // Skip session check if auth is not required
+    if (authRequired === false) {
+      refetch();
+
+      return;
+    }
+
     if (authIsLoading || !session) {
       return;
     }
     refetch();
-  }, [refreshId, session]);
+  }, [refreshId, session, authRequired]);
 
   if (authIsLoading || isInfoLoading) {
     return <Spinner className="flex justify-center items-center" />;

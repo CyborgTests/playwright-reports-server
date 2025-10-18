@@ -161,5 +161,8 @@ export async function GET() {
     return Response.json({ error: 'Config not found' }, { status: 404 });
   }
 
-  return Response.json(config, { status: 200 });
+  // Add authRequired flag to config response
+  const authRequired = !!process.env.API_TOKEN;
+
+  return Response.json({ ...config, authRequired }, { status: 200 });
 }

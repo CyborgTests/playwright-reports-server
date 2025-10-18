@@ -7,7 +7,9 @@ import jwt from 'jsonwebtoken';
 const useAuth = !!process.env.API_TOKEN;
 
 // strictly recommended to specify via env var
-const secret = process.env.AUTH_SECRET ?? crypto.randomUUID();
+// Use a stable default secret when AUTH_SECRET is not set to avoid JWT decryption errors
+// This is only acceptable when auth is disabled (no API_TOKEN)
+const secret = process.env.AUTH_SECRET ?? 'default-secret-for-non-auth-mode';
 
 // session expiration for api token auth
 const expirationHours = process.env.UI_AUTH_EXPIRE_HOURS ? parseInt(process.env.UI_AUTH_EXPIRE_HOURS) : 2;
@@ -73,7 +75,7 @@ const noAuth = {
       async authorize() {
         const token = getJwtStubToken();
 
-        return { apiToken: token };
+        return { apiToken: token, jwtToken: token };
       },
     }),
   ],
@@ -81,9 +83,18 @@ const noAuth = {
     authorized: async () => {
       return true;
     },
-    async session({ session }) {
+    async jwt({ token, user }) {
+      if (user) {
+        token.apiToken = user.apiToken;
+        token.jwtToken = user.jwtToken;
+      }
+
+      return token;
+    },
+    async session({ session, token }) {
       session.sessionToken = getJwtStubToken();
       session.user.jwtToken = session.sessionToken;
+      session.user.apiToken = token.apiToken as string;
 
       return session;
     },

@@ -3,7 +3,7 @@
 import { useQuery as useTanStackQuery, UseQueryOptions } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { withQueryParams } from '../lib/network';
@@ -19,8 +19,32 @@ const useQuery = <ReturnType>(
 ) => {
   const session = useSession();
   const router = useRouter();
+  const [authRequired, setAuthRequired] = useState<boolean | null>(null);
+
+  // Check if auth is required
+  useEffect(() => {
+    fetch('/api/config')
+      .then((res) => res.json())
+      .then((config) => {
+        setAuthRequired(config.authRequired ?? false);
+      })
+      .catch(() => {
+        // Fallback: assume auth is required if we can't fetch config
+        setAuthRequired(true);
+      });
+  }, []);
 
   useEffect(() => {
+    // Don't redirect if auth is not required
+    if (authRequired === false) {
+      return;
+    }
+
+    // Don't redirect if we haven't determined auth requirements yet
+    if (authRequired === null) {
+      return;
+    }
+
     if (session.status === 'unauthenticated') {
       toast.warning('Unauthorized');
       router.push(withQueryParams('/login', options?.callback ? { callbackUrl: encodeURI(options.callback) } : {}));
@@ -31,7 +55,7 @@ const useQuery = <ReturnType>(
     if (session.status === 'loading') {
       return;
     }
-  }, [session.status]);
+  }, [session.status, authRequired]);
 
   return useTanStackQuery<ReturnType, Error>({
     queryKey: [path, ...(options?.dependencies ?? [])],
@@ -55,7 +79,7 @@ const useQuery = <ReturnType>(
 
       return response.json();
     },
-    enabled: session.status === 'authenticated',
+    enabled: authRequired === false || session.status === 'authenticated',
     ...options,
   });
 };

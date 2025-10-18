@@ -21,6 +21,7 @@ export interface SiteWhiteLabelConfig {
   logoPath: string;
   faviconPath: string;
   reporterPaths?: string[];
+  authRequired?: boolean;
   cron?: {
     resultExpireDays?: number;
     resultExpireCronSchedule?: string;
