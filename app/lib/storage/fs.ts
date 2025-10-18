@@ -357,40 +357,21 @@ export async function generateReport(resultsIds: string[], metadata?: ReportMeta
   const reportId = randomUUID();
   const tempFolder = path.join(TMP_FOLDER, reportId);
 
-  const { error: mkdirTempError } = await withError(fs.mkdir(tempFolder, { recursive: true }));
+  await fs.mkdir(tempFolder, { recursive: true });
 
-  if (mkdirTempError) {
-    throw new Error(`failed to create temp folder to generate report: ${mkdirTempError.message}`);
+  try {
+    for (const id of resultsIds) {
+      await fs.copyFile(path.join(RESULTS_FOLDER, `${id}.zip`), path.join(tempFolder, `${id}.zip`));
+    }
+    const generated = await generatePlaywrightReport(reportId, metadata!);
+    const info = await parseReportMetadata(reportId, generated.reportPath, metadata);
+
+    await saveReportMetadata(generated.reportPath, info);
+
+    return reportId;
+  } finally {
+    await fs.rm(tempFolder, { recursive: true, force: true });
   }
-
-  for (const id of resultsIds) {
-    await fs.copyFile(path.join(RESULTS_FOLDER, `${id}.zip`), path.join(tempFolder, `${id}.zip`));
-  }
-
-  const { error: generateReportError, result: generated } = await withError(
-    generatePlaywrightReport(reportId, metadata!),
-  );
-
-  const { error: parsedMetadataError, result: info } = await withError(
-    parseReportMetadata(reportId, generated?.reportPath ?? '', metadata),
-  );
-
-  if (parsedMetadataError) console.error(`failed to parse metadata: ${parsedMetadataError.message}`);
-
-  if (!generateReportError && info) {
-    const { error: writeJsonError } = await withError(saveReportMetadata(generated?.reportPath ?? '', info));
-
-    if (writeJsonError)
-      console.error(`failed to save metadata file for ${reportId} json file: ${writeJsonError.message}`);
-  }
-
-  const { error } = await withError(fs.rm(tempFolder, { recursive: true, force: true }));
-
-  if (error) {
-    console.log(`failed to remove temp folder: ${error.message}`);
-  }
-
-  return reportId;
 }
 
 async function parseReportMetadata(
