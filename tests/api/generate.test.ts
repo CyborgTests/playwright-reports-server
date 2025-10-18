@@ -83,7 +83,7 @@ test('/api/report/generate with invalid result id should fail', async ({ request
   const newReport = await request.post('/api/report/generate', {
     data: {
       project,
-      resultsIds: '435453434343',
+      resultsIds: ['435453434343'],
     },
   });
 

@@ -1,8 +1,13 @@
 'use client';
 
-import { Card, CardBody, CardHeader } from '@heroui/react';
+import { Card, CardBody, CardHeader, Skeleton } from '@heroui/react';
+
+import useQuery from '@/app/hooks/useQuery';
+import { SiteWhiteLabelConfig } from '@/app/types';
 
 export default function EnvironmentInfo() {
+  const { data: envInfo, isLoading } = useQuery<SiteWhiteLabelConfig>('/api/config');
+
   return (
     <Card className="p-4">
       <CardHeader>
@@ -12,21 +17,33 @@ export default function EnvironmentInfo() {
         <div className="space-y-4">
           <div>
             <span className="block text-sm font-medium mb-1">Authentication</span>
-            <p className="text-sm text-gray-600">{process.env.API_TOKEN ? 'Enabled' : 'Disabled'}</p>
+            {isLoading ? (
+              <Skeleton className="h-5 w-20 rounded-lg" />
+            ) : (
+              <p className="text-sm text-gray-600">{envInfo?.authRequired ? 'Enabled' : 'Disabled'}</p>
+            )}
           </div>
           <div>
             <span className="block text-sm font-medium mb-1">Server Cache</span>
-            <p className="text-sm text-gray-600">{process.env.USE_SERVER_CACHE === 'true' ? 'Enabled' : 'Disabled'}</p>
+            {isLoading ? (
+              <Skeleton className="h-5 w-20 rounded-lg" />
+            ) : (
+              <p className="text-sm text-gray-600">{envInfo?.serverCache ? 'Enabled' : 'Disabled'}</p>
+            )}
           </div>
           <div>
             <span className="block text-sm font-medium mb-1">Data Storage</span>
-            <p className="text-sm text-gray-600">{process.env.DATA_STORAGE || 'fs'}</p>
+            {isLoading ? (
+              <Skeleton className="h-5 w-20 rounded-lg" />
+            ) : (
+              <p className="text-sm text-gray-600">{envInfo?.dataStorage || 'fs'}</p>
+            )}
           </div>
-          {process.env.S3_ENDPOINT && (
+          {envInfo?.s3Endpoint && (
             <div>
               <span className="block text-sm font-medium mb-1">S3 Storage</span>
-              <p className="text-sm text-gray-600">Endpoint: {process.env.S3_ENDPOINT}</p>
-              <p className="text-sm text-gray-600">Bucket: {process.env.S3_BUCKET}</p>
+              <p className="text-sm text-gray-600">Endpoint: {envInfo.s3Endpoint}</p>
+              <p className="text-sm text-gray-600">Bucket: {envInfo.s3Bucket}</p>
             </div>
           )}
         </div>

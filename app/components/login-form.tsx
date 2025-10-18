@@ -10,6 +10,7 @@ import { title } from '@/app/components/primitives';
 export default function LoginForm() {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
+  const [isAutoSigningIn, setIsAutoSigningIn] = useState(true);
   const router = useRouter();
   const session = useSession();
   const searchParams = useSearchParams();
@@ -21,21 +22,31 @@ export default function LoginForm() {
     // redirect if already authenticated
     if (session.status === 'authenticated') {
       router.replace(callbackUrl);
+
+      return;
     }
 
     // check if we can sign in automatically
-    getProviders().then((providers) => {
-      // if no api token required we can automatically sign user in
-      if (providers?.credentials.name === 'No Auth') {
-        signIn('credentials', {
-          redirect: false,
-        }).then((response) => {
-          if (!response?.error && response?.ok) {
-            router.replace(callbackUrl);
-          }
-        });
-      }
-    });
+    getProviders()
+      .then((providers) => {
+        // if no api token required we can automatically sign user in
+        if (providers?.credentials.name === 'No Auth') {
+          return signIn('credentials', {
+            redirect: false,
+          }).then((response) => {
+            if (!response?.error && response?.ok) {
+              router.replace(callbackUrl);
+            } else {
+              setIsAutoSigningIn(false);
+            }
+          });
+        } else {
+          setIsAutoSigningIn(false);
+        }
+      })
+      .catch(() => {
+        setIsAutoSigningIn(false);
+      });
   }, []);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -49,9 +60,12 @@ export default function LoginForm() {
     result?.error ? setError('invalid API key') : router.replace(callbackUrl);
   };
 
-  return session.status === 'loading' ? (
-    <Spinner className="w-full" />
-  ) : (
+  // Show spinner while session is loading or while auto-signing in
+  if (session.status === 'loading' || isAutoSigningIn) {
+    return <Spinner className="w-full" />;
+  }
+
+  return (
     <div className="grid col-span-6 justify-center">
       <h1 className={title()}>Login</h1>
       <Card className="h-screen min-w-[340px] max-h-[250px] p-2 mt-10">

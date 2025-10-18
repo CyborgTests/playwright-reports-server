@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation';
 import { withError } from '@/app/lib/withError';
 import { storage } from '@/app/lib/storage';
 import { auth } from '@/app/auth';
+import { env } from '@/app/config/env';
 
 interface ReportParams {
   reportId: string;
@@ -24,6 +25,7 @@ export async function GET(
   // is not protected by the middleware
   // as we want to have callbackUrl in the query
 
+  const authRequired = !!env.API_TOKEN;
   const session = await auth();
 
   const { filePath } = params;
@@ -32,7 +34,8 @@ export async function GET(
 
   const targetPath = decodeURI(uriPath);
 
-  if (!session?.user?.jwtToken) {
+  // Only check for session if auth is required
+  if (authRequired && !session?.user?.jwtToken) {
     redirect(`/login?callbackUrl=${encodeURI(req.nextUrl.pathname)}`);
   }
 
