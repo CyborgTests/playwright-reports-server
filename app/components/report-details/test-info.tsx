@@ -79,7 +79,10 @@ const TestInfo: FC<TestInfoProps> = ({ test, history }: TestInfoProps) => {
                     </TableCell>
                     <TableCell className="w-2/8">{parseMilliseconds(item.duration)}</TableCell>
                     <TableCell className="w-1/8">
-                      <Link href={`${item.reportUrl}#?testId=${item.testId}`} target="_blank">
+                      <Link
+                        href={`${process.env.API_BASE_PATH + item.reportUrl}#?testId=${item.testId}`}
+                        target="_blank"
+                      >
                         <LinkIcon />
                       </Link>
                     </TableCell>

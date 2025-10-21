@@ -11,6 +11,7 @@ import { fontSans } from '@/app/config/fonts';
 import { Navbar } from '@/app/components/navbar';
 import { Aside } from '@/app/components/aside';
 import { service } from '@/app/lib/service';
+import { env } from '@/app/config/env';
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await service.getConfig();
@@ -22,7 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     description: siteConfig.description,
     icons: {
-      icon: config?.faviconPath ? `/api/static${config.faviconPath}` : '/favicon.ico',
+      icon: env.API_BASE_PATH + (config?.faviconPath ? `/api/static${config.faviconPath}` : '/favicon.ico'),
     },
   };
 }
@@ -40,6 +41,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html suppressHydrationWarning lang="en">
       <head>
+        <base href={env.API_BASE_PATH} />
         <link href="https://fonts.googleapis.com" rel="preconnect" />
         <link crossOrigin="anonymous" href="https://fonts.gstatic.com" rel="preconnect" />
         <link

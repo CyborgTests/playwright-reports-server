@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { withQueryParams } from '../lib/network';
 
 import { useAuthConfig } from './useAuthConfig';
+import { env } from '../config/env';
 
 const useQuery = <ReturnType>(
   path: string,
@@ -36,7 +37,14 @@ const useQuery = <ReturnType>(
 
     if (session.status === 'unauthenticated') {
       toast.warning('Unauthorized');
-      router.push(withQueryParams('/login', options?.callback ? { callbackUrl: encodeURI(options.callback) } : {}));
+      router.push(
+        withQueryParams(
+          env.API_BASE_PATH + '/login',
+          options?.callback
+            ? { callbackUrl: encodeURI(options.callback) }
+            : { callbackUrl: encodeURI(env.API_BASE_PATH) },
+        ),
+      );
 
       return;
     }
@@ -55,7 +63,8 @@ const useQuery = <ReturnType>(
         headers.Authorization = session.data.user.apiToken;
       }
 
-      const response = await fetch(path, {
+      const fullPath = env.API_BASE_PATH + path;
+      const response = await fetch(fullPath, {
         headers,
         body: options?.body ? JSON.stringify(options.body) : undefined,
         method: options?.method ?? 'GET',

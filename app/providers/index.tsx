@@ -7,6 +7,7 @@ import { ThemeProviderProps } from 'next-themes/dist/types';
 import { SessionProvider } from 'next-auth/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { env } from '../config/env';
 
 export const Providers: FC<ThemeProviderProps> = ({ children, ...themeProps }) => {
   const [queryClient] = useState(
@@ -31,7 +32,7 @@ export const Providers: FC<ThemeProviderProps> = ({ children, ...themeProps }) =
         }}
       >
         <QueryClientProvider client={queryClient}>
-          <SessionProvider>{children}</SessionProvider>
+          <SessionProvider basePath={env.API_BASE_PATH + '/api/auth'}>{children}</SessionProvider>
           <ReactQueryDevtools initialIsOpen={false} />
         </QueryClientProvider>
       </NextThemesProvider>

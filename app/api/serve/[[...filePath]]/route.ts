@@ -36,7 +36,7 @@ export async function GET(
 
   // Only check for session if auth is required
   if (authRequired && !session?.user?.jwtToken) {
-    redirect(`/login?callbackUrl=${encodeURI(req.nextUrl.pathname)}`);
+    redirect(env.API_BASE_PATH + `/login?callbackUrl=${encodeURI(req.nextUrl.pathname)}`);
   }
 
   const contentType = mime.getType(path.basename(targetPath));

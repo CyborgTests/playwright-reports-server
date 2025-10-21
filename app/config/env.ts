@@ -22,4 +22,5 @@ export const env = cleanEnv(process.env, {
   JIRA_EMAIL: str({ desc: 'Jira user email', default: undefined }),
   JIRA_API_TOKEN: str({ desc: 'Jira API token', default: undefined }),
   JIRA_PROJECT_KEY: str({ desc: 'Default Jira project key (optional)', default: undefined }),
+  API_BASE_PATH: str({ desc: 'Base path for the API', default: '' }),
 });

@@ -27,6 +27,7 @@ import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
 import { BranchIcon, FolderIcon } from '@/app/components/icons';
 import { ReadReportsHistory, ReportHistory } from '@/app/lib/storage';
+import { env } from '../config/env';
 
 const columns = [
   { name: 'Title', uid: 'title' },
@@ -196,7 +197,7 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
               <TableCell className="w-1/2">
                 <div className="flex flex-col">
                   {/* Main title and link */}
-                  <Link href={`/report/${item.reportID}`} prefetch={false}>
+                  <Link href={env.API_BASE_PATH + `/report/${item.reportID}`} prefetch={false}>
                     <div className="flex flex-row items-center">
                       {item.title || item.reportID} <LinkIcon />
                     </div>
@@ -229,7 +230,7 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
               <TableCell className="w-1/4">{item.size}</TableCell>
               <TableCell className="w-1/4">
                 <div className="flex gap-4 justify-end">
-                  <Link href={item.reportUrl} prefetch={false} target="_blank">
+                  <Link href={env.API_BASE_PATH + item.reportUrl} prefetch={false} target="_blank">
                     <Button color="primary" size="md">
                       Open report
                     </Button>

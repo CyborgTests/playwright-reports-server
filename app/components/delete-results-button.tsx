@@ -69,6 +69,7 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult, label 
                   color="primary"
                   variant="light"
                   onPress={() => {
+                    // @ts-ignore
                     setConfirm('');
                     onClose();
                   }}
@@ -80,6 +81,7 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult, label 
                   isLoading={isPending}
                   onPress={() => {
                     DeleteResult();
+                    // @ts-ignore
                     setConfirm('');
                     onClose();
                   }}
