@@ -1,7 +1,6 @@
 'use client';
 
-import { Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, useDisclosure, Button } from '@heroui/react';
-import { useState } from 'react';
+import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, useDisclosure, Button } from '@heroui/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -28,7 +27,6 @@ export default function DeleteResultsButton({ resultIds, onDeletedResult, label 
       toast.success(`result${resultIds.length ? '' : 's'} ${resultIds ?? 'are'} deleted`);
     },
   });
-  const [confirm, setConfirm] = useState('');
 
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
