@@ -34,15 +34,21 @@ export default function GenerateReportButton({
   onGeneratedReport,
 }: Readonly<DeleteProjectButtonProps>) {
   const queryClient = useQueryClient();
-  const {
-    mutate: generateReport,
-    isPending,
-    error,
-  } = useMutation('/api/report/generate', {
+  const [generationError, setGenerationError] = useState<string | null>(null);
+
+  const { mutate: generateReport, isPending } = useMutation('/api/report/generate', {
     method: 'POST',
     onSuccess: (data: { reportId: string }) => {
       invalidateCache(queryClient, { queryKeys: ['/api/info'], predicate: '/api/report' });
       toast.success(`report ${data?.reportId} is generated`);
+      setProjectName('');
+      setCustomName('');
+      setGenerationError(null);
+      onClose();
+      onGeneratedReport?.();
+    },
+    onError: (err: Error) => {
+      setGenerationError(err.message);
     },
   });
 
@@ -61,24 +67,23 @@ export default function GenerateReportButton({
 
   const { isOpen, onOpen, onClose, onOpenChange } = useDisclosure();
 
+  const handleModalOpen = () => {
+    setGenerationError(null);
+    onOpen();
+  };
+
   const GenerateReport = async () => {
     if (!results?.length) {
       return;
     }
 
+    setGenerationError(null);
     generateReport({ body: { resultsIds: results.map((r) => r.resultID), project: projectName, title: customName } });
-
-    setProjectName('');
-    setCustomName('');
-    onClose();
-    onGeneratedReport?.();
   };
-
-  error && toast.error(error.message);
 
   return (
     <>
-      <Button color="primary" isDisabled={!results?.length} isLoading={isPending} size="md" onPress={onOpen}>
+      <Button color="primary" isDisabled={!results?.length} isLoading={isPending} size="md" onPress={handleModalOpen}>
         Generate Report
       </Button>
       <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
@@ -87,45 +92,58 @@ export default function GenerateReportButton({
             <>
               <ModalHeader className="flex flex-col gap-1">Generate report</ModalHeader>
               <ModalBody>
-                <Autocomplete
-                  allowsCustomValue
-                  errorMessage={resultProjectsError?.message}
-                  inputValue={projectName}
-                  isDisabled={isPending}
-                  isLoading={isResultProjectsLoading}
-                  items={Array.from(new Set([...projects, ...(resultProjects ?? [])])).map((project) => ({
-                    label: project,
-                    value: project,
-                  }))}
-                  label="Project name"
-                  labelPlacement="outside"
-                  placeholder="leave empty if not required"
-                  variant="bordered"
-                  onInputChange={(value) => setProjectName(value)}
-                  onSelectionChange={(value) => value && setProjectName(value?.toString() ?? '')}
-                >
-                  {(item) => <AutocompleteItem key={item.value}>{item.label}</AutocompleteItem>}
-                </Autocomplete>
-                <Input
-                  fullWidth
-                  isClearable
-                  label="Custom report name"
-                  labelPlacement="outside"
-                  maxLength={36}
-                  placeholder="leave empty if not required"
-                  value={customName}
-                  variant="bordered"
-                  onChange={(e: { target: { value: any } }) => setCustomName(e.target.value ?? '')}
-                  onClear={() => setCustomName('')}
-                />
+                {generationError ? (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-danger font-semibold">Report generation failed:</p>
+                    <pre className="bg-danger-50 border border-danger-200 rounded-lg p-4 text-sm text-danger-700 font-mono whitespace-pre-wrap break-words overflow-auto max-h-96 select-text">
+                      {generationError}
+                    </pre>
+                  </div>
+                ) : (
+                  <>
+                    <Autocomplete
+                      allowsCustomValue
+                      errorMessage={resultProjectsError?.message}
+                      inputValue={projectName}
+                      isDisabled={isPending}
+                      isLoading={isResultProjectsLoading}
+                      items={Array.from(new Set([...projects, ...(resultProjects ?? [])])).map((project) => ({
+                        label: project,
+                        value: project,
+                      }))}
+                      label="Project name"
+                      labelPlacement="outside"
+                      placeholder="leave empty if not required"
+                      variant="bordered"
+                      onInputChange={(value) => setProjectName(value)}
+                      onSelectionChange={(value) => value && setProjectName(value?.toString() ?? '')}
+                    >
+                      {(item) => <AutocompleteItem key={item.value}>{item.label}</AutocompleteItem>}
+                    </Autocomplete>
+                    <Input
+                      fullWidth
+                      isClearable
+                      label="Custom report name"
+                      labelPlacement="outside"
+                      maxLength={36}
+                      placeholder="leave empty if not required"
+                      value={customName}
+                      variant="bordered"
+                      onChange={(e: { target: { value: any } }) => setCustomName(e.target.value ?? '')}
+                      onClear={() => setCustomName('')}
+                    />
+                  </>
+                )}
               </ModalBody>
               <ModalFooter>
                 <Button color="primary" isDisabled={isPending} variant="light" onPress={onClose}>
                   Close
                 </Button>
-                <Button color="primary" isLoading={isPending} type="submit" onPress={GenerateReport}>
-                  Generate
-                </Button>
+                {!generationError && (
+                  <Button color="primary" isLoading={isPending} type="submit" onPress={GenerateReport}>
+                    Generate
+                  </Button>
+                )}
               </ModalFooter>
             </>
           )}
