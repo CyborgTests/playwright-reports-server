@@ -1,7 +1,6 @@
 import { Cron } from 'croner';
 
 import { service } from '@/app/lib/service';
-import { isBuildStage } from '@/app/config/runtime';
 import { env } from '@/app/config/env';
 import { withError } from '@/app/lib/withError';
 
@@ -9,8 +8,8 @@ export class CronService {
   private static instance: CronService;
   public initialized = false;
 
-  private readonly clearResultsJob: Cron | undefined;
-  private readonly clearReportsJob: Cron | undefined;
+  private clearResultsJob: Cron | undefined;
+  private clearReportsJob: Cron | undefined;
 
   public static getInstance() {
     if (!CronService.instance) {
@@ -25,6 +24,22 @@ export class CronService {
     this.clearReportsJob = this.clearReportsTask();
   }
 
+  public async restart() {
+    console.log('[cron-job] restarting cron tasks...');
+
+    // Stop existing jobs
+    this.clearResultsJob?.stop();
+    this.clearReportsJob?.stop();
+
+    // Recreate jobs with new settings
+    this.clearResultsJob = this.clearResultsTask();
+    this.clearReportsJob = this.clearReportsTask();
+
+    // Reinitialize
+    this.initialized = false;
+    await this.init();
+  }
+
   private isExpired(date: Date, days: number) {
     const millisecondsDays = days * 24 * 60 * 60 * 1000;
 
@@ -35,20 +50,25 @@ export class CronService {
     if (this.initialized) {
       return;
     }
+    const cfg = await service.getConfig();
+    const reportExpireDays = cfg.cron?.reportExpireDays || env.REPORT_EXPIRE_DAYS;
+    const resultExpireDays = cfg.cron?.resultExpireDays || env.RESULT_EXPIRE_DAYS;
+    const reportExpireCronSchedule = cfg.cron?.reportExpireCronSchedule || env.REPORT_EXPIRE_CRON_SCHEDULE;
+    const resultExpireCronSchedule = cfg.cron?.resultExpireCronSchedule || env.RESULT_EXPIRE_CRON_SCHEDULE;
 
     console.log(`[cron-job] initiating cron tasks...`);
     for (const schedule of [
       {
         name: 'reports',
         cron: this.clearReportsJob,
-        expireDays: env.REPORT_EXPIRE_DAYS,
-        expression: env.REPORT_EXPIRE_CRON_SCHEDULE,
+        expireDays: reportExpireDays,
+        expression: reportExpireCronSchedule,
       },
       {
         name: 'results',
         cron: this.clearResultsJob,
-        expireDays: env.RESULT_EXPIRE_DAYS,
-        expression: env.RESULT_EXPIRE_CRON_SCHEDULE,
+        expireDays: resultExpireDays,
+        expression: resultExpireCronSchedule,
       },
     ]) {
       const message = schedule.cron
@@ -82,14 +102,19 @@ export class CronService {
       return;
     }
 
-    return this.createJob(env.REPORT_EXPIRE_CRON_SCHEDULE, async () => {
+    const scheduleExpression = env.REPORT_EXPIRE_CRON_SCHEDULE;
+
+    return this.createJob(scheduleExpression, async () => {
+      const cfg = await service.getConfig();
+      const expireDays = cfg.cron?.reportExpireDays || env.REPORT_EXPIRE_DAYS;
+
       console.log('[cron-job] starting outdated reports lookup...');
       const reportsOutput = await service.getReports();
 
       const outdated = reportsOutput.reports.filter((report) => {
         const createdDate = typeof report.createdAt === 'string' ? new Date(report.createdAt) : report.createdAt;
 
-        return this.isExpired(createdDate, expireDays);
+        return expireDays ? this.isExpired(createdDate, expireDays) : false;
       });
 
       console.log(`[cron-job] found ${outdated.length} outdated reports`);
@@ -108,14 +133,18 @@ export class CronService {
     if (!expireDays) {
       return;
     }
+    const scheduleExpression = env.RESULT_EXPIRE_CRON_SCHEDULE;
 
-    return this.createJob(env.RESULT_EXPIRE_CRON_SCHEDULE, async () => {
+    return this.createJob(scheduleExpression, async () => {
+      const cfg = await service.getConfig();
+      const expireDays = cfg.cron?.resultExpireDays || env.RESULT_EXPIRE_DAYS;
+
       console.log('[cron-job] starting outdated results lookup...');
       const resultsOutput = await service.getResults();
 
       const outdated = resultsOutput.results
         .map((result) => ({ ...result, createdDate: new Date(result.createdAt) }))
-        .filter((result) => this.isExpired(result.createdDate, expireDays));
+        .filter((result) => (expireDays ? this.isExpired(result.createdDate, expireDays) : false));
 
       console.log(`[cron-job] found ${outdated.length} outdated results`);
 
@@ -129,7 +158,3 @@ export class CronService {
 }
 
 export const cronService = CronService.getInstance();
-
-if (!cronService.initialized && !isBuildStage) {
-  await cronService.init();
-}

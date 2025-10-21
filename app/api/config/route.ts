@@ -7,6 +7,7 @@ import { withError } from '@/app/lib/withError';
 import { DATA_FOLDER } from '@/app/lib/storage/constants';
 import { service } from '@/app/lib/service';
 import { JiraService } from '@/app/lib/service/jira';
+import { cronService } from '@/app/lib/service/cron';
 
 export const dynamic = 'force-dynamic'; // defaults to auto
 
@@ -129,23 +130,27 @@ export async function PATCH(request: Request) {
     config.cron = {};
   }
 
-  if (resultExpireDays !== null) {
-    config.cron.resultExpireDays = parseInt(resultExpireDays.toString());
-  }
-  if (resultExpireCronSchedule !== null) {
-    config.cron.resultExpireCronSchedule = resultExpireCronSchedule.toString();
-  }
-  if (reportExpireDays !== null) {
-    config.cron.reportExpireDays = parseInt(reportExpireDays.toString());
-  }
-  if (reportExpireCronSchedule !== null) {
-    config.cron.reportExpireCronSchedule = reportExpireCronSchedule.toString();
-  }
+  if (resultExpireDays || resultExpireCronSchedule || reportExpireDays || reportExpireCronSchedule) {
+    if (resultExpireDays !== null) {
+      config.cron.resultExpireDays = parseInt(resultExpireDays.toString());
+    }
+    if (resultExpireCronSchedule !== null) {
+      config.cron.resultExpireCronSchedule = resultExpireCronSchedule.toString();
+    }
+    if (reportExpireDays !== null) {
+      config.cron.reportExpireDays = parseInt(reportExpireDays.toString());
+    }
+    if (reportExpireCronSchedule !== null) {
+      config.cron.reportExpireCronSchedule = reportExpireCronSchedule.toString();
+    }
 
-  const { error: saveConfigError } = await withError(service.updateConfig(config));
+    const { error: saveConfigError } = await withError(service.updateConfig(config));
 
-  if (saveConfigError) {
-    return Response.json({ error: `failed to save config: ${saveConfigError.message}` }, { status: 500 });
+    if (saveConfigError) {
+      return Response.json({ error: `failed to save config: ${saveConfigError.message}` }, { status: 500 });
+    }
+
+    await cronService.restart();
   }
 
   revalidatePath('/', 'layout');
