@@ -54,6 +54,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const uploadPromise = new Promise<void>((resolve, reject) => {
     let fileReceived = false;
 
+    const onAborted = () => {
+      if (!filePassThrough.destroyed) {
+        filePassThrough.destroy(new Error('Client aborted connection'));
+      }
+    };
+
+    req.on('aborted', onAborted);
+    req.on('close', onAborted);
+
     bb.on('file', (_, fileStream) => {
       fileReceived = true;
 
@@ -63,26 +72,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           reject(error);
         });
 
-      fileStream.on('data', (chunk) => {
-        fileSize += chunk.length;
-
-        const canContinue = filePassThrough.write(chunk);
-
-        if (!canContinue) {
-          fileStream.pause();
-          filePassThrough.once('drain', () => {
-            fileStream.resume();
-          });
-        }
-      });
-
-      fileStream.on('end', () => {
-        filePassThrough.end();
-      });
-
-      fileStream.on('error', (error) => {
-        filePassThrough.destroy(error);
-        reject(error);
+      pipeline(
+        fileStream.on('data', (chunk: Buffer) => {
+          fileSize += chunk.length;
+        }),
+        filePassThrough,
+      ).catch((e) => {
+        filePassThrough.destroy(e);
+        reject(e);
       });
     });
 
@@ -106,6 +103,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         if (error) {
           reject(error);
+        }
+
+        if (contentLength) {
+          const expected = parseInt(contentLength, 10);
+
+          if (Number.isFinite(expected) && expected > 0 && fileSize !== expected) {
+            reject(new Error(`Size mismatch: received ${fileSize} bytes, expected ${expected} bytes`));
+
+            return;
+          }
         }
 
         resolve();
