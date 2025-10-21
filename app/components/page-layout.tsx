@@ -7,8 +7,8 @@ import { Spinner } from '@heroui/react';
 import { toast } from 'sonner';
 
 import useQuery from '@/app/hooks/useQuery';
+import { useAuthConfig } from '@/app/hooks/useAuthConfig';
 import { type ServerDataInfo } from '@/app/lib/storage';
-import { SiteWhiteLabelConfig } from '@/app/types';
 
 interface PageLayoutProps {
   render: (props: { info: ServerDataInfo; onUpdate: () => void }) => React.ReactNode;
@@ -17,23 +17,10 @@ interface PageLayoutProps {
 export default function PageLayout({ render }: PageLayoutProps) {
   const { data: session, status } = useSession();
   const authIsLoading = status === 'loading';
-  const [authRequired, setAuthRequired] = useState<boolean | null>(null);
+  const { authRequired } = useAuthConfig();
 
   const { data: info, error, refetch, isLoading: isInfoLoading } = useQuery<ServerDataInfo>('/api/info');
   const [refreshId, setRefreshId] = useState<string>(uuidv4());
-
-  // Check if auth is required
-  useEffect(() => {
-    fetch('/api/config')
-      .then((res) => res.json())
-      .then((config: SiteWhiteLabelConfig) => {
-        setAuthRequired(config.authRequired ?? false);
-      })
-      .catch(() => {
-        // Fallback: assume auth is required if we can't fetch config
-        setAuthRequired(true);
-      });
-  }, []);
 
   useEffect(() => {
     // Only show error if auth is required

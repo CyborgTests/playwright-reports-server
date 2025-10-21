@@ -3,10 +3,12 @@
 import { useQuery as useTanStackQuery, UseQueryOptions } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { toast } from 'sonner';
 
 import { withQueryParams } from '../lib/network';
+
+import { useAuthConfig } from './useAuthConfig';
 
 const useQuery = <ReturnType>(
   path: string,
@@ -19,20 +21,7 @@ const useQuery = <ReturnType>(
 ) => {
   const session = useSession();
   const router = useRouter();
-  const [authRequired, setAuthRequired] = useState<boolean | null>(null);
-
-  // Check if auth is required
-  useEffect(() => {
-    fetch('/api/config')
-      .then((res) => res.json())
-      .then((config) => {
-        setAuthRequired(config.authRequired ?? false);
-      })
-      .catch(() => {
-        // Fallback: assume auth is required if we can't fetch config
-        setAuthRequired(true);
-      });
-  }, []);
+  const { authRequired } = useAuthConfig();
 
   useEffect(() => {
     // Don't redirect if auth is not required

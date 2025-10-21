@@ -2,11 +2,10 @@
 
 import { Card, CardBody, CardHeader, Skeleton } from '@heroui/react';
 
-import useQuery from '@/app/hooks/useQuery';
-import { SiteWhiteLabelConfig } from '@/app/types';
+import { useAuthConfig } from '@/app/hooks/useAuthConfig';
 
 export default function EnvironmentInfo() {
-  const { data: envInfo, isLoading } = useQuery<SiteWhiteLabelConfig>('/api/config');
+  const { config: envInfo, isLoading } = useAuthConfig();
 
   return (
     <Card className="p-4">
