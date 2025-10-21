@@ -19,6 +19,7 @@ export default defineConfig({
     [
       '@cyborgtests/reporter-playwright-reports-server',
       {
+        enabled: process.env.CI === 'true',
         url: 'https://overwhelming-jsandye-cyborg-tests-d6a8367f.koyeb.app',
         reportPath: 'test-results/blob.zip',
         resultDetails: {

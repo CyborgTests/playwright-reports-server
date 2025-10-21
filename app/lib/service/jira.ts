@@ -143,7 +143,7 @@ export class JiraService {
       if (project.issueTypes && project.issueTypes.length > 0) {
         availableIssueTypes = project.issueTypes;
       }
-    } catch (error) {
+    } catch {
       console.warn(`Could not fetch project-specific issue types for ${projectKey}, using global issue types`);
     }
 

@@ -8,6 +8,8 @@ import { toast } from 'sonner';
 
 import { withQueryParams } from '../lib/network';
 
+import { useAuthConfig } from './useAuthConfig';
+
 const useQuery = <ReturnType>(
   path: string,
   options?: Omit<UseQueryOptions<ReturnType, Error>, 'queryKey' | 'queryFn'> & {
@@ -19,8 +21,19 @@ const useQuery = <ReturnType>(
 ) => {
   const session = useSession();
   const router = useRouter();
+  const { authRequired } = useAuthConfig();
 
   useEffect(() => {
+    // Don't redirect if auth is not required
+    if (authRequired === false) {
+      return;
+    }
+
+    // Don't redirect if we haven't determined auth requirements yet
+    if (authRequired === null) {
+      return;
+    }
+
     if (session.status === 'unauthenticated') {
       toast.warning('Unauthorized');
       router.push(withQueryParams('/login', options?.callback ? { callbackUrl: encodeURI(options.callback) } : {}));
@@ -31,7 +44,7 @@ const useQuery = <ReturnType>(
     if (session.status === 'loading') {
       return;
     }
-  }, [session.status]);
+  }, [session.status, authRequired]);
 
   return useTanStackQuery<ReturnType, Error>({
     queryKey: [path, ...(options?.dependencies ?? [])],
@@ -55,7 +68,7 @@ const useQuery = <ReturnType>(
 
       return response.json();
     },
-    enabled: session.status === 'authenticated',
+    enabled: authRequired === false || session.status === 'authenticated',
     ...options,
   });
 };

@@ -7,6 +7,7 @@ import { withError } from '@/app/lib/withError';
 import { DATA_FOLDER } from '@/app/lib/storage/constants';
 import { service } from '@/app/lib/service';
 import { JiraService } from '@/app/lib/service/jira';
+import { env } from '@/app/config/env';
 import { cronService } from '@/app/lib/service/cron';
 
 export const dynamic = 'force-dynamic'; // defaults to auto
@@ -166,5 +167,14 @@ export async function GET() {
     return Response.json({ error: 'Config not found' }, { status: 404 });
   }
 
-  return Response.json(config, { status: 200 });
+  // Add environment info to config response
+  const envInfo = {
+    authRequired: !!env.API_TOKEN,
+    serverCache: env.USE_SERVER_CACHE,
+    dataStorage: env.DATA_STORAGE,
+    s3Endpoint: env.S3_ENDPOINT,
+    s3Bucket: env.S3_BUCKET,
+  };
+
+  return Response.json({ ...config, ...envInfo }, { status: 200 });
 }

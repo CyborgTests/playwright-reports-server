@@ -21,6 +21,11 @@ export interface SiteWhiteLabelConfig {
   logoPath: string;
   faviconPath: string;
   reporterPaths?: string[];
+  authRequired?: boolean;
+  serverCache?: boolean;
+  dataStorage?: string;
+  s3Endpoint?: string;
+  s3Bucket?: string;
   cron?: {
     resultExpireDays?: number;
     resultExpireCronSchedule?: string;

@@ -7,6 +7,7 @@ import { Spinner } from '@heroui/react';
 import { toast } from 'sonner';
 
 import useQuery from '@/app/hooks/useQuery';
+import { useAuthConfig } from '@/app/hooks/useAuthConfig';
 import { type ServerDataInfo } from '@/app/lib/storage';
 
 interface PageLayoutProps {
@@ -16,22 +17,35 @@ interface PageLayoutProps {
 export default function PageLayout({ render }: PageLayoutProps) {
   const { data: session, status } = useSession();
   const authIsLoading = status === 'loading';
+  const { authRequired } = useAuthConfig();
 
   const { data: info, error, refetch, isLoading: isInfoLoading } = useQuery<ServerDataInfo>('/api/info');
   const [refreshId, setRefreshId] = useState<string>(uuidv4());
 
   useEffect(() => {
-    if (!authIsLoading && !session) {
+    // Only show error if auth is required
+    if (authRequired === false) {
+      return;
+    }
+
+    if (!authIsLoading && !session && authRequired === true) {
       toast.error('You are not authenticated');
     }
-  }, [authIsLoading, session]);
+  }, [authIsLoading, session, authRequired]);
 
   useLayoutEffect(() => {
+    // Skip session check if auth is not required
+    if (authRequired === false) {
+      refetch();
+
+      return;
+    }
+
     if (authIsLoading || !session) {
       return;
     }
     refetch();
-  }, [refreshId, session]);
+  }, [refreshId, session, authRequired]);
 
   if (authIsLoading || isInfoLoading) {
     return <Spinner className="flex justify-center items-center" />;
