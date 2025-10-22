@@ -11,7 +11,7 @@ The Playwright Reports Server provides APIs for managing and generating reports 
 
 ## Demo
 
-[Check out the live demo!](https://overwhelming-jsandye-cyborg-tests-d6a8367f.koyeb.app/reports)
+[Check out the live demo!](https://demo-playwright-reports-server.koyeb.app)
 
 ## Table of Contents
 
