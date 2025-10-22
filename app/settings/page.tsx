@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
+import { Spinner } from '@heroui/react';
+
+import { EnvInfo, SiteWhiteLabelConfig } from '../types';
 
 import { ServerConfig, JiraConfig } from './types';
 import ServerConfiguration from './components/ServerConfiguration';
@@ -21,7 +24,7 @@ export default function SettingsPage() {
   const [showAddLinkModal, setShowAddLinkModal] = useState(false);
   const [newLinkData, setNewLinkData] = useState({ name: '', url: '' });
 
-  const { data: serverConfig, refetch: refetchConfig } = useQuery<ServerConfig>('/api/config');
+  const { data: serverConfig, refetch: refetchConfig } = useQuery<SiteWhiteLabelConfig & EnvInfo>('/api/config');
   const { data: jiraConfig } = useQuery<JiraConfig>('/api/jira/config');
 
   const [isUpdating, setIsUpdating] = useState(false);
@@ -168,10 +171,10 @@ export default function SettingsPage() {
   };
 
   if (session.status === 'loading') {
-    return <div>Loading...</div>;
+    return <Spinner className="flex justify-center items-center" />;
   }
 
-  if (session.status === 'unauthenticated') {
+  if (serverConfig?.authRequired === true && session.status === 'unauthenticated') {
     return <div>Please log in to access settings.</div>;
   }
 

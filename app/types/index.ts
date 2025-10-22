@@ -34,3 +34,11 @@ export interface SiteWhiteLabelConfig {
   };
   jira?: JiraConfig;
 }
+
+export interface EnvInfo {
+  authRequired: boolean;
+  serverCache: boolean | undefined;
+  dataStorage: string | undefined;
+  s3Endpoint: string | undefined;
+  s3Bucket: string | undefined;
+}
