@@ -4,6 +4,8 @@ import { useMutation as useTanStackMutation, UseMutationOptions } from '@tanstac
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
 
+import { withBase } from '../lib/url';
+
 type MutationFnParams<TVariables> = {
   body?: TVariables;
   path?: string;
@@ -28,7 +30,8 @@ const useMutation = <TData = unknown, TVariables = unknown>(
         headers.Authorization = apiToken;
       }
 
-      const response = await fetch(path ?? url, {
+      const fullPath = withBase(path ?? url);
+      const response = await fetch(fullPath, {
         headers,
         body: body ? JSON.stringify(body) : undefined,
         method: options?.method ?? 'POST',

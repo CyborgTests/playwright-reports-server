@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import { toast } from 'sonner';
 
 import { withQueryParams } from '../lib/network';
+import { withBase } from '../lib/url';
 
 import { useAuthConfig } from './useAuthConfig';
 
@@ -36,7 +37,12 @@ const useQuery = <ReturnType>(
 
     if (session.status === 'unauthenticated') {
       toast.warning('Unauthorized');
-      router.push(withQueryParams('/login', options?.callback ? { callbackUrl: encodeURI(options.callback) } : {}));
+      router.push(
+        withQueryParams(
+          withBase('/login'),
+          options?.callback ? { callbackUrl: encodeURI(options.callback) } : { callbackUrl: encodeURI(withBase()) },
+        ),
+      );
 
       return;
     }
@@ -55,7 +61,8 @@ const useQuery = <ReturnType>(
         headers.Authorization = session.data.user.apiToken;
       }
 
-      const response = await fetch(path, {
+      const fullPath = withBase(path);
+      const response = await fetch(fullPath, {
         headers,
         body: options?.body ? JSON.stringify(options.body) : undefined,
         method: options?.method ?? 'GET',

@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { CommonResponseFactory } from '@/app/lib/network';
 import { isAuthorized } from '@/app/lib/auth';
 import { env } from '@/app/config/env';
+import { withBase } from '@/app/lib/url';
 
 export const config = {
   matcher: '/api/:path*',
@@ -15,7 +16,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const unprotectedRoutes = [
+  const routes = [
     {
       methods: ['GET'],
       path: '/api/ping',
@@ -37,6 +38,11 @@ export async function middleware(request: NextRequest) {
       path: '/api/config/',
     },
   ];
+  const unprotectedRoutes = routes.concat(
+    routes.map((route) => {
+      return { methods: route.methods, path: withBase(route.path) };
+    }),
+  );
 
   const isUnprotected = unprotectedRoutes.some(
     (route) =>

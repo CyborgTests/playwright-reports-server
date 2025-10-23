@@ -11,6 +11,7 @@ import useQuery from '@/app/hooks/useQuery';
 import { type ReportHistory } from '@/app/lib/storage';
 import { subtitle, title } from '@/app/components/primitives';
 import FormattedDate from '@/app/components/date-format';
+import { withBase } from '@/app/lib/url';
 
 interface ReportDetailProps {
   params: { id: string };
@@ -48,7 +49,7 @@ function ReportDetail({ params }: Readonly<ReportDetailProps>) {
       <div className="flex md:flex-row flex-col gap-2">
         <div className="flex flex-col items-center md:w-1/4 max-w-full">
           <ReportStatistics stats={report?.stats} />
-          <Link href={report?.reportUrl ?? ''} target="_blank">
+          <Link href={withBase(report?.reportUrl ?? '')} target="_blank">
             <Button color="primary">Open report</Button>
           </Link>
         </div>

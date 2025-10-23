@@ -12,6 +12,8 @@ import NextLink from 'next/link';
 import { toast } from 'sonner';
 import { Skeleton } from '@heroui/skeleton';
 
+import { withBase } from '../lib/url';
+
 import { subtitle } from './primitives';
 
 import { defaultConfig } from '@/app/lib/config';
@@ -50,7 +52,7 @@ export const Navbar: React.FC = () => {
                   alt="Logo"
                   className={`min-w-10 dark:invert ${isCustomLogo ? 'max-w-10' : ''}`}
                   height="31"
-                  src={`/api/static${config?.logoPath}`}
+                  src={withBase(`/api/static${config?.logoPath}`)}
                   width="174"
                 />
               )}

@@ -8,6 +8,7 @@ import { withError } from '@/app/lib/withError';
 import { storage } from '@/app/lib/storage';
 import { auth } from '@/app/auth';
 import { env } from '@/app/config/env';
+import { withBase } from '@/app/lib/url';
 
 interface ReportParams {
   reportId: string;
@@ -36,7 +37,7 @@ export async function GET(
 
   // Only check for session if auth is required
   if (authRequired && !session?.user?.jwtToken) {
-    redirect(`/login?callbackUrl=${encodeURI(req.nextUrl.pathname)}`);
+    redirect(withBase(`/login?callbackUrl=${encodeURI(req.nextUrl.pathname)}`));
   }
 
   const contentType = mime.getType(path.basename(targetPath));

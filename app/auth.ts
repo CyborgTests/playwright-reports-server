@@ -4,15 +4,17 @@ import { type User } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import jwt from 'jsonwebtoken';
 
-const useAuth = !!process.env.API_TOKEN;
+import { env } from './config/env';
+
+const useAuth = !!env.API_TOKEN;
 
 // strictly recommended to specify via env var
 // Use a stable default secret when AUTH_SECRET is not set to avoid JWT decryption errors
 // This is only acceptable when auth is disabled (no API_TOKEN)
-const secret = process.env.AUTH_SECRET ?? 'default-secret-for-non-auth-mode';
+const secret = env.AUTH_SECRET ?? 'default-secret-for-non-auth-mode';
 
 // session expiration for api token auth
-const expirationHours = process.env.UI_AUTH_EXPIRE_HOURS ? parseInt(process.env.UI_AUTH_EXPIRE_HOURS) : 2;
+const expirationHours = env.UI_AUTH_EXPIRE_HOURS ? parseInt(env.UI_AUTH_EXPIRE_HOURS) : 2;
 const expirationSeconds = expirationHours * 60 * 60;
 
 export const authConfig: NextAuthConfig = {
@@ -24,7 +26,7 @@ export const authConfig: NextAuthConfig = {
         apiToken: { label: 'API Token', type: 'password' },
       },
       async authorize(credentials): Promise<User | null> {
-        if (credentials?.apiToken === process.env.API_TOKEN) {
+        if (credentials?.apiToken === env.API_TOKEN) {
           const token = jwt.sign({ authorized: true }, secret);
 
           return {
