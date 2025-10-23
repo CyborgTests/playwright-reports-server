@@ -18,7 +18,7 @@ import Link from 'next/link';
 import { keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { env } from '../config/env';
+import { withBase } from '../lib/url';
 
 import TablePaginationOptions from './table-pagination-options';
 
@@ -198,7 +198,7 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
               <TableCell className="w-1/2">
                 <div className="flex flex-col">
                   {/* Main title and link */}
-                  <Link href={env.API_BASE_PATH + `/report/${item.reportID}`} prefetch={false}>
+                  <Link href={withBase(`/report/${item.reportID}`)} prefetch={false}>
                     <div className="flex flex-row items-center">
                       {item.title || item.reportID} <LinkIcon />
                     </div>
@@ -231,7 +231,7 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
               <TableCell className="w-1/4">{item.size}</TableCell>
               <TableCell className="w-1/4">
                 <div className="flex gap-4 justify-end">
-                  <Link href={env.API_BASE_PATH + item.reportUrl} prefetch={false} target="_blank">
+                  <Link href={withBase(item.reportUrl)} prefetch={false} target="_blank">
                     <Button color="primary" size="md">
                       Open report
                     </Button>

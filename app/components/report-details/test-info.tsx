@@ -8,6 +8,7 @@ import { parseMilliseconds } from '@/app/lib/time';
 import { type TestHistory, type ReportHistory } from '@/app/lib/storage';
 import { type ReportTest } from '@/app/lib/parser/types';
 import { testStatusToColor } from '@/app/lib/tailwind';
+import { withBase } from '@/app/lib/url';
 
 interface TestInfoProps {
   history: ReportHistory[];
@@ -79,10 +80,7 @@ const TestInfo: FC<TestInfoProps> = ({ test, history }: TestInfoProps) => {
                     </TableCell>
                     <TableCell className="w-2/8">{parseMilliseconds(item.duration)}</TableCell>
                     <TableCell className="w-1/8">
-                      <Link
-                        href={`${process.env.API_BASE_PATH + item.reportUrl}#?testId=${item.testId}`}
-                        target="_blank"
-                      >
+                      <Link href={`${withBase(item.reportUrl)}#?testId=${item.testId}`} target="_blank">
                         <LinkIcon />
                       </Link>
                     </TableCell>

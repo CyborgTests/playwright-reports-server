@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { CommonResponseFactory } from '@/app/lib/network';
 import { isAuthorized } from '@/app/lib/auth';
 import { env } from '@/app/config/env';
+import { withBase } from '@/app/lib/url';
 
 export const config = {
   matcher: '/api/:path*',
@@ -39,7 +40,7 @@ export async function middleware(request: NextRequest) {
   ];
   const unprotectedRoutes = routes.concat(
     routes.map((route) => {
-      return { methods: route.methods, path: env.API_BASE_PATH + route.path };
+      return { methods: route.methods, path: withBase(route.path) };
     }),
   );
 
