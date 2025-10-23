@@ -36,15 +36,18 @@ export default function ReportTrends() {
   error && toast.error(error.message);
 
   return (
-    <>
-      <div className="flex flex-row justify-between">
+    <div className="w-[min(100%,1000px)] mx-auto">
+      <div>
         <h1 className={title()}>Trends</h1>
-        {(isFetching || isPending) && <Spinner />}
-        <div className="min-w-[30%]">
+      </div>
+
+      <div>
+        {(isFetching || isPending) && <Spinner className="flex justify-center items-center" />}
+        <div className="flex justify-end my-2">
           <ProjectSelect entity="report" onSelect={onProjectChange} />
         </div>
+        {!!reports?.length && <TrendChart reportHistory={reports} />}
       </div>
-      {!!reports?.length && <TrendChart reportHistory={reports} />}
-    </>
+    </div>
   );
 }

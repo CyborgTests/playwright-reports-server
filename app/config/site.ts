@@ -33,6 +33,10 @@ export const siteConfig: SiteConfig = {
       href: '/results',
     },
     {
+      label: 'Trends',
+      href: '/trends',
+    },
+    {
       label: 'Settings',
       href: '/settings',
     },
@@ -45,6 +49,10 @@ export const siteConfig: SiteConfig = {
     {
       label: 'Results',
       href: '/results',
+    },
+    {
+      label: 'Trends',
+      href: '/trends',
     },
     {
       label: 'Settings',
