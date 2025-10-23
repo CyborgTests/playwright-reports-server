@@ -7,9 +7,9 @@ import { useEffect } from 'react';
 import { toast } from 'sonner';
 
 import { withQueryParams } from '../lib/network';
+import { env } from '../config/env';
 
 import { useAuthConfig } from './useAuthConfig';
-import { env } from '../config/env';
 
 const useQuery = <ReturnType>(
   path: string,
