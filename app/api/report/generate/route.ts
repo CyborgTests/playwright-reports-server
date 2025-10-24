@@ -20,6 +20,7 @@ export async function POST(request: Request) {
 
     return Response.json(result);
   } catch (error) {
+    console.error(`[report/generate] error: ${error}`);
     if (error instanceof Error && error.message.includes('ENOENT: no such file or directory')) {
       return new Response(`Result not found: ${error.message}`, { status: 404 });
     }
