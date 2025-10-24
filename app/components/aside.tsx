@@ -7,7 +7,7 @@ import { useSession } from 'next-auth/react';
 
 import { useAuthConfig } from '../hooks/useAuthConfig';
 
-import { ReportIcon, ResultIcon, SettingsIcon } from '@/app/components/icons';
+import { ReportIcon, ResultIcon, SettingsIcon, TrendIcon } from '@/app/components/icons';
 import { siteConfig } from '@/app/config/site';
 import useQuery from '@/app/hooks/useQuery';
 
@@ -19,6 +19,7 @@ interface ServerInfo {
 const iconst = [
   { href: '/reports', icon: ReportIcon },
   { href: '/results', icon: ResultIcon },
+  { href: '/trends', icon: TrendIcon },
   { href: '/settings', icon: SettingsIcon },
 ];
 
