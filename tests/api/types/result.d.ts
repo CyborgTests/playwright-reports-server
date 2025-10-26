@@ -8,6 +8,7 @@ export type UploadResultResponse = {
     reporter?: string;
     appVersion?: string;
     size?: string;
+    testRun?: string;
     generatedReport?: {
       reportId: string;
       reportUrl: string;

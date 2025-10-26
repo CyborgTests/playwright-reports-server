@@ -19,22 +19,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const contentLength = (req.query['fileContentLength'] as string) ?? '';
-
-  if (!contentLength || !parseInt(contentLength, 10)) {
-    console.warn(
-      `[upload] fileContentLength query parameter is not provided or invalid: ${contentLength}, ignoring presigned URL flow`,
-    );
-  }
-
   const resultID = randomUUID();
   const fileName = `${resultID}.zip`;
 
-  const resultDetails: Record<string, string> = {};
-  let fileSize = 0;
+  const contentLength = (req.query['fileContentLength'] as string) ?? '';
 
+  if (contentLength || parseInt(contentLength, 10)) {
+    console.log(
+      `[upload] fileContentLength query parameter is provided for result ${resultID}, using presigned URL flow`,
+    );
+  }
   // if there is fileContentLength query parameter we can use presigned URL for direct upload
   const presignedUrl = contentLength ? await service.getPresignedUrl(fileName) : '';
+
+  const resultDetails: Record<string, string> = {};
+  let fileSize = 0;
 
   const filePassThrough = new PassThrough({
     highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,

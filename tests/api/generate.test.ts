@@ -1,164 +1,75 @@
 import { expect } from '@playwright/test';
 import { test } from './fixtures/base';
-import { ResultController } from './controllers/ResultController';
-import { ReportController } from './controllers/ReportController';
+import { randomUUID } from 'node:crypto';
 
-test('/api/result/upload should accept correct zip blob', async ({ uploadedResult }) => {
-  const { resp, json } = uploadedResult;
-  expect(resp.status()).toBe(200);
-  expect(json.message).toBe('Success');
-  expect(json.data).toHaveProperty('resultID');
-  expect(json.data).toHaveProperty('createdAt');
-  expect(json.data.project).toBe('Smoke');
-  expect(json.data).toHaveProperty('size');
-  expect(json.data).toHaveProperty('sizeBytes');
-  expect(json.data).toHaveProperty('generatedReport');
-});
-
-test('/api/result/list shows result list', async ({ request }) => {
-  const resultList = await request.get('/api/result/list');
-  expect(resultList.status()).toBe(200);
-  const body = await resultList.json();
-  expect(body).toHaveProperty('results');
-  expect(body).toHaveProperty('total');
-
-  if (body.results.length > 0) {
-    const result = body.results[0];
-    expect(result).toHaveProperty('resultID');
-    expect(result).toHaveProperty('createdAt');
-    expect(result).toHaveProperty('size');
-    expect(result).toHaveProperty('project');
-  }
-});
-
-test('/api/report/generate should generate report', async ({ request, uploadedResult }) => {
+test('/api/report/generate for single result should generate report', async ({ api, uploadedResult }) => {
   const { json } = uploadedResult;
-  const project = json.data?.project;
   const resultID = json.data?.resultID;
-  const newReport = await request.post('/api/report/generate', {
-    data: {
-      project,
-      resultsIds: [resultID],
-      title: 'Smoke test',
-    },
+
+  const { response, json: newReport } = await api.report.generate({
+    project: 'test-project',
+    resultsIds: [resultID],
+    title: 'Smoke test',
   });
 
-  const repBody = await newReport.json();
-
-  expect(newReport.status()).toBe(200);
-  expect(repBody.reportId).toBeTruthy();
-  expect(repBody.reportUrl).toContain(`/api/serve/${project}/${repBody.reportId}/`);
-  expect(repBody.project ?? repBody.metadata?.project).toBe(project);
+  expect(response.status()).toBe(200);
+  expect(newReport.reportId).toBeTruthy();
+  expect(newReport.reportUrl).toContain(`/api/serve/test-project/${newReport.reportId}/`);
+  expect(newReport.metadata?.project).toBe('test-project');
 });
 
-test('/api/report/list shows report list', async ({ request }) => {
-  const reportList = await request.get('/api/report/list');
-  expect(reportList.status()).toBe(200);
-  const body = await reportList.json();
-  expect(body).toHaveProperty('reports');
-  expect(body).toHaveProperty('total');
-
-  if (body.reports.length > 0) {
-    const reports = body.reports[0];
-    expect(reports).toHaveProperty('reportID');
-    expect(reports).toHaveProperty('createdAt');
-    expect(reports).toHaveProperty('project');
-    expect(reports).toHaveProperty('size');
-    expect(reports).toHaveProperty('reportUrl');
-  }
-});
-
-test('/api/result/upload without file should fail', async ({ request }) => {
-  const resp = await request.put('/api/result/upload', {
-    multipart: { project: 'Smoke', tag: 'no-file' },
-  });
-  expect(resp.status()).toBe(400);
-  const body = await resp.json();
-  expect(body.error).toBe('upload result failed: No file received');
-});
-
-test('/api/report/generate with invalid result id should fail', async ({ request, uploadedResult }) => {
-  const { json } = uploadedResult;
-  const project = json.data?.project;
-  const newReport = await request.post('/api/report/generate', {
-    data: {
-      project,
-      resultsIds: ['435453434343'],
-    },
+test('/api/report/generate for multiple results should generate report', async ({ api, uploadedResult }) => {
+  const uploadedResult2 = await api.result.upload('./tests/testdata/correct_blob.zip', {
+    project: 'test-project',
+    tag: 'api-smoke',
   });
 
-  expect(newReport.status()).toBe(404);
-});
+  const { response, json: newReport } = await api.report.generate({
+    project: 'test-project',
+    resultsIds: [uploadedResult.json.data?.resultID, uploadedResult2.json.data?.resultID],
+    title: 'Smoke test',
+  });
 
-test('/api/result/list filter by Project', async ({ request }) => {
-  const api = new ResultController(request);
-  const { response, json } = await api.list({ project: 'Smoke', limit: 100 });
   expect(response.status()).toBe(200);
-  for (const response of json.results) expect(response.project).toBe('Smoke');
+  expect(newReport.reportId).toBeTruthy();
+  expect(newReport.reportUrl).toContain(`/api/serve/test-project/${newReport.reportId}/`);
+  expect(newReport.metadata?.project).toBe('test-project');
 });
 
-test('/api/result/list filter by Tag', async ({ request }) => {
-  const api = new ResultController(request);
-  const { response, json } = await api.list({ tags: 'tag: api-smoke', limit: 100 });
-  expect(response.status()).toBe(200);
-  for (const response of json.results) expect(response.tag).toBe('api-smoke');
+test('/api/report/generate for sharded results with triggerReportGeneration=true should generate report', async ({
+  api,
+}) => {
+  const testRunName = randomUUID();
+
+  const shard1 = await api.result.upload('./tests/testdata/correct_blob.zip', {
+    testRun: testRunName,
+    shardCurrent: 1,
+    shardTotal: 2,
+    triggerReportGeneration: true,
+  });
+  const shard2 = await api.result.upload('./tests/testdata/correct_blob.zip', {
+    testRun: testRunName,
+    shardCurrent: 2,
+    shardTotal: 2,
+    triggerReportGeneration: true,
+  });
+
+  expect(shard1.response.status()).toBe(200);
+  expect(shard1.json.data.generatedReport).toBeNull();
+  expect(shard1.json.data.testRun).toBe(testRunName);
+
+  expect(shard2.json.data.generatedReport).toBeDefined();
+  expect(shard2.json.data.testRun).toBe(testRunName);
+  expect(shard2.json.data.generatedReport?.reportId).toBeDefined();
+  expect(shard2.json.data.generatedReport?.metadata?.testRun).toBe(testRunName);
 });
 
-test('/api/result/list page per row return proper data count', async ({ request }) => {
-  const api = new ResultController(request);
-  const limits = [10, 20, 50];
-  for (const limit of limits) {
-    const { response, json } = await api.list({ limit });
-    expect(response.status()).toBe(200);
-    expect((json.results ?? []).length).toBeLessThanOrEqual(limit);
-  }
-});
+test('/api/report/generate with invalid result id should fail', async ({ api }) => {
+  const { response } = await api.report.generate({
+    project: 'test-project',
+    resultsIds: ['435453434343'],
+    title: 'Smoke test',
+  });
 
-test('/api/result/list search return valid data by existing reportId', async ({ request, uploadedResult }) => {
-  const resultID = uploadedResult.json.data?.resultID;
-  const api = new ResultController(request);
-  const { response, json } = await api.list({ search: resultID });
-  expect(response.status()).toBe(200);
-  expect(json.results.map((r: any) => r.resultID)).toContain(resultID);
-});
-
-test('/api/result/list search return No Result by not existing reportId', async ({ request }) => {
-  const resultID = 'еуіе45789';
-  const api = new ResultController(request);
-  const { response, json } = await api.list({ search: resultID });
-  expect(response.status()).toBe(200);
-  expect(json).toEqual({ results: [], total: 0 });
-});
-
-test('/api/report/list filter by Project', async ({ request }) => {
-  const api = new ReportController(request);
-  const { response, json } = await api.list({ project: 'Smoke', limit: 100 });
-  expect(response.status()).toBe(200);
-  for (const response of json.reports) expect(response.project).toBe('Smoke');
-});
-
-test('/api/report/list page per row return proper data count', async ({ request }) => {
-  const api = new ReportController(request);
-  const limits = [10, 20, 50];
-  for (const limit of limits) {
-    const { response, json } = await api.list({ limit });
-    expect(response.status()).toBe(200);
-    expect((json.report ?? []).length).toBeLessThanOrEqual(limit);
-  }
-});
-
-test('/api/report/list search return valid data by existing reportId', async ({ request, generatedReport }) => {
-  const title = generatedReport.json.metadata?.title;
-  const api = new ReportController(request);
-  const { response, json } = await api.list({ search: title });
-  expect(response.status()).toBe(200);
-  expect(json.reports.map((r: any) => r.title)).toContain(title);
-});
-
-test('/api/report/list search return No Result  by not existing reportId', async ({ request }) => {
-  const title = 'еуіе';
-  const api = new ReportController(request);
-  const { response, json } = await api.list({ search: title });
-  expect(response.status()).toBe(200);
-  expect(json).toEqual({ reports: [], total: 0 });
+  expect(response.status()).toBe(404);
 });
