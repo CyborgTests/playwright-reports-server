@@ -503,8 +503,6 @@ export class S3 implements Storage {
   }
 
   async readOrParseReportMetadata(id: string, projectName: string): Promise<ReportHistory> {
-    console.log(`[s3] checking metadata for report ${projectName}/${id}`);
-
     const { result: metadataContent, error: metadataError } = await withError(
       this.readFile(path.join(REPORTS_BUCKET, projectName, id, REPORT_METADATA_FILE), 'utf-8'),
     );
