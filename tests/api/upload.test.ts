@@ -2,8 +2,8 @@ import { expect } from '@playwright/test';
 import { test } from './fixtures/base';
 
 test('/api/result/upload should accept correct zip blob', async ({ uploadedResult }) => {
-  const { resp, json } = uploadedResult;
-  expect(resp.status()).toBe(200);
+  const { response, json } = uploadedResult;
+  expect(response.status()).toBe(200);
   expect(json.message).toBe('Success');
   expect(json.data).toHaveProperty('resultID');
   expect(json.data).toHaveProperty('createdAt');
