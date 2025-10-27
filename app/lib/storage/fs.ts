@@ -165,7 +165,6 @@ function isMissingFileError(error?: Error | null) {
 }
 
 async function readOrParseReportMetadata(id: string, projectName: string): Promise<ReportMetadata> {
-  console.log(`checking metadata for report ${projectName}/${id}`);
   const { result: metadataContent, error: metadataError } = await withError(
     readFile(path.join(projectName, id, REPORT_METADATA_FILE), 'utf-8'),
   );
