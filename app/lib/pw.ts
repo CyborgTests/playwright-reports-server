@@ -67,36 +67,34 @@ export const generatePlaywrightReport = async (
 
     if (resolvedReporters.length > 0) {
       reporterArgs.push(...resolvedReporters);
-      console.log(`[pw] using custom reporters: ${resolvedReporters.join(', ')}`);
-    } else {
-      console.warn(`[pw] no valid custom reporters found, using only html reporter`);
     }
   }
 
   try {
-    const result = await execAsync(
-      `npx playwright${versionTag} merge-reports --reporter ${reporterArgs.join(' --reporter ')} ${tempFolder}`,
-      {
-        env: {
-          ...process.env,
-          // Avoid opening the report on server
-          PW_TEST_HTML_REPORT_OPEN: 'never',
-          PLAYWRIGHT_HTML_REPORT: reportPath,
-        },
+    const command = `npx playwright${versionTag} merge-reports --reporter ${reporterArgs.join(' --reporter ')} --config merge.config.ts ${tempFolder}`;
+
+    console.log(`[pw] executing merging command: ${command}`);
+    const result = await execAsync(command, {
+      env: {
+        ...process.env,
+        // Avoid opening the report on server
+        PW_TEST_HTML_REPORT_OPEN: 'never',
+        PLAYWRIGHT_HTML_REPORT: reportPath,
       },
-    );
+    });
+
+    console.log(result);
 
     if (result?.stderr) {
       // got STDERR output while generating report - throwing error since we don't know what went wrong.
       throw new Error(result?.stderr);
     }
-
-    return {
-      reportPath,
-    };
   } catch (error) {
     await fs.rm(reportPath, { recursive: true, force: true });
-    console.log(`[pw] got error while generating report: ${error}`);
     throw error;
   }
+
+  return {
+    reportPath,
+  };
 };
