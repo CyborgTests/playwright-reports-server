@@ -9,8 +9,6 @@ function copyDir(src, dest) {
 copyDir(join('.next', 'static'), join('.next', 'standalone', '.next', 'static'));
 copyDir('public', join('.next', 'standalone', 'public'));
 
-// Copy merge.config.ts to standalone build for production use
-copyFileSync('merge.config.ts', join('.next', 'standalone', 'merge.config.ts'));
 
 const server = spawn('node', [join('.next', 'standalone', 'server.js')], {
   stdio: 'inherit',
