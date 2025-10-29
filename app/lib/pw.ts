@@ -11,9 +11,6 @@ import { ReportMetadata } from './storage/types';
 import { defaultConfig } from './config';
 import { storage } from './storage';
 
-// Needed to properly copy/paste config into prod build
-import * as mergeConfig from '../../merge.config';
-
 const execAsync = util.promisify(exec);
 
 export const isValidPlaywrightVersion = (version?: string): boolean => {
