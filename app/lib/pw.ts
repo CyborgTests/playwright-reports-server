@@ -11,6 +11,9 @@ import { ReportMetadata } from './storage/types';
 import { defaultConfig } from './config';
 import { storage } from './storage';
 
+// Needed to properly copy/paste config into prod build
+import * as mergeConfig from '../../merge.config';
+
 const execAsync = util.promisify(exec);
 
 export const isValidPlaywrightVersion = (version?: string): boolean => {
@@ -92,6 +95,7 @@ export const generatePlaywrightReport = async (
   try {
     const command = `npx playwright${versionTag} merge-reports --reporter ${reporterArgs.join(' --reporter ')} --config ${tempFolder}/merge.config.ts ${tempFolder}`;
 
+    console.log('[pw] used merge config', JSON.stringify(mergeConfig, null, 2));
     console.log(`[pw] executing merging command: ${command}`);
     const result = await execAsync(command, {
       env: {
