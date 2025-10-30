@@ -1,7 +1,7 @@
 import { BaseController } from './base.controller';
 import type { GenerateReportResponse } from '../types/report';
 import { ListParams } from '../types/list';
-import { JsonRequest } from '../req/JsonRequest';
+import { JsonRequest } from '../req/json.request';
 
 export class ReportController extends BaseController {
   // TODO: Add rest of params for generate request

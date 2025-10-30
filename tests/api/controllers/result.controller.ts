@@ -3,7 +3,7 @@ import { UploadResultResponse } from '../types/result';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { ListParams } from '../types/list';
-import { JsonRequest } from '../req/JsonRequest';
+import { JsonRequest } from '../req/json.request';
 
 export class ResultController extends BaseController {
   async upload(

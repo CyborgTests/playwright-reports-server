@@ -21,7 +21,6 @@ test('/api/result/delete delete result', async ({ request, uploadedResult }) => 
 
 test('/api/report/delete delete report', async ({ request, generatedReport }) => {
   const { body } = generatedReport;
-  console.log(body);
   const reportId = body.reportId;
   const deleteReport = await request.delete('/api/report/delete', {
     data: {
