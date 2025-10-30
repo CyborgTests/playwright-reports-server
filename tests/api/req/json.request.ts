@@ -9,7 +9,7 @@ export class JsonRequest {
   ) {
     const response = await this.request.fetch(urlOrRequest, options);
     try {
-      return { response, body: (await response.json().catch(e => response.text())) as T };
+      return { response, body: (await response.json().catch((e) => response.text())) as T };
     } catch (error) {
       console.error(`Response: ${response.status()} ${response.statusText()}`);
       throw error;
