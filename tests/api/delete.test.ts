@@ -2,8 +2,9 @@ import { expect } from '@playwright/test';
 import { test } from './fixtures/base';
 
 test('/api/result/delete delete result', async ({ request, uploadedResult }) => {
-  const { json } = uploadedResult;
-  const resultID = json.data?.resultID;
+  const { body } = uploadedResult;
+
+  const resultID = body.data.resultID;
 
   const deleteRes = await request.delete('/api/result/delete', {
     data: {
@@ -19,8 +20,8 @@ test('/api/result/delete delete result', async ({ request, uploadedResult }) => 
 });
 
 test('/api/report/delete delete report', async ({ request, generatedReport }) => {
-  const { json } = generatedReport;
-  const reportId = json.reportId;
+  const { body } = generatedReport;
+  const reportId = body.reportId;
   const deleteReport = await request.delete('/api/report/delete', {
     data: {
       reportsIds: [reportId],

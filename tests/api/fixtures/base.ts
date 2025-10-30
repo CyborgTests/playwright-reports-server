@@ -4,8 +4,8 @@ import { GenerateReportResponse } from '../types/report';
 import { API } from '../controllers';
 
 export const test = base.extend<{
-  uploadedResult: { response: APIResponse; json: UploadResultResponse };
-  generatedReport: { response: APIResponse; json: GenerateReportResponse };
+  uploadedResult: { response: APIResponse; body: UploadResultResponse };
+  generatedReport: { response: APIResponse; body: GenerateReportResponse };
   api: API;
 }>({
   api: async ({ request }, use) => {
@@ -17,12 +17,12 @@ export const test = base.extend<{
       tag: 'api-smoke',
     });
 
-    await use(uploadedResult);
+    await use({ response: uploadedResult.response, body: uploadedResult.body });
   },
   generatedReport: async ({ api, uploadedResult }, use) => {
     const generatedReport = await api.report.generate({
-      project: uploadedResult.json.data?.project!,
-      resultsIds: [uploadedResult.json.data?.resultID!],
+      project: 'Smoke',
+      resultsIds: [uploadedResult.body.data?.resultID!],
       title: 'Smoke Test',
     });
 

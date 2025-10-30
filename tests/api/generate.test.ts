@@ -3,10 +3,9 @@ import { test } from './fixtures/base';
 import { randomUUID } from 'node:crypto';
 
 test('/api/report/generate for single result should generate report', async ({ api, uploadedResult }) => {
-  const { json } = uploadedResult;
-  const resultID = json.data?.resultID;
+  const resultID = uploadedResult.body.data?.resultID;
 
-  const { response, json: newReport } = await api.report.generate({
+  const { response, body: newReport } = await api.report.generate({
     project: 'test-project',
     resultsIds: [resultID],
     title: 'Smoke test',
@@ -24,9 +23,9 @@ test('/api/report/generate for multiple results should generate report', async (
     tag: 'api-smoke',
   });
 
-  const { response, json: newReport } = await api.report.generate({
+  const { response, body: newReport } = await api.report.generate({
     project: 'test-project',
-    resultsIds: [uploadedResult.json.data?.resultID, uploadedResult2.json.data?.resultID],
+    resultsIds: [uploadedResult.body.data?.resultID, uploadedResult2.body.data?.resultID],
     title: 'Smoke test',
   });
 
@@ -55,13 +54,13 @@ test('/api/report/generate for sharded results with triggerReportGeneration=true
   });
 
   expect(shard1.response.status()).toBe(200);
-  expect(shard1.json.data.generatedReport).toBeNull();
-  expect(shard1.json.data.testRun).toBe(testRunName);
+  expect(shard1.body.data.generatedReport).toBeNull();
+  expect(shard1.body.data.testRun).toBe(testRunName);
 
-  expect(shard2.json.data.generatedReport).toBeDefined();
-  expect(shard2.json.data.testRun).toBe(testRunName);
-  expect(shard2.json.data.generatedReport?.reportId).toBeDefined();
-  expect(shard2.json.data.generatedReport?.metadata?.testRun).toBe(testRunName);
+  expect(shard2.body.data.generatedReport).toBeDefined();
+  expect(shard2.body.data.testRun).toBe(testRunName);
+  expect(shard2.body.data.generatedReport?.reportId).toBeDefined();
+  expect(shard2.body.data.generatedReport?.metadata?.testRun).toBe(testRunName);
 });
 
 test('/api/report/generate with invalid result id should fail', async ({ api }) => {

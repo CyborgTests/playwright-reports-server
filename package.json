@@ -42,7 +42,8 @@
     "sharp": "^0.33.5",
     "sonner": "^1.5.0",
     "tailwind-merge": "^3.0.2",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "@playwright/test": "latest"
   },
   "devDependencies": {
     "@cyborgtests/reporter-playwright-reports-server": "^2.3.3",

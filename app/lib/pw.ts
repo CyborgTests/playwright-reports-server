@@ -11,9 +11,6 @@ import { ReportMetadata } from './storage/types';
 import { defaultConfig } from './config';
 import { storage } from './storage';
 
-// Needed to properly copy/paste config into prod build
-import * as mergeConfig from '../../merge.config';
-
 const execAsync = util.promisify(exec);
 
 export const isValidPlaywrightVersion = (version?: string): boolean => {
@@ -73,10 +70,31 @@ export const generatePlaywrightReport = async (
     }
   }
 
-  try {
-    const command = `npx playwright${versionTag} merge-reports --reporter ${reporterArgs.join(' --reporter ')} --config merge.config.ts ${tempFolder}`;
+  /**
+   * Merge configuration used for server side reports merging. Needed to handle errors like this:
+  Network response was not ok: Error: Command failed: npx playwright merge-reports --reporter html /app/.tmp/99f690b3-aace-4293-a988-d5945eb0d259
+  Error: Blob reports being merged were recorded with different test directories, and
+  merging cannot proceed. This may happen if you are merging reports from
+  machines with different environments, like different operating systems or
+  if the tests ran with different playwright configs.
 
-    console.log('[pw] used merge config', JSON.stringify(mergeConfig, null, 2));
+  You can force merge by specifying a merge config file with "-c" option. If
+  you'd like all test paths to be correct, make sure 'testDir' in the merge config
+  file points to the actual tests location.
+
+  Found directories:
+  /builds/_JRRzYANI/1/e2e/tests/
+  /builds/_JRRzYANI/2/e2e/tests/
+  /builds/_JRRzYANI/3/e2e/tests/
+      at mergeConfigureEvents
+  */
+  const mergeConfig = `export default { testDir: 'rootTestsDir' };`;
+
+  await fs.writeFile(path.join(tempFolder, 'merge.config.ts'), mergeConfig);
+  try {
+    const command = `npx playwright${versionTag} merge-reports --reporter ${reporterArgs.join(' --reporter ')} --config ${tempFolder}/merge.config.ts ${tempFolder}`;
+
+    console.log('[pw] used merge config', mergeConfig);
     console.log(`[pw] executing merging command: ${command}`);
     const result = await execAsync(command, {
       env: {
