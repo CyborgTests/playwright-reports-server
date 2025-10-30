@@ -43,7 +43,7 @@ test('/api/result/list page per row return proper data count', async ({ request 
 });
 
 test('/api/result/list search return valid data by existing resultID', async ({ request, uploadedResult }) => {
-  const resultID = uploadedResult.json.data?.resultID;
+  const resultID = uploadedResult.body.data.resultID;
   const api = new ResultController(request);
   const { response, json } = await api.list({ search: resultID });
   expect(response.status()).toBe(200);

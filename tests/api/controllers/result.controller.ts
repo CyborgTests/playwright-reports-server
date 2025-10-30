@@ -3,6 +3,7 @@ import { UploadResultResponse } from '../types/result';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { ListParams } from '../types/list';
+import { JsonRequest } from '../req/JsonRequest';
 
 export class ResultController extends BaseController {
   async upload(
@@ -19,7 +20,19 @@ export class ResultController extends BaseController {
     const absPath = path.resolve(process.cwd(), filePath);
     const zipBuffer = await readFile(absPath);
 
-    const response = await this.request.put('/api/result/upload', {
+    // const response = await this.request.put('/api/result/upload', {
+    //   multipart: {
+    //     file: {
+    //       name: path.basename(absPath),
+    //       mimeType: 'application/zip',
+    //       buffer: zipBuffer,
+    //     },
+    //     ...options,
+    //   },
+    // });
+
+    const response = await new JsonRequest(this.request).send<UploadResultResponse>('/api/result/upload', {
+      method: 'PUT',
       multipart: {
         file: {
           name: path.basename(absPath),
@@ -29,8 +42,7 @@ export class ResultController extends BaseController {
         ...options,
       },
     });
-
-    return { response, json: (await response.json()) as UploadResultResponse };
+    return response;
   }
 
   async list(params: ListParams = {}) {

@@ -88,11 +88,13 @@ export const generatePlaywrightReport = async (
   /builds/_JRRzYANI/3/e2e/tests/
       at mergeConfigureEvents
   */
-  await fs.writeFile(path.join(tempFolder, 'merge.config.ts'), `export default { testDir: 'rootTestsDir' };`);
+  const mergeConfig = `export default { testDir: 'rootTestsDir' };`;
+
+  await fs.writeFile(path.join(tempFolder, 'merge.config.ts'), mergeConfig);
   try {
     const command = `npx playwright${versionTag} merge-reports --reporter ${reporterArgs.join(' --reporter ')} --config ${tempFolder}/merge.config.ts ${tempFolder}`;
 
-    console.log('[pw] used merge config', JSON.stringify(mergeConfig, null, 2));
+    console.log('[pw] used merge config', mergeConfig);
     console.log(`[pw] executing merging command: ${command}`);
     const result = await execAsync(command, {
       env: {

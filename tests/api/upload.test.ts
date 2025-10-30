@@ -2,15 +2,15 @@ import { expect } from '@playwright/test';
 import { test } from './fixtures/base';
 
 test('/api/result/upload should accept correct zip blob', async ({ uploadedResult }) => {
-  const { response, json } = uploadedResult;
+  const { response, body } = uploadedResult;
   expect(response.status()).toBe(200);
-  expect(json.message).toBe('Success');
-  expect(json.data).toHaveProperty('resultID');
-  expect(json.data).toHaveProperty('createdAt');
-  expect(json.data.project).toBe('Smoke');
-  expect(json.data).toHaveProperty('size');
-  expect(json.data).toHaveProperty('sizeBytes');
-  expect(json.data).toHaveProperty('generatedReport');
+  expect(body.message).toBe('Success');
+  expect(body.data).toHaveProperty('resultID');
+  expect(body.data).toHaveProperty('createdAt');
+  expect(body.data.project).toBe('Smoke');
+  expect(body.data).toHaveProperty('size');
+  expect(body.data).toHaveProperty('sizeBytes');
+  expect(body.data).toHaveProperty('generatedReport');
 });
 
 test('/api/result/upload without file should fail', async ({ request }) => {

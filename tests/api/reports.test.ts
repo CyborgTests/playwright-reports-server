@@ -37,7 +37,7 @@ test('/api/report/list page per row return proper data count', async ({ request 
 });
 
 test('/api/report/list search return valid data by existing reportId', async ({ request, generatedReport }) => {
-  const title = generatedReport.json.metadata?.title;
+  const title = generatedReport.body.metadata?.title;
   const api = new ReportController(request);
   const { response, json } = await api.list({ search: title });
   expect(response.status()).toBe(200);
