@@ -4,9 +4,8 @@
   "description": "Playwright Reports Server: Can be used to accept blobs, merge them, store and view Playwright reports",
   "scripts": {
     "build": "next build",
-    "postbuild": "node scripts/cpPublic.js",
     "dev": "next dev",
-    "start": "node .next/standalone/server.js",
+    "start": "next start",
     "format:check": "prettier --ignore-path .gitignore --list-different '**/**/*.{ts,tsx,json,md}'",
     "format:fix": "npm run format:check -- --write",
     "lint": "eslint . --ext .ts,.tsx",
