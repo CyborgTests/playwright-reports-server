@@ -92,6 +92,11 @@ export const generatePlaywrightReport = async (
 
   await fs.writeFile(path.join(tempFolder, 'merge.config.ts'), mergeConfig);
   try {
+    // installing playwright into cache if not installed
+    const installResult = await execAsync(`npx playwright${versionTag} --version`);
+
+    console.log(`[pw] npx cache for playwright${versionTag}`, installResult);
+
     const command = `npx playwright${versionTag} merge-reports --reporter ${reporterArgs.join(' --reporter ')} --config ${tempFolder}/merge.config.ts ${tempFolder}`;
 
     console.log('[pw] used merge config', mergeConfig);
@@ -105,7 +110,7 @@ export const generatePlaywrightReport = async (
       },
     });
 
-    console.log(result);
+    console.log('[pw] merge result', result);
 
     if (result?.stderr) {
       // got STDERR output while generating report - throwing error since we don't know what went wrong.
