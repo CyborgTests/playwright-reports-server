@@ -144,13 +144,20 @@ export async function PATCH(request: Request) {
     if (reportExpireCronSchedule !== null) {
       config.cron.reportExpireCronSchedule = reportExpireCronSchedule.toString();
     }
+  }
 
-    const { error: saveConfigError } = await withError(service.updateConfig(config));
+  const { error: saveConfigError } = await withError(service.updateConfig(config));
 
-    if (saveConfigError) {
-      return Response.json({ error: `failed to save config: ${saveConfigError.message}` }, { status: 500 });
-    }
+  if (saveConfigError) {
+    return Response.json({ error: `failed to save config: ${saveConfigError.message}` }, { status: 500 });
+  }
 
+  if (
+    config.cron?.resultExpireDays ||
+    config.cron?.resultExpireCronSchedule ||
+    config.cron?.reportExpireDays ||
+    config.cron?.reportExpireCronSchedule
+  ) {
     await cronService.restart();
   }
 

@@ -23,19 +23,19 @@ export async function middleware(request: NextRequest) {
     },
     {
       methods: ['GET', 'POST'],
-      path: '/api/auth/',
+      path: '/api/auth',
     },
     {
       methods: ['GET'],
-      path: '/api/serve/',
+      path: '/api/serve',
     },
     {
       methods: ['GET'],
-      path: '/api/static/',
+      path: '/api/static',
     },
     {
       methods: ['GET'],
-      path: '/api/config/',
+      path: '/api/config',
     },
   ];
   const unprotectedRoutes = routes.concat(
