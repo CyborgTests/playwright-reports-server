@@ -1,6 +1,7 @@
 'use client';
 import { Area, AreaChart, XAxis } from 'recharts';
 import Link from 'next/link';
+import { Alert } from '@heroui/react';
 
 import { type ReportHistory } from '@/app/lib/storage';
 import {
@@ -57,13 +58,17 @@ export function TrendChart({ reportHistory }: Readonly<TrendChartProps>) {
     flaky: getPercentage(r.stats.flaky, r.stats.total),
     flakyCount: r.stats.flaky,
     total: r.stats.total,
-    reportUrl: r.reportUrl,
+    reportUrl: `/report/${r.reportID}`,
   }));
 
   return (
     <ChartContainer config={chartConfig}>
       {reportHistory.length <= 1 ? (
-        <span>Not enough data for trend chart</span>
+        <div className="flex items-center justify-center w-auto">
+          <div key="warning" className="flex items-center my-3 mt-10">
+            <Alert color="warning" title={`Not enough data for trend chart`} />
+          </div>
+        </div>
       ) : (
         <AreaChart
           accessibilityLayer
