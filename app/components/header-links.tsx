@@ -1,6 +1,14 @@
 import { Link } from '@heroui/link';
 
-import { GithubIcon, DiscordIcon, TelegramIcon, LinkIcon, BitbucketIcon, CyborgTestIcon } from '@/app/components/icons';
+import {
+  GithubIcon,
+  DiscordIcon,
+  TelegramIcon,
+  LinkIcon,
+  BitbucketIcon,
+  CyborgTestIcon,
+  SlackIcon,
+} from '@/app/components/icons';
 import { SiteWhiteLabelConfig } from '@/app/types';
 
 interface HeaderLinksProps {
@@ -17,6 +25,7 @@ export const HeaderLinks: React.FC<HeaderLinksProps> = ({ config, withTitle = fa
     { name: 'github', Icon: GithubIcon, title: 'GitHub' },
     { name: 'cyborgTest', Icon: CyborgTestIcon, title: 'Cyborg Test' },
     { name: 'bitbucket', Icon: BitbucketIcon, title: 'Bitbucket' },
+    { name: 'slack', Icon: SlackIcon, title: 'Slack' },
   ];
 
   const socialLinks = Object.entries(links).map(([name, href]) => {
