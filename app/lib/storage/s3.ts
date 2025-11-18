@@ -671,10 +671,12 @@ export class S3 implements Storage {
 
     console.log(`[s3] starting multipart upload for ${filename} with chunk size ${chunkSizeMB}MB`);
 
+    const remotePath = path.join(RESULTS_BUCKET, filename);
+
     const { UploadId: uploadID } = await this.client.send(
       new CreateMultipartUploadCommand({
         Bucket: this.bucket,
-        Key: filename,
+        Key: remotePath,
       }),
     );
 
@@ -702,7 +704,7 @@ export class S3 implements Storage {
           const uploadPartResult = await this.client.send(
             new UploadPartCommand({
               Bucket: this.bucket,
-              Key: filename,
+              Key: remotePath,
               UploadId: uploadID,
               PartNumber: partNumber,
               Body: partData,
@@ -723,12 +725,12 @@ export class S3 implements Storage {
       }
 
       if (buffer.length > 0) {
-        console.log(`[s3] uploading final part ${partNumber} (${(buffer.length / (1024 * 1024)).toFixed(2)}MB)`);
+        console.log(`[s3] uploading final part ${partNumber} [${bytesToString(buffer.length)}] for ${filename}`);
 
         const uploadPartResult = await this.client.send(
           new UploadPartCommand({
             Bucket: this.bucket,
-            Key: filename,
+            Key: remotePath,
             UploadId: uploadID,
             PartNumber: partNumber,
             Body: buffer,
@@ -750,7 +752,7 @@ export class S3 implements Storage {
       await this.client.send(
         new CompleteMultipartUploadCommand({
           Bucket: this.bucket,
-          Key: filename,
+          Key: remotePath,
           UploadId: uploadID,
           MultipartUpload: {
             Parts: uploadedParts,
@@ -765,7 +767,7 @@ export class S3 implements Storage {
       await this.client.send(
         new AbortMultipartUploadCommand({
           Bucket: this.bucket,
-          Key: filename,
+          Key: remotePath,
           UploadId: uploadID,
         }),
       );
