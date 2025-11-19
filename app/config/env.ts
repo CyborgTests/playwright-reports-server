@@ -5,7 +5,7 @@ export const env = cleanEnv(process.env, {
   UI_AUTH_EXPIRE_HOURS: str({ desc: 'How much hours are allowed to keep auth session valid', default: '2' }),
   AUTH_SECRET: str({ desc: 'Secret for JWT', default: undefined }),
   DATA_STORAGE: str({ desc: 'Where to store data', default: 'fs' }),
-  USE_SERVER_CACHE: bool({ desc: 'Use server side indexed cache for backend queries', default: false }),
+  USE_SERVER_CACHE: bool({ desc: 'Use sqlite for metadata storing, cache config', default: false }),
   S3_ENDPOINT: str({ desc: 'S3 endpoint', default: undefined }),
   S3_ACCESS_KEY: str({ desc: 'S3 access key', default: undefined }),
   S3_SECRET_KEY: str({ desc: 'S3 secret key', default: undefined }),

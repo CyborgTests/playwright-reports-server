@@ -28,6 +28,7 @@
     "@react-aria/visually-hidden": "^3.8.19",
     "@tanstack/react-query": "^5.59.15",
     "@tanstack/react-query-devtools": "^5.59.15",
+    "better-sqlite3": "^12.4.1",
     "busboy": "^1.6.0",
     "clsx": "^2.1.1",
     "croner": "^9.0.0",
@@ -49,6 +50,7 @@
   "devDependencies": {
     "@cyborgtests/reporter-playwright-reports-server": "^2.3.3",
     "@playwright/test": "^1.55.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/busboy": "^1.5.4",
     "@types/jest": "^29.5.12",
     "@types/jsonwebtoken": "^9.0.7",
