@@ -13,12 +13,15 @@
     "test:api": "npx playwright test --project=api"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.932.0",
+    "@aws-sdk/s3-request-presigner": "^3.932.0",
     "@heroui/link": "2.2.12",
     "@heroui/navbar": "2.2.13",
     "@heroui/react": "2.7.4",
     "@heroui/switch": "2.2.13",
     "@heroui/system": "2.4.11",
     "@heroui/theme": "2.4.11",
+    "@playwright/test": "latest",
     "@react-aria/selection": "^3.12.1",
     "@react-aria/ssr": "^3.9.7",
     "@react-aria/utils": "^3.15.0",
@@ -34,7 +37,6 @@
     "jsonwebtoken": "^9.0.2",
     "jszip": "^3.10.1",
     "mime": "^4.0.4",
-    "minio": "^8.0.2",
     "next": "14.2.30",
     "next-auth": "^5.0.0-beta.22",
     "next-themes": "^0.3.0",
@@ -42,8 +44,7 @@
     "sharp": "^0.33.5",
     "sonner": "^1.5.0",
     "tailwind-merge": "^3.0.2",
-    "uuid": "^10.0.0",
-    "@playwright/test": "latest"
+    "uuid": "^10.0.0"
   },
   "devDependencies": {
     "@cyborgtests/reporter-playwright-reports-server": "^2.3.3",

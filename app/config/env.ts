@@ -13,6 +13,7 @@ export const env = cleanEnv(process.env, {
   S3_REGION: str({ desc: 'S3 region', default: undefined }),
   S3_BUCKET: str({ desc: 'S3 bucket', default: 'playwright-reports-server' }),
   S3_BATCH_SIZE: num({ desc: 'S3 batch size', default: 10 }),
+  S3_MULTIPART_CHUNK_SIZE_MB: num({ desc: 'S3 multipart upload chunk size in MB', default: 25 }),
   RESULT_EXPIRE_DAYS: num({ desc: 'How much days to keep results', default: undefined }),
   RESULT_EXPIRE_CRON_SCHEDULE: str({ desc: 'Cron schedule for results cleanup', default: '33 3 * * *' }),
   REPORT_EXPIRE_DAYS: num({ desc: 'How much days to keep reports', default: undefined }),

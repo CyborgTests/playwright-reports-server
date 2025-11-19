@@ -1,9 +1,25 @@
 import { randomUUID, type UUID } from 'node:crypto';
+import { createWriteStream, createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
 
-import { type BucketItem, Client } from 'minio';
+import {
+  S3Client,
+  HeadBucketCommand,
+  CreateBucketCommand,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+  HeadObjectCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
+  type _Object,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import { processBatch } from './batch';
 import {
@@ -65,13 +81,17 @@ const createClient = () => {
 
   console.log('[s3] creating client');
 
-  const client = new Client({
-    endPoint,
-    accessKey,
-    secretKey,
-    region,
-    port,
-    useSSL: true,
+  const protocol = 'https://';
+  const endpointUrl = port ? `${protocol}${endPoint}:${port}` : `${protocol}${endPoint}`;
+
+  const client = new S3Client({
+    region: region || 'us-east-1',
+    endpoint: endpointUrl,
+    credentials: {
+      accessKeyId: accessKey,
+      secretAccessKey: secretKey,
+    },
+    forcePathStyle: true, // required for S3-compatible services like Minio
   });
 
   return client;
@@ -79,7 +99,7 @@ const createClient = () => {
 
 export class S3 implements Storage {
   private static instance: S3;
-  private readonly client: Client;
+  private readonly client: S3Client;
   private readonly bucket: string;
   private readonly batchSize: number;
 
@@ -98,21 +118,29 @@ export class S3 implements Storage {
   }
 
   private async ensureBucketExist() {
-    const { result: exist, error } = await withError(this.client.bucketExists(this.bucket));
+    const { error } = await withError(this.client.send(new HeadBucketCommand({ Bucket: this.bucket })));
 
-    if (exist && !error) {
+    if (!error) {
       return;
     }
 
-    if (error) {
-      console.error(error);
+    if (error.name === 'NotFound') {
+      console.log(`[s3] bucket ${this.bucket} does not exist, creating...`);
+
+      const { error } = await withError(
+        this.client.send(
+          new CreateBucketCommand({
+            Bucket: this.bucket,
+          }),
+        ),
+      );
+
+      if (error) {
+        console.error('[s3] failed to create bucket:', error);
+      }
     }
 
-    const { error: bucketError } = await withError(this.client.makeBucket(this.bucket, env.S3_REGION));
-
-    if (bucketError) {
-      console.error(bucketError);
-    }
+    console.error('[s3] failed to check that bucket exist:', error);
   }
 
   private async write(dir: string, files: { name: string; content: Readable | Buffer | string; size?: number }[]) {
@@ -124,9 +152,13 @@ export class S3 implements Storage {
 
       const content = typeof file.content === 'string' ? Buffer.from(file.content) : file.content;
 
-      const contentSize = file.size ?? (Buffer.isBuffer(content) ? content.length : undefined);
-
-      await this.client.putObject(this.bucket, path.normalize(filePath), content, contentSize);
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: path.normalize(filePath),
+          Body: content,
+        }),
+      );
     }
   }
 
@@ -138,11 +170,20 @@ export class S3 implements Storage {
 
     console.log(`[s3] reading from remote path: ${remotePath}`);
 
-    const { result: stream, error } = await withError(this.client.getObject(this.bucket, remotePath));
+    const { result: response, error } = await withError(
+      this.client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: remotePath,
+        }),
+      ),
+    );
 
-    if (error ?? !stream) {
+    if (error ?? !response?.Body) {
       return { result: null, error };
     }
+
+    const stream = response.Body as Readable;
 
     const readStream = new Promise<Buffer>((resolve, reject) => {
       const chunks: Uint8Array[] = [];
@@ -176,7 +217,12 @@ export class S3 implements Storage {
     // avoid using "removeObjects" as it is not supported by every S3-compatible provider
     // for example, Google Cloud Storage.
     await processBatch<string, void>(this, path, this.batchSize, async (object) => {
-      await this.client.removeObject(this.bucket, object);
+      await this.client.send(
+        new DeleteObjectCommand({
+          Bucket: this.bucket,
+          Key: object,
+        }),
+      );
     });
   }
 
@@ -184,29 +230,34 @@ export class S3 implements Storage {
     let resultCount = 0;
     let indexCount = 0;
     let totalSize = 0;
-    const stream = this.client.listObjectsV2(this.bucket, folderPath, true);
 
-    return new Promise((resolve, reject) => {
-      stream.on('data', (obj) => {
-        if (obj.name?.endsWith('.zip')) {
+    let continuationToken: string | undefined;
+
+    do {
+      const response = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: folderPath,
+          ContinuationToken: continuationToken,
+        }),
+      );
+
+      for (const obj of response.Contents ?? []) {
+        if (obj.Key?.endsWith('.zip')) {
           resultCount += 1;
         }
 
-        if (obj.name?.endsWith('index.html') && !obj.name.includes('/trace/index.html')) {
+        if (obj.Key?.endsWith('index.html') && !obj.Key.includes('/trace/index.html')) {
           indexCount += 1;
         }
 
-        totalSize += obj?.size ?? 0;
-      });
+        totalSize += obj?.Size ?? 0;
+      }
 
-      stream.on('error', (err) => {
-        reject(err);
-      });
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    } while (continuationToken);
 
-      stream.on('end', () => {
-        resolve({ size: totalSize, resultCount, indexCount });
-      });
-    });
+    return { size: totalSize, resultCount, indexCount };
   }
 
   async getServerDataInfo(): Promise<ServerDataInfo> {
@@ -245,40 +296,39 @@ export class S3 implements Storage {
     await this.ensureBucketExist();
 
     console.log('[s3] reading results');
-    const listResultsStream = this.client.listObjectsV2(this.bucket, RESULTS_BUCKET, true);
 
-    const files: BucketItem[] = [];
+    const jsonFiles: _Object[] = [];
     const resultSizes = new Map<string, number>();
 
-    const findJsonFiles = new Promise<BucketItem[]>((resolve, reject) => {
-      listResultsStream.on('data', async (file) => {
-        if (!file?.name) {
-          return;
+    let continuationToken: string | undefined;
+
+    do {
+      const response = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: RESULTS_BUCKET,
+          ContinuationToken: continuationToken,
+        }),
+      );
+
+      for (const file of response.Contents ?? []) {
+        if (!file?.Key) {
+          continue;
         }
 
-        if (file.name.endsWith('.zip')) {
-          const resultID = path.basename(file.name, '.zip');
+        if (file.Key.endsWith('.zip')) {
+          const resultID = path.basename(file.Key, '.zip');
 
-          resultSizes.set(resultID, file.size);
+          resultSizes.set(resultID, file.Size ?? 0);
         }
 
-        if (!file.name.endsWith('.json')) {
-          return;
+        if (file.Key.endsWith('.json')) {
+          jsonFiles.push(file);
         }
+      }
 
-        files.push(file);
-      });
-
-      listResultsStream.on('error', (err) => {
-        reject(err);
-      });
-
-      listResultsStream.on('end', () => {
-        resolve(files);
-      });
-    });
-
-    const { result: jsonFiles } = await withError(findJsonFiles);
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    } while (continuationToken);
 
     console.log(`[s3] found ${(jsonFiles ?? [])?.length} json files`);
 
@@ -288,20 +338,34 @@ export class S3 implements Storage {
         total: 0,
       };
     }
-    jsonFiles.sort((a, b) => getTimestamp(b.lastModified) - getTimestamp(a.lastModified));
+
+    const getTimestamp = (date?: Date | string) => {
+      if (!date) return 0;
+      if (typeof date === 'string') return new Date(date).getTime();
+
+      return date.getTime();
+    };
+
+    jsonFiles.sort((a, b) => getTimestamp(b.LastModified) - getTimestamp(a.LastModified));
 
     // check if we can apply pagination early
     const noFilters = !input?.project && !input?.pagination;
 
     const resultFiles = noFilters ? handlePagination(jsonFiles, input?.pagination) : jsonFiles;
 
-    const results = await processBatch<BucketItem, Result>(this, resultFiles, this.batchSize, async (file) => {
+    const results = await processBatch<_Object, Result>(this, resultFiles, this.batchSize, async (file) => {
       console.log(`[s3.batch] reading result: ${JSON.stringify(file)}`);
-      const dataStream = await this.client.getObject(this.bucket, file.name!);
+      const response = await this.client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: file.Key!,
+        }),
+      );
 
+      const stream = response.Body as Readable;
       let jsonString = '';
 
-      for await (const chunk of dataStream) {
+      for await (const chunk of stream) {
         jsonString += chunk.toString();
       }
 
@@ -314,11 +378,11 @@ export class S3 implements Storage {
 
     // Filter by tags if provided
     if (input?.tags && input.tags.length > 0) {
-      const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'];
+      const notMetadataKeys = new Set(['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project']);
 
       filteredResults = filteredResults.filter((result) => {
         const resultTags = Object.entries(result)
-          .filter(([key]) => !notMetadataKeys.includes(key))
+          .filter(([key]) => !notMetadataKeys.has(key))
           .map(([key, value]) => `${key}: ${value}`);
 
         return input.tags!.some((selectedTag) => resultTags.includes(selectedTag));
@@ -364,28 +428,37 @@ export class S3 implements Storage {
     await this.ensureBucketExist();
 
     console.log(`[s3] reading reports from external storage`);
-    const reportsStream = this.client.listObjectsV2(this.bucket, REPORTS_BUCKET, true);
 
     const reports: Report[] = [];
     const reportSizes = new Map<string, number>();
 
-    return new Promise((resolve, reject) => {
-      reportsStream.on('data', (file) => {
-        if (!file?.name) {
-          return;
+    let continuationToken: string | undefined;
+
+    do {
+      const response = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: REPORTS_BUCKET,
+          ContinuationToken: continuationToken,
+        }),
+      );
+
+      for (const file of response.Contents ?? []) {
+        if (!file?.Key) {
+          continue;
         }
 
-        const reportID = getFileReportID(file.name);
+        const reportID = getFileReportID(file.Key);
 
-        const newSize = (reportSizes.get(reportID) ?? 0) + file.size;
+        const newSize = (reportSizes.get(reportID) ?? 0) + (file.Size ?? 0);
 
         reportSizes.set(reportID, newSize);
 
-        if (!file.name.endsWith('index.html') || file.name.includes('trace')) {
-          return;
+        if (!file.Key.endsWith('index.html') || file.Key.includes('trace')) {
+          continue;
         }
 
-        const dir = path.dirname(file.name);
+        const dir = path.dirname(file.Key);
         const id = path.basename(dir);
         const parentDir = path.basename(path.dirname(dir));
 
@@ -400,7 +473,7 @@ export class S3 implements Storage {
         const report = {
           reportID: id,
           project: projectName,
-          createdAt: file.lastModified,
+          createdAt: file.LastModified ?? new Date(),
           reportUrl: `${serveReportRoute}/${projectName ? encodeURIComponent(projectName) : ''}/${id}/index.html`,
           size: '',
           sizeBytes: 0,
@@ -409,61 +482,62 @@ export class S3 implements Storage {
         if (noFilters || shouldFilterByProject || shouldFilterByID) {
           reports.push(report);
         }
+      }
+
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    } while (continuationToken);
+
+    const getTimestamp = (date?: Date | string) => {
+      if (!date) return 0;
+      if (typeof date === 'string') return new Date(date).getTime();
+
+      return date.getTime();
+    };
+
+    reports.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
+
+    const currentReports = handlePagination<Report>(reports, input?.pagination);
+
+    const withMetadata = await this.getReportsMetadata(currentReports as ReportHistory[]);
+
+    let filteredReports = withMetadata;
+
+    // Filter by search if provided
+    if (input?.search && input.search.trim()) {
+      const searchTerm = input.search.toLowerCase().trim();
+
+      filteredReports = filteredReports.filter((report) => {
+        // Search in title, reportID, project, and all metadata fields
+        const searchableFields = [
+          report.title,
+          report.reportID,
+          report.project,
+          ...Object.entries(report)
+            .filter(
+              ([key]) =>
+                !['reportID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'reportUrl', 'stats'].includes(key),
+            )
+            .map(([key, value]) => `${key}: ${value}`),
+        ].filter(Boolean);
+
+        return searchableFields.some((field) => field?.toLowerCase().includes(searchTerm));
       });
+    }
 
-      reportsStream.on('error', (err) => {
-        reject(err);
-      });
+    const finalReports = handlePagination(filteredReports, input?.pagination);
 
-      reportsStream.on('end', async () => {
-        reports.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
+    return {
+      reports: finalReports.map((report) => {
+        const sizeBytes = reportSizes.get(report.reportID) ?? 0;
 
-        const currentReports = handlePagination<Report>(reports, input?.pagination);
-
-        const withMetadata = await this.getReportsMetadata(currentReports as ReportHistory[]);
-
-        let filteredReports = withMetadata;
-
-        // Filter by search if provided
-        if (input?.search && input.search.trim()) {
-          const searchTerm = input.search.toLowerCase().trim();
-
-          filteredReports = filteredReports.filter((report) => {
-            // Search in title, reportID, project, and all metadata fields
-            const searchableFields = [
-              report.title,
-              report.reportID,
-              report.project,
-              ...Object.entries(report)
-                .filter(
-                  ([key]) =>
-                    !['reportID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'reportUrl', 'stats'].includes(
-                      key,
-                    ),
-                )
-                .map(([key, value]) => `${key}: ${value}`),
-            ].filter(Boolean);
-
-            return searchableFields.some((field) => field?.toLowerCase().includes(searchTerm));
-          });
-        }
-
-        const finalReports = handlePagination(filteredReports, input?.pagination);
-
-        resolve({
-          reports: finalReports.map((report) => {
-            const sizeBytes = reportSizes.get(report.reportID) ?? 0;
-
-            return {
-              ...report,
-              sizeBytes,
-              size: bytesToString(sizeBytes),
-            };
-          }),
-          total: filteredReports.length,
-        });
-      });
-    });
+        return {
+          ...report,
+          sizeBytes,
+          size: bytesToString(sizeBytes),
+        };
+      }),
+      total: filteredReports.length,
+    };
   }
 
   async getReportsMetadata(reports: ReportHistory[]): Promise<ReportHistory[]> {
@@ -540,31 +614,35 @@ export class S3 implements Storage {
   }
 
   private async getReportObjects(reportsIDs: string[]): Promise<string[]> {
-    const reportStream = this.client.listObjectsV2(this.bucket, REPORTS_BUCKET, true);
-
     const files: string[] = [];
 
-    return new Promise((resolve, reject) => {
-      reportStream.on('data', (file) => {
-        if (!file?.name) {
-          return;
+    let continuationToken: string | undefined;
+
+    do {
+      const response = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: REPORTS_BUCKET,
+          ContinuationToken: continuationToken,
+        }),
+      );
+
+      for (const file of response.Contents ?? []) {
+        if (!file?.Key) {
+          continue;
         }
 
-        const reportID = path.basename(path.dirname(file.name));
+        const reportID = path.basename(path.dirname(file.Key));
 
         if (reportsIDs.includes(reportID)) {
-          files.push(file.name);
+          files.push(file.Key);
         }
-      });
+      }
 
-      reportStream.on('error', (err) => {
-        reject(err);
-      });
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    } while (continuationToken);
 
-      reportStream.on('end', () => {
-        resolve(files);
-      });
-    });
+    return files;
   }
 
   async deleteReports(reportIDs: string[]): Promise<void> {
@@ -578,16 +656,125 @@ export class S3 implements Storage {
     const objectKey = path.join(RESULTS_BUCKET, fileName);
     const expiry = 30 * 60; // 30 minutes
 
-    return this.client.presignedPutObject(this.bucket, objectKey, expiry);
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: objectKey,
+    });
+
+    return await getSignedUrl(this.client, command, { expiresIn: expiry });
   }
 
   async saveResult(filename: string, stream: PassThrough) {
-    return await this.write(RESULTS_BUCKET, [
-      {
-        name: filename,
-        content: stream,
-      },
-    ]);
+    await this.ensureBucketExist();
+
+    const chunkSizeMB = env.S3_MULTIPART_CHUNK_SIZE_MB;
+    const chunkSize = chunkSizeMB * 1024 * 1024; // bytes
+
+    console.log(`[s3] starting multipart upload for ${filename} with chunk size ${chunkSizeMB}MB`);
+
+    const remotePath = path.join(RESULTS_BUCKET, filename);
+
+    const { UploadId: uploadID } = await this.client.send(
+      new CreateMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: remotePath,
+      }),
+    );
+
+    if (!uploadID) {
+      throw new Error('[s3] failed to initiate multipart upload: no UploadId received');
+    }
+
+    const uploadedParts: { PartNumber: number; ETag: string }[] = [];
+    let partNumber = 1;
+    let buffer = Buffer.alloc(0);
+
+    try {
+      for await (const chunk of stream) {
+        buffer = Buffer.concat([buffer, chunk]);
+
+        while (buffer.length >= chunkSize) {
+          const partData = buffer.subarray(0, chunkSize);
+
+          buffer = buffer.subarray(chunkSize);
+
+          console.log(
+            `[s3] uploading part ${partNumber} (${(partData.length / (1024 * 1024)).toFixed(2)}MB) for ${filename}`,
+          );
+
+          const uploadPartResult = await this.client.send(
+            new UploadPartCommand({
+              Bucket: this.bucket,
+              Key: remotePath,
+              UploadId: uploadID,
+              PartNumber: partNumber,
+              Body: partData,
+            }),
+          );
+
+          if (!uploadPartResult.ETag) {
+            throw new Error(`[s3] failed to upload part ${partNumber}: no ETag received`);
+          }
+
+          uploadedParts.push({
+            PartNumber: partNumber,
+            ETag: uploadPartResult.ETag,
+          });
+
+          partNumber++;
+        }
+      }
+
+      if (buffer.length > 0) {
+        console.log(`[s3] uploading final part ${partNumber} [${bytesToString(buffer.length)}] for ${filename}`);
+
+        const uploadPartResult = await this.client.send(
+          new UploadPartCommand({
+            Bucket: this.bucket,
+            Key: remotePath,
+            UploadId: uploadID,
+            PartNumber: partNumber,
+            Body: buffer,
+          }),
+        );
+
+        if (!uploadPartResult.ETag) {
+          throw new Error(`[s3] failed to upload final part ${partNumber}: no ETag received`);
+        }
+
+        uploadedParts.push({
+          PartNumber: partNumber,
+          ETag: uploadPartResult.ETag,
+        });
+      }
+
+      console.log(`[s3] completing multipart upload for ${filename} with ${uploadedParts.length} parts`);
+
+      await this.client.send(
+        new CompleteMultipartUploadCommand({
+          Bucket: this.bucket,
+          Key: remotePath,
+          UploadId: uploadID,
+          MultipartUpload: {
+            Parts: uploadedParts,
+          },
+        }),
+      );
+
+      console.log(`[s3] multipart upload completed successfully for ${filename}`);
+    } catch (error) {
+      console.error(`[s3] multipart upload failed, aborting: ${(error as Error).message}`);
+
+      await this.client.send(
+        new AbortMultipartUploadCommand({
+          Bucket: this.bucket,
+          Key: remotePath,
+          UploadId: uploadID,
+        }),
+      );
+
+      throw error;
+    }
   }
 
   async saveResultDetails(resultID: string, resultDetails: ResultDetails, size: number): Promise<Result> {
@@ -640,7 +827,18 @@ export class S3 implements Storage {
     if (attempt > 3) {
       throw new Error(`[s3] failed to upload file after ${attempt} attempts: ${filePath}`);
     }
-    const { error } = await withError(this.client.fPutObject(this.bucket, remotePath, filePath, {}));
+
+    const fileStream = createReadStream(filePath);
+
+    const { error } = await withError(
+      this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: remotePath,
+          Body: fileStream,
+        }),
+      ),
+    );
 
     if (error) {
       console.error(`[s3] failed to upload file: ${error.message}`);
@@ -677,29 +875,63 @@ export class S3 implements Storage {
       console.error(`[s3] failed to create temporary folder: ${mkdirTempError.message}`);
     }
 
-    const resultsStream = this.client.listObjectsV2(this.bucket, RESULTS_BUCKET, true);
-
     console.log(`[s3] start processing...`);
-    for await (const result of resultsStream) {
-      const fileName = path.basename(result.name);
 
-      const id = fileName.replace(path.extname(fileName), '');
+    let continuationToken: string | undefined;
 
-      if (resultsIds.includes(id)) {
-        console.log(`[s3] file id is in target results, downloading...`);
-        const localFilePath = path.join(tempFolder, fileName);
+    do {
+      const response = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: RESULTS_BUCKET,
+          ContinuationToken: continuationToken,
+        }),
+      );
 
-        const { error } = await withError(this.client.fGetObject(this.bucket, result.name, localFilePath));
+      for (const result of response.Contents ?? []) {
+        if (!result.Key) continue;
 
-        if (error) {
-          console.error(`[s3] failed to download ${result.name}: ${error.message}`);
+        const fileName = path.basename(result.Key);
 
-          throw new Error(`failed to download ${result.name}: ${error.message}`);
+        const id = fileName.replace(path.extname(fileName), '');
+
+        if (resultsIds.includes(id)) {
+          console.log(`[s3] file id is in target results, downloading...`);
+          const localFilePath = path.join(tempFolder, fileName);
+
+          const { error } = await withError(
+            (async () => {
+              const response = await this.client.send(
+                new GetObjectCommand({
+                  Bucket: this.bucket,
+                  Key: result.Key!,
+                }),
+              );
+
+              const stream = response.Body as Readable;
+              const writeStream = createWriteStream(localFilePath);
+
+              return new Promise<void>((resolve, reject) => {
+                stream.pipe(writeStream);
+                writeStream.on('finish', resolve);
+                writeStream.on('error', reject);
+                stream.on('error', reject);
+              });
+            })(),
+          );
+
+          if (error) {
+            console.error(`[s3] failed to download ${result.Key}: ${error.message}`);
+
+            throw new Error(`failed to download ${result.Key}: ${error.message}`);
+          }
+
+          console.log(`[s3] Downloaded: ${result.Key} to ${localFilePath}`);
         }
-
-        console.log(`[s3] Downloaded: ${result.name} to ${localFilePath}`);
       }
-    }
+
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    } while (continuationToken);
 
     const { reportPath } = await generatePlaywrightReport(reportId, metadata!);
 
@@ -765,7 +997,14 @@ export class S3 implements Storage {
     await this.ensureBucketExist();
     console.log(`[s3] checking config file`);
 
-    const { result: stream, error } = await withError(this.client.getObject(this.bucket, APP_CONFIG_S3));
+    const { result: response, error } = await withError(
+      this.client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: APP_CONFIG_S3,
+        }),
+      ),
+    );
 
     if (error) {
       console.error(`[s3] failed to read config file: ${error.message}`);
@@ -773,6 +1012,7 @@ export class S3 implements Storage {
       return { error };
     }
 
+    const stream = response?.Body as Readable;
     let existingConfig = '';
 
     for await (const chunk of stream ?? []) {
@@ -803,7 +1043,23 @@ export class S3 implements Storage {
           const remotePath = path.join(DATA_PATH, image.path);
 
           console.log(`[s3] downloading config image: ${remotePath} to ${localPath}`);
-          await this.client.fGetObject(this.bucket, remotePath, localPath);
+
+          const response = await this.client.send(
+            new GetObjectCommand({
+              Bucket: this.bucket,
+              Key: remotePath,
+            }),
+          );
+
+          const stream = response.Body as Readable;
+          const writeStream = createWriteStream(localPath);
+
+          await new Promise<void>((resolve, reject) => {
+            stream.pipe(writeStream);
+            writeStream.on('finish', resolve);
+            writeStream.on('error', reject);
+            stream.on('error', reject);
+          });
         }
       }
 
@@ -836,7 +1092,16 @@ export class S3 implements Storage {
       if (!config[key]) return false;
       if (isDefaultImage(key)) return false;
 
-      const { result } = await withError(this.client.statObject(this.bucket, uploadConfig.logoPath));
+      const imagePath = key === 'logoPath' ? uploadConfig.logoPath : uploadConfig.faviconPath;
+
+      const { result } = await withError(
+        this.client.send(
+          new HeadObjectCommand({
+            Bucket: this.bucket,
+            Key: path.join(DATA_PATH, imagePath),
+          }),
+        ),
+      );
 
       if (!result) {
         return true;
