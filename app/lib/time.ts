@@ -18,3 +18,10 @@ export const parseMilliseconds = (ms: number) => {
 
   return `${leftMs}ms`;
 };
+
+export const getTimestamp = (date?: Date | string) => {
+  if (!date) return 0;
+  if (typeof date === 'string') return new Date(date).getTime();
+
+  return date.getTime();
+};
