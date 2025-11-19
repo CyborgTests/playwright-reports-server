@@ -3,19 +3,19 @@ import { env } from '@/app/config/env';
 import { SiteWhiteLabelConfig } from '@/app/types';
 import { defaultConfig } from '@/app/lib/config';
 
+const initiatedConfigDb = Symbol.for('playwright.reports.db.config');
+const instance = globalThis as typeof globalThis & { [initiatedConfigDb]?: ConfigCache };
+
 export class ConfigCache {
-  private static instance: ConfigCache;
   public initialized = false;
   public config: SiteWhiteLabelConfig | undefined;
 
   private constructor() {}
 
   public static getInstance() {
-    if (!ConfigCache.instance) {
-      ConfigCache.instance = new ConfigCache();
-    }
+    instance[initiatedConfigDb] ??= new ConfigCache();
 
-    return ConfigCache.instance;
+    return instance[initiatedConfigDb];
   }
 
   public async init(): Promise<void> {

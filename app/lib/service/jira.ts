@@ -36,6 +36,9 @@ export interface JiraErrorResponse {
   errors: Record<string, string>;
 }
 
+const initiatedJira = Symbol.for('playwright.reports.jira');
+const instance = globalThis as typeof globalThis & { [initiatedJira]?: JiraService };
+
 export class JiraService {
   private static instance: JiraService;
   private baseUrl: string;
@@ -64,14 +67,13 @@ export class JiraService {
   }
 
   public static getInstance(jiraConfig?: JiraConfig): JiraService {
-    if (!JiraService.instance) {
-      JiraService.instance = new JiraService(jiraConfig);
-    }
+    instance[initiatedJira] ??= new JiraService(jiraConfig);
 
-    return JiraService.instance;
+    return instance[initiatedJira];
   }
 
   public static resetInstance(): void {
+    instance[initiatedJira] = undefined;
     JiraService.instance = undefined as any;
   }
 
