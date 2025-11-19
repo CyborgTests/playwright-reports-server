@@ -895,7 +895,7 @@ export class S3 implements Storage {
 
         const id = fileName.replace(path.extname(fileName), '');
 
-        if (resultsIds.includes(id)) {
+        if (resultsIds.includes(id) && path.extname(fileName) === '.zip') {
           console.log(`[s3] file id is in target results, downloading...`);
           const localFilePath = path.join(tempFolder, fileName);
 
