@@ -1,0 +1,35 @@
+name: Test Upload
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Server URL'
+        required: true
+        type: string
+      apitoken:
+        description: 'API Token'
+        required: true
+        type: string
+      size_mb:
+        description: 'File size in megabytes'
+        required: true
+        type: number
+        default: 1
+
+jobs:
+  upload-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate test file
+        run: |
+          # Create a file of specified size in MB
+          dd if=/dev/zero of=examplefile.zip bs=${{inputs.size_mb}}M
+          ls -lh examplefile.zip
+
+      - name: Upload file to server
+        run: |
+          curl -X POST \
+            -H "Authorization: ${{ inputs.apitoken }}" \
+            -F "file=@examplefile.zip" \
+            "${{ inputs.url }}/api/result/upload"
