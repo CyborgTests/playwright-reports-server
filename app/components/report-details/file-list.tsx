@@ -1,11 +1,12 @@
 'use client';
 
 import { FC, useEffect, useState } from 'react';
-import { Accordion, AccordionItem, Spinner } from '@heroui/react';
+import { Accordion, AccordionItem, Alert, Spinner } from '@heroui/react';
 import { toast } from 'sonner';
 
 import { subtitle } from '../primitives';
 import { StatChart } from '../stat-chart';
+import InlineStatsCircle from '../inline-stats-circle';
 
 import FileSuitesTree from './suite-tree';
 import ReportFilters from './tests-filters';
@@ -49,13 +50,14 @@ const FileList: FC<FileListProps> = ({ report }) => {
         <ReportFilters report={report!} onChangeFilters={setFilteredTests} />
       </div>
       {!filteredTests?.files?.length ? (
-        <p>No files found</p>
+        <Alert color="warning" title={`No files found`} />
       ) : (
-        <Accordion variant="bordered">
+        <Accordion isCompact={true} variant="bordered">
           {(filteredTests?.files ?? []).map((file) => (
             <AccordionItem
               key={file.fileId}
               aria-label={file.fileName}
+              startContent={<InlineStatsCircle stats={file.stats} />}
               title={
                 <p className="flex flex-row gap-5">
                   {file.fileName}
