@@ -1,22 +1,20 @@
-import { configCache, reportCache, resultCache } from '@/app/lib/service/cache';
+import { configCache } from '@/app/lib/service/cache/config';
+import { reportDb, resultDb } from '@/app/lib/service/db';
 import { cronService } from '@/app/lib/service/cron';
 import { env } from '@/app/config/env';
 import { isBuildStage } from '@/app/config/runtime';
 
-const processKey = Symbol.for('playwright.reports.lifecycle');
+const createdLifecycle = Symbol.for('playwright.reports.lifecycle');
+const instance = globalThis as typeof globalThis & { [createdLifecycle]?: Lifecycle };
 
 export class Lifecycle {
   private initialized = false;
   private initPromise?: Promise<void>;
 
   public static getInstance(): Lifecycle {
-    const nodeJsProcess = process as typeof process & { [key: symbol]: any };
+    instance[createdLifecycle] ??= new Lifecycle();
 
-    if (!nodeJsProcess[processKey]) {
-      nodeJsProcess[processKey] = new Lifecycle();
-    }
-
-    return nodeJsProcess[processKey];
+    return instance[createdLifecycle];
   }
 
   public async initialize(): Promise<void> {
@@ -32,8 +30,8 @@ export class Lifecycle {
 
     try {
       if (env.USE_SERVER_CACHE) {
-        await Promise.all([configCache.init(), reportCache.init(), resultCache.init()]);
-        console.log('[lifecycle] Caches initialized successfully');
+        await Promise.all([configCache.init(), reportDb.init(), resultDb.init()]);
+        console.log('[lifecycle] Databases initialized successfully');
       }
 
       if (!cronService.initialized && !isBuildStage) {
