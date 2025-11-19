@@ -508,5 +508,5 @@ curl --location --request PATCH 'localhost:3000/api/config' \
 ### Header links
 
 - is an object, where key is a name of the link and value is the external url
-- currently we have logo for `telegram`, `github` and `discord`
+- currently we have logo for: `telegram`, `github`, `discord`, `bitbucket`, `slack`
 - we will use specific logo for a link name if we have it, otherwise there will be a generic link icon with a link name
