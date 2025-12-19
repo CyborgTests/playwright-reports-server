@@ -13,6 +13,7 @@ import {
   Pagination,
   LinkIcon,
   Chip,
+  type Selection,
 } from '@heroui/react';
 import Link from 'next/link';
 import { keepPreviousData } from '@tanstack/react-query';
@@ -101,9 +102,12 @@ const getMetadataItems = (item: ReportHistory) => {
 
 interface ReportsTableProps {
   onChange: () => void;
+  selected?: string[];
+  onSelect?: (reports: ReportHistory[]) => void;
+  onDeleted?: () => void;
 }
 
-export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) {
+export default function ReportsTable({ onChange, selected, onSelect, onDeleted }: Readonly<ReportsTableProps>) {
   const reportListEndpoint = '/api/report/list';
   const [project, setProject] = useState(defaultProjectName);
   const [search, setSearch] = useState('');
@@ -130,9 +134,27 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
 
   const { reports, total } = reportResponse ?? {};
 
-  const onDeleted = () => {
+  const handleDeleted = () => {
+    onDeleted?.();
     onChange?.();
     refetch();
+  };
+
+  const onChangeSelect = (keys: Selection) => {
+    if (keys === 'all') {
+      const all = reports ?? [];
+
+      onSelect?.(all);
+    }
+
+    if (typeof keys === 'string') {
+      return;
+    }
+
+    const selectedKeys = Array.from(keys);
+    const selectedReports = reports?.filter((r) => selectedKeys.includes(r.reportID)) ?? [];
+
+    onSelect?.(selectedReports);
   };
 
   const onPageChange = useCallback(
@@ -195,6 +217,9 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
           tr: 'border-b-1 rounded-0',
         }}
         radius="none"
+        selectedKeys={selected}
+        selectionMode="multiple"
+        onSelectionChange={onChangeSelect}
       >
         <TableHeader columns={columns}>
           {(column) => (
@@ -256,7 +281,7 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
                       Open report
                     </Button>
                   </Link>
-                  <DeleteReportButton reportId={item.reportID} onDeleted={onDeleted} />
+                  <DeleteReportButton reportId={item.reportID} onDeleted={handleDeleted} />
                 </div>
               </TableCell>
             </TableRow>
