@@ -52,10 +52,8 @@ export const Aside: React.FC = () => {
               <Link
                 key={item.href}
                 as={NextLink}
-                className={`relative flex items-center justify-center p-2 my-2 rounded-lg transition-colors ${
-                  isActive
-                    ? 'bg-[#D4E8F5] dark:bg-black text-primary dark:text-primary'
-                    : 'hover:bg-[#EEF7FC] dark:hover:bg-black'
+                className={`relative flex items-center justify-center p-2 my-2 rounded-lg transition-colors text-black dark:text-white ${
+                  isActive ? 'bg-[#D4E8F5] dark:bg-[#1A1A1A]' : 'hover:bg-[#EEF7FC] dark:hover:bg-[#1A1A1A]'
                 }`}
                 href={item.href}
                 isDisabled={!isAuthenticated}
