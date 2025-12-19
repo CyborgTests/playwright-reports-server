@@ -55,6 +55,17 @@ const coreFields = [
   'errors',
 ];
 
+const formatMetadataValue = (value: any): string => {
+  if (value === null || value === undefined) {
+    return String(value);
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+};
+
 const getMetadataItems = (item: ReportHistory) => {
   const metadata: Array<{ key: string; value: any; icon?: React.ReactNode }> = [];
 
@@ -77,6 +88,10 @@ const getMetadataItems = (item: ReportHistory) => {
   // Add any other metadata fields
   Object.entries(itemWithMetadata).forEach(([key, value]) => {
     if (!coreFields.includes(key) && !['environment', 'workingDir', 'branch'].includes(key)) {
+      // Skip empty objects
+      if (value !== null && typeof value === 'object' && Object.keys(value).length === 0) {
+        return;
+      }
       metadata.push({ key, value });
     }
   });
@@ -145,6 +160,7 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
   }, [project, total, rowsPerPage]);
 
   error && toast.error(error.message);
+  console.log('reports', reports);
 
   return (
     <>
@@ -206,21 +222,25 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
 
                   {/* Metadata chips below title */}
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {getMetadataItems(item).map(({ key, value, icon }, index) => (
-                      <Chip
-                        key={`${key}-${index}`}
-                        className="text-xs h-5"
-                        color="default"
-                        size="sm"
-                        startContent={icon}
-                        title={`${key}: ${value}`}
-                        variant="flat"
-                      >
-                        <span className="max-w-[150px] truncate">
-                          {key === 'branch' || key === 'workingDir' ? value : `${key}: ${value}`}
-                        </span>
-                      </Chip>
-                    ))}
+                    {getMetadataItems(item).map(({ key, value, icon }, index) => {
+                      const formattedValue = formatMetadataValue(value);
+                      const displayValue =
+                        key === 'branch' || key === 'workingDir' ? formattedValue : `${key}: ${formattedValue}`;
+
+                      return (
+                        <Chip
+                          key={`${key}-${index}`}
+                          className="text-xs h-5"
+                          color="default"
+                          size="sm"
+                          startContent={icon}
+                          title={`${key}: ${formattedValue}`}
+                          variant="flat"
+                        >
+                          <span className="max-w-[150px] truncate">{displayValue}</span>
+                        </Chip>
+                      );
+                    })}
                   </div>
                 </div>
               </TableCell>
