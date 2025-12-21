@@ -111,6 +111,8 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
   const reportListEndpoint = '/api/report/list';
   const [project, setProject] = useState(defaultProjectName);
   const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -119,6 +121,8 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
     offset: ((page - 1) * rowsPerPage).toString(),
     project,
     ...(search.trim() && { search: search.trim() }),
+    ...(dateFrom && { dateFrom }),
+    ...(dateTo && { dateTo }),
   });
 
   const {
@@ -128,7 +132,7 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
     error,
     refetch,
   } = useQuery<ReadReportsHistory>(withQueryParams(reportListEndpoint, getQueryParams()), {
-    dependencies: [project, search, rowsPerPage, page],
+    dependencies: [project, search, dateFrom, dateTo, rowsPerPage, page],
     placeholderData: keepPreviousData,
   });
 
@@ -177,6 +181,16 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
     setPage(1);
   }, []);
 
+  const onDateFromChange = useCallback((date: string) => {
+    setDateFrom(date);
+    setPage(1);
+  }, []);
+
+  const onDateToChange = useCallback((date: string) => {
+    setDateTo(date);
+    setPage(1);
+  }, []);
+
   const pages = useMemo(() => {
     return total ? Math.ceil(total / rowsPerPage) : 0;
   }, [project, total, rowsPerPage]);
@@ -187,11 +201,16 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
   return (
     <>
       <TablePaginationOptions
+        dateFrom={dateFrom}
+        dateTo={dateTo}
         entity="report"
+        rowPerPageOptions={undefined}
         rowsPerPage={rowsPerPage}
         setPage={setPage}
         setRowsPerPage={setRowsPerPage}
         total={total}
+        onDateFromChange={onDateFromChange}
+        onDateToChange={onDateToChange}
         onProjectChange={onProjectChange}
         onSearchChange={onSearchChange}
       />

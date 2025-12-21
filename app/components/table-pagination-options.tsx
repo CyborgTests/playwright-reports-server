@@ -3,6 +3,7 @@ import { Select, SelectItem, Input } from '@heroui/react';
 
 import ProjectSelect from '@/app/components/project-select';
 import TagSelect from '@/app/components/tag-select';
+import DateRangePicker from '@/app/components/date-range-picker';
 import { SearchIcon } from '@/app/components/icons';
 
 interface TablePaginationRowProps {
@@ -13,6 +14,10 @@ interface TablePaginationRowProps {
   onProjectChange: (project: string) => void;
   onSearchChange?: (search: string) => void;
   onTagsChange?: (tags: string[]) => void;
+  onDateFromChange?: (date: string) => void;
+  onDateToChange?: (date: string) => void;
+  dateFrom?: string;
+  dateTo?: string;
   rowPerPageOptions?: number[];
   entity: 'report' | 'result';
 }
@@ -29,6 +34,10 @@ export default function TablePaginationOptions({
   onProjectChange,
   onSearchChange,
   onTagsChange,
+  onDateFromChange,
+  onDateToChange,
+  dateFrom,
+  dateTo,
 }: TablePaginationRowProps) {
   const rowPerPageItems = rowPerPageOptions ?? defaultRowPerPageOptions;
 
@@ -55,6 +64,14 @@ export default function TablePaginationOptions({
         />
         <ProjectSelect entity={entity} onSelect={onProjectChange} />
         {entity === 'result' && <TagSelect entity={entity} onSelect={onTagsChange} />}
+        {(onDateFromChange || onDateToChange) && (
+          <DateRangePicker
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onDateFromChange={onDateFromChange}
+            onDateToChange={onDateToChange}
+          />
+        )}
         <Select
           disallowEmptySelection
           className="w-32 min-w-32 bg-transparent"

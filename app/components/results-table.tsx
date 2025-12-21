@@ -50,6 +50,8 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
   const [project, setProject] = useState(defaultProjectName);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -59,6 +61,8 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
     project,
     ...(selectedTags.length > 0 && { tags: selectedTags.join(',') }),
     ...(search.trim() && { search: search.trim() }),
+    ...(dateFrom && { dateFrom }),
+    ...(dateTo && { dateTo }),
   });
 
   const {
@@ -68,7 +72,7 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
     error,
     refetch,
   } = useQuery<ReadResultsOutput>(withQueryParams(resultListEndpoint, getQueryParams()), {
-    dependencies: [project, selectedTags, search, rowsPerPage, page],
+    dependencies: [project, selectedTags, search, dateFrom, dateTo, rowsPerPage, page],
     placeholderData: keepPreviousData,
   });
 
@@ -101,6 +105,16 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
 
   const onSearchChange = useCallback((searchTerm: string) => {
     setSearch(searchTerm);
+    setPage(1);
+  }, []);
+
+  const onDateFromChange = useCallback((date: string) => {
+    setDateFrom(date);
+    setPage(1);
+  }, []);
+
+  const onDateToChange = useCallback((date: string) => {
+    setDateTo(date);
     setPage(1);
   }, []);
 
@@ -139,6 +153,10 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
         onProjectChange={onProjectChange}
         onSearchChange={onSearchChange}
         onTagsChange={onTagsChange}
+        onDateFromChange={onDateFromChange}
+        onDateToChange={onDateToChange}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
       />
       <Table
         aria-label="Results"
