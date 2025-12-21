@@ -25,7 +25,7 @@ import { ReadResultsOutput, type Result } from '@/app/lib/storage';
 import DeleteResultsButton from '@/app/components/delete-results-button';
 
 const columns = [
-  { name: 'Title', uid: 'title' },
+  { name: 'Result ID', uid: 'title' },
   { name: 'Project', uid: 'project' },
   { name: 'Created at', uid: 'createdAt' },
   { name: 'Tags', uid: 'tags' },
@@ -144,19 +144,19 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
   return (
     <>
       <TablePaginationOptions
+        dateFrom={dateFrom}
+        dateTo={dateTo}
         entity="result"
         rowPerPageOptions={[10, 20, 40, 80, 120]}
         rowsPerPage={rowsPerPage}
         setPage={setPage}
         setRowsPerPage={setRowsPerPage}
         total={total}
+        onDateFromChange={onDateFromChange}
+        onDateToChange={onDateToChange}
         onProjectChange={onProjectChange}
         onSearchChange={onSearchChange}
         onTagsChange={onTagsChange}
-        onDateFromChange={onDateFromChange}
-        onDateToChange={onDateToChange}
-        dateFrom={dateFrom}
-        dateTo={dateTo}
       />
       <Table
         aria-label="Results"
