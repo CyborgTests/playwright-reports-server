@@ -24,6 +24,7 @@ import { defaultConfig } from '@/app/lib/config';
 import { env } from '@/app/config/env';
 import { type S3 } from '@/app/lib/storage/s3';
 import { isValidPlaywrightVersion } from '@/app/lib/pw';
+import { getTimestamp } from '@/app/lib/time';
 
 class Service {
   private static instance: Service;
@@ -78,13 +79,6 @@ class Service {
           return searchableFields.some((field) => field?.toLowerCase().includes(searchTerm));
         });
       }
-
-      const getTimestamp = (date?: Date | string) => {
-        if (!date) return 0;
-        if (typeof date === 'string') return new Date(date).getTime();
-
-        return date.getTime();
-      };
 
       reports.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
       const currentReports = handlePagination<ReportHistory>(reports, input?.pagination);
@@ -214,13 +208,6 @@ class Service {
     if (!cached.length) {
       return await storage.readResults(input);
     }
-
-    const getTimestamp = (date?: Date | string) => {
-      if (!date) return 0;
-      if (typeof date === 'string') return new Date(date).getTime();
-
-      return date.getTime();
-    };
 
     cached.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
 

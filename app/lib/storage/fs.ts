@@ -77,8 +77,9 @@ export async function readFile(targetPath: string, contentType: string | null) {
 
 async function getResultsCount() {
   const files = await fs.readdir(RESULTS_FOLDER);
+  const zipFilesCount = files.filter((file) => file.endsWith('.zip'));
 
-  return Math.round(files.length / 2);
+  return zipFilesCount.length;
 }
 
 export async function readResults(input?: ReadResultsInput) {
