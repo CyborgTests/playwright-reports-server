@@ -2,6 +2,8 @@
 
 import { Card, CardBody, CardHeader, Skeleton } from '@heroui/react';
 
+import ServerCache from './ServerCache';
+
 import { useAuthConfig } from '@/app/hooks/useAuthConfig';
 
 export default function EnvironmentInfo() {
@@ -27,7 +29,7 @@ export default function EnvironmentInfo() {
             {isLoading ? (
               <Skeleton className="h-5 w-20 rounded-lg" />
             ) : (
-              <p className="text-sm text-gray-600">{envInfo?.serverCache ? 'Enabled' : 'Disabled'}</p>
+              <ServerCache isEnabled={envInfo?.serverCache} />
             )}
           </div>
           <div>

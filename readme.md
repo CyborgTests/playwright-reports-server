@@ -84,17 +84,18 @@ The Playwright Reports Server provides APIs for managing and generating reports 
 
 The app is configured with environment variables, so it could be specified as `.env` file as well, however there are no mandatory options.
 
-| Name                   | Description                                                                                      | Default |
-| ---------------------- | ------------------------------------------------------------------------------------------------ | ------- |
-| `API_TOKEN`            | API token for [Authorization](#authorization)                                                    |         |
-| `AUTH_SECRET`          | Secret to encrypt JWT                                                                            |         |
-| `UI_AUTH_EXPIRE_HOURS` | Duration of auth session                                                                         | `"2"`   |
-| `USE_SERVER_CACHE`     | Use server side indexed cache for backend queries, improves UX, reduces impact on a backend / s3 | `false` |
-| `DATA_STORAGE`         | Where to store data, check for additional configuration [Storage Options](#storage-options)      | `"fs"`  |
-| `JIRA_BASE_URL`        | Jira instance URL (e.g., https://your-domain.atlassian.net)                                      |         |
-| `JIRA_EMAIL`           | Jira account email address                                                                       |         |
-| `JIRA_API_TOKEN`       | Jira API token for authentication                                                                |         |
-| `JIRA_PROJECT_KEY`     | Default Jira project key for ticket creation                                                     |         |
+| Name                        | Description                                                                                                       | Default |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------- |
+| `API_TOKEN`                 | API token for [Authorization](#authorization)                                                                     |         |
+| `AUTH_SECRET`               | Secret to encrypt JWT                                                                                             |         |
+| `UI_AUTH_EXPIRE_HOURS`      | Duration of auth session                                                                                          | `"2"`   |
+| `USE_SERVER_CACHE`          | Use sqlite3 for storing metadata for results and reports, config caching - improves UX, reduces impact on a s3/fs | `false` |
+| `SERVER_CACHE_REFRESH_CRON` |                                                                                                                   |         |
+| `DATA_STORAGE`              | Where to store data, check for additional configuration [Storage Options](#storage-options)                       | `"fs"`  |
+| `JIRA_BASE_URL`             | Jira instance URL (e.g., https://your-domain.atlassian.net)                                                       |         |
+| `JIRA_EMAIL`                | Jira account email address                                                                                        |         |
+| `JIRA_API_TOKEN`            | Jira API token for authentication                                                                                 |         |
+| `JIRA_PROJECT_KEY`          | Default Jira project key for ticket creation                                                                      |         |
 
 ## API Routes
 

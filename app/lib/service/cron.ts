@@ -4,19 +4,19 @@ import { service } from '@/app/lib/service';
 import { env } from '@/app/config/env';
 import { withError } from '@/app/lib/withError';
 
+const runningCron = Symbol.for('playwright.reports.cron.service');
+const instance = globalThis as typeof globalThis & { [runningCron]?: CronService };
+
 export class CronService {
-  private static instance: CronService;
   public initialized = false;
 
   private clearResultsJob: Cron | undefined;
   private clearReportsJob: Cron | undefined;
 
   public static getInstance() {
-    if (!CronService.instance) {
-      CronService.instance = new CronService();
-    }
+    instance[runningCron] ??= new CronService();
 
-    return CronService.instance;
+    return instance[runningCron];
   }
 
   private constructor() {

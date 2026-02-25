@@ -6,7 +6,8 @@ import { serveReportRoute } from '../constants';
 import { DEFAULT_STREAM_CHUNK_SIZE } from '../storage/constants';
 
 import { lifecycle } from '@/app/lib/service/lifecycle';
-import { configCache, reportCache, resultCache } from '@/app/lib/service/cache';
+import { configCache } from '@/app/lib/service/cache/config';
+import { reportDb, resultDb } from '@/app/lib/service/db';
 import {
   type ReadReportsInput,
   ReadResultsInput,
@@ -25,16 +26,15 @@ import { env } from '@/app/config/env';
 import { type S3 } from '@/app/lib/storage/s3';
 import { isValidPlaywrightVersion } from '@/app/lib/pw';
 
-class Service {
-  private static instance: Service;
+const runningService = Symbol.for('playwright.reports.service');
+const instance = globalThis as typeof globalThis & { [runningService]?: Service };
 
+class Service {
   public static getInstance() {
     console.log(`[service] get instance`);
-    if (!Service.instance) {
-      Service.instance = new Service();
-    }
+    instance[runningService] ??= new Service();
 
-    return Service.instance;
+    return instance[runningService];
   }
 
   private shouldUseServerCache(): boolean {
@@ -43,7 +43,7 @@ class Service {
 
   public async getReports(input?: ReadReportsInput) {
     console.log(`[service] getReports`);
-    const cached = this.shouldUseServerCache() && reportCache.initialized ? reportCache.getAll() : [];
+    const cached = this.shouldUseServerCache() && reportDb.initialized ? reportDb.getAll() : [];
 
     const shouldUseCache = !input?.ids;
 
@@ -102,7 +102,7 @@ class Service {
 
   public async getReport(id: string): Promise<ReportHistory> {
     console.log(`[service] getReport ${id}`);
-    const cached = this.shouldUseServerCache() && reportCache.initialized ? reportCache.getByID(id) : undefined;
+    const cached = this.shouldUseServerCache() && reportDb.initialized ? reportDb.getByID(id) : undefined;
 
     if (isReportHistory(cached)) {
       console.log(`[service] using cached report`);
@@ -182,7 +182,7 @@ class Service {
 
     const report = await this.getReport(reportId);
 
-    reportCache.onCreated(report);
+    reportDb.onCreated(report);
 
     const projectPath = metadata?.project ? `${encodeURI(metadata.project)}/` : '';
     const reportUrl = `${serveReportRoute}/${projectPath}${reportId}/index.html`;
@@ -197,7 +197,7 @@ class Service {
       throw error;
     }
 
-    reportCache.onDeleted(reportIDs);
+    reportDb.onDeleted(reportIDs);
   }
 
   public async getReportsProjects(): Promise<string[]> {
@@ -209,7 +209,7 @@ class Service {
 
   public async getResults(input?: ReadResultsInput): Promise<ReadResultsOutput> {
     console.log(`[results service] getResults`);
-    const cached = this.shouldUseServerCache() && resultCache.initialized ? resultCache.getAll() : [];
+    const cached = this.shouldUseServerCache() && resultDb.initialized ? resultDb.getAll() : [];
 
     if (!cached.length) {
       return await storage.readResults(input);
@@ -279,7 +279,7 @@ class Service {
       throw error;
     }
 
-    resultCache.onDeleted(resultIDs);
+    resultDb.onDeleted(resultIDs);
   }
 
   public async getPresignedUrl(fileName: string): Promise<string | undefined> {
@@ -338,7 +338,7 @@ class Service {
   public async saveResultDetails(resultID: string, resultDetails: ResultDetails, size: number) {
     const result = await storage.saveResultDetails(resultID, resultDetails, size);
 
-    resultCache.onCreated(result);
+    resultDb.onCreated(result);
 
     return result;
   }
@@ -371,14 +371,14 @@ class Service {
 
   public async getServerInfo(): Promise<ServerDataInfo> {
     console.log(`[service] getServerInfo`);
-    const canCalculateFromCache = this.shouldUseServerCache() && reportCache.initialized && resultCache.initialized;
+    const canCalculateFromCache = this.shouldUseServerCache() && reportDb.initialized && resultDb.initialized;
 
     if (!canCalculateFromCache) {
       return await storage.getServerDataInfo();
     }
 
-    const reports = reportCache.getAll();
-    const results = resultCache.getAll();
+    const reports = reportDb.getAll();
+    const results = resultDb.getAll();
 
     const getTotalSizeBytes = <T extends { sizeBytes: number }[]>(entity: T) =>
       entity.reduce((total, item) => total + item.sizeBytes, 0);
