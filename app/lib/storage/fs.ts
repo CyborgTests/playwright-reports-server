@@ -220,18 +220,28 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
   const entries = await fs.readdir(REPORTS_FOLDER, { withFileTypes: true, recursive: true });
 
   const reportEntries = entries
-    .filter((entry) => !entry.isDirectory() && entry.name === 'index.html' && !(entry as any).path.endsWith('trace'))
-    .filter((entry) => (input?.ids ? input.ids.some((id) => (entry as any).path.includes(id)) : entry))
-    .filter((entry) => (input?.project ? (entry as any).path.includes(input.project) : entry));
+    .filter((entry) => {
+      const entryPath = (entry as any).path ?? (entry as any).parentPath;
+      return (
+        !entry.isDirectory() &&
+        entry.name === 'index.html' &&
+        entryPath != null &&
+        !entryPath.endsWith('trace') &&
+        (input?.ids ? input.ids.some((id: string) => entryPath.includes(id)) : true) &&
+        (input?.project ? entryPath.includes(input.project) : true)
+      );
+    });
 
   const stats = await processBatch<Dirent, Stats & { filePath: string; createdAt: Date }>(
     {},
     reportEntries,
     20,
     async (file) => {
-      const stat = await fs.stat((file as any).path);
+      const filePath = (file as any).path ?? (file as any).parentPath;
 
-      return Object.assign(stat, { filePath: (file as any).path, createdAt: stat.birthtime });
+      const stat = await fs.stat(filePath);
+
+      return Object.assign(stat, { filePath, createdAt: stat.birthtime });
     },
   );
 
