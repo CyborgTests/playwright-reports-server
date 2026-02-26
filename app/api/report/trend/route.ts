@@ -7,9 +7,7 @@ export const dynamic = 'force-dynamic'; // defaults to auto
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const project = searchParams.get('project') ?? '';
-  const { reports } = await service.getReports({ project });
-
-  const latestReports = reports.slice(0, 20);
+  const { reports: latestReports } = await service.getReports({ project, pagination: { offset: 0, limit: 20 } });
 
   return Response.json(latestReports);
 }
