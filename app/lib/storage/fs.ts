@@ -219,18 +219,17 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
   await createDirectoriesIfMissing();
   const entries = await fs.readdir(REPORTS_FOLDER, { withFileTypes: true, recursive: true });
 
-  const reportEntries = entries
-    .filter((entry) => {
-      const entryPath = (entry as any).path ?? (entry as any).parentPath;
-      return (
-        !entry.isDirectory() &&
-        entry.name === 'index.html' &&
-        entryPath != null &&
-        !entryPath.endsWith('trace') &&
-        (input?.ids ? input.ids.some((id: string) => entryPath.includes(id)) : true) &&
-        (input?.project ? entryPath.includes(input.project) : true)
-      );
-    });
+  const reportEntries = entries.filter((entry) => {
+    const entryPath = (entry as any).path ?? (entry as any).parentPath;
+    return (
+      !entry.isDirectory() &&
+      entry.name === 'index.html' &&
+      entryPath != null &&
+      !entryPath.endsWith('trace') &&
+      (input?.ids ? input.ids.some((id: string) => entryPath.includes(id)) : true) &&
+      (input?.project ? entryPath.includes(input.project) : true)
+    );
+  });
 
   const stats = await processBatch<Dirent, Stats & { filePath: string; createdAt: Date }>(
     {},
