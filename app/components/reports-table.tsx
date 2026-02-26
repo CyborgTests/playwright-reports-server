@@ -13,6 +13,7 @@ import {
   Pagination,
   LinkIcon,
   Chip,
+  type Selection,
 } from '@heroui/react';
 import Link from 'next/link';
 import { keepPreviousData } from '@tanstack/react-query';
@@ -55,6 +56,17 @@ const coreFields = [
   'errors',
 ];
 
+const formatMetadataValue = (value: any): string => {
+  if (value === null || value === undefined) {
+    return String(value);
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+};
+
 const getMetadataItems = (item: ReportHistory) => {
   const metadata: Array<{ key: string; value: any; icon?: React.ReactNode }> = [];
 
@@ -77,6 +89,10 @@ const getMetadataItems = (item: ReportHistory) => {
   // Add any other metadata fields
   Object.entries(itemWithMetadata).forEach(([key, value]) => {
     if (!coreFields.includes(key) && !['environment', 'workingDir', 'branch'].includes(key)) {
+      // Skip empty objects
+      if (value !== null && typeof value === 'object' && Object.keys(value).length === 0) {
+        return;
+      }
       metadata.push({ key, value });
     }
   });
@@ -86,12 +102,17 @@ const getMetadataItems = (item: ReportHistory) => {
 
 interface ReportsTableProps {
   onChange: () => void;
+  selected?: string[];
+  onSelect?: (reports: ReportHistory[]) => void;
+  onDeleted?: () => void;
 }
 
-export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) {
+export default function ReportsTable({ onChange, selected, onSelect, onDeleted }: Readonly<ReportsTableProps>) {
   const reportListEndpoint = '/api/report/list';
   const [project, setProject] = useState(defaultProjectName);
   const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -100,6 +121,8 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
     offset: ((page - 1) * rowsPerPage).toString(),
     project,
     ...(search.trim() && { search: search.trim() }),
+    ...(dateFrom && { dateFrom }),
+    ...(dateTo && { dateTo }),
   });
 
   const {
@@ -109,15 +132,33 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
     error,
     refetch,
   } = useQuery<ReadReportsHistory>(withQueryParams(reportListEndpoint, getQueryParams()), {
-    dependencies: [project, search, rowsPerPage, page],
+    dependencies: [project, search, dateFrom, dateTo, rowsPerPage, page],
     placeholderData: keepPreviousData,
   });
 
   const { reports, total } = reportResponse ?? {};
 
-  const onDeleted = () => {
+  const handleDeleted = () => {
+    onDeleted?.();
     onChange?.();
     refetch();
+  };
+
+  const onChangeSelect = (keys: Selection) => {
+    if (keys === 'all') {
+      const all = reports ?? [];
+
+      onSelect?.(all);
+    }
+
+    if (typeof keys === 'string') {
+      return;
+    }
+
+    const selectedKeys = Array.from(keys);
+    const selectedReports = reports?.filter((r) => selectedKeys.includes(r.reportID)) ?? [];
+
+    onSelect?.(selectedReports);
   };
 
   const onPageChange = useCallback(
@@ -140,20 +181,36 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
     setPage(1);
   }, []);
 
+  const onDateFromChange = useCallback((date: string) => {
+    setDateFrom(date);
+    setPage(1);
+  }, []);
+
+  const onDateToChange = useCallback((date: string) => {
+    setDateTo(date);
+    setPage(1);
+  }, []);
+
   const pages = useMemo(() => {
     return total ? Math.ceil(total / rowsPerPage) : 0;
   }, [project, total, rowsPerPage]);
 
   error && toast.error(error.message);
+  console.log('reports', reports);
 
   return (
     <>
       <TablePaginationOptions
+        dateFrom={dateFrom}
+        dateTo={dateTo}
         entity="report"
+        rowPerPageOptions={undefined}
         rowsPerPage={rowsPerPage}
         setPage={setPage}
         setRowsPerPage={setRowsPerPage}
         total={total}
+        onDateFromChange={onDateFromChange}
+        onDateToChange={onDateToChange}
         onProjectChange={onProjectChange}
         onSearchChange={onSearchChange}
       />
@@ -179,6 +236,9 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
           tr: 'border-b-1 rounded-0',
         }}
         radius="none"
+        selectedKeys={selected}
+        selectionMode="multiple"
+        onSelectionChange={onChangeSelect}
       >
         <TableHeader columns={columns}>
           {(column) => (
@@ -206,21 +266,25 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
 
                   {/* Metadata chips below title */}
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {getMetadataItems(item).map(({ key, value, icon }, index) => (
-                      <Chip
-                        key={`${key}-${index}`}
-                        className="text-xs h-5"
-                        color="default"
-                        size="sm"
-                        startContent={icon}
-                        title={`${key}: ${value}`}
-                        variant="flat"
-                      >
-                        <span className="max-w-[150px] truncate">
-                          {key === 'branch' || key === 'workingDir' ? value : `${key}: ${value}`}
-                        </span>
-                      </Chip>
-                    ))}
+                    {getMetadataItems(item).map(({ key, value, icon }, index) => {
+                      const formattedValue = formatMetadataValue(value);
+                      const displayValue =
+                        key === 'branch' || key === 'workingDir' ? formattedValue : `${key}: ${formattedValue}`;
+
+                      return (
+                        <Chip
+                          key={`${key}-${index}`}
+                          className="text-xs h-5"
+                          color="default"
+                          size="sm"
+                          startContent={icon}
+                          title={`${key}: ${formattedValue}`}
+                          variant="flat"
+                        >
+                          <span className="max-w-[150px] truncate">{displayValue}</span>
+                        </Chip>
+                      );
+                    })}
                   </div>
                 </div>
               </TableCell>
@@ -236,7 +300,7 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
                       Open report
                     </Button>
                   </Link>
-                  <DeleteReportButton reportId={item.reportID} onDeleted={onDeleted} />
+                  <DeleteReportButton reportId={item.reportID} onDeleted={handleDeleted} />
                 </div>
               </TableCell>
             </TableRow>

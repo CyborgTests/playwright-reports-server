@@ -27,12 +27,11 @@ export const Aside: React.FC = () => {
   const pathname = usePathname();
   const session = useSession();
   const { authRequired } = useAuthConfig();
+  const isAuthenticated = authRequired === false || session.status === 'authenticated';
 
   const { data: serverInfo } = useQuery<ServerInfo>('/api/info', {
-    dependencies: [],
+    enabled: isAuthenticated,
   });
-
-  const isAuthenticated = authRequired === false || session.status === 'authenticated';
 
   return (
     <Card className="w-16 h-full rounded-none border-r border-gray-200 dark:border-gray-800 dark:bg-black shadow-none">
@@ -52,10 +51,8 @@ export const Aside: React.FC = () => {
               <Link
                 key={item.href}
                 as={NextLink}
-                className={`relative flex items-center justify-center p-2 my-2 rounded-lg transition-colors ${
-                  isActive
-                    ? 'bg-[#D4E8F5] dark:bg-black text-primary dark:text-primary'
-                    : 'hover:bg-[#EEF7FC] dark:hover:bg-black'
+                className={`relative flex items-center justify-center p-2 my-2 rounded-lg transition-colors text-black dark:text-white ${
+                  isActive ? 'bg-[#D4E8F5] dark:bg-[#1A1A1A]' : 'hover:bg-[#EEF7FC] dark:hover:bg-[#1A1A1A]'
                 }`}
                 href={item.href}
                 isDisabled={!isAuthenticated}

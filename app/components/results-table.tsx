@@ -25,7 +25,7 @@ import { ReadResultsOutput, type Result } from '@/app/lib/storage';
 import DeleteResultsButton from '@/app/components/delete-results-button';
 
 const columns = [
-  { name: 'Title', uid: 'title' },
+  { name: 'Result ID', uid: 'title' },
   { name: 'Project', uid: 'project' },
   { name: 'Created at', uid: 'createdAt' },
   { name: 'Tags', uid: 'tags' },
@@ -50,6 +50,8 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
   const [project, setProject] = useState(defaultProjectName);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -59,6 +61,8 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
     project,
     ...(selectedTags.length > 0 && { tags: selectedTags.join(',') }),
     ...(search.trim() && { search: search.trim() }),
+    ...(dateFrom && { dateFrom }),
+    ...(dateTo && { dateTo }),
   });
 
   const {
@@ -68,7 +72,7 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
     error,
     refetch,
   } = useQuery<ReadResultsOutput>(withQueryParams(resultListEndpoint, getQueryParams()), {
-    dependencies: [project, selectedTags, search, rowsPerPage, page],
+    dependencies: [project, selectedTags, search, dateFrom, dateTo, rowsPerPage, page],
     placeholderData: keepPreviousData,
   });
 
@@ -104,6 +108,16 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
     setPage(1);
   }, []);
 
+  const onDateFromChange = useCallback((date: string) => {
+    setDateFrom(date);
+    setPage(1);
+  }, []);
+
+  const onDateToChange = useCallback((date: string) => {
+    setDateTo(date);
+    setPage(1);
+  }, []);
+
   const pages = useMemo(() => {
     return total ? Math.ceil(total / rowsPerPage) : 0;
   }, [project, total, rowsPerPage]);
@@ -130,12 +144,16 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
   return (
     <>
       <TablePaginationOptions
+        dateFrom={dateFrom}
+        dateTo={dateTo}
         entity="result"
         rowPerPageOptions={[10, 20, 40, 80, 120]}
         rowsPerPage={rowsPerPage}
         setPage={setPage}
         setRowsPerPage={setRowsPerPage}
         total={total}
+        onDateFromChange={onDateFromChange}
+        onDateToChange={onDateToChange}
         onProjectChange={onProjectChange}
         onSearchChange={onSearchChange}
         onTagsChange={onTagsChange}

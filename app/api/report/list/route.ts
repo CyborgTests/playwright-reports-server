@@ -11,8 +11,12 @@ export async function GET(request: NextRequest) {
   const pagination = parseFromRequest(searchParams);
   const project = searchParams.get('project') ?? '';
   const search = searchParams.get('search') ?? '';
+  const dateFrom = searchParams.get('dateFrom') ?? undefined;
+  const dateTo = searchParams.get('dateTo') ?? undefined;
 
-  const { result: reports, error } = await withError(service.getReports({ pagination, project, search }));
+  const { result: reports, error } = await withError(
+    service.getReports({ pagination, project, search, dateFrom, dateTo }),
+  );
 
   if (error) {
     return new Response(error.message, { status: 400 });

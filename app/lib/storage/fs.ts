@@ -150,6 +150,25 @@ export async function readResults(input?: ReadResultsInput) {
     });
   }
 
+  // Filter by date range if provided
+  if (input?.dateFrom || input?.dateTo) {
+    const getTimestamp = (date?: Date | string) => {
+      if (!date) return 0;
+      if (typeof date === 'string') return new Date(date).getTime();
+
+      return date.getTime();
+    };
+
+    const fromTimestamp = input.dateFrom ? getTimestamp(input.dateFrom) : 0;
+    const toTimestamp = input.dateTo ? getTimestamp(input.dateTo) : Number.MAX_SAFE_INTEGER;
+
+    filteredResults = filteredResults.filter((result) => {
+      const resultTimestamp = getTimestamp(result.createdAt);
+
+      return resultTimestamp >= fromTimestamp && resultTimestamp <= toTimestamp;
+    });
+  }
+
   const paginatedResults = handlePagination(filteredResults, input?.pagination);
 
   return {
@@ -274,6 +293,25 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
       ].filter(Boolean);
 
       return searchableFields.some((field) => field?.toLowerCase().includes(searchTerm));
+    });
+  }
+
+  // Filter by date range if provided
+  if (input?.dateFrom || input?.dateTo) {
+    const getTimestamp = (date?: Date | string) => {
+      if (!date) return 0;
+      if (typeof date === 'string') return new Date(date).getTime();
+
+      return date.getTime();
+    };
+
+    const fromTimestamp = input.dateFrom ? getTimestamp(input.dateFrom) : 0;
+    const toTimestamp = input.dateTo ? getTimestamp(input.dateTo) : Number.MAX_SAFE_INTEGER;
+
+    filteredReports = filteredReports.filter((report) => {
+      const reportTimestamp = getTimestamp(report.createdAt);
+
+      return reportTimestamp >= fromTimestamp && reportTimestamp <= toTimestamp;
     });
   }
 

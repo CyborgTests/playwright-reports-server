@@ -79,6 +79,25 @@ class Service {
         });
       }
 
+      // Filter by date range if provided
+      if (input?.dateFrom || input?.dateTo) {
+        const getTimestamp = (date?: Date | string) => {
+          if (!date) return 0;
+          if (typeof date === 'string') return new Date(date).getTime();
+
+          return date.getTime();
+        };
+
+        const fromTimestamp = input.dateFrom ? getTimestamp(input.dateFrom) : 0;
+        const toTimestamp = input.dateTo ? getTimestamp(input.dateTo) : Number.MAX_SAFE_INTEGER;
+
+        reports = reports.filter((report) => {
+          const reportTimestamp = getTimestamp(report.createdAt);
+
+          return reportTimestamp >= fromTimestamp && reportTimestamp <= toTimestamp;
+        });
+      }
+
       const getTimestamp = (date?: Date | string) => {
         if (!date) return 0;
         if (typeof date === 'string') return new Date(date).getTime();
@@ -230,6 +249,18 @@ class Service {
 
     if (input?.testRun) {
       filtered = filtered.filter((file) => file.testRun === input.testRun);
+    }
+
+    // Filter by date range if provided
+    if (input?.dateFrom || input?.dateTo) {
+      const fromTimestamp = input.dateFrom ? getTimestamp(input.dateFrom) : 0;
+      const toTimestamp = input.dateTo ? getTimestamp(input.dateTo) : Number.MAX_SAFE_INTEGER;
+
+      filtered = filtered.filter((result) => {
+        const resultTimestamp = getTimestamp(result.createdAt);
+
+        return resultTimestamp >= fromTimestamp && resultTimestamp <= toTimestamp;
+      });
     }
 
     // Filter by tags if provided

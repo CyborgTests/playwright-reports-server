@@ -14,12 +14,20 @@ interface PageLayoutProps {
   render: (props: { info: ServerDataInfo; onUpdate: () => void }) => React.ReactNode;
 }
 
-export default function PageLayout({ render }: PageLayoutProps) {
+export default function PageLayout({ render }: Readonly<PageLayoutProps>) {
   const { data: session, status } = useSession();
   const authIsLoading = status === 'loading';
   const { authRequired } = useAuthConfig();
+  const isAuthenticated = authRequired === false || status === 'authenticated';
 
-  const { data: info, error, refetch, isLoading: isInfoLoading } = useQuery<ServerDataInfo>('/api/info');
+  const {
+    data: info,
+    error,
+    refetch,
+    isLoading: isInfoLoading,
+  } = useQuery<ServerDataInfo>('/api/info', {
+    enabled: isAuthenticated,
+  });
   const [refreshId, setRefreshId] = useState<string>(uuidv4());
 
   useEffect(() => {
@@ -34,17 +42,12 @@ export default function PageLayout({ render }: PageLayoutProps) {
   }, [authIsLoading, session, authRequired]);
 
   useLayoutEffect(() => {
-    // Skip session check if auth is not required
-    if (authRequired === false) {
-      refetch();
-
+    // skip refetch is not authorized
+    if (authRequired && (authIsLoading || !session)) {
       return;
     }
 
-    if (authIsLoading || !session) {
-      return;
-    }
-    refetch();
+    refetch({ cancelRefetch: false });
   }, [refreshId, session, authRequired]);
 
   if (authIsLoading || isInfoLoading) {
