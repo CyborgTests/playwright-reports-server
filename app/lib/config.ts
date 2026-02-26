@@ -13,12 +13,6 @@ export const defaultConfig: SiteWhiteLabelConfig = {
     reportExpireDays: Number(process.env.REPORT_EXPIRE_DAYS) ?? 90,
     reportExpireCronSchedule: process.env.REPORT_EXPIRE_CRON_SCHEDULE ?? '0 3 * * *',
   },
-  jira: {
-    baseUrl: process.env.JIRA_BASE_URL ?? '',
-    email: process.env.JIRA_EMAIL ?? '',
-    apiToken: process.env.JIRA_API_TOKEN ?? '',
-    projectKey: process.env.JIRA_PROJECT_KEY ?? '',
-  },
 };
 
 export const noConfigErr = 'no config';

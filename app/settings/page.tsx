@@ -7,9 +7,8 @@ import { Spinner } from '@heroui/react';
 
 import { EnvInfo, SiteWhiteLabelConfig } from '../types';
 
-import { ServerConfig, JiraConfig } from './types';
+import { ServerConfig } from './types';
 import ServerConfiguration from './components/ServerConfiguration';
-import JiraConfiguration from './components/JiraConfiguration';
 import CronConfiguration from './components/CronConfiguration';
 import AddLinkModal from './components/AddLinkModal';
 import EnvironmentInfo from './components/EnvironmentInfo';
@@ -19,27 +18,23 @@ import useQuery from '@/app/hooks/useQuery';
 export default function SettingsPage() {
   const session = useSession();
   const [config, setConfig] = useState<ServerConfig>({});
-  const [editingSection, setEditingSection] = useState<'none' | 'server' | 'jira' | 'cron'>('none');
+  const [editingSection, setEditingSection] = useState<'none' | 'server' | 'cron'>('none');
   const [tempConfig, setTempConfig] = useState<ServerConfig>({});
   const [showAddLinkModal, setShowAddLinkModal] = useState(false);
   const [newLinkData, setNewLinkData] = useState({ name: '', url: '' });
 
   const { data: serverConfig, refetch: refetchConfig } = useQuery<SiteWhiteLabelConfig & EnvInfo>('/api/config');
-  const { data: jiraConfig } = useQuery<JiraConfig>('/api/jira/config');
 
   const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     if (serverConfig) {
       setConfig(serverConfig);
-      setTempConfig({
-        ...serverConfig,
-        jira: serverConfig.jira || {},
-      });
+      setTempConfig(serverConfig);
     }
   }, [serverConfig]);
 
-  const handleSave = async (section: 'server' | 'jira' | 'cron') => {
+  const handleSave = async (section: 'server' | 'cron') => {
     setIsUpdating(true);
 
     try {
@@ -77,21 +72,6 @@ export default function SettingsPage() {
         );
 
         formData.append('headerLinks', JSON.stringify(cleanHeaderLinks));
-      } else if (section === 'jira') {
-        if (tempConfig.jira) {
-          if (tempConfig.jira.baseUrl) {
-            formData.append('jiraBaseUrl', tempConfig.jira.baseUrl);
-          }
-          if (tempConfig.jira.email) {
-            formData.append('jiraEmail', tempConfig.jira.email);
-          }
-          if (tempConfig.jira.apiToken) {
-            formData.append('jiraApiToken', tempConfig.jira.apiToken);
-          }
-          if (tempConfig.jira.projectKey) {
-            formData.append('jiraProjectKey', tempConfig.jira.projectKey);
-          }
-        }
       } else if (section === 'cron') {
         if (tempConfig.cron) {
           if (tempConfig.cron.resultExpireDays !== undefined) {
@@ -123,9 +103,7 @@ export default function SettingsPage() {
         throw new Error(errorText);
       }
 
-      toast.success(
-        `${section === 'server' ? 'Server' : section === 'jira' ? 'Jira' : 'Cron'} configuration updated successfully`,
-      );
+      toast.success(`${section === 'server' ? 'Server' : 'Cron'} configuration updated successfully`);
       setEditingSection('none');
       refetchConfig();
     } catch (error) {
@@ -136,10 +114,7 @@ export default function SettingsPage() {
   };
 
   const handleCancel = () => {
-    setTempConfig({
-      ...config,
-      jira: config?.jira || {},
-    });
+    setTempConfig(config);
     setEditingSection('none');
   };
 
@@ -191,18 +166,6 @@ export default function SettingsPage() {
         onCancel={handleCancel}
         onEdit={() => setEditingSection('server')}
         onSave={() => handleSave('server')}
-        onUpdateTempConfig={updateTempConfig}
-      />
-
-      <JiraConfiguration
-        config={config}
-        editingSection={editingSection}
-        isUpdating={isUpdating}
-        jiraConfig={jiraConfig}
-        tempConfig={tempConfig}
-        onCancel={handleCancel}
-        onEdit={() => setEditingSection('jira')}
-        onSave={() => handleSave('jira')}
         onUpdateTempConfig={updateTempConfig}
       />
 

@@ -6,7 +6,6 @@ import { revalidatePath } from 'next/cache';
 import { withError } from '@/app/lib/withError';
 import { DATA_FOLDER } from '@/app/lib/storage/constants';
 import { service } from '@/app/lib/service';
-import { JiraService } from '@/app/lib/service/jira';
 import { env } from '@/app/config/env';
 import { cronService } from '@/app/lib/service/cron';
 
@@ -60,10 +59,6 @@ export async function PATCH(request: Request) {
   const faviconPath = formData.get('faviconPath');
   const reporterPaths = formData.get('reporterPaths');
   const headerLinks = formData.get('headerLinks');
-  const jiraBaseUrl = formData.get('jiraBaseUrl');
-  const jiraEmail = formData.get('jiraEmail');
-  const jiraApiToken = formData.get('jiraApiToken');
-  const jiraProjectKey = formData.get('jiraProjectKey');
   const resultExpireDays = formData.get('resultExpireDays');
   const resultExpireCronSchedule = formData.get('resultExpireCronSchedule');
   const reportExpireDays = formData.get('reportExpireDays');
@@ -112,19 +107,6 @@ export async function PATCH(request: Request) {
     }
 
     if (parsedHeaderLinks) config.headerLinks = parsedHeaderLinks;
-  }
-
-  if (!config.jira) {
-    config.jira = {};
-  }
-
-  if (jiraBaseUrl !== null) config.jira.baseUrl = jiraBaseUrl.toString();
-  if (jiraEmail !== null) config.jira.email = jiraEmail.toString();
-  if (jiraApiToken !== null) config.jira.apiToken = jiraApiToken.toString();
-  if (jiraProjectKey !== null) config.jira.projectKey = jiraProjectKey.toString();
-
-  if (jiraBaseUrl || jiraEmail || jiraApiToken || jiraProjectKey) {
-    JiraService.resetInstance();
   }
 
   if (!config.cron) {
