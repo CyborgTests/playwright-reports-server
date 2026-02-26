@@ -27,12 +27,11 @@ export const Aside: React.FC = () => {
   const pathname = usePathname();
   const session = useSession();
   const { authRequired } = useAuthConfig();
+  const isAuthenticated = authRequired === false || session.status === 'authenticated';
 
   const { data: serverInfo } = useQuery<ServerInfo>('/api/info', {
-    dependencies: [],
+    enabled: isAuthenticated,
   });
-
-  const isAuthenticated = authRequired === false || session.status === 'authenticated';
 
   return (
     <Card className="w-16 h-full rounded-none border-r border-gray-200 dark:border-gray-800 dark:bg-black shadow-none">
