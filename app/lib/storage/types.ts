@@ -27,6 +27,8 @@ export interface ReadResultsInput {
   testRun?: string;
   tags?: string[];
   search?: string;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 export interface ReadResultsOutput {
@@ -39,6 +41,8 @@ export interface ReadReportsInput {
   project?: string;
   ids?: string[];
   search?: string;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 export interface ReadReportsOutput {
