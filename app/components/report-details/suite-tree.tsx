@@ -1,7 +1,4 @@
-import { Accordion, AccordionItem, Chip, Button } from '@heroui/react';
-import { useState } from 'react';
-
-import JiraTicketModal from '../jira-ticket-modal';
+import { Accordion, AccordionItem, Chip } from '@heroui/react';
 
 import TestInfo from './test-info';
 
@@ -62,16 +59,15 @@ function buildTestTree(rootName: string, tests: ReportTest[]): SuiteNode {
 interface SuiteNodeComponentProps {
   suite: SuiteNode;
   history: ReportHistory[];
-  onCreateJiraTicket: (test: ReportTest) => void;
 }
 
-const SuiteNodeComponent = ({ suite, history, onCreateJiraTicket }: SuiteNodeComponentProps) => {
+const SuiteNodeComponent = ({ suite, history }: SuiteNodeComponentProps) => {
   return (
     <Accordion key={suite.name} aria-label={suite.name} selectionMode="multiple" title={suite.name}>
       {[
         ...suite.children.map((child) => (
           <AccordionItem key={child.name} aria-label={child.name} className="p-2" title={`${child.name}`}>
-            <SuiteNodeComponent history={history} suite={child} onCreateJiraTicket={onCreateJiraTicket} />
+            <SuiteNodeComponent history={history} suite={child} />
           </AccordionItem>
         )),
         ...suite.tests.map((test) => {
@@ -91,16 +87,6 @@ const SuiteNodeComponent = ({ suite, history, onCreateJiraTicket }: SuiteNodeCom
                   <Chip color="default" size="sm">
                     {test.projectName}
                   </Chip>
-                  <Button
-                    className="ml-auto"
-                    color="primary"
-                    size="sm"
-                    title="Create Jira ticket for this failed test"
-                    variant="flat"
-                    onPress={() => onCreateJiraTicket(test)}
-                  >
-                    Create Jira Ticket
-                  </Button>
                 </span>
               }
             >
@@ -119,29 +105,10 @@ interface FileSuitesTreeProps {
   reportId?: string;
 }
 
-const FileSuitesTree = ({ file, history, reportId }: FileSuitesTreeProps) => {
-  const [selectedTest, setSelectedTest] = useState<ReportTest | null>(null);
-  const [isJiraModalOpen, setIsJiraModalOpen] = useState(false);
-
-  const handleCreateJiraTicket = (test: ReportTest) => {
-    setSelectedTest(test);
-    setIsJiraModalOpen(true);
-  };
-
+const FileSuitesTree = ({ file, history }: FileSuitesTreeProps) => {
   const suiteTree = buildTestTree(file.fileName, file.tests);
 
-  return (
-    <>
-      <SuiteNodeComponent history={history} suite={suiteTree} onCreateJiraTicket={handleCreateJiraTicket} />
-
-      <JiraTicketModal
-        isOpen={isJiraModalOpen}
-        reportId={reportId}
-        test={selectedTest}
-        onOpenChange={setIsJiraModalOpen}
-      />
-    </>
-  );
+  return <SuiteNodeComponent history={history} suite={suiteTree} />;
 };
 
 export default FileSuitesTree;

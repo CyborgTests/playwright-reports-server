@@ -8,13 +8,6 @@ export type IconSvgProps = SVGProps<SVGSVGElement> & {
 
 export type UUID = `${string}-${string}-${string}-${string}-${string}`;
 
-export interface JiraConfig {
-  baseUrl?: string;
-  email?: string;
-  apiToken?: string;
-  projectKey?: string;
-}
-
 export interface SiteWhiteLabelConfig {
   title: string;
   headerLinks: HeaderLinks;
@@ -32,7 +25,6 @@ export interface SiteWhiteLabelConfig {
     reportExpireDays?: number;
     reportExpireCronSchedule?: string;
   };
-  jira?: JiraConfig;
 }
 
 export interface EnvInfo {
