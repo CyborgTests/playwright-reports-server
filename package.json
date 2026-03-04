@@ -10,7 +10,8 @@
     "format:fix": "npm run format:check -- --write",
     "lint": "eslint . --ext .ts,.tsx",
     "test:unit": "jest",
-    "test:api": "npx playwright test --project=api"
+    "test:api": "npx playwright test --project=api",
+    "test:ui": "npx playwright test --project=ui"
   },
   "dependencies": {
     "@heroui/link": "2.2.12",
