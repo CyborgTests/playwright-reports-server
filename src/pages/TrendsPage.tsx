@@ -3,7 +3,9 @@ import { BarChart3 } from 'lucide-react';
 import { motion } from 'motion/react';
 import dayjs from 'dayjs';
 import { useAuth } from '../context/AuthContext';
-import { Report } from '../types';
+import { Report, ReportStats } from '../types';
+
+type StatsLike = Partial<ReportStats> & { passed?: number; failed?: number };
 
 export default function TrendsPage() {
   const { authHeader } = useAuth();
@@ -52,7 +54,7 @@ export default function TrendsPage() {
   }, [projects]);
 
   const getReportTotal = (r: Report) => {
-    const s = r.stats ?? {};
+    const s: StatsLike = r.stats ?? {};
     const total = s.total ?? (s.expected ?? s.passed ?? 0) + (s.unexpected ?? s.failed ?? 0) + (s.flaky ?? 0) + (s.skipped ?? 0);
     return total ?? 0;
   };
