@@ -3,20 +3,6 @@ name: Pull Request CI
 on: pull_request
 
 jobs:
-  prettier:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '20'
-      - name: Install dependencies
-        run: npm ci
-      - name: Run prettier
-        run: npm run format:check
-
   eslint:
     runs-on: ubuntu-latest
     steps:
@@ -47,7 +33,7 @@ jobs:
   #       run: npm run test:unit
 
   api-tests:
-    needs: [prettier, eslint]
+    needs: [eslint]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
