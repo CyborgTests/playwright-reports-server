@@ -1,17 +1,19 @@
 {
-  "name": "react-example",
+  "name": "playwright-reports-server",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "start": "NODE_ENV=production tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:unit": "vitest run",
+    "generate:blob-sample": "cd scripts/blob-sample && npx playwright test && mkdir -p ../../data && cp out/report.zip ../../data/playwright-blob-sample.zip"
   },
   "dependencies": {
-    "@google/genai": "^1.29.0",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
@@ -27,6 +29,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.13.1",
+    "tsx": "^4.21.0",
     "uuid": "^13.0.0",
     "vite": "^6.2.0"
   },
@@ -39,8 +42,8 @@
     "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
-    "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "vitest": "^4.1.2"
   }
 }

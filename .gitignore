@@ -10,3 +10,9 @@ coverage/
 # data
 data/
 testdata/
+
+# generated Playwright blob (see npm run generate:blob-sample)
+scripts/blob-sample/out/
+
+# Playwright local run metadata
+test-results/

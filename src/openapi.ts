@@ -43,7 +43,7 @@ const OPENAPI_BASE = {
     { url: "http://localhost:3000", description: "Local development" },
     { url: "https://demo-playwright-reports-server.koyeb.app", description: "Demo" },
   ],
-  security: [{ apiToken: [] }],
+  security: [{ apiTokenHeader: [] }],
   tags: [
     { name: "Reports", description: "Generated HTML report management" },
     { name: "Server", description: "Health and server info" },
@@ -51,12 +51,13 @@ const OPENAPI_BASE = {
   ],
   components: {
     securitySchemes: {
-      apiToken: {
-        type: "http",
-        scheme: "bearer",
-        bearerFormat: "custom",
+      /** Matches server.ts: req.headers.authorization === process.env.API_TOKEN (raw value, not `Bearer <token>`). */
+      apiTokenHeader: {
+        type: "apiKey",
+        in: "header",
+        name: "Authorization",
         description:
-          "API token. Set via API_TOKEN env. When set, required for API and report serving; use header: Authorization: YOUR_TOKEN",
+          "Raw API token in the Authorization header. Set API_TOKEN in the server environment; when set, most API routes and /api/serve require this header. Send exactly: Authorization: <your-token> (no Bearer prefix unless the token itself contains that text). The SPA uses the same format (see src/context/AuthContext.tsx).",
       },
     },
     parameters: {
