@@ -1,0 +1,5 @@
+{
+  "name": "Playwright Reports Hub",
+  "description": "A centralized hub for managing, merging, and viewing Playwright test reports with a modern UI and robust API.",
+  "requestFramePermissions": []
+}

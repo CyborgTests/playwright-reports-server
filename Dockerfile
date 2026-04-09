@@ -1,75 +1,40 @@
-FROM node:22-alpine AS base
-
-# Install dependencies only when needed
-FROM base AS deps
-# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
-RUN apk add --no-cache libc6-compat
+# syntax=docker/dockerfile:1
+FROM node:22-bookworm-slim AS deps
 WORKDIR /app
-
-# Install dependencies based on the preferred package manager
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 RUN npm ci
 
-# Rebuild the source code only when needed
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+FROM deps AS builder
 COPY . .
-
-ARG API_BASE_PATH=""
-ENV API_BASE_PATH=$API_BASE_PATH
-
-ARG ASSETS_BASE_PATH=""
-ENV ASSETS_BASE_PATH=$ASSETS_BASE_PATH
-
-# Next.js collects completely anonymous telemetry data about general usage.
-# Learn more here: https://nextjs.org/telemetry
-# Uncomment the following line in case you want to disable telemetry during the build.
-ENV NEXT_TELEMETRY_DISABLED=1
-
 RUN npm run build
 
-# Production image, copy all the files and run next
-FROM base AS runner
+FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PORT=3000
 
-RUN apk add --no-cache curl
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl \
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd --system --gid 1001 nodejs \
+  && useradd --system --uid 1001 --gid nodejs nodejs
 
-# Uncomment the following line in case you want to disable telemetry during runtime.
-# ENV NEXT_TELEMETRY_DISABLED 1
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 --ingroup nodejs nextjs
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server.ts ./
+COPY --from=builder /app/src ./src
 
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+RUN mkdir -p data/results data/reports data/public data/temp/upload \
+  && chown -R nodejs:nodejs /app
 
-# Set the correct permission for prerender cache
-RUN mkdir .next && \
-    chown nextjs:nodejs .next
-
-# Automatically leverage output traces to reduce image size
-# https://nextjs.org/docs/advanced-features/output-file-tracing
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-# Create folders required for storing results and reports
-ARG DATA_DIR=/app/data
-ARG RESULTS_DIR=${DATA_DIR}/results
-ARG REPORTS_DIR=${DATA_DIR}/reports
-ARG TEMP_DIR=/app/.tmp
-RUN mkdir -p ${DATA_DIR} ${RESULTS_DIR} ${REPORTS_DIR} ${TEMP_DIR} && \
-    chown -R nextjs:nodejs ${DATA_DIR} ${TEMP_DIR}
-
-USER nextjs
+USER nodejs
 
 EXPOSE 3000
 
-ENV PORT=3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -sf "http://127.0.0.1:${PORT}/api/ping" || exit 1
 
-# server.js is created by next build from the standalone output
-# https://nextjs.org/docs/pages/api-reference/next-config-js/output
-CMD ["sh", "-c", "HOSTNAME=0.0.0.0 node server.js"]
-
-HEALTHCHECK --interval=3m --timeout=3s CMD curl -f http://localhost:$PORT/api/ping || exit 1
+CMD ["npm", "run", "start"]

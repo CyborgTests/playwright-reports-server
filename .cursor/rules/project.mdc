@@ -1,0 +1,18 @@
+---
+description: Project context for Playwright Reports Server — read AGENTS.md first; Conventional Commits for git.
+alwaysApply: true
+---
+
+# Playwright Reports Server
+
+Before changing architecture, API routes, storage, or auth behavior, read **AGENTS.md** at the repository root. It maps `server.ts`, `src/openapi.ts`, `src/db.ts`, and documents what is implemented vs config-only (S3, background expiration).
+
+After behavior or API changes, use the **docs-maintainer** subagent (`.cursor/agents/docs-maintainer.md`) — proactively or via `/docs-maintainer` — so README, AGENTS.md, `.env.example`, and OpenAPI descriptions stay accurate. Pass a brief summary of edits and file paths.
+
+For new or changed **pure logic** (helpers, parsers, OpenAPI utilities), use **unit-test-writer** (`.cursor/agents/unit-test-writer.md`) or `/unit-test-writer`; run `npm run test:unit` after adding tests.
+
+For **Docker, CI/CD, releases, CHANGELOG**, and image publishing, use **devops** (`.cursor/agents/devops.md`) or `/devops`.
+
+## Commits
+
+Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) for all commit messages (e.g. `feat:`, `fix:`, `docs:`).
