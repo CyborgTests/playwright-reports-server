@@ -11,9 +11,9 @@ export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') || '/reports';
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    login(apiToken);
+    await login(apiToken);
     navigate(callbackUrl, { replace: true });
   };
 

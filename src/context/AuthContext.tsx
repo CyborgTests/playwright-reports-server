@@ -1,11 +1,11 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 
 type AuthContextType = {
   apiToken: string;
   setApiToken: (v: string) => void;
   isLoggedIn: boolean;
-  login: (token: string) => void;
-  logout: () => void;
+  login: (token: string) => Promise<void>;
+  logout: () => Promise<void>;
   requireAuth: boolean;
   authHeader: Record<string, string>;
 };
@@ -18,16 +18,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [apiToken, setApiToken] = useState(localStorage.getItem('api_token') || '');
   const [isLoggedIn, setIsLoggedIn] = useState(!requireAuth || !!localStorage.getItem('api_token'));
 
-  const login = useCallback((token: string) => {
+  const login = useCallback(async (token: string) => {
     localStorage.setItem('api_token', token);
     setApiToken(token);
     setIsLoggedIn(true);
+    await fetch('/api/session', {
+      method: 'POST',
+      headers: { Authorization: token },
+      credentials: 'include',
+    });
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    const t = localStorage.getItem('api_token') || '';
+    await fetch('/api/session', {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: t ? { Authorization: t } : {},
+    });
     localStorage.removeItem('api_token');
     setApiToken('');
     setIsLoggedIn(false);
+  }, []);
+
+  useEffect(() => {
+    const t = localStorage.getItem('api_token');
+    if (!t) return;
+    void fetch('/api/session', {
+      method: 'POST',
+      headers: { Authorization: t },
+      credentials: 'include',
+    });
   }, []);
 
   const authHeader = apiToken ? { Authorization: apiToken } : {};

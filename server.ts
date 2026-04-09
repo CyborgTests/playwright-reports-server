@@ -28,8 +28,10 @@ async function startServer() {
   const REPORTS_DIR = path.join(DATA_DIR, 'reports');
   const PUBLIC_DIR = path.join(DATA_DIR, 'public');
   const UPLOAD_TEMP_DIR = path.join(DATA_DIR, 'temp', 'upload');
+  /** Staging for `merge-reports` input zips. Must NOT be under `PLAYWRIGHT_HTML_OUTPUT_DIR` or Playwright embeds absolute attachment paths (broken image URLs in the browser). */
+  const MERGE_BLOBS_TEMP_PARENT = path.join(DATA_DIR, 'temp', 'merge-blobs');
 
-  [DATA_DIR, RESULTS_DIR, REPORTS_DIR, PUBLIC_DIR, UPLOAD_TEMP_DIR].forEach(dir => {
+  [DATA_DIR, RESULTS_DIR, REPORTS_DIR, PUBLIC_DIR, UPLOAD_TEMP_DIR, MERGE_BLOBS_TEMP_PARENT].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   });
 
@@ -84,7 +86,7 @@ async function startServer() {
     }
   }
 
-  /** Generate HTML report from a directory of zip files (e.g. report dir blobs/). Writes to reportOutputDir. */
+  /** Generate HTML report from a directory of zip files (Playwright blob zips). Writes to reportOutputDir. `blobDir` must not be inside `reportOutputDir` or attachment URLs in the HTML will be absolute filesystem paths. */
   function generateReportFromBlobDir(project: string, reportId: string, blobDir: string): { reportUrl: string; size: number } {
     const reportOutputDir = path.join(REPORTS_DIR, project, reportId);
     if (!fs.existsSync(reportOutputDir)) fs.mkdirSync(reportOutputDir, { recursive: true });
@@ -130,13 +132,45 @@ async function startServer() {
     return { reportId, reportUrl, size };
   }
 
+  const SESSION_COOKIE_NAME = "prs_api_token";
+
+  function getCookie(req: express.Request, name: string): string | undefined {
+    const raw = req.headers.cookie;
+    if (!raw) return undefined;
+    for (const part of raw.split(";")) {
+      const idx = part.indexOf("=");
+      if (idx === -1) continue;
+      const k = part.slice(0, idx).trim();
+      if (k !== name) continue;
+      const v = part.slice(idx + 1).trim();
+      try {
+        return decodeURIComponent(v);
+      } catch {
+        return v;
+      }
+    }
+    return undefined;
+  }
+
+  function sessionCookieAttrs(): string {
+    const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+    const maxAge = 60 * 60 * 24 * 7;
+    return `; HttpOnly; Path=/; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+  }
+
+  function clearSessionCookie(): string {
+    const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+    return `${SESSION_COOKIE_NAME}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure}`;
+  }
+
   // Auth Middleware
   const authMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const apiToken = process.env.API_TOKEN;
     if (!apiToken) return next();
 
     const authHeader = req.headers.authorization;
-    if (authHeader === apiToken) {
+    const cookieToken = getCookie(req, SESSION_COOKIE_NAME);
+    if (authHeader === apiToken || cookieToken === apiToken) {
       next();
     } else {
       res.status(401).json({ error: "Unauthorized" });
@@ -147,6 +181,25 @@ async function startServer() {
     const v = typeof value === "string" ? value : JSON.stringify(value);
     db.prepare("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)").run(key, v);
   };
+
+  /** When API_TOKEN is set, browsers cannot send Authorization on <img> / navigation subrequests. Set this cookie after login so /api/serve assets load. */
+  app.post("/api/session", (req, res) => {
+    const apiToken = process.env.API_TOKEN;
+    if (!apiToken) return res.status(204).end();
+    if (req.headers.authorization !== apiToken) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    res.setHeader(
+      "Set-Cookie",
+      `${SESSION_COOKIE_NAME}=${encodeURIComponent(apiToken)}${sessionCookieAttrs()}`
+    );
+    return res.status(204).end();
+  });
+
+  app.delete("/api/session", authMiddleware, (req, res) => {
+    res.setHeader("Set-Cookie", clearSessionCookie());
+    return res.status(204).end();
+  });
 
   // Handlers keyed by OpenAPI operationId (used with ROUTE_SPECS from openapi.ts)
   const handlers: Record<string, express.RequestHandler> = {
@@ -188,15 +241,15 @@ async function startServer() {
     const blobFilename = req.file.filename;
     const reportId = uuidv4();
     const reportDir = path.join(REPORTS_DIR, project, reportId);
-    const blobsDir = path.join(reportDir, 'blobs');
+    const mergeInputDir = path.join(MERGE_BLOBS_TEMP_PARENT, reportId);
 
     try {
-      fs.mkdirSync(blobsDir, { recursive: true });
+      fs.mkdirSync(mergeInputDir, { recursive: true });
       const tempPath = req.file.path;
-      const destPath = path.join(blobsDir, blobFilename);
+      const destPath = path.join(mergeInputDir, blobFilename);
       fs.renameSync(tempPath, destPath);
 
-      const { reportUrl, size: reportSize } = generateReportFromBlobDir(project, reportId, blobsDir);
+      const { reportUrl, size: reportSize } = generateReportFromBlobDir(project, reportId, mergeInputDir);
       const reportCreatedAt = new Date().toISOString();
       const stats = parseStatsFromReportDir(reportDir);
       db.prepare(
@@ -219,6 +272,8 @@ async function startServer() {
       if (fs.existsSync(reportDir)) fs.rmSync(reportDir, { recursive: true, force: true });
       if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(500).json({ error: "Report generation failed", details: (err as Error).message });
+    } finally {
+      if (fs.existsSync(mergeInputDir)) fs.rmSync(mergeInputDir, { recursive: true, force: true });
     }
 
     const createdAt = new Date().toISOString();

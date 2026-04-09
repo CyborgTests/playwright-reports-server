@@ -59,7 +59,7 @@ Routes under `/api/serve/...` are registered separately (Express static) and are
 ## Authentication
 
 - If `API_TOKEN` is **unset**, protected routes do not require a token.
-- If `API_TOKEN` is **set**, the server expects the **`Authorization` header value to equal the raw token** (same as the SPA: no `Bearer ` prefix unless your token string itself includes it).
+- If `API_TOKEN` is **set**, the server expects the **`Authorization` header value to equal the raw token** (same as the SPA: no `Bearer ` prefix unless your token string itself includes it). The same token may be sent in an HttpOnly cookie (`prs_api_token`) after `POST /api/session`, so `/api/serve/...` subresources (screenshots, traces) load in the browser without the `Authorization` header on every request.
 - `GET /api/config` is intentionally reachable without auth (so the UI can read `authRequired`).
 
 ## Data directories (filesystem)
@@ -69,7 +69,7 @@ All under `data/` (created at runtime):
 - `data/results/` — uploaded result zips (legacy flows)
 - `data/reports/<project>/<reportId>/` — generated HTML reports (`playwright merge-reports`)
 - `data/public/` — uploaded logo/favicon from settings
-- `data/temp/` — uploads and merge scratch
+- `data/temp/` — uploads and merge scratch (`temp/upload` for multer, `temp/merge-blobs/<reportId>/` as staging for `merge-reports` input — kept outside `data/reports/.../output` so attachment paths stay relative)
 - `data/database.sqlite` — metadata
 
 ## Implemented vs configuration-only

@@ -70,7 +70,7 @@ export function Layout() {
         </nav>
         <div className="p-4 border-t border-white/5">
           <button
-            onClick={() => { logout(); navigate('/login'); }}
+            onClick={async () => { await logout(); navigate('/login'); }}
             className="w-full flex items-center gap-3 px-3 py-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
           >
             <XCircle size={20} />

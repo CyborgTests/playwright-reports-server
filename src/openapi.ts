@@ -57,7 +57,7 @@ const OPENAPI_BASE = {
         in: "header",
         name: "Authorization",
         description:
-          "Raw API token in the Authorization header. Set API_TOKEN in the server environment; when set, most API routes and /api/serve require this header. Send exactly: Authorization: <your-token> (no Bearer prefix unless the token itself contains that text). The SPA uses the same format (see src/context/AuthContext.tsx).",
+          "Raw API token in the Authorization header. Set API_TOKEN in the server environment; when set, most API routes and /api/serve require auth. Send exactly: Authorization: <your-token> (no Bearer prefix unless the token itself contains that text). The SPA uses the same format (see src/context/AuthContext.tsx). For HTML report assets (images, traces), browsers cannot send this header; after login the SPA calls POST /api/session to set an HttpOnly cookie (prs_api_token) that /api/serve also accepts.",
       },
     },
     parameters: {
