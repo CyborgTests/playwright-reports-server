@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { withBase } from '../lib/url';
 
 import TablePaginationOptions from './table-pagination-options';
+import InlineStatsCircle from './inline-stats-circle';
 
 import { withQueryParams } from '@/app/lib/network';
 import { defaultProjectName } from '@/app/lib/constants';
@@ -34,6 +35,7 @@ import { ReadReportsHistory, ReportHistory } from '@/app/lib/storage';
 const columns = [
   { name: 'Title', uid: 'title' },
   { name: 'Project', uid: 'project' },
+  { name: 'Pass Rate', uid: 'passRate' },
   { name: 'Created at', uid: 'createdAt' },
   { name: 'Size', uid: 'size' },
   { name: '', uid: 'actions' },
@@ -46,6 +48,7 @@ const coreFields = [
   'createdAt',
   'size',
   'sizeBytes',
+  'options',
   'reportUrl',
   'metadata',
   'startTime',
@@ -54,6 +57,7 @@ const coreFields = [
   'projectNames',
   'stats',
   'errors',
+  'playwrightVersion',
 ];
 
 const formatMetadataValue = (value: any): string => {
@@ -85,6 +89,12 @@ const getMetadataItems = (item: ReportHistory) => {
   if (itemWithMetadata.branch) {
     metadata.push({ key: 'branch', value: itemWithMetadata.branch, icon: <BranchIcon /> });
   }
+
+  if (itemWithMetadata.playwrightVersion) {
+    metadata.push({ key: 'playwright', value: itemWithMetadata.playwrightVersion });
+  }
+
+  metadata.push({ key: 'workers', value: itemWithMetadata.metadata?.actualWorkers });
 
   // Add any other metadata fields
   Object.entries(itemWithMetadata).forEach(([key, value]) => {
@@ -255,7 +265,7 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
         >
           {(item) => (
             <TableRow key={item.reportID}>
-              <TableCell className="w-1/2">
+              <TableCell className="w-1/3">
                 <div className="flex flex-col">
                   {/* Main title and link */}
                   <Link href={withBase(`/report/${item.reportID}`)} prefetch={false}>
@@ -288,12 +298,13 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
                   </div>
                 </div>
               </TableCell>
-              <TableCell className="w-1/4">{item.project}</TableCell>
-              <TableCell className="w-1/4">
+              <TableCell className="w-1/6">{item.project}</TableCell>
+              <TableCell className="w-1/12">{<InlineStatsCircle stats={item.stats} />}</TableCell>
+              <TableCell className="w-1/6">
                 <FormattedDate date={item.createdAt} />
               </TableCell>
-              <TableCell className="w-1/4">{item.size}</TableCell>
-              <TableCell className="w-1/4">
+              <TableCell className="w-1/12">{item.size}</TableCell>
+              <TableCell className="w-1/6">
                 <div className="flex gap-4 justify-end">
                   <Link href={withBase(item.reportUrl)} prefetch={false} target="_blank">
                     <Button color="primary" size="md">
