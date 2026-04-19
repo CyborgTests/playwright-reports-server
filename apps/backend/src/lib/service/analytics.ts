@@ -59,6 +59,7 @@ export class AnalyticsService {
     const flakyTestsTrend: 'up' | 'down' | 'stable' = 'stable';
 
     return {
+      totalRuns: recentReports.length,
       totalTests,
       passRate: Math.round(passRate * 100) / 100,
       flakyTests: flakyTests.length,
