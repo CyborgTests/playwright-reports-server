@@ -3,12 +3,12 @@
 import type { ServerDataInfo } from '@playwright-reports/shared';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAuthConfig } from '@/hooks/useAuthConfig';
+import { useConfig } from '@/hooks/useConfig';
 import useQuery from '@/hooks/useQuery';
 import DatabaseInfo from './DatabaseInfo';
 
 export default function EnvironmentInfo() {
-  const { config: envInfo, isLoading } = useAuthConfig();
+  const { data: envInfo, isLoading } = useConfig();
   const { data: serverInfo } = useQuery<ServerDataInfo>('/api/info');
 
   return (

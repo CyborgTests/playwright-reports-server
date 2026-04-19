@@ -26,6 +26,9 @@ export interface TestRun {
   quarantineReason?: string;
   quarantined?: boolean;
   flakinessScore?: number;
+  failureDetails?: string; // JSON string of FailureDetails
+  failureCategory?: string;
+  errorSignature?: string;
 }
 
 export interface TestDetailInfo {
@@ -49,6 +52,7 @@ export interface TestFilters {
   flakinessMin?: number;
   flakinessMax?: number;
   project?: string;
+  failureCategory?: string;
 }
 
 export interface TestMetrics {

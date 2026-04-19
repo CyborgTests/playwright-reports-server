@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import mime from 'mime';
 import { env } from '../config/env.js';
+import { llmService } from '../lib/llm/index.js';
 import { DATA_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';
 import { injectTestAnalysis } from '../lib/utils/html-injector.js';
@@ -44,7 +45,7 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
         'Content-Type': contentType ?? 'application/octet-stream',
       };
 
-      const isLlmEnabled = process.env.LLM_ENABLED === 'true';
+      const isLlmEnabled = llmService.isConfigured();
       const isIndexHtml = contentType === 'text/html' && targetPath.endsWith('index.html');
 
       if (isLlmEnabled && isIndexHtml) {

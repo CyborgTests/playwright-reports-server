@@ -7,7 +7,6 @@ The Playwright Reports Server provides APIs for managing and generating reports 
 - Store raw results, and aggregate them together into one report
 - Check web ui for report trends and test history
 - Basic api token authorization for backend and web ui, reports are secured as well
-- Create Jira tickets directly with attachments
 - Analyze test failure in playwright report with integrated LLM provider
 - Track test flakiness and quarantine unstable tests
 
@@ -26,7 +25,6 @@ The Playwright Reports Server provides APIs for managing and generating reports 
     - [Running the Server](#running-the-server)
   - [Configuration options](#configuration-options)
     - [General](#general)
-    - [Jira](#jira)
     - [LLM](#llm)
     - [Test Management](#test-management)
   - [API Routes](#api-routes)
@@ -39,7 +37,6 @@ The Playwright Reports Server provides APIs for managing and generating reports 
   - [`/api/info` (GET)](#apiinfo-get)
   - [`/api/ping` (GET)](#apiping-get)
   - [Authorization](#authorization)
-  - [Jira Integration](#jira-integration)
   - [Test Quarantine](#test-quarantine)
   - [Reporter Integration](#reporter-integration)
   - [Storage Options](#storage-options)
@@ -100,15 +97,6 @@ The app is configured with environment variables, so it could be specified as `.
 | `UI_AUTH_EXPIRE_HOURS` | Duration of auth session                                                                    | `"2"`   |
 | `DATA_STORAGE`         | Where to store data, check for additional configuration [Storage Options](#storage-options) | `"fs"`  |
 
-### Jira
-
-| Name               | Description                                                 | Default |
-|--------------------|-------------------------------------------------------------|---------|
-| `JIRA_BASE_URL`    | Jira instance URL (e.g., https://your-domain.atlassian.net) |         |
-| `JIRA_EMAIL`       | Jira account email address                                  |         |
-| `JIRA_API_TOKEN`   | Jira API token for authentication                           |         |
-| `JIRA_PROJECT_KEY` | Default Jira project key for ticket creation                |         |
-
 ### S3 Compatible Storage
 
 If you want to persist reports and results on S3 compatible storage, you need to set `DATA_STORAGE` variable to `s3` and provide additional configuration:
@@ -126,16 +114,50 @@ If you want to persist reports and results on S3 compatible storage, you need to
 
 ### LLM
 
-Generated playwright report has button "Ask LLM" for failed tests that allows to analyze test failure with LLM provider.
-It sends prompt provided in "Copy prompt" button along with some historical details.
+When configured, the LLM integration provides failure analysis across the application. It is enabled ONLY if LLM provider is configured.
 
-| Name              | Description                                                      | Default                |
-|-------------------|------------------------------------------------------------------|------------------------|
-| `LLM_PROVIDER`    | LLM provider to use for test failure analysis (openai\anthropic) | openai                 |
-| `LLM_BASE_URL`    | Base URL for the LLM API                                         |                        |
-| `LLM_API_KEY`     | API key for the LLM provider                                     |                        |
-| `LLM_MODEL`       | Model to use for the LLM provider                                | checks /model endpoint |
-| `LLM_TEMPERATURE` | Temperature setting for the LLM                                  | 0.3                    |
+#### Configuration
+
+| Name                     | Description                                                      | Default                |
+|--------------------------|------------------------------------------------------------------|------------------------|
+| `LLM_PROVIDER`           | LLM provider to use for test failure analysis (openai\anthropic) | openai                 |
+| `LLM_BASE_URL`           | Base URL for the LLM API                                         |                        |
+| `LLM_API_KEY`            | API key for the LLM provider                                     |                        |
+| `LLM_MODEL`              | Model to use for the LLM provider                                | checks /model endpoint |
+| `LLM_TEMPERATURE`        | Temperature setting for the LLM                                  | 0.3                    |
+| `LLM_PARALLEL_REQUESTS`  | Number of concurrent LLM requests for background analysis queue  | 1                      |
+
+#### Playwright Report — Per-Test Analysis
+
+The served Playwright HTML report has an **"Ask LLM"** button next to Playwright's "Copy prompt" for failed tests. The analysis is stored and tracked in the LLM task queue.
+
+If a pre-computed analysis already exists for a test (from background processing or a previous request), a **"View LLM Analysis"** inline section appears above the errors area with the cached result and a "Retry" button to re-run.
+
+#### Report Detail Page — Failure Summary
+
+On each report's detail page a **Failure Summary** card appears when the report contains failed tests:
+
+- **"Summarize Failures"** button queues LLM analysis for all failed tests in the report, plus a report-level summary
+- Once analysis is completed, the card displays failure category breakdown, error groups with occurrence counts, and an LLM-generated markdown summary of the report's failures
+
+#### Analytics Dashboard — Failure Categories
+
+- **Failure Categories Chart** — horizontal bar chart showing the breakdown of failure types across the latest failed reports
+- **Most Common Failures** — card listing the top 5 error patterns with category badges, occurrence counts, and expandable error messages
+- **LLM Failure Analysis** — project-level summary with a "Generate Analysis" button that streams an LLM synthesis of failure trends across the latest failed reports.
+
+#### LLM Queue Page
+
+Accessible from **Settings → LLM Configuration → "LLM Queue" button**
+The queue page provides full visibility and control over LLM background tasks processing.
+
+#### Background Processing
+
+App will automagically:
+
+1. Extract failure details from each failed test for every new report available (error message, stack trace, page context from traces)
+2. Queue per-test LLM analysis tasks (categorization + root cause + fix suggestion)
+3. After all test analyses complete, queue a report-level summary task
 
 ### Test Management
 
@@ -407,27 +429,6 @@ openssl rand -base64 32
 ```
 
 If you do not set a token the application will work without authorization, however jwt token will still be utilized.
-
-## Jira Integration
-
-The Playwright Reports Server includes built-in Jira integration that allows you to create Jira tickets directly from tests. This feature automatically captures test failure details, screenshots, videos, and other attachments.
-
-### Configuration
-
-To enable Jira integration, set the following environment variables:
-
-```bash
-JIRA_BASE_URL=https://your-domain.atlassian.net
-JIRA_EMAIL=your-email@example.com
-JIRA_API_TOKEN=your-api-token
-JIRA_PROJECT_KEY=YOUR_PROJECT_KEY (optional)
-```
-
-### Usage
-
-1. **From Test Reports**: Navigate to any test in the web UI and click "Create Jira Ticket"
-2. **Customize Ticket**: Modify the summary, description, issue type, and project key as needed
-3. **Submit**: The ticket will be created in Jira with all test information and attachments
 
 ## Test Quarantine
 

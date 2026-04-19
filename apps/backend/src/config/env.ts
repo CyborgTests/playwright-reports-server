@@ -61,17 +61,6 @@ export const env = cleanEnv(process.env, {
     desc: 'Cron schedule for reports cleanup',
     default: '44 4 * * *',
   }),
-  // jira
-  JIRA_BASE_URL: str({
-    desc: 'Jira base URL (e.g., https://your-domain.atlassian.net)',
-    default: undefined,
-  }),
-  JIRA_EMAIL: str({ desc: 'Jira user email', default: undefined }),
-  JIRA_API_TOKEN: str({ desc: 'Jira API token', default: undefined }),
-  JIRA_PROJECT_KEY: str({
-    desc: 'Default Jira project key (optional)',
-    default: undefined,
-  }),
   // LLM
   LLM_ENABLED: str({ desc: 'Enable LLM features', default: 'false' }),
   LLM_PROVIDER: str<LLMProviderType>({
@@ -86,6 +75,7 @@ export const env = cleanEnv(process.env, {
     default: undefined,
   }),
   LLM_TEMPERATURE: num({ desc: 'LLM temperature (0-2)', default: undefined }),
+  LLM_PARALLEL_REQUESTS: num({ desc: 'Number of parallel LLM requests', default: 1 }),
   // Test management
   TEST_FLAKINESS_QUARANTINE_THRESHOLD: num({
     desc: 'Flakiness percentage threshold for quarantine (default: 5%)',

@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import FormattedDate from '@/components/date-format';
 import { subtitle, title } from '@/components/primitives';
 import FileList from '@/components/report-details/file-list';
+import ReportFailureSummary from '@/components/report-details/ReportFailureSummary';
 import ReportStatistics from '@/components/report-details/report-stats';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -57,6 +58,7 @@ function ReportDetailPage() {
           </span>
         </span>
       )}
+      {id && <ReportFailureSummary reportId={id} />}
       <div className="flex md:flex-row flex-col gap-2">
         <div className="flex flex-col items-center md:w-1/4 max-w-full">
           <ReportStatistics stats={report?.stats} />

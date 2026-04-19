@@ -25,10 +25,6 @@ export const API_ENDPOINTS = {
   INFO: '/api/info',
   CACHE_REFRESH: '/api/cache/refresh',
 
-  // Jira
-  JIRA_CONFIG: '/api/jira/config',
-  JIRA_CREATE_TICKET: '/api/jira/create-ticket',
-
   // Static
   STATIC: '/api/static',
   SERVE: '/api/serve',

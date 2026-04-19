@@ -1,9 +1,8 @@
-import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import { Link, useLocation } from 'react-router-dom';
 import { ReportIcon, ResultIcon, SettingsIcon, TrendIcon } from '@/components/icons';
 import { Skeleton } from '@/components/ui/skeleton';
 import { siteConfig as defaultConfig } from '@/config/site';
-import useQuery from '@/hooks/useQuery';
+import { useConfig } from '@/hooks/useConfig';
 import { withBase } from '@/lib/url';
 import { cn } from '@/lib/utils';
 import { ThemeSwitch } from './theme-switch';
@@ -23,7 +22,7 @@ const navItems: NavItem[] = [
 
 export function Navbar() {
   const location = useLocation();
-  const { data: config, isLoading } = useQuery<SiteWhiteLabelConfig>('/api/config');
+  const { data: config, isLoading } = useConfig();
 
   const isCustomLogo = config?.logoPath !== defaultConfig.logoPath;
   const isCustomTitle = config?.title && config?.title !== defaultConfig.title;

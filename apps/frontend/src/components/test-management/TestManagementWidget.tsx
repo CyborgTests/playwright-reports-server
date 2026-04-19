@@ -1,11 +1,10 @@
 import type {
-  SiteWhiteLabelConfig,
   TestFilters,
   TestWithQuarantineInfo,
 } from '@playwright-reports/shared';
-import { useQueryClient } from '@tanstack/react-query';
-import { Clock } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, Clock } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,6 +21,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
@@ -35,10 +35,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { parseMilliseconds } from '@/lib/time';
+import { useAuth } from '../../hooks/useAuth';
+import { useConfig } from '../../hooks/useConfig';
 import useMutation from '../../hooks/useMutation';
-import useQuery from '../../hooks/useQuery';
 import { defaultProjectName } from '../../lib/constants';
+import { withBase } from '../../lib/url';
 import { invalidateCache } from '../../lib/query-cache';
 import { TrendSparklineHistory } from '../analytics/TrendSparklineHistory';
 import { exponentialMovingAverageDuration } from './calculations/ema';
@@ -58,18 +61,25 @@ export default function TestManagementWidget({ project }: Readonly<TestManagemen
   const [quarantineTest, setQuarantineTest] = useState<TestWithQuarantineInfo | null>(null);
   const [quarantineReason, setQuarantineReason] = useState('');
   const [isQuarantineModalOpen, setIsQuarantineModalOpen] = useState(false);
+  const [deleteTest, setDeleteTest] = useState<TestWithQuarantineInfo | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+
+  useEffect(() => {
+    setFilters((prev) => ({ ...prev, project: project ?? defaultProjectName }));
+  }, [project]);
 
   const queryClient = useQueryClient();
 
-  const { data: config } = useQuery<SiteWhiteLabelConfig>('/api/config');
+  const { data: config } = useConfig();
+  const session = useAuth();
 
   const warningThreshold = config?.testManagement?.warningThresholdPercentage ?? 10;
   const quarantineThreshold = config?.testManagement?.quarantineThresholdPercentage ?? 50;
 
-  const { data: testsResponse, isLoading: isLoadingTests } = useQuery<{
-    data: TestWithQuarantineInfo[];
-  }>(
-    (() => {
+  const PAGE_SIZE = 25;
+
+  const buildQueryParams = useCallback(
+    (offset: number) => {
       const params = new URLSearchParams();
       if (filters.project && filters.project !== defaultProjectName) {
         params.append('project', filters.project);
@@ -83,11 +93,60 @@ export default function TestManagementWidget({ project }: Readonly<TestManagemen
       if (filters.flakinessMax !== undefined && filters.flakinessMax < 100) {
         params.append('flakinessMax', filters.flakinessMax.toString());
       }
-      const stringifiedParams = params.toString() ?? '';
-      return `/api/tests?${stringifiedParams}`;
-    })(),
-    { dependencies: [filters] }
+      params.append('limit', PAGE_SIZE.toString());
+      params.append('offset', offset.toString());
+      return params.toString();
+    },
+    [filters]
   );
+
+  const isAuthDisabled = session.status === 'authenticated' && session.data === null;
+  const isAuthReady = isAuthDisabled || session.status === 'authenticated';
+
+  const {
+    data: testsData,
+    isLoading: isLoadingTests,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<{ data: TestWithQuarantineInfo[]; total: number }>({
+    queryKey: ['/api/tests', filters],
+    queryFn: async ({ pageParam }) => {
+      const headers: HeadersInit = {};
+      const jwtToken = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;
+      if (jwtToken && session.status === 'authenticated' && session.data !== null) {
+        headers.Authorization = `Bearer ${jwtToken}`;
+      }
+      const res = await fetch(withBase(`/api/tests?${buildQueryParams(pageParam as number)}`), { headers });
+      if (!res.ok) throw new Error('Failed to fetch tests');
+      return res.json();
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, p) => sum + p.data.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
+    },
+    enabled: isAuthReady,
+  });
+
+  const sentinelRef = useRef<HTMLTableRowElement>(null);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !hasNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const { mutate: updateQuarantineMutation, isPending: isUpdateQuarantinePending } = useMutation(
     '/api/test',
@@ -105,40 +164,22 @@ export default function TestManagementWidget({ project }: Readonly<TestManagemen
     }
   );
 
-  /**
-   * Sorting priorities:
-   * 1) Quarantined
-   * 2) High flakiness score (high to low)
-   * 3) Pass rate (low to high)
-   */
-  const tests = useMemo(() => {
-    const data = testsResponse?.data || [];
+  const { mutate: deleteTestMutation, isPending: isDeletePending } = useMutation('/api/test', {
+    method: 'DELETE',
+    onSuccess: () => {
+      invalidateCache(queryClient, { predicate: '/api/tests' });
+      setIsDeleteModalOpen(false);
+      setDeleteTest(null);
+      toast.success('Test deleted successfully');
+    },
+  });
 
-    const getPassRate = (test: TestWithQuarantineInfo): number => {
-      if (!test.runs || test.runs.length === 0) {
-        return 1; // No data means 100% pass rate (lowest priority)
-      }
-      const passedRuns = test.runs.filter((run) => run.outcome === 'passed').length;
-      return passedRuns / test.runs.length;
-    };
+  const tests = useMemo(
+    () => testsData?.pages.flatMap((page) => page.data) ?? [],
+    [testsData]
+  );
 
-    return [...data].sort((prev, next) => {
-      if ((prev.isQuarantined ?? false) !== (next.isQuarantined ?? false)) {
-        return (next.isQuarantined ?? false) ? 1 : -1;
-      }
-
-      const prevFlakiness = prev.flakinessScore ?? 0;
-      const nextFlakiness = next.flakinessScore ?? 0;
-      const flakinessDiff = Math.abs(prevFlakiness - nextFlakiness) > 0.01;
-      if (flakinessDiff) {
-        return nextFlakiness - prevFlakiness;
-      }
-
-      const aPassRate = getPassRate(prev);
-      const bPassRate = getPassRate(next);
-      return aPassRate - bPassRate;
-    });
-  }, [testsResponse]);
+  const totalTests = testsData?.pages[0]?.total ?? 0;
 
   const getStatusBadge = (test: TestWithQuarantineInfo) => {
     if (test.isQuarantined) {
@@ -180,6 +221,38 @@ export default function TestManagementWidget({ project }: Readonly<TestManagemen
     setIsQuarantineModalOpen(true);
   };
 
+  const latestReportByProject = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const test of tests) {
+      const latestRun = test.runs?.at(0);
+      if (!latestRun?.createdAt) continue;
+      const current = map.get(test.project);
+      if (!current || latestRun.createdAt > current) {
+        map.set(test.project, latestRun.reportId);
+      }
+    }
+    return map;
+  }, [tests]);
+
+  const isStale = (test: TestWithQuarantineInfo) => {
+    const latestRun = test.runs?.at(0);
+    if (!latestRun) return true;
+    const latestReportId = latestReportByProject.get(test.project);
+    return latestReportId ? latestRun.reportId !== latestReportId : false;
+  };
+
+  const handleDeleteAction = (test: TestWithQuarantineInfo) => {
+    setDeleteTest(test);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleDeleteSubmit = () => {
+    if (!deleteTest) return;
+    deleteTestMutation({
+      path: `/api/test/${deleteTest.fileId}/${deleteTest.testId}?project=${deleteTest.project}`,
+    });
+  };
+
   const handleQuarantineSubmit = () => {
     if (!quarantineTest) return;
 
@@ -217,7 +290,14 @@ export default function TestManagementWidget({ project }: Readonly<TestManagemen
 
       <Card>
         <CardHeader>
-          <h3 className="text-lg font-semibold">Tests</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Tests</h3>
+            {!isLoadingTests && (
+              <span className="text-sm text-muted-foreground">
+                Showing {tests.length} of {totalTests}
+              </span>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {isLoadingTests ? (
@@ -279,7 +359,21 @@ export default function TestManagementWidget({ project }: Readonly<TestManagemen
                         </span>
                       </TableCell>
                       <TableCell>
-                        {item.lastRunAt ? new Date(item.lastRunAt).toLocaleString() : 'Never'}
+                        <div className="flex items-center gap-1">
+                          {item.lastRunAt ? new Date(item.lastRunAt).toLocaleString() : 'Never'}
+                          {isStale(item) && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Not present in latest report — consider removing
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </div>
                       </TableCell>
 
                       <TableCell>
@@ -296,6 +390,13 @@ export default function TestManagementWidget({ project }: Readonly<TestManagemen
                             >
                               {item.isQuarantined ? 'Remove Quarantine' : 'Send Quarantine'}
                             </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteAction(item)}
+                              className="text-red-600"
+                            >
+                              Delete Test
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -305,6 +406,17 @@ export default function TestManagementWidget({ project }: Readonly<TestManagemen
                     <TableRow>
                       <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                         No tests found
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {hasNextPage && (
+                    <TableRow ref={sentinelRef}>
+                      <TableCell colSpan={10} className="text-center py-4">
+                        {isFetchingNextPage ? (
+                          <Spinner size="sm" />
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Scroll for more</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   )}
@@ -381,6 +493,38 @@ export default function TestManagementWidget({ project }: Readonly<TestManagemen
                 : quarantineTest?.isQuarantined
                   ? 'Remove Quarantine'
                   : 'Quarantine Test'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Test</DialogTitle>
+            <DialogDescription>
+              This will permanently delete the test and all its run history. This action cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteTest && (
+            <div>
+              <p>
+                <strong>Test:</strong> {deleteTest.title}
+              </p>
+              <p className="text-sm text-muted-foreground">{deleteTest.filePath}</p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteModalOpen(false)}
+              disabled={isDeletePending}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteSubmit} disabled={isDeletePending}>
+              {isDeletePending ? 'Deleting...' : 'Delete Test'}
             </Button>
           </DialogFooter>
         </DialogContent>

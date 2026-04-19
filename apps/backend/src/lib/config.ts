@@ -16,12 +16,6 @@ export const defaultConfig: SiteWhiteLabelConfig = {
     reportExpireDays: Number(process.env.REPORT_EXPIRE_DAYS ?? defaultReportExpirationDays),
     reportExpireCronSchedule: process.env.REPORT_EXPIRE_CRON_SCHEDULE ?? '0 3 * * *',
   },
-  jira: {
-    baseUrl: process.env.JIRA_BASE_URL ?? '',
-    email: process.env.JIRA_EMAIL ?? '',
-    apiToken: process.env.JIRA_API_TOKEN ?? '',
-    projectKey: process.env.JIRA_PROJECT_KEY ?? '',
-  },
   testManagement: {
     quarantineThresholdPercentage: Number(process.env.TEST_FLAKINESS_QUARANTINE_THRESHOLD ?? 5),
     warningThresholdPercentage: Number(process.env.TEST_FLAKINESS_WARNING_THRESHOLD ?? 2),

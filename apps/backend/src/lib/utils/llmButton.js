@@ -28,7 +28,7 @@ function injectAskLLMButton() {
       const prompt = globalThis.currentPrompt;
 
       if (prompt?.trim()) {
-        showLLMAnalysis(prompt, askBtn, currentTestId);
+        showLLMAnalysis(prompt, askBtn, currentTestId, copyPromptButton);
         return;
       }
     } catch {
@@ -40,7 +40,9 @@ function injectAskLLMButton() {
       if (permission.state === 'denied') {
         showLLMAnalysis(
           'Clipboard access is denied. Please allow clipboard access and try again.',
-          askBtn
+          askBtn,
+          undefined,
+          copyPromptButton
         );
         return;
       }
@@ -55,7 +57,7 @@ function injectAskLLMButton() {
       const prompt = await navigator.clipboard.readText();
 
       if (prompt?.trim()) {
-        showLLMAnalysis(prompt, askBtn, currentTestId);
+        showLLMAnalysis(prompt, askBtn, currentTestId, copyPromptButton);
       } else {
         throw new Error('clipboard is empty');
       }
@@ -68,11 +70,17 @@ function injectAskLLMButton() {
         default: 'Please click "Copy prompt" button manually and try again.',
       };
       const errorMessage = `Unable to access clipboard. ${suggestion[error.name] || suggestion.default}`;
-      showLLMAnalysis(errorMessage, askBtn, currentTestId);
+      showLLMAnalysis(errorMessage, askBtn, currentTestId, copyPromptButton);
     }
   };
 
   copyPromptButton.parentNode?.insertBefore(askBtn, copyPromptButton.nextSibling);
+
+  // Check for pre-computed LLM analysis — if found, show inline and hide Ask LLM button
+  const currentTestId = extractTestIdFromCurrentUrl();
+  if (currentTestId && currentTestId !== 'unknown') {
+    checkForPrecomputedAnalysis(currentTestId, copyPromptButton, askBtn);
+  }
 
   return true;
 }
@@ -100,7 +108,7 @@ function extractTestIdFromCurrentUrl() {
   }
 }
 
-function showLLMAnalysis(prompt, askBtn, testId = 'unknown') {
+function showLLMAnalysis(prompt, askBtn, testId = 'unknown', copyPromptButton = null) {
   let modal = document.getElementById('llm-analysis-modal');
   if (!modal) {
     modal = createLLMModal();
@@ -121,8 +129,9 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown') {
         animation: llm-spin 1s linear infinite;
         margin-bottom: 20px;
       "></div>
-      <div style="color: #1f2937; font-size: 16px; font-weight: 500;">LLM is thinking 🤔...</div>
-      <div style="color: #6b7280; font-size: 14px; margin-top: 8px;">This may take a few seconds</div>
+      <div style="color: var(--llm-body-text); font-size: 16px; font-weight: 500;">LLM is thinking 🤔...</div>
+      <div style="color: var(--llm-body-text); font-size: 14px; font-weight: 500;">(kind of)</div>
+      <div style="color: var(--llm-muted); font-size: 14px; margin-top: 8px;">This may take a few seconds</div>
     </div>
     <style>
       @keyframes llm-spin {
@@ -155,14 +164,14 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown') {
           font-size: 24px;
         ">⚠️</div>
         <div style="
-          color: #1f2937;
+          color: var(--llm-body-text);
           font-size: 16px;
           font-weight: 500;
           text-align: center;
           margin-bottom: 8px;
         ">Unable to Access Clipboard</div>
         <div style="
-          color: #6b7280;
+          color: var(--llm-muted);
           font-size: 14px;
           text-align: center;
           line-height: 1.5;
@@ -192,7 +201,9 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown') {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      let accumulatedContent = '';
+      let thinkingContent = '';
+      let answerContent = '';
+      let isThinking = false;
       let modelData = null;
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -220,10 +231,26 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown') {
               color: white;
               font-size: 16px;
             ">🔍</div>
-            <h2 style="margin: 0; color: #1f2937; font-size: 20px; font-weight: 600;">Test Failure Analysis</h2>
+            <h2 style="margin: 0; color: var(--llm-body-text); font-size: 20px; font-weight: 600;">Test Failure Analysis</h2>
+          </div>
+          <div id="llm-thinking-block" style="
+            display: none;
+            background: var(--llm-thinking-bg);
+            border-left: 4px solid var(--llm-thinking-border);
+            padding: 16px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: var(--llm-thinking-text);
+            line-height: 1.6;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            max-height: 200px;
+            overflow-y: auto;
+          ">
+            <div style="font-weight: 600; margin-bottom: 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">💭 Thinking...</div>
+            <div id="llm-thinking-text"></div>
           </div>
           <div id="llm-streaming-content" style="
-            background: #f9fafb;
+            background: var(--llm-stream-bg);
             border-left: 4px solid #3b82f6;
             padding: 20px;
             border-radius: 8px;
@@ -231,32 +258,76 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown') {
             line-height: 1.7;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 15px;
-            color: #1f2937;
+            color: var(--llm-body-text);
           "></div>
           <div id="llm-streaming-footer" style="
             display: none;
             justify-content: space-between;
             align-items: center;
             padding-top: 16px;
-            border-top: 1px solid #e5e7eb;
+            border-top: 1px solid var(--llm-btn-border);
             margin-top: 8px;
             font-size: 13px;
-            color: #6b7280;
+            color: var(--llm-muted);
           "></div>
         </div>
       `;
 
-      const streamingContent = document.getElementById('llm-streaming-content');
-      const streamingFooter = document.getElementById('llm-streaming-footer');
+      const thinkingBlock = content.querySelector('#llm-thinking-block');
+      const thinkingText = content.querySelector('#llm-thinking-text');
+      const streamingContent = content.querySelector('#llm-streaming-content');
+      const streamingFooter = content.querySelector('#llm-streaming-footer');
 
-      function processText(text) {
-        accumulatedContent += text;
-        streamingContent.textContent = accumulatedContent;
-        streamingContent.scrollTop = streamingContent.scrollHeight;
+      function processThinking(text) {
+        thinkingContent += text;
+        if (thinkingBlock && thinkingText) {
+          if (!isThinking) {
+            isThinking = true;
+            thinkingBlock.style.display = 'block';
+            streamingContent.style.display = 'none';
+          }
+          thinkingText.textContent = thinkingContent;
+          thinkingBlock.scrollTop = thinkingBlock.scrollHeight;
+        }
+      }
+
+      function processToken(text) {
+        answerContent += text;
+        if (streamingContent) {
+          if (isThinking) {
+            // Transition from thinking to answer
+            isThinking = false;
+            streamingContent.style.display = 'block';
+            // Collapse thinking block
+            if (thinkingBlock) {
+              thinkingBlock.querySelector('div').textContent = '💭 Thinking (done)';
+              thinkingBlock.style.maxHeight = '80px';
+              thinkingBlock.style.cursor = 'pointer';
+              thinkingBlock.onclick = () => {
+                const isCollapsed = thinkingBlock.style.maxHeight === '80px';
+                thinkingBlock.style.maxHeight = isCollapsed ? '400px' : '80px';
+              };
+            }
+          }
+          streamingContent.textContent = answerContent;
+          streamingContent.scrollTop = streamingContent.scrollHeight;
+        }
       }
 
       function finalizeResponse() {
-        streamingContent.innerHTML = markdownToHtml(accumulatedContent);
+        const finalContent = answerContent || thinkingContent;
+        if (streamingContent) {
+          streamingContent.style.display = 'block';
+          streamingContent.innerHTML = markdownToHtml(finalContent);
+        }
+        // Format thinking block markdown
+        if (thinkingContent && thinkingText && answerContent) {
+          thinkingText.innerHTML = markdownToHtml(thinkingContent);
+        }
+        // If only thinking was received, hide the thinking block since we moved it to the main area
+        if (!answerContent && thinkingContent && thinkingBlock) {
+          thinkingBlock.style.display = 'none';
+        }
 
         if (streamingFooter) {
           streamingFooter.style.display = 'flex';
@@ -264,6 +335,15 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown') {
             <div>Analysis powered by ${modelData || 'LLM'}</div>
             <div>${new Date().toLocaleString()}</div>
           `;
+        }
+
+        // Also render the result inline above the errors section
+        if (finalContent && copyPromptButton) {
+          // Close the modal after a short delay
+          setTimeout(() => {
+            if (modal) modal.style.display = 'none';
+          }, 500);
+          showInlineAnalysisFromStream(finalContent, modelData, copyPromptButton, askBtn);
         }
       }
 
@@ -291,8 +371,10 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown') {
                 try {
                   const data = JSON.parse(trimmedLine.slice(6));
 
-                  if (data.type === 'token' && data.content) {
-                    processText(data.content);
+                  if (data.type === 'thinking' && data.content) {
+                    processThinking(data.content);
+                  } else if (data.type === 'token' && data.content) {
+                    processToken(data.content);
                   } else if (data.type === 'done') {
                     modelData = data.model;
                   } else if (data.type === 'error') {
@@ -327,14 +409,14 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown') {
             font-size: 24px;
           ">❌</div>
           <div style="
-            color: #1f2937;
+            color: var(--llm-body-text);
             font-size: 16px;
             font-weight: 500;
             text-align: center;
             margin-bottom: 8px;
           ">Analysis Failed</div>
           <div style="
-            color: #6b7280;
+            color: var(--llm-muted);
             font-size: 14px;
             text-align: center;
             line-height: 1.5;
@@ -359,7 +441,7 @@ function createLLMModal() {
           left: 0;
           width: 100%;
           height: 100%;
-          background-color: rgba(0, 0, 0, 0.5);
+          background-color: var(--llm-modal-overlay);
           z-index: 10000;
           align-items: center;
           justify-content: center;
@@ -370,13 +452,14 @@ function createLLMModal() {
   const modalContent = document.createElement('div');
   modalContent.className = 'llm-modal-content';
   modalContent.style.cssText = `
-          background: white;
+          background: var(--llm-modal-bg);
+          color: var(--llm-body-text);
           border-radius: 12px;
           padding: 32px;
           max-width: 800px;
           max-height: 80vh;
           overflow-y: auto;
-          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
           position: relative;
           margin: 20px;
         `;
@@ -387,15 +470,15 @@ function createLLMModal() {
           position: absolute;
           top: 16px;
           right: 16px;
-          background: #f3f4f6;
-          border: none;
+          background: var(--llm-btn-bg);
+          border: 1px solid var(--llm-btn-border);
           width: 32px;
           height: 32px;
           border-radius: 6px;
           font-size: 20px;
           font-weight: 400;
           cursor: pointer;
-          color: #1f2937;
+          color: var(--llm-btn-text);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -403,12 +486,12 @@ function createLLMModal() {
         `;
 
   closeBtn.onmouseover = () => {
-    closeBtn.style.backgroundColor = '#e5e7eb';
+    closeBtn.style.opacity = '0.8';
     closeBtn.style.transform = 'scale(1.05)';
   };
 
   closeBtn.onmouseout = () => {
-    closeBtn.style.backgroundColor = '#f3f4f6';
+    closeBtn.style.opacity = '1';
     closeBtn.style.transform = 'scale(1)';
   };
   closeBtn.onclick = () => {
@@ -447,7 +530,7 @@ function formatLLMResponse(data) {
         color: white;
         font-size: 16px;
       ">🔍</div>
-      <h2 style="margin: 0; color: #1f2937; font-size: 20px; font-weight: 600;">Test Failure Analysis</h2>
+      <h2 style="margin: 0; color: var(--llm-body-text); font-size: 20px; font-weight: 600;">Test Failure Analysis</h2>
     </div>
   `;
 
@@ -455,14 +538,14 @@ function formatLLMResponse(data) {
 
   html += `
     <div style="
-      background: #f9fafb;
+      background: var(--llm-stream-bg);
       border-left: 4px solid #3b82f6;
       padding: 20px;
       border-radius: 8px;
       margin-bottom: 20px;
     ">
       <div style="
-        color: #1f2937;
+        color: var(--llm-body-text);
         line-height: 1.7;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         font-size: 15px;
@@ -476,10 +559,10 @@ function formatLLMResponse(data) {
       justify-content: space-between;
       align-items: center;
       padding-top: 16px;
-      border-top: 1px solid #e5e7eb;
+      border-top: 1px solid var(--llm-btn-border);
       margin-top: 24px;
       font-size: 13px;
-      color: #6b7280;
+      color: var(--llm-muted);
     ">
       <div>Analysis powered by ${data.model || 'LLM'}</div>
       <div>${new Date().toLocaleString()}</div>
@@ -508,37 +591,37 @@ function markdownToHtml(text) {
   // headers
   html = html.replaceAll(
     /^### (.*$)/gim,
-    '<h3 style="margin: 16px 0 8px 0; color: #1f2937; font-size: 18px; font-weight: 600;">$1</h3>'
+    '<h3 style="margin: 16px 0 8px 0; color: var(--llm-body-text); font-size: 18px; font-weight: 600;">$1</h3>'
   );
   html = html.replaceAll(
     /^## (.*$)/gim,
-    '<h2 style="margin: 20px 0 12px 0; color: #1f2937; font-size: 20px; font-weight: 600;">$1</h2>'
+    '<h2 style="margin: 20px 0 12px 0; color: var(--llm-body-text); font-size: 20px; font-weight: 600;">$1</h2>'
   );
   html = html.replaceAll(
     /^# (.*$)/gim,
-    '<h1 style="margin: 24px 0 16px 0; color: #1f2937; font-size: 24px; font-weight: 700;">$1</h1>'
+    '<h1 style="margin: 24px 0 16px 0; color: var(--llm-body-text); font-size: 24px; font-weight: 700;">$1</h1>'
   );
 
   // bold text
   html = html.replaceAll(
     /\*\*(.*?)\*\*/g,
-    '<strong style="font-weight: 600; color: #1f2937;">$1</strong>'
+    '<strong style="font-weight: 600; color: var(--llm-body-text);">$1</strong>'
   );
 
   // italic text - more specific to avoid interfering with bold
   html = html.replaceAll(
     /(?<!\*)\*([^*\n]+)\*(?!\*)/g,
-    '<em style="font-style: italic; color: #4b5563;">$1</em>'
+    '<em style="font-style: italic; color: var(--llm-muted);">$1</em>'
   );
 
   // inline code (make sure not to interfere with code blocks)
   html = html.replaceAll(
     /`([^`\n]+)`/g,
-    "<code style=\"background-color: #f3f4f6; color: #1f2937; padding: 2px 6px; border-radius: 4px; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 14px;\">$1</code>"
+    "<code style=\"background-color: var(--llm-code-bg); color: var(--llm-code-text); padding: 2px 6px; border-radius: 4px; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 14px;\">$1</code>"
   );
 
   // bullet points
-  html = html.replaceAll(/^\* (.+)$/gim, '<li style="margin: 4px 0; color: #4b5563;">• $1</li>');
+  html = html.replaceAll(/^\* (.+)$/gim, '<li style="margin: 4px 0; color: var(--llm-body-text);">• $1</li>');
 
   // wrap bullet lists
   html = html.replaceAll(
@@ -547,7 +630,7 @@ function markdownToHtml(text) {
   );
 
   // numbered lists
-  html = html.replaceAll(/^\d+\. (.+)$/gim, '<li style="margin: 4px 0; color: #4b5563;">$1</li>');
+  html = html.replaceAll(/^\d+\. (.+)$/gim, '<li style="margin: 4px 0; color: var(--llm-body-text);">$1</li>');
 
   // process paragraphs - split by double newlines
   const paragraphs = html.split('\n\n');
@@ -587,10 +670,107 @@ function markdownToHtml(text) {
   return html;
 }
 
+function checkForPrecomputedAnalysis(testId, copyPromptButton, askBtn) {
+  // reportId is injected as a global by html-injector.ts
+  const rid = typeof reportId !== 'undefined' ? reportId : '';
+  fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
+    .then((response) => {
+      if (!response.ok) return null;
+      return response.json();
+    })
+    .then((data) => {
+      if (data?.success && data?.data?.analysis) {
+        renderInlineAnalysis(data.data, copyPromptButton, askBtn);
+      }
+    })
+    .catch(() => {
+      // Silently fail — no section injected
+    });
+}
+
+/**
+ * Find the errors section in the Playwright report and inject the analysis above it.
+ * The errors section is typically the container holding the "Copy prompt" button.
+ */
+function findErrorsSection(copyPromptButton) {
+  // Walk up from the Copy prompt button to find the test result container
+  let node = copyPromptButton.parentNode;
+  for (let i = 0; i < 5 && node; i++) {
+    // Look for a sibling or parent that is the errors area
+    if (node.previousElementSibling || node.parentNode) break;
+    node = node.parentNode;
+  }
+  // The errors area is the closest ancestor that holds error content
+  // Use the grandparent of the button row as insertion point
+  return copyPromptButton.closest('.test-result-error')
+    || copyPromptButton.parentNode?.parentNode
+    || copyPromptButton.parentNode;
+}
+
+function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
+  // Remove any existing inline analysis
+  const existing = document.getElementById('llm-inline-analysis');
+  if (existing) existing.remove();
+
+  const errorsSection = findErrorsSection(copyPromptButton);
+  if (!errorsSection) return;
+
+  // Hide the Ask LLM button — analysis is shown inline instead
+  if (askBtn) askBtn.style.display = 'none';
+
+  const categoryBadge = analysisData.category
+    ? `<span class="llm-category-badge">${analysisData.category}</span>`
+    : '';
+
+  const section = document.createElement('div');
+  section.id = 'llm-inline-analysis';
+  section.innerHTML = `
+    <div class="llm-inline-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="llm-title">LLM Analysis</span>
+        ${categoryBadge}
+        <span class="llm-model">${analysisData.model || ''}</span>
+      </div>
+      <button class="llm-retry-btn">Retry</button>
+    </div>
+    <div class="llm-inline-body">
+      ${markdownToHtml(analysisData.analysis)}
+    </div>
+  `;
+
+  // Insert above the errors section
+  errorsSection.parentNode.insertBefore(section, errorsSection);
+
+  // Retry button re-triggers Ask LLM flow
+  section.querySelector('.llm-retry-btn').onclick = () => {
+    section.remove();
+    if (askBtn) {
+      askBtn.style.display = '';
+      askBtn.click();
+    }
+  };
+}
+
+/**
+ * After an Ask LLM SSE stream completes, show the result inline
+ * (called from showLLMAnalysis on success).
+ */
+function showInlineAnalysisFromStream(content, model, copyPromptButton, askBtn) {
+  renderInlineAnalysis(
+    { analysis: content, model: model, category: null },
+    copyPromptButton,
+    askBtn
+  );
+}
+
+let llmButtonRetryCount = 0;
+const MAX_LLM_BUTTON_RETRIES = 100; // ~5 seconds at 50ms intervals
+
 function tryInjectAskLLMButton() {
   const injected = injectAskLLMButton();
 
-  if (!injected) {
+  if (!injected && llmButtonRetryCount < MAX_LLM_BUTTON_RETRIES) {
+    llmButtonRetryCount++;
     // if no copy prompt button found yet, wait a bit longer and try again
     setTimeout(tryInjectAskLLMButton, 50);
   }

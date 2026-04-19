@@ -1,38 +1,27 @@
-import type {
-  EnvInfo,
-  JiraConfig,
-  ServerConfig,
-  SiteWhiteLabelConfig,
-} from '@playwright-reports/shared';
+import type { ServerConfig } from '@playwright-reports/shared';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import AddLinkModal from '@/components/settings/components/AddLinkModal';
 import CronConfiguration from '@/components/settings/components/CronConfiguration';
 import EnvironmentInfo from '@/components/settings/components/EnvironmentInfo';
-import JiraConfiguration from '@/components/settings/components/JiraConfiguration';
 import LLMConfiguration from '@/components/settings/components/LLMConfiguration';
 import ServerConfiguration from '@/components/settings/components/ServerConfiguration';
 import TestManagementSettings from '@/components/settings/components/TestManagementSettings';
 import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/hooks/useAuth';
-
-import useQuery from '@/hooks/useQuery';
+import { useConfig } from '@/hooks/useConfig';
 
 export default function SettingsPage() {
   const session = useAuth();
   const [config, setConfig] = useState<ServerConfig>({});
   const [editingSection, setEditingSection] = useState<
-    'none' | 'server' | 'jira' | 'cron' | 'llm' | 'testManagement'
+    'none' | 'server' | 'cron' | 'llm' | 'testManagement'
   >('none');
   const [tempConfig, setTempConfig] = useState<ServerConfig>({});
   const [showAddLinkModal, setShowAddLinkModal] = useState(false);
   const [newLinkData, setNewLinkData] = useState({ name: '', url: '' });
 
-  const { data: serverConfig, refetch: refetchConfig } = useQuery<SiteWhiteLabelConfig & EnvInfo>(
-    '/api/config'
-  );
-  const { data: jiraConfig } = useQuery<JiraConfig>('/api/jira/config');
-
+  const { data: serverConfig, refetch: refetchConfig } = useConfig();
   const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
@@ -40,14 +29,13 @@ export default function SettingsPage() {
       setConfig(serverConfig);
       setTempConfig({
         ...serverConfig,
-        jira: serverConfig.jira || {},
         llm: serverConfig.llm || {},
         testManagement: serverConfig.testManagement || {},
       });
     }
   }, [serverConfig]);
 
-  const handleSave = async (section: 'server' | 'jira' | 'cron' | 'llm' | 'testManagement') => {
+  const handleSave = async (section: 'server' | 'cron' | 'llm' | 'testManagement') => {
     setIsUpdating(true);
 
     try {
@@ -85,21 +73,6 @@ export default function SettingsPage() {
         );
 
         formData.append('headerLinks', JSON.stringify(cleanHeaderLinks));
-      } else if (section === 'jira') {
-        if (tempConfig.jira) {
-          if (tempConfig.jira.baseUrl) {
-            formData.append('jiraBaseUrl', tempConfig.jira.baseUrl);
-          }
-          if (tempConfig.jira.email) {
-            formData.append('jiraEmail', tempConfig.jira.email);
-          }
-          if (tempConfig.jira.apiToken) {
-            formData.append('jiraApiToken', tempConfig.jira.apiToken);
-          }
-          if (tempConfig.jira.projectKey) {
-            formData.append('jiraProjectKey', tempConfig.jira.projectKey);
-          }
-        }
       } else if (section === 'cron') {
         if (tempConfig.cron) {
           if (tempConfig.cron.resultExpireDays !== undefined) {
@@ -131,6 +104,9 @@ export default function SettingsPage() {
           }
           if (tempConfig.llm.temperature !== undefined) {
             formData.append('llmTemperature', tempConfig.llm.temperature.toString());
+          }
+          if (tempConfig.llm.parallelRequests !== undefined) {
+            formData.append('llmParallelRequests', tempConfig.llm.parallelRequests.toString());
           }
         }
       } else if (section === 'testManagement') {
@@ -184,7 +160,6 @@ export default function SettingsPage() {
 
       const sectionName = {
         server: 'Server',
-        jira: 'Jira',
         cron: 'Cron',
         llm: 'LLM',
         testManagement: 'Test Management',
@@ -204,7 +179,6 @@ export default function SettingsPage() {
   const handleCancel = () => {
     setTempConfig({
       ...config,
-      jira: config?.jira || {},
       llm: config?.llm || {},
       testManagement: config?.testManagement || {},
     });
@@ -262,18 +236,6 @@ export default function SettingsPage() {
         onCancel={handleCancel}
         onEdit={() => setEditingSection('server')}
         onSave={() => handleSave('server')}
-        onUpdateTempConfig={updateTempConfig}
-      />
-
-      <JiraConfiguration
-        config={config}
-        editingSection={editingSection}
-        isUpdating={isUpdating}
-        jiraConfig={jiraConfig}
-        tempConfig={tempConfig}
-        onCancel={handleCancel}
-        onEdit={() => setEditingSection('jira')}
-        onSave={() => handleSave('jira')}
         onUpdateTempConfig={updateTempConfig}
       />
 

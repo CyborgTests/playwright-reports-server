@@ -8,6 +8,7 @@ export interface LLMConfig {
   apiKey?: string;
   model?: string;
   temperature?: number;
+  parallelRequests?: number;
 }
 
 export interface TestManagementConfig {
@@ -28,34 +29,6 @@ export type IconSvgProps = {
   [key: string]: any;
 };
 
-export interface JiraConfig {
-  baseUrl?: string;
-  email?: string;
-  apiToken?: string;
-  projectKey?: string;
-  configured?: boolean;
-  defaultProjectKey?: string;
-  issueTypes?: Array<{
-    id?: string;
-    name: string;
-    description?: string;
-  }>;
-  message?: string;
-  error?: string;
-}
-
-export interface JiraApiResponse {
-  configured: boolean;
-  baseUrl?: string;
-  defaultProjectKey?: string;
-  issueTypes?: Array<{
-    id?: string;
-    name: string;
-    description?: string;
-  }>;
-  message?: string;
-}
-
 export interface SiteWhiteLabelConfig {
   title: string;
   headerLinks: HeaderLinks;
@@ -73,7 +46,6 @@ export interface SiteWhiteLabelConfig {
     reportExpireDays?: number;
     reportExpireCronSchedule?: string;
   };
-  jira?: JiraConfig;
   llm?: LLMConfig;
   testManagement?: TestManagementConfig;
 }
@@ -321,12 +293,6 @@ export interface ServerConfig {
     resultExpireCronSchedule?: string;
     reportExpireDays?: number;
     reportExpireCronSchedule?: string;
-  };
-  jira?: {
-    baseUrl?: string;
-    email?: string;
-    apiToken?: string;
-    projectKey?: string;
   };
   llm?: LLMConfig;
   testManagement?: TestManagementConfig;

@@ -6,7 +6,6 @@ import { llmService } from '../lib/llm/index.js';
 import { CronService, cronService } from '../lib/service/cron.js';
 import { getDatabaseStats } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
-import { JiraService } from '../lib/service/jira.js';
 import { testManagementService } from '../lib/service/testManagement.js';
 import { DATA_FOLDER } from '../lib/storage/constants.js';
 import { withError } from '../lib/withError.js';
@@ -24,10 +23,6 @@ interface ConfigFormData {
   faviconPath?: string;
   reporterPaths?: string;
   headerLinks?: string;
-  jiraBaseUrl?: string;
-  jiraEmail?: string;
-  jiraApiToken?: string;
-  jiraProjectKey?: string;
   resultExpireDays?: string;
   resultExpireCronSchedule?: string;
   reportExpireDays?: string;
@@ -37,6 +32,7 @@ interface ConfigFormData {
   llmApiKey?: string;
   llmModel?: string;
   llmTemperature?: string;
+  llmParallelRequests?: string;
   testManagementQuarantineThresholdPercentage?: string;
   testManagementWarningThresholdPercentage?: string;
   testManagementAutoQuarantineEnabled?: string;
@@ -77,6 +73,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       temperature:
         config.llm?.temperature ??
         (env.LLM_TEMPERATURE ? Number.parseFloat(String(env.LLM_TEMPERATURE)) : undefined),
+      parallelRequests: config.llm?.parallelRequests || 1,
     };
 
     return { ...config, ...envInfo, llm: llmInfo };
@@ -87,30 +84,29 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       const authResult = await authenticate(request as AuthRequest, reply);
       if (authResult) return authResult;
 
-      const data = await request.file({
-        limits: { files: 2 },
-      });
-
-      if (!data) {
-        return reply.status(400).send({ error: 'No data received' });
-      }
+      const parts = request.parts({ limits: { files: 2 } });
 
       let logoFile: MultipartFile | null = null;
       let faviconFile: MultipartFile | null = null;
       const formData: ConfigFormData = {};
+      let hasParts = false;
 
-      for await (const part of data.file) {
+      for await (const part of parts) {
+        hasParts = true;
         if (part.type === 'file') {
-          const filePart = part as MultipartFile;
           if (part.fieldname === 'logo') {
-            logoFile = filePart;
+            logoFile = part as unknown as MultipartFile;
           } else if (part.fieldname === 'favicon') {
-            faviconFile = filePart;
+            faviconFile = part as unknown as MultipartFile;
           }
         } else if (part.type === 'field') {
           const fieldName = part.fieldname as keyof ConfigFormData;
           formData[fieldName] = part.value as string;
         }
+      }
+
+      if (!hasParts) {
+        return reply.status(400).send({ error: 'No data received' });
       }
 
       const config = await service.getConfig();
@@ -177,22 +173,6 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         }
       }
 
-      config.jira ??= {};
-
-      if (formData.jiraBaseUrl !== undefined) config.jira.baseUrl = formData.jiraBaseUrl;
-      if (formData.jiraEmail !== undefined) config.jira.email = formData.jiraEmail;
-      if (formData.jiraApiToken !== undefined) config.jira.apiToken = formData.jiraApiToken;
-      if (formData.jiraProjectKey !== undefined) config.jira.projectKey = formData.jiraProjectKey;
-
-      if (
-        formData.jiraBaseUrl ||
-        formData.jiraEmail ||
-        formData.jiraApiToken ||
-        formData.jiraProjectKey
-      ) {
-        JiraService.resetInstance();
-      }
-
       config.llm ??= {};
 
       if (formData.llmProvider !== undefined) {
@@ -210,6 +190,15 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           });
         }
         config.llm.temperature = temperature;
+      }
+
+      if (formData.llmParallelRequests !== undefined) {
+        const parallelRequests = Number.parseInt(formData.llmParallelRequests, 10);
+        if (Number.isNaN(parallelRequests) || parallelRequests < 1 || parallelRequests > 10) {
+          return reply.status(400).send({ error: 'LLM parallel requests must be between 1 and 10' });
+        }
+        config.llm ??= {};
+        config.llm.parallelRequests = parallelRequests;
       }
 
       const llmConfigChanged = !!(
@@ -316,7 +305,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       );
 
       if (testManagementConfigChanged) {
-        testManagementService.invalidateConfigCache();
+        await testManagementService.recalculateAllFlakinessScores();
       }
 
       if (

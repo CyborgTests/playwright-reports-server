@@ -141,6 +141,82 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_test_runs_quarantined_created ON test_runs(quarantined, createdAt DESC);
   `);
 
+  // Failure analysis columns migration
+  const addColumnIfNotExists = (table: string, column: string, type: string) => {
+    const columns = db.pragma(`table_info(${table})`) as Array<{ name: string }>;
+    if (!columns.some(c => c.name === column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    }
+  };
+  addColumnIfNotExists('test_runs', 'failure_details', 'TEXT');
+  addColumnIfNotExists('test_runs', 'failure_category', 'TEXT');
+  addColumnIfNotExists('test_runs', 'error_signature', 'TEXT');
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_test_runs_failure_category ON test_runs(failure_category);
+    CREATE INDEX IF NOT EXISTS idx_test_runs_error_signature ON test_runs(error_signature);
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS llm_tasks (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      priority INTEGER NOT NULL DEFAULT 0,
+      reportId TEXT,
+      testId TEXT,
+      fileId TEXT,
+      project TEXT,
+      prompt TEXT,
+      result TEXT,
+      category TEXT,
+      model TEXT,
+      error TEXT,
+      createdAt TEXT NOT NULL,
+      startedAt TEXT,
+      completedAt TEXT,
+      retryCount INTEGER NOT NULL DEFAULT 0,
+      maxRetries INTEGER NOT NULL DEFAULT 2
+    );
+    CREATE INDEX IF NOT EXISTS idx_llm_tasks_status ON llm_tasks(status, priority DESC, createdAt);
+    CREATE INDEX IF NOT EXISTS idx_llm_tasks_report ON llm_tasks(reportId);
+    CREATE INDEX IF NOT EXISTS idx_llm_tasks_type ON llm_tasks(type, status);
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS report_failure_summaries (
+      reportId TEXT PRIMARY KEY,
+      project TEXT NOT NULL,
+      totalFailures INTEGER NOT NULL DEFAULT 0,
+      categories TEXT NOT NULL DEFAULT '{}',
+      errorGroups TEXT NOT NULL DEFAULT '[]',
+      llmSummary TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT,
+      FOREIGN KEY (reportId) REFERENCES reports(reportID)
+    );
+    CREATE INDEX IF NOT EXISTS idx_rfs_project ON report_failure_summaries(project);
+    CREATE INDEX IF NOT EXISTS idx_rfs_created ON report_failure_summaries(createdAt DESC);
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS test_llm_analyses (
+      id TEXT PRIMARY KEY,
+      testId TEXT NOT NULL,
+      fileId TEXT NOT NULL,
+      project TEXT NOT NULL,
+      reportId TEXT NOT NULL,
+      analysis TEXT,
+      category TEXT,
+      model TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT,
+      UNIQUE(testId, fileId, project)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tla_test ON test_llm_analyses(testId, fileId, project);
+    CREATE INDEX IF NOT EXISTS idx_tla_report ON test_llm_analyses(reportId);
+  `);
+
   console.log('[db] schema initialized');
 }
 
@@ -205,6 +281,9 @@ export function clearAll(): void {
     DELETE FROM cache_metadata;
     DELETE FROM test_runs;
     DELETE FROM tests;
+    DELETE FROM llm_tasks;
+    DELETE FROM report_failure_summaries;
+    DELETE FROM test_llm_analyses;
   `);
 
   db.exec('VACUUM;');

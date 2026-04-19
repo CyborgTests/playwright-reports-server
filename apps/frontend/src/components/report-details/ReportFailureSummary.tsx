@@ -1,0 +1,220 @@
+import { useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, Brain, RefreshCw } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Spinner } from '@/components/ui/spinner';
+import { useConfig } from '@/hooks/useConfig';
+import useMutation from '@/hooks/useMutation';
+import useQuery from '@/hooks/useQuery';
+import { MarkdownRenderer } from '@/components/markdown-renderer';
+
+interface ReportFailureSummaryProps {
+  reportId: string;
+}
+
+interface ErrorGroup {
+  pattern: string;
+  count: number;
+  category: string;
+  testIds: string[];
+}
+
+interface FailureSummary {
+  reportId: string;
+  project: string;
+  totalFailures: number;
+  categories: Record<string, number>;
+  errorGroups: ErrorGroup[];
+  llmSummary: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+interface FailureSummaryResponse {
+  success: boolean;
+  data?: FailureSummary;
+  hasFailures?: boolean;
+  error?: string;
+}
+
+interface AnalyzeResponse {
+  success: boolean;
+  queued: number;
+}
+
+const CATEGORY_COLORS: Record<string, string> = {
+  'timeout': 'bg-amber-100 text-amber-800',
+  'assertion_error': 'bg-red-100 text-red-800',
+  'network_error': 'bg-blue-100 text-blue-800',
+  'element_not_found': 'bg-purple-100 text-purple-800',
+  'navigation_error': 'bg-cyan-100 text-cyan-800',
+  'javascript_error': 'bg-orange-100 text-orange-800',
+  'permission_error': 'bg-pink-100 text-pink-800',
+  'setup_teardown': 'bg-gray-100 text-gray-800',
+  'browser_crash': 'bg-red-100 text-red-800',
+  'api_error': 'bg-blue-100 text-blue-800',
+  'snapshot_mismatch': 'bg-purple-100 text-purple-800',
+  'unknown': 'bg-slate-100 text-slate-800',
+};
+
+function getCategoryColor(category: string): string {
+  const key = category.toLowerCase();
+  return CATEGORY_COLORS[key] ?? 'bg-slate-100 text-slate-800';
+}
+
+export default function ReportFailureSummary({ reportId }: Readonly<ReportFailureSummaryProps>) {
+  const { data: config } = useConfig();
+  const queryClient = useQueryClient();
+
+  const queryPath = `/api/report/${reportId}/failure-summary`;
+
+  const {
+    data: summaryResponse,
+    isLoading,
+    error,
+  } = useQuery<FailureSummaryResponse>(queryPath, {
+    retry: false,
+  });
+
+  const { mutate: triggerAnalysis, isPending: isAnalyzing } = useMutation<AnalyzeResponse>(
+    `/api/report/${reportId}/analyze`,
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: [queryPath] });
+      },
+    }
+  );
+
+  // Don't render if LLM is not configured
+  if (!config?.llm?.baseUrl) {
+    return null;
+  }
+
+  // Loading state
+  if (isLoading) {
+    return null;
+  }
+
+  // Analyzing state (after clicking Summarize)
+  if (isAnalyzing) {
+    return (
+      <Card className="mb-4">
+        <CardContent className="flex items-center gap-3 py-4">
+          <Spinner size="sm" />
+          <span className="text-sm text-muted-foreground">
+            Queued — LLM analysis in progress...
+          </span>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // No summary exists — show Summarize button only if report has failures
+  const summary = summaryResponse?.data;
+  const hasFailures = summaryResponse?.hasFailures ?? false;
+
+  if ((!summary || error) && !hasFailures) {
+    return null; // No failures in this report — nothing to show
+  }
+
+  if (!summary || error) {
+    return (
+      <Card className="mb-4">
+        <CardContent className="flex items-center justify-between py-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Brain className="h-4 w-4" />
+            <span>LLM failure analysis available</span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => triggerAnalysis({})}
+          >
+            <Brain className="h-4 w-4 mr-1" />
+            Summarize Failures
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Summary exists — display it
+  const categoryEntries = Object.entries(summary.categories);
+
+  return (
+    <Card className="mb-4">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <AlertTriangle className="h-4 w-4 text-destructive" />
+            Failure Summary
+            <Badge variant="destructive" className="ml-1">
+              {summary.totalFailures} {summary.totalFailures === 1 ? 'failure' : 'failures'}
+            </Badge>
+          </CardTitle>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => triggerAnalysis({})}
+            title="Re-analyze failures"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Category breakdown */}
+        {categoryEntries.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {categoryEntries.map(([category, count]) => (
+              <span
+                key={category}
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-0.5 text-xs font-semibold ${getCategoryColor(category)}`}
+              >
+                {category}
+                <span className="font-bold">{count}</span>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Error groups */}
+        {summary.errorGroups.length > 0 && (
+          <div className="space-y-2">
+            {summary.errorGroups.map((group) => (
+              <div
+                key={group.pattern}
+                className="rounded-lg border p-3 text-sm"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span
+                    className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${getCategoryColor(group.category)}`}
+                  >
+                    {group.category}
+                  </span>
+                  <Badge variant="outline" className="text-xs">
+                    {group.count}x
+                  </Badge>
+                </div>
+                <p className="font-mono text-xs text-muted-foreground mt-1 break-all line-clamp-2">
+                  {group.pattern}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* LLM Summary */}
+        {summary.llmSummary && (
+          <div className="border-t pt-3">
+            <p className="text-xs font-medium text-muted-foreground mb-2">LLM Summary</p>
+            <div className="prose prose-sm max-w-none">
+              <MarkdownRenderer content={summary.llmSummary} />
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

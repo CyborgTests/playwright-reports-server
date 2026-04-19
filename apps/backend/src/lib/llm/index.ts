@@ -18,7 +18,7 @@ export class LLMService {
       apiKey: env.LLM_API_KEY ?? '',
       model: env.LLM_MODEL ?? '',
       temperature: env.LLM_TEMPERATURE ?? 0.3,
-      requestTimeoutMs: 30 * 1000,
+      requestTimeoutMs: 5 * 60 * 1000,
       maxRetries: 3,
       retryDelayMs: 1 * 1000,
     };
@@ -32,7 +32,7 @@ export class LLMService {
   }
 
   isConfigured(): boolean {
-    return !!env.LLM_BASE_URL && !!env.LLM_API_KEY;
+    return !!(this.config?.baseUrl && this.config?.apiKey);
   }
 
   async initialize(): Promise<void> {
@@ -40,18 +40,10 @@ export class LLMService {
       throw new Error('LLM service is not enabled. Set LLM_BASE_URL and LLM_API_KEY to enable');
     }
 
-    this.config = {
-      provider: env.LLM_PROVIDER,
-      baseUrl: env.LLM_BASE_URL ?? '',
-      apiKey: env.LLM_API_KEY ?? '',
-      model: env.LLM_MODEL ?? '',
-      temperature: env.LLM_TEMPERATURE ?? 0.3,
-      requestTimeoutMs: 30 * 1000,
-      maxRetries: 3,
-      retryDelayMs: 1 * 1000,
-    };
-    this.provider = this.createProvider();
-    await this.provider.validateConfig();
+    if (!this.provider) {
+      this.provider = this.createProvider();
+      await this.provider.validateConfig();
+    }
   }
 
   async getAvailableModels(): Promise<string[]> {

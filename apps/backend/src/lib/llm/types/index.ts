@@ -24,7 +24,7 @@ export interface LLMResponse {
 }
 
 export interface LLMStreamChunk {
-  type: 'token' | 'done' | 'error';
+  type: 'token' | 'thinking' | 'done' | 'error';
   content?: string;
   model?: string;
   usage?: {
@@ -162,6 +162,9 @@ export abstract class BaseLLMProvider {
     };
 
     try {
+      let totalLines = 0;
+      let parsedChunks = 0;
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -176,10 +179,40 @@ export abstract class BaseLLMProvider {
             continue;
           }
 
+          totalLines++;
           const chunk = this.parseStreamLine(trimmedLine, accumulator);
           if (chunk) {
+            parsedChunks++;
             onChunk(chunk);
           }
+        }
+      }
+
+      // Process any remaining data in the buffer
+      if (buffer.trim()) {
+        totalLines++;
+        const chunk = this.parseStreamLine(buffer.trim(), accumulator);
+        if (chunk) {
+          parsedChunks++;
+          onChunk(chunk);
+        }
+      }
+
+      console.log(`[llm] processStream: ${totalLines} SSE line(s), ${parsedChunks} token chunk(s)`);
+
+      // If no tokens were parsed, check if the response was a JSON error
+      if (parsedChunks === 0 && buffer.trim()) {
+        try {
+          const errorJson = JSON.parse(buffer.trim());
+          if (errorJson.error) {
+            onChunk({
+              type: 'error',
+              error: typeof errorJson.error === 'string' ? errorJson.error : JSON.stringify(errorJson.error),
+            });
+            return;
+          }
+        } catch {
+          // not JSON, ignore
         }
       }
 

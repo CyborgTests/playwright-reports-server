@@ -74,11 +74,17 @@ export class OpenAIProvider extends LLMProvider {
         return null;
       }
 
-      const content = choice.delta?.content;
-      if (content) {
+      if (choice.delta?.reasoning_content) {
+        return {
+          type: 'thinking',
+          content: choice.delta.reasoning_content,
+        };
+      }
+
+      if (choice.delta?.content) {
         return {
           type: 'token',
-          content,
+          content: choice.delta.content,
         };
       }
 

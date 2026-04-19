@@ -5,16 +5,17 @@ import type {
   StepTimingTrend,
   TrendMetrics,
 } from '@playwright-reports/shared';
-import { ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import type { ReportHistory as BackendReportHistory } from '../storage/types.js';
 import { reportDb } from './db/reports.sqlite.js';
+import { testDb } from './db/tests.sqlite.js';
+import { service } from './index.js';
 
 export class AnalyticsService {
   async getAnalyticsData(project?: string): Promise<AnalyticsData> {
     const reports = await this.getRecentReports(project);
 
     return {
-      overviewStats: await this.calculateOverviewStats(reports),
+      overviewStats: await this.calculateOverviewStats(reports, project),
       runHealthMetrics: await this.calculateRunHealthMetrics(reports),
       trendMetrics: await this.calculateTrendMetrics(reports),
     };
@@ -27,8 +28,7 @@ export class AnalyticsService {
     return reportDb.getAll();
   }
 
-  private async calculateOverviewStats(reports: BackendReportHistory[]): Promise<OverviewStats> {
-    // TODO: properly calculate metrics, including data from tests table with runs
+  private async calculateOverviewStats(reports: BackendReportHistory[], project?: string): Promise<OverviewStats> {
     const recentReports = reports.slice(0, 30); // Last 30 runs
     const olderReports = reports.slice(30, 60); // Previous 30 runs for comparison
 
@@ -40,7 +40,7 @@ export class AnalyticsService {
     );
     const passRate = totalTests > 0 ? (totalPassed / totalTests) * 100 : 0;
 
-    const flakyTests = await this.identifyFlakyTests(recentReports);
+    const flakyTests = await this.identifyFlakyTests(recentReports, project);
 
     const testDurations = await this.extractTestDurations(recentReports);
     const averageTestDuration =
@@ -55,11 +55,8 @@ export class AnalyticsService {
 
     const currentPassRate = passRate;
     const olderPassRate = await this.calculatePreviousPassRate(olderReports);
-    const currentFlakyCount = flakyTests.length;
-    const olderFlakyCount = await this.calculatePreviousFlakyCount(olderReports);
-
     const passRateTrend = this.calculateTrend(currentPassRate, olderPassRate, 2); // 2% threshold
-    const flakyTestsTrend = this.calculateTrend(currentFlakyCount, olderFlakyCount, 1); // 1 test threshold
+    const flakyTestsTrend: 'up' | 'down' | 'stable' = 'stable';
 
     return {
       totalTests,
@@ -128,38 +125,13 @@ export class AnalyticsService {
     };
   }
 
-  private async identifyFlakyTests(reports: BackendReportHistory[]): Promise<string[]> {
-    const testResults = new Map<string, { passed: number; failed: number }>();
-
-    for (const report of reports) {
-      if (!report.files) continue;
-
-      for (const file of report.files) {
-        if (!file.tests) continue;
-
-        for (const test of file.tests) {
-          const testId = test.testId || `${file.fileName}:${test.title}`;
-          const results = testResults.get(testId) || { passed: 0, failed: 0 };
-
-          const isPassed = test.outcome === ReportTestOutcomeEnum.Expected;
-          if (isPassed) {
-            results.passed++;
-          } else {
-            results.failed++;
-          }
-
-          testResults.set(testId, results);
-        }
-      }
-    }
-
-    return Array.from(testResults.entries())
-      .filter(([_, results]) => {
-        const total = results.passed + results.failed;
-        const failRate = total > 0 ? results.failed / total : 0;
-        return total >= 5 && failRate > 0 && failRate <= 0.8;
-      })
-      .map(([testId]) => testId);
+  private async identifyFlakyTests(_reports: BackendReportHistory[], project?: string): Promise<string[]> {
+    const config = await service.getConfig();
+    const warningThreshold = config.testManagement?.warningThresholdPercentage ?? 2;
+    const allTests = testDb.getAllAndDerivedData(project);
+    return allTests
+      .filter((t) => (t.flakinessScore ?? 0) >= warningThreshold)
+      .map((t) => t.testId);
   }
 
   private async extractTestDurations(reports: BackendReportHistory[]): Promise<number[]> {
@@ -216,11 +188,6 @@ export class AnalyticsService {
     const totalPassed = reports.reduce((sum, report) => sum + (report.stats?.expected || 0), 0);
 
     return totalTests > 0 ? (totalPassed / totalTests) * 100 : 0;
-  }
-
-  private async calculatePreviousFlakyCount(reports: BackendReportHistory[]): Promise<number> {
-    const flakyTests = await this.identifyFlakyTests(reports);
-    return flakyTests.length;
   }
 
   private calculateTrend(

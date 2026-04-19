@@ -1,6 +1,8 @@
 'use client';
 
 import type { ServerConfig } from '@playwright-reports/shared';
+import { ListTodo } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,6 +39,7 @@ export default function LLMConfiguration({
   onCancel,
   onUpdateTempConfig,
 }: Readonly<LLMConfigurationProps>) {
+  const navigate = useNavigate();
   const providers = [
     { key: 'openai', label: 'OpenAI' },
     { key: 'anthropic', label: 'Anthropic' },
@@ -67,9 +70,17 @@ export default function LLMConfiguration({
             </Button>
           </div>
         ) : (
-          <Button disabled={editingSection !== 'none'} onClick={onEdit}>
-            {editingSection === 'none' ? 'Edit Configuration' : 'Section in Use'}
-          </Button>
+          <div className="flex gap-2">
+            {isConfigured && (
+              <Button variant="outline" onClick={() => navigate('/llm-queue')}>
+                <ListTodo className="h-4 w-4 mr-1" />
+                LLM Queue
+              </Button>
+            )}
+            <Button disabled={editingSection !== 'none'} onClick={onEdit}>
+              {editingSection === 'none' ? 'Edit Configuration' : 'Section in Use'}
+            </Button>
+          </div>
         )}
       </CardHeader>
       <CardContent>
@@ -180,6 +191,33 @@ export default function LLMConfiguration({
                   llm: {
                     ...tempConfig.llm,
                     temperature: e.target.value ? Number.parseFloat(e.target.value) : undefined,
+                  },
+                })
+              }
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="llm-parallel-requests">Parallel Requests (1-10)</Label>
+            <Input
+              id="llm-parallel-requests"
+              disabled={editingSection !== 'llm'}
+              placeholder="1"
+              type="number"
+              min="1"
+              max="10"
+              step="1"
+              value={
+                editingSection === 'llm'
+                  ? tempConfig.llm?.parallelRequests?.toString() || ''
+                  : config.llm?.parallelRequests?.toString() || ''
+              }
+              onChange={(e) =>
+                editingSection === 'llm' &&
+                onUpdateTempConfig({
+                  llm: {
+                    ...tempConfig.llm,
+                    parallelRequests: e.target.value ? Number.parseInt(e.target.value, 10) : undefined,
                   },
                 })
               }

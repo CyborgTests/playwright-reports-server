@@ -30,6 +30,9 @@ export interface TestRun {
   quarantineReason?: string;
   quarantined?: boolean;
   fixedAt?: string;
+  failureDetails?: string;
+  failureCategory?: string;
+  errorSignature?: string;
 }
 
 export interface TestWithQuarantineInfo extends Test {
@@ -49,6 +52,9 @@ export class TestDatabase {
     return {
       ...row,
       quarantined: Boolean(row.quarantined),
+      failureDetails: row.failure_details || undefined,
+      failureCategory: row.failure_category || undefined,
+      errorSignature: row.error_signature || undefined,
     };
   }
 
@@ -73,6 +79,9 @@ export class TestDatabase {
       number,
       string | null,
       number,
+      string | null,
+      string | null,
+      string | null,
     ]
   >;
   private readonly quarantineTestRunStmt: Database.Statement<[number, string | null, string]>;
@@ -85,6 +94,7 @@ export class TestDatabase {
 
   private readonly getTestStatsStmt: Database.Statement<[string, string, string]>;
   private readonly deleteTestRunsByReportIdStmt: Database.Statement<[string]>;
+  private readonly updateFlakinessScoreStmt: Database.Statement<[number, string]>;
 
   private constructor() {
     this.insertTestStmt = this.db.prepare(`
@@ -110,8 +120,8 @@ export class TestDatabase {
     `);
 
     this.insertTestRunStmt = this.db.prepare(`
-      INSERT INTO test_runs (runId, testId, fileId, project, reportId, outcome, duration, createdAt, flakinessScore, quarantineReason, quarantined)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_runs (runId, testId, fileId, project, reportId, outcome, duration, createdAt, flakinessScore, quarantineReason, quarantined, failure_details, failure_category, error_signature)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     this.quarantineTestRunStmt = this.db.prepare(`
@@ -167,6 +177,10 @@ export class TestDatabase {
 
     this.deleteTestRunsByReportIdStmt = this.db.prepare(`
       DELETE FROM test_runs WHERE reportId = ?
+    `);
+
+    this.updateFlakinessScoreStmt = this.db.prepare(`
+      UPDATE test_runs SET flakinessScore = ? WHERE runId = ?
     `);
   }
 
@@ -284,6 +298,9 @@ export class TestDatabase {
       flakinessScore: testRunWithId.flakinessScore ?? 0,
       quarantineReason: testRunWithId.quarantineReason || null,
       quarantined: testRunWithId.quarantined ? 1 : 0,
+      failureDetails: testRunWithId.failureDetails || null,
+      failureCategory: testRunWithId.failureCategory || null,
+      errorSignature: testRunWithId.errorSignature || null,
     };
 
     this.insertTestRunStmt.run(
@@ -297,7 +314,10 @@ export class TestDatabase {
       validatedParams.createdAt,
       validatedParams.flakinessScore,
       validatedParams.quarantineReason,
-      validatedParams.quarantined
+      validatedParams.quarantined,
+      validatedParams.failureDetails,
+      validatedParams.failureCategory,
+      validatedParams.errorSignature
     );
 
     return testRunWithId;
@@ -391,6 +411,37 @@ export class TestDatabase {
         runs,
       };
     });
+  }
+
+  public getTestsSummary(project?: string): { total: number; flakyTests: TestWithQuarantineInfo[] } {
+    const tests = project ? this.getTestsByProject(project) : this.getAllTests();
+    const flaky: TestWithQuarantineInfo[] = [];
+
+    for (const test of tests) {
+      const latestRun = this.getLatestTestRun(test.testId, test.fileId, test.project);
+      if (latestRun?.flakinessScore && latestRun.flakinessScore > 0) {
+        flaky.push({
+          ...test,
+          flakinessScore: latestRun.flakinessScore,
+          isQuarantined: latestRun.quarantined || false,
+        });
+      }
+    }
+
+    return { total: tests.length, flakyTests: flaky };
+  }
+
+  public updateFlakinessScore(runId: string, score: number): void {
+    this.updateFlakinessScoreStmt.run(score, runId);
+  }
+
+  public getTestRunsByReport(reportId: string): TestRun[] {
+    const rows = this.db.prepare('SELECT * FROM test_runs WHERE reportId = ? ORDER BY createdAt DESC').all(reportId);
+    return rows.map((row) => this.convertDbRowToTestRun(row));
+  }
+
+  public updateFailureCategory(runId: string, category: string): void {
+    this.db.prepare('UPDATE test_runs SET failure_category = ? WHERE runId = ?').run(category, runId);
   }
 
   public clear(): void {

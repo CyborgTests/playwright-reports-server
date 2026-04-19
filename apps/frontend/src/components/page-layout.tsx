@@ -2,7 +2,7 @@ import type { ServerDataInfo } from '@playwright-reports/shared';
 import { useEffect, useLayoutEffect } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '../hooks/useAuth';
-import { useAuthConfig } from '../hooks/useAuthConfig';
+import { useConfig } from '../hooks/useConfig';
 import useQuery from '../hooks/useQuery';
 import { Spinner } from './ui/spinner';
 
@@ -14,7 +14,8 @@ export default function PageLayout({ render }: Readonly<PageLayoutProps>) {
   const session = useAuth();
   const status = session.status;
   const authIsLoading = status === 'loading';
-  const { authRequired } = useAuthConfig();
+  const { data: configData } = useConfig();
+  const authRequired = configData?.authRequired ?? null;
   const isAuthenticated = authRequired === false || status === 'authenticated';
 
   const {

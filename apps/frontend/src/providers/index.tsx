@@ -3,18 +3,23 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import type { ThemeProviderProps } from 'next-themes';
 import { ThemeProvider as NextThemesProvider } from 'next-themes';
 import { type FC, useState } from 'react';
+import { CONFIG_QUERY_KEY, fetchConfig } from '../hooks/useConfig';
 
 export const Providers: FC<ThemeProviderProps> = ({ children, ...themeProps }) => {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 5 * 60 * 1000, // 5 minutes
-          },
+  const [queryClient] = useState(() => {
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: {
+          staleTime: 5 * 60 * 1000, // 5 minutes
         },
-      })
-  );
+      },
+    });
+    client.prefetchQuery({
+      queryKey: CONFIG_QUERY_KEY,
+      queryFn: fetchConfig,
+    });
+    return client;
+  });
 
   return (
     <NextThemesProvider

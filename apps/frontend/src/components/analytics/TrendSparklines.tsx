@@ -2,36 +2,48 @@
 
 import type { TrendMetrics } from '@playwright-reports/shared';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface TrendSparklinesProps {
   metrics: TrendMetrics;
+  isLoading?: boolean;
 }
 
 const durationColor = 'hsl(217, 91%, 60%)'; // blue
 const flakyColor = 'hsl(38, 92%, 50%)'; // orange
 const slowColor = 'hsl(0, 84%, 60%)'; // red
 
-export function TrendSparklines({ metrics }: Readonly<TrendSparklinesProps>) {
-  if (!metrics) {
+function SparklineSkeleton({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
+      <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">{title}</h4>
+      <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">{subtitle}</p>
+      <Skeleton className="h-20 w-full" />
+    </div>
+  );
+}
+
+export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklinesProps>) {
+  if (isLoading || !metrics) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        {new Array({ length: 3 }).map((_, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: placeholder until real data is loaded
-          <div key={index} className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
-            <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">
-              Loading...
-            </h4>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Loading trend data</p>
-            <div className="h-20 bg-gray-100 dark:bg-gray-700 rounded"></div>
-          </div>
-        ))}
+        <SparklineSkeleton title="Duration Trend" subtitle="Average test execution time" />
+        <SparklineSkeleton title="Flaky Count Trend" subtitle="Number of intermittently failing tests" />
+        <SparklineSkeleton title="Slow Count Trend" subtitle="Tests slower than 95th percentile" />
       </div>
     );
   }
 
   const formatDuration = (ms: number) => {
     if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(1)}s`;
+    const totalSeconds = Math.floor(ms / 1000);
+    const seconds = totalSeconds % 60;
+    const minutes = Math.floor(totalSeconds / 60) % 60;
+    const hours = Math.floor(totalSeconds / 3600);
+
+    if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
+    if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+    return `${seconds}s`;
   };
 
   const { durationTrend = [], flakyCountTrend = [], slowCountTrend = [] } = metrics;
@@ -68,7 +80,7 @@ export function TrendSparklines({ metrics }: Readonly<TrendSparklinesProps>) {
           Duration Trend
         </h4>
         <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-          Average test execution time (ms)
+          Average test execution time
         </p>
         <div className="h-20">
           <ResponsiveContainer width="100%" height="100%">

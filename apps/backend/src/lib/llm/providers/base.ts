@@ -52,9 +52,17 @@ export abstract class LLMProvider extends BaseProvider {
       const response = await this.withTimeout(this.sendRequest(request));
 
       if (!response.ok) {
+        let errorBody = '';
+        try {
+          errorBody = await response.text();
+        } catch {
+          // ignore
+        }
+        console.error(`[llm] Request failed ${response.status}: ${errorBody.substring(0, 500)}`);
         throw this.handleError({
           status: response.status,
           statusText: response.statusText,
+          message: errorBody || response.statusText,
         });
       }
 

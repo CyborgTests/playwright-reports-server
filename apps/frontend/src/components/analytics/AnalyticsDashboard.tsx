@@ -1,54 +1,57 @@
 'use client';
 
-import type { TestWithQuarantineInfo } from '@playwright-reports/shared';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
-import { Spinner } from '../../components/ui/spinner';
 import { useAnalyticsData } from '../../hooks/useAnalyticsData';
+import { useConfig } from '../../hooks/useConfig';
+import { useFailureCategoryData } from '../../hooks/useFailureCategoryData';
 import useQuery from '../../hooks/useQuery';
 import { defaultProjectName } from '../../lib/constants';
 import ProjectSelect from '../project-select';
 import TestManagementWidget from '../test-management/TestManagementWidget';
+import { FailureAnalysisSummary } from './FailureAnalysisSummary';
+import { FailureCategoryChart } from './FailureCategoryChart';
 import { HealthGrid } from './HealthGrid';
 import { OverviewStatsCard } from './OverviewStats';
+import { TopFailuresWidget } from './TopFailuresWidget';
 import { TrendSparklines } from './TrendSparklines';
 
 export default function AnalyticsDashboard() {
   const [project, setProject] = useState(defaultProjectName);
 
+  const { data: config, error: configError, isFetching: isFetchingConfig, isPending: isPendingConfig } = useConfig();
   const { data: analyticsData, error, isFetching, isPending } = useAnalyticsData(project);
+  const llmConfigured = !!(config?.llm?.baseUrl && config?.llm?.apiKey);
+  const { data: failureCategoryResponse, isLoading: isLoadingFailures } = useFailureCategoryData(project);
 
   const onProjectChange = useCallback((project: string) => {
     setProject(project);
   }, []);
 
+  configError && toast.error(configError.message);
   error && toast.error(error.message);
 
-  const { data: testsResponse, isLoading: isLoadingTests } = useQuery<{
-    data: TestWithQuarantineInfo[];
+  const warningThreshold = config?.testManagement?.warningThresholdPercentage ?? 2;
+
+  const { data: testsSummary, isLoading: isLoadingSummary } = useQuery<{
+    success: boolean;
+    total: number;
+    flakyCount: number;
   }>(
     (() => {
       const params = new URLSearchParams();
       if (project && project !== defaultProjectName) {
         params.append('project', project);
       }
-      const stringifiedParams = params.toString() ?? '';
-      return `/api/tests?${stringifiedParams}`;
+      params.append('warningThreshold', warningThreshold.toString());
+      return `/api/tests/summary?${params.toString()}`;
     })(),
-    { dependencies: [project] }
+    { dependencies: [project, warningThreshold] }
   );
 
-  if (isPending || isFetching || isLoadingTests) {
-    return (
-      <div className="w-[min(100%, 1200px)] mx-auto">
-        <div className="flex justify-center items-center py-12">
-          <Spinner size="lg" />
-        </div>
-      </div>
-    );
-  }
+  const isLoading = isPending || isFetching || isLoadingSummary || isFetchingConfig || isPendingConfig;
 
-  if (!analyticsData) {
+  if (!isLoading && !analyticsData) {
     return (
       <div className="w-[min(100%, 1200px)] mx-auto">
         <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -63,7 +66,7 @@ export default function AnalyticsDashboard() {
     );
   }
 
-  const { overviewStats, runHealthMetrics = [], trendMetrics } = analyticsData;
+  const { overviewStats, runHealthMetrics = [], trendMetrics } = analyticsData ?? {};
 
   return (
     <div className="w-[min(100%, 1200px)] mx-auto space-y-6">
@@ -84,17 +87,33 @@ export default function AnalyticsDashboard() {
         </div>
       </div>
 
-      <OverviewStatsCard stats={overviewStats} testStats={testsResponse?.data} />
-      <TrendSparklines metrics={trendMetrics} />
+      <OverviewStatsCard stats={overviewStats!} totalTests={testsSummary?.total} flakyCount={testsSummary?.flakyCount} totalRuns={runHealthMetrics.length} />
+      <TrendSparklines metrics={trendMetrics!} isLoading={isLoading} />
 
-      <HealthGrid metrics={runHealthMetrics} />
-      {/**
-       * TODO: investigate slowest tests table/graph
-       */}
+      <HealthGrid metrics={runHealthMetrics} isLoading={isLoading} />
+
+      {llmConfigured && (
+        <>
+          {(failureCategoryResponse?.data?.totalFailures ?? 0) > 0 && (
+            <>
+              <FailureCategoryChart
+                categories={failureCategoryResponse?.data?.categories}
+                totalFailures={failureCategoryResponse?.data?.totalFailures}
+                isLoading={isLoadingFailures}
+              />
+              <TopFailuresWidget
+                errors={failureCategoryResponse?.data?.topErrors}
+                isLoading={isLoadingFailures}
+              />
+            </>
+          )}
+          <FailureAnalysisSummary project={project} totalFailures={failureCategoryResponse?.data?.totalFailures} />
+        </>
+      )}
 
       <TestManagementWidget project={project} />
 
-      {runHealthMetrics.length === 0 && (
+      {!isLoading && runHealthMetrics.length === 0 && (
         <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6">
           <div className="text-center">
             <div className="text-yellow-800 dark:text-yellow-200 font-medium mb-2">

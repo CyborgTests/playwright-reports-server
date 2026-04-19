@@ -2,9 +2,11 @@
 
 import type { RunHealthMetric } from '@playwright-reports/shared';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface HealthGridProps {
   metrics: RunHealthMetric[];
+  isLoading?: boolean;
 }
 
 const chartColors = {
@@ -13,7 +15,7 @@ const chartColors = {
   flaky: 'hsl(38, 92%, 50%)', // yellow/orange
 };
 
-export function HealthGrid({ metrics }: Readonly<HealthGridProps>) {
+export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
   const chartData = metrics.map((metric) => ({
     name: new Date(metric.timestamp).toLocaleDateString(),
     runId: metric.runId,
@@ -77,7 +79,9 @@ export function HealthGrid({ metrics }: Readonly<HealthGridProps>) {
         Stacked bar chart showing pass/fail breakdown across the most recent 20 runs
       </p>
 
-      {metrics.length === 0 ? (
+      {isLoading ? (
+        <Skeleton className="h-[300px] w-full" />
+      ) : metrics.length === 0 ? (
         <div className="flex items-center justify-center h-64 text-gray-500">
           No health data available
         </div>

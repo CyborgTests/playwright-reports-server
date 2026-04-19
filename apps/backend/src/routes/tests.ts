@@ -1,31 +1,55 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
+import { getDatabase } from '../lib/service/db/db.js';
 import { testManagementService } from '../lib/service/testManagement.js';
 import { withError } from '../lib/withError.js';
 
 export async function registerTestsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/tests', async (request: FastifyRequest, reply: FastifyReply) => {
-    const { project, status, flakinessMin, flakinessMax } = request.query as {
+    const { project, status, flakinessMin, flakinessMax, limit, offset } = request.query as {
       project?: string;
       status?: string;
       flakinessMin?: string;
       flakinessMax?: string;
+      limit?: string;
+      offset?: string;
     };
 
     try {
       const options = {
-        project: project,
         status: status as 'all' | 'quarantined' | 'not-quarantined' | undefined,
         flakinessMin: flakinessMin ? Number.parseInt(flakinessMin, 10) : undefined,
         flakinessMax: flakinessMax ? Number.parseInt(flakinessMax, 10) : undefined,
+        limit: limit ? Number.parseInt(limit, 10) : undefined,
+        offset: offset ? Number.parseInt(offset, 10) : undefined,
       };
 
-      const tests = await testManagementService.getTests(options.project, options);
-      return reply.send({ success: true, data: tests });
+      const { data, total } = await testManagementService.getTests(project, options);
+      return reply.send({ success: true, data, total });
     } catch (error) {
       fastify.log.error(error);
       return reply.status(500).send({
         success: false,
         error: 'Failed to fetch tests',
+      });
+    }
+  });
+
+  fastify.get('/api/tests/summary', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { project, warningThreshold } = request.query as {
+      project?: string;
+      warningThreshold?: string;
+    };
+
+    try {
+      const threshold = warningThreshold ? Number.parseFloat(warningThreshold) : undefined;
+      const summary = await testManagementService.getTestsSummary(project, threshold);
+      return reply.send({ success: true, ...summary });
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Failed to fetch tests summary',
       });
     }
   });
@@ -55,6 +79,29 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
 
     return reply.send({ success: true, data: test });
   });
+
+  fastify.delete(
+    '/api/test/:fileId/:testId',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { fileId, testId } = request.params as { fileId: string; testId: string };
+      const { project } = request.query as { project: string };
+
+      if (!project) {
+        return reply
+          .status(400)
+          .send({ success: false, error: 'project query parameter is required' });
+      }
+
+      const { error } = await withError(testManagementService.deleteTest(testId, fileId, project));
+
+      if (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({ success: false, error: 'Failed to delete test' });
+      }
+
+      return reply.send({ success: true });
+    }
+  );
 
   fastify.patch(
     '/api/test/:fileId/:testId',
@@ -109,4 +156,71 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
       });
     }
   );
+
+  // GET /api/test/:fileId/:testId/analysis - get pre-computed LLM analysis for a test
+  fastify.get(
+    '/api/test/:fileId/:testId/analysis',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { fileId, testId } = request.params as { fileId: string; testId: string };
+      const { project } = request.query as { project: string };
+
+      if (!project) {
+        return reply
+          .status(400)
+          .send({ success: false, error: 'project query parameter is required' });
+      }
+
+      try {
+        const analysis = testAnalysisDb.getByTest(testId, fileId, project);
+
+        return reply.send({ success: true, data: analysis ?? null });
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({
+          success: false,
+          error: 'Failed to fetch test analysis',
+        });
+      }
+    }
+  );
+
+  // GET /api/test-analysis/:testId - get LLM analysis for a test run (used by Playwright report viewer)
+  fastify.get(
+    '/api/test-analysis/:testId',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { testId } = request.params as { testId: string };
+      const { reportId } = request.query as { reportId?: string };
+
+      try {
+        const analysis = reportId
+          ? testAnalysisDb.getByTestAndReport(testId, reportId)
+          : testAnalysisDb.getByTestAndReport(testId, '');
+        return reply.send({ success: true, data: analysis ?? null });
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({
+          success: false,
+          error: 'Failed to fetch test analysis',
+        });
+      }
+    }
+  );
+
+  // GET /api/failure-categories - get distinct failure categories from test_runs
+  fastify.get('/api/failure-categories', async (_request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const db = getDatabase();
+      const rows = db
+        .prepare('SELECT DISTINCT failure_category FROM test_runs WHERE failure_category IS NOT NULL')
+        .all() as Array<{ failure_category: string }>;
+
+      const categories = rows.map((row) => row.failure_category);
+      return reply.send({ success: true, data: categories });
+    } catch (error) {
+      return reply.status(500).send({
+        success: false,
+        error: 'Failed to fetch failure categories',
+      });
+    }
+  });
 }

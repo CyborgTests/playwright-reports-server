@@ -1,17 +1,19 @@
 'use client';
 
-import type { OverviewStats, TestWithQuarantineInfo } from '@playwright-reports/shared';
+import type { OverviewStats } from '@playwright-reports/shared';
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { parseMilliseconds } from '@/lib/time';
 
 interface OverviewStatsProps {
   stats: OverviewStats;
-  testStats?: TestWithQuarantineInfo[] | null;
+  totalTests?: number;
+  flakyCount?: number;
+  totalRuns?: number;
 }
 
-export function OverviewStatsCard({ stats, testStats }: Readonly<OverviewStatsProps>) {
-  if (!stats || !testStats) {
+export function OverviewStatsCard({ stats, totalTests, flakyCount, totalRuns }: Readonly<OverviewStatsProps>) {
+  if (!stats || totalTests === undefined) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         {Array.from({ length: 5 }).map((_, index) => (
@@ -66,13 +68,11 @@ export function OverviewStatsCard({ stats, testStats }: Readonly<OverviewStatsPr
     flakyTestsTrend = 'stable' as const,
   } = stats;
 
-  const flakyTestsCount = testStats.filter((test) => (test?.flakinessScore ?? 0) > 0).length;
-
   const statsCards = [
     {
       title: 'Total Tests',
-      value: testStats.length.toLocaleString(),
-      subtitle: 'Across all runs',
+      value: totalTests.toLocaleString(),
+      subtitle: `Across ${totalRuns ?? 0} ${(totalRuns ?? 0) === 1 ? 'run' : 'runs'}`,
     },
     {
       title: 'Pass Rate',
@@ -83,7 +83,7 @@ export function OverviewStatsCard({ stats, testStats }: Readonly<OverviewStatsPr
     },
     {
       title: 'Flaky Tests',
-      value: flakyTestsCount.toString(),
+      value: (flakyCount ?? 0).toString(),
       subtitle: 'Failing intermittently',
       icon: getTrendIcon(flakyTestsTrend),
       iconColor: getTrendColor(flakyTestsTrend),

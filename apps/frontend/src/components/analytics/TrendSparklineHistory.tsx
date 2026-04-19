@@ -1,8 +1,20 @@
 import { ReportTestOutcomeEnum, type TestRun } from '@playwright-reports/shared';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+
+const outcomeLabel = (outcome: string) => {
+  if (outcome === ReportTestOutcomeEnum.Expected) return 'PASS';
+  if (outcome === ReportTestOutcomeEnum.Flaky) return 'FLAKY';
+  return 'FAIL';
+};
 
 const SparklineChart = ({ recentRuns }: { recentRuns: Array<TestRun> }) => {
   const maxRuns = Math.min(recentRuns.length, 30);
-  const recentRunsSlice = recentRuns.slice(-maxRuns);
+  const recentRunsSlice = recentRuns.slice(0, maxRuns).reverse();
 
   const colorPerOutcome: Record<string, string> = {
     [ReportTestOutcomeEnum.Expected]: 'bg-green-500',
@@ -12,20 +24,33 @@ const SparklineChart = ({ recentRuns }: { recentRuns: Array<TestRun> }) => {
   };
 
   return (
-    <div className="flex items-end gap-px h-4">
-      {recentRunsSlice.reverse().map((run) => {
-        const isPassed = run.outcome === ReportTestOutcomeEnum.Expected;
-        return (
-          <div
-            key={run.runId}
-            className={`w-1 rounded-sm ${colorPerOutcome[run.outcome] || colorPerOutcome.default}`}
-            style={{ height: `${Math.max(2, (isPassed ? 0.8 : 1.0) * 16)}px` }}
-            title={`${isPassed ? 'PASS' : 'FAIL'} - ${new Date(run.createdAt).toLocaleDateString()}`}
-          />
-        );
-      })}
-      {recentRunsSlice.length === 0 && <div className="text-xs text-gray-400">No data</div>}
-    </div>
+    <TooltipProvider>
+      <div className="flex items-end gap-px h-4">
+        {recentRunsSlice.map((run) => {
+          const isPassed = run.outcome === ReportTestOutcomeEnum.Expected;
+          return (
+            <Tooltip key={run.runId}>
+              <TooltipTrigger asChild>
+                <a href={`/report/${run.reportId}`}>
+                  <div
+                    className={`w-1 rounded-sm ${colorPerOutcome[run.outcome] || colorPerOutcome.default}`}
+                    style={{ height: `${Math.max(2, (isPassed ? 0.8 : 1.0) * 16)}px` }}
+                  />
+                </a>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>
+                  {outcomeLabel(run.outcome)} &mdash;{' '}
+                  {new Date(run.createdAt).toLocaleDateString()}
+                </p>
+                <p className="text-xs text-muted-foreground">Click to open report</p>
+              </TooltipContent>
+            </Tooltip>
+          );
+        })}
+        {recentRunsSlice.length === 0 && <div className="text-xs text-gray-400">No data</div>}
+      </div>
+    </TooltipProvider>
   );
 };
 
@@ -57,7 +82,7 @@ export function TrendSparklineHistory({ runs }: Readonly<TrendSparklinesProps>) 
         <span className={getPassRateColor(passRate)}>{passRate.toFixed(2)}%</span>
       </div>
       <div className="flex items-center">
-        <SparklineChart recentRuns={runs.slice(-30)} />
+        <SparklineChart recentRuns={runs} />
       </div>
     </div>
   );

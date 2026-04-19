@@ -1,10 +1,9 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { Layout } from '@/components/Layout';
-import { AUTH_CONFIG_QUERY_KEY, prefetchAuthConfig } from '@/hooks/useAuthConfig';
 import HomePage from '@/pages/HomePage';
+import LlmQueuePage from '@/pages/LlmQueuePage';
 import LoginPage from '@/pages/LoginPage';
 import ReportDetailPage from '@/pages/ReportDetailPage';
 import ReportsPage from '@/pages/ReportsPage';
@@ -12,22 +11,9 @@ import ResultsPage from '@/pages/ResultsPage';
 import SettingsPage from '@/pages/SettingsPage';
 import { Providers } from '@/providers';
 
-function ConfigInitializer() {
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    prefetchAuthConfig().then((config) => {
-      queryClient.setQueryData(AUTH_CONFIG_QUERY_KEY, config);
-    });
-  }, [queryClient]);
-
-  return null;
-}
-
 function App() {
   return (
     <Providers attribute="class" defaultTheme="system">
-      <ConfigInitializer />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route
@@ -40,6 +26,7 @@ function App() {
                 <Route path="/report/:id" element={<ReportDetailPage />} />
                 <Route path="/report/:id/:testId" element={<RedirectTestDetails />} />
                 <Route path="/results" element={<ResultsPage />} />
+                <Route path="/llm-queue" element={<LlmQueuePage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Routes>
             </Layout>

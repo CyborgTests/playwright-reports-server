@@ -1,6 +1,7 @@
 import type { TestFilters as TestFiltersType } from '@playwright-reports/shared';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { formatCategoryName } from '@/lib/format';
 import {
   Select,
   SelectContent,
@@ -8,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import useQuery from '@/hooks/useQuery';
 
 interface TestFiltersProps {
   filters: TestFiltersType;
@@ -15,6 +17,18 @@ interface TestFiltersProps {
 }
 
 export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersProps>) {
+  const { data: categoriesResponse } = useQuery<{ success: boolean; data: string[] }>(
+    '/api/failure-categories'
+  );
+  const categories = categoriesResponse?.data ?? [];
+
+  const handleFailureCategoryChange = (value: string) => {
+    onFiltersChange({
+      ...filters,
+      failureCategory: value === 'all' ? undefined : value,
+    });
+  };
+
   const handleStatusChange = (value: string) => {
     onFiltersChange({
       ...filters,
@@ -51,7 +65,7 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
       <div className="space-y-2">
         <Label htmlFor="status-filter">Status</Label>
         <Select value={filters.status ?? 'all'} onValueChange={handleStatusChange}>
@@ -65,6 +79,27 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
           </SelectContent>
         </Select>
       </div>
+      {categories.length > 0 && (
+        <div className="space-y-2">
+          <Label htmlFor="category-filter">Failure Category</Label>
+          <Select
+            value={filters.failureCategory ?? 'all'}
+            onValueChange={handleFailureCategoryChange}
+          >
+            <SelectTrigger id="category-filter">
+              <SelectValue placeholder="Filter by category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat} value={cat}>
+                  {formatCategoryName(cat)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="space-y-2">
         <Label htmlFor="min-flakiness">Min Flakiness (%)</Label>
         <Input

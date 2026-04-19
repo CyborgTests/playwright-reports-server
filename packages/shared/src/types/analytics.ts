@@ -5,6 +5,7 @@ export interface LLMConfig {
   apiKey: string;
   model: string;
   temperature: number;
+  parallelRequests?: number;
 }
 
 export interface LLMProvider {
@@ -19,6 +20,7 @@ export interface LLMProvider {
 
 export interface OverviewStats {
   totalTests: number;
+  totalRuns: number;
   passRate: number;
   flakyTests: number;
   averageTestDuration: number;
@@ -80,4 +82,96 @@ export interface AnalyticsData {
   overviewStats: OverviewStats;
   runHealthMetrics: RunHealthMetric[];
   trendMetrics: TrendMetrics;
+}
+
+export type LlmTaskType = 'test_analysis' | 'report_summary' | 'project_summary';
+export type LlmTaskStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+
+export interface LlmTask {
+  id: string;
+  type: LlmTaskType;
+  status: LlmTaskStatus;
+  priority: number;
+  reportId?: string;
+  testId?: string;
+  fileId?: string;
+  project?: string;
+  prompt?: string;
+  result?: string;
+  category?: string;
+  model?: string;
+  error?: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  retryCount: number;
+  maxRetries: number;
+}
+
+export interface LlmTaskStats {
+  queued: number;
+  processing: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+}
+
+export interface FailureDetails {
+  message: string;
+  stackTrace?: string;
+  testTitle: string;
+  filePath: string;
+  location?: {
+    file: string;
+    line: number;
+    column: number;
+  };
+  attachments?: Array<{
+    name: string;
+    path: string;
+    contentType: string;
+  }>;
+  attempt: number;
+  status: string;
+}
+
+export interface ReportFailureSummary {
+  reportId: string;
+  project: string;
+  totalFailures: number;
+  categories: Record<string, number>;
+  errorGroups: Array<{
+    signature: string;
+    category: string;
+    count: number;
+    sampleMessage: string;
+    affectedTests: string[];
+  }>;
+  llmSummary?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface TestLlmAnalysis {
+  id: string;
+  testId: string;
+  fileId: string;
+  project: string;
+  reportId: string;
+  analysis?: string;
+  category?: string;
+  model?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface FailureCategoryAnalytics {
+  categories: Array<{ category: string; count: number; percentage: number }>;
+  totalFailures: number;
+  topErrors: Array<{
+    message: string;
+    category: string;
+    count: number;
+    signature: string;
+  }>;
 }
