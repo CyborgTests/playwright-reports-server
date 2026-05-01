@@ -240,24 +240,23 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
 
   const reportsWithProject = reportFiles
     .map((file) => {
-      const id = path.basename(file.filePath);
-      const parentDir = path.basename(path.dirname(file.filePath));
-
+      // The filePath points to the index.html file. The report ID is the directory containing index.html.
+      const reportDir = path.dirname(file.filePath);
+      const id = path.basename(reportDir);
+      const parentDir = path.basename(path.dirname(reportDir));
       const projectName = parentDir === REPORTS_PATH ? '' : parentDir;
 
-      return Object.assign(file, { id, project: projectName });
+      return Object.assign(file, { id, project: projectName, reportDir });
     })
     .filter((report) => (input?.project ? input.project === report.project : report));
 
   const allReports = await Promise.all(
     reportsWithProject.map(async (file) => {
-      const id = path.basename(file.filePath);
-      const reportPath = path.dirname(file.filePath);
-      const parentDir = path.basename(reportPath);
-      const sizeBytes = await getFolderSize.loose(path.join(reportPath, id));
+      const id = file.id;
+      const reportPath = file.reportDir;
+      const projectName = file.project;
+      const sizeBytes = await getFolderSize.loose(reportPath);
       const size = bytesToString(sizeBytes);
-
-      const projectName = parentDir === REPORTS_PATH ? '' : parentDir;
 
       const metadata = await readOrParseReportMetadata(id, projectName);
 

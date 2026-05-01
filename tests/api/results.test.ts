@@ -57,3 +57,46 @@ test('/api/result/list search return No Result by not existing resultID', async 
   expect(response.status()).toBe(200);
   expect(json).toEqual({ results: [], total: 0 });
 });
+
+test('/api/result/list filter by date range returns items within range', async ({ request, uploadedResult }) => {
+  const api = new ResultController(request);
+  const now = new Date();
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+
+  const { response, json } = await api.list({ dateFrom: yesterday, dateTo: tomorrow });
+  expect(response.status()).toBe(200);
+  expect(json.results.length).toBeGreaterThan(0);
+  expect(json.results.some((r: any) => r.resultID === uploadedResult.body.data?.resultID)).toBeTruthy();
+});
+
+test('/api/result/list filter by future date range returns empty list', async ({ request }) => {
+  const api = new ResultController(request);
+  const futureFrom = '2099-01-01T00:00:00.000Z';
+  const futureTo = '2099-12-31T23:59:59.999Z';
+
+  const { response, json } = await api.list({ dateFrom: futureFrom, dateTo: futureTo });
+  expect(response.status()).toBe(200);
+  expect(json.results).toEqual([]);
+  expect(json.total).toBe(0);
+});
+
+test('/api/result/list filter by dateFrom only returns items from that date onwards', async ({ request, uploadedResult }) => {
+  const api = new ResultController(request);
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const { response, json } = await api.list({ dateFrom: yesterday, limit: 1000 });
+  expect(response.status()).toBe(200);
+  expect(json.results.length).toBeGreaterThan(0);
+  expect(json.results.some((r: any) => r.resultID === uploadedResult.body.data?.resultID)).toBeTruthy();
+});
+
+test('/api/result/list filter by dateTo only returns items up to that date', async ({ request, uploadedResult }) => {
+  const api = new ResultController(request);
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  const { response, json } = await api.list({ dateTo: tomorrow, limit: 1000 });
+  expect(response.status()).toBe(200);
+  expect(json.results.length).toBeGreaterThan(0);
+  expect(json.results.some((r: any) => r.resultID === uploadedResult.body.data?.resultID)).toBeTruthy();
+});
