@@ -1,12 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
+import dotenv from 'dotenv';
+import path from 'path';
 
-/**
- * Read environment variables from file.
- * https://github.com/motdotla/dotenv
- */
-// import dotenv from 'dotenv';
-// import path from 'path';
-// dotenv.config({ path: path.resolve(__dirname, '.env') });
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 export default defineConfig({
   testDir: './tests',
@@ -37,13 +33,25 @@ export default defineConfig({
       name: 'api',
       testDir: './tests/api',
       testMatch: /.*\.test\.ts/,
-      use: { baseURL: 'http://localhost:3000', ...devices['Desktop Chrome'] },
+      use: {
+        baseURL: 'http://localhost:3000',
+        ...devices['Desktop Chrome'],
+        extraHTTPHeaders: {
+          ...(process.env.API_TOKEN ? { Authorization: process.env.API_TOKEN } : {}),
+        },
+      },
     },
     {
       name: 'ui',
       testDir: './tests/ui',
       testMatch: /.*\.test\.ts/,
-      use: { baseURL: 'http://localhost:3000', ...devices['Desktop Chrome'] },
+      use: {
+        baseURL: 'http://localhost:3000',
+        ...devices['Desktop Chrome'],
+        extraHTTPHeaders: {
+          ...(process.env.API_TOKEN ? { Authorization: process.env.API_TOKEN } : {}),
+        },
+      },
     },
   ],
   /* Run your local dev server before starting the tests */

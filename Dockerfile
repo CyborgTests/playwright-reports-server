@@ -35,7 +35,10 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-RUN apk add --no-cache curl
+# Install Chromium for PDF export feature
+RUN apk add --no-cache curl chromium
+
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Uncomment the following line in case you want to disable telemetry during runtime.
 # ENV NEXT_TELEMETRY_DISABLED 1
@@ -53,6 +56,18 @@ RUN mkdir .next && \
 # https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Copy playwright packages - standalone tracing omits node_modules/.bin symlinks
+# so npx playwright (used for merge-reports + PDF export) would fail without this.
+# All three packages are needed: @playwright/test CLI delegates to playwright which
+# requires playwright-core.
+COPY --from=builder /app/node_modules/@playwright ./node_modules/@playwright
+COPY --from=builder /app/node_modules/playwright ./node_modules/playwright
+COPY --from=builder /app/node_modules/playwright-core ./node_modules/playwright-core
+RUN mkdir -p node_modules/.bin && \
+    ln -sf /app/node_modules/@playwright/test/cli.js node_modules/.bin/playwright && \
+    chmod +x node_modules/@playwright/test/cli.js && \
+    chown -R nextjs:nodejs node_modules/@playwright node_modules/playwright node_modules/playwright-core node_modules/.bin/playwright
 
 # Create folders required for storing results and reports
 ARG DATA_DIR=/app/data

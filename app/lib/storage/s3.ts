@@ -18,6 +18,7 @@ import {
   ReadResultsOutput,
   ReportHistory,
   ReportMetadata,
+  ReportFile,
   Storage,
 } from './types';
 import { bytesToString } from './format';
@@ -49,6 +50,7 @@ const createClient = () => {
   const secretKey = env.S3_SECRET_KEY;
   const port = env.S3_PORT;
   const region = env.S3_REGION;
+  const useSSL = env.S3_USE_SSL;
 
   if (!endPoint) {
     throw new Error('S3_ENDPOINT is required');
@@ -62,7 +64,7 @@ const createClient = () => {
     throw new Error('S3_SECRET_KEY is required');
   }
 
-  console.log('[s3] creating client');
+  console.log(`[s3] creating client with SSL: ${useSSL}`);
 
   const client = new Client({
     endPoint,
@@ -70,7 +72,7 @@ const createClient = () => {
     secretKey,
     region,
     port,
-    useSSL: true,
+    useSSL,
   });
 
   return client;
@@ -811,6 +813,28 @@ export class S3 implements Storage {
     });
 
     return content;
+  }
+
+  async listReportFiles(reportId: string, project: string): Promise<ReportFile[]> {
+    const prefix = path.join(REPORTS_BUCKET, project, reportId);
+    const stream = this.client.listObjectsV2(this.bucket, prefix, true);
+
+    const files: ReportFile[] = [];
+
+    return new Promise((resolve, reject) => {
+      stream.on('data', (obj: { name?: string }) => {
+        if (!obj?.name) return;
+
+        const storagePath = obj.name.replace(`${REPORTS_BUCKET}/`, '');
+        const relativePath = storagePath.replace(`${project ? project + '/' : ''}${reportId}/`, '');
+
+        files.push({ relativePath, storagePath });
+      });
+
+      stream.on('error', (err: Error) => reject(err));
+
+      stream.on('end', () => resolve(files));
+    });
   }
 
   async readConfigFile(): Promise<{ result?: SiteWhiteLabelConfig; error: Error | null }> {
