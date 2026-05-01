@@ -50,3 +50,8 @@ node_modules/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+## all docker files (local)
+docker-compose**.**yml
+!docker-compose.yml
+!Dockerfile

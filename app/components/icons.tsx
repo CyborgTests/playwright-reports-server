@@ -296,6 +296,53 @@ export const FolderIcon: FC<IconSvgProps> = ({ width, height, ...props }) => {
   );
 };
 
+export const DownloadIcon: FC<IconSvgProps> = ({ width, height, ...props }) => (
+  <svg fill="none" height={height ?? 18} viewBox="0 0 24 24" width={width ?? 18} {...props}>
+    <path
+      d="M12 3v13m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+    />
+  </svg>
+);
+
+export const EvidenceIcon: FC<IconSvgProps> = ({ width, height, ...props }) => (
+  <svg fill="none" height={height ?? 18} viewBox="0 0 24 24" width={width ?? 18} {...props}>
+    <path
+      d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.5"
+    />
+    <path d="M14 2v6h6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+    <rect height="5" rx="1" stroke="currentColor" strokeWidth="1.5" width="8" x="8" y="13" />
+    <path d="M10 13v-1.5a1.5 1.5 0 013 0V13" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
+  </svg>
+);
+
+export const PdfIcon: FC<IconSvgProps> = ({ width, height, ...props }) => (
+  <svg fill="none" height={height ?? 18} viewBox="0 0 24 24" width={width ?? 18} {...props}>
+    <path
+      d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.5"
+    />
+    <path d="M14 2v6h6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+    <path
+      d="M9 13h1.5a1 1 0 010 2H9v-4h1.5a1 1 0 010 2M13 11v4m0-4h1a1.5 1.5 0 010 3h-1M17 11v4"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.5"
+    />
+  </svg>
+);
+
 export const SettingsIcon: FC<IconSvgProps> = ({ size = 24, width, height, ...props }) => {
   return (
     <svg fill="none" height={size || height} viewBox="0 0 24 24" width={size || width} {...props}>
@@ -316,3 +363,18 @@ export const SettingsIcon: FC<IconSvgProps> = ({ size = 24, width, height, ...pr
     </svg>
   );
 };
+
+export const SlackIcon: FC<IconSvgProps> = ({ size = 40, width, height, ...props }) => (
+  <svg
+    height={size || height}
+    viewBox="0 0 24 24"
+    width={size || width}
+    xmlns="http://www.w3.org/2000/svg"
+    {...props}
+  >
+    <path
+      d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"
+      fill="currentColor"
+    />
+  </svg>
+);

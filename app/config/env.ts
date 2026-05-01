@@ -12,6 +12,7 @@ export const env = cleanEnv(process.env, {
   S3_PORT: num({ desc: 'S3 port', default: undefined }),
   S3_REGION: str({ desc: 'S3 region', default: undefined }),
   S3_BUCKET: str({ desc: 'S3 bucket', default: 'playwright-reports-server' }),
+  S3_USE_SSL: bool({ desc: 'Use SSL for S3 connections', default: true }),
   S3_BATCH_SIZE: num({ desc: 'S3 batch size', default: 10 }),
   RESULT_EXPIRE_DAYS: num({ desc: 'How much days to keep results', default: undefined }),
   RESULT_EXPIRE_CRON_SCHEDULE: str({ desc: 'Cron schedule for results cleanup', default: '33 3 * * *' }),

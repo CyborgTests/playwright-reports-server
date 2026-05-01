@@ -32,6 +32,7 @@ import {
   type Result,
   type ServerDataInfo,
   type ResultDetails,
+  type ReportFile,
   ReadReportsOutput,
   ReadReportsInput,
   ReadResultsInput,
@@ -481,6 +482,24 @@ async function saveConfigFile(config: Partial<SiteWhiteLabelConfig>) {
   };
 }
 
+export async function listReportFiles(reportId: string, project: string): Promise<ReportFile[]> {
+  const reportDir = path.join(REPORTS_FOLDER, project, reportId);
+  const entries = await fs.readdir(reportDir, { recursive: true, withFileTypes: true });
+
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const entryPath = (entry as any).path ?? path.dirname(reportDir);
+      const absolutePath = path.join(entryPath, entry.name);
+      const relativePath = path.relative(reportDir, absolutePath);
+
+      return {
+        relativePath,
+        storagePath: path.join(project, reportId, relativePath),
+      };
+    });
+}
+
 export const FS: Storage = {
   getServerDataInfo,
   readFile,
@@ -491,6 +510,7 @@ export const FS: Storage = {
   saveResult,
   saveResultDetails,
   generateReport,
+  listReportFiles,
   readConfigFile,
   saveConfigFile,
 };

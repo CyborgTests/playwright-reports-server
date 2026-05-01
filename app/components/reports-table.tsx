@@ -29,7 +29,7 @@ import { defaultProjectName } from '@/app/lib/constants';
 import useQuery from '@/app/hooks/useQuery';
 import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
-import { BranchIcon, FolderIcon } from '@/app/components/icons';
+import { BranchIcon, DownloadIcon, EvidenceIcon, FolderIcon, PdfIcon } from '@/app/components/icons';
 import { ReadReportsHistory, ReportHistory } from '@/app/lib/storage';
 
 const columns = [
@@ -303,14 +303,50 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
               <TableCell className="w-1/6">
                 <FormattedDate date={item.createdAt} />
               </TableCell>
-              <TableCell className="w-1/12">{item.size}</TableCell>
-              <TableCell className="w-1/6">
-                <div className="flex gap-4 justify-end">
+              <TableCell className="w-1/4">{item.size}</TableCell>
+              <TableCell className="w-1/4">
+                <div className="flex gap-2 justify-end items-center">
                   <Link href={withBase(item.reportUrl)} prefetch={false} target="_blank">
                     <Button color="primary" size="md">
                       Open report
                     </Button>
                   </Link>
+                  <Button
+                    isIconOnly
+                    aria-label="Download HTML (ZIP)"
+                    as="a"
+                    download
+                    href={withBase(`/api/download/${item.reportID}?format=zip`)}
+                    size="md"
+                    title="Download HTML (ZIP)"
+                    variant="flat"
+                  >
+                    <DownloadIcon />
+                  </Button>
+                  <Button
+                    isIconOnly
+                    aria-label="Export as PDF"
+                    as="a"
+                    download
+                    href={withBase(`/api/download/${item.reportID}?format=pdf`)}
+                    size="md"
+                    title="Export as PDF"
+                    variant="flat"
+                  >
+                    <PdfIcon />
+                  </Button>
+                  <Button
+                    isIconOnly
+                    aria-label="Evidence PDF (test name + screenshot)"
+                    as="a"
+                    download
+                    href={withBase(`/api/download/${item.reportID}?format=evidence`)}
+                    size="md"
+                    title="Evidence PDF (test name + screenshot)"
+                    variant="flat"
+                  >
+                    <EvidenceIcon />
+                  </Button>
                   <DeleteReportButton reportId={item.reportID} onDeleted={handleDeleted} />
                 </div>
               </TableCell>
