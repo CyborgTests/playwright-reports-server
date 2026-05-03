@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { PassThrough } from 'node:stream';
+import { createWriteStream } from 'node:fs';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance } from 'fastify';
 import { serveReportRoute } from '../lib/constants.js';
@@ -170,7 +173,7 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
   fastify.post('/api/report/upload', async (request, reply) => {
     let metadata: Record<string, unknown> = {};
     let fileFound = false;
-    let passThrough: PassThrough | null = null;
+    let tempZipPath: string | null = null;
     const parts = request.parts();
     const reportId = randomUUID();
 
@@ -184,20 +187,17 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
           }
         } else if (part.type === 'file' && !fileFound) {
           fileFound = true;
-          passThrough = new PassThrough();
           const validatedMetadata = validateSchema(UploadReportRequestSchema, metadata) as Record<
             string,
             string | number | undefined
           >;
 
-          const uploadPromise = storage.uploadReportFromStream(
-            reportId,
-            passThrough,
-            validatedMetadata
-          );
-          await pipeline(part.file, passThrough);
+          tempZipPath = path.join(os.tmpdir(), `report-upload-${reportId}.zip`);
+          await pipeline(part.file, createWriteStream(tempZipPath));
 
-          const { error: uploadError, result: uploaded } = await withError(uploadPromise);
+          const { error: uploadError, result: uploaded } = await withError(
+            storage.uploadReportFromZipFile(reportId, tempZipPath, validatedMetadata)
+          );
 
           if (uploadError) {
             throw uploadError;
@@ -228,9 +228,14 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
       }
     } catch (error) {
       console.error('[routes] upload report error:', error);
-      if (passThrough && !passThrough.destroyed) passThrough.destroy();
       const message = error instanceof Error ? error.message : 'Upload failed';
       return reply.status(500).send({ error: message });
+    } finally {
+      if (tempZipPath) {
+        await fs.unlink(tempZipPath).catch(() => {
+          // ignore: temp file may already be gone if write failed
+        });
+      }
     }
   });
 }

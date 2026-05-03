@@ -18,6 +18,8 @@ export default function SettingsPage() {
     'none' | 'server' | 'cron' | 'llm' | 'testManagement'
   >('none');
   const [tempConfig, setTempConfig] = useState<ServerConfig>({});
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [faviconFile, setFaviconFile] = useState<File | null>(null);
   const [showAddLinkModal, setShowAddLinkModal] = useState(false);
   const [newLinkData, setNewLinkData] = useState({ name: '', url: '' });
 
@@ -42,37 +44,37 @@ export default function SettingsPage() {
       const formData = new FormData();
 
       if (section === 'server') {
-        formData.append('title', tempConfig.title || '');
-
-        if (tempConfig.logoPath && tempConfig.logoPath !== config.logoPath) {
-          const logoInput = document.getElementById('logo-upload') as HTMLInputElement;
-
-          if (logoInput?.files?.[0]) {
-            formData.append('logo', logoInput.files[0]);
-          } else {
-            formData.append('logoPath', tempConfig.logoPath);
-          }
+        if (tempConfig.title && tempConfig.title !== config.title) {
+          formData.append('title', tempConfig.title);
         }
 
-        if (tempConfig.faviconPath && tempConfig.faviconPath !== config.faviconPath) {
-          const faviconInput = document.getElementById('favicon-upload') as HTMLInputElement;
-
-          if (faviconInput?.files?.[0]) {
-            formData.append('favicon', faviconInput.files[0]);
-          } else {
-            formData.append('faviconPath', tempConfig.faviconPath);
-          }
+        if (logoFile) {
+          formData.append('logo', logoFile);
+        } else if (tempConfig.logoPath && tempConfig.logoPath !== config.logoPath) {
+          formData.append('logoPath', tempConfig.logoPath);
         }
 
-        if (tempConfig.reporterPaths) {
-          formData.append('reporterPaths', JSON.stringify(tempConfig.reporterPaths));
+        if (faviconFile) {
+          formData.append('favicon', faviconFile);
+        } else if (tempConfig.faviconPath && tempConfig.faviconPath !== config.faviconPath) {
+          formData.append('faviconPath', tempConfig.faviconPath);
+        }
+
+        const reporterPathsChanged =
+          JSON.stringify(tempConfig.reporterPaths ?? []) !==
+          JSON.stringify(config.reporterPaths ?? []);
+        if (reporterPathsChanged) {
+          formData.append('reporterPaths', JSON.stringify(tempConfig.reporterPaths ?? []));
         }
 
         const cleanHeaderLinks = Object.fromEntries(
-          Object.entries(tempConfig.headerLinks || {}).filter(([_, value]) => value !== undefined)
+          Object.entries(tempConfig.headerLinks ?? {}).filter(([_, value]) => value !== undefined)
         );
-
-        formData.append('headerLinks', JSON.stringify(cleanHeaderLinks));
+        const headerLinksChanged =
+          JSON.stringify(cleanHeaderLinks) !== JSON.stringify(config.headerLinks ?? {});
+        if (headerLinksChanged) {
+          formData.append('headerLinks', JSON.stringify(cleanHeaderLinks));
+        }
       } else if (section === 'cron') {
         if (tempConfig.cron) {
           if (tempConfig.cron.resultExpireDays !== undefined) {
@@ -107,6 +109,12 @@ export default function SettingsPage() {
           }
           if (tempConfig.llm.parallelRequests !== undefined) {
             formData.append('llmParallelRequests', tempConfig.llm.parallelRequests.toString());
+          }
+          if (tempConfig.llm.autoAnalyzeNewReports !== undefined) {
+            formData.append(
+              'llmAutoAnalyzeNewReports',
+              tempConfig.llm.autoAnalyzeNewReports.toString()
+            );
           }
         }
       } else if (section === 'testManagement') {
@@ -166,6 +174,10 @@ export default function SettingsPage() {
       };
       toast.success(`${sectionName[section]} configuration updated successfully`);
       setEditingSection('none');
+      if (section === 'server') {
+        setLogoFile(null);
+        setFaviconFile(null);
+      }
       refetchConfig();
     } catch (error) {
       toast.error(
@@ -182,6 +194,8 @@ export default function SettingsPage() {
       llm: config?.llm || {},
       testManagement: config?.testManagement || {},
     });
+    setLogoFile(null);
+    setFaviconFile(null);
     setEditingSection('none');
   };
 
@@ -230,11 +244,15 @@ export default function SettingsPage() {
       <ServerConfiguration
         config={config}
         editingSection={editingSection}
+        faviconFile={faviconFile}
         isUpdating={isUpdating}
+        logoFile={logoFile}
         tempConfig={tempConfig}
         onAddHeaderLink={addHeaderLink}
         onCancel={handleCancel}
         onEdit={() => setEditingSection('server')}
+        onFaviconFileChange={setFaviconFile}
+        onLogoFileChange={setLogoFile}
         onSave={() => handleSave('server')}
         onUpdateTempConfig={updateTempConfig}
       />

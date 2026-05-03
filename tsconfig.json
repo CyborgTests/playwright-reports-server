@@ -1,36 +1,17 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "esModuleInterop": true,
-    "module": "esnext",
+    "module": "ESNext",
+    "lib": ["ES2022"],
     "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
     "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
-    "jsx": "preserve",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "paths": {
-      "@/*": ["./*"]
-    },
-    "lib": ["dom", "dom.iterable", "esnext"]
+    "noEmit": true
   },
-  "include": [
-    "next-env.d.ts",
-    "next-auth.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts",
-    "app/lib/placeholder-data.js",
-    "scripts/seed.js",
-    "tailwind.config.ts"
-  ],
-  "exclude": ["node_modules", "memory"]
+  "exclude": ["node_modules", "dist", "apps/*/dist", "packages/*/dist"]
 }

@@ -1,5 +1,9 @@
-import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
+import { mkdir, unlink } from 'node:fs/promises';
+import path from 'node:path';
+import type { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
 import { llmService } from '../lib/llm/index.js';
@@ -14,7 +18,66 @@ import { type AuthRequest, authenticate } from './auth.js';
 interface MultipartFile {
   fieldname: string;
   filename?: string;
-  toBuffer(): Promise<Buffer>;
+  file: Readable & { truncated?: boolean };
+}
+
+const BRANDING_SUBDIR = 'branding';
+const BRANDING_DIR = path.join(DATA_FOLDER, BRANDING_SUBDIR);
+const BRANDING_FILE_SIZE_LIMIT = 10 * 1024 * 1024; // 10 MB
+const BRANDING_ALLOWED_EXTENSIONS = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.svg',
+  '.webp',
+  '.ico',
+]);
+
+function isCustomBrandingPath(p: string | undefined): boolean {
+  if (!p) return false;
+  return p.startsWith(`/${BRANDING_SUBDIR}/`);
+}
+
+async function deleteCustomBrandingFile(brandingPath: string | undefined) {
+  if (!isCustomBrandingPath(brandingPath)) return;
+  const safeRelative = path.normalize(brandingPath as string).replace(/^[/\\]+/, '');
+  const absolute = path.resolve(DATA_FOLDER, safeRelative);
+  if (!absolute.startsWith(path.resolve(DATA_FOLDER) + path.sep)) return;
+  await withError(unlink(absolute));
+}
+
+async function persistBrandingFile(
+  kind: 'logo' | 'favicon',
+  uploaded: MultipartFile
+): Promise<{ relativePath: string } | { error: string }> {
+  const original = uploaded.filename ?? '';
+  const ext = path.extname(original).toLowerCase();
+  if (!BRANDING_ALLOWED_EXTENSIONS.has(ext)) {
+    return { error: `Unsupported ${kind} file type: ${ext || '(none)'}` };
+  }
+
+  await mkdir(BRANDING_DIR, { recursive: true });
+
+  const safeName = `${kind}-${randomUUID()}${ext}`;
+  const absolute = path.join(BRANDING_DIR, safeName);
+
+  const {error} = await withError(pipeline(uploaded.file, createWriteStream(absolute)));
+
+  if (error) {
+    await withError(unlink(absolute))
+    const message = error instanceof Error ? error.message : 'write failed';
+    return { error: `failed to save ${kind}: ${message}` };
+  }
+
+  if (uploaded.file.truncated) {
+    await withError(unlink(absolute))
+    return {
+      error: `${kind} file exceeds ${BRANDING_FILE_SIZE_LIMIT / (1024 * 1024)} MB limit`,
+    };
+  }
+
+  return { relativePath: `/${BRANDING_SUBDIR}/${safeName}` };
 }
 
 interface ConfigFormData {
@@ -33,6 +96,7 @@ interface ConfigFormData {
   llmModel?: string;
   llmTemperature?: string;
   llmParallelRequests?: string;
+  llmAutoAnalyzeNewReports?: string;
   testManagementQuarantineThresholdPercentage?: string;
   testManagementWarningThresholdPercentage?: string;
   testManagementAutoQuarantineEnabled?: string;
@@ -74,6 +138,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         config.llm?.temperature ??
         (env.LLM_TEMPERATURE ? Number.parseFloat(String(env.LLM_TEMPERATURE)) : undefined),
       parallelRequests: config.llm?.parallelRequests || 1,
+      autoAnalyzeNewReports: !!config.llm?.autoAnalyzeNewReports,
     };
 
     return { ...config, ...envInfo, llm: llmInfo };
@@ -84,21 +149,38 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       const authResult = await authenticate(request as AuthRequest, reply);
       if (authResult) return authResult;
 
-      const parts = request.parts({ limits: { files: 2 } });
+      const parts = request.parts({
+        limits: { files: 2, fileSize: BRANDING_FILE_SIZE_LIMIT },
+      });
 
-      let logoFile: MultipartFile | null = null;
-      let faviconFile: MultipartFile | null = null;
+      const config = await service.getConfig();
+
+      if (!config) {
+        return reply.status(500).send({ error: 'failed to get config' });
+      }
+
+      const previousLogoPath = config.logoPath;
+      const previousFaviconPath = config.faviconPath;
+
       const formData: ConfigFormData = {};
       let hasParts = false;
+      let logoFileSaved: string | null = null;
+      let faviconFileSaved: string | null = null;
 
       for await (const part of parts) {
         hasParts = true;
         if (part.type === 'file') {
-          if (part.fieldname === 'logo') {
-            logoFile = part as unknown as MultipartFile;
-          } else if (part.fieldname === 'favicon') {
-            faviconFile = part as unknown as MultipartFile;
+          if (part.fieldname !== 'logo' && part.fieldname !== 'favicon') {
+            part.file.resume();
+            continue;
           }
+          const kind = part.fieldname;
+          const result = await persistBrandingFile(kind, part as unknown as MultipartFile);
+          if ('error' in result) {
+            return reply.status(400).send({ error: result.error });
+          }
+          if (kind === 'logo') logoFileSaved = result.relativePath;
+          else faviconFileSaved = result.relativePath;
         } else if (part.type === 'field') {
           const fieldName = part.fieldname as keyof ConfigFormData;
           formData[fieldName] = part.value as string;
@@ -109,49 +191,20 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: 'No data received' });
       }
 
-      const config = await service.getConfig();
-
-      if (!config) {
-        return reply.status(500).send({ error: 'failed to get config' });
-      }
-
-      if (logoFile) {
-        const { error: logoError } = await withError(
-          writeFile(join(DATA_FOLDER, logoFile.filename!), Buffer.from(await logoFile.toBuffer()))
-        );
-
-        if (logoError) {
-          return reply.status(500).send({ error: `failed to save logo: ${logoError?.message}` });
-        }
-        config.logoPath = `/${logoFile.filename}`;
-      }
-
-      if (faviconFile) {
-        const { error: faviconError } = await withError(
-          writeFile(
-            join(DATA_FOLDER, faviconFile.filename!),
-            Buffer.from(await faviconFile.toBuffer())
-          )
-        );
-
-        if (faviconError) {
-          return reply.status(500).send({
-            error: `failed to save favicon: ${faviconError?.message}`,
-          });
-        }
-        config.faviconPath = `/${faviconFile.filename}`;
-      }
-
-      if (formData.title !== undefined) {
-        config.title = formData.title;
-      }
-
-      if (formData.logoPath !== undefined && !logoFile) {
+      if (logoFileSaved) {
+        config.logoPath = logoFileSaved;
+      } else if (formData.logoPath !== undefined) {
         config.logoPath = formData.logoPath;
       }
 
-      if (formData.faviconPath !== undefined && !faviconFile) {
+      if (faviconFileSaved) {
+        config.faviconPath = faviconFileSaved;
+      } else if (formData.faviconPath !== undefined) {
         config.faviconPath = formData.faviconPath;
+      }
+
+      if (formData.title !== undefined && formData.title !== '') {
+        config.title = formData.title;
       }
 
       if (formData.reporterPaths !== undefined) {
@@ -195,10 +248,16 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       if (formData.llmParallelRequests !== undefined) {
         const parallelRequests = Number.parseInt(formData.llmParallelRequests, 10);
         if (Number.isNaN(parallelRequests) || parallelRequests < 1 || parallelRequests > 10) {
-          return reply.status(400).send({ error: 'LLM parallel requests must be between 1 and 10' });
+          return reply
+            .status(400)
+            .send({ error: 'LLM parallel requests must be between 1 and 10' });
         }
         config.llm ??= {};
         config.llm.parallelRequests = parallelRequests;
+      }
+
+      if (formData.llmAutoAnalyzeNewReports !== undefined) {
+        config.llm.autoAnalyzeNewReports = formData.llmAutoAnalyzeNewReports === 'true';
       }
 
       const llmConfigChanged = !!(
@@ -294,6 +353,13 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         return reply.status(500).send({
           error: `failed to save config: ${saveConfigError.message}`,
         });
+      }
+
+      if (config.logoPath !== previousLogoPath) {
+        await withError(deleteCustomBrandingFile(previousLogoPath))
+      }
+      if (config.faviconPath !== previousFaviconPath) {
+        await withError(deleteCustomBrandingFile(previousFaviconPath))
       }
 
       const testManagementConfigChanged = !!(

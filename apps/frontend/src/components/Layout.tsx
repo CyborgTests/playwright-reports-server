@@ -1,4 +1,7 @@
+import { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
+import { useConfig } from '@/hooks/useConfig';
+import { withBase } from '@/lib/url';
 import { cn } from '@/lib/utils';
 import { Navbar } from './layout/navbar';
 
@@ -6,7 +9,33 @@ interface LayoutProps {
   children?: React.ReactNode;
 }
 
+function setFaviconHref(href: string) {
+  let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  link.href = href;
+}
+
 export function Layout({ children }: LayoutProps) {
+  const { data: config } = useConfig();
+
+  useEffect(() => {
+    if (config?.title) {
+      document.title = config.title;
+    }
+  }, [config?.title]);
+
+  useEffect(() => {
+    if (!config?.faviconPath) return;
+    const href = config.faviconPath.startsWith('http')
+      ? config.faviconPath
+      : withBase(`/api/static${config.faviconPath}`);
+    setFaviconHref(href);
+  }, [config?.faviconPath]);
+
   return (
     <div className="min-h-screen bg-background font-sans">
       <div className="flex min-h-screen flex-col">

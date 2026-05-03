@@ -1,7 +1,7 @@
 'use client';
 
 import type { ServerConfig } from '@playwright-reports/shared';
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -15,11 +15,15 @@ interface ServerConfigurationProps {
   tempConfig: ServerConfig;
   editingSection: string;
   isUpdating: boolean;
+  logoFile: File | null;
+  faviconFile: File | null;
   onEdit: () => void;
   onSave: () => void;
   onCancel: () => void;
   onUpdateTempConfig: (updates: Partial<ServerConfig>) => void;
   onAddHeaderLink: () => void;
+  onLogoFileChange: (file: File | null) => void;
+  onFaviconFileChange: (file: File | null) => void;
 }
 
 export default function ServerConfiguration({
@@ -27,16 +31,18 @@ export default function ServerConfiguration({
   tempConfig,
   editingSection,
   isUpdating,
+  logoFile,
+  faviconFile,
   onEdit,
   onSave,
   onCancel,
   onUpdateTempConfig,
   onAddHeaderLink,
+  onLogoFileChange,
+  onFaviconFileChange,
 }: Readonly<ServerConfigurationProps>) {
   const logoFileRef = useRef<HTMLInputElement>(null);
   const faviconFileRef = useRef<HTMLInputElement>(null);
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [faviconFile, setFaviconFile] = useState<File | null>(null);
 
   const updateHeaderLink = (key: string, value: string) => {
     onUpdateTempConfig({
@@ -55,25 +61,15 @@ export default function ServerConfiguration({
   };
 
   const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
-
-    setLogoFile(file);
-    if (file) {
-      onUpdateTempConfig({ logoPath: `/${file.name}` });
-    }
+    onLogoFileChange(e.target.files?.[0] || null);
   };
 
   const handleFaviconFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
-
-    setFaviconFile(file);
-    if (file) {
-      onUpdateTempConfig({ faviconPath: `/${file.name}` });
-    }
+    onFaviconFileChange(e.target.files?.[0] || null);
   };
 
   const resetLogo = () => {
-    setLogoFile(null);
+    onLogoFileChange(null);
     onUpdateTempConfig({ logoPath: '/logo.svg' });
     if (logoFileRef.current) {
       logoFileRef.current.value = '';
@@ -81,7 +77,7 @@ export default function ServerConfiguration({
   };
 
   const resetFavicon = () => {
-    setFaviconFile(null);
+    onFaviconFileChange(null);
     onUpdateTempConfig({ faviconPath: '/favicon.ico' });
     if (faviconFileRef.current) {
       faviconFileRef.current.value = '';
@@ -213,7 +209,7 @@ export default function ServerConfiguration({
                 <div className="space-y-2">
                   <input
                     ref={faviconFileRef}
-                    accept="image/*"
+                    accept="image/x-icon,image/vnd.microsoft.icon,image/png,image/svg+xml,image/*"
                     className="hidden"
                     id="favicon-upload"
                     type="file"

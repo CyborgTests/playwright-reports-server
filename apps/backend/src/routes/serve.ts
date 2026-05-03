@@ -1,5 +1,5 @@
 import { access, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import path, { resolve, sep } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import mime from 'mime';
 import { env } from '../config/env.js';
@@ -94,17 +94,28 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: 'Not Found' });
       }
 
-      const imageDataPath = join(DATA_FOLDER, targetPath);
-      const imagePublicPath = join(process.cwd(), 'public', targetPath);
+      const dataRoot = resolve(DATA_FOLDER);
+      const publicRoot = resolve(process.cwd(), 'public');
+      const safeRelative = path.normalize(targetPath).replace(/^([/\\])+/, '');
+      const candidateInData = resolve(dataRoot, safeRelative);
+      const candidateInPublic = resolve(publicRoot, safeRelative);
 
-      const { error: dataAccessError } = await withError(access(imageDataPath));
-      const imagePath = dataAccessError ? imagePublicPath : imageDataPath;
+      const isInside = (child: string, parent: string) =>
+        child === parent || child.startsWith(parent + sep);
+
+      if (!isInside(candidateInData, dataRoot) && !isInside(candidateInPublic, publicRoot)) {
+        return reply.code(400).send({ error: 'Invalid path' });
+      }
+
+      const { error: dataAccessError } = await withError(access(candidateInData));
+      const imagePath = dataAccessError ? candidateInPublic : candidateInData;
 
       const imageBuffer = await readFile(imagePath);
 
       return reply
         .code(200)
         .header('Content-Type', contentType || 'image/*')
+        .header('Cache-Control', 'public, max-age=300, must-revalidate')
         .send(imageBuffer);
     } catch (error) {
       fastify.log.error({ error }, 'Static file serving error');

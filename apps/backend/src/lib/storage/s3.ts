@@ -3,7 +3,6 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PassThrough, type Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
@@ -22,7 +21,7 @@ import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import getFolderSize from 'get-folder-size';
-import { type Entry, Parse } from 'unzipper';
+import { Open } from 'unzipper';
 import { env } from '../../config/env.js';
 import { withError } from '../../lib/withError.js';
 import { defaultConfig, isConfigValid } from '../config.js';
@@ -859,99 +858,58 @@ export class S3 implements Storage {
     return null;
   }
 
-  async uploadReportFromStream(
+  async uploadReportFromZipFile(
     reportId: string,
-    zipStream: Readable,
+    zipFilePath: string,
     metadata?: ReportMetadata
   ): Promise<{ reportPath: string; report: ReportHistory }> {
     const remotePath = path.join(REPORTS_BUCKET, reportId);
 
     const semaphore = new Semaphore(this.batchSize);
-    const parser = Parse();
-    const uploads: Promise<{ size: number }>[] = [];
-    let foundIndexHtml = false;
+    const directory = await Open.file(zipFilePath);
+    const fileEntries = directory.files.filter((file) => file.type === 'File');
+    const indexFile = fileEntries.find((file) => file.path === 'index.html');
 
-    parser.on('entry', async (entry: Entry) => {
-      if (entry.type !== 'File') {
-        entry.autodrain();
-        return;
-      }
-
-      if (entry.path === 'index.html') {
-        foundIndexHtml = true;
-      }
-
-      const upload = semaphore.run(async () => {
-        const s3Key = path.join(remotePath, entry.path);
-
-        let entrySize = 0;
-        const countingPassThrough = new PassThrough({
-          transform(chunk, _encoding, callback) {
-            entrySize += chunk.length;
-            callback(null, chunk);
-          },
-        });
-
-        entry.pipe(countingPassThrough);
-
-        const uploadResult = await new Upload({
-          client: this.client,
-          params: {
-            Bucket: this.bucket,
-            Key: s3Key,
-            Body: countingPassThrough,
-          },
-        }).done();
-
-        if (uploadResult instanceof Error) {
-          throw uploadResult;
-        }
-
-        return { size: entrySize };
-      });
-
-      uploads.push(upload);
-    });
-
-    const parsingPromise = new Promise<void>((resolve, reject) => {
-      parser.on('error', reject);
-      parser.on('close', () => {
-        Promise.all(uploads)
-          .then(() => resolve())
-          .catch(reject);
-      });
-    });
-
-    await pipeline(zipStream, parser);
-    await parsingPromise;
-
-    if (!foundIndexHtml) {
+    if (!indexFile) {
       throw new Error('index.html not found at root of uploaded report ZIP');
     }
 
-    const totalSizeBytes = await Promise.all(uploads).then((results) =>
-      results.reduce((sum, { size }) => sum + size, 0)
-    );
+    const uploadResults = await Promise.all(
+      fileEntries.map((file) =>
+        semaphore.run(async () => {
+          const s3Key = path.join(remotePath, file.path);
 
-    const indexHtmlKey = path.join(remotePath, 'index.html');
-    const { result: indexObject, error: indexError } = await withError(
-      this.client.send(
-        new GetObjectCommand({
-          Bucket: this.bucket,
-          Key: indexHtmlKey,
+          let entrySize = 0;
+          const countingPassThrough = new PassThrough({
+            transform(chunk, _encoding, callback) {
+              entrySize += chunk.length;
+              callback(null, chunk);
+            },
+          });
+
+          file.stream().pipe(countingPassThrough);
+
+          const uploadResult = await new Upload({
+            client: this.client,
+            params: {
+              Bucket: this.bucket,
+              Key: s3Key,
+              Body: countingPassThrough,
+            },
+          }).done();
+
+          if (uploadResult instanceof Error) {
+            throw uploadResult;
+          }
+
+          return { size: entrySize };
         })
       )
     );
 
-    if (indexError) {
-      throw new Error(`[s3] failed to retrieve index.html: ${indexError.message}`);
-    }
+    const totalSizeBytes = uploadResults.reduce((sum, { size }) => sum + size, 0);
 
-    if (!indexObject) {
-      throw new Error('index.html not found in uploaded report');
-    }
-
-    const htmlContent = await this.streamToString(indexObject.Body as Readable);
+    const htmlContent = (await indexFile.buffer()).toString('utf-8');
     const info = await this.parseReportMetadata(
       reportId,
       remotePath,
@@ -961,13 +919,5 @@ export class S3 implements Storage {
     );
 
     return { reportPath: remotePath, report: info as unknown as ReportHistory };
-  }
-
-  private async streamToString(stream: Readable): Promise<string> {
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream) {
-      chunks.push(Buffer.from(chunk));
-    }
-    return Buffer.concat(chunks).toString('utf-8');
   }
 }

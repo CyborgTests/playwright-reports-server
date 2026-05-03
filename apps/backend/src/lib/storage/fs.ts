@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { PassThrough, Readable } from 'node:stream';
+import type { PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import getFolderSize from 'get-folder-size';
-import { type Entry, Parse } from 'unzipper';
+import { Open } from 'unzipper';
 import { env } from '../../config/env.js';
 import { defaultConfig, isConfigValid, noConfigErr } from '../config.js';
 import { serveReportRoute } from '../constants.js';
@@ -250,9 +250,9 @@ async function saveConfigFile(config: Partial<SiteWhiteLabelConfig>) {
   };
 }
 
-async function uploadReportFromStream(
+async function uploadReportFromZipFile(
   reportId: string,
-  zipStream: Readable,
+  zipFilePath: string,
   metadata?: ReportMetadata
 ): Promise<{ reportPath: string; report: ReportHistory }> {
   await createDirectoriesIfMissing();
@@ -263,59 +263,23 @@ async function uploadReportFromStream(
   const concurrency = env.S3_BATCH_SIZE || 10;
   const semaphore = new Semaphore(concurrency);
 
-  const parser = Parse();
-  const uploads: Promise<void>[] = [];
-  let foundIndexHtml = false;
-
-  parser.on('entry', async (entry: Entry) => {
-    if (entry.type !== 'File') {
-      entry.autodrain();
-      return;
-    }
-
-    if (entry.path === 'index.html') {
-      foundIndexHtml = true;
-    }
-
-    const upload = semaphore.run(async () => {
-      const targetPath = path.join(reportPath, entry.path);
-      await fs.mkdir(path.dirname(targetPath), { recursive: true });
-
-      const writeStream = createWriteStream(targetPath);
-
-      await new Promise<void>((res, rej) => {
-        entry.pipe(writeStream);
-        writeStream.on('finish', res);
-        writeStream.on('error', rej);
-        entry.on('error', rej);
-      });
-    });
-
-    uploads.push(upload);
-  });
-
-  const parsingPromise = new Promise<void>((resolve, reject) => {
-    parser.on('error', reject);
-    parser.on('close', () => {
-      Promise.all(uploads)
-        .then(() => resolve())
-        .catch(reject);
-    });
-  });
-
-  await pipeline(zipStream, parser);
-  await parsingPromise;
+  const directory = await Open.file(zipFilePath);
+  const fileEntries = directory.files.filter((file) => file.type === 'File');
+  const foundIndexHtml = fileEntries.some((file) => file.path === 'index.html');
 
   if (!foundIndexHtml) {
     throw new Error('index.html not found at root of uploaded report ZIP');
   }
 
-  const indexPath = path.join(reportPath, 'index.html');
-  try {
-    await fs.access(indexPath);
-  } catch {
-    throw new Error('index.html not found in uploaded report');
-  }
+  await Promise.all(
+    fileEntries.map((file) =>
+      semaphore.run(async () => {
+        const targetPath = path.join(reportPath, file.path);
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await pipeline(file.stream(), createWriteStream(targetPath));
+      })
+    )
+  );
 
   const info = await parseReportMetadata(reportId, reportPath, metadata);
 
@@ -329,7 +293,7 @@ export const FS: Storage = {
   deleteReports,
   saveResult,
   generateReport,
-  uploadReportFromStream,
+  uploadReportFromZipFile,
   readConfigFile,
   saveConfigFile,
 };
