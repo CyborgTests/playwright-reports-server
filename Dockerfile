@@ -1,4 +1,4 @@
-FROM node:24.15.1-alpine AS build-base
+FROM node:24-alpine AS build-base
 
 # Install pnpm globally
 RUN npm install -g pnpm
@@ -11,7 +11,7 @@ RUN apk add --no-cache python3 make g++ libc6-compat curl
 ENV CI=true
 
 # Runner base: minimal runtime image with only Node.js and Litestream
-FROM node:24.15.1-alpine AS runner-base
+FROM node:24-alpine AS runner-base
 
 # Install Litestream for SQLite replication
 # Supports: linux/amd64, linux/arm64, linux/armv6, linux/armv7
