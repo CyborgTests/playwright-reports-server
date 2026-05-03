@@ -72,7 +72,6 @@ export default function ResultsTable({
 
   const {
     data: resultsResponse,
-    isFetching,
     isPending,
     error,
     refetch,
@@ -187,7 +186,7 @@ export default function ResultsTable({
     );
   };
 
-  if (isFetching || isPending) {
+  if (isPending && !resultsResponse) {
     return (
       <div className="flex items-center justify-center p-8">
         <Spinner size="lg" />

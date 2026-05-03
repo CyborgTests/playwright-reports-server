@@ -94,7 +94,6 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
       }
 
       const validatedBody = validateSchema(GenerateReportRequestSchema, body);
-      console.log(`[routes] generate report request:`, validatedBody);
 
       const metadata: Record<string, string> = {
         ...(validatedBody.project && { project: validatedBody.project }),
@@ -129,7 +128,7 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: error.message });
       }
 
-      console.log(`[routes] generate report success:`, result);
+      console.log(`[routes] generate report success: ${result?.reportId}`);
       return result;
     } catch (error) {
       console.error('[routes] generate report validation error:', error);
@@ -150,7 +149,6 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
       }
 
       const validatedBody = validateSchema(DeleteReportsRequestSchema, body);
-      console.log(`[routes] delete reports:`, validatedBody.reportsIds);
 
       const { error } = await withError(service.deleteReports(validatedBody.reportsIds));
 
@@ -182,7 +180,7 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
           try {
             metadata = JSON.parse(part.value as string);
           } catch {
-            // use empty metadata on parse error
+            // fall through with empty metadata
           }
         } else if (part.type === 'file' && !fileFound) {
           fileFound = true;
@@ -205,10 +203,11 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
             throw uploadError;
           }
 
-          const report = await service.getReport(reportId, uploaded?.reportPath);
-          if (!report) {
+          if (!uploaded?.report) {
             throw new Error('Failed to read uploaded report');
           }
+
+          const report = uploaded.report;
           reportDb.onCreated(report);
 
           const { error: testsError } = await withError(

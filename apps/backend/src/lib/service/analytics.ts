@@ -7,62 +7,170 @@ import type {
 } from '@playwright-reports/shared';
 import type { ReportHistory as BackendReportHistory } from '../storage/types.js';
 import { reportDb } from './db/reports.sqlite.js';
-import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
 
+const HEALTH_GRID_UNBOUNDED_CAP = 200;
+
 export class AnalyticsService {
-  async getAnalyticsData(project?: string): Promise<AnalyticsData> {
-    const reports = await this.getRecentReports(project);
+  async getAnalyticsData(
+    project?: string,
+    from?: string,
+    to?: string
+  ): Promise<AnalyticsData> {
+    const allReports = await this.getAllReportsForProject(project);
+    const { displayReports, recentForTrend, olderForTrend, isBounded } = this.partitionReports(
+      allReports,
+      from,
+      to
+    );
 
     return {
-      overviewStats: await this.calculateOverviewStats(reports, project),
-      runHealthMetrics: await this.calculateRunHealthMetrics(reports),
-      trendMetrics: await this.calculateTrendMetrics(reports),
+      overviewStats: await this.calculateOverviewStats(
+        displayReports,
+        recentForTrend,
+        olderForTrend
+      ),
+      runHealthMetrics: await this.calculateRunHealthMetrics(displayReports, isBounded),
+      trendMetrics: await this.calculateTrendMetrics(displayReports, allReports),
     };
   }
 
-  private async getRecentReports(project?: string): Promise<BackendReportHistory[]> {
+  private async getAllReportsForProject(project?: string): Promise<BackendReportHistory[]> {
     if (project) {
       return reportDb.getByProject(project);
     }
     return reportDb.getAll();
   }
 
-  private async calculateOverviewStats(reports: BackendReportHistory[], project?: string): Promise<OverviewStats> {
-    const recentReports = reports.slice(0, 30); // Last 30 runs
-    const olderReports = reports.slice(30, 60); // Previous 30 runs for comparison
+  /**
+   * Split reports into:
+   *   - `displayReports` — what the dashboard cards display (visible aggregates).
+   *   - `recentForTrend` / `olderForTrend` — what the trend arrows compare against each other.
+   *
+   * For a bounded window [from, to]:
+   *   display & recentForTrend are the reports inside the window.
+   *   olderForTrend is the equivalent prior period (same duration, immediately preceding).
+   *
+   * For "all time":
+   *   display is all reports.
+   *   recentForTrend / olderForTrend = newer-half / older-half by date midpoint.
+   */
+  private partitionReports(
+    allReports: BackendReportHistory[],
+    from?: string,
+    to?: string
+  ): {
+    displayReports: BackendReportHistory[];
+    recentForTrend: BackendReportHistory[];
+    olderForTrend: BackendReportHistory[];
+    isBounded: boolean;
+  } {
+    if (from || to) {
+      const fromMs = from ? new Date(from).getTime() : Number.NEGATIVE_INFINITY;
+      const toMs = to ? new Date(to).getTime() : Number.POSITIVE_INFINITY;
+      const display = allReports.filter((r) => {
+        const t = new Date(r.createdAt).getTime();
+        return t >= fromMs && t < toMs;
+      });
 
-    const totalTests = recentReports.reduce((sum, report) => sum + (report.stats?.total || 0), 0);
+      const duration =
+        Number.isFinite(toMs) && Number.isFinite(fromMs) ? toMs - fromMs : null;
+      let older: BackendReportHistory[] = [];
+      if (duration !== null && duration > 0) {
+        const compTo = fromMs;
+        const compFrom = fromMs - duration;
+        older = allReports.filter((r) => {
+          const t = new Date(r.createdAt).getTime();
+          return t >= compFrom && t < compTo;
+        });
+      }
+      return {
+        displayReports: display,
+        recentForTrend: display,
+        olderForTrend: older,
+        isBounded: true,
+      };
+    }
 
-    const totalPassed = recentReports.reduce(
+    if (allReports.length < 2) {
+      return {
+        displayReports: allReports,
+        recentForTrend: allReports,
+        olderForTrend: [],
+        isBounded: false,
+      };
+    }
+    // allReports is sorted DESC; split by midpoint index = newer / older halves
+    const mid = Math.floor(allReports.length / 2);
+    return {
+      displayReports: allReports,
+      recentForTrend: allReports.slice(0, mid),
+      olderForTrend: allReports.slice(mid),
+      isBounded: false,
+    };
+  }
+
+  private async calculateOverviewStats(
+    displayReports: BackendReportHistory[],
+    recentForTrend: BackendReportHistory[],
+    olderForTrend: BackendReportHistory[]
+  ): Promise<OverviewStats> {
+    const totalTests = displayReports.reduce((sum, report) => sum + (report.stats?.total || 0), 0);
+
+    const totalPassed = displayReports.reduce(
       (sum, report) => sum + (report.stats?.expected || 0),
       0
     );
-    const passRate = totalTests > 0 ? (totalPassed / totalTests) * 100 : 0;
+    // Skipped tests are excluded from pass rate — they aren't pass/fail outcomes.
+    const totalExecuted = displayReports.reduce(
+      (sum, report) =>
+        sum +
+        (report.stats?.expected || 0) +
+        (report.stats?.unexpected || 0) +
+        (report.stats?.flaky || 0),
+      0
+    );
+    const passRate = totalExecuted > 0 ? (totalPassed / totalExecuted) * 100 : 0;
 
-    const flakyTests = await this.identifyFlakyTests(recentReports, project);
-
-    const testDurations = await this.extractTestDurations(recentReports);
+    const testDurations = await this.extractTestDurations(displayReports);
     const averageTestDuration =
       testDurations.length > 0
         ? testDurations.reduce((sum, duration) => sum + duration, 0) / testDurations.length
         : 0;
 
-    const slowestSteps = await this.findSlowestSteps(recentReports, 10);
+    const slowestSteps = await this.findSlowestSteps(displayReports, 10);
 
     const averageTestRunDuration =
-      recentReports.reduce((sum, report) => sum + (report.duration || 0), 0) / recentReports.length;
+      displayReports.length > 0
+        ? displayReports.reduce((sum, report) => sum + (report.duration || 0), 0) /
+          displayReports.length
+        : 0;
 
-    const currentPassRate = passRate;
-    const olderPassRate = await this.calculatePreviousPassRate(olderReports);
-    const passRateTrend = this.calculateTrend(currentPassRate, olderPassRate, 2); // 2% threshold
-    const flakyTestsTrend: 'up' | 'down' | 'stable' = 'stable';
+    const recentPassRate = await this.calculatePreviousPassRate(recentForTrend);
+    const olderPassRate = await this.calculatePreviousPassRate(olderForTrend);
+    const passRateTrend = this.calculateTrend(recentPassRate, olderPassRate, 2);
+
+    const config = await service.getConfig();
+    const flakinessThreshold = config.testManagement?.warningThresholdPercentage ?? 2;
+
+    const recentFlakyOccurrences = recentForTrend.reduce(
+      (sum, report) => sum + (report.stats?.flaky || 0),
+      0
+    );
+    const olderFlakyOccurrences = olderForTrend.reduce(
+      (sum, report) => sum + (report.stats?.flaky || 0),
+      0
+    );
+    const flakyTestsTrend = this.calculateTrend(
+      recentFlakyOccurrences,
+      olderFlakyOccurrences,
+      flakinessThreshold
+    );
 
     return {
-      totalRuns: recentReports.length,
+      totalRuns: displayReports.length,
       totalTests,
       passRate: Math.round(passRate * 100) / 100,
-      flakyTests: flakyTests.length,
       averageTestDuration: Math.round(averageTestDuration),
       slowestSteps,
       averageTestRunDuration,
@@ -72,9 +180,11 @@ export class AnalyticsService {
   }
 
   private async calculateRunHealthMetrics(
-    reports: BackendReportHistory[]
+    reports: BackendReportHistory[],
+    isBounded: boolean
   ): Promise<RunHealthMetric[]> {
-    return reports.slice(0, 20).map((report) => {
+    const limited = isBounded ? reports : reports.slice(0, HEALTH_GRID_UNBOUNDED_CAP);
+    return limited.map((report) => {
       const stats = report.stats;
       const totalTests = stats?.total || 0;
       const passed = stats?.expected || 0;
@@ -93,24 +203,25 @@ export class AnalyticsService {
     });
   }
 
-  private async calculateTrendMetrics(reports: BackendReportHistory[]): Promise<TrendMetrics> {
-    const recentReports = reports.slice(0, 30);
-
-    const durationTrend = recentReports.map((report) => ({
+  private async calculateTrendMetrics(
+    displayReports: BackendReportHistory[],
+    allReportsForBaseline: BackendReportHistory[]
+  ): Promise<TrendMetrics> {
+    const durationTrend = displayReports.map((report) => ({
       date: new Date(report.createdAt).toISOString(),
       duration: report.duration || 0,
     }));
 
     const flakyCounts = await Promise.all(
-      recentReports.map(async (report) => ({
+      displayReports.map(async (report) => ({
         date: new Date(report.createdAt).toISOString(),
         count: report.stats?.flaky || 0,
       }))
     );
 
-    const slowThreshold = await this.calculateSlowThreshold(recentReports);
+    const slowThreshold = await this.calculateSlowThreshold(allReportsForBaseline);
     const slowCounts = await Promise.all(
-      recentReports.map(async (report) => {
+      displayReports.map(async (report) => {
         const slowCount = await this.countSlowTests(report, slowThreshold);
         return {
           date: new Date(report.createdAt).toISOString(),
@@ -124,15 +235,6 @@ export class AnalyticsService {
       flakyCountTrend: flakyCounts,
       slowCountTrend: slowCounts,
     };
-  }
-
-  private async identifyFlakyTests(_reports: BackendReportHistory[], project?: string): Promise<string[]> {
-    const config = await service.getConfig();
-    const warningThreshold = config.testManagement?.warningThresholdPercentage ?? 2;
-    const allTests = testDb.getAllAndDerivedData(project);
-    return allTests
-      .filter((t) => (t.flakinessScore ?? 0) >= warningThreshold)
-      .map((t) => t.testId);
   }
 
   private async extractTestDurations(reports: BackendReportHistory[]): Promise<number[]> {
@@ -185,21 +287,29 @@ export class AnalyticsService {
   private async calculatePreviousPassRate(reports: BackendReportHistory[]): Promise<number> {
     if (reports.length === 0) return 0;
 
-    const totalTests = reports.reduce((sum, report) => sum + (report.stats?.total || 0), 0);
+    const totalExecuted = reports.reduce(
+      (sum, report) =>
+        sum +
+        (report.stats?.expected || 0) +
+        (report.stats?.unexpected || 0) +
+        (report.stats?.flaky || 0),
+      0
+    );
     const totalPassed = reports.reduce((sum, report) => sum + (report.stats?.expected || 0), 0);
 
-    return totalTests > 0 ? (totalPassed / totalTests) * 100 : 0;
+    return totalExecuted > 0 ? (totalPassed / totalExecuted) * 100 : 0;
   }
 
   private calculateTrend(
     current: number,
     previous: number,
-    threshold: number
+    thresholdPercent: number
   ): 'up' | 'down' | 'stable' {
-    const difference = current - previous;
-    const percentChange = previous > 0 ? (difference / previous) * 100 : 0;
-
-    if (Math.abs(percentChange) < threshold || Math.abs(difference) < threshold) {
+    if (previous === 0) {
+      return current === 0 ? 'stable' : 'up';
+    }
+    const percentChange = ((current - previous) / previous) * 100;
+    if (Math.abs(percentChange) < thresholdPercent) {
       return 'stable';
     }
     return percentChange > 0 ? 'up' : 'down';
@@ -235,7 +345,6 @@ export class AnalyticsService {
     const testReports = reportDb.getReportHistoryByTestId(testId, projectName);
 
     if (!testReports.length) {
-      console.log(`[analytics] No historical data found for testId: ${testId}`);
       return null;
     }
 
@@ -253,7 +362,7 @@ export class AnalyticsService {
               runId: report.reportID,
               runDate: new Date(report.createdAt),
               duration: test.duration,
-              isOutlier: false, // to be determined
+              isOutlier: false,
             });
           }
         }
@@ -274,7 +383,6 @@ export class AnalyticsService {
     const variance = durations.reduce((sum, d) => sum + (d - mean) ** 2, 0) / durations.length;
     const stdDev = Math.sqrt(variance);
 
-    // define outliers
     for (const run of runs) {
       run.isOutlier = Math.abs(run.duration - mean) > 2 * stdDev;
     }

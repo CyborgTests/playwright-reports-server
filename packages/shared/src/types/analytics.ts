@@ -22,7 +22,6 @@ export interface OverviewStats {
   totalTests: number;
   totalRuns: number;
   passRate: number;
-  flakyTests: number;
   averageTestDuration: number;
   slowestSteps: Array<{ step: string; duration: number; testId: string }>;
   averageTestRunDuration: number;
@@ -44,18 +43,6 @@ export interface TrendMetrics {
   durationTrend: Array<{ date: string; duration: number }>;
   flakyCountTrend: Array<{ date: string; count: number }>;
   slowCountTrend: Array<{ date: string; count: number }>;
-}
-
-export interface PerTestMetric {
-  testId: string;
-  testName: string;
-  passRate: number;
-  isFlaky: boolean;
-  recentRuns: Array<{ date: string; passed: boolean }>;
-  avgDuration: number;
-  file: string;
-  line: number;
-  latestReportId: string;
 }
 
 export interface StepTimingTrend {
@@ -173,5 +160,8 @@ export interface FailureCategoryAnalytics {
     category: string;
     count: number;
     signature: string;
+    sampleReportId?: string;
+    sampleReportUrl?: string;
+    sampleTestId?: string;
   }>;
 }

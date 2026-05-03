@@ -24,18 +24,17 @@ export function createDatabase(): Database.Database {
   console.log(`[db] creating database at ${dbPath}`);
 
   const db = new Database(dbPath, {
-    verbose: undefined, // for debugging: console.log
+    // Set verbose to console.log to trace every SQL statement.
+    verbose: undefined,
   });
 
-  db.pragma('journal_mode = WAL'); // better concurrency
-  db.pragma('synchronous = NORMAL'); // faster writes, still safe with WAL
-  db.pragma('cache_size = -8000'); // 8MB page cache (balance of speed and memory)
-  db.pragma('mmap_size = 134217728'); // 128MB memory-mapped I/O
-  db.pragma('temp_store = MEMORY'); // store temporary tables in RAM
-  db.pragma('foreign_keys = ON'); // enforce referential integrity
-  db.pragma('auto_vacuum = INCREMENTAL'); // manage file size
-
-  console.log('[db] database is configured');
+  db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
+  db.pragma('cache_size = -8000');
+  db.pragma('mmap_size = 134217728');
+  db.pragma('temp_store = MEMORY');
+  db.pragma('foreign_keys = ON');
+  db.pragma('auto_vacuum = INCREMENTAL');
 
   initializeSchema(db);
   instance[initiatedDb] = db;
@@ -44,8 +43,6 @@ export function createDatabase(): Database.Database {
 }
 
 function initializeSchema(db: Database.Database): void {
-  console.log('[db] initializing schema');
-
   db.exec(`
     CREATE TABLE IF NOT EXISTS results (
       resultID TEXT PRIMARY KEY,
@@ -54,11 +51,10 @@ function initializeSchema(db: Database.Database): void {
       createdAt TEXT NOT NULL,
       size TEXT,
       sizeBytes INTEGER,
-      metadata TEXT, -- JSON string for additional metadata
+      metadata TEXT,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Indexes for common queries
     CREATE INDEX IF NOT EXISTS idx_results_ids ON results(resultID);
     CREATE INDEX IF NOT EXISTS idx_results_project ON results(project);
     CREATE INDEX IF NOT EXISTS idx_results_createdAt ON results(createdAt DESC);
@@ -75,12 +71,11 @@ function initializeSchema(db: Database.Database): void {
       reportUrl TEXT NOT NULL,
       size TEXT,
       sizeBytes INTEGER,
-      stats TEXT, -- JSON string for report stats
-      metadata TEXT, -- JSON string for additional metadata
+      stats TEXT,
+      metadata TEXT,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Indexes for common queries
     CREATE INDEX IF NOT EXISTS idx_reports_ids ON reports(reportID);
     CREATE INDEX IF NOT EXISTS idx_reports_project ON reports(project);
     CREATE INDEX IF NOT EXISTS idx_reports_createdAt ON reports(createdAt DESC);
@@ -107,7 +102,6 @@ function initializeSchema(db: Database.Database): void {
       PRIMARY KEY (testId, fileId, project)
     );
 
-    -- Indexes for tests table
     CREATE INDEX IF NOT EXISTS idx_tests_project ON tests(project);
     CREATE INDEX IF NOT EXISTS idx_tests_createdAt ON tests(createdAt DESC);
   `);
@@ -126,11 +120,14 @@ function initializeSchema(db: Database.Database): void {
       quarantineReason TEXT,
       quarantined BOOLEAN DEFAULT FALSE NOT NULL,
       fixedAt TEXT,
+      failure_details TEXT,
+      failure_category TEXT,
+      failure_category_source TEXT,
+      error_signature TEXT,
       FOREIGN KEY (testId, fileId, project)
         REFERENCES tests(testId, fileId, project)
     );
 
-    -- Indexes for test_runs table
     CREATE INDEX IF NOT EXISTS idx_test_runs_testId ON test_runs(testId, project);
     CREATE INDEX IF NOT EXISTS idx_test_runs_reportId ON test_runs(reportId);
     CREATE INDEX IF NOT EXISTS idx_test_runs_createdAt ON test_runs(createdAt DESC);
@@ -139,20 +136,6 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_test_runs_outcome_created ON test_runs(outcome, createdAt DESC);
     CREATE INDEX IF NOT EXISTS idx_test_runs_quarantined ON test_runs(quarantined);
     CREATE INDEX IF NOT EXISTS idx_test_runs_quarantined_created ON test_runs(quarantined, createdAt DESC);
-  `);
-
-  // Failure analysis columns migration
-  const addColumnIfNotExists = (table: string, column: string, type: string) => {
-    const columns = db.pragma(`table_info(${table})`) as Array<{ name: string }>;
-    if (!columns.some(c => c.name === column)) {
-      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-    }
-  };
-  addColumnIfNotExists('test_runs', 'failure_details', 'TEXT');
-  addColumnIfNotExists('test_runs', 'failure_category', 'TEXT');
-  addColumnIfNotExists('test_runs', 'error_signature', 'TEXT');
-
-  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_test_runs_failure_category ON test_runs(failure_category);
     CREATE INDEX IF NOT EXISTS idx_test_runs_error_signature ON test_runs(error_signature);
   `);
@@ -206,18 +189,44 @@ function initializeSchema(db: Database.Database): void {
       fileId TEXT NOT NULL,
       project TEXT NOT NULL,
       reportId TEXT NOT NULL,
+      attempt INTEGER NOT NULL DEFAULT 1,
       analysis TEXT,
       category TEXT,
       model TEXT,
+      -- NULL for fresh LLM-generated analyses; source row id for reused ones (same error_signature).
+      reusedFromAnalysisId TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT,
-      UNIQUE(testId, fileId, project)
+      UNIQUE(testId, fileId, project, reportId, attempt)
     );
     CREATE INDEX IF NOT EXISTS idx_tla_test ON test_llm_analyses(testId, fileId, project);
     CREATE INDEX IF NOT EXISTS idx_tla_report ON test_llm_analyses(reportId);
+    CREATE INDEX IF NOT EXISTS idx_tla_test_report ON test_llm_analyses(testId, reportId);
   `);
 
-  console.log('[db] schema initialized');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS analysis_feedback (
+      id TEXT PRIMARY KEY,
+      testId TEXT NOT NULL,
+      fileId TEXT NOT NULL,
+      project TEXT NOT NULL,
+      reportId TEXT,
+      errorSignature TEXT,
+      comment TEXT NOT NULL CHECK (length(trim(comment)) > 0),
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_af_test
+      ON analysis_feedback(testId, fileId, project);
+    CREATE INDEX IF NOT EXISTS idx_af_updated
+      ON analysis_feedback(updatedAt DESC);
+    -- Supports cross-project lookups for same test and signature-match.
+    CREATE INDEX IF NOT EXISTS idx_af_test_lookup
+      ON analysis_feedback(testId, fileId);
+    CREATE INDEX IF NOT EXISTS idx_af_signature
+      ON analysis_feedback(errorSignature)
+      WHERE errorSignature IS NOT NULL;
+  `);
 }
 
 export function getDatabase(): Database.Database {
@@ -273,8 +282,6 @@ export function getDatabaseStats(): {
 export function clearAll(): void {
   const db = getDatabase();
 
-  console.log('[db] clearing all data');
-
   db.exec(`
     DELETE FROM results;
     DELETE FROM reports;
@@ -284,20 +291,15 @@ export function clearAll(): void {
     DELETE FROM llm_tasks;
     DELETE FROM report_failure_summaries;
     DELETE FROM test_llm_analyses;
+    DELETE FROM analysis_feedback;
   `);
 
   db.exec('VACUUM;');
-
-  console.log('[db] cleared');
 }
 
 export function optimizeDB(): void {
   const db = getDatabase();
 
-  console.log('[db] optimizing database');
-
   db.exec('ANALYZE;');
   db.exec('PRAGMA incremental_vacuum;');
-
-  console.log('[db] optimization complete');
 }

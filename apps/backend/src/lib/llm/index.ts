@@ -54,7 +54,6 @@ export class LLMService {
     return this.provider.getAvailableModels();
   }
 
-  // previous implementation with sync request
   async sendMessage(
     prompt: string,
     systemPrompt?: string,

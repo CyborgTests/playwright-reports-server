@@ -2,11 +2,231 @@ import type { TestManagementConfig } from '@playwright-reports/shared';
 import { ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import { defaultConfig } from '../config.js';
 import { llmService } from '../llm/index.js';
+import { extractFailureMessage, readErrorContextSync } from '../parser/failure-extraction.js';
 import type { ReportHistory } from '../storage/types.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import type { Test, TestRun, TestWithQuarantineInfo } from './db/tests.sqlite.js';
 import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
+
+export { readErrorContextSync };
+
+/**
+ * Compute flakiness score (% of runs that triggered an instability event) from an
+ * oldest-first sequence of run outcomes. Mirrors the algorithm in calculateFlakinessSync.
+ */
+export function computeFlakinessFromOutcomes(
+  runs: Array<{ outcome: ReportTestOutcomeEnum | string }>,
+  minRuns = 1
+): number {
+  if (runs.length < minRuns || runs.length <= 1) return 0;
+
+  const isPass = (outcome: string): boolean =>
+    outcome === ReportTestOutcomeEnum.Expected || outcome === 'passed';
+
+  let events = 0;
+  let inFailStreak = false;
+  let seenPass = false;
+
+  for (const { outcome } of runs) {
+    if (outcome === ReportTestOutcomeEnum.Flaky) {
+      events++;
+      seenPass = true;
+      inFailStreak = false;
+      continue;
+    }
+
+    if (isPass(outcome)) {
+      seenPass = true;
+      inFailStreak = false;
+    } else if (seenPass && !inFailStreak) {
+      events++;
+      inFailStreak = true;
+    }
+  }
+
+  return (events / runs.length) * 100;
+}
+
+/**
+ * Canonical failure-category enum. Order is significant for UI display and LLM prompts.
+ */
+export const FAILURE_CATEGORIES = [
+  'timeout',
+  'element_not_visible',
+  'element_not_found',
+  'assertion_error',
+  'snapshot_mismatch',
+  'network_error',
+  'api_error',
+  'authentication_error',
+  'navigation_error',
+  'browser_crash',
+  'setup_teardown',
+  'javascript_error',
+  'unknown',
+] as const;
+
+export type FailureCategory = (typeof FAILURE_CATEGORIES)[number];
+
+const KNOWN_CATEGORIES = new Set<string>(FAILURE_CATEGORIES);
+
+export function isKnownCategory(value: string | undefined | null): value is FailureCategory {
+  return !!value && KNOWN_CATEGORIES.has(value);
+}
+
+/**
+ * Detect failure category from a Playwright error message via anchored, ordered patterns.
+ * Most-specific shapes match first; ambiguous inputs fall through to `unknown` rather than
+ * being mis-labelled. Used as the baseline; LLM and signature-consensus layers may override.
+ */
+export function detectFailureCategory(errorMessage: string): FailureCategory {
+  if (!errorMessage) return 'unknown';
+  const msg = errorMessage.trim();
+  const lower = msg.toLowerCase();
+
+  // Extract leading error class name when Playwright prefixes the message.
+  // e.g. "TimeoutError: locator.click: Timeout 30000ms exceeded."
+  const errorNameMatch = msg.match(/^([A-Z][A-Za-z]*Error)\b/);
+  const errorName = errorNameMatch?.[1];
+
+  // 1. Browser/page lifecycle issues — check before network so "browser closed" doesn't slip into network.
+  if (
+    /Target page, context or browser has been closed/.test(msg) ||
+    /Page (?:crashed|closed)/.test(msg) ||
+    /browser has (?:disconnected|been closed)/i.test(msg) ||
+    /Execution context (?:was destroyed|is unavailable)/.test(msg)
+  ) {
+    return 'browser_crash';
+  }
+
+  // 2. Snapshot / visual-regression — explicit Playwright phrasing.
+  if (
+    /Screenshot comparison failed/.test(msg) ||
+    /toHaveScreenshot|toMatchSnapshot/.test(msg) ||
+    /pixels?\s+\(?ratio/.test(msg)
+  ) {
+    return 'snapshot_mismatch';
+  }
+
+  // 3. Network transport — explicit `net::ERR_*` or low-level socket errors.
+  if (/net::ERR_[A-Z_]+/.test(msg) || /\b(?:ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN)\b/.test(msg)) {
+    return 'network_error';
+  }
+
+  // 4. Setup/teardown — error originates inside a hook or fixture.
+  if (
+    /\b(?:beforeAll|afterAll|beforeEach|afterEach)\b/.test(msg) ||
+    /Error in fixture\b/.test(msg) ||
+    /Worker process (?:exited|crashed)/.test(msg)
+  ) {
+    return 'setup_teardown';
+  }
+
+  // 5. Assertion-shaped failures — distinguish "element didn't appear" from "value mismatch".
+  //    Playwright's web-first assertions emit `expect(locator).toBeVisible()` etc.; if the
+  //    failure also mentions a timeout, the locator never resolved — bucket as element_not_visible.
+  const isExpect = /\bexpect\s*\(/.test(msg);
+  if (isExpect) {
+    if (
+      /\.(?:toBeVisible|toBeAttached|toBeEnabled|toBeFocused|toBeInViewport|toContainText|toHaveText|toHaveValue|toHaveCount|toHaveAttribute|toBeChecked)\b/.test(msg) &&
+      /Timed? out|Timeout/i.test(msg)
+    ) {
+      return 'element_not_visible';
+    }
+    if (/\.(?:toEqual|toBe|toMatch|toContain|toStrictEqual|toHaveLength|toBeTruthy|toBeFalsy|toBeNull|toBeDefined|toBeGreaterThan|toBeLessThan|toBeCloseTo)\b/.test(msg)) {
+      return 'assertion_error';
+    }
+  }
+
+  // 6. Locator failures — strict-mode violations or "resolved to 0 elements".
+  if (
+    /resolved to 0 elements/.test(msg) ||
+    /strict mode violation/i.test(msg) ||
+    /locator\.\w+: .*not found/i.test(msg) ||
+    /No node found for selector/.test(msg)
+  ) {
+    return 'element_not_found';
+  }
+
+  // 7. Timeouts — the typed TimeoutError class, or test-level timeout messages.
+  if (
+    errorName === 'TimeoutError' ||
+    /^Test timeout of \d+ms exceeded/.test(msg) ||
+    /\bTimeout \d+ms exceeded\b/.test(msg) ||
+    /exceeded the maximum/i.test(lower)
+  ) {
+    return 'timeout';
+  }
+
+  // 8. Navigation — page.goto or frame navigation, when not already classified as network.
+  if (
+    /page\.(?:goto|reload|goBack|goForward):/.test(msg) ||
+    /Navigation (?:failed|timeout|to .+ was interrupted)/i.test(msg) ||
+    /frame (?:was )?detached/i.test(msg)
+  ) {
+    return 'navigation_error';
+  }
+
+  // 9. HTTP API failures — explicit 4xx/5xx mention, narrow to avoid false positives.
+  const statusCodeMatch = msg.match(/\bstatus(?:\s+code)?[:\s]+(\d{3})\b/i);
+  if (statusCodeMatch) {
+    const status = Number(statusCodeMatch[1]);
+    if (status === 401 || status === 403) return 'authentication_error';
+    if (status >= 400) return 'api_error';
+  }
+  if (/\bHTTP\s+(?:4|5)\d{2}\b/.test(msg)) {
+    return 'api_error';
+  }
+
+  // 10. Authentication keywords — only when paired with explicit auth/identity context.
+  if (
+    /\b(?:Unauthorized|Forbidden)\b/.test(msg) ||
+    /\b401\b|\b403\b/.test(msg) ||
+    /(?:authentication|login|credentials) (?:failed|required|invalid)/i.test(msg)
+  ) {
+    return 'authentication_error';
+  }
+
+  // 11. JS runtime errors thrown inside the page under test.
+  if (
+    /^(?:ReferenceError|SyntaxError|TypeError):/.test(msg) ||
+    /Uncaught \(in promise\)/.test(msg) ||
+    /page\.evaluate(?:Handle)?:/.test(msg)
+  ) {
+    return 'javascript_error';
+  }
+
+  return 'unknown';
+}
+
+const CONSENSUS_MIN_OBSERVATIONS = 3;
+const CONSENSUS_MIN_SHARE = 0.7;
+
+/**
+ * Classify a failure with provenance. Order:
+ *   1. If `errorSignature` has a strong historical consensus → use it (`'consensus'`).
+ *   2. Otherwise → run the heuristic (`'heuristic'`).
+ *
+ * The LLM layer may override afterwards (see llmAnalysisQueue).
+ */
+export function classifyFailure(
+  errorMessage: string,
+  errorSignature: string | null
+): { category: FailureCategory; source: 'heuristic' | 'consensus' } {
+  if (errorSignature) {
+    const consensus = testDb.getCategoryConsensus(errorSignature);
+    if (
+      consensus &&
+      isKnownCategory(consensus.category) &&
+      consensus.total >= CONSENSUS_MIN_OBSERVATIONS &&
+      consensus.share >= CONSENSUS_MIN_SHARE
+    ) {
+      return { category: consensus.category, source: 'consensus' };
+    }
+  }
+  return { category: detectFailureCategory(errorMessage), source: 'heuristic' };
+}
 
 export class TestManagementService {
   private config: TestManagementConfig | null = null;
@@ -50,6 +270,42 @@ export class TestManagementService {
 
     const config = await this.getConfig();
 
+    // Phase 1: pre-extract failure details for every failed attempt (async — may read
+    // trace ZIPs and error-context files from disk). We do this OUTSIDE the SQL
+    // transaction so the transaction stays sync and short.
+    type PreparedFailure = {
+      details: string;
+      message: string;
+      signature: string;
+      classification: { category: FailureCategory; source: 'heuristic' | 'consensus' };
+    };
+    const preparedByKey = new Map<string, PreparedFailure>();
+    for (const file of report.files) {
+      if (!file.tests) continue;
+      for (const test of file.tests) {
+        const isFailedTest =
+          test.outcome === 'unexpected' || test.outcome === 'failed' || test.outcome === 'flaky';
+        if (!isFailedTest) continue;
+        const testId = test.testId ?? '';
+        const fileId = file.fileId ?? '';
+        const filePath = file.fileName ?? 'unknown';
+        const details = await this.extractFailureDetails(test, filePath, 1, report.reportID);
+        if (!details) continue;
+        let message = '';
+        try {
+          message = String(JSON.parse(details).message ?? '');
+        } catch { /* ignore */ }
+        const signature = this.computeErrorSignature(message, filePath);
+        const classification = classifyFailure(message, signature);
+        preparedByKey.set(`${testId}::${fileId}`, {
+          details,
+          message,
+          signature,
+          classification,
+        });
+      }
+    }
+
     const transaction = () => {
       for (const file of report.files!) {
         if (!file.tests) continue;
@@ -73,11 +329,10 @@ export class TestManagementService {
             ? latestTestRun?.quarantined && !latestTestRun?.fixedAt
             : false;
 
-          const isFailedTest = test.outcome === 'unexpected' || test.outcome === 'failed' || test.outcome === 'flaky';
-          const failureDetails = isFailedTest ? this.extractFailureDetails(test, filePath, 1) : null;
-          const errorSignature = failureDetails
-            ? this.computeErrorSignature(test.results?.[0]?.message || '', filePath)
-            : null;
+          const prepared = preparedByKey.get(`${testId}::${fileId}`);
+          const failureDetails = prepared?.details ?? null;
+          const errorSignature = prepared?.signature ?? null;
+          const classification = prepared?.classification ?? null;
 
           const testRun = {
             runId: undefined,
@@ -87,12 +342,13 @@ export class TestManagementService {
             reportId: report.reportID,
             outcome: test.outcome || 'unknown',
             duration: test.duration,
-            createdAt: test.createdAt ?? new Date().toISOString(),
+            createdAt: test.createdAt ?? (report.startTime ? new Date(report.startTime).toISOString() : (report.createdAt instanceof Date ? report.createdAt.toISOString() : report.createdAt)),
             quarantined: shouldQuarantineNextRun,
             quarantineReason: latestTestRun?.quarantineReason ?? '',
             flakinessScore: this.calculateFlakinessSync(testId, fileId, report.project, config),
             failureDetails: failureDetails ?? undefined,
-            failureCategory: undefined, // populated by LLM later
+            failureCategory: classification?.category,
+            failureCategorySource: classification?.source,
             errorSignature: errorSignature ?? undefined,
           };
 
@@ -124,15 +380,19 @@ export class TestManagementService {
       );
     }
 
-    // After the transaction, queue LLM analysis for failed tests
+    // After the transaction, queue LLM analysis for failed tests — but only if the user
+    // opted in via Settings → LLM Configuration → "Auto-analyze new reports". Default off
+    // so deployments don't burn LLM tokens unprompted.
     if (llmService.isConfigured()) {
-      this.queueLlmAnalysis(report.reportID, report.project);
+      const cfg = await service.getConfig();
+      if (cfg.llm?.autoAnalyzeNewReports) {
+        this.queueLlmAnalysis(report.reportID, report.project);
+      }
     }
   }
 
   private queueLlmAnalysis(reportId: string, project: string): void {
     try {
-      // Get all test runs for this report that have failure details
       const allRuns = testDb.getTestRunsByReport(reportId);
       const failedRuns = allRuns.filter((run) => run.failureDetails);
 
@@ -164,17 +424,23 @@ export class TestManagementService {
     }
   }
 
-  private extractFailureDetails(
-    test: { title: string; results?: Array<{ status?: string; message?: string; attachments?: Array<{ name: string; contentType: string; path: string }> }>; location?: { file: string; line: number; column: number }; attachments?: Array<{ name: string; path: string; contentType: string }> },
+  private async extractFailureDetails(
+    test: { title: string; outcome?: string; results?: Array<{ status?: string; message?: string; attachments?: Array<{ name: string; contentType: string; path: string }> }>; location?: { file: string; line: number; column: number }; attachments?: Array<{ name: string; path: string; contentType: string }> },
     filePath: string,
-    attempt: number
-  ): string | null {
+    attempt: number,
+    reportId: string
+  ): Promise<string | null> {
     const result = test.results?.[attempt - 1];
     if (!result || result.status === 'passed') return null;
 
+    // Pull the best error text we can find — `result.message` first, then the trace
+    // ZIP's structured error entry, then the error-context DOM snapshot, finally a
+    // synthetic "Test {outcome}: {title}" so signatures still group.
+    const { message, stackTrace } = await extractFailureMessage(reportId, test, result);
+
     const details = {
-      message: result.message || '',
-      stackTrace: undefined as string | undefined, // Playwright puts stack in message
+      message,
+      stackTrace,
       testTitle: test.title,
       filePath,
       location: test.location,
@@ -183,28 +449,18 @@ export class TestManagementService {
       status: result.status || 'unknown',
     };
 
-    // Try to split message from stack trace (Playwright includes stack in message)
-    if (details.message) {
-      const stackIndex = details.message.indexOf('\n    at ');
-      if (stackIndex > 0) {
-        details.stackTrace = details.message.substring(stackIndex);
-        details.message = details.message.substring(0, stackIndex);
-      }
-    }
-
     return JSON.stringify(details);
   }
 
   private computeErrorSignature(message: string, filePath: string): string {
-    // Strip line numbers, variable values, timestamps for grouping
+    // Strip numbers, quoted strings, and excess whitespace so the same root failure groups together.
     const normalized = message
-      .replace(/\d+/g, 'N')           // numbers → N
-      .replace(/['"][^'"]*['"]/g, 'S') // quoted strings → S
-      .replace(/\s+/g, ' ')           // normalize whitespace
+      .replace(/\d+/g, 'N')
+      .replace(/['"][^'"]*['"]/g, 'S')
+      .replace(/\s+/g, ' ')
       .trim()
-      .substring(0, 500);             // limit length
+      .substring(0, 500);
 
-    // Simple hash combining normalized message + file path
     let hash = 0;
     const input = `${filePath}:${normalized}`;
     for (let i = 0; i < input.length; i++) {
@@ -234,39 +490,7 @@ export class TestManagementService {
       .getRecentTestRunsForFlakiness(testId, fileId, project, cutoffDate.toISOString())
       .reverse();
 
-    if (recentRuns.length < minRuns! || recentRuns.length <= 1) return 0;
-
-    // Classify each run as pass or fail
-    const isPass = (outcome: string): boolean =>
-      outcome === ReportTestOutcomeEnum.Expected || outcome === 'passed';
-
-    // Count distinct instability events:
-    // - A "flaky" outcome from Playwright (with retries) = 1 event
-    // - A group of consecutive failures surrounded by passes = 1 event
-    // - Leading failures (before any pass) are not flaky — just failures
-    // A test that reliably fails or reliably passes has 0 events = 0% flaky.
-    let events = 0;
-    let inFailStreak = false;
-    let seenPass = false;
-
-    for (const { outcome } of recentRuns) {
-      if (outcome === ReportTestOutcomeEnum.Flaky) {
-        events++;
-        seenPass = true; // flaky implies it passed on retry
-        inFailStreak = false;
-        continue;
-      }
-
-      if (isPass(outcome)) {
-        seenPass = true;
-        inFailStreak = false;
-      } else if (seenPass && !inFailStreak) {
-        events++;
-        inFailStreak = true;
-      }
-    }
-
-    return (events / recentRuns.length) * 100;
+    return computeFlakinessFromOutcomes(recentRuns, minRuns ?? 1);
   }
 
   async updateQuarantineStatus(
@@ -303,9 +527,41 @@ export class TestManagementService {
       flakinessMax?: number;
       limit?: number;
       offset?: number;
+      from?: string;
+      to?: string;
     }
   ): Promise<{ data: TestWithQuarantineInfo[]; total: number }> {
     let tests = testDb.getAllAndDerivedData(project);
+
+    if (options?.from || options?.to) {
+      const config = await this.getConfig();
+      const minRuns = config.flakinessMinRuns ?? 1;
+      const from = options.from ?? '0001-01-01T00:00:00Z';
+      const to = options.to ?? new Date(Date.now() + 60_000).toISOString();
+      const windowedRuns = testDb.getTestRunOutcomesInWindow(project, from, to);
+
+      const grouped = new Map<string, Array<{ outcome: ReportTestOutcomeEnum | string }>>();
+      for (const run of windowedRuns) {
+        const key = `${run.testId}::${run.fileId}::${run.project}`;
+        let bucket = grouped.get(key);
+        if (!bucket) {
+          bucket = [];
+          grouped.set(key, bucket);
+        }
+        bucket.push({ outcome: run.outcome });
+      }
+
+      tests = tests
+        .filter((t) => grouped.has(`${t.testId}::${t.fileId}::${t.project}`))
+        .map((t) => {
+          const runs = grouped.get(`${t.testId}::${t.fileId}::${t.project}`) ?? [];
+          return {
+            ...t,
+            flakinessScore: computeFlakinessFromOutcomes(runs, minRuns),
+            totalRuns: runs.length,
+          };
+        });
+    }
 
     if (options) {
       if (options.status && options.status !== 'all') {
@@ -357,13 +613,45 @@ export class TestManagementService {
 
   async getTestsSummary(
     project?: string,
-    warningThreshold = 2
+    warningThreshold = 2,
+    opts?: { from?: string; to?: string }
   ): Promise<{ total: number; flakyCount: number }> {
-    const { total, flakyTests } = testDb.getTestsSummary(project);
-    const flakyCount = flakyTests.filter(
-      (t) => (t.flakinessScore ?? 0) >= warningThreshold
-    ).length;
-    return { total, flakyCount };
+    if (opts?.from || opts?.to) {
+      const config = await this.getConfig();
+      const minRuns = config.flakinessMinRuns ?? 1;
+      const from = opts.from ?? '0001-01-01T00:00:00Z';
+      const to = opts.to ?? new Date(Date.now() + 60_000).toISOString();
+      const runs = testDb.getTestRunOutcomesInWindow(project, from, to);
+
+      const grouped = new Map<string, Array<{ outcome: ReportTestOutcomeEnum | string }>>();
+      const uniqueTestIds = new Set<string>();
+      for (const run of runs) {
+        uniqueTestIds.add(run.testId);
+        const key = `${run.testId}::${run.fileId}::${run.project}`;
+        let bucket = grouped.get(key);
+        if (!bucket) {
+          bucket = [];
+          grouped.set(key, bucket);
+        }
+        bucket.push({ outcome: run.outcome });
+      }
+
+      // A test is flaky if it's flaky in at least one (file, project) lane.
+      const flakyTestIds = new Set<string>();
+      for (const [key, runsForTest] of grouped) {
+        const score = computeFlakinessFromOutcomes(runsForTest, minRuns);
+        if (score >= warningThreshold) {
+          const testId = key.split('::', 1)[0];
+          flakyTestIds.add(testId);
+        }
+      }
+
+      return { total: uniqueTestIds.size, flakyCount: flakyTestIds.size };
+    }
+
+    const { total, flakyTests } = testDb.getTestsSummary(project, warningThreshold);
+    const flakyTestIds = new Set<string>(flakyTests.map((t) => t.testId));
+    return { total, flakyCount: flakyTestIds.size };
   }
 
   async getTest(

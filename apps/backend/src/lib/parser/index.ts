@@ -51,7 +51,7 @@ export const parseHtmlReport = async (html: string) => {
     return await parse(html);
   } catch (e: unknown) {
     if (e instanceof Error) {
-      console.error(e.message);
+      console.error(`[report parser] ${e.message}`);
     }
 
     return null;

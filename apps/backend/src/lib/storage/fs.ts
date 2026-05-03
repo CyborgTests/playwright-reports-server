@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createWriteStream, type Dirent, type Stats } from 'node:fs';
+import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { PassThrough, Readable } from 'node:stream';
@@ -18,7 +18,6 @@ import {
   APP_CONFIG,
   DATA_FOLDER,
   DEFAULT_STREAM_CHUNK_SIZE,
-  REPORT_METADATA_FILE,
   REPORTS_FOLDER,
   RESULTS_FOLDER,
   TMP_FOLDER,
@@ -26,12 +25,9 @@ import {
 import { createDirectory } from './folders.js';
 import { bytesToString } from './format.js';
 import type {
-  ReadReportsOutput,
   ReportHistory,
   ReportMetadata,
   ReportPath,
-  Result,
-  ResultDetails,
   ServerDataInfo,
   Storage,
 } from './types.js';
@@ -56,12 +52,24 @@ async function getAvailableSize(dir: string) {
   return bytesToString(availableSize);
 }
 
+async function getResultsCount() {
+  const files = await fs.readdir(RESULTS_FOLDER);
+
+  return files.filter((file) => file.endsWith('.zip')).length;
+}
+
+async function getReportsCount() {
+  const entries = await fs.readdir(REPORTS_FOLDER, { withFileTypes: true });
+
+  return entries.filter((entry) => entry.isDirectory()).length;
+}
+
 export async function getServerDataInfo(): Promise<ServerDataInfo> {
   await createDirectoriesIfMissing();
   const dataFolderSizeinMB = await getSizeInMb(DATA_FOLDER);
   const resultsCount = await getResultsCount();
   const resultsFolderSizeinMB = await getSizeInMb(RESULTS_FOLDER);
-  const { total: reportsCount } = await readReports();
+  const reportsCount = await getReportsCount();
   const reportsFolderSizeinMB = await getSizeInMb(REPORTS_FOLDER);
   const availableSizeinMB = await getAvailableSize('./');
 
@@ -81,157 +89,6 @@ export async function readFile(targetPath: string, contentType: string | null) {
   });
 }
 
-async function getResultsCount() {
-  const files = await fs.readdir(RESULTS_FOLDER);
-  const zipFilesCount = files.filter((file) => file.endsWith('.zip'));
-
-  return zipFilesCount.length;
-}
-
-export async function readResults() {
-  await createDirectoriesIfMissing();
-  const files = await fs.readdir(RESULTS_FOLDER);
-
-  const stats = await processWithConcurrency(
-    files.filter((file) => file.endsWith('.json')),
-    20,
-    async (file) => {
-      const filePath = path.join(RESULTS_FOLDER, file);
-
-      const stat = await fs.stat(filePath);
-
-      const sizeBytes = await getFolderSize.loose(filePath.replace('.json', '.zip'));
-
-      const size = bytesToString(sizeBytes);
-
-      return Object.assign(stat, { filePath, size, sizeBytes });
-    }
-  );
-
-  const results = await processWithConcurrency(stats, 10, async (entry) => {
-    const content = await fs.readFile(entry.filePath, 'utf-8');
-
-    return {
-      size: entry.size,
-      sizeBytes: entry.sizeBytes,
-      ...JSON.parse(content),
-    };
-  });
-
-  return {
-    results,
-    total: results.length,
-  };
-}
-
-function isMissingFileError(error?: Error | null) {
-  return error?.message.includes('ENOENT');
-}
-
-async function readOrParseReportMetadata(id: string): Promise<ReportMetadata> {
-  const { result: metadataContent, error: metadataError } = await withError(
-    readFile(path.join(id, REPORT_METADATA_FILE), 'utf-8')
-  );
-
-  if (metadataError) console.error(`failed to read metadata for ${id}: ${metadataError.message}`);
-
-  const metadata = metadataContent && !metadataError ? JSON.parse(metadataContent.toString()) : {};
-
-  if (!isMissingFileError(metadataError)) {
-    return metadata;
-  }
-
-  console.log(`metadata file not found for ${id}, creating new metadata`);
-  try {
-    const reportPath = path.join(REPORTS_FOLDER, id);
-    const parsed = await parseReportMetadata(id, reportPath, {
-      reportID: id,
-    });
-
-    console.log(`parsed metadata for ${id}`);
-
-    await saveReportMetadata(reportPath, parsed);
-
-    Object.assign(metadata, parsed);
-  } catch (e) {
-    console.error(`failed to create metadata for ${id}: ${(e as Error).message}`);
-  }
-
-  return metadata;
-}
-
-export async function readReport(
-  reportID: string,
-  reportPath: string
-): Promise<ReportHistory | null> {
-  await createDirectoriesIfMissing();
-
-  console.log(`[fs] reading report ${reportID} metadata from path: ${reportPath}`);
-
-  // Convert reportPath to relative path from REPORTS_FOLDER
-  const relativePath = path.relative(REPORTS_FOLDER, reportPath);
-  console.log(`[fs] reading report ${reportID} relative path: ${relativePath}`);
-
-  const { result: metadataContent, error: metadataError } = await withError(
-    readFile(path.join(relativePath, REPORT_METADATA_FILE), 'utf-8')
-  );
-
-  if (metadataError) {
-    console.error(`[fs] failed to read metadata for ${reportID}: ${metadataError.message}`);
-
-    return null;
-  }
-
-  const metadata = metadataContent ? JSON.parse(metadataContent.toString()) : {};
-  const { size: metaSize, sizeBytes: metaSizeBytes, ...cleanMetadata } = metadata;
-
-  return {
-    reportID,
-    project: metadata.project || '',
-    createdAt: new Date(metadata.createdAt),
-    size: metaSize || '',
-    sizeBytes: metaSizeBytes || 0,
-    reportUrl: metadata.reportUrl || '',
-    ...cleanMetadata,
-  } as ReportHistory;
-}
-
-export async function readReports(): Promise<ReadReportsOutput> {
-  await createDirectoriesIfMissing();
-  const entries = await fs.readdir(REPORTS_FOLDER, {
-    withFileTypes: true,
-  });
-
-  const reportEntries = entries.filter((entry) => entry.isDirectory());
-
-  const stats = await processWithConcurrency(reportEntries, 20, async (file) => {
-    const filePath = path.join(REPORTS_FOLDER, file.name);
-    const stat = await fs.stat(filePath);
-
-    return Object.assign(stat, { filePath, createdAt: stat.birthtime });
-  });
-
-  const reports = await processWithConcurrency(stats, 10, async (file) => {
-    const id = path.basename(file.filePath);
-    const sizeBytes = await getFolderSize.loose(file.filePath);
-    const size = bytesToString(sizeBytes);
-
-    const metadata = await readOrParseReportMetadata(id);
-
-    return {
-      reportID: id,
-      project: metadata.project || '',
-      createdAt: file.birthtime,
-      size,
-      sizeBytes,
-      reportUrl: `${serveReportRoute}/${id}/index.html`,
-      ...metadata,
-    } as ReportHistory;
-  });
-
-  return { reports: reports, total: reports.length };
-}
-
 export async function deleteResults(resultsIds: string[]) {
   await Promise.allSettled(resultsIds.map((id) => deleteResult(id)));
 }
@@ -239,7 +96,7 @@ export async function deleteResults(resultsIds: string[]) {
 export async function deleteResult(resultId: string) {
   const resultPath = path.join(RESULTS_FOLDER, resultId);
 
-  await Promise.allSettled([fs.unlink(`${resultPath}.json`), fs.unlink(`${resultPath}.zip`)]);
+  await fs.unlink(`${resultPath}.zip`).catch(() => {});
 }
 
 export async function deleteReports(reports: ReportPath[]) {
@@ -272,35 +129,6 @@ export async function saveResult(filename: string, stream: PassThrough) {
   }
 }
 
-export async function saveResultDetails(
-  resultID: string,
-  resultDetails: ResultDetails,
-  size: number
-): Promise<Result> {
-  await createDirectoriesIfMissing();
-
-  const metaData = {
-    resultID,
-    createdAt: new Date().toISOString(),
-    project: resultDetails?.project ?? '',
-    ...resultDetails,
-    sizeBytes: size,
-    size: bytesToString(size),
-  };
-
-  const { error: writeJsonError } = await withError(
-    fs.writeFile(path.join(RESULTS_FOLDER, `${resultID}.json`), JSON.stringify(metaData, null, 2), {
-      encoding: 'utf-8',
-    })
-  );
-
-  if (writeJsonError) {
-    throw new Error(`failed to save result ${resultID} json file: ${writeJsonError.message}`);
-  }
-
-  return metaData as Result;
-}
-
 export async function generateReport(resultsIds: string[], metadata?: ReportMetadata) {
   await createDirectoriesIfMissing();
 
@@ -314,8 +142,6 @@ export async function generateReport(resultsIds: string[], metadata?: ReportMeta
       const sourceZipPath = path.join(RESULTS_FOLDER, `${id}.zip`);
       const targetZipPath = path.join(tempFolder, `${id}.zip`);
 
-      console.log(`[fs] copying result ${id} to temp folder`);
-
       const { result: stats, error: statError } = await withError(fs.stat(sourceZipPath));
 
       if (statError || !stats) {
@@ -328,8 +154,6 @@ export async function generateReport(resultsIds: string[], metadata?: ReportMeta
         throw new Error(`zip file for result ${id} is empty`);
       }
 
-      console.log(`[fs] source zip file size: ${stats.size} bytes`);
-
       const { error: copyError } = await withError(fs.copyFile(sourceZipPath, targetZipPath));
 
       if (copyError) {
@@ -337,13 +161,14 @@ export async function generateReport(resultsIds: string[], metadata?: ReportMeta
       }
     }
 
-    console.log(`[fs] all zip files copied, calling playwright merge-reports`);
     const generated = await generatePlaywrightReport(reportId, metadata ?? {});
     const info = await parseReportMetadata(reportId, generated.reportPath, metadata);
 
-    await saveReportMetadata(generated.reportPath, info);
-
-    return { reportId, reportPath: generated.reportPath };
+    return {
+      reportId,
+      reportPath: generated.reportPath,
+      report: info as unknown as ReportHistory,
+    };
   } finally {
     await fs.rm(tempFolder, { recursive: true, force: true });
   }
@@ -362,7 +187,7 @@ async function parseReportMetadata(
     info,
     {
       reportID,
-      createdAt: new Date().toISOString(),
+      createdAt: info.startTime ? new Date(info.startTime).toISOString() : new Date().toISOString(),
       sizeBytes: await getFolderSize.loose(reportPath).then(bytesToString),
       size: bytesToString(sizeBytes),
       reportUrl: `${serveReportRoute}/${reportID}/index.html`,
@@ -373,12 +198,6 @@ async function parseReportMetadata(
   if (metadata?.displayNumber) content.displayNumber = metadata.displayNumber;
 
   return content;
-}
-
-async function saveReportMetadata(reportPath: string, info: ReportMetadata) {
-  return fs.writeFile(path.join(reportPath, REPORT_METADATA_FILE), JSON.stringify(info, null, 2), {
-    encoding: 'utf-8',
-  });
 }
 
 async function readConfigFile() {
@@ -413,7 +232,7 @@ async function saveConfigFile(config: Partial<SiteWhiteLabelConfig>) {
   const isConfigFailed = !!configError && configError?.message !== noConfigErr && !existingConfig;
 
   if (isConfigFailed) {
-    console.error(`failed to read existing config: ${configError.message}`);
+    console.error(`[fs] failed to read existing config: ${configError.message}`);
   }
 
   const previousConfig = existingConfig ?? defaultConfig;
@@ -435,7 +254,7 @@ async function uploadReportFromStream(
   reportId: string,
   zipStream: Readable,
   metadata?: ReportMetadata
-): Promise<{ reportPath: string }> {
+): Promise<{ reportPath: string; report: ReportHistory }> {
   await createDirectoriesIfMissing();
 
   const reportPath = path.join(REPORTS_FOLDER, reportId);
@@ -499,21 +318,16 @@ async function uploadReportFromStream(
   }
 
   const info = await parseReportMetadata(reportId, reportPath, metadata);
-  await saveReportMetadata(reportPath, info);
 
-  return { reportPath };
+  return { reportPath, report: info as unknown as ReportHistory };
 }
 
 export const FS: Storage = {
   getServerDataInfo,
   readFile,
-  readResults,
-  readReports,
-  readReport,
   deleteResults,
   deleteReports,
   saveResult,
-  saveResultDetails,
   generateReport,
   uploadReportFromStream,
   readConfigFile,

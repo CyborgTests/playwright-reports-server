@@ -151,6 +151,65 @@ export const ErrorResponseSchema = z.object({
   error: z.string(),
 });
 
+// Feedback is always test-level. Identity: testId + (fileId+project) OR (reportId).
+// Server resolves missing fileId/project from test_runs when only reportId is provided
+// — used by the injected Playwright panel which only knows what's in the URL.
+const testKeyShape = {
+  testId: z.string().min(1),
+  fileId: z.string().optional(),
+  project: z.string().optional(),
+  reportId: z.string().optional(),
+} as const;
+
+const testKeysRefinement = (data: {
+  testId: string;
+  fileId?: string;
+  project?: string;
+  reportId?: string;
+}) => !!(data.fileId && data.project) || !!data.reportId;
+
+const testKeysMessage = 'feedback requires testId AND ((fileId+project) OR reportId)';
+
+export const GetFeedbackQuerySchema = z
+  .object(testKeyShape)
+  .refine(testKeysRefinement, { message: testKeysMessage });
+
+export const UpsertFeedbackRequestSchema = z
+  .object({
+    ...testKeyShape,
+    comment: z.string().trim().min(1, 'comment must be non-empty'),
+  })
+  .refine(testKeysRefinement, { message: testKeysMessage });
+
+export const DeleteFeedbackRequestSchema = z
+  .object(testKeyShape)
+  .refine(testKeysRefinement, { message: testKeysMessage });
+
+// Phase 2: cross-project related feedback. Either (fileId+excludeProject) — full identity —
+// or (reportId) — let the server resolve fileId+project from test_runs.
+export const GetRelatedFeedbackQuerySchema = z
+  .object({
+    testId: z.string().min(1),
+    fileId: z.string().optional(),
+    excludeProject: z.string().optional(),
+    reportId: z.string().optional(),
+  })
+  .refine((data) => !!((data.fileId && data.excludeProject) || data.reportId), {
+    message:
+      '/related requires (fileId + excludeProject) OR reportId so the server can resolve the test',
+  });
+
+export const FeedbackRegenerateRequestSchema = z
+  .object({
+    ...testKeyShape,
+    /** When true and reportId is set, also enqueue a report_summary task for that report. */
+    cascadeReportSummary: z.boolean().optional(),
+  })
+  .refine(testKeysRefinement, { message: testKeysMessage })
+  .refine((data) => !data.cascadeReportSummary || !!data.reportId, {
+    message: 'cascadeReportSummary=true requires reportId',
+  });
+
 export type GenerateReportRequest = z.infer<typeof GenerateReportRequestSchema>;
 export type GenerateReportResponse = z.infer<typeof GenerateReportResponseSchema>;
 export type ListReportsQuery = z.infer<typeof ListReportsQuerySchema>;

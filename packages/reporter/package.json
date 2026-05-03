@@ -33,11 +33,11 @@
     "package.json"
   ],
   "peerDependencies": {
-    "@playwright/test": "^1.37.0"
+    "@playwright/test": "^1.59.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.46.0",
-    "@types/node": "^20.14.11"
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^22.19.17"
   },
   "directories": {
     "test": "tests"

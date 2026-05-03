@@ -85,7 +85,6 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
         }
 
         const validatedBody = validateSchema(DeleteResultsRequestSchema, body);
-        console.log(`[routes] delete results:`, validatedBody.resultsIds);
 
         const { error } = await withError(service.deleteResults(validatedBody.resultsIds));
 
@@ -94,7 +93,6 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
           return reply.status(404).send({ error: error.message });
         }
 
-        console.log(`[routes] delete results - deletion successful`);
         return reply.status(200).send({
           message: 'Results files deleted successfully',
           resultsIds: validatedBody.resultsIds,
@@ -116,7 +114,7 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
     const query = request.query as Record<string, string>;
     const contentLength = query['fileContentLength'] || '';
 
-    // if there is fileContentLength query parameter we can use presigned URL for direct upload
+    // When fileContentLength is provided we can hand back a presigned URL for direct upload.
     const presignedUrl = contentLength ? await service.getPresignedUrl(fileName) : '';
 
     const filePassThrough = new PassThrough({
@@ -163,7 +161,9 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
       });
     }
 
-    console.log(`[upload] generated report:`, generatedReport);
+    if (generatedReport && typeof generatedReport === 'object' && 'reportId' in generatedReport) {
+      console.log(`[upload] generated report ${(generatedReport as { reportId: string }).reportId}`);
+    }
 
     return reply.status(200).send({
       message: 'Success',
@@ -189,7 +189,7 @@ async function processMultipartAndUpload(
   const savePromise = service.saveResult(fileName, passThrough, {
     presignedUrl: opts.presignedUrl,
     contentLength: opts.contentLength,
-    shouldStoreLocalCopy: false, // decide based on fields after parsing
+    shouldStoreLocalCopy: false,
   });
 
   try {

@@ -1,8 +1,6 @@
 import type Database from 'better-sqlite3';
 import { defaultProjectName } from '../../constants.js';
-import { storage } from '../../storage/index.js';
 import type { ReadResultsInput, ReadResultsOutput, Result } from '../../storage/types.js';
-import { withError } from '../../withError.js';
 import { getDatabase } from './db.js';
 
 const initiatedResultsDb = Symbol.for('playwright.reports.db.results');
@@ -57,34 +55,8 @@ export class ResultDatabase {
       return;
     }
 
-    console.log('[result db] initializing SQLite for results');
-    const { result: resultsResponse, error } = await withError(storage.readResults());
-
-    if (error) {
-      console.error('[result db] failed to read results:', error);
-
-      return;
-    }
-
-    if (!resultsResponse?.results?.length) {
-      console.log('[result db] no results to store');
-      this.initialized = true;
-
-      return;
-    }
-
-    console.log(`[result db] caching ${resultsResponse.results.length} results`);
-
-    const insertMany = this.db.transaction((results: Result[]) => {
-      for (const result of results) {
-        this.insertResult(result);
-      }
-    });
-
-    insertMany(resultsResponse.results);
-
     this.initialized = true;
-    console.log('[result db] initialization complete');
+    console.log(`[result db] initialized (${this.getCount()} results)`);
   }
 
   private insertResult(result: Result): void {
@@ -102,8 +74,6 @@ export class ResultDatabase {
   }
 
   public onDeleted(resultIds: string[]) {
-    console.log(`[result db] deleting ${resultIds.length} results`);
-
     const deleteMany = this.db.transaction((ids: string[]) => {
       for (const id of ids) {
         this.deleteStmt.run(id);
@@ -114,7 +84,6 @@ export class ResultDatabase {
   }
 
   public onCreated(result: Result) {
-    console.log(`[result db] adding result ${result.resultID}`);
     this.insertResult(result);
   }
 
@@ -191,7 +160,6 @@ export class ResultDatabase {
   }
 
   public clear(): void {
-    console.log('[result db] clearing all results');
     this.db.prepare('DELETE FROM results').run();
   }
 
@@ -211,8 +179,6 @@ export class ResultDatabase {
     }
 
     if (input?.tags && input.tags.length > 0) {
-      console.log('Filtering by tags:', input.tags);
-
       for (const tag of input.tags) {
         const [key, value] = tag.split(':').map((part) => part.trim());
 
@@ -247,8 +213,6 @@ export class ResultDatabase {
       params.push(input.pagination.limit.toString(), input.pagination.offset.toString());
     }
 
-    console.log('Executing query:', query, 'with params:', params);
-
     const rows = this.db.prepare(query).all(...params) as Array<{
       resultID: string;
       project: string;
@@ -263,14 +227,6 @@ export class ResultDatabase {
       results: rows.map((row) => this.rowToResult(row)),
       total,
     };
-  }
-
-  public async refresh(): Promise<void> {
-    console.log('[result db] refreshing cache');
-    this.clear();
-    this.initialized = false;
-    // Re-initialize immediately by reading from filesystem
-    await this.init();
   }
 
   private rowToResult(row: {

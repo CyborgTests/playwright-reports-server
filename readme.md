@@ -7,8 +7,24 @@ The Playwright Reports Server provides APIs for managing and generating reports 
 - Store raw results, and aggregate them together into one report
 - Check web ui for report trends and test history
 - Basic api token authorization for backend and web ui, reports are secured as well
-- Analyze test failure in playwright report with integrated LLM provider
+- Analyze test failures in Playwright reports with integrated LLM provider
+- Provide a feedback for LLM analyses to impact the direction for next test runs
 - Track test flakiness and quarantine unstable tests
+
+## Project structure
+
+This is a pnpm-workspaces monorepo:
+
+```
+├── apps/
+│   ├── backend/    Fastify API server (port 3001, serves the SPA in production)
+│   └── frontend/   React SPA (Vite, dev port 3000 — proxies /api to :3001)
+└── packages/
+    ├── shared/     @playwright-reports/shared — types, constants, utils
+    └── reporter/   @playwright-reports/reporter (npm: @shelex/playwright-reporter)
+```
+
+Persistent state lives in `data/` (SQLite `metadata.db` via better-sqlite3 + raw blobs/HTML reports). Optional [Litestream](https://litestream.io) replication is configured via `litestream.yml`.
 
 ## Demo
 
@@ -18,6 +34,7 @@ The Playwright Reports Server provides APIs for managing and generating reports 
 
 - [Playwright Reports Server](#playwright-reports-server)
   - [Demo](#demo)
+  - [Project structure](#project-structure)
   - [Table of Contents](#table-of-contents)
   - [Getting Started](#getting-started)
     - [Prerequisites](#prerequisites)
@@ -25,20 +42,18 @@ The Playwright Reports Server provides APIs for managing and generating reports 
     - [Running the Server](#running-the-server)
   - [Configuration options](#configuration-options)
     - [General](#general)
+    - [S3 Compatible Storage](#s3-compatible-storage)
     - [LLM](#llm)
+      - [Playwright Report — Per-Test Analysis](#playwright-report--per-test-analysis)
+      - [Feedback widget (test-level)](#feedback-widget-test-level)
+      - [Report Detail Page — Failure Summary](#report-detail-page--failure-summary)
+      - [Analytics Dashboard — Failure Categories](#analytics-dashboard--failure-categories)
+      - [LLM Queue Page](#llm-queue-page)
+      - [Background Processing](#background-processing)
     - [Test Management](#test-management)
   - [API Routes](#api-routes)
-  - [`/api/report/list` (GET):](#apireportlist-get)
-  - [`/api/report/delete` (DELETE):](#apireportdelete-delete)
-  - [`/api/result/delete` (DELETE):](#apiresultdelete-delete)
-  - [`/api/report/generate` (POST):](#apireportgenerate-post)
-  - [`/api/result/list` (GET):](#apiresultlist-get)
-  - [`/api/result/upload` (PUT):](#apiresultupload-put)
-  - [`/api/info` (GET)](#apiinfo-get)
-  - [`/api/ping` (GET)](#apiping-get)
   - [Authorization](#authorization)
   - [Test Quarantine](#test-quarantine)
-  - [Reporter Integration](#reporter-integration)
   - [Storage Options](#storage-options)
     - [Local File System Storage](#local-file-system-storage)
     - [S3-Compatible Object Storage](#s3-compatible-object-storage)
@@ -72,18 +87,23 @@ The Playwright Reports Server provides APIs for managing and generating reports 
 
 ### Running the Server
 
-1. Build and start the server:
+**Production:**
 
-   ```
-   pnpm run build && pnpm run start
-   ```
+```
+pnpm run build && pnpm run start
+```
 
-   The `start` script uses a small Node.js utility to copy the build assets
-   before launching the server, so it works on Windows without requiring Unix
-   commands.
+The server listens on port `3001` by default (configurable via `PORT`) and serves both the API and the built SPA from a single process. App is accessible at `http://localhost:3001`.
 
-2. The application will be accessible at `http://localhost:3000`.
-   All data will be stored at `/apps/backend/data/` folder. You can backup it, to keep your data safe.
+**Development:**
+
+```
+pnpm run dev
+```
+
+Starts the backend on `:3001` and the Vite dev frontend on `:3000` concurrently. The frontend proxies `/api/*` to `:3001`, so during dev you can hit either port for the UI but **API requests should target `:3001`** (or `:3000` only if you want to go through the Vite proxy).
+
+All persistent state lives in the `data/` folder — `apps/backend/data/` for `pnpm run start`/`dev`, `/app/data/` in the Docker image. Back this up to keep reports, results, and the SQLite metadata file safe.
 
 ## Configuration options
 
@@ -129,9 +149,28 @@ When configured, the LLM integration provides failure analysis across the applic
 
 #### Playwright Report — Per-Test Analysis
 
-The served Playwright HTML report has an **"Ask LLM"** button next to Playwright's "Copy prompt" for failed tests. The analysis is stored and tracked in the LLM task queue.
+For failed tests in the served Playwright HTML report, the LLM analysis is exposed in one of two states:
 
-If a pre-computed analysis already exists for a test (from background processing or a previous request), a **"View LLM Analysis"** inline section appears above the errors area with the cached result and a "Retry" button to re-run.
+- **Analysis already done** — an inline **LLM Analysis widget** appears above the errors area with the cached result, the model name, the failure category badge, and a **Retry** button. This is the common case once background processing has run for the test.
+- **Analysis not yet done** — an **"Ask LLM"** button is added next to Playwright's "Copy prompt" so you can trigger analysis on demand. Once the analysis arrives the button is hidden and the inline widget takes over.
+
+#### Feedback widget (test-level)
+
+Below the analysis area, a **Feedback** panel is injected into the served Playwright report. It has an option to add a single shared note that becomes context for future LLM analyses.
+
+At a glance, the header shows:
+
+- 💬 *Feedback (updated 2h ago)* — current state
+- **🆕 New error** — this exact failure shape (matching `errorSignature`) has not been seen in any prior run of this test, OR
+- **🔁 N prior occurrences** — this failure has happened before, plus an inline "First found in [report X] — Nd ago" link
+- **🔗 N other projects** — same test has feedback in other projects
+- **⚠ Stale indicator** — your feedback is newer than the latest analysis
+
+Expand the panel to:
+
+- Read/edit the note (textarea + Save/Delete)
+- Click **Regenerate** to enqueue a fresh `test_analysis` task that includes your feedback in the prompt
+- Tick **"Also refresh report summary after this test"** to cascade — re-run the test analysis AND the report-level summary in one click
 
 #### Report Detail Page — Failure Summary
 
@@ -173,12 +212,12 @@ The Test Management feature is configured via the Settings page in the web UI. T
 
 ## API Routes
 
-## `/api/report/list` (GET):
+### `/api/report/list` (GET):
 
 Returns list of generated reports and corresponding url on server:
 
 ```sh
-curl --location --request GET 'http://localhost:3000/api/report/list' \
+curl --location --request GET 'http://localhost:3001/api/report/list' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: <api-token>'
 ```
@@ -209,12 +248,12 @@ Response example:
 }
 ```
 
-## `/api/report/delete` (DELETE):
+### `/api/report/delete` (DELETE):
 
 Deletes report folder
 
 ```sh
-curl --location --request DELETE 'http://localhost:3000/api/report/delete' \
+curl --location --request DELETE 'http://localhost:3001/api/report/delete' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: <api-token>' \
 --data '{
@@ -233,12 +272,12 @@ Response example:
 }
 ```
 
-## `/api/result/delete` (DELETE):
+### `/api/result/delete` (DELETE):
 
 Delete result by ids
 
 ```sh
-curl --location --request DELETE 'http://localhost:3000/api/result/delete' \
+curl --location --request DELETE 'http://localhost:3001/api/result/delete' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: <api-token>' \
 --data '{
@@ -257,12 +296,12 @@ Response example:
 }
 ```
 
-## `/api/report/generate` (POST):
+### `/api/report/generate` (POST):
 
 Generates report from provided resultsIds, merges results together into one report, using https://playwright.dev/docs/test-sharding#merge-reports-cli
 
 ```sh
-curl --location --request POST 'http://localhost:3000/api/report/generate' \
+curl --location --request POST 'http://localhost:3001/api/report/generate' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: <api-token>' \
 --data '{
@@ -284,12 +323,12 @@ Response example:
 }
 ```
 
-## `/api/result/list` (GET):
+### `/api/result/list` (GET):
 
 Returns list of currently existing results (raw blobs .zip files) on server:
 
 ```sh
-curl --location 'http://localhost:3000/api/result/list'
+curl --location 'http://localhost:3001/api/result/list'
 ```
 
 Response will contain array of results:
@@ -310,12 +349,12 @@ Response will contain array of results:
 }
 ```
 
-## `/api/result/upload` (PUT):
+### `/api/result/upload` (PUT):
 
 Accepts .zip archive - output of blob report, details - https://playwright.dev/docs/test-reporters#blob-reporter:
 
 ```sh
-curl --location --request PUT 'http://localhost:3000/api/result/upload' \
+curl --location --request PUT 'http://localhost:3001/api/result/upload' \
 --header 'Authorization: <api-token>' \
 --form 'file=@"/path/to/file"'
 ```
@@ -323,7 +362,7 @@ curl --location --request PUT 'http://localhost:3000/api/result/upload' \
 Notice, that you can pass any custom keys with string values as form keys:
 
 ```sh
-curl --location --request PUT 'http://localhost:3000/api/result/upload' \
+curl --location --request PUT 'http://localhost:3001/api/result/upload' \
 --header 'Authorization: <api-token>' \
 --form 'file=@"/path/to/file"' \
 --form 'project="desktop"' \
@@ -334,7 +373,7 @@ curl --location --request PUT 'http://localhost:3000/api/result/upload' \
 If you have **s3 storage** configured, you can pass `fileContentLength` query parameter to use **presigned URL** for **direct upload**:
 
 ```sh
-curl --location --request PUT 'http://localhost:3000/api/result/upload?fileContentLength=10738538' \
+curl --location --request PUT 'http://localhost:3001/api/result/upload?fileContentLength=10738538' \
 --header 'Authorization: <api-token>' \
 --form 'file=@"/path/to/file"' \
 --form 'project="desktop"' \
@@ -367,7 +406,7 @@ Response example:
 Auto-generation reports once all shards completed is supported, you need to pass `testRun`, `shardCurrent`, `shardTotal` and `triggerReportGeneration=true` as form keys, example:
 
 ```sh
-curl --location --request PUT 'http://localhost:3000/api/result/upload' \
+curl --location --request PUT 'http://localhost:3001/api/result/upload' \
 --header 'Authorization: <api-token>' \
 --form 'file=@"/path/to/file"' \
 --form 'shardCurrent="1"' \
@@ -377,12 +416,12 @@ curl --location --request PUT 'http://localhost:3000/api/result/upload' \
 
 Server will automatically trigger report generation when all shards for this testRun will report their blob file
 
-## `/api/info` (GET)
+### `/api/info` (GET)
 
 Returns server stats:
 
 ```sh
-curl --location 'http://localhost:3000/api/info' \
+curl --location 'http://localhost:3001/api/info' \
 --header 'Authorization: <api-token>' \
 ```
 
@@ -398,12 +437,12 @@ Response example:
 }
 ```
 
-## `/api/ping` (GET)
+### `/api/ping` (GET)
 
 Returns server stats:
 
 ```sh
-curl --location 'http://localhost:3000/api/ping'
+curl --location 'http://localhost:3001/api/ping'
 ```
 
 Response example:
@@ -585,7 +624,7 @@ There is an option to customize application UI logo, favicon, title and header l
 Patch endpoint that accepts form-data request body to update the configuration:
 
 ```sh
-curl --location --request PATCH 'localhost:3000/api/config' \
+curl --location --request PATCH 'localhost:3001/api/config' \
   --header 'Authorization: YOUR_TOKEN' \
   --form 'title="YOUR_TITLE"' \
   --form 'logo=@"PATH_TO_YOUR_LOGO"' \

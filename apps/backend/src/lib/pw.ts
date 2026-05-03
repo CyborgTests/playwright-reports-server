@@ -14,7 +14,7 @@ import { withError } from './withError.js';
 const execAsync = util.promisify(exec);
 
 export const isValidPlaywrightVersion = (version?: string): boolean => {
-  // stupid-simple validation to check that version follows semantic version format major.minor.patch
+  // Loose semver: major.minor.patch with no pre-release/build suffixes.
   const versionPattern = /^\d+\.\d+\.\d+$/;
 
   return versionPattern.test(version ?? '');
@@ -26,21 +26,14 @@ export const generatePlaywrightReport = async (
 ): Promise<{ reportPath: string }> => {
   const { playwrightVersion } = metadata;
 
-  console.log(`[pw] generating Playwright report ${reportId}`);
-
   const reportPath = path.join(REPORTS_FOLDER, reportId);
 
   await createDirectory(reportPath);
 
-  console.log(`[pw] report path: ${reportPath}`);
-
   const tempFolder = path.join(TMP_FOLDER, reportId);
-
-  console.log(`[pw] merging reports from ${tempFolder}`);
-
   const versionTag = isValidPlaywrightVersion(playwrightVersion) ? `@${playwrightVersion}` : '';
 
-  console.log(`[pw] using playwright version tag: "${versionTag}"`);
+  console.log(`[pw] generating report ${reportId} (playwright${versionTag || ' default'})`);
 
   const { result: config } = await storage.readConfigFile();
   const customReporters = config?.reporterPaths || defaultConfig.reporterPaths || [];
@@ -70,37 +63,22 @@ export const generatePlaywrightReport = async (
     }
   }
 
-  /**
-   * Merge configuration used for server side reports merging. Needed to handle errors like this:
-  Network response was not ok: Error: Command failed: npx playwright merge-reports --reporter html /app/.tmp/99f690b3-aace-4293-a988-d5945eb0d259
-  Error: Blob reports being merged were recorded with different test directories, and
-  merging cannot proceed. This may happen if you are merging reports from
-  machines with different environments, like different operating systems or
-  if the tests ran with different playwright configs.
-
-  You can force merge by specifying a merge config file with "-c" option. If
-  you'd like all test paths to be correct, make sure 'testDir' in the merge config
-  file points to the actual tests location.
-
-  Found directories:
-  /builds/_JRRzYANI/1/e2e/tests/
-  /builds/_JRRzYANI/2/e2e/tests/
-  /builds/_JRRzYANI/3/e2e/tests/
-      at mergeConfigureEvents
-  */
+  // Force a synthetic testDir so blob reports recorded under different working directories
+  // (e.g. CI shards under /builds/_JRRzYANI/{1,2,3}/e2e/tests/) can be merged. Without this,
+  // Playwright bails out with "Blob reports being merged were recorded with different test
+  // directories, and merging cannot proceed."
   const mergeConfig = `export default { testDir: 'rootTestsDir' };`;
 
   const configPath = path.join(TMP_FOLDER, 'merge.config.ts');
   await fs.writeFile(configPath, mergeConfig);
   try {
-    // installing playwright into cache if not installed
-    const { result: installResult, error: installCheckError } = await withError(
+    const { error: installCheckError } = await withError(
       execAsync(`npx playwright${versionTag} --version`)
     );
 
     if (installCheckError) {
       console.log(`[pw] playwright${versionTag} not found, installing...`);
-      const { result: installResultInner, error: installError } = await withError(
+      const { error: installError } = await withError(
         execAsync(`npx playwright${versionTag} install --with-deps`)
       );
 
@@ -108,21 +86,15 @@ export const generatePlaywrightReport = async (
         console.error(`[pw] playwright${versionTag} install error:`, installError.message);
         throw installError;
       }
-
-      console.log(`[pw] playwright${versionTag} installed:`, installResultInner);
     }
-
-    console.log(`[pw] npx cache for playwright${versionTag}`, installResult);
 
     const command = `npx playwright${versionTag} merge-reports --reporter ${reporterArgs.join(' --reporter ')} --config ${configPath} ${tempFolder}`;
 
-    console.log('[pw] used merge config', mergeConfig);
-    console.log(`[pw] executing merging command: ${command}`);
     const { result, error } = await withError(
       execAsync(command, {
         env: {
           ...process.env,
-          // Avoid opening the report on server
+          // Don't auto-open the report in a browser on the server.
           PW_TEST_HTML_REPORT_OPEN: 'never',
           PLAYWRIGHT_HTML_REPORT: reportPath,
         },
@@ -134,11 +106,8 @@ export const generatePlaywrightReport = async (
       throw error;
     }
 
-    console.log('[pw] merge result', result);
-
     if (result?.stderr) {
-      // stderr also contains warnings, should not fail due to that
-      // only throw if stderr contains actual errors
+      // stderr also carries non-fatal warnings (e.g. `npm warn …`); only fail on real errors.
       const stderr = result.stderr;
       const isWarning = stderr
         .split('\n')

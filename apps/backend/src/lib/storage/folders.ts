@@ -5,6 +5,6 @@ export async function createDirectory(dir: string) {
     await fs.access(dir);
   } catch {
     await fs.mkdir(dir, { recursive: true });
-    console.log('Created directory:', dir);
+    console.log(`[fs] created directory ${dir}`);
   }
 }

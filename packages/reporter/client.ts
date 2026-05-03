@@ -49,7 +49,7 @@ export class ReportServerClient {
     try {
       stat = await fsp.stat(blobPath);
     } catch (err) {
-      console.error(err);
+      console.error('[ReportServerClient] failed to stat blob:', err);
       throw new Error(
         '[ReportServerClient] Blob file not found or cannot be loaded. Results cannot be uploaded'
       );

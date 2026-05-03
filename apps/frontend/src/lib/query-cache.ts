@@ -5,7 +5,6 @@ export const invalidateCache = async (
   options?: { queryKeys?: string[]; predicate?: string }
 ) => {
   try {
-    // Invalidate client-side cache
     if (queryClient) {
       if (options?.queryKeys) {
         for (const key of options.queryKeys) {

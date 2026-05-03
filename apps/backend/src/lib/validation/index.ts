@@ -14,8 +14,6 @@ export class ValidationError extends Error {
 export function validateSchema<T extends z.ZodType>(schema: T, data: unknown): z.infer<T> {
   const result = schema.safeParse(data);
   if (!result.success) {
-    console.log('Validation error data:', data);
-    console.log('Validation error:', result.error);
     const errorMessages = result.error.issues.map((err: any) => ({
       field: err.path.join('.'),
       message: err.message,

@@ -1,4 +1,5 @@
 import type {
+  DateRange,
   TestFilters,
   TestWithQuarantineInfo,
 } from '@playwright-reports/shared';
@@ -49,9 +50,13 @@ import { TestFilters as TestFiltersComponent } from './TestFilters';
 
 interface TestManagementWidgetProps {
   project?: string;
+  dateRange?: DateRange;
 }
 
-export default function TestManagementWidget({ project }: Readonly<TestManagementWidgetProps>) {
+export default function TestManagementWidget({
+  project,
+  dateRange,
+}: Readonly<TestManagementWidgetProps>) {
   const [filters, setFilters] = useState<TestFilters>({
     project: project ?? defaultProjectName,
     status: 'all',
@@ -93,11 +98,13 @@ export default function TestManagementWidget({ project }: Readonly<TestManagemen
       if (filters.flakinessMax !== undefined && filters.flakinessMax < 100) {
         params.append('flakinessMax', filters.flakinessMax.toString());
       }
+      if (dateRange?.from) params.append('from', dateRange.from);
+      if (dateRange?.to) params.append('to', dateRange.to);
       params.append('limit', PAGE_SIZE.toString());
       params.append('offset', offset.toString());
       return params.toString();
     },
-    [filters]
+    [filters, dateRange?.from, dateRange?.to]
   );
 
   const isAuthDisabled = session.status === 'authenticated' && session.data === null;
@@ -110,7 +117,7 @@ export default function TestManagementWidget({ project }: Readonly<TestManagemen
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<{ data: TestWithQuarantineInfo[]; total: number }>({
-    queryKey: ['/api/tests', filters],
+    queryKey: ['/api/tests', filters, dateRange?.from, dateRange?.to],
     queryFn: async ({ pageParam }) => {
       const headers: HeadersInit = {};
       const jwtToken = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;

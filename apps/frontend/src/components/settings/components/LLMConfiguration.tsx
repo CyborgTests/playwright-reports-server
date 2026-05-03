@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 
 interface LLMConfigurationProps {
   config: ServerConfig;
@@ -221,6 +222,31 @@ export default function LLMConfiguration({
                   },
                 })
               }
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-medium">Auto-analyze new reports</h4>
+              <p className="text-xs text-muted-foreground mt-1">
+                When enabled, every failed test in a newly ingested report is queued for LLM
+                analysis automatically.
+              </p>
+            </div>
+            <Switch
+              disabled={editingSection !== 'llm'}
+              checked={
+                editingSection === 'llm'
+                  ? !!tempConfig.llm?.autoAnalyzeNewReports
+                  : !!config.llm?.autoAnalyzeNewReports
+              }
+              onCheckedChange={(checked) => {
+                if (editingSection === 'llm') {
+                  onUpdateTempConfig({
+                    llm: { ...tempConfig.llm, autoAnalyzeNewReports: checked },
+                  });
+                }
+              }}
             />
           </div>
 

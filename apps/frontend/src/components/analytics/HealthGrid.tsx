@@ -1,7 +1,8 @@
 'use client';
 
 import type { RunHealthMetric } from '@playwright-reports/shared';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { useCallback, useLayoutEffect, useState } from 'react';
+import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface HealthGridProps {
@@ -14,6 +15,9 @@ const chartColors = {
   failed: 'hsl(0, 84%, 60%)', // red
   flaky: 'hsl(38, 92%, 50%)', // yellow/orange
 };
+
+const BAR_PX = 36;
+const CHART_HEIGHT = 300;
 
 export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
   const chartData = metrics.map((metric) => ({
@@ -72,11 +76,39 @@ export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
     return null;
   };
 
+  const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  const scrollContainerRef = useCallback((node: HTMLDivElement | null) => {
+    setScrollContainer(node);
+    if (node) setContainerWidth(node.clientWidth);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!scrollContainer || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const next = entries[0]?.contentRect.width ?? 0;
+      if (next > 0) setContainerWidth(next);
+    });
+    observer.observe(scrollContainer);
+    return () => observer.disconnect();
+  }, [scrollContainer]);
+
+  // Stretch chart to fill the container when there are few runs; grow beyond it
+  // (and let the container scroll horizontally) when there are many.
+  const chartWidth = Math.max(containerWidth, chartData.length * BAR_PX);
+
+  useLayoutEffect(() => {
+    if (!scrollContainer) return;
+    scrollContainer.scrollLeft = scrollContainer.scrollWidth;
+  }, [scrollContainer, chartWidth, isLoading]);
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
       <h3 className="text-lg font-semibold mb-4">Test Health Grid</h3>
       <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-        Stacked bar chart showing pass/fail breakdown across the most recent 20 runs
+        Stacked bar chart showing pass/fail breakdown across {metrics.length}{' '}
+        {metrics.length === 1 ? 'run' : 'runs'} in the selected period
       </p>
 
       {isLoading ? (
@@ -86,12 +118,14 @@ export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
           No health data available
         </div>
       ) : (
-        <ResponsiveContainer width="100%" height={300}>
+        <div ref={scrollContainerRef} className="overflow-x-auto">
           <BarChart
+            width={chartWidth}
+            height={CHART_HEIGHT}
             data={chartData.reverse()}
             onClick={(e) => {
               const reportId = e.activePayload?.[0]?.payload?.runId;
-              window.open(`/report/${reportId}`, '_blank');
+              if (reportId) window.open(`/report/${reportId}`, '_blank');
             }}
           >
             <CartesianGrid strokeDasharray="3 3" />
@@ -108,7 +142,7 @@ export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
             <Bar dataKey="flaky" stackId="a" fill={chartColors.flaky} />
             <Bar dataKey="failed" stackId="a" fill={chartColors.failed} />
           </BarChart>
-        </ResponsiveContainer>
+        </div>
       )}
     </div>
   );

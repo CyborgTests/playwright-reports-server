@@ -70,6 +70,7 @@ const useQuery = <ReturnType>(
     ...(options?.gcTime !== undefined && { gcTime: options.gcTime }),
     ...(options?.retry !== undefined && { retry: options.retry }),
     ...(options?.select !== undefined && { select: options.select }),
+    ...(options?.placeholderData !== undefined && { placeholderData: options.placeholderData }),
   });
 };
 

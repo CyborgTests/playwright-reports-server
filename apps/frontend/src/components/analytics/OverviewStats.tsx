@@ -38,26 +38,21 @@ export function OverviewStatsCard({ stats, totalTests, flakyCount, totalRuns }: 
     );
   }
 
-  const getTrendIcon = (trend: 'up' | 'down' | 'stable') => {
-    switch (trend) {
-      case 'up':
-        return <TrendingUp className="h-4 w-4 text-red-500" />;
-      case 'down':
-        return <TrendingDown className="h-4 w-4 text-green-500" />;
-      default:
-        return <Minus className="h-4 w-4 text-gray-500" />;
-    }
+  const isPositive = (trend: 'up' | 'down' | 'stable', higherIsBetter: boolean) =>
+    (trend === 'up' && higherIsBetter) || (trend === 'down' && !higherIsBetter);
+
+  const getTrendIcon = (trend: 'up' | 'down' | 'stable', higherIsBetter: boolean) => {
+    if (trend === 'stable') return <Minus className="h-4 w-4 text-gray-500" />;
+    const colorClass = isPositive(trend, higherIsBetter) ? 'text-green-500' : 'text-red-500';
+    const Icon = trend === 'up' ? TrendingUp : TrendingDown;
+    return <Icon className={`h-4 w-4 ${colorClass}`} />;
   };
 
-  const getTrendColor = (trend: 'up' | 'down' | 'stable') => {
-    switch (trend) {
-      case 'up':
-        return 'text-red-600 dark:text-red-400';
-      case 'down':
-        return 'text-green-600 dark:text-green-400';
-      default:
-        return 'text-gray-600 dark:text-gray-400';
-    }
+  const getTrendColor = (trend: 'up' | 'down' | 'stable', higherIsBetter: boolean) => {
+    if (trend === 'stable') return 'text-gray-600 dark:text-gray-400';
+    return isPositive(trend, higherIsBetter)
+      ? 'text-green-600 dark:text-green-400'
+      : 'text-red-600 dark:text-red-400';
   };
 
   const {
@@ -78,15 +73,15 @@ export function OverviewStatsCard({ stats, totalTests, flakyCount, totalRuns }: 
       title: 'Pass Rate',
       value: `${passRate.toFixed(2)}%`,
       subtitle: '7-day/30-day comparison',
-      icon: getTrendIcon(passRateTrend),
-      iconColor: getTrendColor(passRateTrend),
+      icon: getTrendIcon(passRateTrend, true),
+      iconColor: getTrendColor(passRateTrend, true),
     },
     {
       title: 'Flaky Tests',
       value: (flakyCount ?? 0).toString(),
       subtitle: 'Failing intermittently',
-      icon: getTrendIcon(flakyTestsTrend),
-      iconColor: getTrendColor(flakyTestsTrend),
+      icon: getTrendIcon(flakyTestsTrend, false),
+      iconColor: getTrendColor(flakyTestsTrend, false),
     },
     {
       title: 'Avg Test Duration',

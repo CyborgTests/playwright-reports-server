@@ -82,7 +82,7 @@ export abstract class LLMProvider extends BaseProvider {
 
       return response.ok;
     } catch (error) {
-      console.log(
+      console.warn(
         `[llm] validation failed for ${this.config.provider}:`,
         error instanceof Error ? error.message : error
       );
@@ -205,7 +205,6 @@ export abstract class LLMProvider extends BaseProvider {
   }): LLMProviderError {
     const statusCode = error.status || error.statusCode;
 
-    // Common error patterns
     if (statusCode === 401 || statusCode === 403) {
       return new LLMProviderError(
         error.message ?? error.statusText ?? 'Authentication failed',

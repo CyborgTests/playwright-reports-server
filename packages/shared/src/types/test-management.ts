@@ -14,6 +14,8 @@ export interface TestWithQuarantineInfo {
   lastRunAt?: string;
 }
 
+export type FailureCategorySource = 'heuristic' | 'llm' | 'manual' | 'consensus';
+
 export interface TestRun {
   runId: string;
   testId: string;
@@ -28,6 +30,7 @@ export interface TestRun {
   flakinessScore?: number;
   failureDetails?: string; // JSON string of FailureDetails
   failureCategory?: string;
+  failureCategorySource?: FailureCategorySource;
   errorSignature?: string;
 }
 

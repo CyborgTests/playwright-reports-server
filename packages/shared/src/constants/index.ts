@@ -23,7 +23,6 @@ export const API_ENDPOINTS = {
   // Config
   CONFIG: '/api/config',
   INFO: '/api/info',
-  CACHE_REFRESH: '/api/cache/refresh',
 
   // Static
   STATIC: '/api/static',
@@ -32,6 +31,12 @@ export const API_ENDPOINTS = {
   // Health
   PING: '/api/ping',
   HEALTH: '/api/health',
+
+  // LLM feedback (test-level only)
+  LLM_FEEDBACK: '/api/llm/feedback',
+  LLM_FEEDBACK_RELATED: '/api/llm/feedback/related',
+  LLM_REGENERATE: '/api/llm/regenerate',
+  LLM_TEST_HISTORY: '/api/llm/test-history',
 } as const;
 
 export const TEST_OUTCOMES = {

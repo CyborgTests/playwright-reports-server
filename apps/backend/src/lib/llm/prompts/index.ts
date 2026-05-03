@@ -59,7 +59,20 @@ export const testFailureAnalysisPrompt = (
   }
 ): string => {
   let prompt = `Analyze this Playwright test failure and provide:\n`;
-  prompt += `1. A failure **category** (one of: timeout, snapshot_mismatch, element_not_found, assertion_error, network_error, navigation_error, api_error, authentication_error, javascript_error, setup_teardown, browser_crash, unknown)\n`;
+  prompt += `1. A failure **category** — pick exactly one from this fixed enum:\n`;
+  prompt += `   - **timeout** — Playwright's TimeoutError or a test-level timeout, with no specific locator/visibility context\n`;
+  prompt += `   - **element_not_visible** — \`expect(locator).toBeVisible()\` (or similar) timed out waiting for an element to appear/become interactable\n`;
+  prompt += `   - **element_not_found** — locator resolved to 0 elements, or strict-mode violation\n`;
+  prompt += `   - **assertion_error** — test-logic value mismatch (toEqual/toMatch/toContain/...) without timeout or locator context\n`;
+  prompt += `   - **snapshot_mismatch** — visual / screenshot / toMatchSnapshot failure\n`;
+  prompt += `   - **network_error** — \`net::ERR_*\`, ECONNREFUSED/ECONNRESET, transport-layer failure\n`;
+  prompt += `   - **api_error** — explicit 4xx/5xx response from the app under test (non-auth)\n`;
+  prompt += `   - **authentication_error** — 401/403, "Unauthorized", "Forbidden", or login/credential failures\n`;
+  prompt += `   - **navigation_error** — page.goto/reload failure, frame detached, navigation timeout (when not a network transport error)\n`;
+  prompt += `   - **browser_crash** — "Target closed", "Page crashed", browser/context disconnected\n`;
+  prompt += `   - **setup_teardown** — error originating in beforeAll/afterAll/beforeEach/afterEach/fixture\n`;
+  prompt += `   - **javascript_error** — ReferenceError/SyntaxError/TypeError, page.evaluate failures, uncaught promise rejections\n`;
+  prompt += `   - **unknown** — only when none of the above clearly apply\n`;
   prompt += `2. A concise **analysis** of the root cause\n`;
   prompt += `3. A suggested **fix**\n`;
   prompt += `4. Whether this appears to be a **new issue** or a recurring pattern\n\n`;
@@ -117,7 +130,13 @@ export const testFailureAnalysisPrompt = (
 export const reportFailureSummaryPrompt = (
   reportId: string,
   categories: Record<string, number>,
-  errorGroups: Array<{ signature: string; category: string; count: number; sampleMessage: string; affectedTests: string[] }>,
+  errorGroups: Array<{
+    signature: string;
+    category: string;
+    count: number;
+    sampleMessage: string;
+    affectedTests: string[];
+  }>,
   perTestAnalyses: Array<{ testTitle: string; category: string; analysis: string }>
 ): string => {
   let prompt = `Summarize the test failures from this Playwright report.\n\n`;
@@ -157,29 +176,109 @@ export const reportFailureSummaryPrompt = (
   return prompt;
 };
 
+function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return 'just now';
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
+  const days = Math.floor(ms / 86_400_000);
+  if (days < 30) return `${days}d ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
+}
+
+export const buildFeedbackContext = (
+  feedback: { comment: string; updatedAt: string } | null
+): string => {
+  if (!feedback) return '';
+  return `\n## Prior User Feedback\n${feedback.comment}\nUpdated: ${relativeTime(feedback.updatedAt)}\n`;
+};
+
+export const buildPerTestFeedbackContext = (
+  notes: Array<{ testTitle?: string; comment: string; updatedAt: string }>
+): string => {
+  if (notes.length === 0) return '';
+  let block = `\n## Per-Test Feedback Notes\n`;
+  for (const n of notes) {
+    block += `- **${n.testTitle ?? 'test'}** (updated ${relativeTime(n.updatedAt)}): ${n.comment}\n`;
+  }
+  return block;
+};
+
+interface CrossProjectEntry {
+  project: string;
+  comment: string;
+  updatedAt: string;
+  errorSignatureMatchesCurrent: boolean;
+  latestAnalysis?: { content: string; updatedAt: string; model?: string };
+}
+
+/**
+ * Phase 2: same-test feedback in other projects. Each entry is labeled with project name,
+ * relative age, and signature-match status so the model can self-prioritize. Capped at 5
+ * by the caller (newest first); a tail line is appended when more exist.
+ */
+export const buildCrossProjectContext = (
+  entries: CrossProjectEntry[],
+  totalCount = entries.length
+): string => {
+  if (entries.length === 0) return '';
+  let block = `\n## Same Test in Other Projects\n`;
+  for (const e of entries) {
+    const sig = e.errorSignatureMatchesCurrent ? 'matches' : 'differs';
+    block += `\n### Project ${e.project} — feedback updated ${relativeTime(e.updatedAt)} — error signature: ${sig}\n`;
+    block += `${e.comment}\n`;
+    if (e.latestAnalysis) {
+      const modelInfo = e.latestAnalysis.model ? `, model: ${e.latestAnalysis.model}` : '';
+      block += `Latest analysis there (${relativeTime(e.latestAnalysis.updatedAt)}${modelInfo}):\n${e.latestAnalysis.content}\n`;
+    }
+  }
+  if (totalCount > entries.length) {
+    block += `\n… and ${totalCount - entries.length} more not shown.\n`;
+  }
+  return block;
+};
+
 export const projectFailureSummaryPrompt = (
   project: string,
-  reportSummaries: Array<{ reportId: string; totalFailures: number; categories: Record<string, number>; llmSummary?: string; createdAt: string }>
+  runs: Array<{
+    reportId: string;
+    createdAt: string;
+    stats: { total: number; expected: number; unexpected: number; flaky: number; skipped: number };
+    totalFailures: number;
+    categories: Record<string, number>;
+    llmSummary?: string;
+  }>
 ): string => {
-  let prompt = `Synthesize the test failure trends for project "${project}" across the last ${reportSummaries.length} reports.\n\n`;
+  const totalRuns = runs.length;
+  const runsWithFailures = runs.filter((r) => r.totalFailures > 0);
+  const passingRuns = totalRuns - runsWithFailures.length;
 
-  for (const summary of reportSummaries) {
-    prompt += `### Report ${summary.reportId} (${summary.createdAt})\n`;
-    prompt += `- Total failures: ${summary.totalFailures}\n`;
-    for (const [cat, count] of Object.entries(summary.categories).sort((a, b) => b[1] - a[1])) {
-      prompt += `  - ${cat}: ${count}\n`;
-    }
-    if (summary.llmSummary) {
-      prompt += `- Summary: ${summary.llmSummary.substring(0, 300)}\n`;
+  let prompt = `Analyze the test health for project "${project}" across the latest ${totalRuns} runs.\n\n`;
+  prompt += `**Overview:** ${passingRuns} of ${totalRuns} runs passed cleanly (no failures). ${runsWithFailures.length} runs had failures.\n\n`;
+  prompt += `Runs are listed from most recent to oldest:\n\n`;
+
+  for (const run of runs) {
+    const status = run.totalFailures > 0 ? 'FAILURES' : 'PASS';
+    prompt += `### Run ${run.reportId} (${run.createdAt}) — ${status}\n`;
+    prompt += `- Tests: ${run.stats.total} total, ${run.stats.expected} passed, ${run.stats.unexpected} failed, ${run.stats.flaky} flaky, ${run.stats.skipped} skipped\n`;
+    if (run.totalFailures > 0) {
+      for (const [cat, count] of Object.entries(run.categories).sort((a, b) => b[1] - a[1])) {
+        prompt += `  - ${cat}: ${count}\n`;
+      }
+      if (run.llmSummary) {
+        prompt += `- Summary: ${run.llmSummary.substring(0, 300)}\n`;
+      }
     }
     prompt += '\n';
   }
 
   prompt += `Provide:\n`;
-  prompt += `1. Overall trends — are failures increasing, decreasing, or stable?\n`;
-  prompt += `2. Persistent issues that appear across multiple reports\n`;
-  prompt += `3. New issues that appeared recently\n`;
+  prompt += `1. Overall health assessment — consider that passing runs mean issues were resolved or absent\n`;
+  prompt += `2. Identify which failures are transient (appeared and then resolved) vs persistent (recurring across multiple runs)\n`;
+  prompt += `3. New issues that appeared recently and whether they have been resolved in subsequent runs\n`;
   prompt += `4. Top 3 prioritized recommendations for improving test stability\n`;
+  prompt += `\nIMPORTANT: Account for the full timeline. If tests were passing before and after a failure, that failure is likely transient/already resolved — do not treat it as an ongoing critical issue.\n`;
 
   return prompt;
 };

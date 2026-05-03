@@ -1,5 +1,10 @@
 export type UUID = `${string}-${string}-${string}-${string}-${string}`;
 
+export interface DateRange {
+  from?: string;
+  to?: string;
+}
+
 export type LLMProviderType = 'openai' | 'anthropic';
 
 export interface LLMConfig {
@@ -9,6 +14,7 @@ export interface LLMConfig {
   model?: string;
   temperature?: number;
   parallelRequests?: number;
+  autoAnalyzeNewReports?: boolean;
 }
 
 export interface TestManagementConfig {
@@ -299,4 +305,5 @@ export interface ServerConfig {
 }
 
 export * from './analytics.js';
+export * from './feedback.js';
 export * from './test-management.js';

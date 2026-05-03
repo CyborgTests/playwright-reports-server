@@ -13,18 +13,35 @@ export interface TestAnalysisRow {
   fileId: string;
   project: string;
   reportId: string;
+  attempt: number;
   analysis: string | null;
   category: string | null;
   model: string | null;
   createdAt: string;
   updatedAt: string | null;
+  /** Set to the source analysis id when this row was copied from a prior analysis
+   *  (same error_signature). NULL for fresh LLM-generated analyses. */
+  reusedFromAnalysisId: string | null;
 }
 
 export class TestAnalysisDatabase {
   private readonly db = getDatabase();
 
   private readonly upsertStmt: Database.Statement<
-    [string, string, string, string, string, string | null, string | null, string | null, string, string]
+    [
+      string,
+      string,
+      string,
+      string,
+      string,
+      number,
+      string | null,
+      string | null,
+      string | null,
+      string,
+      string,
+      string | null,
+    ]
   >;
   private readonly getByTestStmt: Database.Statement<[string, string, string]>;
   private readonly getByReportStmt: Database.Statement<[string]>;
@@ -33,14 +50,14 @@ export class TestAnalysisDatabase {
 
   private constructor() {
     this.upsertStmt = this.db.prepare(`
-      INSERT INTO test_llm_analyses (id, testId, fileId, project, reportId, analysis, category, model, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(testId, fileId, project) DO UPDATE SET
-        reportId = excluded.reportId,
+      INSERT INTO test_llm_analyses (id, testId, fileId, project, reportId, attempt, analysis, category, model, createdAt, updatedAt, reusedFromAnalysisId)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(testId, fileId, project, reportId, attempt) DO UPDATE SET
         analysis = excluded.analysis,
         category = excluded.category,
         model = excluded.model,
-        updatedAt = excluded.updatedAt
+        updatedAt = excluded.updatedAt,
+        reusedFromAnalysisId = excluded.reusedFromAnalysisId
     `);
 
     this.getByTestStmt = this.db.prepare(`
@@ -72,7 +89,9 @@ export class TestAnalysisDatabase {
     reportId: string,
     analysis?: string,
     category?: string,
-    model?: string
+    model?: string,
+    attempt = 1,
+    reusedFromAnalysisId?: string
   ): TestAnalysisRow {
     const id = uuid();
     const now = new Date().toISOString();
@@ -83,11 +102,13 @@ export class TestAnalysisDatabase {
       fileId,
       project,
       reportId,
+      attempt,
       analysis ?? null,
       category ?? null,
       model ?? null,
       now,
-      now
+      now,
+      reusedFromAnalysisId ?? null
     );
 
     return {
@@ -96,11 +117,13 @@ export class TestAnalysisDatabase {
       fileId,
       project,
       reportId,
+      attempt,
       analysis: analysis ?? null,
       category: category ?? null,
       model: model ?? null,
       createdAt: now,
       updatedAt: now,
+      reusedFromAnalysisId: reusedFromAnalysisId ?? null,
     };
   }
 
@@ -116,7 +139,7 @@ export class TestAnalysisDatabase {
   public getByTestAndReport(testId: string, reportId: string): TestAnalysisRow | null {
     // Try exact match first: testId + reportId
     const exact = this.db
-      .prepare('SELECT * FROM test_llm_analyses WHERE testId = ? AND reportId = ? LIMIT 1')
+      .prepare('SELECT * FROM test_llm_analyses WHERE testId = ? AND reportId = ? ORDER BY attempt LIMIT 1')
       .get(testId, reportId) as TestAnalysisRow | undefined;
     if (exact) return exact;
 
@@ -125,6 +148,15 @@ export class TestAnalysisDatabase {
       .prepare('SELECT * FROM test_llm_analyses WHERE testId = ? ORDER BY updatedAt DESC, createdAt DESC LIMIT 1')
       .get(testId) as TestAnalysisRow | undefined;
     return fallback ?? null;
+  }
+
+  /**
+   * Get all analyses for a test in a specific report (one per attempt).
+   */
+  public getAllByTestAndReport(testId: string, reportId: string): TestAnalysisRow[] {
+    return this.db
+      .prepare('SELECT * FROM test_llm_analyses WHERE testId = ? AND reportId = ? ORDER BY attempt')
+      .all(testId, reportId) as TestAnalysisRow[];
   }
 
   public getByReport(reportId: string): TestAnalysisRow[] {

@@ -21,7 +21,6 @@ Progress.displayName = ProgressPrimitive.Root.displayName;
 
 export { Progress };
 
-// Circular Progress Component
 interface CircularProgressProps extends React.HTMLAttributes<HTMLDivElement> {
   value: number;
   size?: number;

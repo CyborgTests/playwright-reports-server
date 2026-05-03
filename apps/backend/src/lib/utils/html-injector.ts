@@ -12,9 +12,6 @@ export async function injectTestAnalysis(source: string, testUrl: ParsedTestUrl)
     const dom = new JSDOM(html);
     const document = dom.window.document;
     await injectClientSideScript(document, testUrl);
-    console.log(
-      `[html-injector] Successfully injected client-side script for testId: ${testUrl.reportId}`
-    );
     return dom.serialize();
   } catch (error) {
     console.error('[html-injector] Error injecting HTML:', error);
@@ -137,6 +134,18 @@ async function injectClientSideScript(document: any, testUrl: ParsedTestUrl): Pr
       font-weight: 600;
     }
 
+    .llm-inline-header .llm-reused-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      background: var(--llm-thinking-bg);
+      color: var(--llm-thinking-text);
+      border: 1px solid var(--llm-thinking-border);
+      font-weight: 500;
+      cursor: help;
+    }
+
     .llm-inline-header .llm-model {
       font-size: 11px;
       color: var(--llm-muted);
@@ -161,6 +170,261 @@ async function injectClientSideScript(document: any, testUrl: ParsedTestUrl): Pr
     }
 
     .llm-retry-btn:hover { opacity: 0.8; }
+
+    #llm-feedback-panel {
+      margin: 12px 0;
+      border: 1px solid var(--llm-btn-border);
+      border-radius: 8px;
+      background: var(--llm-body-bg);
+      color: var(--llm-body-text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    .llm-feedback-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+
+    .llm-feedback-icon { font-size: 14px; }
+
+    .llm-feedback-title { font-weight: 600; }
+
+    .llm-feedback-state {
+      color: var(--llm-muted);
+      font-size: 12px;
+    }
+
+    .llm-feedback-stale {
+      color: #b45309;
+      font-size: 12px;
+      font-weight: 500;
+      margin-left: auto;
+    }
+
+    .dark-mode .llm-feedback-stale,
+    [data-theme="dark"] .llm-feedback-stale {
+      color: #fcd34d;
+    }
+
+    .llm-feedback-toggle {
+      margin-left: auto;
+      padding: 4px 10px;
+      font-size: 11px;
+      border: 1px solid var(--llm-btn-border);
+      border-radius: 4px;
+      background: var(--llm-btn-bg);
+      color: var(--llm-btn-text);
+      cursor: pointer;
+    }
+
+    .llm-feedback-stale:not([hidden]) ~ .llm-feedback-toggle {
+      margin-left: 8px;
+    }
+
+    .llm-feedback-toggle:hover { opacity: 0.85; }
+
+    .llm-feedback-body {
+      padding: 0 12px 12px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .llm-feedback-body[hidden] { display: none; }
+    .llm-feedback-stale[hidden] { display: none; }
+
+    .llm-feedback-textarea {
+      width: 100%;
+      min-height: 80px;
+      padding: 8px 10px;
+      font-family: inherit;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--llm-body-text);
+      background: var(--llm-stream-bg);
+      border: 1px solid var(--llm-btn-border);
+      border-radius: 6px;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+
+    .llm-feedback-textarea:focus {
+      outline: 2px solid var(--llm-border);
+      outline-offset: -1px;
+    }
+
+    .llm-feedback-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .llm-feedback-actions button {
+      padding: 5px 12px;
+      font-size: 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      border: 1px solid var(--llm-btn-border);
+      background: var(--llm-btn-bg);
+      color: var(--llm-btn-text);
+    }
+
+    .llm-feedback-actions button:hover:not(:disabled) { opacity: 0.85; }
+    .llm-feedback-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .llm-feedback-save {
+      background: var(--llm-border) !important;
+      color: white !important;
+      border-color: var(--llm-border) !important;
+    }
+
+    .llm-feedback-status {
+      font-size: 12px;
+      color: var(--llm-muted);
+      margin-left: auto;
+    }
+
+    .llm-feedback-status-ok { color: #059669; }
+    .llm-feedback-status-error { color: var(--llm-error-text); }
+
+    .llm-feedback-cascade-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--llm-muted);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .llm-feedback-cascade {
+      cursor: pointer;
+    }
+
+    .llm-feedback-origin {
+      font-size: 12px;
+      color: var(--llm-muted);
+    }
+
+    .llm-feedback-origin a {
+      color: var(--llm-body-text);
+      text-decoration: underline;
+    }
+
+    .llm-feedback-origin a:hover {
+      text-decoration: none;
+    }
+
+    /* Cross-project chips & list (Phase 2) */
+    .llm-feedback-reused-chip,
+    .llm-feedback-new-error,
+    .llm-feedback-related-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+      border: 1px solid var(--llm-btn-border);
+      background: var(--llm-btn-bg);
+      color: var(--llm-btn-text);
+      white-space: nowrap;
+    }
+
+    .llm-feedback-new-error {
+      background: var(--llm-thinking-bg);
+      color: var(--llm-thinking-text);
+      border-color: var(--llm-thinking-border);
+    }
+
+    .llm-feedback-reused-chip {
+      background: var(--llm-thinking-bg);
+      color: var(--llm-thinking-text);
+      border-color: var(--llm-thinking-border);
+      cursor: help;
+    }
+
+    .llm-feedback-related-chip {
+      cursor: pointer;
+    }
+    .llm-feedback-related-chip:hover { opacity: 0.85; }
+
+    .llm-feedback-related {
+      font-size: 12px;
+      padding: 8px 10px;
+      background: var(--llm-stream-bg);
+      border-radius: 6px;
+      border: 1px solid var(--llm-btn-border);
+    }
+
+    .llm-feedback-related-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: var(--llm-body-text);
+    }
+
+    .llm-feedback-related-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .llm-feedback-related-list li {
+      padding: 3px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .llm-feedback-related-list a {
+      color: var(--llm-body-text);
+      text-decoration: underline;
+    }
+
+    .llm-feedback-related-list a:hover { text-decoration: none; }
+
+    .llm-feedback-sig {
+      padding: 1px 6px;
+      border-radius: 8px;
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .llm-feedback-sig.match {
+      background: var(--llm-header-bg);
+      color: var(--llm-header-text);
+    }
+
+    .llm-feedback-sig.differ {
+      background: var(--llm-thinking-bg);
+      color: var(--llm-thinking-text);
+    }
+
+    .llm-feedback-related-time {
+      color: var(--llm-muted);
+      font-size: 11px;
+    }
+
+    .llm-feedback-firstfound {
+      font-size: 11px;
+      color: var(--llm-muted);
+      white-space: nowrap;
+    }
+
+    .llm-feedback-firstfound a {
+      color: var(--llm-body-text);
+      text-decoration: underline;
+    }
+
+    .llm-feedback-firstfound a:hover {
+      text-decoration: none;
+    }
     `;
   document.head.appendChild(style);
 

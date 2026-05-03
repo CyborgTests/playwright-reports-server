@@ -132,7 +132,6 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
 
   const {
     data: reportResponse,
-    isFetching,
     isPending,
     error,
     refetch,
@@ -218,7 +217,7 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
     );
   };
 
-  if (isFetching || isPending) {
+  if (isPending && !reportResponse) {
     return (
       <div className="flex items-center justify-center p-8">
         <Spinner size="lg" />

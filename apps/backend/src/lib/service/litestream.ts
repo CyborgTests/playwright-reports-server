@@ -66,9 +66,6 @@ dbs:
   private async ensureConfigExists(): Promise<void> {
     const config = this.generateConfig();
     await fs.writeFile(this.configPath, config, 'utf-8');
-    const absoluteDbPath = path.resolve(this.dbPath);
-    console.log(`[litestream] Generated config from env package: ${this.configPath}`);
-    console.log(`[litestream] Database path in config: ${absoluteDbPath}`);
   }
 
   public static getInstance(): LitestreamService {
@@ -197,9 +194,9 @@ dbs:
     }
 
     await this.ensureConfigExists();
-    console.log(`[litestream] Using config from env package: ${this.configPath}`);
-    console.log(`[litestream] S3 bucket: ${env.S3_BUCKET}`);
-    console.log(`[litestream] S3 endpoint: ${env.S3_ENDPOINT || 'default (AWS)'}`);
+    console.log(
+      `[litestream] config=${this.configPath} bucket=${env.S3_BUCKET} endpoint=${env.S3_ENDPOINT || 'default (AWS)'}`
+    );
 
     const { error } = await withError(fs.access(this.configPath));
 
@@ -214,8 +211,7 @@ dbs:
       return;
     }
 
-    console.log('[litestream] Starting replication process');
-    console.log(`[litestream] Database: ${this.dbPath}`);
+    console.log(`[litestream] starting replication for ${this.dbPath}`);
 
     const litestreamEnv = this.buildLitestreamEnv();
 
@@ -240,8 +236,6 @@ dbs:
       console.log(`[litestream] Process exited with code ${code} and signal ${signal}`);
       this.process = null;
     });
-
-    console.log('[litestream] Replication starting...');
   }
 
   public async stop(): Promise<void> {
@@ -258,7 +252,6 @@ dbs:
 
     this.process.kill('SIGTERM');
 
-    // wait for process to exit or timeout after 5 seconds
     await Promise.race([
       new Promise<void>((resolve) => {
         this.process?.on('exit', () => resolve());

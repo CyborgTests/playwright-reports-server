@@ -1,6 +1,5 @@
 import type Database from 'better-sqlite3';
 import { defaultProjectName } from '../../constants.js';
-import { storage } from '../../storage/index.js';
 import type { ReadReportsInput, ReadReportsOutput, ReportHistory } from '../../storage/types.js';
 import { withError } from '../../withError.js';
 import { testManagementService } from '../testManagement.js';
@@ -10,6 +9,19 @@ import { testDb } from './tests.sqlite.js';
 const initiatedReportsDb = Symbol.for('playwright.reports.db.reports');
 const instance = globalThis as typeof globalThis & {
   [initiatedReportsDb]?: ReportDatabase;
+};
+
+type ReportRow = {
+  reportID: string;
+  project: string;
+  title: string | null;
+  displayNumber: number | null;
+  createdAt: string;
+  reportUrl: string;
+  size: string | null;
+  sizeBytes: number;
+  stats: string | null;
+  metadata: string;
 };
 
 export class ReportDatabase {
@@ -69,65 +81,8 @@ export class ReportDatabase {
       return;
     }
 
-    console.log('[report db] initializing SQLite for reports');
-    const { result, error } = await withError(storage.readReports());
-
-    if (error) {
-      console.error('[report db] failed to read reports:', error);
-      return;
-    }
-
-    if (!result?.reports?.length) {
-      console.log('[report db] no reports to store');
-      this.initialized = true;
-      return;
-    }
-
-    console.log(`[report db] caching ${result.reports.length} reports`);
-
-    const existingReports = this.getAll();
-    const displayNumbersInUse = new Set<number>();
-    for (const report of existingReports) {
-      if (report.displayNumber) {
-        displayNumbersInUse.add(report.displayNumber);
-      }
-    }
-
-    const insertMany = this.db.transaction((reports: ReportHistory[]) => {
-      const sortedReports = reports.sort(
-        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      );
-
-      let nextDisplayNumber = 1;
-
-      for (const report of sortedReports) {
-        if (existingReports.some((existing) => existing.reportID === report.reportID)) {
-          continue;
-        }
-        let displayNumber = report.displayNumber;
-
-        if (!displayNumber) {
-          while (displayNumbersInUse.has(nextDisplayNumber)) {
-            nextDisplayNumber++;
-          }
-          displayNumber = nextDisplayNumber;
-          displayNumbersInUse.add(displayNumber);
-          nextDisplayNumber++;
-        }
-
-        const reportWithDisplayNumber = {
-          ...report,
-          displayNumber,
-        };
-
-        this.insertReport(reportWithDisplayNumber);
-      }
-    });
-
-    insertMany(result.reports as ReportHistory[]);
-
     this.initialized = true;
-    console.log('[report db] initialization complete');
+    console.log(`[report db] initialized (${this.getCount()} reports)`);
   }
 
   public async populateTestRuns(): Promise<void> {
@@ -226,8 +181,6 @@ export class ReportDatabase {
   }
 
   public onDeleted(reportIds: string[]) {
-    console.log(`[report db] deleting ${reportIds.length} reports`);
-
     const deleteMany = this.db.transaction((ids: string[]) => {
       for (const id of ids) {
         this.deleteStmt.run(id);
@@ -242,8 +195,6 @@ export class ReportDatabase {
   }
 
   public onCreated(report: ReportHistory) {
-    console.log(`[report db] adding report ${report.reportID}`);
-
     const reportWithDisplayNumber = {
       ...report,
       displayNumber: report.displayNumber ?? this.getNextDisplayNumber(),
@@ -316,25 +267,36 @@ export class ReportDatabase {
     return rows.map(this.rowToReport);
   }
 
-  public getByProject(project?: string): ReportHistory[] {
-    const stmt =
-      project && project !== defaultProjectName
-        ? this.getByProjectStmt.all(project ?? '')
-        : this.getAllStmt.all();
+  public getByProject(
+    project?: string,
+    opts?: { from?: string; to?: string }
+  ): ReportHistory[] {
+    const hasProject = project && project !== defaultProjectName;
+    const hasFrom = !!opts?.from;
+    const hasTo = !!opts?.to;
 
-    const rows = stmt as Array<{
-      reportID: string;
-      project: string;
-      title: string | null;
-      displayNumber: number | null;
-      createdAt: string;
-      reportUrl: string;
-      size: string | null;
-      sizeBytes: number;
-      stats: string | null;
-      metadata: string;
-    }>;
+    if (!hasFrom && !hasTo) {
+      const stmt = hasProject ? this.getByProjectStmt.all(project ?? '') : this.getAllStmt.all();
+      return (stmt as ReportRow[]).map(this.rowToReport);
+    }
 
+    const conditions: string[] = [];
+    const params: string[] = [];
+    if (hasProject) {
+      conditions.push('project = ?');
+      params.push(project ?? '');
+    }
+    if (hasFrom) {
+      conditions.push('datetime(createdAt) >= datetime(?)');
+      params.push(opts?.from ?? '');
+    }
+    if (hasTo) {
+      conditions.push('datetime(createdAt) < datetime(?)');
+      params.push(opts?.to ?? '');
+    }
+
+    const sql = `SELECT * FROM reports WHERE ${conditions.join(' AND ')} ORDER BY createdAt DESC`;
+    const rows = this.db.prepare(sql).all(...params) as ReportRow[];
     return rows.map(this.rowToReport);
   }
 
@@ -361,6 +323,33 @@ export class ReportDatabase {
     return rows.map(this.rowToReport);
   }
 
+  public getLatestByProject(project?: string, limit = 10): ReportHistory[] {
+    let rows: Array<{
+      reportID: string;
+      project: string;
+      title: string | null;
+      displayNumber: number | null;
+      createdAt: string;
+      reportUrl: string;
+      size: string | null;
+      sizeBytes: number;
+      stats: string | null;
+      metadata: string;
+    }>;
+
+    if (project && project !== 'all') {
+      rows = this.db
+        .prepare('SELECT * FROM reports WHERE project = ? ORDER BY createdAt DESC LIMIT ?')
+        .all(project, limit) as typeof rows;
+    } else {
+      rows = this.db
+        .prepare('SELECT * FROM reports ORDER BY createdAt DESC LIMIT ?')
+        .all(limit) as typeof rows;
+    }
+
+    return rows.map(this.rowToReport);
+  }
+
   public getCount(): number {
     const result = this.db.prepare('SELECT COUNT(*) as count FROM reports').get() as {
       count: number;
@@ -370,7 +359,6 @@ export class ReportDatabase {
   }
 
   public clear(): void {
-    console.log('[report db] clearing all reports');
     this.db.prepare('DELETE FROM reports').run();
   }
 
@@ -440,15 +428,6 @@ export class ReportDatabase {
     };
 
     return (result.maxNumber || 0) + 1;
-  }
-
-  public async refresh(): Promise<void> {
-    console.log('[report db] refreshing cache');
-    this.clear();
-    testDb.clear();
-    this.initialized = false;
-    await this.init();
-    await this.populateTestRuns();
   }
 
   private rowToReport(row: {

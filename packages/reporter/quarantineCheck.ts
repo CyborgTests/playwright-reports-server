@@ -13,14 +13,13 @@ export const test = base.extend<{ checkQuarantine: void }>({
   checkQuarantine: [
     // biome-ignore lint/correctness/noEmptyPattern: need an object
     async ({}, use, testInfo) => {
-      console.log(`[checkQuarantinedTests] Checking quarantine for ${testInfo.testId}...`);
       const reporter = testInfo.config.reporter.find((reporter) => {
         const reporterOptions = reporter?.at(1) as PublicReporterOptions;
         if (!reporterOptions) {
           return false;
         }
 
-        // just a most stupid assumption that this is our reporter
+        // Heuristic for "this is our reporter" — anything that opts into quarantine skipping.
         return reporterOptions.enabled && reporterOptions.skipQuarantinedTests;
       });
 
@@ -54,7 +53,6 @@ export const test = base.extend<{ checkQuarantine: void }>({
         return await use();
       }
 
-      console.log(`[checkQuarantinedTests] Loaded ${quarantined.length} quarantined tests`);
       const quarantineRecord = quarantined.find((record) => record.id === testInfo.testId);
 
       if (quarantineRecord) {

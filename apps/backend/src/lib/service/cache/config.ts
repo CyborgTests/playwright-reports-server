@@ -24,33 +24,26 @@ export class ConfigCache {
       return;
     }
 
-    console.log('[config cache] initializing cache');
     const { result, error } = await storage.readConfigFile();
 
     if (error) {
       if (error.message.includes('Error: no config')) {
         console.warn('[config cache] using default config');
+      } else {
+        console.error('[config cache] failed to read config file');
       }
-      console.error('[config cache] failed to read config file');
       return;
     }
 
     const cache = ConfigCache.getInstance();
 
     cache.config = result ?? defaultConfig;
-    console.log('[config cache] initialized with config:', cache.config);
 
     this.initialized = true;
   }
 
   public onChanged(config: SiteWhiteLabelConfig) {
     this.config = config;
-  }
-
-  public refresh(): void {
-    console.log('[config cache] refreshing cache');
-    this.initialized = false;
-    this.config = undefined;
   }
 }
 

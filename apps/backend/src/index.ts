@@ -48,7 +48,8 @@ async function start() {
 
   await fastify.register(fastifyMultipart, {
     limits: {
-      fileSize: 0, // 0 = unlimited
+      // 0 disables the file-size limit entirely.
+      fileSize: 0,
       files: 1,
     },
     attachFieldsToBody: false,
@@ -87,7 +88,7 @@ async function start() {
       decorateReply: true,
     });
 
-    // spa fallback for non-api routes
+    // SPA fallback: serve index.html for any non-/api, non-/data path so the React router can take over.
     fastify.setNotFoundHandler(async (request, reply) => {
       if (!request.url.startsWith('/api') && !request.url.startsWith('/data')) {
         return reply.sendFile('index.html');

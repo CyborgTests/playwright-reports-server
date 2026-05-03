@@ -6,14 +6,17 @@ import { withError } from '../lib/withError.js';
 
 export async function registerTestsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/tests', async (request: FastifyRequest, reply: FastifyReply) => {
-    const { project, status, flakinessMin, flakinessMax, limit, offset } = request.query as {
-      project?: string;
-      status?: string;
-      flakinessMin?: string;
-      flakinessMax?: string;
-      limit?: string;
-      offset?: string;
-    };
+    const { project, status, flakinessMin, flakinessMax, limit, offset, from, to } =
+      request.query as {
+        project?: string;
+        status?: string;
+        flakinessMin?: string;
+        flakinessMax?: string;
+        limit?: string;
+        offset?: string;
+        from?: string;
+        to?: string;
+      };
 
     try {
       const options = {
@@ -22,6 +25,8 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         flakinessMax: flakinessMax ? Number.parseInt(flakinessMax, 10) : undefined,
         limit: limit ? Number.parseInt(limit, 10) : undefined,
         offset: offset ? Number.parseInt(offset, 10) : undefined,
+        from,
+        to,
       };
 
       const { data, total } = await testManagementService.getTests(project, options);
@@ -36,14 +41,19 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/api/tests/summary', async (request: FastifyRequest, reply: FastifyReply) => {
-    const { project, warningThreshold } = request.query as {
+    const { project, warningThreshold, from, to } = request.query as {
       project?: string;
       warningThreshold?: string;
+      from?: string;
+      to?: string;
     };
 
     try {
       const threshold = warningThreshold ? Number.parseFloat(warningThreshold) : undefined;
-      const summary = await testManagementService.getTestsSummary(project, threshold);
+      const summary = await testManagementService.getTestsSummary(project, threshold, {
+        from,
+        to,
+      });
       return reply.send({ success: true, ...summary });
     } catch (error) {
       fastify.log.error(error);
@@ -195,7 +205,22 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         const analysis = reportId
           ? testAnalysisDb.getByTestAndReport(testId, reportId)
           : testAnalysisDb.getByTestAndReport(testId, '');
-        return reply.send({ success: true, data: analysis ?? null });
+
+        if (analysis) {
+          return reply.send({ success: true, data: analysis });
+        }
+
+        // Fall back to llm_tasks table — the SSE endpoint saves results there
+        const db = getDatabase();
+        const taskQuery = reportId
+          ? db.prepare(`SELECT result AS analysis, model, category FROM llm_tasks WHERE testId = ? AND reportId = ? AND status = 'completed' AND result IS NOT NULL ORDER BY completedAt DESC LIMIT 1`)
+          : db.prepare(`SELECT result AS analysis, model, category FROM llm_tasks WHERE testId = ? AND status = 'completed' AND result IS NOT NULL ORDER BY completedAt DESC LIMIT 1`);
+
+        const taskRow = reportId
+          ? taskQuery.get(testId, reportId)
+          : taskQuery.get(testId);
+
+        return reply.send({ success: true, data: taskRow ?? null });
       } catch (error) {
         fastify.log.error(error);
         return reply.status(500).send({

@@ -59,15 +59,16 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
 
           const testUrl = {
             reportId: reportId ?? 'unknown',
-            testId: 'unknown', // will be defined on button click, as it is unknown from index
+            // testId is resolved client-side once the user clicks into a test page.
+            testId: 'unknown',
             isPlaywrightReport: true,
             isTestPage: false,
           };
 
           reportHtml = await injectTestAnalysis(content.toString(), testUrl);
         } catch (injectionError) {
+          // Fall through with the original content if injection fails.
           console.error('[serve] Failed to inject LLM analysis:', injectionError);
-          // continue with original content if injection fails
         }
       }
 

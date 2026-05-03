@@ -7,13 +7,14 @@ import { defaultConfig } from '../config.js';
 import { serveReportRoute } from '../constants.js';
 import { isValidPlaywrightVersion } from '../pw.js';
 import { DEFAULT_STREAM_CHUNK_SIZE, TMP_FOLDER } from '../storage/constants.js';
-import { getUniqueProjectsList } from '../storage/format.js';
+import { bytesToString, getUniqueProjectsList } from '../storage/format.js';
 import {
   type ReadReportsInput,
   type ReadResultsInput,
   type ReadResultsOutput,
   type ReportMetadata,
   type ReportPath,
+  type Result,
   type ResultDetails,
   type ServerDataInfo,
   storage,
@@ -34,31 +35,11 @@ class Service {
   }
 
   public async getReports(input?: ReadReportsInput) {
-    console.log(`[service] getReports`);
-
     return reportDb.query(input);
   }
 
-  public async getReport(id: string, path?: string) {
-    console.log(`[service] getReport ${id}`);
-
+  public async getReport(id: string) {
     const report = reportDb.getByID(id);
-
-    if (!report && path) {
-      console.warn(`[service] getReport ${id} - not found in db, fetching from storage`);
-      const { result: reportFromStorage, error } = await withError(storage.readReport(id, path));
-
-      if (error) {
-        console.error(`[service] getReport ${id} - error fetching from storage: ${error.message}`);
-        throw error;
-      }
-
-      if (!reportFromStorage) {
-        throw new Error(`report ${id} not found`);
-      }
-
-      return reportFromStorage;
-    }
 
     if (!report) {
       throw new Error(`report ${id} not found`);
@@ -96,7 +77,6 @@ class Service {
       return versionFromResults;
     }
 
-    // just in case version not found in results, we can try to get it from latest reports
     const { result: reportsArray, error } = await withError(
       this.getReports({ pagination: { limit: 10, offset: 0 } })
     );
@@ -133,18 +113,7 @@ class Service {
       playwrightVersion: version ?? '',
     };
 
-    const { reportId, reportPath } = await storage.generateReport(resultsIds, metadataWithVersion);
-
-    console.log(`[service] reading report ${reportId} from path: ${reportPath}`);
-    const { result: report, error } = await withError(storage.readReport(reportId, reportPath));
-
-    if (error) {
-      throw new Error(`Failed to read generated report: ${error.message}`);
-    }
-
-    if (!report) {
-      throw new Error(`Generated report ${reportId} not found`);
-    }
+    const { reportId, report } = await storage.generateReport(resultsIds, metadataWithVersion);
 
     reportDb.onCreated(report);
 
@@ -186,14 +155,10 @@ class Service {
   }
 
   public async getResults(input?: ReadResultsInput): Promise<ReadResultsOutput> {
-    console.log(`[results service] getResults`);
     return resultDb.query(input);
   }
 
   public async deleteResults(resultIDs: string[]): Promise<void> {
-    console.log(`[service] deleteResults`);
-    console.log(`deleting results:`, resultIDs);
-
     const { error } = await withError(storage.deleteResults(resultIDs));
 
     if (error) {
@@ -201,23 +166,13 @@ class Service {
       throw error;
     }
 
-    console.log(
-      `[service] deleteResults - storage deletion successful, removing from database cache`
-    );
     resultDb.onDeleted(resultIDs);
-    console.log(`[service] deleteResults - database cache cleanup completed`);
   }
 
   public async getPresignedUrl(fileName: string): Promise<string | undefined> {
-    console.log(`[service] getPresignedUrl for ${fileName}`);
-
     if (env.DATA_STORAGE !== 's3') {
-      console.log(`[service] fs storage detected, no presigned URL needed`);
-
       return '';
     }
-
-    console.log(`[service] s3 detected, generating presigned URL`);
 
     const { result: presignedUrl, error } = await withError(
       (storage as S3).generatePresignedUploadUrl(fileName)
@@ -247,8 +202,7 @@ class Service {
       shouldStoreLocalCopy?: boolean;
     }
   ) {
-    // redirect stream to other PassThrough just in case
-    // we need to store local copy as well as upload to S3
+    // Forks the upload to a local temp copy (S3 mode only) so it can be reused without re-downloading.
     const uploadStream = new PassThrough({ highWaterMark: DEFAULT_STREAM_CHUNK_SIZE });
 
     if (options?.shouldStoreLocalCopy && env.DATA_STORAGE === 's3') {
@@ -258,10 +212,6 @@ class Service {
       const writeStream = createWriteStream(localCopyPath);
       localCopyStream.pipe(writeStream);
 
-      writeStream.on('finish', () => {
-        console.log(`[service] local copy saved: ${localCopyPath}`);
-      });
-
       writeStream.on('error', (error) => {
         console.error(`[service] local write error: ${error.message}`);
       });
@@ -270,12 +220,8 @@ class Service {
     stream.pipe(uploadStream);
 
     if (!options?.presignedUrl) {
-      console.log(`[service] saving result`);
-
       return await storage.saveResult(filename, uploadStream);
     }
-
-    console.log(`[service] using direct upload via presigned URL`, options?.presignedUrl);
 
     const { error } = await withError(
       fetch(options?.presignedUrl, {
@@ -300,7 +246,14 @@ class Service {
   }
 
   public async saveResultDetails(resultID: string, resultDetails: ResultDetails, size: number) {
-    const result = await storage.saveResultDetails(resultID, resultDetails, size);
+    const result: Result = {
+      resultID,
+      createdAt: new Date().toISOString(),
+      project: resultDetails?.project ?? '',
+      ...resultDetails,
+      sizeBytes: size,
+      size: bytesToString(size),
+    } as Result;
 
     resultDb.onCreated(result);
 
@@ -334,7 +287,6 @@ class Service {
   }
 
   public async getServerInfo(): Promise<ServerDataInfo> {
-    console.log(`[service] getServerInfo`);
     const canCalculateFromCache =
       lifecycle.isInitialized() && reportDb.initialized && resultDb.initialized;
 
@@ -350,8 +302,6 @@ class Service {
       const cached = configCache.config;
 
       if (cached) {
-        console.log(`[service] using cached config`);
-
         return cached;
       }
     }
@@ -364,7 +314,6 @@ class Service {
   }
 
   public async updateConfig(config: Partial<SiteWhiteLabelConfig>) {
-    console.log(`[service] updateConfig`, config);
     const { result, error } = await storage.saveConfigFile(config);
 
     if (error) {
@@ -376,15 +325,6 @@ class Service {
     return result;
   }
 
-  public async refreshCache() {
-    console.log(`[service] refreshCache`);
-
-    await reportDb.refresh();
-    await resultDb.refresh();
-    configCache.refresh();
-
-    return { message: 'cache refreshed successfully' };
-  }
 }
 
 export const service = Service.getInstance();

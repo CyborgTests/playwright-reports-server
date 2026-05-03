@@ -6,16 +6,16 @@ import { ReportServerClient } from './client.js';
 import { DEFAULT_OPTIONS } from './config.js';
 import type { PublicReporterOptions, ReporterOptions } from './types.js';
 
-// reporter: [
-//   ['@playwright-reports/reporter', {
-//       url: 'http://localhost:3000/'
-//       resultDetails: {
-//           browser: 'chromium',
-//           foo: 'bar',
-//       },
-//       triggerReportGeneration: true
-//   }]
-// ]
+/*
+Usage in playwright.config.ts:
+reporter: [
+  ['@playwright-reports/reporter', {
+    url: 'http://localhost:3000/',
+    resultDetails: { browser: 'chromium', foo: 'bar' },
+    triggerReportGeneration: true,
+  }]
+]
+*/
 
 const getUsername = (): string => {
   const username = process.env.QA_USERNAME || '';
@@ -59,7 +59,7 @@ class ReporterPlaywrightReportsServer implements Reporter {
     });
   }
 
-  async onBegin(config: FullConfig /*suite: Suite*/) {
+  async onBegin(config: FullConfig) {
     if (this.rpOptions.enabled === false) {
       return;
     }
@@ -87,7 +87,7 @@ class ReporterPlaywrightReportsServer implements Reporter {
     this.pwConfig = config;
   }
 
-  async onEnd(/*result: FullResult*/) {
+  async onEnd() {
     if (this.rpOptions.enabled === false) {
       return;
     }

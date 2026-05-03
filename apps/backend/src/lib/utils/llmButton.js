@@ -80,6 +80,8 @@ function injectAskLLMButton() {
   const currentTestId = extractTestIdFromCurrentUrl();
   if (currentTestId && currentTestId !== 'unknown') {
     checkForPrecomputedAnalysis(currentTestId, copyPromptButton, askBtn);
+    // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+    injectFeedbackPanel(currentTestId, reportId, copyPromptButton);
   }
 
   return true;
@@ -103,7 +105,7 @@ function extractTestIdFromCurrentUrl() {
     }
     return 'unknown';
   } catch (error) {
-    console.log('[Playwright LLM] Error extracting test ID from URL:', error);
+    console.warn('[Playwright LLM] Error extracting test ID from URL:', error);
     return 'unknown';
   }
 }
@@ -115,7 +117,6 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown', copyPromptButton = 
     document.body.appendChild(modal);
   }
 
-  // loading state
   modal.style.display = 'flex';
   const content = modal.querySelector('.llm-modal-content');
   content.innerHTML = `
@@ -141,7 +142,6 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown', copyPromptButton = 
     </style>
   `;
 
-  // disable button during analysis
   askBtn.disabled = true;
   askBtn.textContent = 'Analyzing...';
 
@@ -315,7 +315,17 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown', copyPromptButton = 
       }
 
       function finalizeResponse() {
-        const finalContent = answerContent || thinkingContent;
+        let finalContent = answerContent || thinkingContent;
+        // LLM may return structured JSON (possibly wrapped in markdown code fences)
+        try {
+          let jsonStr = finalContent.trim();
+          const fenceMatch = jsonStr.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+          if (fenceMatch) jsonStr = fenceMatch[1].trim();
+          const parsed = JSON.parse(jsonStr);
+          if (parsed.analysis) finalContent = parsed.analysis;
+        } catch {
+          /* not JSON — use as-is */
+        }
         if (streamingContent) {
           streamingContent.style.display = 'block';
           streamingContent.innerHTML = markdownToHtml(finalContent);
@@ -381,7 +391,7 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown', copyPromptButton = 
                     throw new Error(data.error || 'Stream error occurred');
                   }
                 } catch (parseError) {
-                  console.error('Failed to parse SSE data:', parseError);
+                  console.error('[Playwright LLM] Failed to parse SSE data:', parseError);
                 }
               }
 
@@ -394,7 +404,7 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown', copyPromptButton = 
       });
     })
     .catch((error) => {
-      console.error('Analysis error:', error);
+      console.error('[Playwright LLM] Analysis error:', error);
       content.innerHTML = `
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px;">
           <div style="
@@ -621,7 +631,10 @@ function markdownToHtml(text) {
   );
 
   // bullet points
-  html = html.replaceAll(/^\* (.+)$/gim, '<li style="margin: 4px 0; color: var(--llm-body-text);">• $1</li>');
+  html = html.replaceAll(
+    /^\* (.+)$/gim,
+    '<li style="margin: 4px 0; color: var(--llm-body-text);">• $1</li>'
+  );
 
   // wrap bullet lists
   html = html.replaceAll(
@@ -630,7 +643,10 @@ function markdownToHtml(text) {
   );
 
   // numbered lists
-  html = html.replaceAll(/^\d+\. (.+)$/gim, '<li style="margin: 4px 0; color: var(--llm-body-text);">$1</li>');
+  html = html.replaceAll(
+    /^\d+\. (.+)$/gim,
+    '<li style="margin: 4px 0; color: var(--llm-body-text);">$1</li>'
+  );
 
   // process paragraphs - split by double newlines
   const paragraphs = html.split('\n\n');
@@ -702,15 +718,34 @@ function findErrorsSection(copyPromptButton) {
   }
   // The errors area is the closest ancestor that holds error content
   // Use the grandparent of the button row as insertion point
-  return copyPromptButton.closest('.test-result-error')
-    || copyPromptButton.parentNode?.parentNode
-    || copyPromptButton.parentNode;
+  return (
+    copyPromptButton.closest('.test-result-error') ||
+    copyPromptButton.parentNode?.parentNode ||
+    copyPromptButton.parentNode
+  );
 }
 
 function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
   // Remove any existing inline analysis
   const existing = document.getElementById('llm-inline-analysis');
   if (existing) existing.remove();
+
+  // Handle analysis stored as JSON (possibly wrapped in markdown code fences)
+  if (analysisData.analysis && typeof analysisData.analysis === 'string') {
+    try {
+      let jsonStr = analysisData.analysis.trim();
+      // Strip markdown code fences: ```json ... ``` or ``` ... ```
+      const fenceMatch = jsonStr.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+      if (fenceMatch) jsonStr = fenceMatch[1].trim();
+      const parsed = JSON.parse(jsonStr);
+      if (parsed.analysis) {
+        analysisData.analysis = parsed.analysis;
+        if (parsed.category && !analysisData.category) analysisData.category = parsed.category;
+      }
+    } catch {
+      /* not JSON — use as-is */
+    }
+  }
 
   const errorsSection = findErrorsSection(copyPromptButton);
   if (!errorsSection) return;
@@ -721,6 +756,11 @@ function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
   const categoryBadge = analysisData.category
     ? `<span class="llm-category-badge">${analysisData.category}</span>`
     : '';
+  // Mark reused analyses (signature-match short-circuit copies the prior result without
+  // hitting the LLM). Lets the user know the analysis is a previously-seen one.
+  const reusedBadge = analysisData.reusedFromAnalysisId
+    ? `<span class="llm-reused-badge" title="Same error signature as a previous run — analysis was reused without calling the LLM. Click Retry to force a fresh analysis.">♻ Reused</span>`
+    : '';
 
   const section = document.createElement('div');
   section.id = 'llm-inline-analysis';
@@ -729,6 +769,7 @@ function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
       <div style="display: flex; align-items: center; gap: 8px;">
         <span class="llm-title">LLM Analysis</span>
         ${categoryBadge}
+        ${reusedBadge}
         <span class="llm-model">${analysisData.model || ''}</span>
       </div>
       <button class="llm-retry-btn">Retry</button>
@@ -763,6 +804,390 @@ function showInlineAnalysisFromStream(content, model, copyPromptButton, askBtn) 
   );
 }
 
+// ---- Feedback panel (test-level shared note) ----
+
+function relativeTimeShort(iso) {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return 'just now';
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
+  const days = Math.floor(ms / 86_400_000);
+  if (days < 30) return `${days}d ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
+}
+
+function feedbackBody(testId, rid, extra) {
+  return JSON.stringify({ testId: testId, reportId: rid, ...extra });
+}
+
+async function fetchFeedback(testId, rid) {
+  const url = `/api/llm/feedback?testId=${encodeURIComponent(testId)}&reportId=${encodeURIComponent(rid)}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j?.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchRelatedFeedback(testId, rid) {
+  const url = `/api/llm/feedback/related?testId=${encodeURIComponent(testId)}&reportId=${encodeURIComponent(rid)}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return [];
+    const j = await r.json();
+    return Array.isArray(j?.data) ? j.data : [];
+  } catch {
+    return [];
+  }
+}
+
+const EMPTY_HISTORY = { priorOccurrenceCount: 0, firstOccurrence: null };
+
+async function fetchTestHistory(testId, rid) {
+  const url = `/api/llm/test-history?testId=${encodeURIComponent(testId)}&reportId=${encodeURIComponent(rid)}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return EMPTY_HISTORY;
+    const j = await r.json();
+    return j?.data ?? EMPTY_HISTORY;
+  } catch {
+    return EMPTY_HISTORY;
+  }
+}
+
+// Lightweight check: does a stored analysis exist for this test, and was it reused
+// from a prior analysis (signature-match short-circuit)? Used to surface a "♻ Reused"
+// chip in the panel header so the reuse fact is visible at a glance, not just inside
+// the inline analysis widget.
+async function fetchAnalysisStatus(testId, rid) {
+  try {
+    const r = await fetch(
+      `/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`
+    );
+    if (!r.ok) return { exists: false, reused: false };
+    const j = await r.json();
+    const data = j?.data;
+    return {
+      exists: !!(j?.success && data?.analysis),
+      reused: !!data?.reusedFromAnalysisId,
+    };
+  } catch {
+    return { exists: false, reused: false };
+  }
+}
+
+async function injectFeedbackPanel(testId, rid, copyPromptButton) {
+  if (!testId || !rid || testId === 'unknown') return;
+  // Avoid double-render
+  if (document.getElementById('llm-feedback-panel')) return;
+
+  const [feedback, related, history, analysisStatus] = await Promise.all([
+    fetchFeedback(testId, rid),
+    fetchRelatedFeedback(testId, rid),
+    fetchTestHistory(testId, rid),
+    fetchAnalysisStatus(testId, rid),
+  ]);
+  renderFeedbackPanel({
+    feedback,
+    related,
+    history,
+    analysisStatus,
+    testId,
+    reportId: rid,
+    copyPromptButton,
+  });
+}
+
+function renderFeedbackPanel({
+  feedback,
+  related,
+  history,
+  analysisStatus,
+  testId,
+  reportId: rid,
+  copyPromptButton,
+}) {
+  let panel = document.getElementById('llm-feedback-panel');
+  const expanded = panel?.dataset.expanded === '1';
+  const draftSnapshot = panel?.querySelector('.llm-feedback-textarea')?.value;
+  // Preserve related/history/analysisStatus across re-renders triggered by save/delete
+  // (which only refresh feedback).
+  const relatedEntries = Array.isArray(related)
+    ? related
+    : panel?.__relatedCache
+      ? panel.__relatedCache
+      : [];
+  const historyData = history ?? panel?.__historyCache ?? EMPTY_HISTORY;
+  const status = analysisStatus ?? panel?.__analysisStatusCache ?? { exists: false, reused: false };
+
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'llm-feedback-panel';
+    const insertionPoint = findErrorsSection(copyPromptButton);
+    if (insertionPoint?.parentNode) {
+      // Insert above the errors section so it sits near the analysis when present.
+      insertionPoint.parentNode.insertBefore(panel, insertionPoint);
+    } else {
+      copyPromptButton.parentNode?.parentNode?.appendChild(panel);
+    }
+  }
+  panel.__relatedCache = relatedEntries;
+  panel.__historyCache = historyData;
+  panel.__analysisStatusCache = status;
+
+  // Compute stale flag: feedback updated after the most-recent persisted analysis for this (testId, reportId).
+  // We don't know the analysis updatedAt synchronously here, so resolve lazily after render.
+  const stateLabel = feedback
+    ? `(updated ${relativeTimeShort(feedback.updatedAt)})`
+    : 'No feedback yet';
+
+  // Provenance lines — both hidden when they reference the report the user is currently viewing.
+  // "First attached" = when feedback was first noted; "First found" = when this exact error
+  // signature first occurred in test_runs. Different signals; both useful when not redundant.
+  const originIsCurrent = feedback?.reportId === rid;
+  const originLine =
+    feedback?.reportId && feedback?.createdAt && !originIsCurrent
+      ? `<div class="llm-feedback-origin">
+          First attached in
+          <a href="/report/${feedback.reportId}" target="_blank" rel="noopener">report ${feedback.reportId.slice(0, 8)}</a>
+          — ${relativeTimeShort(feedback.createdAt)}
+        </div>`
+      : '';
+
+  // First-found marker rendered inline in the header (next to the chips), not in the body —
+  // it's a glance signal that shouldn't require expanding the panel. Hidden when the first
+  // occurrence is the report being viewed, since the link would just point back to itself.
+  const firstOccIsCurrent = historyData.firstOccurrence?.reportId === rid;
+  const firstFoundInline =
+    historyData.firstOccurrence && !firstOccIsCurrent
+      ? `<span class="llm-feedback-firstfound">
+          First found in
+          <a href="/report/${historyData.firstOccurrence.reportId}" target="_blank" rel="noopener">report ${historyData.firstOccurrence.reportId.slice(0, 8)}</a>
+          — ${relativeTimeShort(historyData.firstOccurrence.createdAt)}
+        </span>`
+      : '';
+
+  // Header chips. Failure history (🆕 New / 🔁 N prior) is the primary signal — based on
+  // test_runs with matching errorSignature, not on feedback. Cross-project feedback is a
+  // secondary chip shown only when present.
+  const priorCount = historyData.priorOccurrenceCount ?? 0;
+  const failureChip =
+    priorCount === 0
+      ? `<span class="llm-feedback-new-error" title="This exact failure has not been seen in prior runs of this test">🆕 New error</span>`
+      : `<span class="llm-feedback-related-chip" title="This failure signature has been seen in ${priorCount} prior run${priorCount === 1 ? '' : 's'} of this test">🔁 ${priorCount} prior occurrence${priorCount === 1 ? '' : 's'}</span>`;
+  const relatedCount = relatedEntries.length;
+  const relatedChipHtml =
+    relatedCount > 0
+      ? `<span class="llm-feedback-related-chip" title="Same test has feedback in ${relatedCount} other project${relatedCount === 1 ? '' : 's'}" data-related-jump="1">🔗 ${relatedCount} other project${relatedCount === 1 ? '' : 's'}</span>`
+      : '';
+
+  // Make the reuse fact obvious at the panel-header level — when the displayed analysis
+  // wasn't generated for this specific test_run but copied from a prior one with the same
+  // error signature, surface a "♻ Reused" chip alongside the other status chips.
+  const reusedChip = status.reused
+    ? `<span class="llm-feedback-reused-chip" title="The analysis shown for this test was reused from a previous run with the same error signature — it wasn't generated for this specific failure. Click Retry on the analysis (or Regenerate here) to force a fresh one.">♻ Reused</span>`
+    : '';
+  const relatedSection =
+    relatedCount > 0
+      ? `<div class="llm-feedback-related">
+          <div class="llm-feedback-related-title">Same test in other projects:</div>
+          <ul class="llm-feedback-related-list">
+            ${relatedEntries
+              .map((e) => {
+                const sigText = e.errorSignatureMatchesCurrent
+                  ? 'matching error'
+                  : 'different error';
+                const sigClass = e.errorSignatureMatchesCurrent ? 'match' : 'differ';
+                const reportLink = e.feedback?.reportId
+                  ? `<a href="/report/${e.feedback.reportId}" target="_blank" rel="noopener">${e.project}</a>`
+                  : `<span>${e.project}</span>`;
+                return `<li>
+                  ${reportLink}
+                  <span class="llm-feedback-sig ${sigClass}">${sigText}</span>
+                  <span class="llm-feedback-related-time">${relativeTimeShort(e.feedback?.updatedAt ?? new Date().toISOString())}</span>
+                </li>`;
+              })
+              .join('')}
+          </ul>
+        </div>`
+      : '';
+
+  panel.innerHTML = `
+    <div class="llm-feedback-header">
+      <span class="llm-feedback-icon">💬</span>
+      <span class="llm-feedback-title">Feedback</span>
+      <span class="llm-feedback-state">${stateLabel}</span>
+      ${failureChip}
+      ${firstFoundInline}
+      ${reusedChip}
+      ${relatedChipHtml}
+      <span class="llm-feedback-stale" hidden>⚠ Latest feedback not included in analysis</span>
+      <button class="llm-feedback-toggle" type="button">${expanded ? 'View' : 'Edit'}</button>
+    </div>
+    <div class="llm-feedback-body" ${expanded ? '' : 'hidden'}>
+      ${originLine}
+      ${relatedSection}
+      <textarea class="llm-feedback-textarea" placeholder="Add a note for the LLM. Will be included in future analyses for this test in this project."></textarea>
+      <div class="llm-feedback-actions">
+        <button class="llm-feedback-save" type="button">Save</button>
+        <button class="llm-feedback-delete" type="button" ${feedback ? '' : 'hidden'}>Delete</button>
+        <button class="llm-feedback-regenerate" type="button">Regenerate</button>
+        <span class="llm-feedback-status"></span>
+      </div>
+      <label class="llm-feedback-cascade-label">
+        <input type="checkbox" class="llm-feedback-cascade" />
+        <span>Also refresh report summary after this test</span>
+      </label>
+    </div>
+  `;
+
+  // Clicking either chip expands the body. The `data-related-jump="1"` chip scrolls to the
+  // related list; the failure-history chip just expands so the user can read "First found".
+  panel.querySelectorAll('.llm-feedback-related-chip').forEach((chip) => {
+    chip.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const bodyEl = panel.querySelector('.llm-feedback-body');
+      const toggle = panel.querySelector('.llm-feedback-toggle');
+      if (bodyEl?.hasAttribute('hidden')) {
+        bodyEl.removeAttribute('hidden');
+        if (toggle) toggle.textContent = 'View';
+        panel.dataset.expanded = '1';
+      }
+      if (chip.getAttribute('data-related-jump') === '1') {
+        panel.querySelector('.llm-feedback-related')?.scrollIntoView({ block: 'nearest' });
+      }
+    });
+  });
+
+  const textarea = panel.querySelector('.llm-feedback-textarea');
+  const toggleBtn = panel.querySelector('.llm-feedback-toggle');
+  const body = panel.querySelector('.llm-feedback-body');
+  const saveBtn = panel.querySelector('.llm-feedback-save');
+  const deleteBtn = panel.querySelector('.llm-feedback-delete');
+  const regenBtn = panel.querySelector('.llm-feedback-regenerate');
+  const statusEl = panel.querySelector('.llm-feedback-status');
+  const staleEl = panel.querySelector('.llm-feedback-stale');
+  const cascadeCheckbox = panel.querySelector('.llm-feedback-cascade');
+
+  textarea.value = draftSnapshot ?? feedback?.comment ?? '';
+  panel.dataset.expanded = expanded ? '1' : '0';
+
+  // Disable Save when the trimmed draft is empty or unchanged from the saved note.
+  const savedComment = feedback?.comment ?? '';
+  function refreshSaveDisabled() {
+    const trimmed = textarea.value.trim();
+    saveBtn.disabled = !trimmed || trimmed === savedComment;
+  }
+  refreshSaveDisabled();
+  textarea.addEventListener('input', refreshSaveDisabled);
+
+  toggleBtn.onclick = () => {
+    const nowExpanded = body.hasAttribute('hidden');
+    if (nowExpanded) {
+      body.removeAttribute('hidden');
+      toggleBtn.textContent = 'View';
+      panel.dataset.expanded = '1';
+    } else {
+      body.setAttribute('hidden', '');
+      toggleBtn.textContent = 'Edit';
+      panel.dataset.expanded = '0';
+    }
+  };
+
+  function setStatus(text, kind) {
+    statusEl.textContent = text || '';
+    statusEl.className = `llm-feedback-status${kind ? ` llm-feedback-status-${kind}` : ''}`;
+  }
+
+  saveBtn.onclick = async () => {
+    const comment = textarea.value.trim();
+    if (!comment) {
+      setStatus('Comment is empty', 'error');
+      return;
+    }
+    saveBtn.disabled = true;
+    setStatus('Saving…');
+    try {
+      const r = await fetch('/api/llm/feedback', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: feedbackBody(testId, rid, { comment }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j?.success) throw new Error(j?.error || 'Save failed');
+      setStatus('Saved', 'ok');
+      renderFeedbackPanel({ feedback: j.data, testId, reportId: rid, copyPromptButton });
+    } catch (err) {
+      setStatus(err.message || 'Save failed', 'error');
+    } finally {
+      saveBtn.disabled = false;
+    }
+  };
+
+  deleteBtn.onclick = async () => {
+    deleteBtn.disabled = true;
+    setStatus('Deleting…');
+    try {
+      const r = await fetch('/api/llm/feedback', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: feedbackBody(testId, rid),
+      });
+      const j = await r.json();
+      if (!r.ok || !j?.success) throw new Error(j?.error || 'Delete failed');
+      setStatus('Deleted', 'ok');
+      renderFeedbackPanel({ feedback: null, testId, reportId: rid, copyPromptButton });
+    } catch (err) {
+      setStatus(err.message || 'Delete failed', 'error');
+    } finally {
+      deleteBtn.disabled = false;
+    }
+  };
+
+  regenBtn.onclick = async () => {
+    regenBtn.disabled = true;
+    setStatus('Enqueueing…');
+    try {
+      const cascade = !!cascadeCheckbox?.checked;
+      const r = await fetch('/api/llm/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: feedbackBody(testId, rid, cascade ? { cascadeReportSummary: true } : {}),
+      });
+      const j = await r.json();
+      if (!r.ok || !j?.success) throw new Error(j?.error || 'Regenerate failed');
+      const cascadeMsg = j?.data?.cascadedReportTaskId ? ' (report regen queued)' : '';
+      setStatus(
+        (j?.data?.deduped ? 'Already in progress' : 'Analysis enqueued') + cascadeMsg,
+        'ok'
+      );
+    } catch (err) {
+      setStatus(err.message || 'Regenerate failed', 'error');
+    } finally {
+      regenBtn.disabled = false;
+    }
+  };
+
+  // Resolve stale indicator: compare feedback.updatedAt with the persisted analysis updatedAt.
+  if (feedback) {
+    fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const analysisAt = data?.data?.updatedAt || data?.data?.createdAt;
+        if (analysisAt && new Date(feedback.updatedAt).getTime() > new Date(analysisAt).getTime()) {
+          staleEl.removeAttribute('hidden');
+        }
+      })
+      .catch(() => {
+        // ignore — stale indicator is best-effort
+      });
+  }
+}
+
 let llmButtonRetryCount = 0;
 const MAX_LLM_BUTTON_RETRIES = 100; // ~5 seconds at 50ms intervals
 
@@ -776,13 +1201,11 @@ function tryInjectAskLLMButton() {
   }
 }
 
-// try to inject button after the page loads
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', tryInjectAskLLMButton);
-  // handle case with internal playwright report redirects that are not tracked
-  // so we can listen to clicks, and if it is a test sub-page - try injection
+  // The Playwright report uses client-side navigation that we can't observe directly,
+  // so we re-attempt injection on clicks that look like a test sub-page transition.
   document.addEventListener('click', (event) => {
-    console.log(event);
     if (event?.target?.className?.includes('test-file-title')) {
       tryInjectAskLLMButton();
     }

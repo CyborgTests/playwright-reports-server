@@ -27,7 +27,7 @@ export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklines
   if (isLoading || !metrics) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <SparklineSkeleton title="Duration Trend" subtitle="Average test execution time" />
+        <SparklineSkeleton title="Duration Trend" subtitle="Total run duration over time" />
         <SparklineSkeleton title="Flaky Count Trend" subtitle="Number of intermittently failing tests" />
         <SparklineSkeleton title="Slow Count Trend" subtitle="Tests slower than 95th percentile" />
       </div>
@@ -80,7 +80,7 @@ export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklines
           Duration Trend
         </h4>
         <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-          Average test execution time
+          Total run duration over time
         </p>
         <div className="h-20">
           <ResponsiveContainer width="100%" height="100%">

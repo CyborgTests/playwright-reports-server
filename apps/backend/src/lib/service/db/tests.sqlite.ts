@@ -1,4 +1,7 @@
-import type { ReportTestOutcomeEnum } from '@playwright-reports/shared';
+import type {
+  FailureCategorySource,
+  ReportTestOutcomeEnum,
+} from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import { v4 as uuid } from 'uuid';
 import { getDatabase } from './db.js';
@@ -32,6 +35,7 @@ export interface TestRun {
   fixedAt?: string;
   failureDetails?: string;
   failureCategory?: string;
+  failureCategorySource?: FailureCategorySource;
   errorSignature?: string;
 }
 
@@ -54,6 +58,7 @@ export class TestDatabase {
       quarantined: Boolean(row.quarantined),
       failureDetails: row.failure_details || undefined,
       failureCategory: row.failure_category || undefined,
+      failureCategorySource: (row.failure_category_source as FailureCategorySource) || undefined,
       errorSignature: row.error_signature || undefined,
     };
   }
@@ -79,6 +84,7 @@ export class TestDatabase {
       number,
       string | null,
       number,
+      string | null,
       string | null,
       string | null,
       string | null,
@@ -120,8 +126,8 @@ export class TestDatabase {
     `);
 
     this.insertTestRunStmt = this.db.prepare(`
-      INSERT INTO test_runs (runId, testId, fileId, project, reportId, outcome, duration, createdAt, flakinessScore, quarantineReason, quarantined, failure_details, failure_category, error_signature)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_runs (runId, testId, fileId, project, reportId, outcome, duration, createdAt, flakinessScore, quarantineReason, quarantined, failure_details, failure_category, failure_category_source, error_signature)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     this.quarantineTestRunStmt = this.db.prepare(`
@@ -242,7 +248,6 @@ export class TestDatabase {
 
   public deleteTestRunsByReportId(reportId: string): number {
     const transaction = this.db.transaction(() => {
-      // First, find all unique (testId, fileId, project) tuples that have runs for this report
       const affectedTestsStmt = this.db.prepare(`
         SELECT DISTINCT testId, fileId, project FROM test_runs WHERE reportId = ?
       `);
@@ -252,11 +257,9 @@ export class TestDatabase {
         project: string;
       }>;
 
-      // Delete test runs for this report
       const result = this.deleteTestRunsByReportIdStmt.run(reportId);
 
-      // For each affected test, check if it has any remaining runs
-      // If not, delete the test itself
+      // Drop tests that no longer have any runs after this deletion.
       const checkRunsStmt = this.db.prepare(`
         SELECT COUNT(*) as count FROM test_runs WHERE testId = ? AND fileId = ? AND project = ?
       `);
@@ -300,6 +303,7 @@ export class TestDatabase {
       quarantined: testRunWithId.quarantined ? 1 : 0,
       failureDetails: testRunWithId.failureDetails || null,
       failureCategory: testRunWithId.failureCategory || null,
+      failureCategorySource: testRunWithId.failureCategorySource || null,
       errorSignature: testRunWithId.errorSignature || null,
     };
 
@@ -317,6 +321,7 @@ export class TestDatabase {
       validatedParams.quarantined,
       validatedParams.failureDetails,
       validatedParams.failureCategory,
+      validatedParams.failureCategorySource,
       validatedParams.errorSignature
     );
 
@@ -330,7 +335,6 @@ export class TestDatabase {
     isQuarantined: boolean,
     quarantineReason?: string
   ): boolean {
-    // Convert boolean to integer for SQLite compatibility
     const quarantinedInt = isQuarantined ? 1 : 0;
 
     const latestRun = this.getLatestTestRun(testId, fileId, project);
@@ -413,13 +417,23 @@ export class TestDatabase {
     });
   }
 
-  public getTestsSummary(project?: string): { total: number; flakyTests: TestWithQuarantineInfo[] } {
+  /**
+   * A test is considered flaky when its latest run's `flakinessScore` is at or above the
+   * provided warning threshold. `total` counts unique testIds (so the same test running
+   * across multiple Playwright projects/browsers is counted once).
+   */
+  public getTestsSummary(
+    project: string | undefined,
+    warningThreshold: number
+  ): { total: number; flakyTests: TestWithQuarantineInfo[] } {
     const tests = project ? this.getTestsByProject(project) : this.getAllTests();
     const flaky: TestWithQuarantineInfo[] = [];
+    const uniqueTestIds = new Set<string>();
 
     for (const test of tests) {
+      uniqueTestIds.add(test.testId);
       const latestRun = this.getLatestTestRun(test.testId, test.fileId, test.project);
-      if (latestRun?.flakinessScore && latestRun.flakinessScore > 0) {
+      if (latestRun?.flakinessScore !== undefined && latestRun.flakinessScore >= warningThreshold) {
         flaky.push({
           ...test,
           flakinessScore: latestRun.flakinessScore,
@@ -428,7 +442,34 @@ export class TestDatabase {
       }
     }
 
-    return { total: tests.length, flakyTests: flaky };
+    return { total: uniqueTestIds.size, flakyTests: flaky };
+  }
+
+  public getTestRunOutcomesInWindow(
+    project: string | undefined,
+    from: string,
+    to: string
+  ): Array<{ testId: string; fileId: string; project: string; outcome: ReportTestOutcomeEnum }> {
+    const conditions: string[] = ["outcome != 'skipped'"];
+    const params: string[] = [];
+
+    conditions.push('datetime(createdAt) >= datetime(?)');
+    params.push(from);
+    conditions.push('datetime(createdAt) < datetime(?)');
+    params.push(to);
+
+    if (project && project !== 'all') {
+      conditions.push('project = ?');
+      params.push(project);
+    }
+
+    const sql = `SELECT testId, fileId, project, outcome FROM test_runs WHERE ${conditions.join(' AND ')} ORDER BY createdAt ASC`;
+    return this.db.prepare(sql).all(...params) as Array<{
+      testId: string;
+      fileId: string;
+      project: string;
+      outcome: ReportTestOutcomeEnum;
+    }>;
   }
 
   public updateFlakinessScore(runId: string, score: number): void {
@@ -440,12 +481,85 @@ export class TestDatabase {
     return rows.map((row) => this.convertDbRowToTestRun(row));
   }
 
-  public updateFailureCategory(runId: string, category: string): void {
-    this.db.prepare('UPDATE test_runs SET failure_category = ? WHERE runId = ?').run(category, runId);
+  public updateFailureCategory(
+    runId: string,
+    category: string,
+    source: FailureCategorySource = 'heuristic'
+  ): void {
+    this.db
+      .prepare(
+        'UPDATE test_runs SET failure_category = ?, failure_category_source = ? WHERE runId = ?'
+      )
+      .run(category, source, runId);
+  }
+
+  /**
+   * Find the most common failure category previously assigned to runs sharing this signature.
+   * Used to "lock" labels when there's a strong historical consensus, so categorization
+   * stays stable across runs of the same root-cause failure.
+   */
+  public getCategoryConsensus(
+    signature: string
+  ): { category: string; share: number; total: number } | null {
+    if (!signature) return null;
+    const rows = this.db
+      .prepare(
+        `SELECT failure_category as category, COUNT(*) as count
+         FROM test_runs
+         WHERE error_signature = ?
+           AND failure_category IS NOT NULL
+           AND failure_category != 'unknown'
+         GROUP BY failure_category
+         ORDER BY count DESC
+         LIMIT 5`
+      )
+      .all(signature) as Array<{ category: string; count: number }>;
+    if (rows.length === 0) return null;
+    const total = rows.reduce((sum, r) => sum + r.count, 0);
+    const top = rows[0];
+    return { category: top.category, share: top.count / total, total };
+  }
+
+  /**
+   * Phase 2: failure history for a (test, error_signature) — used by the injected panel
+   * to surface "🆕 New error" vs "🔁 N prior occurrences". Excludes the current report
+   * so the count reflects PRIOR occurrences only.
+   */
+  public getFailureHistory(
+    testId: string,
+    fileId: string,
+    project: string,
+    errorSignature: string,
+    excludeReportId: string
+  ): { priorOccurrenceCount: number; firstOccurrence: { reportId: string; createdAt: string } | null } {
+    if (!errorSignature) {
+      return { priorOccurrenceCount: 0, firstOccurrence: null };
+    }
+    const countRow = this.db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM test_runs
+         WHERE testId = ? AND fileId = ? AND project = ?
+           AND error_signature = ? AND reportId != ?`
+      )
+      .get(testId, fileId, project, errorSignature, excludeReportId) as { c: number };
+    const firstRow = this.db
+      .prepare(
+        `SELECT reportId, createdAt FROM test_runs
+         WHERE testId = ? AND fileId = ? AND project = ?
+           AND error_signature = ? AND reportId != ?
+         ORDER BY createdAt ASC
+         LIMIT 1`
+      )
+      .get(testId, fileId, project, errorSignature, excludeReportId) as
+      | { reportId: string; createdAt: string }
+      | undefined;
+    return {
+      priorOccurrenceCount: countRow?.c ?? 0,
+      firstOccurrence: firstRow ?? null,
+    };
   }
 
   public clear(): void {
-    console.log('[test db] clearing all test data');
     this.db.prepare('DELETE FROM test_runs').run();
     this.db.prepare('DELETE FROM tests').run();
   }

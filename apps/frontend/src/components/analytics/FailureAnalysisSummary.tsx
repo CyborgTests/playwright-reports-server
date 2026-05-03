@@ -1,5 +1,6 @@
 'use client';
 
+import type { DateRange } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -7,14 +8,20 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
+import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { withBase } from '@/lib/url';
 
 interface FailureAnalysisSummaryProps {
   project?: string;
   totalFailures?: number;
+  dateRange?: DateRange;
 }
 
-export function FailureAnalysisSummary({ project, totalFailures }: Readonly<FailureAnalysisSummaryProps>) {
+export function FailureAnalysisSummary({
+  project,
+  totalFailures,
+  dateRange,
+}: Readonly<FailureAnalysisSummaryProps>) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [model, setModel] = useState<string | null>(null);
@@ -32,6 +39,8 @@ export function FailureAnalysisSummary({ project, totalFailures }: Readonly<Fail
 
       const params = new URLSearchParams();
       if (project) params.append('project', project);
+      if (dateRange?.from) params.append('from', dateRange.from);
+      if (dateRange?.to) params.append('to', dateRange.to);
 
       const response = await fetch(
         withBase(`/api/analytics/failure-categories/llm?${params.toString()}`),
@@ -107,7 +116,7 @@ export function FailureAnalysisSummary({ project, totalFailures }: Readonly<Fail
           <div>
             <h3 className="text-lg font-semibold">LLM Failure Analysis</h3>
             <p className="text-sm text-muted-foreground">
-              Project-level failure pattern summary from the latest failed reports
+              Test health analysis based on the latest 10 runs
             </p>
           </div>
           <Button
@@ -132,14 +141,12 @@ export function FailureAnalysisSummary({ project, totalFailures }: Readonly<Fail
         {isStreaming && !summary && (
           <div className="flex items-center justify-center py-8 gap-2">
             <Spinner size="sm" />
-            <span className="text-muted-foreground">LLM is analyzing failure patterns...</span>
+            <span className="text-muted-foreground">LLM is analyzing latest runs...</span>
           </div>
         )}
         {summary && (
           <div className="space-y-3">
-            <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
-              {summary}
-            </div>
+            <MarkdownRenderer content={summary} />
             {model && (
               <div className="flex items-center gap-2 pt-3 border-t text-xs text-muted-foreground">
                 <Badge variant="outline">{model}</Badge>
@@ -150,7 +157,7 @@ export function FailureAnalysisSummary({ project, totalFailures }: Readonly<Fail
         )}
         {!isStreaming && !summary && (
           <div className="text-center py-6 text-muted-foreground text-sm">
-            Click "Generate Analysis" to get an LLM-powered summary of recent failure patterns
+            Click "Generate Analysis" to get an LLM-powered health analysis of the latest runs
           </div>
         )}
       </CardContent>

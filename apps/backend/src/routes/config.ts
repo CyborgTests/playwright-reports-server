@@ -335,25 +335,4 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
     return info;
   });
-
-  fastify.post(
-    '/api/cache/refresh',
-    {
-      schema: {
-        response: {
-          200: { type: 'object' },
-          400: { type: 'object', properties: { error: { type: 'string' } } },
-        },
-      },
-    },
-    async (_request, reply) => {
-      const { result, error } = await withError(service.refreshCache());
-
-      if (error) {
-        return reply.status(400).send({ error: error.message });
-      }
-
-      return result;
-    }
-  );
 }

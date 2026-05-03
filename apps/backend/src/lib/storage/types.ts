@@ -10,26 +10,18 @@ import type { Pagination } from './pagination.js';
 export interface Storage {
   getServerDataInfo: () => Promise<ServerDataInfo>;
   readFile: (targetPath: string, contentType: string | null) => Promise<string | Buffer>;
-  readResults: () => Promise<ReadResultsOutput>;
-  readReports: () => Promise<ReadReportsOutput>;
-  readReport: (reportID: string, reportPath: string) => Promise<ReportHistory | null>;
   deleteResults: (resultIDs: string[]) => Promise<void>;
   deleteReports: (reports: ReportPath[]) => Promise<void>;
   saveResult: (filename: string, stream: PassThrough) => Promise<void>;
-  saveResultDetails: (
-    resultID: string,
-    resultDetails: ResultDetails,
-    size: number
-  ) => Promise<Result>;
   generateReport: (
     resultsIds: string[],
     metadata?: ReportMetadata
-  ) => Promise<{ reportId: UUID; reportPath: string }>;
+  ) => Promise<{ reportId: UUID; reportPath: string; report: ReportHistory }>;
   uploadReportFromStream: (
     reportId: string,
     zipStream: Readable,
     metadata?: ReportMetadata
-  ) => Promise<{ reportPath: string }>;
+  ) => Promise<{ reportPath: string; report: ReportHistory }>;
   readConfigFile: () => Promise<{
     result?: SiteWhiteLabelConfig;
     error: Error | null;

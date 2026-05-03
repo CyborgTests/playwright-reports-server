@@ -1,16 +1,22 @@
 'use client';
 
+import { ExternalLink } from 'lucide-react';
 import { useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCategoryName } from '@/lib/format';
+import { withBase } from '@/lib/url';
 
 interface ErrorGroup {
   message: string;
   category: string;
   count: number;
   signature: string;
+  sampleReportId?: string;
+  sampleReportUrl?: string;
+  sampleTestId?: string;
 }
 
 interface TopFailuresWidgetProps {
@@ -78,9 +84,23 @@ export function TopFailuresWidget({ errors, isLoading }: Readonly<TopFailuresWid
                   </Badge>
                 </div>
                 {expandedIndex === index && (
-                  <pre className="mt-2 text-xs bg-muted p-3 rounded overflow-x-auto whitespace-pre-wrap break-words">
-                    {error.message}
-                  </pre>
+                  <div className="mt-2 space-y-2">
+                    <pre className="text-xs bg-muted p-3 rounded overflow-x-auto whitespace-pre-wrap break-words">
+                      {error.message}
+                    </pre>
+                    {error.sampleReportUrl && error.sampleTestId && (
+                      <RouterLink
+                        to={`${withBase(error.sampleReportUrl)}#?testId=${error.sampleTestId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Open this failure in the Playwright report
+                      </RouterLink>
+                    )}
+                  </div>
                 )}
               </div>
             ))}

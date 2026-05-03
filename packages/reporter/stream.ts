@@ -44,7 +44,7 @@ export async function* multipartStream(opts: {
 
   yield fileHead(boundary, 'file', fileName, fileType) as Uint8Array;
 
-  const rs = fs.createReadStream(filePath, { highWaterMark: 512 * 1024 }); // 512KB
+  const rs = fs.createReadStream(filePath, { highWaterMark: 512 * 1024 });
   let sent = 0,
     lastPct = -5,
     lastTick = Date.now();

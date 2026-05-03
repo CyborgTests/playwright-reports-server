@@ -2,14 +2,22 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { llmService } from '../llm/index.js';
-import { testFailureAnalysisPrompt, reportFailureSummaryPrompt } from '../llm/prompts/index.js';
 import type { FailureDetailsForPrompt } from '../llm/prompts/index.js';
+import {
+  buildCrossProjectContext,
+  buildFeedbackContext,
+  buildPerTestFeedbackContext,
+  reportFailureSummaryPrompt,
+  testFailureAnalysisPrompt,
+} from '../llm/prompts/index.js';
 import { parseHtmlReport } from '../parser/index.js';
 import { REPORTS_FOLDER } from '../storage/constants.js';
-import { llmTasksDb } from './db/llmTasks.sqlite.js';
-import type { LlmTaskRow } from './db/llmTasks.sqlite.js';
-import { testAnalysisDb } from './db/testAnalysis.sqlite.js';
+import { analysisFeedbackDb } from './db/analysisFeedback.sqlite.js';
+import { getDatabase } from './db/db.js';
 import { failureSummaryDb } from './db/failureSummary.sqlite.js';
+import type { LlmTaskRow } from './db/llmTasks.sqlite.js';
+import { llmTasksDb } from './db/llmTasks.sqlite.js';
+import { testAnalysisDb } from './db/testAnalysis.sqlite.js';
 import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
 
@@ -113,89 +121,217 @@ class LlmAnalysisQueue {
 
     // Get failure details — try stored data first, fall back to parsing report HTML
     const runs = testDb.getTestRuns(testId, fileId, project);
-    const failedRun = runs.find((r) => r.failureDetails && r.reportId === reportId)
-      || runs.find((r) => r.failureDetails)
-      || runs.find((r) => r.reportId === reportId)
-      || runs[0];
+    const failedRun =
+      runs.find((r) => r.failureDetails && r.reportId === reportId) ||
+      runs.find((r) => r.failureDetails) ||
+      runs.find((r) => r.reportId === reportId) ||
+      runs[0];
 
     let details: FailureDetailsForPrompt;
 
     if (failedRun?.failureDetails) {
-      // Stored failure details available
       try {
         details = JSON.parse(failedRun.failureDetails);
       } catch {
         llmTasksDb.fail(task.id, 'Failed to parse failure details JSON');
         return;
       }
+
+      // Stored details often have an empty message in merged reports — enrich from
+      // attachments (error-context, trace) which carry the real error text.
+      if (!details.message || details.message.trim() === '') {
+        const extracted = await this.extractDetailsFromReport(reportId, testId);
+        if (extracted?.message) {
+          details.message = extracted.message;
+          details.stackTrace ??= extracted.stackTrace;
+        }
+      }
     } else {
-      // Fall back: read from report HTML on disk
-      const extracted = await this.extractDetailsFromReport(reportId, testId, fileId);
+      const extracted = await this.extractDetailsFromReport(reportId, testId);
       if (!extracted) {
-        llmTasksDb.fail(task.id, `No failure details found — test ${testId} not found in report ${reportId}`);
+        llmTasksDb.fail(
+          task.id,
+          `No failure details found — test ${testId} not found in report ${reportId}`
+        );
         return;
       }
       details = extracted;
     }
 
-    // Strip ANSI escape codes from message and stack trace
     if (details.message) details.message = stripAnsi(details.message);
     if (details.stackTrace) details.stackTrace = stripAnsi(details.stackTrace);
 
-    // Build historical context
     const totalRuns = testDb.getTestRunCount(testId, fileId, project);
-    const recentFailures = runs.filter((r) => r.outcome === 'unexpected' || r.outcome === 'failed').length;
+    const recentFailures = runs.filter(
+      (r) => r.outcome === 'unexpected' || r.outcome === 'failed'
+    ).length;
 
     const previousAnalysis = testAnalysisDb.getByTest(testId, fileId, project);
     const isNewFailure = !previousAnalysis;
 
-    // Check flakiness against warning threshold from config
+    const feedback = analysisFeedbackDb.getByTest(testId, fileId, project);
+
+    // Reuse the previous analysis when the error message + stack are identical.
+    // Guard: own-project feedback newer than the previous analysis must invalidate reuse,
+    // otherwise feedback never reaches the model after the first generation.
+    if (previousAnalysis?.analysis) {
+      const prevAnalysisAt = previousAnalysis.updatedAt || previousAnalysis.createdAt;
+      const feedbackIsNewer =
+        feedback &&
+        prevAnalysisAt &&
+        new Date(feedback.updatedAt).getTime() > new Date(prevAnalysisAt).getTime();
+
+      if (!feedbackIsNewer) {
+        const db = getDatabase();
+        const prevTask = db
+          .prepare(
+            `SELECT prompt FROM llm_tasks WHERE testId = ? AND status = 'completed' AND prompt IS NOT NULL ORDER BY completedAt DESC LIMIT 1`
+          )
+          .get(testId) as { prompt: string } | undefined;
+
+        if (prevTask?.prompt) {
+          const errorSignature = `${details.message}\n${details.stackTrace || ''}`.trim();
+          const prevErrorMatch = prevTask.prompt.match(/## Error Message\n```\n([\s\S]*?)```/);
+          const prevStackMatch = prevTask.prompt.match(/## Stack Trace\n```\n([\s\S]*?)```/);
+          const prevSignature =
+            `${prevErrorMatch?.[1]?.trim() || ''}\n${prevStackMatch?.[1]?.trim() || ''}`.trim();
+
+          if (errorSignature && prevSignature && errorSignature === prevSignature) {
+            console.log(
+              `[llmQueue] Task ${task.id}: same error as previous analysis, reusing result for test ${testId}`
+            );
+            const attempt = details.attempt ?? 1;
+            llmTasksDb.complete(
+              task.id,
+              previousAnalysis.analysis,
+              previousAnalysis.category ?? undefined,
+              previousAnalysis.model ?? undefined
+            );
+            // Mark the new row as reused so consumers can show "♻ Reused" rather than
+            // surface it as a fresh LLM-generated analysis.
+            testAnalysisDb.upsert(
+              testId,
+              fileId,
+              project,
+              reportId,
+              previousAnalysis.analysis,
+              previousAnalysis.category ?? undefined,
+              previousAnalysis.model ?? undefined,
+              attempt,
+              previousAnalysis.id
+            );
+
+            if (failedRun?.runId && previousAnalysis.category) {
+              testDb.updateFailureCategory(failedRun.runId, previousAnalysis.category);
+            }
+
+            if (reportId && llmTasksDb.areAllTestTasksComplete(reportId)) {
+              console.log(`[llmQueue] All test analyses for report ${reportId} complete`);
+            }
+            return;
+          }
+        }
+      }
+    }
+
     const config = await service.getConfig();
     const warningThreshold = (config as any)?.testManagement?.warningThresholdPercentage ?? 2;
     const flakinessScore = failedRun?.flakinessScore ?? 0;
 
-    const prompt = testFailureAnalysisPrompt(details, {
+    const basePrompt = testFailureAnalysisPrompt(details, {
       totalRuns,
       recentFailureCount: recentFailures,
       isFlaky: flakinessScore >= warningThreshold,
       isNewFailure,
     });
 
+    // Phase 2: same-test feedback in other projects, labeled with age + signature-match.
+    // Purely additive context — does NOT invalidate reuse (guard above checks only own-project).
+    const relatedRows = analysisFeedbackDb.getRelatedByTest(testId, fileId, project);
+    const currentSignature = failedRun?.errorSignature ?? undefined;
+    const crossProjectEntries = relatedRows.map((r) => ({
+      project: r.project,
+      comment: r.comment,
+      updatedAt: r.updatedAt,
+      errorSignatureMatchesCurrent:
+        !!currentSignature && !!r.errorSignature && r.errorSignature === currentSignature,
+      latestAnalysis: r.latestAnalysis
+        ? {
+            content: r.latestAnalysis,
+            updatedAt: r.latestAnalysisUpdatedAt ?? r.updatedAt,
+            model: r.latestAnalysisModel ?? undefined,
+          }
+        : undefined,
+    }));
+
+    const prompt =
+      basePrompt + buildFeedbackContext(feedback) + buildCrossProjectContext(crossProjectEntries);
+
     // Store prompt on task for debugging (truncated to 10k chars)
     llmTasksDb.updatePrompt(task.id, prompt.substring(0, 10000));
 
     // Truncate prompt if too large for LLM (most providers have ~128k context but smaller is better)
     const MAX_PROMPT_CHARS = 30000;
-    const finalPrompt = prompt.length > MAX_PROMPT_CHARS
-      ? prompt.substring(0, MAX_PROMPT_CHARS) + '\n\n... (prompt truncated due to size)'
-      : prompt;
+    const finalPrompt =
+      prompt.length > MAX_PROMPT_CHARS
+        ? prompt.substring(0, MAX_PROMPT_CHARS) + '\n\n... (prompt truncated due to size)'
+        : prompt;
 
-    console.log(`[llmQueue] Task ${task.id}: prompt ${finalPrompt.length} chars for test ${testId}`);
+    console.log(
+      `[llmQueue] Task ${task.id}: prompt ${finalPrompt.length} chars for test ${testId}`
+    );
 
     await llmService.initialize();
     const response = await llmService.sendMessage(finalPrompt);
 
-    // Try to parse structured response
-    let category = 'unknown';
+    // Try to parse structured response (LLM may wrap JSON in markdown code fences).
+    let llmCategory: string | null = null;
     let analysis = response.content;
     try {
-      const parsed = JSON.parse(response.content);
-      if (parsed.category) category = parsed.category;
+      let jsonStr = response.content.trim();
+      const fenceMatch = jsonStr.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+      if (fenceMatch) jsonStr = fenceMatch[1].trim();
+      const parsed = JSON.parse(jsonStr);
+      if (parsed.category) llmCategory = parsed.category;
       if (parsed.analysis) analysis = parsed.analysis;
     } catch {
-      // LLM didn't return JSON, use raw content as analysis
+      // LLM didn't return JSON — leave llmCategory null and fall back to heuristic below.
     }
 
-    // Store results
+    // LLM precedence rule: the LLM may override only when it returns a known category AND
+    // either the heuristic was 'unknown' or the LLM's choice agrees with the heuristic.
+    // Otherwise we trust the heuristic — preventing the "two classifiers disagree → label
+    // flips between runs" problem.
+    const { detectFailureCategory, isKnownCategory } = await import('./testManagement.js');
+    const heuristicCategory = detectFailureCategory(details.message);
+    let category: string = heuristicCategory;
+    let categorySource: 'heuristic' | 'llm' = 'heuristic';
+    if (
+      llmCategory &&
+      isKnownCategory(llmCategory) &&
+      (heuristicCategory === 'unknown' || llmCategory === heuristicCategory)
+    ) {
+      category = llmCategory;
+      categorySource = 'llm';
+    }
+
+    const attempt = details.attempt ?? 1;
     llmTasksDb.complete(task.id, analysis, category, response.model);
-    testAnalysisDb.upsert(testId, fileId, project, reportId, analysis, category, response.model);
+    testAnalysisDb.upsert(
+      testId,
+      fileId,
+      project,
+      reportId,
+      analysis,
+      category,
+      response.model,
+      attempt
+    );
 
-    // Update failure_category on the test_run
     if (failedRun?.runId) {
-      testDb.updateFailureCategory(failedRun.runId, category);
+      testDb.updateFailureCategory(failedRun.runId, category, categorySource);
     }
 
-    // Check if all test tasks for this report are done
     if (reportId && llmTasksDb.areAllTestTasksComplete(reportId)) {
       console.log(`[llmQueue] All test analyses for report ${reportId} complete`);
     }
@@ -212,8 +348,7 @@ class LlmAnalysisQueue {
    */
   private async extractDetailsFromReport(
     reportId: string,
-    testId: string,
-    fileId: string
+    testId: string
   ): Promise<FailureDetailsForPrompt | null> {
     try {
       const reportDir = path.join(REPORTS_FOLDER, reportId);
@@ -226,10 +361,8 @@ class LlmAnalysisQueue {
       for (const file of reportInfo.files) {
         if (!file.tests) continue;
         for (const test of file.tests) {
-          // Match by testId (primary unique test identifier)
           if (test.testId !== testId) continue;
 
-          // Collect error context from all results
           let message = '';
           let errorContextContent = '';
           const allAttachments: Array<{ name: string; path: string; contentType: string }> = [];
@@ -239,12 +372,11 @@ class LlmAnalysisQueue {
               const result = test.results[i];
               if (result.status === 'passed') continue;
 
-              // Direct error message
               if (result.message && !message) {
                 message = result.message;
               }
 
-              // Read error-context attachment from disk (Playwright's "Copy prompt" source)
+              // Read the error-context attachment (Playwright's "Copy prompt" source).
               if (result.attachments) {
                 for (const att of result.attachments) {
                   if (att.name === 'error-context' && att.path && !errorContextContent) {
@@ -254,7 +386,7 @@ class LlmAnalysisQueue {
                         'utf-8'
                       );
                     } catch {
-                      // File may not exist
+                      // attachment file may be missing — fall through
                     }
                   }
                   allAttachments.push({
@@ -267,7 +399,6 @@ class LlmAnalysisQueue {
             }
           }
 
-          // Also collect test-level attachments
           if (test.attachments) {
             for (const att of test.attachments) {
               allAttachments.push({
@@ -278,31 +409,22 @@ class LlmAnalysisQueue {
             }
           }
 
-          // Read error details from trace ZIP (richest source — has structured error + stack)
+          // Trace ZIP carries structured error + stack — richest source when present.
           let traceError: { message: string; stack: string } | null = null;
-          const traceAtt = allAttachments.find(a => a.name === 'trace' && a.path);
+          const traceAtt = allAttachments.find((a) => a.name === 'trace' && a.path);
           if (traceAtt) {
             traceError = await this.extractErrorFromTrace(reportDir, traceAtt.path);
           }
 
-          // Build the best possible message, combining all sources:
-          // 1. Trace error message + stack (most structured)
-          // 2. error-context attachment (page snapshot — truncated to avoid LLM timeout)
-          // 3. Direct result.message
-          // 4. Fallback to test outcome
-          const MAX_CONTEXT_CHARS = 4000; // Keep prompt reasonable for LLM context window
+          // Pick the best message source in order: trace, result.message, synthetic fallback.
+          // The DOM snapshot is appended as supplementary context, not the error itself.
+          const MAX_CONTEXT_CHARS = 4000;
           let bestMessage = '';
           let stackTrace: string | undefined;
 
           if (traceError) {
             bestMessage = stripAnsi(traceError.message);
             stackTrace = traceError.stack;
-          }
-          if (errorContextContent) {
-            const truncatedContext = errorContextContent.length > MAX_CONTEXT_CHARS
-              ? errorContextContent.substring(0, MAX_CONTEXT_CHARS) + '\n\n... (truncated)'
-              : errorContextContent;
-            bestMessage += (bestMessage ? '\n\n# Page Context\n\n' : '') + truncatedContext;
           }
           if (!bestMessage && message) {
             bestMessage = message;
@@ -314,6 +436,13 @@ class LlmAnalysisQueue {
           }
           if (!bestMessage) {
             bestMessage = `Test ${test.outcome}: ${test.title}`;
+          }
+          if (errorContextContent) {
+            const truncatedContext =
+              errorContextContent.length > MAX_CONTEXT_CHARS
+                ? errorContextContent.substring(0, MAX_CONTEXT_CHARS) + '\n\n... (truncated)'
+                : errorContextContent;
+            bestMessage += `\n\n# Page Context (DOM snapshot)\n\n${truncatedContext}`;
           }
 
           return {
@@ -343,18 +472,19 @@ class LlmAnalysisQueue {
       return;
     }
 
-    // Check if all test analyses are done — requeue with retry limit if not
+    // Wait for per-test analyses to complete; requeue (bounded) if they're still in flight.
     if (!llmTasksDb.areAllTestTasksComplete(reportId)) {
       if (task.retryCount >= 20) {
         llmTasksDb.fail(task.id, 'Timed out waiting for test analyses to complete');
         return;
       }
       llmTasksDb.requeueWithRetryIncrement(task.id);
-      console.log(`[llmQueue] Report summary ${task.id} requeued (${task.retryCount + 1}/20) — waiting for test analyses`);
+      console.log(
+        `[llmQueue] Report summary ${task.id} requeued (${task.retryCount + 1}/20) — waiting for test analyses`
+      );
       return;
     }
 
-    // Gather per-test analyses
     const testAnalyses = testAnalysisDb.getByReport(reportId);
     const categories: Record<string, number> = {};
     const perTestAnalyses: Array<{ testTitle: string; category: string; analysis: string }> = [];
@@ -363,7 +493,6 @@ class LlmAnalysisQueue {
       if (ta.category) {
         categories[ta.category] = (categories[ta.category] || 0) + 1;
       }
-      // Get test title
       const test = testDb.getTest(ta.testId, ta.fileId, ta.project);
       perTestAnalyses.push({
         testTitle: test?.title || ta.testId,
@@ -372,17 +501,27 @@ class LlmAnalysisQueue {
       });
     }
 
-    // Build error groups from test_runs for this report
-    const errorGroups: Array<{ signature: string; category: string; count: number; sampleMessage: string; affectedTests: string[] }> = [];
-    // Group by error_signature
-    const signatureMap = new Map<string, { category: string; count: number; message: string; tests: Set<string> }>();
+    const errorGroups: Array<{
+      signature: string;
+      category: string;
+      count: number;
+      sampleMessage: string;
+      affectedTests: string[];
+    }> = [];
+    const signatureMap = new Map<
+      string,
+      { category: string; count: number; message: string; tests: Set<string> }
+    >();
 
-    // Query test_runs by reportId
     const reportRuns = testDb.getTestRunsByReport(reportId);
     for (const run of reportRuns) {
       if (!run.errorSignature || !run.failureDetails) continue;
       let details: any;
-      try { details = JSON.parse(run.failureDetails); } catch { continue; }
+      try {
+        details = JSON.parse(run.failureDetails);
+      } catch {
+        continue;
+      }
 
       const existing = signatureMap.get(run.errorSignature);
       if (existing) {
@@ -409,23 +548,50 @@ class LlmAnalysisQueue {
     }
     errorGroups.sort((a, b) => b.count - a.count);
 
-    const prompt = reportFailureSummaryPrompt(reportId, categories, errorGroups, perTestAnalyses);
+    const basePrompt = reportFailureSummaryPrompt(
+      reportId,
+      categories,
+      errorGroups,
+      perTestAnalyses
+    );
+
+    // Inject per-test feedback notes for tests in this report (capped at 10 by recency).
+    // The report summary is itself an aggregation of test analyses, so test-level feedback
+    // is what's relevant here; there is no separate report-level feedback.
+    const perTestFeedback = analysisFeedbackDb.getPerTestForReport(reportId, 10);
+    const perTestFeedbackForPrompt = perTestFeedback.map((f) => {
+      const t =
+        f.testId && f.fileId && f.project
+          ? testDb.getTest(f.testId, f.fileId, f.project)
+          : undefined;
+      return {
+        testTitle: t?.title,
+        comment: f.comment,
+        updatedAt: f.updatedAt,
+      };
+    });
+    const prompt = basePrompt + buildPerTestFeedbackContext(perTestFeedbackForPrompt);
 
     await llmService.initialize();
     const response = await llmService.sendMessage(prompt);
 
     llmTasksDb.complete(task.id, response.content, null, response.model);
 
-    // Store in failure summary table
     const totalFailures = Object.values(categories).reduce((s, c) => s + c, 0);
-    // Map to ErrorGroup shape expected by the DB (serialized as JSON)
+    // Map to the ErrorGroup shape the DB expects (serialized as JSON).
     const dbErrorGroups = errorGroups.map((g) => ({
       pattern: g.sampleMessage,
       count: g.count,
       category: g.category,
       testIds: g.affectedTests,
     }));
-    failureSummaryDb.upsertSummary(reportId, project || '', totalFailures, categories, dbErrorGroups);
+    failureSummaryDb.upsertSummary(
+      reportId,
+      project || '',
+      totalFailures,
+      categories,
+      dbErrorGroups
+    );
     failureSummaryDb.updateLlmSummary(reportId, response.content);
   }
 
@@ -436,22 +602,39 @@ class LlmAnalysisQueue {
       return;
     }
 
-    // Import the prompt function
     const { projectFailureSummaryPrompt } = await import('../llm/prompts/index.js');
+    const { reportDb } = await import('./db/reports.sqlite.js');
 
-    const summaries = failureSummaryDb.getSummariesByProject(project, 10);
-    if (summaries.length === 0) {
-      llmTasksDb.fail(task.id, 'No report summaries found for project');
+    const latestReports = reportDb.getLatestByProject(project, 10);
+    if (latestReports.length === 0) {
+      llmTasksDb.fail(task.id, 'No reports found for project');
       return;
     }
 
-    const prompt = projectFailureSummaryPrompt(project, summaries.map((s) => ({
-      reportId: s.reportId,
-      totalFailures: s.totalFailures,
-      categories: s.categories,
-      llmSummary: s.llmSummary ?? undefined,
-      createdAt: s.createdAt,
-    })));
+    const failureSummaryMap = new Map(
+      failureSummaryDb.getSummariesByProject(project, 10).map((s) => [s.reportId, s] as const)
+    );
+
+    const prompt = projectFailureSummaryPrompt(
+      project,
+      latestReports.map((r) => {
+        const summary = failureSummaryMap.get(r.reportID);
+        return {
+          reportId: r.reportID,
+          createdAt: String(r.createdAt),
+          stats: {
+            total: r.stats?.total ?? 0,
+            expected: r.stats?.expected ?? 0,
+            unexpected: r.stats?.unexpected ?? 0,
+            flaky: r.stats?.flaky ?? 0,
+            skipped: r.stats?.skipped ?? 0,
+          },
+          totalFailures: summary?.totalFailures ?? 0,
+          categories: summary?.categories ?? {},
+          llmSummary: summary?.llmSummary ?? undefined,
+        };
+      })
+    );
 
     await llmService.initialize();
     const response = await llmService.sendMessage(prompt);
@@ -476,23 +659,27 @@ class LlmAnalysisQueue {
       const content = await testTraceFile.async('string');
       const lines = content.split('\n').filter((l: string) => l.trim());
 
-      // Find the "error" type entry — it has the structured error
       for (const line of lines) {
         try {
           const entry = JSON.parse(line);
+          // "error" entries carry the structured error message + stack.
           if (entry.type === 'error' && entry.message) {
             const stackLines = Array.isArray(entry.stack)
-              ? entry.stack.map((s: { file?: string; line?: number; column?: number; function?: string }) =>
-                  `    at ${s.function ? s.function + ' ' : ''}(${s.file}:${s.line}:${s.column})`
-                ).join('\n')
-              : typeof entry.stack === 'string' ? entry.stack : '';
+              ? entry.stack
+                  .map(
+                    (s: { file?: string; line?: number; column?: number; function?: string }) =>
+                      `    at ${s.function ? s.function + ' ' : ''}(${s.file}:${s.line}:${s.column})`
+                  )
+                  .join('\n')
+              : typeof entry.stack === 'string'
+                ? entry.stack
+                : '';
 
             return {
               message: entry.message,
               stack: stackLines,
             };
           }
-          // Also check "after" entries with error field
           if (entry.type === 'after' && entry.error?.message) {
             return {
               message: entry.error.message,
@@ -500,7 +687,7 @@ class LlmAnalysisQueue {
             };
           }
         } catch {
-          // Skip unparseable lines
+          // skip unparseable lines
         }
       }
 
