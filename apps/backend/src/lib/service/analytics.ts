@@ -12,11 +12,7 @@ import { service } from './index.js';
 const HEALTH_GRID_UNBOUNDED_CAP = 200;
 
 export class AnalyticsService {
-  async getAnalyticsData(
-    project?: string,
-    from?: string,
-    to?: string
-  ): Promise<AnalyticsData> {
+  async getAnalyticsData(project?: string, from?: string, to?: string): Promise<AnalyticsData> {
     const allReports = await this.getAllReportsForProject(project);
     const { displayReports, recentForTrend, olderForTrend, isBounded } = this.partitionReports(
       allReports,
@@ -73,8 +69,7 @@ export class AnalyticsService {
         return t >= fromMs && t < toMs;
       });
 
-      const duration =
-        Number.isFinite(toMs) && Number.isFinite(fromMs) ? toMs - fromMs : null;
+      const duration = Number.isFinite(toMs) && Number.isFinite(fromMs) ? toMs - fromMs : null;
       let older: BackendReportHistory[] = [];
       if (duration !== null && duration > 0) {
         const compTo = fromMs;

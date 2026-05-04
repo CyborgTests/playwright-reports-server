@@ -150,7 +150,10 @@ export default function DateRangeSelect({
   // Track parent-driven changes (e.g. URL navigation)
   useEffect(() => {
     if (!isInitialized) return;
-    if (selectedRange && (selectedRange.from !== internalRange.from || selectedRange.to !== internalRange.to)) {
+    if (
+      selectedRange &&
+      (selectedRange.from !== internalRange.from || selectedRange.to !== internalRange.to)
+    ) {
       setInternalRange(selectedRange);
     }
   }, [selectedRange, internalRange.from, internalRange.to, isInitialized]);

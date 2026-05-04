@@ -21,9 +21,7 @@ import { TrendSparklines } from './TrendSparklines';
 
 export default function AnalyticsDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [project, setProject] = useState(
-    searchParams.get('project') ?? defaultProjectName
-  );
+  const [project, setProject] = useState(searchParams.get('project') ?? defaultProjectName);
   const [dateRange, setDateRangeState] = useState<DateRange>(() => ({
     from: searchParams.get('from') ?? undefined,
     to: searchParams.get('to') ?? undefined,
@@ -43,8 +41,18 @@ export default function AnalyticsDashboard() {
     }
   }, [project, dateRange, searchParams, setSearchParams]);
 
-  const { data: config, error: configError, isFetching: isFetchingConfig, isPending: isPendingConfig } = useConfig();
-  const { data: analyticsData, error, isFetching, isPending } = useAnalyticsData(project, dateRange);
+  const {
+    data: config,
+    error: configError,
+    isFetching: isFetchingConfig,
+    isPending: isPendingConfig,
+  } = useConfig();
+  const {
+    data: analyticsData,
+    error,
+    isFetching,
+    isPending,
+  } = useAnalyticsData(project, dateRange);
   const llmConfigured = !!(config?.llm?.baseUrl && config?.llm?.apiKey);
   const { data: failureCategoryResponse, isLoading: isLoadingFailures } = useFailureCategoryData(
     project,
@@ -79,7 +87,8 @@ export default function AnalyticsDashboard() {
     flakyCount: number;
   }>(summaryUrl, { dependencies: [project, warningThreshold, dateRange.from, dateRange.to] });
 
-  const isLoading = isPending || isFetching || isLoadingSummary || isFetchingConfig || isPendingConfig;
+  const isLoading =
+    isPending || isFetching || isLoadingSummary || isFetchingConfig || isPendingConfig;
 
   if (!isLoading && !analyticsData) {
     return (
@@ -108,11 +117,7 @@ export default function AnalyticsDashboard() {
           </p>
         </div>
         <div className="flex justify-end items-end gap-3 flex-wrap">
-          <DateRangeSelect
-            label="Period"
-            selectedRange={dateRange}
-            onSelect={onDateRangeChange}
-          />
+          <DateRangeSelect label="Period" selectedRange={dateRange} onSelect={onDateRangeChange} />
           <ProjectSelect
             label="Select project"
             entity="report"
@@ -122,7 +127,12 @@ export default function AnalyticsDashboard() {
         </div>
       </div>
 
-      <OverviewStatsCard stats={overviewStats!} totalTests={testsSummary?.total} flakyCount={testsSummary?.flakyCount} totalRuns={runHealthMetrics.length} />
+      <OverviewStatsCard
+        stats={overviewStats!}
+        totalTests={testsSummary?.total}
+        flakyCount={testsSummary?.flakyCount}
+        totalRuns={runHealthMetrics.length}
+      />
       <TrendSparklines metrics={trendMetrics!} isLoading={isLoading} />
 
       <HealthGrid metrics={runHealthMetrics} isLoading={isLoading} />

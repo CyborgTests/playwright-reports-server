@@ -139,13 +139,17 @@ export class TestAnalysisDatabase {
   public getByTestAndReport(testId: string, reportId: string): TestAnalysisRow | null {
     // Try exact match first: testId + reportId
     const exact = this.db
-      .prepare('SELECT * FROM test_llm_analyses WHERE testId = ? AND reportId = ? ORDER BY attempt LIMIT 1')
+      .prepare(
+        'SELECT * FROM test_llm_analyses WHERE testId = ? AND reportId = ? ORDER BY attempt LIMIT 1'
+      )
       .get(testId, reportId) as TestAnalysisRow | undefined;
     if (exact) return exact;
 
     // Fall back to testId only (analysis may have been triggered from a different report)
     const fallback = this.db
-      .prepare('SELECT * FROM test_llm_analyses WHERE testId = ? ORDER BY updatedAt DESC, createdAt DESC LIMIT 1')
+      .prepare(
+        'SELECT * FROM test_llm_analyses WHERE testId = ? ORDER BY updatedAt DESC, createdAt DESC LIMIT 1'
+      )
       .get(testId) as TestAnalysisRow | undefined;
     return fallback ?? null;
   }

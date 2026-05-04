@@ -4,11 +4,11 @@ import type { DateRange } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
-import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { withBase } from '@/lib/url';
 
 interface FailureAnalysisSummaryProps {
@@ -87,9 +87,14 @@ export function FailureAnalysisSummary({
         }
       }
 
-      queryClient.invalidateQueries({ predicate: (q) => q.queryKey.some((k) => typeof k === 'string' && k.includes('failure-categories')) });
+      queryClient.invalidateQueries({
+        predicate: (q) =>
+          q.queryKey.some((k) => typeof k === 'string' && k.includes('failure-categories')),
+      });
     } catch (error) {
-      toast.error(`LLM analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(
+        `LLM analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
       setSummary(null);
     } finally {
       setIsStreaming(false);
@@ -119,12 +124,7 @@ export function FailureAnalysisSummary({
               Test health analysis based on the latest 10 runs
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleGenerate}
-            disabled={isStreaming}
-          >
+          <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isStreaming}>
             {isStreaming ? (
               <>
                 <Spinner size="sm" /> Analyzing...

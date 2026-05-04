@@ -1,6 +1,15 @@
 'use client';
 
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCategoryName } from '@/lib/format';
 
@@ -31,10 +40,12 @@ const categoryColors: Record<string, string> = {
   unknown: 'hsl(220, 10%, 60%)',
 };
 
-export function FailureCategoryChart({ categories, totalFailures, isLoading }: Readonly<FailureCategoryChartProps>) {
-  const chartData = (categories ?? [])
-    .filter((c) => c.count > 0)
-    .sort((a, b) => b.count - a.count);
+export function FailureCategoryChart({
+  categories,
+  totalFailures,
+  isLoading,
+}: Readonly<FailureCategoryChartProps>) {
+  const chartData = (categories ?? []).filter((c) => c.count > 0).sort((a, b) => b.count - a.count);
 
   const CustomTooltip = ({
     active,
@@ -67,9 +78,7 @@ export function FailureCategoryChart({ categories, totalFailures, isLoading }: R
           </p>
         </div>
         {totalFailures !== undefined && (
-          <span className="text-sm text-muted-foreground">
-            {totalFailures} total failures
-          </span>
+          <span className="text-sm text-muted-foreground">{totalFailures} total failures</span>
         )}
       </div>
 

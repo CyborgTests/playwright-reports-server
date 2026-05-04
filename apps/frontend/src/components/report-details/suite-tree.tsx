@@ -65,11 +65,7 @@ interface SuiteNodeComponentProps {
   reportId?: string;
 }
 
-const SuiteNodeComponent = ({
-  suite,
-  history,
-  reportId,
-}: SuiteNodeComponentProps) => {
+const SuiteNodeComponent = ({ suite, history, reportId }: SuiteNodeComponentProps) => {
   return (
     <Accordion type="multiple" className="pl-4">
       {[
@@ -77,11 +73,7 @@ const SuiteNodeComponent = ({
           <AccordionItem key={child.name} value={child.name}>
             <AccordionTrigger className="hover:no-underline">{child.name}</AccordionTrigger>
             <AccordionContent>
-              <SuiteNodeComponent
-                history={history}
-                reportId={reportId}
-                suite={child}
-              />
+              <SuiteNodeComponent history={history} reportId={reportId} suite={child} />
             </AccordionContent>
           </AccordionItem>
         )),
@@ -123,11 +115,7 @@ const FileSuitesTree = ({ file, history, reportId }: FileSuitesTreeProps) => {
 
   return (
     <>
-      <SuiteNodeComponent
-        history={history}
-        reportId={reportId}
-        suite={suiteTree}
-      />
+      <SuiteNodeComponent history={history} reportId={reportId} suite={suiteTree} />
     </>
   );
 };

@@ -1,9 +1,9 @@
+import type { LlmTaskStatus, LlmTaskType } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import { v4 as uuid } from 'uuid';
-import type { LlmTaskType, LlmTaskStatus } from '@playwright-reports/shared';
 import { getDatabase } from './db.js';
 
-export type { LlmTaskType, LlmTaskStatus } from '@playwright-reports/shared';
+export type { LlmTaskStatus, LlmTaskType } from '@playwright-reports/shared';
 
 const initiatedLlmTasksDb = Symbol.for('playwright.reports.db.llmTasks');
 const instance = globalThis as typeof globalThis & {
@@ -42,7 +42,7 @@ export class LlmTasksDatabase {
   private readonly completeTaskStmt: Database.Statement<
     [string, string, string | null, string | null, string]
   >;
-  private readonly failTaskStmt: Database.Statement<[string | null, string]>;
+  private readonly failTaskStmt: Database.Statement<[string, string | null, string]>;
   private readonly requeueTaskStmt: Database.Statement<[string | null, string]>;
   private readonly cancelTaskStmt: Database.Statement<[string]>;
   private readonly retryTaskStmt: Database.Statement<[string]>;
@@ -78,9 +78,12 @@ export class LlmTasksDatabase {
       WHERE id = ?
     `);
 
+    // completedAt is written as a JS ISO-8601 string (UTC, with 'T'/'Z'). Using
+    // CURRENT_TIMESTAMP would emit SQLite's 'YYYY-MM-DD HH:MM:SS' format which V8
+    // parses as local time, producing negative durations for users east of UTC.
     this.failTaskStmt = this.db.prepare(`
       UPDATE llm_tasks
-      SET status = 'failed', completedAt = CURRENT_TIMESTAMP, error = ?
+      SET status = 'failed', completedAt = ?, error = ?
       WHERE id = ?
     `);
 
@@ -197,22 +200,28 @@ export class LlmTasksDatabase {
     return transaction();
   }
 
-  public complete(id: string, result: string, category?: string | null, model?: string | null): void {
+  public complete(
+    id: string,
+    result: string,
+    category?: string | null,
+    model?: string | null
+  ): void {
     const now = new Date().toISOString();
     this.completeTaskStmt.run(now, result, category ?? null, model ?? null, id);
   }
 
   public fail(id: string, error: string): void {
-    const task = this.db.prepare('SELECT retryCount, maxRetries FROM llm_tasks WHERE id = ?').get(id) as
-      | { retryCount: number; maxRetries: number }
-      | undefined;
+    const task = this.db
+      .prepare('SELECT retryCount, maxRetries FROM llm_tasks WHERE id = ?')
+      .get(id) as { retryCount: number; maxRetries: number } | undefined;
 
     if (!task) return;
 
     if (task.retryCount < task.maxRetries) {
       this.requeueTaskStmt.run(error, id);
     } else {
-      this.failTaskStmt.run(error, id);
+      const now = new Date().toISOString();
+      this.failTaskStmt.run(now, error, id);
     }
   }
 
@@ -235,7 +244,13 @@ export class LlmTasksDatabase {
     this.clearQueueStmt.run();
   }
 
-  public getStats(): { queued: number; processing: number; completed: number; failed: number; cancelled: number } {
+  public getStats(): {
+    queued: number;
+    processing: number;
+    completed: number;
+    failed: number;
+    cancelled: number;
+  } {
     const rows = this.getStatsStmt.all() as Array<{ status: string; count: number }>;
     const stats = { queued: 0, processing: 0, completed: 0, failed: 0, cancelled: 0 };
 
@@ -246,6 +261,21 @@ export class LlmTasksDatabase {
     }
 
     return stats;
+  }
+
+  /**
+   * Count in-flight tasks (queued or processing) for a single report — any task type.
+   * Used by the report detail page to disable the "Summarize Failures" button while
+   * an analysis is already running.
+   */
+  public getInflightCountForReport(reportId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) as count FROM llm_tasks
+         WHERE reportId = ? AND status IN ('queued','processing')`
+      )
+      .get(reportId) as { count: number } | undefined;
+    return row?.count ?? 0;
   }
 
   public getTasksPaginated(opts: {
@@ -278,9 +308,7 @@ export class LlmTasksDatabase {
       .get(...params) as { total: number };
 
     const data = this.db
-      .prepare(
-        `SELECT * FROM llm_tasks ${whereClause} ORDER BY createdAt DESC LIMIT ? OFFSET ?`
-      )
+      .prepare(`SELECT * FROM llm_tasks ${whereClause} ORDER BY createdAt DESC LIMIT ? OFFSET ?`)
       .all(...params, opts.limit, opts.offset) as LlmTaskRow[];
 
     return { data, total: countResult.total };
@@ -308,9 +336,11 @@ export class LlmTasksDatabase {
   }
 
   public requeueWithRetryIncrement(id: string): void {
-    this.db.prepare(
-      "UPDATE llm_tasks SET status = 'queued', startedAt = NULL, retryCount = retryCount + 1 WHERE id = ?"
-    ).run(id);
+    this.db
+      .prepare(
+        "UPDATE llm_tasks SET status = 'queued', startedAt = NULL, retryCount = retryCount + 1 WHERE id = ?"
+      )
+      .run(id);
   }
 }
 

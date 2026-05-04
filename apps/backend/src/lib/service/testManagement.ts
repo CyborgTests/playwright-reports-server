@@ -110,7 +110,10 @@ export function detectFailureCategory(errorMessage: string): FailureCategory {
   }
 
   // 3. Network transport — explicit `net::ERR_*` or low-level socket errors.
-  if (/net::ERR_[A-Z_]+/.test(msg) || /\b(?:ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN)\b/.test(msg)) {
+  if (
+    /net::ERR_[A-Z_]+/.test(msg) ||
+    /\b(?:ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN)\b/.test(msg)
+  ) {
     return 'network_error';
   }
 
@@ -129,12 +132,18 @@ export function detectFailureCategory(errorMessage: string): FailureCategory {
   const isExpect = /\bexpect\s*\(/.test(msg);
   if (isExpect) {
     if (
-      /\.(?:toBeVisible|toBeAttached|toBeEnabled|toBeFocused|toBeInViewport|toContainText|toHaveText|toHaveValue|toHaveCount|toHaveAttribute|toBeChecked)\b/.test(msg) &&
+      /\.(?:toBeVisible|toBeAttached|toBeEnabled|toBeFocused|toBeInViewport|toContainText|toHaveText|toHaveValue|toHaveCount|toHaveAttribute|toBeChecked)\b/.test(
+        msg
+      ) &&
       /Timed? out|Timeout/i.test(msg)
     ) {
       return 'element_not_visible';
     }
-    if (/\.(?:toEqual|toBe|toMatch|toContain|toStrictEqual|toHaveLength|toBeTruthy|toBeFalsy|toBeNull|toBeDefined|toBeGreaterThan|toBeLessThan|toBeCloseTo)\b/.test(msg)) {
+    if (
+      /\.(?:toEqual|toBe|toMatch|toContain|toStrictEqual|toHaveLength|toBeTruthy|toBeFalsy|toBeNull|toBeDefined|toBeGreaterThan|toBeLessThan|toBeCloseTo)\b/.test(
+        msg
+      )
+    ) {
       return 'assertion_error';
     }
   }
@@ -294,7 +303,9 @@ export class TestManagementService {
         let message = '';
         try {
           message = String(JSON.parse(details).message ?? '');
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         const signature = this.computeErrorSignature(message, filePath);
         const classification = classifyFailure(message, signature);
         preparedByKey.set(`${testId}::${fileId}`, {
@@ -342,7 +353,13 @@ export class TestManagementService {
             reportId: report.reportID,
             outcome: test.outcome || 'unknown',
             duration: test.duration,
-            createdAt: test.createdAt ?? (report.startTime ? new Date(report.startTime).toISOString() : (report.createdAt instanceof Date ? report.createdAt.toISOString() : report.createdAt)),
+            createdAt:
+              test.createdAt ??
+              (report.startTime
+                ? new Date(report.startTime).toISOString()
+                : report.createdAt instanceof Date
+                  ? report.createdAt.toISOString()
+                  : report.createdAt),
             quarantined: shouldQuarantineNextRun,
             quarantineReason: latestTestRun?.quarantineReason ?? '',
             flakinessScore: this.calculateFlakinessSync(testId, fileId, report.project, config),
@@ -397,7 +414,9 @@ export class TestManagementService {
       const failedRuns = allRuns.filter((run) => run.failureDetails);
 
       if (failedRuns.length === 0) {
-        console.log(`[testManagement] No failed tests in report ${reportId}, skipping LLM analysis`);
+        console.log(
+          `[testManagement] No failed tests in report ${reportId}, skipping LLM analysis`
+        );
         return;
       }
 
@@ -418,14 +437,26 @@ export class TestManagementService {
         priority: -1,
       });
 
-      console.log(`[testManagement] Queued ${failedRuns.length} LLM analysis tasks for report ${reportId}`);
+      console.log(
+        `[testManagement] Queued ${failedRuns.length} LLM analysis tasks for report ${reportId}`
+      );
     } catch (error) {
       console.error('[testManagement] Failed to queue LLM analysis:', error);
     }
   }
 
   private async extractFailureDetails(
-    test: { title: string; outcome?: string; results?: Array<{ status?: string; message?: string; attachments?: Array<{ name: string; contentType: string; path: string }> }>; location?: { file: string; line: number; column: number }; attachments?: Array<{ name: string; path: string; contentType: string }> },
+    test: {
+      title: string;
+      outcome?: string;
+      results?: Array<{
+        status?: string;
+        message?: string;
+        attachments?: Array<{ name: string; contentType: string; path: string }>;
+      }>;
+      location?: { file: string; line: number; column: number };
+      attachments?: Array<{ name: string; path: string; contentType: string }>;
+    },
     filePath: string,
     attempt: number,
     reportId: string
@@ -465,7 +496,7 @@ export class TestManagementService {
     const input = `${filePath}:${normalized}`;
     for (let i = 0; i < input.length; i++) {
       const char = input.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash |= 0;
     }
     return hash.toString(36);
@@ -596,7 +627,10 @@ export class TestManagementService {
 
       const getPassRate = (t: TestWithQuarantineInfo) => {
         if (!t.runs || t.runs.length === 0) return 1;
-        return t.runs.filter((r) => r.outcome === 'expected' || r.outcome === 'passed').length / t.runs.length;
+        return (
+          t.runs.filter((r) => r.outcome === 'expected' || r.outcome === 'passed').length /
+          t.runs.length
+        );
       };
       return getPassRate(a) - getPassRate(b);
     });

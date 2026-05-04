@@ -1,7 +1,6 @@
 import type { TestFilters as TestFiltersType } from '@playwright-reports/shared';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { formatCategoryName } from '@/lib/format';
 import {
   Select,
   SelectContent,
@@ -10,6 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import useQuery from '@/hooks/useQuery';
+import { formatCategoryName } from '@/lib/format';
 
 interface TestFiltersProps {
   filters: TestFiltersType;

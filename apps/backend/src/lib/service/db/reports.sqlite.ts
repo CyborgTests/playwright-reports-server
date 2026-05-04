@@ -267,10 +267,7 @@ export class ReportDatabase {
     return rows.map(this.rowToReport);
   }
 
-  public getByProject(
-    project?: string,
-    opts?: { from?: string; to?: string }
-  ): ReportHistory[] {
+  public getByProject(project?: string, opts?: { from?: string; to?: string }): ReportHistory[] {
     const hasProject = project && project !== defaultProjectName;
     const hasFrom = !!opts?.from;
     const hasTo = !!opts?.to;

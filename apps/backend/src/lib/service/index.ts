@@ -324,7 +324,6 @@ class Service {
 
     return result;
   }
-
 }
 
 export const service = Service.getInstance();

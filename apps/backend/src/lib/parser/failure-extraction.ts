@@ -36,10 +36,7 @@ export interface AttachmentLike {
  * ERROR_CONTEXT_MAX_CHARS). Returns '' when no such attachment exists or the
  * file is missing/unreadable.
  */
-export function readErrorContextSync(
-  reportId: string,
-  attachments?: AttachmentLike[]
-): string {
+export function readErrorContextSync(reportId: string, attachments?: AttachmentLike[]): string {
   if (!attachments) return '';
   for (const att of attachments) {
     if (att.name !== 'error-context' || !att.path) continue;
@@ -88,8 +85,9 @@ export async function extractErrorFromTrace(
         if (entry.type === 'error' && entry.message) {
           const stackLines = Array.isArray(entry.stack)
             ? entry.stack
-                .map((s: { file?: string; line?: number; column?: number; function?: string }) =>
-                  `    at ${s.function ? `${s.function} ` : ''}(${s.file}:${s.line}:${s.column})`
+                .map(
+                  (s: { file?: string; line?: number; column?: number; function?: string }) =>
+                    `    at ${s.function ? `${s.function} ` : ''}(${s.file}:${s.line}:${s.column})`
                 )
                 .join('\n')
             : typeof entry.stack === 'string'

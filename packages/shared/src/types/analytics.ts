@@ -163,5 +163,13 @@ export interface FailureCategoryAnalytics {
     sampleReportId?: string;
     sampleReportUrl?: string;
     sampleTestId?: string;
+    affectedTests?: Array<{
+      testId: string;
+      title: string;
+      filePath?: string;
+      project: string;
+      reportId: string;
+      reportUrl?: string;
+    }>;
   }>;
 }

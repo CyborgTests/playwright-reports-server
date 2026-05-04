@@ -1,10 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Brain, RefreshCw } from 'lucide-react';
+import { Link as RouterLink } from 'react-router-dom';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useConfig } from '@/hooks/useConfig';
 import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
@@ -35,6 +37,7 @@ interface FailureSummaryResponse {
   success: boolean;
   data?: FailureSummary;
   hasFailures?: boolean;
+  pendingAnalysisCount?: number;
   error?: string;
 }
 
@@ -109,6 +112,8 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
 
   const summary = summaryResponse?.data;
   const hasFailures = summaryResponse?.hasFailures ?? false;
+  const pendingAnalysisCount = summaryResponse?.pendingAnalysisCount ?? 0;
+  const hasOngoingAnalysis = pendingAnalysisCount > 0;
 
   if ((!summary || error) && !hasFailures) {
     return null;
@@ -123,10 +128,32 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
             <Brain className="h-4 w-4" />
             <span>LLM failure analysis available</span>
           </div>
-          <Button size="sm" variant="outline" onClick={() => triggerAnalysis({})}>
-            <Brain className="h-4 w-4 mr-1" />
-            Summarize Failures
-          </Button>
+          {hasOngoingAnalysis ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <Button size="sm" variant="outline" disabled>
+                      <Spinner size="sm" className="mr-1" />
+                      Analysis ongoing ({pendingAnalysisCount})
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Analysis ongoing — refresh the page later, or check the{' '}
+                  <RouterLink to="/llm-queue" className="underline">
+                    LLM queue
+                  </RouterLink>
+                  .
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => triggerAnalysis({})}>
+              <Brain className="h-4 w-4 mr-1" />
+              Summarize Failures
+            </Button>
+          )}
         </CardContent>
       </Card>
     );
@@ -145,14 +172,35 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
               {summary.totalFailures} {summary.totalFailures === 1 ? 'failure' : 'failures'}
             </Badge>
           </CardTitle>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => triggerAnalysis({})}
-            title="Re-analyze failures"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
+          {hasOngoingAnalysis ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <Button size="sm" variant="ghost" disabled>
+                      <Spinner size="sm" />
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Analysis ongoing ({pendingAnalysisCount}) — refresh the page later, or check the{' '}
+                  <RouterLink to="/llm-queue" className="underline">
+                    LLM queue
+                  </RouterLink>
+                  .
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => triggerAnalysis({})}
+              title="Re-analyze failures"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

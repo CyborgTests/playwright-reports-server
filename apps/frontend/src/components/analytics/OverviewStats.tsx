@@ -12,7 +12,12 @@ interface OverviewStatsProps {
   totalRuns?: number;
 }
 
-export function OverviewStatsCard({ stats, totalTests, flakyCount, totalRuns }: Readonly<OverviewStatsProps>) {
+export function OverviewStatsCard({
+  stats,
+  totalTests,
+  flakyCount,
+  totalRuns,
+}: Readonly<OverviewStatsProps>) {
   if (!stats || totalTests === undefined) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
@@ -63,16 +68,17 @@ export function OverviewStatsCard({ stats, totalTests, flakyCount, totalRuns }: 
     flakyTestsTrend = 'stable' as const,
   } = stats;
 
+  const runsCount = totalRuns ?? 0;
   const statsCards = [
     {
-      title: 'Total Tests',
-      value: totalTests.toLocaleString(),
-      subtitle: `Across ${totalRuns ?? 0} ${(totalRuns ?? 0) === 1 ? 'run' : 'runs'}`,
+      title: 'Total Runs',
+      value: runsCount.toLocaleString(),
+      subtitle: `With ${totalTests.toLocaleString()} ${totalTests === 1 ? 'test' : 'tests'}`,
     },
     {
       title: 'Pass Rate',
       value: `${passRate.toFixed(2)}%`,
-      subtitle: '7-day/30-day comparison',
+      subtitle: 'vs previous period',
       icon: getTrendIcon(passRateTrend, true),
       iconColor: getTrendColor(passRateTrend, true),
     },

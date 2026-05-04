@@ -1,10 +1,5 @@
 import { ReportTestOutcomeEnum, type TestRun } from '@playwright-reports/shared';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const outcomeLabel = (outcome: string) => {
   if (outcome === ReportTestOutcomeEnum.Expected) return 'PASS';
@@ -40,8 +35,7 @@ const SparklineChart = ({ recentRuns }: { recentRuns: Array<TestRun> }) => {
               </TooltipTrigger>
               <TooltipContent>
                 <p>
-                  {outcomeLabel(run.outcome)} &mdash;{' '}
-                  {new Date(run.createdAt).toLocaleDateString()}
+                  {outcomeLabel(run.outcome)} &mdash; {new Date(run.createdAt).toLocaleDateString()}
                 </p>
                 <p className="text-xs text-muted-foreground">Click to open report</p>
               </TooltipContent>

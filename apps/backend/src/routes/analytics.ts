@@ -312,7 +312,16 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
           (r) => r.outcome === 'unexpected' || r.outcome === 'failed' || r.outcome === 'flaky'
         );
 
-        return reply.send({ success: true, data: summary ?? null, hasFailures });
+        // Surface in-flight LLM task count so the UI can disable Summarize while a
+        // queued or processing analysis is already in progress for this report.
+        const pendingAnalysisCount = llmTasksDb.getInflightCountForReport(id);
+
+        return reply.send({
+          success: true,
+          data: summary ?? null,
+          hasFailures,
+          pendingAnalysisCount,
+        });
       } catch (error) {
         fastify.log.error(error);
         return reply.status(500).send({
@@ -344,6 +353,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
       // A test can have multiple runs in one report — collapse them.
       const seen = new Set<string>();
       let queued = 0;
+      let skipped = 0;
       let project: string | undefined;
 
       for (const run of failedRuns) {
@@ -352,6 +362,34 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         seen.add(key);
 
         project ??= run.project;
+
+        // Skip queuing if this test already has an analysis stored — propagation should not
+        // re-run the LLM for tests already analyzed. The user can force a fresh analysis via
+        // /api/llm/regenerate or by clicking Retry on the inline widget.
+        const existing = testAnalysisDb.getByTest(run.testId, run.fileId, run.project);
+        if (existing?.analysis) {
+          skipped++;
+          // Mirror the existing analysis to the current reportId so the report_summary task
+          // (which loads via testAnalysisDb.getByReport) can include it. Without this, a
+          // fully-skipped report would summarize from an empty analysis set.
+          if (existing.reportId !== id) {
+            testAnalysisDb.upsert(
+              run.testId,
+              run.fileId,
+              run.project,
+              id,
+              existing.analysis,
+              existing.category ?? undefined,
+              existing.model ?? undefined,
+              1,
+              existing.id
+            );
+            if (run.runId && existing.category) {
+              testDb.updateFailureCategory(run.runId, existing.category);
+            }
+          }
+          continue;
+        }
 
         llmTasksDb.createTask('test_analysis', {
           reportId: id,
@@ -362,16 +400,18 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         queued++;
       }
 
-      if (queued > 0) {
+      // Enqueue the report summary as long as there's something to summarize — even when
+      // every per-test analysis was skipped because it already exists. Otherwise clicking
+      // "Summarize Failures" on a fully-analyzed report would never produce a summary.
+      if (queued > 0 || skipped > 0) {
         llmTasksDb.createTask('report_summary', {
           reportId: id,
           project,
           priority: -1,
         });
-        queued++;
       }
 
-      return reply.send({ success: true, queued });
+      return reply.send({ success: true, queued, skipped });
     } catch (error) {
       fastify.log.error(error);
       return reply.status(500).send({
@@ -804,7 +844,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     let resolvedFileId = fileId;
     let resolvedProject = project;
     let resolvedSignature = errorSignature;
-    let excludeReportId = reportId ?? '';
+    const excludeReportId = reportId ?? '';
     if ((!resolvedFileId || !resolvedProject || !resolvedSignature) && reportId) {
       const resolved = resolveTestRun(testId, reportId);
       if (!resolved) {
@@ -834,5 +874,4 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     );
     return reply.send({ success: true, data: history });
   });
-
 }

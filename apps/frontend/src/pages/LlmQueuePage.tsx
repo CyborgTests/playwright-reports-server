@@ -1,6 +1,6 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useLlmTasks, useLlmTaskStats } from '@/hooks/useLlmTasks';
+import { useLlmTaskStats, useLlmTasks } from '@/hooks/useLlmTasks';
 import useMutation from '@/hooks/useMutation';
 import { formatCategoryName } from '@/lib/format';
 import { invalidateCache } from '@/lib/query-cache';
@@ -48,9 +48,21 @@ function statusBadgeVariant(status: string) {
   }
 }
 
+function parseSqliteTs(ts: string): number {
+  // SQLite's CURRENT_TIMESTAMP emits 'YYYY-MM-DD HH:MM:SS' (UTC, no zone marker).
+  // V8 parses that as local time, which skews durations by the local UTC offset.
+  // Treat zone-less timestamps as UTC by appending 'Z' before parsing.
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(ts)) {
+    return new Date(`${ts.replace(' ', 'T')}Z`).getTime();
+  }
+  return new Date(ts).getTime();
+}
+
 function formatDuration(startedAt?: string, completedAt?: string): string {
   if (!startedAt || !completedAt) return '-';
-  const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+  // Math.max guards against any remaining clock skew in legacy rows so the duration
+  // is never displayed as negative — show 0 instead and let the user see the column.
+  const ms = Math.max(0, parseSqliteTs(completedAt) - parseSqliteTs(startedAt));
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60000).toFixed(1)}m`;
@@ -322,7 +334,9 @@ export default function LlmQueuePage() {
             variant="destructive"
             size="sm"
             disabled={bulkDeleteMutation.isPending}
-            onClick={() => bulkDeleteMutation.mutate({ body: { ids: Array.from(selectedIds) } as any })}
+            onClick={() =>
+              bulkDeleteMutation.mutate({ body: { ids: Array.from(selectedIds) } as any })
+            }
           >
             {bulkDeleteMutation.isPending ? 'Deleting...' : `Delete Selected (${selectedIds.size})`}
           </Button>
@@ -395,9 +409,7 @@ export default function LlmQueuePage() {
                   <TableCell>
                     {task.testId ? (
                       <span className="text-sm font-mono" title={task.testId}>
-                        {task.testId.length > 20
-                          ? `${task.testId.slice(0, 20)}...`
-                          : task.testId}
+                        {task.testId.length > 20 ? `${task.testId.slice(0, 20)}...` : task.testId}
                       </span>
                     ) : (
                       <span className="text-sm text-muted-foreground">-</span>
@@ -411,13 +423,8 @@ export default function LlmQueuePage() {
                   </TableCell>
                   <TableCell>
                     {task.status === 'failed' && task.error ? (
-                      <span
-                        className="text-sm text-destructive cursor-help"
-                        title={task.error}
-                      >
-                        {task.error.length > 40
-                          ? `${task.error.slice(0, 40)}...`
-                          : task.error}
+                      <span className="text-sm text-destructive cursor-help" title={task.error}>
+                        {task.error.length > 40 ? `${task.error.slice(0, 40)}...` : task.error}
                       </span>
                     ) : (
                       <span className="text-sm text-muted-foreground">-</span>

@@ -162,7 +162,9 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
     }
 
     if (generatedReport && typeof generatedReport === 'object' && 'reportId' in generatedReport) {
-      console.log(`[upload] generated report ${(generatedReport as { reportId: string }).reportId}`);
+      console.log(
+        `[upload] generated report ${(generatedReport as { reportId: string }).reportId}`
+      );
     }
 
     return reply.status(200).send({

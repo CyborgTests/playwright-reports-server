@@ -679,7 +679,9 @@ export class S3 implements Storage {
       info,
       {
         reportID: reportId,
-        createdAt: info.startTime ? new Date(info.startTime).toISOString() : new Date().toISOString(),
+        createdAt: info.startTime
+          ? new Date(info.startTime).toISOString()
+          : new Date().toISOString(),
         reportUrl: `${serveReportRoute}/${reportId}/index.html`,
         project: '',
       },

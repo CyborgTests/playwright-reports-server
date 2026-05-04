@@ -1,7 +1,4 @@
-import type {
-  FailureCategorySource,
-  ReportTestOutcomeEnum,
-} from '@playwright-reports/shared';
+import type { FailureCategorySource, ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import { v4 as uuid } from 'uuid';
 import { getDatabase } from './db.js';
@@ -477,7 +474,9 @@ export class TestDatabase {
   }
 
   public getTestRunsByReport(reportId: string): TestRun[] {
-    const rows = this.db.prepare('SELECT * FROM test_runs WHERE reportId = ? ORDER BY createdAt DESC').all(reportId);
+    const rows = this.db
+      .prepare('SELECT * FROM test_runs WHERE reportId = ? ORDER BY createdAt DESC')
+      .all(reportId);
     return rows.map((row) => this.convertDbRowToTestRun(row));
   }
 
@@ -531,7 +530,10 @@ export class TestDatabase {
     project: string,
     errorSignature: string,
     excludeReportId: string
-  ): { priorOccurrenceCount: number; firstOccurrence: { reportId: string; createdAt: string } | null } {
+  ): {
+    priorOccurrenceCount: number;
+    firstOccurrence: { reportId: string; createdAt: string } | null;
+  } {
     if (!errorSignature) {
       return { priorOccurrenceCount: 0, firstOccurrence: null };
     }

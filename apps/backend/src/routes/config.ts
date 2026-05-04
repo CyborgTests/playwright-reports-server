@@ -62,16 +62,16 @@ async function persistBrandingFile(
   const safeName = `${kind}-${randomUUID()}${ext}`;
   const absolute = path.join(BRANDING_DIR, safeName);
 
-  const {error} = await withError(pipeline(uploaded.file, createWriteStream(absolute)));
+  const { error } = await withError(pipeline(uploaded.file, createWriteStream(absolute)));
 
   if (error) {
-    await withError(unlink(absolute))
+    await withError(unlink(absolute));
     const message = error instanceof Error ? error.message : 'write failed';
     return { error: `failed to save ${kind}: ${message}` };
   }
 
   if (uploaded.file.truncated) {
-    await withError(unlink(absolute))
+    await withError(unlink(absolute));
     return {
       error: `${kind} file exceeds ${BRANDING_FILE_SIZE_LIMIT / (1024 * 1024)} MB limit`,
     };
@@ -356,10 +356,10 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       }
 
       if (config.logoPath !== previousLogoPath) {
-        await withError(deleteCustomBrandingFile(previousLogoPath))
+        await withError(deleteCustomBrandingFile(previousLogoPath));
       }
       if (config.faviconPath !== previousFaviconPath) {
-        await withError(deleteCustomBrandingFile(previousFaviconPath))
+        await withError(deleteCustomBrandingFile(previousFaviconPath));
       }
 
       const testManagementConfigChanged = !!(

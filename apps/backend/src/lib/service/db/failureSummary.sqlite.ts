@@ -38,9 +38,7 @@ interface FailureSummaryDbRow {
 export class FailureSummaryDatabase {
   private readonly db = getDatabase();
 
-  private readonly upsertStmt: Database.Statement<
-    [string, string, number, string, string, string]
-  >;
+  private readonly upsertStmt: Database.Statement<[string, string, number, string, string, string]>;
   private readonly getStmt: Database.Statement<[string]>;
   private readonly updateLlmSummaryStmt: Database.Statement<[string, string, string]>;
   private readonly deleteStmt: Database.Statement<[string]>;
@@ -179,9 +177,17 @@ export class FailureSummaryDatabase {
       sampleReportId?: string;
       sampleReportUrl?: string;
       sampleTestId?: string;
+      affectedTests?: Array<{
+        testId: string;
+        title: string;
+        filePath?: string;
+        project: string;
+        reportId: string;
+        reportUrl?: string;
+      }>;
     }>;
   } {
-    const conditions: string[] = ["failure_category IS NOT NULL"];
+    const conditions: string[] = ['failure_category IS NOT NULL'];
     const params: string[] = [];
     if (project && project !== 'all') {
       conditions.push('project = ?');
@@ -197,7 +203,7 @@ export class FailureSummaryDatabase {
     }
 
     const sql = `
-      SELECT testId, reportId, failure_category as category,
+      SELECT testId, fileId, project, reportId, failure_category as category,
              error_signature as signature, failure_details, createdAt
       FROM test_runs
       WHERE ${conditions.join(' AND ')}
@@ -205,6 +211,8 @@ export class FailureSummaryDatabase {
     `;
     const rows = this.db.prepare(sql).all(...params) as Array<{
       testId: string;
+      fileId: string;
+      project: string;
       reportId: string;
       category: string;
       signature: string | null;
@@ -222,9 +230,14 @@ export class FailureSummaryDatabase {
         signature: string;
         sampleReportId?: string;
         sampleTestId?: string;
+        // Up to 10 distinct (testId, fileId, project, reportId) examples for this error
+        // signature — populated in iteration order (newest first by createdAt DESC sort).
+        examples: Array<{ testId: string; fileId: string; project: string; reportId: string }>;
+        seenExamples: Set<string>;
       }
     >();
 
+    const MAX_EXAMPLES = 10;
     let totalFailures = 0;
     for (const row of rows) {
       totalFailures++;
@@ -234,6 +247,16 @@ export class FailureSummaryDatabase {
       const existing = errorMap.get(groupKey);
       if (existing) {
         existing.count++;
+        const exampleKey = `${row.testId}::${row.fileId}::${row.project}`;
+        if (existing.examples.length < MAX_EXAMPLES && !existing.seenExamples.has(exampleKey)) {
+          existing.examples.push({
+            testId: row.testId,
+            fileId: row.fileId,
+            project: row.project,
+            reportId: row.reportId,
+          });
+          existing.seenExamples.add(exampleKey);
+        }
         // Prefer the most-recent sample with a non-empty message.
         if (existing.message === existing.category && row.failure_details) {
           const msg = extractDisplayMessage(row.failure_details);
@@ -247,6 +270,7 @@ export class FailureSummaryDatabase {
       }
 
       const message = extractDisplayMessage(row.failure_details) || row.category;
+      const exampleKey = `${row.testId}::${row.fileId}::${row.project}`;
       errorMap.set(groupKey, {
         message,
         category: row.category,
@@ -254,6 +278,15 @@ export class FailureSummaryDatabase {
         signature: groupKey,
         sampleReportId: row.reportId,
         sampleTestId: row.testId,
+        examples: [
+          {
+            testId: row.testId,
+            fileId: row.fileId,
+            project: row.project,
+            reportId: row.reportId,
+          },
+        ],
+        seenExamples: new Set([exampleKey]),
       });
     }
 
@@ -269,17 +302,50 @@ export class FailureSummaryDatabase {
       .sort((a, b) => b.count - a.count)
       .slice(0, limit);
 
-    // Resolve reportUrl for sample reports in one batched query.
-    const reportIds = Array.from(
-      new Set(topErrors.map((e) => e.sampleReportId).filter((id): id is string => !!id))
-    );
+    // Resolve reportUrl for every reportId referenced (sample + examples) in one batched query.
+    const reportIds = new Set<string>();
+    for (const e of topErrors) {
+      if (e.sampleReportId) reportIds.add(e.sampleReportId);
+      for (const ex of e.examples) reportIds.add(ex.reportId);
+    }
     let urlMap = new Map<string, string>();
-    if (reportIds.length > 0) {
-      const placeholders = reportIds.map(() => '?').join(',');
+    if (reportIds.size > 0) {
+      const ids = Array.from(reportIds);
+      const placeholders = ids.map(() => '?').join(',');
       const reportRows = this.db
         .prepare(`SELECT reportID, reportUrl FROM reports WHERE reportID IN (${placeholders})`)
-        .all(...reportIds) as Array<{ reportID: string; reportUrl: string }>;
+        .all(...ids) as Array<{ reportID: string; reportUrl: string }>;
       urlMap = new Map(reportRows.map((r) => [r.reportID, r.reportUrl]));
+    }
+
+    // Resolve test titles + filePaths for every distinct (testId, fileId, project) referenced.
+    type TestKey = string;
+    const makeTestKey = (testId: string, fileId: string, project: string): TestKey =>
+      `${testId}::${fileId}::${project}`;
+    const testKeys = new Set<TestKey>();
+    for (const e of topErrors) {
+      for (const ex of e.examples) testKeys.add(makeTestKey(ex.testId, ex.fileId, ex.project));
+    }
+    const titleMap = new Map<TestKey, { title: string; filePath?: string }>();
+    if (testKeys.size > 0) {
+      const stmt = this.db.prepare(
+        'SELECT testId, fileId, project, title, filePath FROM tests WHERE testId = ? AND fileId = ? AND project = ?'
+      );
+      for (const key of testKeys) {
+        const [testId, fileId, project] = key.split('::');
+        const row = stmt.get(testId, fileId, project) as
+          | {
+              testId: string;
+              fileId: string;
+              project: string;
+              title: string;
+              filePath: string | null;
+            }
+          | undefined;
+        if (row) {
+          titleMap.set(key, { title: row.title, filePath: row.filePath ?? undefined });
+        }
+      }
     }
 
     return {
@@ -293,6 +359,17 @@ export class FailureSummaryDatabase {
         sampleReportId: e.sampleReportId,
         sampleTestId: e.sampleTestId,
         sampleReportUrl: e.sampleReportId ? urlMap.get(e.sampleReportId) : undefined,
+        affectedTests: e.examples.map((ex) => {
+          const t = titleMap.get(makeTestKey(ex.testId, ex.fileId, ex.project));
+          return {
+            testId: ex.testId,
+            title: t?.title ?? ex.testId,
+            filePath: t?.filePath,
+            project: ex.project,
+            reportId: ex.reportId,
+            reportUrl: urlMap.get(ex.reportId),
+          };
+        }),
       })),
     };
   }

@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { getDatabase } from '../lib/service/db/db.js';
+import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testManagementService } from '../lib/service/testManagement.js';
 import { withError } from '../lib/withError.js';
 
@@ -213,14 +213,44 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         // Fall back to llm_tasks table — the SSE endpoint saves results there
         const db = getDatabase();
         const taskQuery = reportId
-          ? db.prepare(`SELECT result AS analysis, model, category FROM llm_tasks WHERE testId = ? AND reportId = ? AND status = 'completed' AND result IS NOT NULL ORDER BY completedAt DESC LIMIT 1`)
-          : db.prepare(`SELECT result AS analysis, model, category FROM llm_tasks WHERE testId = ? AND status = 'completed' AND result IS NOT NULL ORDER BY completedAt DESC LIMIT 1`);
+          ? db.prepare(
+              `SELECT result AS analysis, model, category FROM llm_tasks WHERE testId = ? AND reportId = ? AND status = 'completed' AND result IS NOT NULL ORDER BY completedAt DESC LIMIT 1`
+            )
+          : db.prepare(
+              `SELECT result AS analysis, model, category FROM llm_tasks WHERE testId = ? AND status = 'completed' AND result IS NOT NULL ORDER BY completedAt DESC LIMIT 1`
+            );
 
-        const taskRow = reportId
-          ? taskQuery.get(testId, reportId)
-          : taskQuery.get(testId);
+        const taskRow = reportId ? taskQuery.get(testId, reportId) : taskQuery.get(testId);
 
-        return reply.send({ success: true, data: taskRow ?? null });
+        if (taskRow) {
+          return reply.send({ success: true, data: taskRow });
+        }
+
+        // No completed analysis yet — surface in-flight tasks so the report viewer
+        // can render a loading state instead of nothing while the queue catches up.
+        const pendingQuery = reportId
+          ? db.prepare(
+              `SELECT id, status FROM llm_tasks
+               WHERE type = 'test_analysis' AND testId = ? AND reportId = ?
+                 AND status IN ('queued','processing')
+               ORDER BY createdAt DESC LIMIT 1`
+            )
+          : db.prepare(
+              `SELECT id, status FROM llm_tasks
+               WHERE type = 'test_analysis' AND testId = ?
+                 AND status IN ('queued','processing')
+               ORDER BY createdAt DESC LIMIT 1`
+            );
+
+        const pending = (
+          reportId ? pendingQuery.get(testId, reportId) : pendingQuery.get(testId)
+        ) as { id: string; status: string } | undefined;
+
+        return reply.send({
+          success: true,
+          data: null,
+          pending: pending ? { taskId: pending.id, status: pending.status } : null,
+        });
       } catch (error) {
         fastify.log.error(error);
         return reply.status(500).send({
@@ -236,7 +266,9 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
     try {
       const db = getDatabase();
       const rows = db
-        .prepare('SELECT DISTINCT failure_category FROM test_runs WHERE failure_category IS NOT NULL')
+        .prepare(
+          'SELECT DISTINCT failure_category FROM test_runs WHERE failure_category IS NOT NULL'
+        )
         .all() as Array<{ failure_category: string }>;
 
       const categories = rows.map((row) => row.failure_category);

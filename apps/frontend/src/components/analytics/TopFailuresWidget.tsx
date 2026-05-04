@@ -9,6 +9,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatCategoryName } from '@/lib/format';
 import { withBase } from '@/lib/url';
 
+interface AffectedTest {
+  testId: string;
+  title: string;
+  filePath?: string;
+  project: string;
+  reportId: string;
+  reportUrl?: string;
+}
+
 interface ErrorGroup {
   message: string;
   category: string;
@@ -17,6 +26,7 @@ interface ErrorGroup {
   sampleReportId?: string;
   sampleReportUrl?: string;
   sampleTestId?: string;
+  affectedTests?: AffectedTest[];
 }
 
 interface TopFailuresWidgetProps {
@@ -40,9 +50,7 @@ export function TopFailuresWidget({ errors, isLoading }: Readonly<TopFailuresWid
     <Card>
       <CardHeader>
         <h3 className="text-lg font-semibold">Most Common Failures</h3>
-        <p className="text-sm text-muted-foreground">
-          Top error patterns across recent reports
-        </p>
+        <p className="text-sm text-muted-foreground">Top error patterns across recent reports</p>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -53,9 +61,7 @@ export function TopFailuresWidget({ errors, isLoading }: Readonly<TopFailuresWid
             ))}
           </div>
         ) : topErrors.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            No failure data available
-          </div>
+          <div className="text-center py-8 text-muted-foreground">No failure data available</div>
         ) : (
           <div className="space-y-3">
             {topErrors.map((error, index) => (
@@ -99,6 +105,48 @@ export function TopFailuresWidget({ errors, isLoading }: Readonly<TopFailuresWid
                         <ExternalLink className="h-3 w-3" />
                         Open this failure in the Playwright report
                       </RouterLink>
+                    )}
+                    {error.affectedTests && error.affectedTests.length > 0 && (
+                      <div className="text-xs">
+                        <div className="font-medium mb-1 text-muted-foreground">
+                          Examples ({error.affectedTests.length}
+                          {error.count > error.affectedTests.length ? ` of ${error.count}` : ''})
+                        </div>
+                        <ul className="space-y-1">
+                          {error.affectedTests.map((t) => {
+                            const link = t.reportUrl
+                              ? `${withBase(t.reportUrl)}#?testId=${t.testId}`
+                              : null;
+                            return (
+                              <li
+                                key={`${t.reportId}-${t.testId}-${t.project}`}
+                                className="flex items-start gap-2"
+                              >
+                                <span className="text-muted-foreground shrink-0">•</span>
+                                <div className="min-w-0 flex-1">
+                                  {link ? (
+                                    <RouterLink
+                                      to={link}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline break-words"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      {t.title}
+                                    </RouterLink>
+                                  ) : (
+                                    <span className="break-words">{t.title}</span>
+                                  )}
+                                  <div className="text-muted-foreground break-words">
+                                    {t.project}
+                                    {t.filePath ? ` · ${t.filePath}` : ''}
+                                  </div>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
                     )}
                   </div>
                 )}

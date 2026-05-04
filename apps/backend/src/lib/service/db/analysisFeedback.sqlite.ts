@@ -24,17 +24,7 @@ export class AnalysisFeedbackDatabase {
 
   private readonly getByTestStmt: Database.Statement<[string, string, string]>;
   private readonly insertStmt: Database.Statement<
-    [
-      string,
-      string,
-      string,
-      string,
-      string | null,
-      string | null,
-      string,
-      string,
-      string,
-    ]
+    [string, string, string, string, string | null, string | null, string, string, string]
   >;
   private readonly updateCommentStmt: Database.Statement<[string, string, string]>;
   private readonly deleteByTestStmt: Database.Statement<[string, string, string]>;

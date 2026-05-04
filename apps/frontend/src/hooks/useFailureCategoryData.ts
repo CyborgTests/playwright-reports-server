@@ -1,6 +1,6 @@
 import type { DateRange, FailureCategoryAnalytics } from '@playwright-reports/shared';
-import useQuery from './useQuery';
 import { defaultProjectName } from '../lib/constants';
+import useQuery from './useQuery';
 
 export function useFailureCategoryData(project?: string, dateRange?: DateRange) {
   const params = new URLSearchParams();

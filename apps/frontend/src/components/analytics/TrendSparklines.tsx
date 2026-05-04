@@ -28,7 +28,10 @@ export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklines
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <SparklineSkeleton title="Duration Trend" subtitle="Total run duration over time" />
-        <SparklineSkeleton title="Flaky Count Trend" subtitle="Number of intermittently failing tests" />
+        <SparklineSkeleton
+          title="Flaky Count Trend"
+          subtitle="Number of intermittently failing tests"
+        />
         <SparklineSkeleton title="Slow Count Trend" subtitle="Tests slower than 95th percentile" />
       </div>
     );
@@ -41,7 +44,8 @@ export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklines
     const minutes = Math.floor(totalSeconds / 60) % 60;
     const hours = Math.floor(totalSeconds / 3600);
 
-    if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
+    if (hours > 0)
+      return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
     if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
     return `${seconds}s`;
   };

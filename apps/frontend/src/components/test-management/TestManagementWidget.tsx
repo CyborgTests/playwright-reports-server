@@ -1,8 +1,4 @@
-import type {
-  DateRange,
-  TestFilters,
-  TestWithQuarantineInfo,
-} from '@playwright-reports/shared';
+import type { DateRange, TestFilters, TestWithQuarantineInfo } from '@playwright-reports/shared';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Clock } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -42,8 +38,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { useConfig } from '../../hooks/useConfig';
 import useMutation from '../../hooks/useMutation';
 import { defaultProjectName } from '../../lib/constants';
-import { withBase } from '../../lib/url';
 import { invalidateCache } from '../../lib/query-cache';
+import { withBase } from '../../lib/url';
 import { TrendSparklineHistory } from '../analytics/TrendSparklineHistory';
 import { exponentialMovingAverageDuration } from './calculations/ema';
 import { TestFilters as TestFiltersComponent } from './TestFilters';
@@ -124,7 +120,9 @@ export default function TestManagementWidget({
       if (jwtToken && session.status === 'authenticated' && session.data !== null) {
         headers.Authorization = `Bearer ${jwtToken}`;
       }
-      const res = await fetch(withBase(`/api/tests?${buildQueryParams(pageParam as number)}`), { headers });
+      const res = await fetch(withBase(`/api/tests?${buildQueryParams(pageParam as number)}`), {
+        headers,
+      });
       if (!res.ok) throw new Error('Failed to fetch tests');
       return res.json();
     },
@@ -181,10 +179,7 @@ export default function TestManagementWidget({
     },
   });
 
-  const tests = useMemo(
-    () => testsData?.pages.flatMap((page) => page.data) ?? [],
-    [testsData]
-  );
+  const tests = useMemo(() => testsData?.pages.flatMap((page) => page.data) ?? [], [testsData]);
 
   const totalTests = testsData?.pages[0]?.total ?? 0;
 
@@ -316,35 +311,41 @@ export default function TestManagementWidget({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Test Name</TableHead>
-                    <TableHead>Project</TableHead>
-                    <TableHead>Outcome (latest)</TableHead>
-                    <TableHead>Is Flaky</TableHead>
-                    <TableHead>Flakiness Score</TableHead>
-                    <TableHead>Total Runs</TableHead>
-                    <TableHead>History (first to last)</TableHead>
-                    <TableHead>Duration (Avg)</TableHead>
-                    <TableHead>Last Run</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead className="min-w-[240px]">Test Name</TableHead>
+                    <TableHead className="min-w-[120px]">Project</TableHead>
+                    <TableHead className="whitespace-nowrap w-px">Outcome (latest)</TableHead>
+                    <TableHead className="whitespace-nowrap w-px">Is Flaky</TableHead>
+                    <TableHead className="whitespace-nowrap w-px">Flakiness Score</TableHead>
+                    <TableHead className="whitespace-nowrap w-px">Total Runs</TableHead>
+                    <TableHead className="whitespace-nowrap w-px">
+                      History (first to last)
+                    </TableHead>
+                    <TableHead className="whitespace-nowrap w-px">Duration (Avg)</TableHead>
+                    <TableHead className="min-w-[160px]">Last Run</TableHead>
+                    <TableHead className="whitespace-nowrap w-px">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {tests.map((item) => (
                     <TableRow key={`${item.testId}-${item.fileId}-${item.project}`}>
-                      <TableCell>
+                      <TableCell className="break-words">
                         <div>
-                          <p className="font-medium">{item.title}</p>
-                          <p className="text-sm text-muted-foreground">{item.filePath}</p>
+                          <p className="font-medium break-words">{item.title}</p>
+                          <p className="text-sm text-muted-foreground break-words">
+                            {item.filePath}
+                          </p>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <p className="text-sm">{item.project}</p>
+                      <TableCell className="break-words">
+                        <p className="text-sm break-words">{item.project}</p>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap w-px">
                         <p className="text-sm">{item.runs?.at(0)?.outcome}</p>
                       </TableCell>
-                      <TableCell>{getStatusBadge(item)}</TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap w-px">
+                        {getStatusBadge(item)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap w-px">
                         <div className="flex items-center gap-2">
                           <Progress
                             value={item.flakinessScore || 0}
@@ -353,20 +354,20 @@ export default function TestManagementWidget({
                           <span className="text-sm">{item.flakinessScore?.toFixed(1)}%</span>
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap w-px">
                         <Badge variant="outline">{item.totalRuns || 0}</Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap w-px">
                         <TrendSparklineHistory runs={item.runs ?? []} />
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap w-px">
                         <span className="flex items-center">
                           <Clock className="h-4 w-4 mr-1" />
                           {parseMilliseconds(exponentialMovingAverageDuration(item.runs))}
                         </span>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 break-words">
                           {item.lastRunAt ? new Date(item.lastRunAt).toLocaleString() : 'Never'}
                           {isStale(item) && (
                             <TooltipProvider>
@@ -383,7 +384,7 @@ export default function TestManagementWidget({
                         </div>
                       </TableCell>
 
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap w-px">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="sm">

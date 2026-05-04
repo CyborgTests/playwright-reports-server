@@ -1,8 +1,10 @@
 'use client';
 
 import type { ServerConfig } from '@playwright-reports/shared';
-import { ListTodo } from 'lucide-react';
+import { CheckCircle2, ListTodo, Plug, XCircle } from 'lucide-react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,7 +19,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
+import { useAuth } from '@/hooks/useAuth';
 
 interface LLMConfigurationProps {
   config: ServerConfig;
@@ -41,12 +45,66 @@ export default function LLMConfiguration({
   onUpdateTempConfig,
 }: Readonly<LLMConfigurationProps>) {
   const navigate = useNavigate();
+  const session = useAuth();
   const providers = [
     { key: 'openai', label: 'OpenAI' },
     { key: 'anthropic', label: 'Anthropic' },
   ];
 
   const isConfigured = config.llm?.baseUrl && config.llm?.apiKey;
+  const isEditing = editingSection === 'llm';
+
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<
+    { ok: true; models?: string[] } | { ok: false; error: string } | null
+  >(null);
+
+  const handleTestConnection = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      // When editing, test the draft values; otherwise test the saved config.
+      const source = isEditing ? tempConfig.llm : config.llm;
+      const body: Record<string, unknown> = {};
+      if (isEditing) {
+        if (source?.provider) body.provider = source.provider;
+        if (source?.baseUrl) body.baseUrl = source.baseUrl;
+        // The saved apiKey is masked (****) — only forward when the user typed something new.
+        if (source?.apiKey && !/^\*+$/.test(source.apiKey)) body.apiKey = source.apiKey;
+        if (source?.model) body.model = source.model;
+        if (source?.temperature !== undefined) body.temperature = source.temperature;
+      }
+
+      const res = await fetch('/api/llm/test-connection', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: session.data?.user?.apiToken || '',
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data?.success) {
+        setTestResult({ ok: true, models: data.models });
+        toast.success('LLM connection successful');
+      } else {
+        const error = data?.error || 'Connection test failed';
+        setTestResult({ ok: false, error });
+        toast.error(error);
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err.message : 'Connection test failed';
+      setTestResult({ ok: false, error });
+      toast.error(error);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const canTest = (() => {
+    const source = isEditing ? tempConfig.llm : config.llm;
+    return !!(source?.baseUrl && source?.apiKey);
+  })();
 
   return (
     <Card className="mb-6 p-4">
@@ -63,6 +121,14 @@ export default function LLMConfiguration({
         </div>
         {editingSection === 'llm' ? (
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              disabled={!canTest || testing || isUpdating}
+              onClick={handleTestConnection}
+            >
+              {testing ? <Spinner size="sm" /> : <Plug className="h-4 w-4 mr-1" />}
+              {testing ? 'Testing…' : 'Test Connection'}
+            </Button>
             <Button disabled={isUpdating} onClick={onSave}>
               {isUpdating ? 'Saving...' : 'Save Changes'}
             </Button>
@@ -72,6 +138,16 @@ export default function LLMConfiguration({
           </div>
         ) : (
           <div className="flex gap-2">
+            {isConfigured && (
+              <Button
+                variant="outline"
+                disabled={!canTest || testing}
+                onClick={handleTestConnection}
+              >
+                {testing ? <Spinner size="sm" /> : <Plug className="h-4 w-4 mr-1" />}
+                {testing ? 'Testing…' : 'Test Connection'}
+              </Button>
+            )}
             {isConfigured && (
               <Button variant="outline" onClick={() => navigate('/llm-queue')}>
                 <ListTodo className="h-4 w-4 mr-1" />
@@ -218,7 +294,9 @@ export default function LLMConfiguration({
                 onUpdateTempConfig({
                   llm: {
                     ...tempConfig.llm,
-                    parallelRequests: e.target.value ? Number.parseInt(e.target.value, 10) : undefined,
+                    parallelRequests: e.target.value
+                      ? Number.parseInt(e.target.value, 10)
+                      : undefined,
                   },
                 })
               }
@@ -251,6 +329,41 @@ export default function LLMConfiguration({
           </div>
 
           <Separator />
+
+          {testResult && (
+            <Alert
+              className={
+                testResult.ok
+                  ? 'border-green-500/50 bg-green-50 dark:bg-green-900/20'
+                  : 'border-red-500/50 bg-red-50 dark:bg-red-900/20'
+              }
+            >
+              <div className="flex items-start gap-2">
+                {testResult.ok ? (
+                  <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                )}
+                <div className="flex-1">
+                  <p className="text-sm font-medium">
+                    {testResult.ok ? 'Connection successful' : 'Connection failed'}
+                  </p>
+                  {testResult.ok && testResult.models && testResult.models.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {testResult.models.length} model{testResult.models.length === 1 ? '' : 's'}{' '}
+                      available
+                      {testResult.models.length <= 5 ? `: ${testResult.models.join(', ')}` : ''}
+                    </p>
+                  )}
+                  {!testResult.ok && (
+                    <p className="text-xs text-muted-foreground mt-1 break-words">
+                      {testResult.error}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </Alert>
+          )}
 
           {/* Status Display */}
           {isConfigured ? (

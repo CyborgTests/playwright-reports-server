@@ -145,6 +145,68 @@ export class LLMService {
     this.provider = null;
     await this.initialize();
   }
+
+  /**
+   * Test the connection without mutating the active provider. Builds a one-off
+   * provider from the merged config (current + overrides), calls validateConfig
+   * (hits the models endpoint), and returns a structured result. Used by the
+   * Settings UI's "Test Connection" button.
+   */
+  async testConnection(
+    overrides?: Partial<LLMProviderConfig>
+  ): Promise<{ success: boolean; error?: string; models?: string[] }> {
+    const merged: LLMProviderConfig = {
+      provider: overrides?.provider ?? this.config?.provider ?? 'openai',
+      baseUrl: overrides?.baseUrl ?? this.config?.baseUrl ?? '',
+      apiKey: overrides?.apiKey ?? this.config?.apiKey ?? '',
+      model: overrides?.model ?? this.config?.model ?? '',
+      temperature: overrides?.temperature ?? this.config?.temperature ?? 0.3,
+      requestTimeoutMs: this.config?.requestTimeoutMs ?? 60_000,
+      maxRetries: 0,
+      retryDelayMs: 0,
+    };
+
+    if (!merged.baseUrl || !merged.apiKey) {
+      return { success: false, error: 'Base URL and API key are required' };
+    }
+
+    let provider: OpenAIProvider | AnthropicProvider;
+    try {
+      switch (merged.provider) {
+        case 'openai':
+          provider = new OpenAIProvider(merged);
+          break;
+        case 'anthropic':
+          provider = new AnthropicProvider(merged);
+          break;
+        default:
+          return { success: false, error: `Unknown provider: ${merged.provider}` };
+      }
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Failed to initialize provider',
+      };
+    }
+
+    try {
+      const ok = await provider.validateConfig();
+      if (!ok) {
+        return {
+          success: false,
+          error:
+            'Provider rejected the request. Check the base URL and API key (the /models endpoint must be reachable).',
+        };
+      }
+      const models = await provider.getAvailableModels();
+      return { success: true, models };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Connection test failed',
+      };
+    }
+  }
 }
 
 export const llmService = LLMService.getInstance();

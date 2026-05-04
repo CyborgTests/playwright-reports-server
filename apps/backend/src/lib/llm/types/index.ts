@@ -201,7 +201,10 @@ export abstract class BaseLLMProvider {
           if (errorJson.error) {
             onChunk({
               type: 'error',
-              error: typeof errorJson.error === 'string' ? errorJson.error : JSON.stringify(errorJson.error),
+              error:
+                typeof errorJson.error === 'string'
+                  ? errorJson.error
+                  : JSON.stringify(errorJson.error),
             });
             return;
           }

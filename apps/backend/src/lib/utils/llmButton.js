@@ -11,6 +11,24 @@ function injectAskLLMButton() {
 
   const existingAskBtn = copyPromptButton.parentNode?.querySelector('.llm-ask-btn');
   if (existingAskBtn) {
+    // Same button host as before — but the user may have navigated to a different test.
+    // Re-check analysis for the (possibly new) testId so we don't show stale state.
+    const currentTestId = extractTestIdFromCurrentUrl();
+    if (
+      currentTestId &&
+      currentTestId !== 'unknown' &&
+      existingAskBtn.dataset.testId !== currentTestId
+    ) {
+      existingAskBtn.dataset.testId = currentTestId;
+      existingAskBtn.style.display = '';
+      const oldInline = document.getElementById('llm-inline-analysis');
+      if (oldInline) oldInline.remove();
+      const oldFeedback = document.getElementById('llm-feedback-panel');
+      if (oldFeedback) oldFeedback.remove();
+      checkForPrecomputedAnalysis(currentTestId, copyPromptButton, existingAskBtn);
+      // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+      injectFeedbackPanel(currentTestId, reportId, copyPromptButton);
+    }
     return;
   }
 
@@ -79,6 +97,7 @@ function injectAskLLMButton() {
   // Check for pre-computed LLM analysis — if found, show inline and hide Ask LLM button
   const currentTestId = extractTestIdFromCurrentUrl();
   if (currentTestId && currentTestId !== 'unknown') {
+    askBtn.dataset.testId = currentTestId;
     checkForPrecomputedAnalysis(currentTestId, copyPromptButton, askBtn);
     // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
     injectFeedbackPanel(currentTestId, reportId, copyPromptButton);
@@ -697,11 +716,86 @@ function checkForPrecomputedAnalysis(testId, copyPromptButton, askBtn) {
     .then((data) => {
       if (data?.success && data?.data?.analysis) {
         renderInlineAnalysis(data.data, copyPromptButton, askBtn);
+      } else if (data?.success && data?.pending) {
+        // Analysis is queued or processing — show a loading widget and poll until done.
+        renderLoadingAnalysis(testId, rid, copyPromptButton, askBtn);
       }
     })
     .catch(() => {
       // Silently fail — no section injected
     });
+}
+
+function renderLoadingAnalysis(testId, rid, copyPromptButton, askBtn) {
+  // If a real analysis or another loader is already in the DOM, don't double-render.
+  if (document.getElementById('llm-inline-analysis')) return;
+
+  const errorsSection = findErrorsSection(copyPromptButton);
+  if (!errorsSection) return;
+
+  if (askBtn) askBtn.style.display = 'none';
+
+  const section = document.createElement('div');
+  section.id = 'llm-inline-analysis';
+  section.dataset.loading = '1';
+  section.innerHTML = `
+    <div class="llm-inline-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="llm-title">LLM Analysis</span>
+        <span class="llm-model">analysis in progress…</span>
+      </div>
+    </div>
+    <div class="llm-inline-body">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 4px 0;">
+        <div class="llm-spinner" style="
+          width: 18px;
+          height: 18px;
+          border: 2px solid var(--llm-btn-border);
+          border-top: 2px solid var(--llm-border);
+          border-radius: 50%;
+          animation: llm-spin 1s linear infinite;
+        "></div>
+        <span style="color: var(--llm-muted); font-size: 13px;">
+          LLM analysis is queued or running. This panel will update automatically.
+        </span>
+      </div>
+      <style>
+        @keyframes llm-spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      </style>
+    </div>
+  `;
+  errorsSection.parentNode.insertBefore(section, errorsSection);
+
+  let attempts = 0;
+  const MAX_ATTEMPTS = 60; // ~3 minutes at 3s intervals
+  const tick = () => {
+    attempts++;
+    fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.success && data?.data?.analysis) {
+          // Result landed — replace the loader with the real analysis.
+          section.remove();
+          renderInlineAnalysis(data.data, copyPromptButton, askBtn);
+          return;
+        }
+        if (data?.success && data?.pending && attempts < MAX_ATTEMPTS) {
+          setTimeout(tick, 3000);
+          return;
+        }
+        // No pending task and no analysis — analysis was cancelled or failed.
+        // Hide the loader and restore the Ask LLM button.
+        section.remove();
+        if (askBtn) askBtn.style.display = '';
+      })
+      .catch(() => {
+        if (attempts < MAX_ATTEMPTS) setTimeout(tick, 3000);
+      });
+  };
+  setTimeout(tick, 3000);
 }
 
 /**
@@ -1213,3 +1307,9 @@ if (document.readyState === 'loading') {
 } else {
   setTimeout(tryInjectAskLLMButton, 50);
 }
+
+// The Playwright report swaps tests via URL hash without reloading. Re-check analysis
+// when the testId changes so we don't keep stale state from the previously-viewed test.
+globalThis.addEventListener?.('hashchange', () => {
+  setTimeout(tryInjectAskLLMButton, 50);
+});
