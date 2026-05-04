@@ -204,6 +204,44 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tla_test_report ON test_llm_analyses(testId, reportId);
   `);
 
+  // Drop any pre-existing table that doesn't match the current schema, then recreate.
+  // The cache is cheap to regenerate on demand, so a one-shot reset is preferable to
+  // accumulating ALTER TABLE migration logic for an evolving schema.
+  const expectedProjectSummaryColumns = [
+    'project',
+    'summary',
+    'model',
+    'lastReportId',
+    'reportCount',
+    'firstReportAt',
+    'lastReportAt',
+    'createdAt',
+    'updatedAt',
+  ];
+  const existingProjectSummaryColumns = (
+    db.pragma("table_info('project_llm_summaries')") as Array<{ name: string }>
+  ).map((c) => c.name);
+  if (
+    existingProjectSummaryColumns.length > 0 &&
+    expectedProjectSummaryColumns.some((c) => !existingProjectSummaryColumns.includes(c))
+  ) {
+    db.exec('DROP TABLE project_llm_summaries');
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_llm_summaries (
+      project TEXT PRIMARY KEY,
+      summary TEXT NOT NULL,
+      model TEXT,
+      lastReportId TEXT,
+      reportCount INTEGER,
+      firstReportAt TEXT,
+      lastReportAt TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+  `);
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS analysis_feedback (
       id TEXT PRIMARY KEY,
@@ -291,6 +329,7 @@ export function clearAll(): void {
     DELETE FROM llm_tasks;
     DELETE FROM report_failure_summaries;
     DELETE FROM test_llm_analyses;
+    DELETE FROM project_llm_summaries;
     DELETE FROM analysis_feedback;
   `);
 

@@ -12,6 +12,7 @@ import { analysisFeedbackDb } from '../lib/service/db/analysisFeedback.sqlite.js
 import { getDatabase } from '../lib/service/db/db.js';
 import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
 import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
+import { projectSummaryDb } from '../lib/service/db/projectSummary.sqlite.js';
 import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
@@ -451,6 +452,29 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     }
   );
 
+  // GET /api/analytics/project-summary - return the persisted project-level LLM summary.
+  // Keyed by project only — survives page refreshes (and date-range changes) until a new
+  // report for the project arrives, which invalidates the cache server-side.
+  fastify.get(
+    '/api/analytics/project-summary',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const authResult = await authenticate(request as AuthRequest, reply);
+        if (authResult) return authResult;
+
+        const { project } = request.query as { project?: string };
+
+        const row = projectSummaryDb.get(project ?? 'all');
+        return reply.send({ success: true, data: row ?? null });
+      } catch (error) {
+        fastify.log.error(error);
+        return reply
+          .status(500)
+          .send({ success: false, error: 'Failed to fetch project summary' });
+      }
+    }
+  );
+
   // POST /api/analytics/failure-categories/llm - per-project LLM failure summary (SSE stream)
   fastify.post(
     '/api/analytics/failure-categories/llm',
@@ -497,6 +521,22 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
           (r) => r.stats && ((r.stats.unexpected ?? 0) > 0 || (r.stats.flaky ?? 0) > 0)
         );
 
+        const projectKey = project || 'all';
+        const lastReportId = latestReports[0]?.reportID;
+        // Capture the actual reports that feed this summary so the UI can show
+        // "Generated for N reports between A and B" — useful when the user later
+        // views the cached result under a different relative date filter.
+        const reportTimes = latestReports
+          .map((r) => (r.createdAt ? new Date(String(r.createdAt)).getTime() : Number.NaN))
+          .filter((t) => Number.isFinite(t)) as number[];
+        const reportCount = latestReports.length;
+        const firstReportAt = reportTimes.length
+          ? new Date(Math.min(...reportTimes)).toISOString()
+          : undefined;
+        const lastReportAt = reportTimes.length
+          ? new Date(Math.max(...reportTimes)).toISOString()
+          : undefined;
+
         if (!hasAnyFailures) {
           // No failures → skip the LLM call and emit a short canned message.
           reply.raw.writeHead(200, {
@@ -509,6 +549,15 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
           reply.raw.write(`data: ${JSON.stringify({ type: 'token', content: msg })}\n\n`);
           reply.raw.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
           reply.raw.end();
+          // Persist canned all-green so a refresh shows it without recomputing.
+          projectSummaryDb.upsert({
+            project: projectKey,
+            summary: msg,
+            lastReportId,
+            reportCount,
+            firstReportAt,
+            lastReportAt,
+          });
           return;
         }
 
@@ -556,11 +605,22 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
           reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
         };
 
+        // Capture the full content + model so we can persist after the stream completes.
+        let fullContent = '';
+        let finalModel: string | undefined;
+        let streamErrored = false;
         try {
           await llmService.sendMessageStream(prompt, (chunk) => {
             sendChunk(chunk);
+            if (chunk.type === 'token' && chunk.content) {
+              fullContent += chunk.content;
+            }
+            if (chunk.type === 'done' && chunk.model) {
+              finalModel = chunk.model;
+            }
           });
         } catch (streamError) {
+          streamErrored = true;
           sendChunk({
             type: 'error',
             error: streamError instanceof Error ? streamError.message : 'Stream error',
@@ -568,6 +628,19 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         }
 
         reply.raw.end();
+
+        // Persist on success so a page refresh shows the same summary without re-running.
+        if (!streamErrored && fullContent.trim()) {
+          projectSummaryDb.upsert({
+            project: projectKey,
+            summary: fullContent,
+            model: finalModel,
+            lastReportId,
+            reportCount,
+            firstReportAt,
+            lastReportAt,
+          });
+        }
       } catch (error) {
         fastify.log.error(error);
         if (!reply.sent) {

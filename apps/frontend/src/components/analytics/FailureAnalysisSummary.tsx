@@ -2,14 +2,31 @@
 
 import type { DateRange } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
+import useQuery from '@/hooks/useQuery';
+import { defaultProjectName } from '@/lib/constants';
 import { withBase } from '@/lib/url';
+
+interface CachedProjectSummary {
+  project: string;
+  summary: string;
+  model: string | null;
+  updatedAt: string;
+  reportCount: number | null;
+  firstReportAt: string | null;
+  lastReportAt: string | null;
+}
+
+interface CachedSummaryResponse {
+  success: boolean;
+  data: CachedProjectSummary | null;
+}
 
 interface FailureAnalysisSummaryProps {
   project?: string;
@@ -25,12 +42,50 @@ export function FailureAnalysisSummary({
   const [isStreaming, setIsStreaming] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [model, setModel] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [reportCount, setReportCount] = useState<number | null>(null);
+  const [firstReportAt, setFirstReportAt] = useState<string | null>(null);
+  const [lastReportAt, setLastReportAt] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
+  // Hydrate from the persisted cache so a refresh shows the same summary until a new
+  // report for this project arrives. Cache key is project only — the date filter just
+  // narrows the input pool for regeneration; relative ranges shouldn't blow the cache.
+  const cacheParams = new URLSearchParams();
+  if (project && project !== defaultProjectName) cacheParams.append('project', project);
+  const cachePath = `/api/analytics/project-summary?${cacheParams.toString()}`;
+  const { data: cached } = useQuery<CachedSummaryResponse>(cachePath, {
+    dependencies: [project],
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (cached?.data && !isStreaming) {
+      setSummary(cached.data.summary);
+      setModel(cached.data.model);
+      setUpdatedAt(cached.data.updatedAt);
+      setReportCount(cached.data.reportCount);
+      setFirstReportAt(cached.data.firstReportAt);
+      setLastReportAt(cached.data.lastReportAt);
+    } else if (cached?.data === null && !isStreaming) {
+      // Cache was invalidated (e.g. new report arrived) — clear stale UI state.
+      setSummary(null);
+      setModel(null);
+      setUpdatedAt(null);
+      setReportCount(null);
+      setFirstReportAt(null);
+      setLastReportAt(null);
+    }
+  }, [cached, isStreaming]);
 
   const handleGenerate = async () => {
     setIsStreaming(true);
     setSummary('');
     setModel(null);
+    setUpdatedAt(null);
+    setReportCount(null);
+    setFirstReportAt(null);
+    setLastReportAt(null);
 
     try {
       const jwtToken = localStorage.getItem('jwtToken');
@@ -87,9 +142,16 @@ export function FailureAnalysisSummary({
         }
       }
 
+      // Mark the persisted summary as just-updated for the timestamp in the footer.
+      setUpdatedAt(new Date().toISOString());
+
       queryClient.invalidateQueries({
         predicate: (q) =>
-          q.queryKey.some((k) => typeof k === 'string' && k.includes('failure-categories')),
+          q.queryKey.some(
+            (k) =>
+              typeof k === 'string' &&
+              (k.includes('failure-categories') || k.includes('project-summary'))
+          ),
       });
     } catch (error) {
       toast.error(
@@ -147,10 +209,21 @@ export function FailureAnalysisSummary({
         {summary && (
           <div className="space-y-3">
             <MarkdownRenderer content={summary} />
-            {model && (
-              <div className="flex items-center gap-2 pt-3 border-t text-xs text-muted-foreground">
-                <Badge variant="outline">{model}</Badge>
-                <span>{new Date().toLocaleString()}</span>
+            {(model || updatedAt || reportCount) && (
+              <div className="flex items-center gap-2 pt-3 border-t text-xs text-muted-foreground flex-wrap">
+                {model && <Badge variant="outline">{model}</Badge>}
+                {reportCount && reportCount > 0 && firstReportAt && lastReportAt && (
+                  <span>
+                    Generated for {reportCount} {reportCount === 1 ? 'report' : 'reports'} between{' '}
+                    {new Date(firstReportAt).toLocaleDateString()} and{' '}
+                    {new Date(lastReportAt).toLocaleDateString()}
+                  </span>
+                )}
+                {updatedAt && (
+                  <span className="ml-auto">
+                    Generated {new Date(updatedAt).toLocaleString()}
+                  </span>
+                )}
               </div>
             )}
           </div>
