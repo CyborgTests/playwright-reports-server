@@ -6,7 +6,7 @@ import { withError } from '../lib/withError.js';
 
 export async function registerTestsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/tests', async (request: FastifyRequest, reply: FastifyReply) => {
-    const { project, status, flakinessMin, flakinessMax, limit, offset, from, to } =
+    const { project, status, flakinessMin, flakinessMax, limit, offset, from, to, search } =
       request.query as {
         project?: string;
         status?: string;
@@ -16,6 +16,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         offset?: string;
         from?: string;
         to?: string;
+        search?: string;
       };
 
     try {
@@ -27,6 +28,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         offset: offset ? Number.parseInt(offset, 10) : undefined,
         from,
         to,
+        search,
       };
 
       const { data, total } = await testManagementService.getTests(project, options);

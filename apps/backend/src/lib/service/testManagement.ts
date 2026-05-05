@@ -567,6 +567,7 @@ export class TestManagementService {
       offset?: number;
       from?: string;
       to?: string;
+      search?: string;
     }
   ): Promise<{ data: TestWithQuarantineInfo[]; total: number }> {
     let tests = testDb.getAllAndDerivedData(project);
@@ -614,6 +615,13 @@ export class TestManagementService {
           const score = test.flakinessScore || 0;
           return score >= min && score <= max;
         });
+      }
+
+      if (options.search) {
+        const term = options.search.toLowerCase();
+        tests = tests.filter(
+          (test) => test.title.toLowerCase().includes(term) || test.filePath.toLowerCase().includes(term)
+        );
       }
     }
 

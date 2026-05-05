@@ -65,7 +65,17 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+      <div className="space-y-2 md:col-span-2">
+        <Label htmlFor="search-filter">Search</Label>
+        <Input
+          id="search-filter"
+          type="text"
+          placeholder="Search by test title or file path..."
+          value={filters.search ?? ''}
+          onChange={(e) => onFiltersChange({ ...filters, search: e.target.value || undefined })}
+        />
+      </div>
       <div className="space-y-2">
         <Label htmlFor="status-filter">Status</Label>
         <Select value={filters.status ?? 'all'} onValueChange={handleStatusChange}>

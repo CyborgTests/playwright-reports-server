@@ -94,6 +94,9 @@ export default function TestManagementWidget({
       if (filters.flakinessMax !== undefined && filters.flakinessMax < 100) {
         params.append('flakinessMax', filters.flakinessMax.toString());
       }
+      if (filters.search) {
+        params.append('search', filters.search);
+      }
       if (dateRange?.from) params.append('from', dateRange.from);
       if (dateRange?.to) params.append('to', dateRange.to);
       params.append('limit', PAGE_SIZE.toString());
