@@ -80,12 +80,6 @@ export function FailureAnalysisSummary({
 
   const handleGenerate = async () => {
     setIsStreaming(true);
-    setSummary('');
-    setModel(null);
-    setUpdatedAt(null);
-    setReportCount(null);
-    setFirstReportAt(null);
-    setLastReportAt(null);
 
     try {
       const jwtToken = localStorage.getItem('jwtToken');
@@ -220,9 +214,7 @@ export function FailureAnalysisSummary({
                   </span>
                 )}
                 {updatedAt && (
-                  <span className="ml-auto">
-                    Generated {new Date(updatedAt).toLocaleString()}
-                  </span>
+                  <span className="ml-auto">Generated {new Date(updatedAt).toLocaleString()}</span>
                 )}
               </div>
             )}

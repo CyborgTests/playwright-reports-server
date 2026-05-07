@@ -22,6 +22,15 @@ export interface TestAnalysisRow {
   /** Set to the source analysis id when this row was copied from a prior analysis
    *  (same error_signature). NULL for fresh LLM-generated analyses. */
   reusedFromAnalysisId: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  promptVersion: string | null;
+}
+
+export interface TestAnalysisExtras {
+  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  promptVersion?: string;
 }
 
 export class TestAnalysisDatabase {
@@ -41,6 +50,10 @@ export class TestAnalysisDatabase {
       string,
       string,
       string | null,
+      number | null,
+      number | null,
+      number | null,
+      string | null,
     ]
   >;
   private readonly getByTestStmt: Database.Statement<[string, string, string]>;
@@ -50,14 +63,18 @@ export class TestAnalysisDatabase {
 
   private constructor() {
     this.upsertStmt = this.db.prepare(`
-      INSERT INTO test_llm_analyses (id, testId, fileId, project, reportId, attempt, analysis, category, model, createdAt, updatedAt, reusedFromAnalysisId)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_llm_analyses (id, testId, fileId, project, reportId, attempt, analysis, category, model, createdAt, updatedAt, reusedFromAnalysisId, inputTokens, outputTokens, totalTokens, promptVersion)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(testId, fileId, project, reportId, attempt) DO UPDATE SET
         analysis = excluded.analysis,
         category = excluded.category,
         model = excluded.model,
         updatedAt = excluded.updatedAt,
-        reusedFromAnalysisId = excluded.reusedFromAnalysisId
+        reusedFromAnalysisId = excluded.reusedFromAnalysisId,
+        inputTokens = excluded.inputTokens,
+        outputTokens = excluded.outputTokens,
+        totalTokens = excluded.totalTokens,
+        promptVersion = excluded.promptVersion
     `);
 
     this.getByTestStmt = this.db.prepare(`
@@ -91,10 +108,12 @@ export class TestAnalysisDatabase {
     category?: string,
     model?: string,
     attempt = 1,
-    reusedFromAnalysisId?: string
+    reusedFromAnalysisId?: string,
+    extras?: TestAnalysisExtras
   ): TestAnalysisRow {
     const id = uuid();
     const now = new Date().toISOString();
+    const usage = extras?.usage;
 
     this.upsertStmt.run(
       id,
@@ -108,7 +127,11 @@ export class TestAnalysisDatabase {
       model ?? null,
       now,
       now,
-      reusedFromAnalysisId ?? null
+      reusedFromAnalysisId ?? null,
+      usage?.inputTokens ?? null,
+      usage?.outputTokens ?? null,
+      usage?.totalTokens ?? null,
+      extras?.promptVersion ?? null
     );
 
     return {
@@ -124,6 +147,10 @@ export class TestAnalysisDatabase {
       createdAt: now,
       updatedAt: now,
       reusedFromAnalysisId: reusedFromAnalysisId ?? null,
+      inputTokens: usage?.inputTokens ?? null,
+      outputTokens: usage?.outputTokens ?? null,
+      totalTokens: usage?.totalTokens ?? null,
+      promptVersion: extras?.promptVersion ?? null,
     };
   }
 

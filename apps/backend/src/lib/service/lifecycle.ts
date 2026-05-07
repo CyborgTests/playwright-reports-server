@@ -1,6 +1,7 @@
 import { configCache } from './cache/config.js';
 import { cronService } from './cron.js';
 import { reportDb, resultDb } from './db/index.js';
+import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import { litestreamService } from './litestream.js';
 
 const createdLifecycle = Symbol.for('playwright.reports.lifecycle');
@@ -36,6 +37,14 @@ export class Lifecycle {
         await Promise.all([configCache.init(), reportDb.init(), resultDb.init()]);
         await reportDb.populateTestRuns();
         console.log('[lifecycle] Databases initialized successfully');
+      }
+
+      // Reap orphaned LLM tasks: any row stuck in `processing` is from a worker
+      // (queue or SSE) that died before completing. Fail them so the queue page
+      // doesn't show ghost-running tasks
+      const reaped = llmTasksDb.failStaleProcessing();
+      if (reaped > 0) {
+        console.log(`[lifecycle] Failed ${reaped} stale processing LLM task(s) from prior run`);
       }
 
       await litestreamService.start();

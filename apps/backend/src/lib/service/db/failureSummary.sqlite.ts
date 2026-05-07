@@ -20,6 +20,7 @@ export interface FailureSummaryRow {
   categories: Record<string, number>;
   errorGroups: ErrorGroup[];
   llmSummary: string | null;
+  llmModel: string | null;
   createdAt: string;
   updatedAt: string | null;
 }
@@ -31,6 +32,7 @@ interface FailureSummaryDbRow {
   categories: string;
   errorGroups: string;
   llmSummary: string | null;
+  llmModel: string | null;
   createdAt: string;
   updatedAt: string | null;
 }
@@ -40,7 +42,9 @@ export class FailureSummaryDatabase {
 
   private readonly upsertStmt: Database.Statement<[string, string, number, string, string, string]>;
   private readonly getStmt: Database.Statement<[string]>;
-  private readonly updateLlmSummaryStmt: Database.Statement<[string, string, string]>;
+  private readonly updateLlmSummaryStmt: Database.Statement<
+    [string, string | null, string, string]
+  >;
   private readonly deleteStmt: Database.Statement<[string]>;
 
   private constructor() {
@@ -54,7 +58,7 @@ export class FailureSummaryDatabase {
     `);
 
     this.updateLlmSummaryStmt = this.db.prepare(`
-      UPDATE report_failure_summaries SET llmSummary = ?, updatedAt = ? WHERE reportId = ?
+      UPDATE report_failure_summaries SET llmSummary = ?, llmModel = ?, updatedAt = ? WHERE reportId = ?
     `);
 
     this.deleteStmt = this.db.prepare(`
@@ -99,9 +103,9 @@ export class FailureSummaryDatabase {
     return this.parseRow(row);
   }
 
-  public updateLlmSummary(reportId: string, llmSummary: string): void {
+  public updateLlmSummary(reportId: string, llmSummary: string, llmModel?: string | null): void {
     const now = new Date().toISOString();
-    this.updateLlmSummaryStmt.run(llmSummary, now, reportId);
+    this.updateLlmSummaryStmt.run(llmSummary, llmModel ?? null, now, reportId);
   }
 
   /**

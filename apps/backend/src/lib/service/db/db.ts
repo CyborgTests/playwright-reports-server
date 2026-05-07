@@ -42,6 +42,31 @@ export function createDatabase(): Database.Database {
   return db;
 }
 
+/** Add a column if it does not already exist on the given table. SQLite has
+ *  no IF NOT EXISTS for ADD COLUMN, so we introspect via PRAGMA table_info.
+ *  Used to migrate persistent DBs forward without dropping data.
+ *
+ *  Identifier args are interpolated into raw SQL — callers MUST pass static
+ *  strings, never user input. The shape check below is a safety net so a
+ *  future caller from a route handler can't smuggle in a quote-laden
+ *  identifier. */
+const SAFE_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const SAFE_TYPE = /^[A-Za-z_][A-Za-z0-9_ ()]*$/;
+function addColumnIfMissing(
+  db: Database.Database,
+  table: string,
+  column: string,
+  type: string
+): void {
+  if (!SAFE_IDENT.test(table)) throw new Error(`addColumnIfMissing: unsafe table "${table}"`);
+  if (!SAFE_IDENT.test(column)) throw new Error(`addColumnIfMissing: unsafe column "${column}"`);
+  if (!SAFE_TYPE.test(type)) throw new Error(`addColumnIfMissing: unsafe type "${type}"`);
+  const cols = db.pragma(`table_info('${table}')`) as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
+
 function initializeSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS results (
@@ -159,12 +184,23 @@ function initializeSchema(db: Database.Database): void {
       startedAt TEXT,
       completedAt TEXT,
       retryCount INTEGER NOT NULL DEFAULT 0,
-      maxRetries INTEGER NOT NULL DEFAULT 2
+      maxRetries INTEGER NOT NULL DEFAULT 2,
+      inputTokens INTEGER,
+      outputTokens INTEGER,
+      totalTokens INTEGER,
+      promptVersion TEXT,
+      isRetry INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_llm_tasks_status ON llm_tasks(status, priority DESC, createdAt);
     CREATE INDEX IF NOT EXISTS idx_llm_tasks_report ON llm_tasks(reportId);
     CREATE INDEX IF NOT EXISTS idx_llm_tasks_type ON llm_tasks(type, status);
   `);
+  // ALTER TABLE migrations for upgrades from earlier schema versions.
+  addColumnIfMissing(db, 'llm_tasks', 'inputTokens', 'INTEGER');
+  addColumnIfMissing(db, 'llm_tasks', 'outputTokens', 'INTEGER');
+  addColumnIfMissing(db, 'llm_tasks', 'totalTokens', 'INTEGER');
+  addColumnIfMissing(db, 'llm_tasks', 'promptVersion', 'TEXT');
+  addColumnIfMissing(db, 'llm_tasks', 'isRetry', 'INTEGER NOT NULL DEFAULT 0');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS report_failure_summaries (
@@ -174,6 +210,7 @@ function initializeSchema(db: Database.Database): void {
       categories TEXT NOT NULL DEFAULT '{}',
       errorGroups TEXT NOT NULL DEFAULT '[]',
       llmSummary TEXT,
+      llmModel TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT,
       FOREIGN KEY (reportId) REFERENCES reports(reportID)
@@ -181,6 +218,7 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_rfs_project ON report_failure_summaries(project);
     CREATE INDEX IF NOT EXISTS idx_rfs_created ON report_failure_summaries(createdAt DESC);
   `);
+  addColumnIfMissing(db, 'report_failure_summaries', 'llmModel', 'TEXT');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS test_llm_analyses (
@@ -197,12 +235,20 @@ function initializeSchema(db: Database.Database): void {
       reusedFromAnalysisId TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT,
+      inputTokens INTEGER,
+      outputTokens INTEGER,
+      totalTokens INTEGER,
+      promptVersion TEXT,
       UNIQUE(testId, fileId, project, reportId, attempt)
     );
     CREATE INDEX IF NOT EXISTS idx_tla_test ON test_llm_analyses(testId, fileId, project);
     CREATE INDEX IF NOT EXISTS idx_tla_report ON test_llm_analyses(reportId);
     CREATE INDEX IF NOT EXISTS idx_tla_test_report ON test_llm_analyses(testId, reportId);
   `);
+  addColumnIfMissing(db, 'test_llm_analyses', 'inputTokens', 'INTEGER');
+  addColumnIfMissing(db, 'test_llm_analyses', 'outputTokens', 'INTEGER');
+  addColumnIfMissing(db, 'test_llm_analyses', 'totalTokens', 'INTEGER');
+  addColumnIfMissing(db, 'test_llm_analyses', 'promptVersion', 'TEXT');
 
   // Drop any pre-existing table that doesn't match the current schema, then recreate.
   // The cache is cheap to regenerate on demand, so a one-shot reset is preferable to

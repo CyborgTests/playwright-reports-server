@@ -14,18 +14,32 @@ function injectAskLLMButton() {
     // Same button host as before — but the user may have navigated to a different test.
     // Re-check analysis for the (possibly new) testId so we don't show stale state.
     const currentTestId = extractTestIdFromCurrentUrl();
-    if (
-      currentTestId &&
-      currentTestId !== 'unknown' &&
-      existingAskBtn.dataset.testId !== currentTestId
-    ) {
+    if (!currentTestId || currentTestId === 'unknown') return;
+
+    const testChanged = existingAskBtn.dataset.testId !== currentTestId;
+    const inlineMissing = !document.getElementById('llm-inline-analysis');
+    const feedbackMissing = !document.getElementById('llm-feedback-panel');
+
+    if (testChanged) {
+      // User navigated to a different test (hash change, file-tree click). Reset
+      // the stored testId and discard any leftover panels for the previous test.
       existingAskBtn.dataset.testId = currentTestId;
       existingAskBtn.style.display = '';
-      const oldInline = document.getElementById('llm-inline-analysis');
-      if (oldInline) oldInline.remove();
-      const oldFeedback = document.getElementById('llm-feedback-panel');
-      if (oldFeedback) oldFeedback.remove();
+      document.getElementById('llm-inline-analysis')?.remove();
+      document.getElementById('llm-feedback-panel')?.remove();
       checkForPrecomputedAnalysis(currentTestId, copyPromptButton, existingAskBtn);
+      // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+      injectFeedbackPanel(currentTestId, reportId, copyPromptButton);
+      return;
+    }
+
+    // Same test, same button host — but Playwright may have just rebuilt the
+    // errors section (retry-tab swap), wiping our injected nodes. Re-attach
+    // whichever ones are missing. The fetches are cheap and idempotent.
+    if (inlineMissing) {
+      checkForPrecomputedAnalysis(currentTestId, copyPromptButton, existingAskBtn);
+    }
+    if (feedbackMissing) {
       // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
       injectFeedbackPanel(currentTestId, reportId, copyPromptButton);
     }
@@ -38,58 +52,9 @@ function injectAskLLMButton() {
   askBtn.style.minWidth = '100px';
   askBtn.style.marginLeft = '8px';
 
-  askBtn.onclick = async () => {
+  askBtn.onclick = () => {
     const currentTestId = extractTestIdFromCurrentUrl();
-
-    try {
-      copyPromptButton.click();
-      const prompt = globalThis.currentPrompt;
-
-      if (prompt?.trim()) {
-        showLLMAnalysis(prompt, askBtn, currentTestId, copyPromptButton);
-        return;
-      }
-    } catch {
-      // fallback to clipboard
-    }
-
-    try {
-      const permission = await navigator.permissions.query({ name: 'clipboard-read' });
-      if (permission.state === 'denied') {
-        showLLMAnalysis(
-          'Clipboard access is denied. Please allow clipboard access and try again.',
-          askBtn,
-          undefined,
-          copyPromptButton
-        );
-        return;
-      }
-    } catch (error) {
-      // clipboard permission API access not granted, proceed anyway
-    }
-
-    try {
-      copyPromptButton.click();
-      // wait for 100ms till prompt populated to clipboard
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      const prompt = await navigator.clipboard.readText();
-
-      if (prompt?.trim()) {
-        showLLMAnalysis(prompt, askBtn, currentTestId, copyPromptButton);
-      } else {
-        throw new Error('clipboard is empty');
-      }
-    } catch (error) {
-      console.error('[Playwright LLM] Failed to read from clipboard:', error);
-
-      const suggestion = {
-        NotAllowedError: 'Please allow clipboard access and try again.',
-        NotFoundError: 'Clipboard is empty. Please click "Copy prompt" first.',
-        default: 'Please click "Copy prompt" button manually and try again.',
-      };
-      const errorMessage = `Unable to access clipboard. ${suggestion[error.name] || suggestion.default}`;
-      showLLMAnalysis(errorMessage, askBtn, currentTestId, copyPromptButton);
-    }
+    showLLMAnalysis(askBtn, currentTestId, copyPromptButton);
   };
 
   copyPromptButton.parentNode?.insertBefore(askBtn, copyPromptButton.nextSibling);
@@ -129,7 +94,7 @@ function extractTestIdFromCurrentUrl() {
   }
 }
 
-function showLLMAnalysis(prompt, askBtn, testId = 'unknown', copyPromptButton = null) {
+function showLLMAnalysis(askBtn, testId = 'unknown', copyPromptButton = null) {
   let modal = document.getElementById('llm-analysis-modal');
   if (!modal) {
     modal = createLLMModal();
@@ -164,45 +129,6 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown', copyPromptButton = 
   askBtn.disabled = true;
   askBtn.textContent = 'Analyzing...';
 
-  if (
-    prompt.includes('Unable to extract prompt') ||
-    prompt.includes('copy the prompt') ||
-    prompt.includes('Clipboard access is denied')
-  ) {
-    content.innerHTML = `
-      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px;">
-        <div style="
-          width: 48px;
-          height: 48px;
-          border-radius: 50%;
-          background-color: #fef3c7;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin-bottom: 16px;
-          font-size: 24px;
-        ">⚠️</div>
-        <div style="
-          color: var(--llm-body-text);
-          font-size: 16px;
-          font-weight: 500;
-          text-align: center;
-          margin-bottom: 8px;
-        ">Unable to Access Clipboard</div>
-        <div style="
-          color: var(--llm-muted);
-          font-size: 14px;
-          text-align: center;
-          line-height: 1.5;
-          max-width: 400px;
-        ">${prompt}</div>
-      </div>
-    `;
-    askBtn.disabled = false;
-    askBtn.textContent = 'Ask LLM';
-    return;
-  }
-
   fetch(`/api/llm/analyze-failed-test`, {
     method: 'POST',
     headers: {
@@ -212,7 +138,6 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown', copyPromptButton = 
       testId: testId,
       // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
       reportId: reportId,
-      prompt: prompt,
     }),
   })
     .then((response) => {
@@ -278,7 +203,26 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown', copyPromptButton = 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 15px;
             color: var(--llm-body-text);
-          "></div>
+          ">
+            <div id="llm-streaming-progress" style="
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              color: var(--llm-muted);
+              font-size: 14px;
+            ">
+              <div style="
+                width: 14px;
+                height: 14px;
+                border: 2px solid var(--llm-btn-border);
+                border-top-color: #3b82f6;
+                border-radius: 50%;
+                animation: llm-spin 0.8s linear infinite;
+              "></div>
+              <span id="llm-streaming-progress-label">Generating analysis…</span>
+            </div>
+          </div>
+          <style>@keyframes llm-spin { to { transform: rotate(360deg); } }</style>
           <div id="llm-streaming-footer" style="
             display: none;
             justify-content: space-between;
@@ -310,6 +254,9 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown', copyPromptButton = 
         }
       }
 
+      // Throttle partial-render to ~10fps so a fast stream doesn't churn the DOM.
+      let lastPartialRenderAt = 0;
+
       function processToken(text) {
         answerContent += text;
         if (streamingContent) {
@@ -328,8 +275,25 @@ function showLLMAnalysis(prompt, askBtn, testId = 'unknown', copyPromptButton = 
               };
             }
           }
-          streamingContent.textContent = answerContent;
-          streamingContent.scrollTop = streamingContent.scrollHeight;
+          // The response is structured JSON (forced via response_format /
+          // tool_use). We extract the `analysis` field's partial value and
+          // render it as markdown on the fly — best-effort, may be broken
+          // mid-fence or mid-bullet, that's fine. The final render on `done`
+          // does a clean parse and fully replaces the in-progress markdown.
+          const ts = Date.now();
+          if (ts - lastPartialRenderAt >= 100) {
+            lastPartialRenderAt = ts;
+            const partial = extractPartialAnalysis(answerContent);
+            if (partial && partial.length > 0) {
+              streamingContent.innerHTML = markdownToHtml(partial);
+              streamingContent.scrollTop = streamingContent.scrollHeight;
+            } else {
+              const progressLabel = streamingContent.querySelector('#llm-streaming-progress-label');
+              if (progressLabel) {
+                progressLabel.textContent = `Generating analysis… (${answerContent.length} chars)`;
+              }
+            }
+          }
         }
       }
 
@@ -539,72 +503,67 @@ function createLLMModal() {
   return modal;
 }
 
-function formatLLMResponse(data) {
-  let html = '<div>';
-  html += `
-    <div style="
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 20px;
-    ">
-      <div style="
-        width: 32px;
-        height: 32px;
-        background: linear-gradient(135deg, #10b981, #059669);
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-size: 16px;
-      ">🔍</div>
-      <h2 style="margin: 0; color: var(--llm-body-text); font-size: 20px; font-weight: 600;">Test Failure Analysis</h2>
-    </div>
-  `;
-
-  const formattedContent = markdownToHtml(data.content || 'No analysis available');
-
-  html += `
-    <div style="
-      background: var(--llm-stream-bg);
-      border-left: 4px solid #3b82f6;
-      padding: 20px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-    ">
-      <div style="
-        color: var(--llm-body-text);
-        line-height: 1.7;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        font-size: 15px;
-      ">${formattedContent}</div>
-    </div>
-  `;
-
-  html += `
-    <div style="
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-top: 16px;
-      border-top: 1px solid var(--llm-btn-border);
-      margin-top: 24px;
-      font-size: 13px;
-      color: var(--llm-muted);
-    ">
-      <div>Analysis powered by ${data.model || 'LLM'}</div>
-      <div>${new Date().toLocaleString()}</div>
-    </div>
-  `;
-  html += '</div>';
-  return html;
+/**
+ * Best-effort partial extractor for the `analysis` field value out of an
+ * in-progress structured-output JSON envelope. Returns whatever has been
+ * received so far (with JSON string escapes resolved), or null when the
+ * `analysis` field hasn't started yet. The output may be partial/broken
+ * markdown — that's fine; the caller renders it as a preview.
+ */
+function extractPartialAnalysis(jsonText) {
+  if (!jsonText) return null;
+  const m = jsonText.match(/"analysis"\s*:\s*"/);
+  if (!m) return null;
+  const s = jsonText.slice(m.index + m[0].length);
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === '\\') {
+      const next = s[i + 1];
+      if (next === undefined) break; // partial escape — drop trailing backslash
+      if (next === 'n') out += '\n';
+      else if (next === 't') out += '\t';
+      else if (next === 'r') out += '\r';
+      else if (next === '"') out += '"';
+      else if (next === '\\') out += '\\';
+      else if (next === '/') out += '/';
+      else if (next === 'u') {
+        if (i + 5 >= s.length) break; // incomplete \uXXXX — wait for more
+        const hex = s.slice(i + 2, i + 6);
+        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+          out += String.fromCharCode(Number.parseInt(hex, 16));
+          i += 6;
+          continue;
+        }
+        break;
+      } else out += next;
+      i += 2;
+    } else if (c === '"') {
+      break; // unescaped closing quote — end of value
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
 }
 
 function markdownToHtml(text) {
   if (!text) return 'No analysis available';
 
+  // Some local models emit markdown with literal `\n` and `\t` escape
+  // sequences instead of actual newlines (JSON-string style without the JSON
+  // envelope). Detect-and-unescape only when present so legitimate text
+  // containing a backslash-n is left alone. Mirrors the backend safety net.
   let html = text;
+  if (/\\[ntr"]/.test(html)) {
+    html = html
+      .replaceAll('\\n', '\n')
+      .replaceAll('\\t', '\t')
+      .replaceAll('\\r', '\r')
+      .replaceAll('\\"', '"');
+  }
 
   // process code blocks first (before other transformations)
   const codeBlocks = [];
@@ -705,9 +664,17 @@ function markdownToHtml(text) {
   return html;
 }
 
+// Module-level fetch dedup. The body-level guardian observer (see bottom of
+// file) can call checkForPrecomputedAnalysis on every DOM mutation that
+// removes our injected nodes; without this we'd hammer /api/test-analysis.
+const inflightAnalysisFetches = new Set();
+
 function checkForPrecomputedAnalysis(testId, copyPromptButton, askBtn) {
-  // reportId is injected as a global by html-injector.ts
+  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
   const rid = typeof reportId !== 'undefined' ? reportId : '';
+  const key = `${testId}::${rid}`;
+  if (inflightAnalysisFetches.has(key)) return;
+  inflightAnalysisFetches.add(key);
   fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
     .then((response) => {
       if (!response.ok) return null;
@@ -723,6 +690,9 @@ function checkForPrecomputedAnalysis(testId, copyPromptButton, askBtn) {
     })
     .catch(() => {
       // Silently fail — no section injected
+    })
+    .finally(() => {
+      inflightAnalysisFetches.delete(key);
     });
 }
 
@@ -730,9 +700,14 @@ function renderLoadingAnalysis(testId, rid, copyPromptButton, askBtn) {
   // If a real analysis or another loader is already in the DOM, don't double-render.
   if (document.getElementById('llm-inline-analysis')) return;
 
-  const errorsSection = findErrorsSection(copyPromptButton);
-  if (!errorsSection) return;
+  // Wait for the errors section if Playwright is still building the test page.
+  whenErrorsSectionReady(copyPromptButton, (errorsSection) => {
+    if (document.getElementById('llm-inline-analysis')) return;
+    renderLoadingInto(testId, rid, copyPromptButton, askBtn, errorsSection);
+  });
+}
 
+function renderLoadingInto(testId, rid, copyPromptButton, askBtn, errorsSection) {
   if (askBtn) askBtn.style.display = 'none';
 
   const section = document.createElement('div');
@@ -769,33 +744,108 @@ function renderLoadingAnalysis(testId, rid, copyPromptButton, askBtn) {
   `;
   errorsSection.parentNode.insertBefore(section, errorsSection);
 
-  let attempts = 0;
-  const MAX_ATTEMPTS = 60; // ~3 minutes at 3s intervals
-  const tick = () => {
-    attempts++;
+  // Resolve the pending taskId once, then subscribe to the task-progress SSE
+  // stream. Falls back to a 3s poll loop only if SSE is unavailable
+  // (older browser, proxy stripping text/event-stream, or a connection error
+  // before any update arrives).
+  let cleanup = null;
+  const settle = () => {
+    if (cleanup) {
+      cleanup();
+      cleanup = null;
+    }
     fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.success && data?.data?.analysis) {
-          // Result landed — replace the loader with the real analysis.
           section.remove();
           renderInlineAnalysis(data.data, copyPromptButton, askBtn);
-          return;
+        } else {
+          // Task settled without producing an analysis (cancelled/failed).
+          section.remove();
+          if (askBtn) askBtn.style.display = '';
         }
-        if (data?.success && data?.pending && attempts < MAX_ATTEMPTS) {
-          setTimeout(tick, 3000);
-          return;
-        }
-        // No pending task and no analysis — analysis was cancelled or failed.
-        // Hide the loader and restore the Ask LLM button.
-        section.remove();
-        if (askBtn) askBtn.style.display = '';
       })
       .catch(() => {
-        if (attempts < MAX_ATTEMPTS) setTimeout(tick, 3000);
+        section.remove();
+        if (askBtn) askBtn.style.display = '';
       });
   };
-  setTimeout(tick, 3000);
+
+  const subscribe = (taskId) => {
+    if (typeof EventSource === 'undefined') {
+      pollFallback();
+      return;
+    }
+    const es = new EventSource(`/api/llm/task-progress/${encodeURIComponent(taskId)}`);
+    let receivedAny = false;
+    es.addEventListener('update', (evt) => {
+      receivedAny = true;
+      try {
+        const row = JSON.parse(evt.data);
+        if (row.status === 'completed' || row.status === 'failed' || row.status === 'cancelled') {
+          settle();
+        }
+      } catch {
+        // ignore malformed payloads
+      }
+    });
+    es.onerror = () => {
+      es.close();
+      // If we never got an update event, the server may not support SSE here;
+      // degrade to polling so the user still sees a result.
+      if (!receivedAny) pollFallback();
+    };
+    cleanup = () => es.close();
+  };
+
+  let attempts = 0;
+  const MAX_ATTEMPTS = 60; // ~3 minutes at 3s intervals
+  const pollFallback = () => {
+    const tick = () => {
+      attempts++;
+      fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.success && data?.data?.analysis) {
+            section.remove();
+            renderInlineAnalysis(data.data, copyPromptButton, askBtn);
+            return;
+          }
+          if (data?.success && data?.pending && attempts < MAX_ATTEMPTS) {
+            setTimeout(tick, 3000);
+            return;
+          }
+          section.remove();
+          if (askBtn) askBtn.style.display = '';
+        })
+        .catch(() => {
+          if (attempts < MAX_ATTEMPTS) setTimeout(tick, 3000);
+        });
+    };
+    setTimeout(tick, 3000);
+  };
+
+  // Resolve the current pending task id, then subscribe.
+  fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (data?.success && data?.data?.analysis) {
+        section.remove();
+        renderInlineAnalysis(data.data, copyPromptButton, askBtn);
+        return;
+      }
+      if (data?.success && data?.pending?.taskId) {
+        subscribe(data.pending.taskId);
+        return;
+      }
+      // No pending task right now — fall back to polling in case one is
+      // about to be enqueued (e.g. cascade after report-summary regenerate).
+      pollFallback();
+    })
+    .catch(() => {
+      pollFallback();
+    });
 }
 
 /**
@@ -817,6 +867,36 @@ function findErrorsSection(copyPromptButton) {
     copyPromptButton.parentNode?.parentNode ||
     copyPromptButton.parentNode
   );
+}
+
+/**
+ * Run `cb(section)` once the errors section is in the DOM. Resolves
+ * synchronously when it's already there. Otherwise watches `document.body`
+ * for up to `timeoutMs` and fires the callback the first time
+ * `findErrorsSection` returns a node — fixes the race where the precomputed
+ * analysis fetch resolves before Playwright finishes rendering the test page.
+ */
+function whenErrorsSectionReady(copyPromptButton, cb, timeoutMs = 2000) {
+  const section = findErrorsSection(copyPromptButton);
+  if (section) {
+    cb(section);
+    return;
+  }
+  const start = Date.now();
+  const obs = new MutationObserver(() => {
+    if (Date.now() - start > timeoutMs) {
+      obs.disconnect();
+      return;
+    }
+    const s = findErrorsSection(copyPromptButton);
+    if (s) {
+      obs.disconnect();
+      cb(s);
+    }
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+  // Hard timeout so we don't keep observing forever if the section never lands.
+  setTimeout(() => obs.disconnect(), timeoutMs + 100);
 }
 
 function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
@@ -841,49 +921,54 @@ function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
     }
   }
 
-  const errorsSection = findErrorsSection(copyPromptButton);
-  if (!errorsSection) return;
+  // Defer to whenErrorsSectionReady so a still-rendering report (initial load
+  // or a retry-tab swap) eventually gets the analysis inserted, instead of the
+  // previous silent no-op.
+  whenErrorsSectionReady(copyPromptButton, (errorsSection) => {
+    // Re-check existing right before insert — another path may have raced us.
+    document.getElementById('llm-inline-analysis')?.remove();
 
-  // Hide the Ask LLM button — analysis is shown inline instead
-  if (askBtn) askBtn.style.display = 'none';
+    // Hide the Ask LLM button — analysis is shown inline instead
+    if (askBtn) askBtn.style.display = 'none';
 
-  const categoryBadge = analysisData.category
-    ? `<span class="llm-category-badge">${analysisData.category}</span>`
-    : '';
-  // Mark reused analyses (signature-match short-circuit copies the prior result without
-  // hitting the LLM). Lets the user know the analysis is a previously-seen one.
-  const reusedBadge = analysisData.reusedFromAnalysisId
-    ? `<span class="llm-reused-badge" title="Same error signature as a previous run — analysis was reused without calling the LLM. Click Retry to force a fresh analysis.">♻ Reused</span>`
-    : '';
+    const categoryBadge = analysisData.category
+      ? `<span class="llm-category-badge">${analysisData.category}</span>`
+      : '';
+    // Mark reused analyses (signature-match short-circuit copies the prior result without
+    // hitting the LLM). Lets the user know the analysis is a previously-seen one.
+    const reusedBadge = analysisData.reusedFromAnalysisId
+      ? `<span class="llm-reused-badge" title="Same error signature as a previous run — analysis was reused without calling the LLM. Click Retry to force a fresh analysis.">♻ Reused</span>`
+      : '';
 
-  const section = document.createElement('div');
-  section.id = 'llm-inline-analysis';
-  section.innerHTML = `
-    <div class="llm-inline-header">
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <span class="llm-title">LLM Analysis</span>
-        ${categoryBadge}
-        ${reusedBadge}
-        <span class="llm-model">${analysisData.model || ''}</span>
+    const section = document.createElement('div');
+    section.id = 'llm-inline-analysis';
+    section.innerHTML = `
+      <div class="llm-inline-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="llm-title">LLM Analysis</span>
+          ${categoryBadge}
+          ${reusedBadge}
+          <span class="llm-model">${analysisData.model || ''}</span>
+        </div>
+        <button class="llm-retry-btn">Retry</button>
       </div>
-      <button class="llm-retry-btn">Retry</button>
-    </div>
-    <div class="llm-inline-body">
-      ${markdownToHtml(analysisData.analysis)}
-    </div>
-  `;
+      <div class="llm-inline-body">
+        ${markdownToHtml(analysisData.analysis)}
+      </div>
+    `;
 
-  // Insert above the errors section
-  errorsSection.parentNode.insertBefore(section, errorsSection);
+    // Insert above the errors section
+    errorsSection.parentNode.insertBefore(section, errorsSection);
 
-  // Retry button re-triggers Ask LLM flow
-  section.querySelector('.llm-retry-btn').onclick = () => {
-    section.remove();
-    if (askBtn) {
-      askBtn.style.display = '';
-      askBtn.click();
-    }
-  };
+    // Retry button re-triggers Ask LLM flow
+    section.querySelector('.llm-retry-btn').onclick = () => {
+      section.remove();
+      if (askBtn) {
+        askBtn.style.display = '';
+        askBtn.click();
+      }
+    };
+  });
 }
 
 /**
@@ -1313,3 +1398,40 @@ if (document.readyState === 'loading') {
 globalThis.addEventListener?.('hashchange', () => {
   setTimeout(tryInjectAskLLMButton, 50);
 });
+
+// Body-level guardian observer. Playwright re-renders the errors-section DOM
+// when the user clicks a different retry tab (no URL change, no event we can
+// hook). When that swap removes our injected nodes we re-inject. The injection
+// path is idempotent — if the Ask button + inline analysis are still present,
+// `injectAskLLMButton` early-returns. Debounced so a burst of mutations only
+// triggers one check.
+(() => {
+  if (typeof MutationObserver === 'undefined' || !document.body) return;
+
+  let pending = null;
+  const schedule = () => {
+    if (pending) return;
+    pending = setTimeout(() => {
+      pending = null;
+      // Cheap pre-check: only run if either (a) there's a Copy prompt without a
+      // sibling Ask LLM button, or (b) an Ask LLM button exists but the inline
+      // analysis is missing for the current testId. Avoids work on unrelated
+      // mutations (e.g., the modal opening, our own DOM inserts).
+      const copyPromptBtns = Array.from(document.querySelectorAll('button')).filter((b) =>
+        b.textContent?.includes('Copy prompt')
+      );
+      if (copyPromptBtns.length === 0) return;
+      const btn = copyPromptBtns[0];
+      const askBtn = btn.parentNode?.querySelector('.llm-ask-btn');
+      const needsAskBtn = !askBtn;
+      const needsInline = askBtn && !document.getElementById('llm-inline-analysis');
+      const needsFeedback = askBtn && !document.getElementById('llm-feedback-panel');
+      if (needsAskBtn || needsInline || needsFeedback) {
+        injectAskLLMButton();
+      }
+    }, 150);
+  };
+
+  const observer = new MutationObserver(schedule);
+  observer.observe(document.body, { childList: true, subtree: true });
+})();

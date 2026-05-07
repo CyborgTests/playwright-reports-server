@@ -29,6 +29,7 @@ interface FailureSummary {
   categories: Record<string, number>;
   errorGroups: ErrorGroup[];
   llmSummary: string | null;
+  llmModel: string | null;
   createdAt: string;
   updatedAt: string | null;
 }
@@ -78,6 +79,10 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
     error,
   } = useQuery<FailureSummaryResponse>(queryPath, {
     retry: false,
+    refetchInterval: (query) => {
+      const data = query.state.data as FailureSummaryResponse | undefined;
+      return (data?.pendingAnalysisCount ?? 0) > 0 ? 10000 : false;
+    },
   });
 
   const { mutate: triggerAnalysis, isPending: isAnalyzing } = useMutation<AnalyzeResponse>(
@@ -97,23 +102,10 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
     return null;
   }
 
-  if (isAnalyzing) {
-    return (
-      <Card className="mb-4">
-        <CardContent className="flex items-center gap-3 py-4">
-          <Spinner size="sm" />
-          <span className="text-sm text-muted-foreground">
-            Queued — LLM analysis in progress...
-          </span>
-        </CardContent>
-      </Card>
-    );
-  }
-
   const summary = summaryResponse?.data;
   const hasFailures = summaryResponse?.hasFailures ?? false;
   const pendingAnalysisCount = summaryResponse?.pendingAnalysisCount ?? 0;
-  const hasOngoingAnalysis = pendingAnalysisCount > 0;
+  const hasOngoingAnalysis = pendingAnalysisCount > 0 || isAnalyzing;
 
   if ((!summary || error) && !hasFailures) {
     return null;
@@ -135,12 +127,12 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
                   <span className="inline-flex">
                     <Button size="sm" variant="outline" disabled>
                       <Spinner size="sm" className="mr-1" />
-                      Analysis ongoing ({pendingAnalysisCount})
+                      Analysis ongoing{pendingAnalysisCount > 0 ? ` (${pendingAnalysisCount})` : ''}
                     </Button>
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  Analysis ongoing — refresh the page later, or check the{' '}
+                  Analysis ongoing — check the{' '}
                   <RouterLink to="/llm-queue" className="underline">
                     LLM queue
                   </RouterLink>
@@ -183,7 +175,8 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  Analysis ongoing ({pendingAnalysisCount}) — refresh the page later, or check the{' '}
+                  Analysis ongoing{pendingAnalysisCount > 0 ? ` (${pendingAnalysisCount})` : ''} -
+                  check the{' '}
                   <RouterLink to="/llm-queue" className="underline">
                     LLM queue
                   </RouterLink>
@@ -249,6 +242,16 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
             <div className="prose prose-sm max-w-none">
               <MarkdownRenderer content={summary.llmSummary} />
             </div>
+            {(summary.llmModel || summary.updatedAt) && (
+              <div className="flex items-center gap-2 pt-3 mt-3 border-t text-xs text-muted-foreground flex-wrap">
+                {summary.llmModel && <Badge variant="outline">{summary.llmModel}</Badge>}
+                {summary.updatedAt && (
+                  <span className="ml-auto">
+                    Generated {new Date(summary.updatedAt).toLocaleString()}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         )}
       </CardContent>

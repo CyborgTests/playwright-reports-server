@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { llmService } from '../lib/llm/index.js';
+import { TEST_FAILURE_ANALYSIS_SCHEMA, unescapeLiteralNewlines } from '../lib/llm/prompts/index.js';
 import {
   DeleteFeedbackRequestSchema,
   FeedbackRegenerateRequestSchema,
@@ -16,6 +17,7 @@ import { projectSummaryDb } from '../lib/service/db/projectSummary.sqlite.js';
 import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
+import { buildTestAnalysisRequest } from '../lib/service/llmAnalysisQueue.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
@@ -95,78 +97,72 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
       const authResult = await authenticate(request as AuthRequest, reply);
       if (authResult) return authResult;
 
-      const { testId, reportId, prompt } = request.body as {
-        testId: string;
-        reportId: string;
-        prompt: string;
-      };
+      const { testId, reportId } = request.body as { testId: string; reportId: string };
 
-      if (!testId || !reportId || !prompt) {
-        reply.status(400);
-        reply.send({
-          success: false,
-          error: 'Missing some of required parameters: testId, reportId, prompt',
-        });
+      if (!testId || !reportId) {
+        reply.status(400).send({ success: false, error: 'Missing testId or reportId' });
         return;
       }
 
       if (!llmService.isConfigured()) {
-        reply.status(400);
-        reply.send({
+        reply.status(400).send({
           success: false,
-          error: 'LLM service is not enabled. Set LLM_BASE_URL and LLM_API_TOKEN to enable',
+          error: 'LLM service is not enabled. Set LLM_BASE_URL and LLM_API_KEY to enable',
         });
         return;
       }
 
       const { error: llmInitError } = await withError(llmService.initialize());
       if (llmInitError) {
-        reply.status(400);
-        reply.send({
+        reply.status(400).send({
           success: false,
           error: `LLM initialization error: ${llmInitError instanceof Error ? llmInitError.message : 'Unknown initialization error'}`,
         });
         return;
       }
 
+      // Resolve the test_run so we know fileId + project for the segmented
+      // prompt builder. Without this we can't read the right config or attach
+      // the right screenshot.
+      const tr = resolveTestRun(testId, reportId);
+      if (!tr) {
+        reply.status(404).send({
+          success: false,
+          error: `No test_run for testId=${testId} in report=${reportId}`,
+        });
+        return;
+      }
+
+      const built = await buildTestAnalysisRequest({
+        testId,
+        fileId: tr.fileId,
+        project: tr.project,
+        reportId,
+      });
+      if ('error' in built) {
+        reply.status(404).send({ success: false, error: built.error });
+        return;
+      }
+
+      // Create a synthetic task row so the SSE task-progress endpoint and the
+      // queue page can show this run, even though we bypass the queue poll.
       const task = llmTasksDb.createTask('test_analysis', {
         reportId,
         testId,
-        project: 'default',
+        fileId: tr.fileId,
+        project: tr.project,
       });
-      // Skip the queue's poll cycle and mark this task processing right away.
       const now = new Date().toISOString();
       try {
         const db = (await import('../lib/service/db/db.js')).getDatabase();
         db.prepare('UPDATE llm_tasks SET status = ?, startedAt = ?, prompt = ? WHERE id = ?').run(
           'processing',
           now,
-          prompt.substring(0, 2000),
+          built.debugPrompt,
           task.id
         );
       } catch {
         // Task tracking is non-critical — never block the analysis on it.
-      }
-
-      const { result: trends, error: testHistoryError } = await withError(
-        analyticsService.getTestTrends(testId)
-      );
-
-      if (testHistoryError) {
-        console.warn(
-          `[llm] Failed to fetch historical data: ${testHistoryError instanceof Error ? testHistoryError.message : String(testHistoryError)}`
-        );
-      }
-
-      const context: any = {};
-      if (trends && trends.runs.length > 0) {
-        const recentFailures = trends.runs.filter((run) => run.isOutlier).slice(-3).length;
-
-        context.totalRuns = trends.runs.length;
-        context.averageDuration = trends.statistics?.mean || 0;
-        context.isFlaky =
-          trends.runs.length > 5 && trends.statistics.stdDev > trends.statistics.mean * 0.3;
-        context.recentFailures = recentFailures;
       }
 
       reply.raw.writeHead(200, {
@@ -175,12 +171,11 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         Connection: 'keep-alive',
         'X-Accel-Buffering': 'no',
       });
-
       const sendChunk = (chunk: {
         type: string;
         content?: string;
         model?: string;
-        usage?: any;
+        usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
         finishReason?: string;
         error?: string;
       }) => {
@@ -189,25 +184,32 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
 
       let fullContent = '';
       let modelName = '';
+      let usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | undefined;
+      // always streams structured output (TEST_FAILURE_ANALYSIS_SCHEMA)
+      // so partial bytes are an in-progress
+      // JSON envelope — not a meaningful queryable string. The single write
+      // on `done` is forced; if the SSE drops, the task is retried via the queue.
+
       try {
-        await llmService.sendMessageStream(
-          prompt,
+        await llmService.sendSegmentedMessageStream(
+          built.segmentedPrompt,
           (chunk) => {
             sendChunk(chunk);
             if (chunk.type === 'token' && chunk.content) {
               fullContent += chunk.content;
             }
-            if (chunk.type === 'done' && chunk.model) {
-              modelName = chunk.model;
+            if (chunk.type === 'done') {
+              if (chunk.model) modelName = chunk.model;
+              if (chunk.usage) usage = chunk.usage;
             }
           },
-          {
-            context,
-          }
+          { temperature: 0.2, responseSchema: TEST_FAILURE_ANALYSIS_SCHEMA }
         );
 
-        if (fullContent) {
-          // LLM may wrap the structured {category, analysis} JSON in markdown code fences.
+        if (!fullContent) {
+          llmTasksDb.fail(task.id, 'LLM returned empty response');
+        } else {
+          // Prefer typed structured output; fall back to fence-stripped JSON parsing.
           let analysisText = fullContent;
           let parsedCategory: string | undefined;
           try {
@@ -218,63 +220,54 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
             if (parsed.analysis) analysisText = parsed.analysis;
             if (parsed.category) parsedCategory = parsed.category;
           } catch {
-            /* not JSON — use raw content */
+            // not JSON — use raw text
           }
+          // Local models sometimes emit markdown with literal `\n` instead of
+          // newlines (the JSON-escape style without the JSON envelope). Unwind.
+          analysisText = unescapeLiteralNewlines(analysisText);
 
-          // Combine LLM-parsed category with the heuristic baseline using the precedence
-          // rule: LLM overrides only when its category is in the known enum AND either
-          // the heuristic returned 'unknown' or the LLM agrees with it.
-          const { detectFailureCategory, isKnownCategory } = await import(
-            '../lib/service/testManagement.js'
-          );
-          const runs = testDb.getTestRunsByReport(reportId);
-          const matchingRun = runs.find((r) => r.testId === testId);
-          let heuristicCategory: string | undefined;
-          if (matchingRun?.failureDetails) {
-            try {
-              const details = JSON.parse(matchingRun.failureDetails);
-              heuristicCategory = detectFailureCategory(details.message || '');
-            } catch {
-              /* ignore parse errors */
-            }
-          }
-          let detectedCategory: string | undefined = heuristicCategory;
+          // Heuristic+LLM consensus: LLM wins only on a known category AND
+          // either heuristic was unknown or the two agree.
+          const { isKnownCategory } = await import('../lib/service/testManagement.js');
+          let detectedCategory: string | undefined = built.heuristicCategory;
           let categorySource: 'heuristic' | 'llm' = 'heuristic';
           if (
             parsedCategory &&
             isKnownCategory(parsedCategory) &&
-            (heuristicCategory === 'unknown' || parsedCategory === heuristicCategory)
+            (built.heuristicCategory === 'unknown' || parsedCategory === built.heuristicCategory)
           ) {
             detectedCategory = parsedCategory;
             categorySource = 'llm';
           }
 
-          llmTasksDb.complete(task.id, analysisText, detectedCategory, modelName || undefined);
+          const completionExtras = { usage, promptVersion: built.promptVersion };
+          llmTasksDb.complete(
+            task.id,
+            analysisText,
+            detectedCategory,
+            modelName || undefined,
+            completionExtras
+          );
 
-          // Mirror to test_llm_analyses so checkForPrecomputedAnalysis can find it.
           try {
-            const fileId = matchingRun?.fileId || '';
-            const project = matchingRun?.project || 'default';
-            if (fileId) {
-              testAnalysisDb.upsert(
-                testId,
-                fileId,
-                project,
-                reportId,
-                analysisText,
-                detectedCategory,
-                modelName || undefined
-              );
-            }
-            if (matchingRun?.runId && detectedCategory) {
-              testDb.updateFailureCategory(matchingRun.runId, detectedCategory, categorySource);
+            testAnalysisDb.upsert(
+              testId,
+              tr.fileId,
+              tr.project,
+              reportId,
+              analysisText,
+              detectedCategory,
+              modelName || undefined,
+              built.details.attempt ?? 1,
+              undefined,
+              completionExtras
+            );
+            if (built.failedRun?.runId && detectedCategory) {
+              testDb.updateFailureCategory(built.failedRun.runId, detectedCategory, categorySource);
             }
           } catch (persistError) {
-            // Non-critical: the analysis still lives in llm_tasks as a fallback.
             console.error('[llm] Failed to persist analysis to test_llm_analyses:', persistError);
           }
-        } else {
-          llmTasksDb.fail(task.id, 'LLM returned empty response');
         }
       } catch (streamError) {
         const errorMsg =
@@ -468,9 +461,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         return reply.send({ success: true, data: row ?? null });
       } catch (error) {
         fastify.log.error(error);
-        return reply
-          .status(500)
-          .send({ success: false, error: 'Failed to fetch project summary' });
+        return reply.status(500).send({ success: false, error: 'Failed to fetch project summary' });
       }
     }
   );
@@ -796,12 +787,17 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     if (inflightTest) {
       taskId = inflightTest.id;
       deduped = true;
+      // Regenerate is an explicit user request for fresh analysis. If the
+      // deduped task was auto-queued (isRetry=0), upgrade it so the queue
+      // bypasses reuse-by-signature when it picks the row up.
+      llmTasksDb.markAsRetry(taskId);
     } else {
       const created = llmTasksDb.createTask('test_analysis', {
         reportId: body.reportId,
         testId: body.testId,
         fileId: keys.fileId,
         project: keys.project,
+        isRetry: true,
       });
       taskId = created.id;
       deduped = false;

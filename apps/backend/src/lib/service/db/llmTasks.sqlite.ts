@@ -1,6 +1,7 @@
 import type { LlmTaskStatus, LlmTaskType } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import { v4 as uuid } from 'uuid';
+import { llmTaskEvents } from '../llmTaskEvents.js';
 import { getDatabase } from './db.js';
 
 export type { LlmTaskStatus, LlmTaskType } from '@playwright-reports/shared';
@@ -29,18 +30,49 @@ export interface LlmTaskRow {
   completedAt: string | null;
   retryCount: number;
   maxRetries: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  promptVersion: string | null;
+  isRetry: number;
+}
+
+export interface LlmTaskUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
 }
 
 export class LlmTasksDatabase {
   private readonly db = getDatabase();
 
   private readonly insertTaskStmt: Database.Statement<
-    [string, string, number, string | null, string | null, string | null, string | null, string]
+    [
+      string,
+      string,
+      number,
+      string | null,
+      string | null,
+      string | null,
+      string | null,
+      string,
+      number,
+    ]
   >;
   private readonly selectQueuedStmt: Database.Statement<[number]>;
   private readonly claimTaskStmt: Database.Statement<[string, string]>;
   private readonly completeTaskStmt: Database.Statement<
-    [string, string, string | null, string | null, string]
+    [
+      string,
+      string,
+      string | null,
+      string | null,
+      number | null,
+      number | null,
+      number | null,
+      string | null,
+      string,
+    ]
   >;
   private readonly failTaskStmt: Database.Statement<[string, string | null, string]>;
   private readonly requeueTaskStmt: Database.Statement<[string | null, string]>;
@@ -55,8 +87,8 @@ export class LlmTasksDatabase {
 
   private constructor() {
     this.insertTaskStmt = this.db.prepare(`
-      INSERT INTO llm_tasks (id, type, status, priority, reportId, testId, fileId, project, createdAt)
-      VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?)
+      INSERT INTO llm_tasks (id, type, status, priority, reportId, testId, fileId, project, createdAt, isRetry)
+      VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)
     `);
 
     this.selectQueuedStmt = this.db.prepare(`
@@ -74,7 +106,8 @@ export class LlmTasksDatabase {
 
     this.completeTaskStmt = this.db.prepare(`
       UPDATE llm_tasks
-      SET status = 'completed', completedAt = ?, result = ?, category = ?, model = ?
+      SET status = 'completed', completedAt = ?, result = ?, category = ?, model = ?,
+          inputTokens = ?, outputTokens = ?, totalTokens = ?, promptVersion = ?
       WHERE id = ?
     `);
 
@@ -101,7 +134,8 @@ export class LlmTasksDatabase {
 
     this.retryTaskStmt = this.db.prepare(`
       UPDATE llm_tasks
-      SET status = 'queued', retryCount = 0, error = NULL, startedAt = NULL, completedAt = NULL
+      SET status = 'queued', retryCount = 0, error = NULL, startedAt = NULL, completedAt = NULL,
+          isRetry = 1
       WHERE id = ? AND status = 'failed'
     `);
 
@@ -144,11 +178,13 @@ export class LlmTasksDatabase {
       fileId?: string;
       project?: string;
       priority?: number;
+      isRetry?: boolean;
     } = {}
   ): LlmTaskRow {
     const id = uuid();
     const now = new Date().toISOString();
     const priority = opts.priority ?? 0;
+    const isRetry = opts.isRetry ? 1 : 0;
 
     this.insertTaskStmt.run(
       id,
@@ -158,7 +194,8 @@ export class LlmTasksDatabase {
       opts.testId ?? null,
       opts.fileId ?? null,
       opts.project ?? null,
-      now
+      now,
+      isRetry
     );
 
     return {
@@ -180,7 +217,16 @@ export class LlmTasksDatabase {
       completedAt: null,
       retryCount: 0,
       maxRetries: 2,
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      promptVersion: null,
+      isRetry,
     };
+  }
+
+  public markAsRetry(id: string): void {
+    this.db.prepare(`UPDATE llm_tasks SET isRetry = 1 WHERE id = ? AND status = 'queued'`).run(id);
   }
 
   public claimNext(count: number): LlmTaskRow[] {
@@ -204,10 +250,23 @@ export class LlmTasksDatabase {
     id: string,
     result: string,
     category?: string | null,
-    model?: string | null
+    model?: string | null,
+    extras?: { usage?: LlmTaskUsage; promptVersion?: string }
   ): void {
     const now = new Date().toISOString();
-    this.completeTaskStmt.run(now, result, category ?? null, model ?? null, id);
+    const usage = extras?.usage;
+    this.completeTaskStmt.run(
+      now,
+      result,
+      category ?? null,
+      model ?? null,
+      usage?.inputTokens ?? null,
+      usage?.outputTokens ?? null,
+      usage?.totalTokens ?? null,
+      extras?.promptVersion ?? null,
+      id
+    );
+    this.fireUpdateEvent(id);
   }
 
   public fail(id: string, error: string): void {
@@ -223,10 +282,37 @@ export class LlmTasksDatabase {
       const now = new Date().toISOString();
       this.failTaskStmt.run(now, error, id);
     }
+    this.fireUpdateEvent(id);
+  }
+
+  /** Look up the post-update row and broadcast it to event subscribers. */
+  private fireUpdateEvent(id: string): void {
+    const row = this.db.prepare('SELECT * FROM llm_tasks WHERE id = ?').get(id) as
+      | LlmTaskRow
+      | undefined;
+    if (row) llmTaskEvents.emitTaskUpdate(row);
   }
 
   public cancel(id: string): void {
     this.cancelTaskStmt.run(id);
+  }
+
+  /** Fail every task left in `processing` — called once at boot. A task in
+   *  `processing` after a process restart is necessarily orphaned: the worker
+   *  that claimed it (queue or SSE route) is gone and won't return. We don't
+   *  know if the LLM call actually completed before the crash, so failing is
+   *  safer than requeuing (which could double-bill and produce duplicate
+   *  analyses). The user can manually retry from the queue page. */
+  public failStaleProcessing(): number {
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE llm_tasks
+         SET status = 'failed', completedAt = ?, error = ?
+         WHERE status = 'processing'`
+      )
+      .run(now, 'Server restarted while task was processing');
+    return result.changes;
   }
 
   public retry(id: string): void {

@@ -1,23 +1,3 @@
-export interface LLMConfig {
-  enabled: boolean;
-  provider: 'openai' | 'anthropic';
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-  temperature: number;
-  parallelRequests?: number;
-}
-
-export interface LLMProvider {
-  sendMessage(prompt: string): Promise<{
-    content: string;
-    usage: { inputTokens: number; outputTokens: number };
-    model: string;
-  }>;
-  validateConfig(): Promise<boolean>;
-  getAvailableModels(): Promise<string[]>;
-}
-
 export interface OverviewStats {
   totalTests: number;
   totalRuns: number;
@@ -93,6 +73,13 @@ export interface LlmTask {
   completedAt?: string;
   retryCount: number;
   maxRetries: number;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  /** SHA-256 hex (16-char prefix) of the templateOnly segments that produced
+   *  this analysis. Lets the UI distinguish runs of the same test that were
+   *  produced by different prompt revisions. */
+  promptVersion?: string | null;
 }
 
 export interface LlmTaskStats {

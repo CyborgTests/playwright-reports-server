@@ -104,9 +104,25 @@ export default function SettingsPage() {
           if (tempConfig.llm.model) {
             formData.append('llmModel', tempConfig.llm.model);
           }
-          if (tempConfig.llm.temperature !== undefined) {
-            formData.append('llmTemperature', tempConfig.llm.temperature.toString());
-          }
+          // Per-task temperature overrides. Send always to allow clearing.
+          formData.append(
+            'llmTestAnalysisTemperature',
+            tempConfig.llm.testAnalysisTemperature !== undefined
+              ? tempConfig.llm.testAnalysisTemperature.toString()
+              : ''
+          );
+          formData.append(
+            'llmReportSummaryTemperature',
+            tempConfig.llm.reportSummaryTemperature !== undefined
+              ? tempConfig.llm.reportSummaryTemperature.toString()
+              : ''
+          );
+          formData.append(
+            'llmProjectSummaryTemperature',
+            tempConfig.llm.projectSummaryTemperature !== undefined
+              ? tempConfig.llm.projectSummaryTemperature.toString()
+              : ''
+          );
           if (tempConfig.llm.parallelRequests !== undefined) {
             formData.append('llmParallelRequests', tempConfig.llm.parallelRequests.toString());
           }
@@ -116,6 +132,34 @@ export default function SettingsPage() {
               tempConfig.llm.autoAnalyzeNewReports.toString()
             );
           }
+          // New mode/limit fields. We send them on every save so blanking a value
+          // (set to undefined in temp state) clears the override on the backend.
+          formData.append(
+            'llmMaxTokens',
+            tempConfig.llm.maxTokens !== undefined ? tempConfig.llm.maxTokens.toString() : ''
+          );
+          formData.append(
+            'llmContextWindow',
+            tempConfig.llm.contextWindow !== undefined
+              ? tempConfig.llm.contextWindow.toString()
+              : ''
+          );
+          formData.append('llmStructuredOutputMode', tempConfig.llm.structuredOutputMode ?? '');
+          formData.append('llmMultimodalMode', tempConfig.llm.multimodalMode ?? '');
+          // Custom prompts — same "send always to allow clearing" pattern.
+          formData.append('llmCustomSystemPrompt', tempConfig.llm.customSystemPrompt ?? '');
+          formData.append(
+            'llmCustomTestAnalysisInstructions',
+            tempConfig.llm.customTestAnalysisInstructions ?? ''
+          );
+          formData.append(
+            'llmCustomReportSummaryInstructions',
+            tempConfig.llm.customReportSummaryInstructions ?? ''
+          );
+          formData.append(
+            'llmCustomProjectSummaryInstructions',
+            tempConfig.llm.customProjectSummaryInstructions ?? ''
+          );
         }
       } else if (section === 'testManagement') {
         if (tempConfig.testManagement) {

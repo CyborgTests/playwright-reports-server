@@ -7,14 +7,36 @@ export interface DateRange {
 
 export type LLMProviderType = 'openai' | 'anthropic';
 
+export type LLMStructuredOutputMode = 'auto' | 'force' | 'disabled';
+export type LLMMultimodalMode = 'auto' | 'force' | 'disabled';
+
 export interface LLMConfig {
   provider?: LLMProviderType;
   baseUrl?: string;
   apiKey?: string;
   model?: string;
-  temperature?: number;
+  /** Per-task temperature. Undefined → fall back to the corresponding entry
+   *  in `defaults` (server-side constant). Each task type is set independently. */
+  testAnalysisTemperature?: number;
+  reportSummaryTemperature?: number;
+  projectSummaryTemperature?: number;
+  /** Read-only — populated by GET /api/config so the UI can show the active
+   *  defaults as input placeholders. Ignored on PATCH (server constants). */
+  defaults?: {
+    testAnalysisTemperature: number;
+    reportSummaryTemperature: number;
+    projectSummaryTemperature: number;
+  };
   parallelRequests?: number;
   autoAnalyzeNewReports?: boolean;
+  maxTokens?: number;
+  contextWindow?: number;
+  structuredOutputMode?: LLMStructuredOutputMode;
+  multimodalMode?: LLMMultimodalMode;
+  customSystemPrompt?: string;
+  customTestAnalysisInstructions?: string;
+  customReportSummaryInstructions?: string;
+  customProjectSummaryInstructions?: string;
 }
 
 export interface TestManagementConfig {

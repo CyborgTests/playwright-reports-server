@@ -74,8 +74,25 @@ export const env = cleanEnv(process.env, {
     desc: 'LLM model name, by default will take some model from /models endpoint',
     default: undefined,
   }),
-  LLM_TEMPERATURE: num({ desc: 'LLM temperature (0-2)', default: undefined }),
+  LLM_MAX_TOKENS: num({
+    desc: 'Max output tokens. OpenAI/local omit when unset; Anthropic falls back to a safe default.',
+    default: undefined,
+  }),
+  LLM_CONTEXT_WINDOW: num({
+    desc: 'Override detected model context window (tokens). Useful for local models that do not advertise it via /models.',
+    default: undefined,
+  }),
   LLM_PARALLEL_REQUESTS: num({ desc: 'Number of parallel LLM requests', default: 1 }),
+  LLM_STRUCTURED_OUTPUT_MODE: str({
+    desc: 'How to request structured output: auto (try; fall back to text on unsupported), force (require), disabled (always text).',
+    default: 'auto',
+    choices: ['auto', 'force', 'disabled'],
+  }),
+  LLM_MULTIMODAL_MODE: str({
+    desc: 'How to attach screenshots for visual failures: auto (try; fall back on unsupported), force (require), disabled (never attach images).',
+    default: 'auto',
+    choices: ['auto', 'force', 'disabled'],
+  }),
   // Test management
   TEST_FLAKINESS_QUARANTINE_THRESHOLD: num({
     desc: 'Flakiness percentage threshold for quarantine (default: 5%)',

@@ -10,6 +10,61 @@ export function useLlmTaskStats() {
   });
 }
 
+export interface LlmUsageStats {
+  days: number;
+  fromDate: string;
+  totals: {
+    tasks: number;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
+  byType: Record<
+    string,
+    {
+      type: string;
+      tasks: number;
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+    }
+  >;
+  reuse: {
+    analyses: number;
+    reused: number;
+    rate: number;
+  };
+}
+
+export interface LlmDefaultPrompt {
+  /** Default template for this slot. Contains {{var}} placeholders; rendered
+   *  through the same applyMustache path as user overrides, so the default
+   *  shown in the UI doubles as a canonical usage example. */
+  content: string;
+  vars: string[];
+}
+
+export interface LlmDefaultPrompts {
+  systemPrompt: LlmDefaultPrompt;
+  testAnalysisInstructions: LlmDefaultPrompt;
+  reportSummaryInstructions: LlmDefaultPrompt;
+  projectSummaryInstructions: LlmDefaultPrompt;
+}
+
+export function useLlmDefaultPrompts() {
+  return useQuery<{ success: boolean; data: LlmDefaultPrompts }>('/api/llm/default-prompts', {
+    // Defaults change only when the codebase changes — long stale time.
+    staleTime: 60 * 60 * 1000,
+  });
+}
+
+export function useLlmUsageStats(days: number) {
+  return useQuery<{ success: boolean; data: LlmUsageStats }>(`/api/llm/usage-stats?days=${days}`, {
+    dependencies: [days],
+    staleTime: 30_000,
+  });
+}
+
 export function useLlmTasks(filters: {
   status?: string;
   type?: string;

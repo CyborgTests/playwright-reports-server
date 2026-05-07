@@ -21,10 +21,42 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useLlmTaskStats, useLlmTasks } from '@/hooks/useLlmTasks';
+import { useLlmTaskStats, useLlmTasks, useLlmUsageStats } from '@/hooks/useLlmTasks';
 import useMutation from '@/hooks/useMutation';
 import { formatCategoryName } from '@/lib/format';
 import { invalidateCache } from '@/lib/query-cache';
+import { withBase } from '@/lib/url';
+
+/** Short, single-word labels for the task-type filter and column. The DB
+ *  stores `test_analysis` / `report_summary` / `project_summary`; these are
+ *  noisy in a list view, so collapse them. */
+const TYPE_SHORT_LABEL: Record<string, string> = {
+  test_analysis: 'Test',
+  report_summary: 'Report',
+  project_summary: 'Project',
+};
+
+/** Build the URL to the served Playwright report with a deep-link to a test.
+ *  Mirrors the hash format the Playwright report viewer parses. */
+function buildServedTestUrl(reportId: string, testId?: string): string {
+  const base = withBase(`/api/serve/${reportId}/index.html`);
+  return testId ? `${base}#?testId=${encodeURIComponent(testId)}` : base;
+}
+
+/** Compact "in / out" formatter for the Tokens column. Returns "-" when no
+ *  usage was captured (queued task, or reused analysis with no LLM call). */
+function formatTokens(input?: number | null, output?: number | null): string {
+  if ((input ?? 0) === 0 && (output ?? 0) === 0) return '-';
+  return `${input ?? 0} / ${output ?? 0}`;
+}
+
+/** Human-readable big-number formatter: 1234567 → "1.2M", 4567 → "4.6K". */
+function formatCount(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}K`;
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  return `${(n / 1_000_000_000).toFixed(1)}B`;
+}
 
 const PAGE_SIZE = 25;
 
@@ -88,8 +120,12 @@ export default function LlmQueuePage() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [page, setPage] = useState(0);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Usage card period — 7d default, toggleable to 30d.
+  const [usageDays, setUsageDays] = useState<7 | 30>(7);
 
   const { data: stats, refetch: refetchStats } = useLlmTaskStats();
+  const { data: usageData, refetch: refetchUsage } = useLlmUsageStats(usageDays);
+  const usage = usageData?.data;
   const { data: tasksData, refetch: refetchTasks } = useLlmTasks({
     status: statusFilter === 'all' ? undefined : statusFilter,
     type: typeFilter === 'all' ? undefined : typeFilter,
@@ -109,6 +145,12 @@ export default function LlmQueuePage() {
     }, 5000);
     return () => clearInterval(interval);
   }, [refetchStats, refetchTasks]);
+
+  // Refresh usage stats less aggressively — period is in days, no need to poll fast.
+  useEffect(() => {
+    const interval = setInterval(() => refetchUsage(), 60_000);
+    return () => clearInterval(interval);
+  }, [refetchUsage]);
 
   const invalidateLlmQueries = useCallback(() => {
     invalidateCache(queryClient, { predicate: '/api/llm' });
@@ -260,6 +302,85 @@ export default function LlmQueuePage() {
         ))}
       </div>
 
+      {/* Usage Card — aggregated tokens + reuse rate over the selected period.
+          Shown alongside the queue-status stat bar above so the user has both
+          "what's happening right now" and "what did this cost" in one view. */}
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">Usage</CardTitle>
+            <span className="text-xs text-muted-foreground">
+              completed tasks · last {usageDays}d
+            </span>
+          </div>
+          <div className="flex gap-1">
+            {([7, 30] as const).map((d) => (
+              <Button
+                key={d}
+                size="sm"
+                variant={usageDays === d ? 'default' : 'outline'}
+                onClick={() => setUsageDays(d)}
+              >
+                {d}d
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div>
+            <div className="text-2xl font-bold">{formatCount(usage?.totals.tasks ?? 0)}</div>
+            <div className="text-xs text-muted-foreground">tasks completed</div>
+          </div>
+          <div>
+            <div className="text-2xl font-bold">{formatCount(usage?.totals.inputTokens ?? 0)}</div>
+            <div className="text-xs text-muted-foreground">input tokens</div>
+          </div>
+          <div>
+            <div className="text-2xl font-bold">{formatCount(usage?.totals.outputTokens ?? 0)}</div>
+            <div className="text-xs text-muted-foreground">output tokens</div>
+          </div>
+          <div>
+            <div className="text-2xl font-bold">
+              {usage ? `${Math.round(usage.reuse.rate * 100)}%` : '—'}
+            </div>
+            <div
+              className="text-xs text-muted-foreground"
+              title={
+                usage
+                  ? `${usage.reuse.reused} of ${usage.reuse.analyses} analyses reused via signature match`
+                  : ''
+              }
+            >
+              reused (no LLM call)
+            </div>
+          </div>
+        </div>
+
+        {/* Per-type breakdown — small, secondary. Helps the user see where the
+            tokens are going. Hidden when the period had no completed tasks. */}
+        {usage && usage.totals.tasks > 0 && (
+          <div className="mt-4 pt-3 border-t border-border space-y-1">
+            {(['test_analysis', 'report_summary', 'project_summary'] as const).map((t) => {
+              const row = usage.byType[t];
+              if (!row) return null;
+              return (
+                <div
+                  key={t}
+                  className="flex items-center justify-between text-xs text-muted-foreground"
+                >
+                  <span className="font-medium">{TYPE_SHORT_LABEL[t]}</span>
+                  <span>
+                    {row.tasks} {row.tasks === 1 ? 'task' : 'tasks'} ·{' '}
+                    {formatCount(row.totalTokens)} tokens
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
       {/* Filters Row */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
@@ -287,7 +408,7 @@ export default function LlmQueuePage() {
             <SelectContent>
               {TYPE_OPTIONS.map((t) => (
                 <SelectItem key={t} value={t}>
-                  {t === 'all' ? 'All' : formatCategoryName(t)}
+                  {t === 'all' ? 'All' : (TYPE_SHORT_LABEL[t] ?? formatCategoryName(t))}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -367,6 +488,8 @@ export default function LlmQueuePage() {
               <TableHead>Type</TableHead>
               <TableHead>Report</TableHead>
               <TableHead>Test</TableHead>
+              <TableHead>Model</TableHead>
+              <TableHead>Tokens (in/out)</TableHead>
               <TableHead>Created</TableHead>
               <TableHead>Duration</TableHead>
               <TableHead>Error</TableHead>
@@ -376,7 +499,7 @@ export default function LlmQueuePage() {
           <TableBody>
             {tasks.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
                   No tasks found
                 </TableCell>
               </TableRow>
@@ -391,9 +514,52 @@ export default function LlmQueuePage() {
                     />
                   </TableCell>
                   <TableCell>
-                    <Badge variant={statusBadgeVariant(task.status)}>{task.status}</Badge>
+                    <div className="flex flex-col gap-1">
+                      <Badge variant={statusBadgeVariant(task.status)}>{task.status}</Badge>
+                      {/* Reused-via-signature: completed test_analysis task whose reuse path
+                          explicitly wrote {inputTokens: 0, outputTokens: 0}. We require
+                          STRICT zero (not `?? 0`) so old rows with NULL tokens — captured
+                          before token persistence existed — don't get a false-positive badge. */}
+                      {task.status === 'completed' &&
+                        task.type === 'test_analysis' &&
+                        task.inputTokens === 0 &&
+                        task.outputTokens === 0 && (
+                          <Badge
+                            variant="secondary"
+                            className="text-xs"
+                            title="Analysis was reused from a prior signature match — no LLM call was made."
+                          >
+                            ♻ Reused
+                          </Badge>
+                        )}
+                      {/* Partial result during streaming: incremental persistence has flushed
+                          some tokens but the stream hasn't completed yet. */}
+                      {task.status === 'processing' && task.result && task.result.length > 0 && (
+                        <Badge
+                          variant="outline"
+                          className="text-xs"
+                          title="Streaming in progress — partial content is already persisted."
+                        >
+                          Streaming
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
-                  <TableCell className="text-sm">{formatCategoryName(task.type)}</TableCell>
+                  <TableCell className="text-sm">
+                    <div className="flex flex-col gap-0.5">
+                      <span>{TYPE_SHORT_LABEL[task.type] ?? formatCategoryName(task.type)}</span>
+                      {/* Prompt version (templateOnly hash) — surfaces which prompt revision
+                          produced this analysis, useful when debugging unexpected category drift. */}
+                      {task.promptVersion && (
+                        <span
+                          className="text-[11px] font-mono text-muted-foreground"
+                          title={`Prompt template version: ${task.promptVersion}`}
+                        >
+                          v{task.promptVersion.slice(0, 8)}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     {task.reportId ? (
                       <Link
@@ -407,13 +573,30 @@ export default function LlmQueuePage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {task.testId ? (
-                      <span className="text-sm font-mono" title={task.testId}>
-                        {task.testId.length > 20 ? `${task.testId.slice(0, 20)}...` : task.testId}
+                    {task.testId && task.reportId ? (
+                      // Link to the served Playwright report with a deep-link to this test.
+                      // Opens in a new tab so the user keeps the queue page in place.
+                      <a
+                        href={buildServedTestUrl(task.reportId, task.testId)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-mono text-primary hover:underline break-all whitespace-normal"
+                      >
+                        {task.testId}
+                      </a>
+                    ) : task.testId ? (
+                      <span className="text-sm font-mono break-all whitespace-normal">
+                        {task.testId}
                       </span>
                     ) : (
                       <span className="text-sm text-muted-foreground">-</span>
                     )}
+                  </TableCell>
+                  <TableCell className="text-sm break-all whitespace-normal">
+                    {task.model ?? <span className="text-muted-foreground">-</span>}
+                  </TableCell>
+                  <TableCell className="text-sm font-mono whitespace-nowrap">
+                    {formatTokens(task.inputTokens, task.outputTokens)}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {formatRelativeTime(task.createdAt)}

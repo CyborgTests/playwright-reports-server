@@ -1,11 +1,45 @@
-import type { LLMRequest, LLMResponse, LLMStreamChunk, StreamAccumulator } from '../types/index.js';
+import type {
+  LLMRequest,
+  LLMResponse,
+  LLMStreamChunk,
+  PromptSegment,
+  SegmentedPrompt,
+  StreamAccumulator,
+} from '../types/index.js';
 import { LLMProvider } from './base.js';
 import type {
+  AnthropicContentBlock,
+  AnthropicImageBlock,
   AnthropicModelList,
   AnthropicRequest,
   AnthropicResponse,
   AnthropicStreamChunk,
+  AnthropicTextBlock,
 } from './types.js';
+
+const DEFAULT_ANTHROPIC_MAX_TOKENS = 8000;
+
+/**
+ * Anthropic does not expose context windows via /v1/models, so we look them up
+ * by model-family prefix. Returns null for unknown models (caller falls back
+ * to a safe default or to manual config override).
+ *
+ * Source: https://docs.anthropic.com/en/docs/about-claude/models — keep this
+ * roughly in sync. All Claude 3.x and 4.x models documented at writing
+ * support 200k context.
+ */
+function lookupAnthropicContextWindow(model: string): number | null {
+  if (!model) return null;
+  const m = model.toLowerCase();
+  // Claude 4.x and 3.x families all advertise 200k context.
+  if (m.includes('claude-opus') || m.includes('claude-sonnet') || m.includes('claude-haiku')) {
+    return 200_000;
+  }
+  if (m.startsWith('claude-3') || m.startsWith('claude-4')) {
+    return 200_000;
+  }
+  return null;
+}
 
 export class AnthropicProvider extends LLMProvider {
   protected getApiEndpoint(): string {
@@ -31,29 +65,135 @@ export class AnthropicProvider extends LLMProvider {
 
     return {
       model: this.config.model,
-      max_tokens: 8000,
       messages,
       system: systemPrompt,
       temperature: this.config.temperature,
-    } as AnthropicRequest;
+      maxTokens: this.config.maxTokens,
+    };
+  }
+
+  /**
+   * Build the Anthropic body from a segmented prompt. Joins same-role segments
+   * (system/user) into single fields, then applies cache_control:ephemeral on
+   * the last stable system block and the last stable user block. Two cache
+   * breakpoints — well within Anthropic's 4-block limit — capture the full
+   * stable prefix while leaving the varying tail uncached.
+   */
+  private buildBodyFromSegments(segments: PromptSegment[], request: LLMRequest): AnthropicRequest {
+    const systemBlocks: AnthropicTextBlock[] = [];
+    const userBlocks: AnthropicContentBlock[] = [];
+    // Track the index of each segment's first text block so we can place
+    // cache_control on the right one (Anthropic caches the prefix up to and
+    // including the marked block — must be a stable segment's text block).
+    let lastStableSystemTextIdx = -1;
+    let lastStableUserTextIdx = -1;
+
+    for (const seg of segments) {
+      // Image blocks come BEFORE the segment's text, in line with Anthropic's
+      // recommendation that visual context precede the textual instruction
+      // referring to it.
+      if (seg.role === 'user' && seg.images && seg.images.length > 0) {
+        for (const img of seg.images) {
+          const imgBlock: AnthropicImageBlock = {
+            type: 'image',
+            source: { type: 'base64', media_type: img.mediaType, data: img.data },
+          };
+          userBlocks.push(imgBlock);
+        }
+      }
+
+      const textBlock: AnthropicTextBlock = { type: 'text', text: seg.content };
+      if (seg.role === 'system') {
+        if (seg.stable) lastStableSystemTextIdx = systemBlocks.length;
+        systemBlocks.push(textBlock);
+      } else {
+        if (seg.stable) lastStableUserTextIdx = userBlocks.length;
+        userBlocks.push(textBlock);
+      }
+    }
+
+    if (lastStableSystemTextIdx >= 0) {
+      systemBlocks[lastStableSystemTextIdx].cache_control = { type: 'ephemeral' };
+    }
+    if (lastStableUserTextIdx >= 0) {
+      const target = userBlocks[lastStableUserTextIdx];
+      if (target.type === 'text') {
+        target.cache_control = { type: 'ephemeral' };
+      }
+    }
+
+    const body: AnthropicRequest = {
+      model: request.model,
+      max_tokens: request.maxTokens ?? DEFAULT_ANTHROPIC_MAX_TOKENS,
+      messages: [{ role: 'user', content: userBlocks }],
+      system: systemBlocks,
+      temperature: request.temperature,
+    };
+
+    if (request.responseSchema) {
+      // Anthropic structured output via forced tool use: define a single tool
+      // matching the schema, then force the model to call it via tool_choice.
+      // The tool_use input block in the response carries the typed JSON.
+      body.tools = [
+        {
+          name: request.responseSchema.name,
+          description: request.responseSchema.description,
+          input_schema: request.responseSchema.schema,
+        },
+      ];
+      body.tool_choice = { type: 'tool', name: request.responseSchema.name };
+    }
+
+    return body;
   }
 
   protected formatRequestBody(request: LLMRequest): AnthropicRequest {
-    return request as AnthropicRequest;
+    if (request.segments && request.segments.length > 0) {
+      return this.buildBodyFromSegments(request.segments, request);
+    }
+
+    // Legacy path: messages + system as plain strings.
+    return {
+      model: request.model,
+      max_tokens: request.maxTokens ?? DEFAULT_ANTHROPIC_MAX_TOKENS,
+      messages: request.messages.map((m) => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content,
+      })),
+      system: request.system,
+      temperature: request.temperature,
+    };
   }
 
   protected formatStreamRequestBody(request: LLMRequest): AnthropicRequest {
     return {
-      ...(request as AnthropicRequest),
+      ...this.formatRequestBody(request),
       stream: true,
     };
   }
 
-  protected async parseResponse(response: Response): Promise<LLMResponse> {
+  protected async parseResponse(response: Response, _request?: LLMRequest): Promise<LLMResponse> {
     const data = (await response.json()) as AnthropicResponse;
 
+    // Prefer tool_use input when present (structured output path); otherwise
+    // fall back to the first text block.
+    const toolBlock = data.content?.find((b) => b.type === 'tool_use');
+    const textBlock = data.content?.find((b) => b.type === 'text');
+
+    let structuredOutput: unknown;
+    let content = '';
+    if (toolBlock?.input !== undefined) {
+      structuredOutput = toolBlock.input;
+      // Carry a JSON-stringified copy in `content` so legacy code paths that
+      // parse the text response keep working as a fallback.
+      content = JSON.stringify(toolBlock.input);
+    } else if (textBlock?.text) {
+      content = textBlock.text;
+    }
+
     return {
-      content: data.content?.[0]?.text || '',
+      content,
+      structuredOutput,
       usage: {
         inputTokens: data.usage?.input_tokens || 0,
         outputTokens: data.usage?.output_tokens || 0,
@@ -84,6 +224,21 @@ export class AnthropicProvider extends LLMProvider {
         }
       }
 
+      // Structured-output (tool_use) streaming: forced via tool_choice when
+      // `responseSchema` is set. Anthropic emits the tool input as a stream of
+      // `input_json_delta` chunks whose `partial_json` fragments concatenate
+      // into valid JSON. Surface them as token chunks so the consumer can
+      // accumulate and JSON.parse the complete envelope on `done`.
+      if (chunk.type === 'content_block_delta' && chunk.delta?.type === 'input_json_delta') {
+        const partial = chunk.delta.partial_json;
+        if (partial) {
+          return {
+            type: 'token',
+            content: partial,
+          };
+        }
+      }
+
       if (chunk.type === 'message_stop' && chunk.message?.usage) {
         accumulator.usage = {
           inputTokens: chunk.message.usage.input_tokens || 0,
@@ -110,5 +265,52 @@ export class AnthropicProvider extends LLMProvider {
 
   protected extractModelIds(data: AnthropicModelList): string[] {
     return data.data?.map((model) => model.id) || [];
+  }
+
+  protected async detectContextWindow(): Promise<number | null> {
+    return lookupAnthropicContextWindow(this.config.model);
+  }
+
+  /**
+   * Exact token count via Anthropic's /v1/messages/count_tokens. Free, no
+   * billing impact, and uses the same tokenization the model itself uses.
+   * Falls back to the base 4-chars-per-token estimator on failure.
+   */
+  override async countTokens(prompt: SegmentedPrompt): Promise<number> {
+    if (!prompt.segments.length) return 0;
+
+    const body = this.buildBodyFromSegments(prompt.segments, {
+      model: this.config.model,
+      messages: [],
+      segments: prompt.segments,
+      maxTokens: 1,
+    });
+
+    try {
+      const response = await this.withTimeout(
+        fetch(`${this.config.baseUrl}/messages/count_tokens`, {
+          method: 'POST',
+          headers: this.getHeaders(),
+          body: JSON.stringify({
+            model: body.model,
+            messages: body.messages,
+            system: body.system,
+          }),
+        }),
+        10_000
+      );
+      if (!response.ok) {
+        return this.estimateTokensFromText(this.serializeSegmentsForCounting(prompt));
+      }
+      const data = (await response.json()) as { input_tokens?: number };
+      if (typeof data.input_tokens === 'number') {
+        return data.input_tokens;
+      }
+    } catch (err) {
+      console.warn(
+        `[llm] count_tokens failed, falling back to estimator: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+    return this.estimateTokensFromText(this.serializeSegmentsForCounting(prompt));
   }
 }

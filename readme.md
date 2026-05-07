@@ -134,43 +134,42 @@ If you want to persist reports and results on S3 compatible storage, you need to
 
 ### LLM
 
-When configured, the LLM integration provides failure analysis across the application. It is enabled ONLY if LLM provider is configured.
+When configured, the LLM integration provides failure analysis across the application. It is enabled ONLY if an LLM provider is configured.
 
-#### Configuration
+#### Configuration (env)
 
-| Name                     | Description                                                      | Default                |
-|--------------------------|------------------------------------------------------------------|------------------------|
-| `LLM_PROVIDER`           | LLM provider to use for test failure analysis (openai\anthropic) | openai                 |
-| `LLM_BASE_URL`           | Base URL for the LLM API                                         |                        |
-| `LLM_API_KEY`            | API key for the LLM provider                                     |                        |
-| `LLM_MODEL`              | Model to use for the LLM provider                                | checks /model endpoint |
-| `LLM_TEMPERATURE`        | Temperature setting for the LLM                                  | 0.3                    |
-| `LLM_PARALLEL_REQUESTS`  | Number of concurrent LLM requests for background analysis queue  | 1                      |
+The minimum to enable LLM features is `LLM_BASE_URL` + `LLM_API_KEY`. Everything else has sensible defaults or is configurable at runtime via the Settings page.
+NB! Provider - not the exact company that serves your token casino, it's the API format.  
 
-#### Playwright Report — Per-Test Analysis
+| Name                          | Description                                                                                                                  | Default                |
+|-------------------------------|------------------------------------------------------------------------------------------------------------------------------|------------------------|
+| `LLM_PROVIDER`                | LLM provider (`openai` \| `anthropic`)                                                                                       | `openai`               |
+| `LLM_BASE_URL`                | Base URL for the LLM API                                                                                                     |                        |
+| `LLM_API_KEY`                 | API key for the LLM provider                                                                                                 |                        |
+| `LLM_MODEL`                   | Model to use; first model from `/models` endpoint when unset                                                                 | first available        |
+| `LLM_PARALLEL_REQUESTS`       | Concurrent LLM requests for the background analysis queue                                                                    | `1`                    |
+| `LLM_MAX_TOKENS`              | Cap on output tokens per request. OpenAI/local omit when blank; Anthropic falls back to a safe default (its API requires it) |                        |
+| `LLM_CONTEXT_WINDOW`          | Override detected model context window in tokens (useful for local models that don't advertise it)                           | auto-detect            |
+| `LLM_STRUCTURED_OUTPUT_MODE`  | `auto` (try; fall back to text on unsupported), `force`, `disabled`                                                          | `auto`                 |
+| `LLM_MULTIMODAL_MODE`         | `auto` (attach images; fall back on unsupported), `force`, `disabled`                                                        | `auto`                 |
 
-For failed tests in the served Playwright HTML report, the LLM analysis is exposed in one of two states:
+#### Settings UI
 
-- **Analysis already done** — an inline **LLM Analysis widget** appears above the errors area with the cached result, the model name, the failure category badge, and a **Retry** button. This is the common case once background processing has run for the test.
-- **Analysis not yet done** — an **"Ask LLM"** button is added next to Playwright's "Copy prompt" so you can trigger analysis on demand. Once the analysis arrives the button is hidden and the inline widget takes over.
+The Settings page (`/settings` → LLM Configuration) exposes everything tunable at runtime, restartless on save:
+
+- **Provider / base URL / API key / model** — same as env, but overridable per environment.
+- **Refresh available models** — calls the provider's `/models` endpoint
+- **Test connection** — validates draft config without mutating the active provider.
+- **Max output tokens / context window override** — both optional; blank uses provider default / auto-detect.
+- **Structured output mode** — `auto` / `force` / `disabled`. On `auto`, an unsupported-by-model error is memoized for 1h and the request retries text-only.
+- **Multimodal mode** — same shape, controls whether failure screenshots are attached to test analyses on vision-capable models.
+- **Per-task temperatures** — three independent fields (test analysis, report summary, project summary).
+- **Custom prompts** — tune the prompts if you are into prompt-engineering
+- **Auto-analyze new reports** — when enabled, every new failed test and report analysis tasks are queued automatically.
 
 #### Feedback widget (test-level)
 
 Below the analysis area, a **Feedback** panel is injected into the served Playwright report. It has an option to add a single shared note that becomes context for future LLM analyses.
-
-At a glance, the header shows:
-
-- 💬 *Feedback (updated 2h ago)* — current state
-- **🆕 New error** — this exact failure shape (matching `errorSignature`) has not been seen in any prior run of this test, OR
-- **🔁 N prior occurrences** — this failure has happened before, plus an inline "First found in [report X] — Nd ago" link
-- **🔗 N other projects** — same test has feedback in other projects
-- **⚠ Stale indicator** — your feedback is newer than the latest analysis
-
-Expand the panel to:
-
-- Read/edit the note (textarea + Save/Delete)
-- Click **Regenerate** to enqueue a fresh `test_analysis` task that includes your feedback in the prompt
-- Tick **"Also refresh report summary after this test"** to cascade — re-run the test analysis AND the report-level summary in one click
 
 #### Report Detail Page — Failure Summary
 
@@ -183,20 +182,11 @@ On each report's detail page a **Failure Summary** card appears when the report 
 
 - **Failure Categories Chart** — horizontal bar chart showing the breakdown of failure types across the latest failed reports
 - **Most Common Failures** — card listing the top 5 error patterns with category badges, occurrence counts, and expandable error messages
-- **LLM Failure Analysis** — project-level summary with a "Generate Analysis" button that streams an LLM synthesis of failure trends across the latest failed reports.
+- **LLM Failure Analysis** — project-level summary with a "Generate Analysis" button that streams an LLM synthesis of failure trends across the latest failed reports
 
 #### LLM Queue Page
 
-Accessible from **Settings → LLM Configuration → "LLM Queue" button**
-The queue page provides full visibility and control over LLM background tasks processing.
-
-#### Background Processing
-
-App will automagically:
-
-1. Extract failure details from each failed test for every new report available (error message, stack trace, page context from traces)
-2. Queue per-test LLM analysis tasks (categorization + root cause + fix suggestion)
-3. After all test analyses complete, queue a report-level summary task
+Accessible from **Settings → LLM Configuration → "LLM Queue" button**. Provides full visibility and control over LLM background-task processing.
 
 ### Test Management
 

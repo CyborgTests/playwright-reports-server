@@ -71,6 +71,7 @@ const useQuery = <ReturnType>(
     ...(options?.retry !== undefined && { retry: options.retry }),
     ...(options?.select !== undefined && { select: options.select }),
     ...(options?.placeholderData !== undefined && { placeholderData: options.placeholderData }),
+    ...(options?.refetchInterval !== undefined && { refetchInterval: options.refetchInterval }),
   });
 };
 

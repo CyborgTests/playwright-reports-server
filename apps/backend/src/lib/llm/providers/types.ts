@@ -1,23 +1,58 @@
+export interface AnthropicCacheControl {
+  type: 'ephemeral';
+}
+
+export interface AnthropicTextBlock {
+  type: 'text';
+  text: string;
+  cache_control?: AnthropicCacheControl;
+}
+
+export interface AnthropicImageBlock {
+  type: 'image';
+  source: {
+    type: 'base64';
+    media_type: string;
+    data: string;
+  };
+  cache_control?: AnthropicCacheControl;
+}
+
+export type AnthropicContentBlock = AnthropicTextBlock | AnthropicImageBlock;
+
+export interface AnthropicTool {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+}
+
 export interface AnthropicRequest {
   model: string;
   max_tokens: number;
   messages: Array<{
     role: 'user' | 'assistant';
-    content: string;
+    content: string | AnthropicContentBlock[];
   }>;
-  system?: string;
+  system?: string | AnthropicTextBlock[];
   temperature?: number;
   stream?: boolean;
+  tools?: AnthropicTool[];
+  tool_choice?: { type: 'tool'; name: string } | { type: 'auto' } | { type: 'any' };
+}
+
+export interface AnthropicResponseContentBlock {
+  type: 'text' | 'tool_use';
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
 }
 
 export interface AnthropicResponse {
   id: string;
   type: string;
   role: string;
-  content: Array<{
-    type: string;
-    text: string;
-  }>;
+  content: AnthropicResponseContentBlock[];
   model: string;
   stop_reason: string | null;
   stop_sequence: string | null;
@@ -38,14 +73,38 @@ export interface AnthropicModelList {
   data: AnthropicModel[];
 }
 
+export interface OpenAIResponseFormat {
+  type: 'json_schema';
+  json_schema: {
+    name: string;
+    description?: string;
+    schema: Record<string, unknown>;
+    strict?: boolean;
+  };
+}
+
+export interface OpenAITextPart {
+  type: 'text';
+  text: string;
+}
+
+export interface OpenAIImagePart {
+  type: 'image_url';
+  image_url: { url: string; detail?: 'auto' | 'low' | 'high' };
+}
+
+export type OpenAIMessageContent = string | Array<OpenAITextPart | OpenAIImagePart>;
+
 export interface OpenAIRequest {
   model: string;
   messages: Array<{
     role: 'user' | 'assistant' | 'system';
-    content: string;
+    content: OpenAIMessageContent;
   }>;
   max_tokens?: number;
   temperature?: number;
+  stream?: boolean;
+  response_format?: OpenAIResponseFormat;
 }
 
 export interface OpenAIResponse {
@@ -118,6 +177,10 @@ export interface AnthropicStreamChunk {
   delta?: {
     type: string;
     text?: string;
+    /** Set when delta.type === 'input_json_delta' (tool_use streaming).
+     *  Carries a JSON-string fragment of the tool's `input` field; the
+     *  concatenation of all deltas is valid JSON. */
+    partial_json?: string;
   };
   content_block?: AnthropicStreamContentBlockDelta;
   usage?: {

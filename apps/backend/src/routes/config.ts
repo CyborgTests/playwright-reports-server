@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
 import { llmService } from '../lib/llm/index.js';
+import { TASK_TEMPERATURE_DEFAULTS } from '../lib/service/llmAnalysisQueue.js';
 import { CronService, cronService } from '../lib/service/cron.js';
 import { getDatabaseStats } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
@@ -94,9 +95,19 @@ interface ConfigFormData {
   llmBaseUrl?: string;
   llmApiKey?: string;
   llmModel?: string;
-  llmTemperature?: string;
+  llmTestAnalysisTemperature?: string;
+  llmReportSummaryTemperature?: string;
+  llmProjectSummaryTemperature?: string;
   llmParallelRequests?: string;
   llmAutoAnalyzeNewReports?: string;
+  llmMaxTokens?: string;
+  llmContextWindow?: string;
+  llmStructuredOutputMode?: string;
+  llmMultimodalMode?: string;
+  llmCustomSystemPrompt?: string;
+  llmCustomTestAnalysisInstructions?: string;
+  llmCustomReportSummaryInstructions?: string;
+  llmCustomProjectSummaryInstructions?: string;
   testManagementQuarantineThresholdPercentage?: string;
   testManagementWarningThresholdPercentage?: string;
   testManagementAutoQuarantineEnabled?: string;
@@ -134,11 +145,18 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       baseUrl: config.llm?.baseUrl || env.LLM_BASE_URL,
       apiKey: maskString(config.llm?.apiKey || env.LLM_API_KEY),
       model: config.llm?.model || env.LLM_MODEL,
-      temperature:
-        config.llm?.temperature ??
-        (env.LLM_TEMPERATURE ? Number.parseFloat(String(env.LLM_TEMPERATURE)) : undefined),
+      testAnalysisTemperature: config.llm?.testAnalysisTemperature,
+      reportSummaryTemperature: config.llm?.reportSummaryTemperature,
+      projectSummaryTemperature: config.llm?.projectSummaryTemperature,
       parallelRequests: config.llm?.parallelRequests || 1,
       autoAnalyzeNewReports: !!config.llm?.autoAnalyzeNewReports,
+      // Server-side per-task defaults — read-only, used by the UI to show
+      // active defaults as input placeholders.
+      defaults: {
+        testAnalysisTemperature: TASK_TEMPERATURE_DEFAULTS.testAnalysis,
+        reportSummaryTemperature: TASK_TEMPERATURE_DEFAULTS.reportSummary,
+        projectSummaryTemperature: TASK_TEMPERATURE_DEFAULTS.projectSummary,
+      },
     };
 
     return { ...config, ...envInfo, llm: llmInfo };
@@ -235,14 +253,39 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       if (formData.llmBaseUrl !== undefined) config.llm.baseUrl = formData.llmBaseUrl;
       if (formData.llmApiKey !== undefined) config.llm.apiKey = formData.llmApiKey;
       if (formData.llmModel !== undefined) config.llm.model = formData.llmModel;
-      if (formData.llmTemperature !== undefined) {
-        const temperature = Number.parseFloat(formData.llmTemperature);
-        if (Number.isNaN(temperature)) {
-          return reply.status(400).send({
-            error: 'LLM temperature must be a number between 0 and 2',
-          });
+      // Per-task temperature overrides. Empty string clears (provider falls
+      // back to env-driven default). Range is 0–2 (same as model APIs accept).
+      const parseTaskTemp = (
+        raw: string | undefined,
+        label: string
+      ): number | undefined | { error: string } => {
+        if (raw === undefined) return undefined;
+        const trimmed = raw.trim();
+        if (trimmed === '') return undefined; // explicit clear
+        const n = Number.parseFloat(trimmed);
+        if (Number.isNaN(n) || n < 0 || n > 2) {
+          return { error: `${label} must be a number between 0 and 2` };
         }
-        config.llm.temperature = temperature;
+        return n;
+      };
+      for (const [key, label] of [
+        ['llmTestAnalysisTemperature', 'Test analysis temperature'],
+        ['llmReportSummaryTemperature', 'Report summary temperature'],
+        ['llmProjectSummaryTemperature', 'Project summary temperature'],
+      ] as const) {
+        const raw = formData[key as keyof typeof formData];
+        if (raw === undefined) continue;
+        const parsed = parseTaskTemp(raw, label);
+        if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+          return reply.status(400).send({ error: parsed.error });
+        }
+        const cfgKey =
+          key === 'llmTestAnalysisTemperature'
+            ? 'testAnalysisTemperature'
+            : key === 'llmReportSummaryTemperature'
+              ? 'reportSummaryTemperature'
+              : 'projectSummaryTemperature';
+        config.llm[cfgKey] = parsed as number | undefined;
       }
 
       if (formData.llmParallelRequests !== undefined) {
@@ -260,12 +303,88 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         config.llm.autoAnalyzeNewReports = formData.llmAutoAnalyzeNewReports === 'true';
       }
 
+      // Max output tokens — blank/0 clears the override (provider falls back to env or default).
+      if (formData.llmMaxTokens !== undefined) {
+        const trimmed = formData.llmMaxTokens.trim();
+        if (trimmed === '') {
+          config.llm.maxTokens = undefined;
+        } else {
+          const n = Number.parseInt(trimmed, 10);
+          if (Number.isNaN(n) || n < 1) {
+            return reply.status(400).send({ error: 'LLM max tokens must be a positive integer' });
+          }
+          config.llm.maxTokens = n;
+        }
+      }
+
+      if (formData.llmContextWindow !== undefined) {
+        const trimmed = formData.llmContextWindow.trim();
+        if (trimmed === '') {
+          config.llm.contextWindow = undefined;
+        } else {
+          const n = Number.parseInt(trimmed, 10);
+          if (Number.isNaN(n) || n < 1024) {
+            return reply
+              .status(400)
+              .send({ error: 'LLM context window must be at least 1024 tokens' });
+          }
+          config.llm.contextWindow = n;
+        }
+      }
+
+      if (formData.llmStructuredOutputMode !== undefined) {
+        const v = formData.llmStructuredOutputMode;
+        if (v && !['auto', 'force', 'disabled'].includes(v)) {
+          return reply
+            .status(400)
+            .send({ error: 'LLM structured output mode must be auto, force, or disabled' });
+        }
+        config.llm.structuredOutputMode = (v || undefined) as
+          | 'auto'
+          | 'force'
+          | 'disabled'
+          | undefined;
+      }
+
+      if (formData.llmMultimodalMode !== undefined) {
+        const v = formData.llmMultimodalMode;
+        if (v && !['auto', 'force', 'disabled'].includes(v)) {
+          return reply
+            .status(400)
+            .send({ error: 'LLM multimodal mode must be auto, force, or disabled' });
+        }
+        config.llm.multimodalMode = (v || undefined) as 'auto' | 'force' | 'disabled' | undefined;
+      }
+
+      // Custom prompt overrides — empty string clears the override (falls back to default).
+      if (formData.llmCustomSystemPrompt !== undefined) {
+        config.llm.customSystemPrompt = formData.llmCustomSystemPrompt || undefined;
+      }
+      if (formData.llmCustomTestAnalysisInstructions !== undefined) {
+        config.llm.customTestAnalysisInstructions =
+          formData.llmCustomTestAnalysisInstructions || undefined;
+      }
+      if (formData.llmCustomReportSummaryInstructions !== undefined) {
+        config.llm.customReportSummaryInstructions =
+          formData.llmCustomReportSummaryInstructions || undefined;
+      }
+      if (formData.llmCustomProjectSummaryInstructions !== undefined) {
+        config.llm.customProjectSummaryInstructions =
+          formData.llmCustomProjectSummaryInstructions || undefined;
+      }
+
       const llmConfigChanged = !!(
         formData.llmProvider ||
         formData.llmBaseUrl ||
         formData.llmApiKey ||
         formData.llmModel ||
-        formData.llmTemperature !== undefined
+        formData.llmTestAnalysisTemperature !== undefined ||
+        formData.llmReportSummaryTemperature !== undefined ||
+        formData.llmProjectSummaryTemperature !== undefined ||
+        formData.llmMaxTokens !== undefined ||
+        formData.llmContextWindow !== undefined ||
+        formData.llmStructuredOutputMode !== undefined ||
+        formData.llmMultimodalMode !== undefined
       );
 
       if (llmConfigChanged) {

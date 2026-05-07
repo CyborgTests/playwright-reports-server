@@ -1,11 +1,27 @@
 'use client';
 
+import { isValidElement, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import { CopyButton } from './copy-button';
 import { Badge } from './ui/badge';
+
+/** Recursively flatten a ReactNode tree to plain text. Needed because
+ *  rehype-highlight wraps every code token in a `<span>` element, so
+ *  `String(children)` would emit `[object Object],[object Object],…` for
+ *  the copy button. */
+function reactNodeToText(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') return '';
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(reactNodeToText).join('');
+  if (isValidElement(node)) {
+    return reactNodeToText((node.props as { children?: ReactNode }).children);
+  }
+  return '';
+}
 
 interface MarkdownRendererProps {
   content: string;
@@ -90,13 +106,16 @@ export function MarkdownRenderer({ content, className = '' }: Readonly<MarkdownR
               );
             }
 
-            const language = className?.replace('language-', '') || 'text';
+            // rehype-highlight prefixes `hljs ` to the className, so a plain
+            // `replace('language-', '')` leaves `hljs ts`. Match the language
+            // class anywhere in the list instead.
+            const language = className?.match(/language-([\w+#-]+)/)?.[1] || 'text';
 
             return (
               <div className="relative group mb-4">
                 <div className="flex items-center justify-between bg-muted px-4 py-2 rounded-t-lg border">
                   <Badge variant="secondary">{language}</Badge>
-                  <CopyButton content={String(children).replace(/\n$/, '')} />
+                  <CopyButton content={reactNodeToText(children).replace(/\n$/, '')} />
                 </div>
                 <pre className="bg-muted p-4 rounded-b-lg border border-t-0 overflow-x-auto">
                   <code className={className} {...props}>

@@ -280,8 +280,8 @@ export class TestManagementService {
 
     const config = await this.getConfig();
 
-    // Phase 1: pre-extract failure details for every failed attempt (async — may read
-    // trace ZIPs and error-context files from disk). We do this OUTSIDE the SQL
+    // Pre-extract failure details for every failed attempt (async — may read
+    // trace ZIPs and error-context files from disk). Done OUTSIDE the SQL
     // transaction so the transaction stays sync and short.
     type PreparedFailure = {
       details: string;
@@ -459,6 +459,7 @@ export class TestManagementService {
       results?: Array<{
         status?: string;
         message?: string;
+        duration?: number;
         attachments?: Array<{ name: string; contentType: string; path: string }>;
       }>;
       location?: { file: string; line: number; column: number };
@@ -476,6 +477,21 @@ export class TestManagementService {
     // synthetic "Test {outcome}: {title}" so signatures still group.
     const { message, stackTrace } = await extractFailureMessage(reportId, test, result);
 
+    // Build the full retry timeline so the LLM can reason about flaky-vs-persistent
+    // directly. Single-line message summaries keep this compact even with many retries.
+    const attempts = (test.results ?? []).map((r, idx) => {
+      const summary =
+        r.status === 'passed'
+          ? undefined
+          : (r.message ?? '').replace(/\s+/g, ' ').trim().substring(0, 300) || undefined;
+      return {
+        attempt: idx + 1,
+        status: r.status ?? 'unknown',
+        message: summary,
+        durationMs: typeof r.duration === 'number' ? r.duration : undefined,
+      };
+    });
+
     const details = {
       message,
       stackTrace,
@@ -485,6 +501,7 @@ export class TestManagementService {
       attachments: result.attachments || test.attachments,
       attempt,
       status: result.status || 'unknown',
+      attempts: attempts.length > 0 ? attempts : undefined,
     };
 
     return JSON.stringify(details);
@@ -620,7 +637,8 @@ export class TestManagementService {
       if (options.search) {
         const term = options.search.toLowerCase();
         tests = tests.filter(
-          (test) => test.title.toLowerCase().includes(term) || test.filePath.toLowerCase().includes(term)
+          (test) =>
+            test.title.toLowerCase().includes(term) || test.filePath.toLowerCase().includes(term)
         );
       }
     }
