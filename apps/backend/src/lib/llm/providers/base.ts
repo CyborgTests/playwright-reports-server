@@ -3,7 +3,6 @@ import type {
   LLMRequest,
   LLMResponse,
   LLMResponseSchema,
-  LLMStreamChunk,
   SegmentedPrompt,
 } from '../types/index.js';
 import { BaseLLMProvider as BaseProvider, LLMProviderError } from '../types/index.js';
@@ -24,7 +23,6 @@ const CONTEXT_WINDOW_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export abstract class LLMProvider extends BaseProvider {
   protected abstract getApiEndpoint(): string;
-  protected abstract getStreamApiEndpoint(): string;
   protected abstract getModelsEndpoint(): string;
   protected abstract getDefaultHeaders(): Record<string, string>;
 
@@ -97,18 +95,6 @@ export abstract class LLMProvider extends BaseProvider {
     return imageCount * 1200;
   }
 
-  async sendMessageStream(
-    prompt: string,
-    onChunk: (chunk: LLMStreamChunk) => void,
-    systemPrompt?: string
-  ): Promise<void> {
-    const modelToUse = await this.resolveModelForStream(onChunk);
-    if (!modelToUse) return;
-
-    const request = this.createRequest(prompt, systemPrompt, modelToUse);
-    return this.executeStream(request, onChunk);
-  }
-
   async sendMessage(prompt: string, systemPrompt?: string): Promise<LLMResponse> {
     const modelToUse = await this.resolveModelOrThrow();
     const request = this.createRequest(prompt, systemPrompt, modelToUse);
@@ -124,35 +110,11 @@ export abstract class LLMProvider extends BaseProvider {
     return this.executeRequest(request);
   }
 
-  async sendSegmentedMessageStream(
-    prompt: SegmentedPrompt,
-    onChunk: (chunk: LLMStreamChunk) => void,
-    options: SendOptions = {}
-  ): Promise<void> {
-    const modelToUse = await this.resolveModelForStream(onChunk);
-    if (!modelToUse) return;
-
-    const request = this.createSegmentedRequest(prompt, modelToUse, options);
-    return this.executeStream(request, onChunk);
-  }
-
   private async resolveModelOrThrow(): Promise<string> {
     if (this.config.model) return this.config.model;
     const bestModel = await this.getBestAvailableModel();
     if (!bestModel) {
       throw new Error('No model configured and no suitable models found');
-    }
-    return bestModel;
-  }
-
-  private async resolveModelForStream(
-    onChunk: (chunk: LLMStreamChunk) => void
-  ): Promise<string | null> {
-    if (this.config.model) return this.config.model;
-    const bestModel = await this.getBestAvailableModel();
-    if (!bestModel) {
-      onChunk({ type: 'error', error: 'No model configured and no suitable models found' });
-      return null;
     }
     return bestModel;
   }
@@ -177,16 +139,6 @@ export abstract class LLMProvider extends BaseProvider {
       }
 
       return this.parseResponse(response, request);
-    });
-  }
-
-  private async executeStream(
-    request: LLMRequest,
-    onChunk: (chunk: LLMStreamChunk) => void
-  ): Promise<void> {
-    return this.retryRequest(async () => {
-      const response = await this.withTimeout(this.sendStreamRequest(request));
-      return this.processStream(response, onChunk);
     });
   }
 
@@ -282,29 +234,6 @@ export abstract class LLMProvider extends BaseProvider {
     return result;
   }
 
-  protected async sendStreamRequest(request: LLMRequest): Promise<Response> {
-    const streamHeaders = {
-      ...this.getHeaders(),
-    };
-
-    const { result, error } = await withError(
-      fetch(this.getStreamApiEndpoint(), {
-        method: 'POST',
-        headers: streamHeaders,
-        body: JSON.stringify(this.formatStreamRequestBody(request)),
-      })
-    );
-
-    if (error) {
-      throw new LLMProviderError(`Network error: ${error.message}`, 'network');
-    }
-
-    if (!result) {
-      throw new LLMProviderError('No response received', 'network');
-    }
-    return result;
-  }
-
   protected getHeaders(): Record<string, string> {
     return {
       'Content-Type': 'application/json',
@@ -313,7 +242,6 @@ export abstract class LLMProvider extends BaseProvider {
   }
 
   protected abstract formatRequestBody(request: LLMRequest): unknown;
-  protected abstract formatStreamRequestBody(request: LLMRequest): unknown;
   protected abstract extractModelIds(data: unknown): string[];
 
   protected async getBestAvailableModel(): Promise<string | null> {

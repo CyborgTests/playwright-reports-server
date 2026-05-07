@@ -94,29 +94,48 @@ function extractTestIdFromCurrentUrl() {
   }
 }
 
-function showLLMAnalysis(askBtn, testId = 'unknown', copyPromptButton = null) {
-  let modal = document.getElementById('llm-analysis-modal');
-  if (!modal) {
-    modal = createLLMModal();
-    document.body.appendChild(modal);
-  }
+// Phase metadata for the loading modal. Each entry maps a task lifecycle
+// state to a label, a short description, and a spinner color so the user can
+// tell at a glance whether the task is waiting in the queue or actively being
+// processed by the LLM.
+const LLM_MODAL_PHASES = {
+  enqueueing: {
+    label: 'Enqueueing 📤 analysis…',
+    sub: 'Asking reception...',
+    color: '#9ca3af',
+  },
+  queued: {
+    label: 'Queued — ⏳ waiting for worker',
+    sub: 'Made a job posting...',
+    color: '#f59e0b',
+  },
+  processing: {
+    label: 'Processing — 🤖 LLM is working',
+    sub: 'Predicting what went wrong...',
+    color: '#3b82f6',
+  },
+  joining: {
+    label: 'Joining 🔗 in-progress analysis…',
+    sub: 'A task is already running for this test; we will pick up its result.',
+    color: '#3b82f6',
+  },
+};
 
-  modal.style.display = 'flex';
-  const content = modal.querySelector('.llm-modal-content');
+function renderLoadingModal(content, phaseKey = 'enqueueing') {
+  const phase = LLM_MODAL_PHASES[phaseKey] || LLM_MODAL_PHASES.enqueueing;
   content.innerHTML = `
     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 40px;">
-      <div class="llm-spinner" style="
+      <div id="llm-modal-spinner" class="llm-spinner" style="
         width: 40px;
         height: 40px;
         border: 4px solid #f3f3f3;
-        border-top: 4px solid #3b82f6;
+        border-top: 4px solid ${phase.color};
         border-radius: 50%;
         animation: llm-spin 1s linear infinite;
         margin-bottom: 20px;
       "></div>
-      <div style="color: var(--llm-body-text); font-size: 16px; font-weight: 500;">LLM is thinking 🤔...</div>
-      <div style="color: var(--llm-body-text); font-size: 14px; font-weight: 500;">(kind of)</div>
-      <div style="color: var(--llm-muted); font-size: 14px; margin-top: 8px;">This may take a few seconds</div>
+      <div id="llm-modal-status" style="color: var(--llm-body-text); font-size: 16px; font-weight: 600;">${phase.label}</div>
+      <div id="llm-modal-substatus" style="color: var(--llm-muted); font-size: 13px; margin-top: 8px; text-align: center; max-width: 360px; line-height: 1.5;">${phase.sub}</div>
     </div>
     <style>
       @keyframes llm-spin {
@@ -125,303 +144,195 @@ function showLLMAnalysis(askBtn, testId = 'unknown', copyPromptButton = null) {
       }
     </style>
   `;
+}
 
-  askBtn.disabled = true;
-  askBtn.textContent = 'Analyzing...';
+function setModalPhase(content, phaseKey) {
+  const phase = LLM_MODAL_PHASES[phaseKey];
+  if (!phase) return;
+  const spinner = content.querySelector('#llm-modal-spinner');
+  const status = content.querySelector('#llm-modal-status');
+  const sub = content.querySelector('#llm-modal-substatus');
+  if (spinner) spinner.style.borderTopColor = phase.color;
+  if (status) status.textContent = phase.label;
+  if (sub) sub.textContent = phase.sub;
+}
 
-  fetch(`/api/llm/analyze-failed-test`, {
+function renderModalError(content, message) {
+  content.innerHTML = `
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px;">
+      <div style="
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background-color: #fee2e2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 16px;
+        font-size: 24px;
+      ">❌</div>
+      <div style="
+        color: var(--llm-body-text);
+        font-size: 16px;
+        font-weight: 500;
+        text-align: center;
+        margin-bottom: 8px;
+      ">Analysis Failed</div>
+      <div style="
+        color: var(--llm-muted);
+        font-size: 14px;
+        text-align: center;
+        line-height: 1.5;
+        max-width: 400px;
+      ">${message || 'Analysis failed. Please try again.'}</div>
+    </div>
+  `;
+}
+
+// Ask LLM flow:
+//   1. Open the loading modal.
+//   2. POST /api/llm/analyze-failed-test → enqueues a queued task with isRetry=true
+//      (same path Retry uses; bypasses cross-report reuse, replaces any existing
+//      row on success).
+//   3. Subscribe to /api/llm/task-progress/:taskId for status transitions.
+//   4. On completed → fetch /api/test-analysis, render inline, close modal.
+//   5. On failed/cancelled → show error in modal.
+function openTaskProgressModal({
+  testId,
+  rid,
+  copyPromptButton,
+  askBtn,
+  enqueueUrl,
+  enqueueBody,
+  busyButton,
+  busyLabel = 'Analyzing…',
+  idleLabel,
+}) {
+  let modal = document.getElementById('llm-analysis-modal');
+  if (!modal) {
+    modal = createLLMModal();
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+  const content = modal.querySelector('.llm-modal-content');
+  renderLoadingModal(content, 'enqueueing');
+
+  let originalLabel = null;
+  if (busyButton) {
+    busyButton.disabled = true;
+    originalLabel = busyButton.textContent;
+    busyButton.textContent = busyLabel;
+  }
+
+  let eventSource = null;
+  const cleanup = () => {
+    if (eventSource) {
+      try {
+        eventSource.close();
+      } catch (_e) {
+        /* noop */
+      }
+      eventSource = null;
+    }
+    if (busyButton) {
+      busyButton.disabled = false;
+      busyButton.textContent = idleLabel ?? originalLabel ?? busyButton.textContent;
+    }
+  };
+
+  function onCompleted() {
+    fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) => {
+        if (payload?.success && payload.data?.analysis) {
+          if (modal) modal.style.display = 'none';
+          renderInlineAnalysis(payload.data, copyPromptButton, askBtn);
+        } else {
+          renderModalError(content, 'Analysis completed but the result was empty.');
+        }
+      })
+      .catch((err) => {
+        renderModalError(content, err?.message || 'Failed to fetch analysis.');
+      })
+      .finally(cleanup);
+  }
+
+  fetch(enqueueUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      testId: testId,
-      // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-      reportId: reportId,
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(enqueueBody),
   })
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+    .then((response) => response.json().then((j) => ({ ok: response.ok, j })))
+    .then(({ ok, j }) => {
+      if (!ok || !j?.success || !j?.data?.taskId) {
+        throw new Error(j?.error || 'Failed to enqueue analysis task');
       }
+      const taskId = j.data.taskId;
+      setModalPhase(content, j.data.deduped ? 'joining' : 'queued');
 
-      let thinkingContent = '';
-      let answerContent = '';
-      let isThinking = false;
-      let modelData = null;
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      content.innerHTML = `
-        <div style="
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        ">
-          <div style="
-            display: flex;
-            align-items: center;
-            gap: 8px;
-          ">
-            <div style="
-              width: 32px;
-              height: 32px;
-              background: linear-gradient(135deg, #10b981, #059669);
-              border-radius: 8px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              color: white;
-              font-size: 16px;
-            ">🔍</div>
-            <h2 style="margin: 0; color: var(--llm-body-text); font-size: 20px; font-weight: 600;">Test Failure Analysis</h2>
-          </div>
-          <div id="llm-thinking-block" style="
-            display: none;
-            background: var(--llm-thinking-bg);
-            border-left: 4px solid var(--llm-thinking-border);
-            padding: 16px 20px;
-            border-radius: 8px;
-            font-size: 13px;
-            color: var(--llm-thinking-text);
-            line-height: 1.6;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            max-height: 200px;
-            overflow-y: auto;
-          ">
-            <div style="font-weight: 600; margin-bottom: 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">💭 Thinking...</div>
-            <div id="llm-thinking-text"></div>
-          </div>
-          <div id="llm-streaming-content" style="
-            background: var(--llm-stream-bg);
-            border-left: 4px solid #3b82f6;
-            padding: 20px;
-            border-radius: 8px;
-            min-height: 60px;
-            line-height: 1.7;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 15px;
-            color: var(--llm-body-text);
-          ">
-            <div id="llm-streaming-progress" style="
-              display: flex;
-              align-items: center;
-              gap: 10px;
-              color: var(--llm-muted);
-              font-size: 14px;
-            ">
-              <div style="
-                width: 14px;
-                height: 14px;
-                border: 2px solid var(--llm-btn-border);
-                border-top-color: #3b82f6;
-                border-radius: 50%;
-                animation: llm-spin 0.8s linear infinite;
-              "></div>
-              <span id="llm-streaming-progress-label">Generating analysis…</span>
-            </div>
-          </div>
-          <style>@keyframes llm-spin { to { transform: rotate(360deg); } }</style>
-          <div id="llm-streaming-footer" style="
-            display: none;
-            justify-content: space-between;
-            align-items: center;
-            padding-top: 16px;
-            border-top: 1px solid var(--llm-btn-border);
-            margin-top: 8px;
-            font-size: 13px;
-            color: var(--llm-muted);
-          "></div>
-        </div>
-      `;
-
-      const thinkingBlock = content.querySelector('#llm-thinking-block');
-      const thinkingText = content.querySelector('#llm-thinking-text');
-      const streamingContent = content.querySelector('#llm-streaming-content');
-      const streamingFooter = content.querySelector('#llm-streaming-footer');
-
-      function processThinking(text) {
-        thinkingContent += text;
-        if (thinkingBlock && thinkingText) {
-          if (!isThinking) {
-            isThinking = true;
-            thinkingBlock.style.display = 'block';
-            streamingContent.style.display = 'none';
-          }
-          thinkingText.textContent = thinkingContent;
-          thinkingBlock.scrollTop = thinkingBlock.scrollHeight;
-        }
-      }
-
-      // Throttle partial-render to ~10fps so a fast stream doesn't churn the DOM.
-      let lastPartialRenderAt = 0;
-
-      function processToken(text) {
-        answerContent += text;
-        if (streamingContent) {
-          if (isThinking) {
-            // Transition from thinking to answer
-            isThinking = false;
-            streamingContent.style.display = 'block';
-            // Collapse thinking block
-            if (thinkingBlock) {
-              thinkingBlock.querySelector('div').textContent = '💭 Thinking (done)';
-              thinkingBlock.style.maxHeight = '80px';
-              thinkingBlock.style.cursor = 'pointer';
-              thinkingBlock.onclick = () => {
-                const isCollapsed = thinkingBlock.style.maxHeight === '80px';
-                thinkingBlock.style.maxHeight = isCollapsed ? '400px' : '80px';
-              };
-            }
-          }
-          // The response is structured JSON (forced via response_format /
-          // tool_use). We extract the `analysis` field's partial value and
-          // render it as markdown on the fly — best-effort, may be broken
-          // mid-fence or mid-bullet, that's fine. The final render on `done`
-          // does a clean parse and fully replaces the in-progress markdown.
-          const ts = Date.now();
-          if (ts - lastPartialRenderAt >= 100) {
-            lastPartialRenderAt = ts;
-            const partial = extractPartialAnalysis(answerContent);
-            if (partial && partial.length > 0) {
-              streamingContent.innerHTML = markdownToHtml(partial);
-              streamingContent.scrollTop = streamingContent.scrollHeight;
-            } else {
-              const progressLabel = streamingContent.querySelector('#llm-streaming-progress-label');
-              if (progressLabel) {
-                progressLabel.textContent = `Generating analysis… (${answerContent.length} chars)`;
-              }
-            }
-          }
-        }
-      }
-
-      function finalizeResponse() {
-        let finalContent = answerContent || thinkingContent;
-        // LLM may return structured JSON (possibly wrapped in markdown code fences)
+      eventSource = new EventSource(`/api/llm/task-progress/${encodeURIComponent(taskId)}`);
+      eventSource.addEventListener('update', (evt) => {
+        let task;
         try {
-          let jsonStr = finalContent.trim();
-          const fenceMatch = jsonStr.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
-          if (fenceMatch) jsonStr = fenceMatch[1].trim();
-          const parsed = JSON.parse(jsonStr);
-          if (parsed.analysis) finalContent = parsed.analysis;
+          task = JSON.parse(evt.data);
         } catch {
-          /* not JSON — use as-is */
+          return;
         }
-        if (streamingContent) {
-          streamingContent.style.display = 'block';
-          streamingContent.innerHTML = markdownToHtml(finalContent);
+        if (task.status === 'queued') {
+          setModalPhase(content, 'queued');
+        } else if (task.status === 'processing') {
+          setModalPhase(content, 'processing');
+        } else if (task.status === 'completed') {
+          onCompleted();
+        } else if (task.status === 'failed') {
+          renderModalError(content, task.error || 'Analysis task failed.');
+          cleanup();
+        } else if (task.status === 'cancelled') {
+          renderModalError(content, 'Analysis was cancelled.');
+          cleanup();
         }
-        // Format thinking block markdown
-        if (thinkingContent && thinkingText && answerContent) {
-          thinkingText.innerHTML = markdownToHtml(thinkingContent);
-        }
-        // If only thinking was received, hide the thinking block since we moved it to the main area
-        if (!answerContent && thinkingContent && thinkingBlock) {
-          thinkingBlock.style.display = 'none';
-        }
-
-        if (streamingFooter) {
-          streamingFooter.style.display = 'flex';
-          streamingFooter.innerHTML = `
-            <div>Analysis powered by ${modelData || 'LLM'}</div>
-            <div>${new Date().toLocaleString()}</div>
-          `;
-        }
-
-        // Also render the result inline above the errors section
-        if (finalContent && copyPromptButton) {
-          // Close the modal after a short delay
-          setTimeout(() => {
-            if (modal) modal.style.display = 'none';
-          }, 500);
-          showInlineAnalysisFromStream(finalContent, modelData, copyPromptButton, askBtn);
-        }
-      }
-
-      return new Promise((resolve, reject) => {
-        function read() {
-          reader
-            .read()
-            .then(({ done, value }) => {
-              if (done) {
-                finalizeResponse();
-                resolve();
-                return;
-              }
-
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split('\n');
-              buffer = lines.pop() || '';
-
-              for (const line of lines) {
-                const trimmedLine = line.trim();
-                if (!trimmedLine || !trimmedLine.startsWith('data: ')) {
-                  continue;
-                }
-
-                try {
-                  const data = JSON.parse(trimmedLine.slice(6));
-
-                  if (data.type === 'thinking' && data.content) {
-                    processThinking(data.content);
-                  } else if (data.type === 'token' && data.content) {
-                    processToken(data.content);
-                  } else if (data.type === 'done') {
-                    modelData = data.model;
-                  } else if (data.type === 'error') {
-                    throw new Error(data.error || 'Stream error occurred');
-                  }
-                } catch (parseError) {
-                  console.error('[Playwright LLM] Failed to parse SSE data:', parseError);
-                }
-              }
-
-              read();
-            })
-            .catch(reject);
-        }
-
-        read();
       });
+      eventSource.onerror = () => {
+        // SSE may drop transiently — fall back to a single fetch in case the
+        // task has already completed by the time we got here. If the row
+        // exists, render it; otherwise leave the modal status as-is.
+        fetch(
+          `/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`
+        )
+          .then((r) => (r.ok ? r.json() : null))
+          .then((payload) => {
+            if (payload?.success && payload.data?.analysis) {
+              if (modal) modal.style.display = 'none';
+              renderInlineAnalysis(payload.data, copyPromptButton, askBtn);
+              cleanup();
+            }
+          })
+          .catch(() => {
+            /* noop */
+          });
+      };
     })
     .catch((error) => {
       console.error('[Playwright LLM] Analysis error:', error);
-      content.innerHTML = `
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px;">
-          <div style="
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            background-color: #fee2e2;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 16px;
-            font-size: 24px;
-          ">❌</div>
-          <div style="
-            color: var(--llm-body-text);
-            font-size: 16px;
-            font-weight: 500;
-            text-align: center;
-            margin-bottom: 8px;
-          ">Analysis Failed</div>
-          <div style="
-            color: var(--llm-muted);
-            font-size: 14px;
-            text-align: center;
-            line-height: 1.5;
-            max-width: 400px;
-          ">${error.message || 'Analysis failed. Please try again.'}</div>
-        </div>
-      `;
-    })
-    .finally(() => {
-      askBtn.disabled = false;
-      askBtn.textContent = 'Ask LLM';
+      renderModalError(content, error?.message);
+      cleanup();
     });
+}
+
+function showLLMAnalysis(askBtn, testId = 'unknown', copyPromptButton = null) {
+  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+  const rid = reportId;
+  openTaskProgressModal({
+    testId,
+    rid,
+    copyPromptButton,
+    askBtn,
+    enqueueUrl: '/api/llm/analyze-failed-test',
+    enqueueBody: { testId, reportId: rid },
+    busyButton: askBtn,
+    busyLabel: 'Analyzing…',
+    idleLabel: 'Ask LLM',
+  });
 }
 
 function createLLMModal() {
@@ -501,52 +412,6 @@ function createLLMModal() {
   };
 
   return modal;
-}
-
-/**
- * Best-effort partial extractor for the `analysis` field value out of an
- * in-progress structured-output JSON envelope. Returns whatever has been
- * received so far (with JSON string escapes resolved), or null when the
- * `analysis` field hasn't started yet. The output may be partial/broken
- * markdown — that's fine; the caller renders it as a preview.
- */
-function extractPartialAnalysis(jsonText) {
-  if (!jsonText) return null;
-  const m = jsonText.match(/"analysis"\s*:\s*"/);
-  if (!m) return null;
-  const s = jsonText.slice(m.index + m[0].length);
-  let out = '';
-  let i = 0;
-  while (i < s.length) {
-    const c = s[i];
-    if (c === '\\') {
-      const next = s[i + 1];
-      if (next === undefined) break; // partial escape — drop trailing backslash
-      if (next === 'n') out += '\n';
-      else if (next === 't') out += '\t';
-      else if (next === 'r') out += '\r';
-      else if (next === '"') out += '"';
-      else if (next === '\\') out += '\\';
-      else if (next === '/') out += '/';
-      else if (next === 'u') {
-        if (i + 5 >= s.length) break; // incomplete \uXXXX — wait for more
-        const hex = s.slice(i + 2, i + 6);
-        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
-          out += String.fromCharCode(Number.parseInt(hex, 16));
-          i += 6;
-          continue;
-        }
-        break;
-      } else out += next;
-      i += 2;
-    } else if (c === '"') {
-      break; // unescaped closing quote — end of value
-    } else {
-      out += c;
-      i++;
-    }
-  }
-  return out;
 }
 
 function markdownToHtml(text) {
@@ -971,18 +836,6 @@ function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
   });
 }
 
-/**
- * After an Ask LLM SSE stream completes, show the result inline
- * (called from showLLMAnalysis on success).
- */
-function showInlineAnalysisFromStream(content, model, copyPromptButton, askBtn) {
-  renderInlineAnalysis(
-    { analysis: content, model: model, category: null },
-    copyPromptButton,
-    askBtn
-  );
-}
-
 // ---- Feedback panel (test-level shared note) ----
 
 function relativeTimeShort(iso) {
@@ -1327,28 +1180,24 @@ function renderFeedbackPanel({
     }
   };
 
-  regenBtn.onclick = async () => {
-    regenBtn.disabled = true;
-    setStatus('Enqueueing…');
-    try {
-      const cascade = !!cascadeCheckbox?.checked;
-      const r = await fetch('/api/llm/regenerate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: feedbackBody(testId, rid, cascade ? { cascadeReportSummary: true } : {}),
-      });
-      const j = await r.json();
-      if (!r.ok || !j?.success) throw new Error(j?.error || 'Regenerate failed');
-      const cascadeMsg = j?.data?.cascadedReportTaskId ? ' (report regen queued)' : '';
-      setStatus(
-        (j?.data?.deduped ? 'Already in progress' : 'Analysis enqueued') + cascadeMsg,
-        'ok'
-      );
-    } catch (err) {
-      setStatus(err.message || 'Regenerate failed', 'error');
-    } finally {
-      regenBtn.disabled = false;
-    }
+  regenBtn.onclick = () => {
+    setStatus('');
+    const cascade = !!cascadeCheckbox?.checked;
+    openTaskProgressModal({
+      testId,
+      rid,
+      copyPromptButton,
+      askBtn: null,
+      enqueueUrl: '/api/llm/regenerate',
+      enqueueBody: {
+        testId,
+        reportId: rid,
+        ...(cascade ? { cascadeReportSummary: true } : {}),
+      },
+      busyButton: regenBtn,
+      busyLabel: 'Regenerating…',
+      idleLabel: 'Regenerate',
+    });
   };
 
   // Resolve stale indicator: compare feedback.updatedAt with the persisted analysis updatedAt.

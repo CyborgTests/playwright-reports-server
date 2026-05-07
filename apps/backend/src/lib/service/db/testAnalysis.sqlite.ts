@@ -161,24 +161,23 @@ export class TestAnalysisDatabase {
 
   /**
    * Find analysis by testId + reportId — precise lookup for a specific test run.
-   * Falls back to testId-only if no match for the specific report.
+   * Returns the most recently updated row (latest attempt wins on ties) — when
+   * a retry replaces an existing row via ON CONFLICT, the updatedAt advances,
+   * so this always surfaces the fresh result. No cross-report fallback: an
+   * analysis from a different report is not authoritative for the current
+   * one — the served viewer should render an empty state and let the user
+   * trigger a fresh analysis instead of seeing "some other analysis".
    */
   public getByTestAndReport(testId: string, reportId: string): TestAnalysisRow | null {
-    // Try exact match first: testId + reportId
-    const exact = this.db
+    const row = this.db
       .prepare(
-        'SELECT * FROM test_llm_analyses WHERE testId = ? AND reportId = ? ORDER BY attempt LIMIT 1'
+        `SELECT * FROM test_llm_analyses
+         WHERE testId = ? AND reportId = ?
+         ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC, attempt DESC
+         LIMIT 1`
       )
       .get(testId, reportId) as TestAnalysisRow | undefined;
-    if (exact) return exact;
-
-    // Fall back to testId only (analysis may have been triggered from a different report)
-    const fallback = this.db
-      .prepare(
-        'SELECT * FROM test_llm_analyses WHERE testId = ? ORDER BY updatedAt DESC, createdAt DESC LIMIT 1'
-      )
-      .get(testId) as TestAnalysisRow | undefined;
-    return fallback ?? null;
+    return row ?? null;
   }
 
   /**

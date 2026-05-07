@@ -2,16 +2,17 @@
 
 import type { DateRange } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { Brain, RefreshCw } from 'lucide-react';
+import { Link as RouterLink } from 'react-router-dom';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 import { defaultProjectName } from '@/lib/constants';
-import { withBase } from '@/lib/url';
 
 interface CachedProjectSummary {
   project: string;
@@ -26,138 +27,60 @@ interface CachedProjectSummary {
 interface CachedSummaryResponse {
   success: boolean;
   data: CachedProjectSummary | null;
+  pendingAnalysisCount?: number;
+}
+
+interface EnqueueResponse {
+  success: boolean;
+  data?: { taskId?: string; deduped?: boolean; allGreen?: boolean };
+  error?: string;
 }
 
 interface FailureAnalysisSummaryProps {
   project?: string;
   totalFailures?: number;
+  // Kept for API compatibility with the dashboard wiring; the queue handler
+  // always uses the latest 10 reports for the project, so range is ignored.
   dateRange?: DateRange;
 }
 
 export function FailureAnalysisSummary({
   project,
   totalFailures,
-  dateRange,
 }: Readonly<FailureAnalysisSummaryProps>) {
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [summary, setSummary] = useState<string | null>(null);
-  const [model, setModel] = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
-  const [reportCount, setReportCount] = useState<number | null>(null);
-  const [firstReportAt, setFirstReportAt] = useState<string | null>(null);
-  const [lastReportAt, setLastReportAt] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  // Hydrate from the persisted cache so a refresh shows the same summary until a new
-  // report for this project arrives. Cache key is project only — the date filter just
-  // narrows the input pool for regeneration; relative ranges shouldn't blow the cache.
   const cacheParams = new URLSearchParams();
   if (project && project !== defaultProjectName) cacheParams.append('project', project);
   const cachePath = `/api/analytics/project-summary?${cacheParams.toString()}`;
-  const { data: cached } = useQuery<CachedSummaryResponse>(cachePath, {
+
+  const { data: cached, isLoading } = useQuery<CachedSummaryResponse>(cachePath, {
     dependencies: [project],
     retry: false,
+    refetchInterval: (query) => {
+      const data = query.state.data as CachedSummaryResponse | undefined;
+      return (data?.pendingAnalysisCount ?? 0) > 0 ? 5000 : false;
+    },
   });
 
-  useEffect(() => {
-    if (cached?.data && !isStreaming) {
-      setSummary(cached.data.summary);
-      setModel(cached.data.model);
-      setUpdatedAt(cached.data.updatedAt);
-      setReportCount(cached.data.reportCount);
-      setFirstReportAt(cached.data.firstReportAt);
-      setLastReportAt(cached.data.lastReportAt);
-    } else if (cached?.data === null && !isStreaming) {
-      // Cache was invalidated (e.g. new report arrived) — clear stale UI state.
-      setSummary(null);
-      setModel(null);
-      setUpdatedAt(null);
-      setReportCount(null);
-      setFirstReportAt(null);
-      setLastReportAt(null);
+  const enqueuePath = `/api/analytics/failure-categories/llm?${cacheParams.toString()}`;
+  const { mutate: enqueueAnalysis, isPending: isEnqueuing } = useMutation<EnqueueResponse>(
+    enqueuePath,
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: [cachePath] });
+      },
     }
-  }, [cached, isStreaming]);
+  );
 
-  const handleGenerate = async () => {
-    setIsStreaming(true);
+  const summary = cached?.data ?? null;
+  const pendingAnalysisCount = cached?.pendingAnalysisCount ?? 0;
+  const hasOngoingAnalysis = pendingAnalysisCount > 0 || isEnqueuing;
 
-    try {
-      const jwtToken = localStorage.getItem('jwtToken');
-      const headers: HeadersInit = {};
-      if (jwtToken) headers.Authorization = `Bearer ${jwtToken}`;
+  if (isLoading) {
+    return null;
+  }
 
-      const params = new URLSearchParams();
-      if (project) params.append('project', project);
-      if (dateRange?.from) params.append('from', dateRange.from);
-      if (dateRange?.to) params.append('to', dateRange.to);
-
-      const response = await fetch(
-        withBase(`/api/analytics/failure-categories/llm?${params.toString()}`),
-        { method: 'POST', headers }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error: ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('No response body');
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let content = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith('data: ')) continue;
-
-          try {
-            const data = JSON.parse(trimmed.slice(6));
-            if (data.type === 'token' && data.content) {
-              content += data.content;
-              setSummary(content);
-            } else if (data.type === 'done') {
-              setModel(data.model || null);
-            } else if (data.type === 'error') {
-              throw new Error(data.error);
-            }
-          } catch (parseError) {
-            if (parseError instanceof SyntaxError) continue;
-            throw parseError;
-          }
-        }
-      }
-
-      // Mark the persisted summary as just-updated for the timestamp in the footer.
-      setUpdatedAt(new Date().toISOString());
-
-      queryClient.invalidateQueries({
-        predicate: (q) =>
-          q.queryKey.some(
-            (k) =>
-              typeof k === 'string' &&
-              (k.includes('failure-categories') || k.includes('project-summary'))
-          ),
-      });
-    } catch (error) {
-      toast.error(
-        `LLM analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-      setSummary(null);
-    } finally {
-      setIsStreaming(false);
-    }
-  };
-
-  // No failures — show success message
   if (totalFailures === 0 && !summary) {
     return (
       <Card>
@@ -170,6 +93,29 @@ export function FailureAnalysisSummary({
     );
   }
 
+  const ongoingButton = (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">
+            <Button size="sm" variant="outline" disabled>
+              <Spinner size="sm" className="mr-1" />
+              Analysis ongoing
+              {pendingAnalysisCount > 0 ? ` (${pendingAnalysisCount})` : ''}
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          Analysis ongoing — check the{' '}
+          <RouterLink to="/llm-queue" className="underline">
+            LLM queue
+          </RouterLink>
+          .
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+
   return (
     <Card>
       <CardHeader>
@@ -180,47 +126,63 @@ export function FailureAnalysisSummary({
               Test health analysis based on the latest 10 runs
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isStreaming}>
-            {isStreaming ? (
-              <>
-                <Spinner size="sm" /> Analyzing...
-              </>
-            ) : summary ? (
-              'Re-generate'
-            ) : (
-              'Generate Analysis'
-            )}
-          </Button>
+          {hasOngoingAnalysis ? (
+            ongoingButton
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => enqueueAnalysis({})}>
+              {summary ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-1" /> Re-generate
+                </>
+              ) : (
+                <>
+                  <Brain className="h-4 w-4 mr-1" /> Generate Analysis
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
-        {isStreaming && !summary && (
+        {hasOngoingAnalysis && !summary && (
           <div className="flex items-center justify-center py-8 gap-2">
             <Spinner size="sm" />
-            <span className="text-muted-foreground">LLM is analyzing latest runs...</span>
+            <span className="text-muted-foreground">
+              LLM is analyzing latest runs — track progress on the{' '}
+              <RouterLink to="/llm-queue" className="underline">
+                LLM queue
+              </RouterLink>
+              .
+            </span>
           </div>
         )}
         {summary && (
           <div className="space-y-3">
-            <MarkdownRenderer content={summary} />
-            {(model || updatedAt || reportCount) && (
+            <MarkdownRenderer content={summary.summary} />
+            {(summary.model || summary.updatedAt || summary.reportCount) && (
               <div className="flex items-center gap-2 pt-3 border-t text-xs text-muted-foreground flex-wrap">
-                {model && <Badge variant="outline">{model}</Badge>}
-                {reportCount && reportCount > 0 && firstReportAt && lastReportAt && (
-                  <span>
-                    Generated for {reportCount} {reportCount === 1 ? 'report' : 'reports'} between{' '}
-                    {new Date(firstReportAt).toLocaleDateString()} and{' '}
-                    {new Date(lastReportAt).toLocaleDateString()}
+                {summary.model && <Badge variant="outline">{summary.model}</Badge>}
+                {summary.reportCount &&
+                  summary.reportCount > 0 &&
+                  summary.firstReportAt &&
+                  summary.lastReportAt && (
+                    <span>
+                      Generated for {summary.reportCount}{' '}
+                      {summary.reportCount === 1 ? 'report' : 'reports'} between{' '}
+                      {new Date(summary.firstReportAt).toLocaleDateString()} and{' '}
+                      {new Date(summary.lastReportAt).toLocaleDateString()}
+                    </span>
+                  )}
+                {summary.updatedAt && (
+                  <span className="ml-auto">
+                    Generated {new Date(summary.updatedAt).toLocaleString()}
                   </span>
-                )}
-                {updatedAt && (
-                  <span className="ml-auto">Generated {new Date(updatedAt).toLocaleString()}</span>
                 )}
               </div>
             )}
           </div>
         )}
-        {!isStreaming && !summary && (
+        {!hasOngoingAnalysis && !summary && (
           <div className="text-center py-6 text-muted-foreground text-sm">
             Click "Generate Analysis" to get an LLM-powered health analysis of the latest runs
           </div>

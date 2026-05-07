@@ -1,7 +1,10 @@
+import { storage } from '../storage/index.js';
+import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
 import { cronService } from './cron.js';
 import { reportDb, resultDb } from './db/index.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
+import { siteConfigDb } from './db/siteConfig.sqlite.js';
 import { litestreamService } from './litestream.js';
 
 const createdLifecycle = Symbol.for('playwright.reports.lifecycle');
@@ -37,6 +40,18 @@ export class Lifecycle {
         await Promise.all([configCache.init(), reportDb.init(), resultDb.init()]);
         await reportDb.populateTestRuns();
         console.log('[lifecycle] Databases initialized successfully');
+      }
+
+      siteConfigDb.ensureSeeded();
+      const cfg = siteConfigDb.get();
+      for (const candidate of [cfg.logoPath, cfg.faviconPath]) {
+        if (!candidate?.startsWith('/branding/')) continue;
+        const { error } = await withError(storage.ensureBrandingAsset(candidate));
+        if (error) {
+          console.warn(
+            `[lifecycle] failed to ensure branding asset ${candidate}: ${error.message}`
+          );
+        }
       }
 
       // Reap orphaned LLM tasks: any row stuck in `processing` is from a worker

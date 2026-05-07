@@ -1,11 +1,4 @@
-import type {
-  LLMRequest,
-  LLMResponse,
-  LLMStreamChunk,
-  PromptSegment,
-  SegmentedPrompt,
-  StreamAccumulator,
-} from '../types/index.js';
+import type { LLMRequest, LLMResponse, PromptSegment, SegmentedPrompt } from '../types/index.js';
 import { LLMProvider } from './base.js';
 import type {
   AnthropicContentBlock,
@@ -13,7 +6,6 @@ import type {
   AnthropicModelList,
   AnthropicRequest,
   AnthropicResponse,
-  AnthropicStreamChunk,
   AnthropicTextBlock,
 } from './types.js';
 
@@ -43,10 +35,6 @@ function lookupAnthropicContextWindow(model: string): number | null {
 
 export class AnthropicProvider extends LLMProvider {
   protected getApiEndpoint(): string {
-    return `${this.config.baseUrl}/messages`;
-  }
-
-  protected getStreamApiEndpoint(): string {
     return `${this.config.baseUrl}/messages`;
   }
 
@@ -165,13 +153,6 @@ export class AnthropicProvider extends LLMProvider {
     };
   }
 
-  protected formatStreamRequestBody(request: LLMRequest): AnthropicRequest {
-    return {
-      ...this.formatRequestBody(request),
-      stream: true,
-    };
-  }
-
   protected async parseResponse(response: Response, _request?: LLMRequest): Promise<LLMResponse> {
     const data = (await response.json()) as AnthropicResponse;
 
@@ -202,65 +183,6 @@ export class AnthropicProvider extends LLMProvider {
       model: data.model || this.config.model,
       finishReason: data.stop_reason || undefined,
     };
-  }
-
-  protected parseStreamLine(line: string, accumulator: StreamAccumulator): LLMStreamChunk | null {
-    if (!line.startsWith('data: ')) {
-      return null;
-    }
-
-    const data = line.slice(6); // Remove 'data: ' prefix
-
-    try {
-      const chunk = JSON.parse(data) as AnthropicStreamChunk;
-
-      if (chunk.type === 'content_block_delta' && chunk.delta?.type === 'text_delta') {
-        const text = chunk.delta.text;
-        if (text) {
-          return {
-            type: 'token',
-            content: text,
-          };
-        }
-      }
-
-      // Structured-output (tool_use) streaming: forced via tool_choice when
-      // `responseSchema` is set. Anthropic emits the tool input as a stream of
-      // `input_json_delta` chunks whose `partial_json` fragments concatenate
-      // into valid JSON. Surface them as token chunks so the consumer can
-      // accumulate and JSON.parse the complete envelope on `done`.
-      if (chunk.type === 'content_block_delta' && chunk.delta?.type === 'input_json_delta') {
-        const partial = chunk.delta.partial_json;
-        if (partial) {
-          return {
-            type: 'token',
-            content: partial,
-          };
-        }
-      }
-
-      if (chunk.type === 'message_stop' && chunk.message?.usage) {
-        accumulator.usage = {
-          inputTokens: chunk.message.usage.input_tokens || 0,
-          outputTokens: chunk.message.usage.output_tokens || 0,
-          totalTokens:
-            (chunk.message.usage.input_tokens || 0) + (chunk.message.usage.output_tokens || 0),
-        };
-      }
-
-      if (chunk.type === 'message_start' && chunk.message?.usage) {
-        accumulator.usage = {
-          inputTokens: chunk.message.usage.input_tokens || 0,
-          outputTokens: chunk.message.usage.output_tokens || 0,
-          totalTokens:
-            (chunk.message.usage.input_tokens || 0) + (chunk.message.usage.output_tokens || 0),
-        };
-      }
-
-      return null;
-    } catch {
-      return null;
-    }
   }
 
   protected extractModelIds(data: AnthropicModelList): string[] {

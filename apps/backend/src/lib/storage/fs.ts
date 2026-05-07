@@ -4,18 +4,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import getFolderSize from 'get-folder-size';
 import { Open } from 'unzipper';
 import { env } from '../../config/env.js';
-import { defaultConfig, isConfigValid, noConfigErr } from '../config.js';
 import { serveReportRoute } from '../constants.js';
 import { parse } from '../parser/index.js';
 import { generatePlaywrightReport } from '../pw.js';
 import { processWithConcurrency, Semaphore } from '../utils/semaphore.js';
 import { withError } from '../withError.js';
 import {
-  APP_CONFIG,
   DATA_FOLDER,
   DEFAULT_STREAM_CHUNK_SIZE,
   REPORTS_FOLDER,
@@ -200,56 +197,6 @@ async function parseReportMetadata(
   return content;
 }
 
-async function readConfigFile() {
-  const { error: accessConfigError } = await withError(fs.access(APP_CONFIG));
-
-  if (accessConfigError) {
-    return { result: defaultConfig, error: new Error(noConfigErr) };
-  }
-
-  const { result, error } = await withError(fs.readFile(APP_CONFIG, 'utf-8'));
-
-  if (error || !result) {
-    return { error };
-  }
-
-  try {
-    const parsed = JSON.parse(result);
-
-    const isValid = isConfigValid(parsed);
-
-    return isValid ? { result: parsed, error: null } : { error: new Error('invalid config') };
-  } catch (e) {
-    return {
-      error: new Error(`failed to parse config: ${e instanceof Error ? e.message : e}`),
-    };
-  }
-}
-
-async function saveConfigFile(config: Partial<SiteWhiteLabelConfig>) {
-  const { result: existingConfig, error: configError } = await readConfigFile();
-
-  const isConfigFailed = !!configError && configError?.message !== noConfigErr && !existingConfig;
-
-  if (isConfigFailed) {
-    console.error(`[fs] failed to read existing config: ${configError.message}`);
-  }
-
-  const previousConfig = existingConfig ?? defaultConfig;
-  const uploadConfig = { ...previousConfig, ...config };
-
-  const { error } = await withError(
-    fs.writeFile(APP_CONFIG, JSON.stringify(uploadConfig, null, 2), {
-      flag: 'w+',
-    })
-  );
-
-  return {
-    result: uploadConfig,
-    error,
-  };
-}
-
 async function uploadReportFromZipFile(
   reportId: string,
   zipFilePath: string,
@@ -286,6 +233,11 @@ async function uploadReportFromZipFile(
   return { reportPath, report: info as unknown as ReportHistory };
 }
 
+// FS storage keeps branding assets on local disk only; nothing to mirror.
+async function noopBrandingAsset(_relativePath: string): Promise<void> {
+  return;
+}
+
 export const FS: Storage = {
   getServerDataInfo,
   readFile,
@@ -294,6 +246,7 @@ export const FS: Storage = {
   saveResult,
   generateReport,
   uploadReportFromZipFile,
-  readConfigFile,
-  saveConfigFile,
+  uploadBrandingAsset: noopBrandingAsset,
+  ensureBrandingAsset: noopBrandingAsset,
+  deleteBrandingAsset: noopBrandingAsset,
 };

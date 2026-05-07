@@ -1,6 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { llmService } from '../lib/llm/index.js';
-import { TEST_FAILURE_ANALYSIS_SCHEMA, unescapeLiteralNewlines } from '../lib/llm/prompts/index.js';
 import {
   DeleteFeedbackRequestSchema,
   FeedbackRegenerateRequestSchema,
@@ -17,8 +16,6 @@ import { projectSummaryDb } from '../lib/service/db/projectSummary.sqlite.js';
 import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
-import { buildTestAnalysisRequest } from '../lib/service/llmAnalysisQueue.js';
-import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
 function feedbackRowToShared(
@@ -92,6 +89,12 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // POST /api/llm/analyze-failed-test - enqueue a fresh analysis run for the
+  // given (testId, reportId). User-driven (Ask LLM button); always treated as
+  // an explicit retry so the queue bypasses cross-report reuse and replaces
+  // any existing row on success. Returns the enqueued task id; the caller
+  // tracks status via /api/llm/task-progress/:taskId and re-fetches
+  // /api/test-analysis/:testId once the task completes.
   fastify.post('/api/llm/analyze-failed-test', async (request, reply) => {
     try {
       const authResult = await authenticate(request as AuthRequest, reply);
@@ -100,192 +103,63 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
       const { testId, reportId } = request.body as { testId: string; reportId: string };
 
       if (!testId || !reportId) {
-        reply.status(400).send({ success: false, error: 'Missing testId or reportId' });
-        return;
+        return reply.status(400).send({ success: false, error: 'Missing testId or reportId' });
       }
 
       if (!llmService.isConfigured()) {
-        reply.status(400).send({
+        return reply.status(400).send({
           success: false,
           error: 'LLM service is not enabled. Set LLM_BASE_URL and LLM_API_KEY to enable',
         });
-        return;
       }
 
-      const { error: llmInitError } = await withError(llmService.initialize());
-      if (llmInitError) {
-        reply.status(400).send({
-          success: false,
-          error: `LLM initialization error: ${llmInitError instanceof Error ? llmInitError.message : 'Unknown initialization error'}`,
-        });
-        return;
-      }
-
-      // Resolve the test_run so we know fileId + project for the segmented
-      // prompt builder. Without this we can't read the right config or attach
-      // the right screenshot.
       const tr = resolveTestRun(testId, reportId);
       if (!tr) {
-        reply.status(404).send({
+        return reply.status(404).send({
           success: false,
           error: `No test_run for testId=${testId} in report=${reportId}`,
         });
-        return;
       }
 
-      const built = await buildTestAnalysisRequest({
-        testId,
-        fileId: tr.fileId,
-        project: tr.project,
-        reportId,
-      });
-      if ('error' in built) {
-        reply.status(404).send({ success: false, error: built.error });
-        return;
+      const db = getDatabase();
+      const inflightTest = db
+        .prepare(
+          `SELECT id FROM llm_tasks
+           WHERE type = 'test_analysis'
+             AND testId = ? AND reportId = ?
+             AND status IN ('queued','processing')
+           ORDER BY createdAt DESC
+           LIMIT 1`
+        )
+        .get(testId, reportId) as { id: string } | undefined;
+
+      let taskId: string;
+      let deduped: boolean;
+      if (inflightTest) {
+        // Coalesce duplicate clicks while a task is already in flight. Upgrade
+        // to a retry so the worker (if still queued) skips reuse.
+        taskId = inflightTest.id;
+        deduped = true;
+        llmTasksDb.markAsRetry(taskId);
+      } else {
+        const created = llmTasksDb.createTask('test_analysis', {
+          reportId,
+          testId,
+          fileId: tr.fileId,
+          project: tr.project,
+          isRetry: true,
+        });
+        taskId = created.id;
+        deduped = false;
       }
 
-      // Create a synthetic task row so the SSE task-progress endpoint and the
-      // queue page can show this run, even though we bypass the queue poll.
-      const task = llmTasksDb.createTask('test_analysis', {
-        reportId,
-        testId,
-        fileId: tr.fileId,
-        project: tr.project,
-      });
-      const now = new Date().toISOString();
-      try {
-        const db = (await import('../lib/service/db/db.js')).getDatabase();
-        db.prepare('UPDATE llm_tasks SET status = ?, startedAt = ?, prompt = ? WHERE id = ?').run(
-          'processing',
-          now,
-          built.debugPrompt,
-          task.id
-        );
-      } catch {
-        // Task tracking is non-critical — never block the analysis on it.
-      }
-
-      reply.raw.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      });
-      const sendChunk = (chunk: {
-        type: string;
-        content?: string;
-        model?: string;
-        usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
-        finishReason?: string;
-        error?: string;
-      }) => {
-        reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      };
-
-      let fullContent = '';
-      let modelName = '';
-      let usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | undefined;
-      // always streams structured output (TEST_FAILURE_ANALYSIS_SCHEMA)
-      // so partial bytes are an in-progress
-      // JSON envelope — not a meaningful queryable string. The single write
-      // on `done` is forced; if the SSE drops, the task is retried via the queue.
-
-      try {
-        await llmService.sendSegmentedMessageStream(
-          built.segmentedPrompt,
-          (chunk) => {
-            sendChunk(chunk);
-            if (chunk.type === 'token' && chunk.content) {
-              fullContent += chunk.content;
-            }
-            if (chunk.type === 'done') {
-              if (chunk.model) modelName = chunk.model;
-              if (chunk.usage) usage = chunk.usage;
-            }
-          },
-          { temperature: 0.2, responseSchema: TEST_FAILURE_ANALYSIS_SCHEMA }
-        );
-
-        if (!fullContent) {
-          llmTasksDb.fail(task.id, 'LLM returned empty response');
-        } else {
-          // Prefer typed structured output; fall back to fence-stripped JSON parsing.
-          let analysisText = fullContent;
-          let parsedCategory: string | undefined;
-          try {
-            let jsonStr = fullContent.trim();
-            const fenceMatch = jsonStr.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
-            if (fenceMatch) jsonStr = fenceMatch[1].trim();
-            const parsed = JSON.parse(jsonStr);
-            if (parsed.analysis) analysisText = parsed.analysis;
-            if (parsed.category) parsedCategory = parsed.category;
-          } catch {
-            // not JSON — use raw text
-          }
-          // Local models sometimes emit markdown with literal `\n` instead of
-          // newlines (the JSON-escape style without the JSON envelope). Unwind.
-          analysisText = unescapeLiteralNewlines(analysisText);
-
-          // Heuristic+LLM consensus: LLM wins only on a known category AND
-          // either heuristic was unknown or the two agree.
-          const { isKnownCategory } = await import('../lib/service/testManagement.js');
-          let detectedCategory: string | undefined = built.heuristicCategory;
-          let categorySource: 'heuristic' | 'llm' = 'heuristic';
-          if (
-            parsedCategory &&
-            isKnownCategory(parsedCategory) &&
-            (built.heuristicCategory === 'unknown' || parsedCategory === built.heuristicCategory)
-          ) {
-            detectedCategory = parsedCategory;
-            categorySource = 'llm';
-          }
-
-          const completionExtras = { usage, promptVersion: built.promptVersion };
-          llmTasksDb.complete(
-            task.id,
-            analysisText,
-            detectedCategory,
-            modelName || undefined,
-            completionExtras
-          );
-
-          try {
-            testAnalysisDb.upsert(
-              testId,
-              tr.fileId,
-              tr.project,
-              reportId,
-              analysisText,
-              detectedCategory,
-              modelName || undefined,
-              built.details.attempt ?? 1,
-              undefined,
-              completionExtras
-            );
-            if (built.failedRun?.runId && detectedCategory) {
-              testDb.updateFailureCategory(built.failedRun.runId, detectedCategory, categorySource);
-            }
-          } catch (persistError) {
-            console.error('[llm] Failed to persist analysis to test_llm_analyses:', persistError);
-          }
-        }
-      } catch (streamError) {
-        const errorMsg =
-          streamError instanceof Error ? streamError.message : 'Stream error occurred';
-        sendChunk({ type: 'error', error: errorMsg });
-        llmTasksDb.fail(task.id, errorMsg);
-      }
-
-      reply.raw.end();
+      return reply.send({ success: true, data: { taskId, deduped } });
     } catch (error) {
       fastify.log.error({
-        error: 'LLM streaming analysis error',
+        error: 'LLM analyze-failed-test enqueue error',
         message: error instanceof Error ? error.message : String(error),
       });
-      if (!reply.sent) {
-        reply.status(500);
-        reply.send({ success: false, error: 'Failed to analyze test with LLM' });
-      }
+      return reply.status(500).send({ success: false, error: 'Failed to enqueue analysis task' });
     }
   });
 
@@ -350,6 +224,46 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
       let skipped = 0;
       let project: string | undefined;
 
+      const { detectFailureCategory } = await import('../lib/service/testManagement.js');
+      const db = getDatabase();
+
+      const findReuseSource = (
+        testId: string,
+        fileId: string,
+        proj: string,
+        errorSignature: string | undefined,
+        heuristicCategory: string,
+        currentReportId: string
+      ) => {
+        if (!errorSignature) return null;
+        return db
+          .prepare(
+            `SELECT tla.id, tla.reportId, tla.analysis, tla.category, tla.model
+             FROM test_llm_analyses tla
+             JOIN test_runs tr ON tr.testId = tla.testId
+                              AND tr.fileId = tla.fileId
+                              AND tr.project = tla.project
+                              AND tr.reportId = tla.reportId
+             WHERE tla.testId = ? AND tla.fileId = ? AND tla.project = ?
+               AND tr.error_signature = ?
+               AND tr.failure_category = ?
+               AND tla.analysis IS NOT NULL
+               AND TRIM(tla.analysis) != ''
+               AND tla.reportId != ?
+             ORDER BY datetime(COALESCE(tla.updatedAt, tla.createdAt)) DESC
+             LIMIT 1`
+          )
+          .get(testId, fileId, proj, errorSignature, heuristicCategory, currentReportId) as
+          | {
+              id: string;
+              reportId: string;
+              analysis: string;
+              category: string | null;
+              model: string | null;
+            }
+          | undefined;
+      };
+
       for (const run of failedRuns) {
         const key = `${run.testId}:${run.fileId}`;
         if (seen.has(key)) continue;
@@ -357,30 +271,43 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
 
         project ??= run.project;
 
-        // Skip queuing if this test already has an analysis stored — propagation should not
-        // re-run the LLM for tests already analyzed. The user can force a fresh analysis via
-        // /api/llm/regenerate or by clicking Retry on the inline widget.
-        const existing = testAnalysisDb.getByTest(run.testId, run.fileId, run.project);
-        if (existing?.analysis) {
+        // Strict propagation: only mirror an existing analysis when both the
+        // normalized error_signature AND the heuristic failure category match
+        // the prior run's. Otherwise enqueue a fresh test_analysis task — a
+        // truly different failure deserves its own analysis. The user can
+        // force a fresh analysis on a per-test basis via /api/llm/regenerate
+        // or by clicking Retry on the inline widget.
+        const heuristicCategory = run.failureDetails
+          ? detectFailureCategory(JSON.parse(run.failureDetails)?.message ?? '')
+          : detectFailureCategory('');
+        const reuseSource = findReuseSource(
+          run.testId,
+          run.fileId,
+          run.project,
+          run.errorSignature,
+          heuristicCategory,
+          id
+        );
+
+        if (reuseSource) {
           skipped++;
-          // Mirror the existing analysis to the current reportId so the report_summary task
-          // (which loads via testAnalysisDb.getByReport) can include it. Without this, a
-          // fully-skipped report would summarize from an empty analysis set.
-          if (existing.reportId !== id) {
-            testAnalysisDb.upsert(
-              run.testId,
-              run.fileId,
-              run.project,
-              id,
-              existing.analysis,
-              existing.category ?? undefined,
-              existing.model ?? undefined,
-              1,
-              existing.id
-            );
-            if (run.runId && existing.category) {
-              testDb.updateFailureCategory(run.runId, existing.category);
-            }
+          // Mirror the qualifying analysis to the current reportId so the
+          // report_summary task (which loads via testAnalysisDb.getByReport)
+          // can include it. Without this, a fully-skipped report would
+          // summarize from an empty analysis set.
+          testAnalysisDb.upsert(
+            run.testId,
+            run.fileId,
+            run.project,
+            id,
+            reuseSource.analysis,
+            reuseSource.category ?? undefined,
+            reuseSource.model ?? undefined,
+            1,
+            reuseSource.id
+          );
+          if (run.runId && reuseSource.category) {
+            testDb.updateFailureCategory(run.runId, reuseSource.category);
           }
           continue;
         }
@@ -448,6 +375,8 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   // GET /api/analytics/project-summary - return the persisted project-level LLM summary.
   // Keyed by project only — survives page refreshes (and date-range changes) until a new
   // report for the project arrives, which invalidates the cache server-side.
+  // Surfaces `pendingAnalysisCount` so the dashboard can drive refetch polling
+  // while a project_summary task is in flight.
   fastify.get(
     '/api/analytics/project-summary',
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -456,9 +385,11 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         if (authResult) return authResult;
 
         const { project } = request.query as { project?: string };
+        const projectKey = project ?? 'all';
 
-        const row = projectSummaryDb.get(project ?? 'all');
-        return reply.send({ success: true, data: row ?? null });
+        const row = projectSummaryDb.get(projectKey);
+        const pendingAnalysisCount = llmTasksDb.getInflightCountForProject(projectKey);
+        return reply.send({ success: true, data: row ?? null, pendingAnalysisCount });
       } catch (error) {
         fastify.log.error(error);
         return reply.status(500).send({ success: false, error: 'Failed to fetch project summary' });
@@ -466,7 +397,10 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // POST /api/analytics/failure-categories/llm - per-project LLM failure summary (SSE stream)
+  // POST /api/analytics/failure-categories/llm - enqueue a project_summary task.
+  // The queue worker runs the LLM call and writes both the llm_tasks row and
+  // projectSummaryDb cache. The UI tracks progress by polling
+  // /api/analytics/project-summary (which surfaces pendingAnalysisCount).
   fastify.post(
     '/api/analytics/failure-categories/llm',
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -474,11 +408,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         const authResult = await authenticate(request as AuthRequest, reply);
         if (authResult) return authResult;
 
-        const { project, from, to } = request.query as {
-          project?: string;
-          from?: string;
-          to?: string;
-        };
+        const { project } = request.query as { project?: string };
 
         if (!llmService.isConfigured()) {
           return reply.status(400).send({
@@ -487,20 +417,9 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
           });
         }
 
-        const { error: llmInitError } = await withError(llmService.initialize());
-        if (llmInitError) {
-          return reply.status(400).send({
-            success: false,
-            error: `LLM initialization error: ${llmInitError instanceof Error ? llmInitError.message : 'Unknown'}`,
-          });
-        }
+        const projectKey = project || 'all';
 
-        // Gather the latest N reports in the active window (or overall when unbounded).
-        const allInWindow =
-          from || to
-            ? reportDb.getByProject(project || undefined, { from, to })
-            : reportDb.getLatestByProject(project || undefined, 10);
-        const latestReports = allInWindow.slice(0, 10);
+        const latestReports = reportDb.getLatestByProject(project || undefined, 10);
         if (latestReports.length === 0) {
           return reply.status(400).send({
             success: false,
@@ -512,134 +431,66 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
           (r) => r.stats && ((r.stats.unexpected ?? 0) > 0 || (r.stats.flaky ?? 0) > 0)
         );
 
-        const projectKey = project || 'all';
-        const lastReportId = latestReports[0]?.reportID;
-        // Capture the actual reports that feed this summary so the UI can show
-        // "Generated for N reports between A and B" — useful when the user later
-        // views the cached result under a different relative date filter.
-        const reportTimes = latestReports
-          .map((r) => (r.createdAt ? new Date(String(r.createdAt)).getTime() : Number.NaN))
-          .filter((t) => Number.isFinite(t)) as number[];
-        const reportCount = latestReports.length;
-        const firstReportAt = reportTimes.length
-          ? new Date(Math.min(...reportTimes)).toISOString()
-          : undefined;
-        const lastReportAt = reportTimes.length
-          ? new Date(Math.max(...reportTimes)).toISOString()
-          : undefined;
-
+        // No failures → no LLM call needed. Persist a canned all-green message
+        // synchronously so a refresh shows it.
         if (!hasAnyFailures) {
-          // No failures → skip the LLM call and emit a short canned message.
-          reply.raw.writeHead(200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
-            'X-Accel-Buffering': 'no',
-          });
+          const lastReportId = latestReports[0]?.reportID;
+          const reportTimes = latestReports
+            .map((r) => (r.createdAt ? new Date(String(r.createdAt)).getTime() : Number.NaN))
+            .filter((t) => Number.isFinite(t)) as number[];
+          const firstReportAt = reportTimes.length
+            ? new Date(Math.min(...reportTimes)).toISOString()
+            : undefined;
+          const lastReportAt = reportTimes.length
+            ? new Date(Math.max(...reportTimes)).toISOString()
+            : undefined;
           const msg = `All ${latestReports.length} latest test runs passed without failures. Everything is looking good!`;
-          reply.raw.write(`data: ${JSON.stringify({ type: 'token', content: msg })}\n\n`);
-          reply.raw.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
-          reply.raw.end();
-          // Persist canned all-green so a refresh shows it without recomputing.
           projectSummaryDb.upsert({
             project: projectKey,
             summary: msg,
             lastReportId,
-            reportCount,
+            reportCount: latestReports.length,
             firstReportAt,
             lastReportAt,
           });
-          return;
+          return reply.send({ success: true, data: { allGreen: true } });
         }
 
-        const failureSummaryMap = new Map(
-          failureSummaryDb
-            .getSummariesByProject(project || undefined, 10, { from, to })
-            .map((s) => [s.reportId, s])
-        );
+        // Coalesce duplicate clicks while a task is already in flight.
+        const db = getDatabase();
+        const inflight = db
+          .prepare(
+            `SELECT id FROM llm_tasks
+             WHERE type = 'project_summary'
+               AND project = ?
+               AND status IN ('queued','processing')
+             ORDER BY createdAt DESC
+             LIMIT 1`
+          )
+          .get(projectKey) as { id: string } | undefined;
 
-        const { projectFailureSummaryPrompt } = await import('../lib/llm/prompts/index.js');
-        const prompt = projectFailureSummaryPrompt(
-          project || 'all',
-          latestReports.map((r) => {
-            const summary = failureSummaryMap.get(r.reportID);
-            return {
-              reportId: r.reportID,
-              createdAt: String(r.createdAt),
-              stats: {
-                total: r.stats?.total ?? 0,
-                expected: r.stats?.expected ?? 0,
-                unexpected: r.stats?.unexpected ?? 0,
-                flaky: r.stats?.flaky ?? 0,
-                skipped: r.stats?.skipped ?? 0,
-              },
-              totalFailures: summary?.totalFailures ?? 0,
-              categories: summary?.categories ?? {},
-              llmSummary: summary?.llmSummary ?? undefined,
-            };
-          })
-        );
-
-        reply.raw.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-          'X-Accel-Buffering': 'no',
-        });
-
-        const sendChunk = (chunk: {
-          type: string;
-          content?: string;
-          model?: string;
-          error?: string;
-        }) => {
-          reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
-        };
-
-        // Capture the full content + model so we can persist after the stream completes.
-        let fullContent = '';
-        let finalModel: string | undefined;
-        let streamErrored = false;
-        try {
-          await llmService.sendMessageStream(prompt, (chunk) => {
-            sendChunk(chunk);
-            if (chunk.type === 'token' && chunk.content) {
-              fullContent += chunk.content;
-            }
-            if (chunk.type === 'done' && chunk.model) {
-              finalModel = chunk.model;
-            }
-          });
-        } catch (streamError) {
-          streamErrored = true;
-          sendChunk({
-            type: 'error',
-            error: streamError instanceof Error ? streamError.message : 'Stream error',
-          });
-        }
-
-        reply.raw.end();
-
-        // Persist on success so a page refresh shows the same summary without re-running.
-        if (!streamErrored && fullContent.trim()) {
-          projectSummaryDb.upsert({
+        let taskId: string;
+        let deduped: boolean;
+        if (inflight) {
+          taskId = inflight.id;
+          deduped = true;
+          llmTasksDb.markAsRetry(taskId);
+        } else {
+          const created = llmTasksDb.createTask('project_summary', {
             project: projectKey,
-            summary: fullContent,
-            model: finalModel,
-            lastReportId,
-            reportCount,
-            firstReportAt,
-            lastReportAt,
+            isRetry: true,
           });
+          taskId = created.id;
+          deduped = false;
         }
+
+        return reply.send({ success: true, data: { taskId, deduped } });
       } catch (error) {
         fastify.log.error(error);
-        if (!reply.sent) {
-          reply.status(500).send({
-            success: false,
-            error: 'Failed to generate project failure summary',
-          });
-        }
+        return reply.status(500).send({
+          success: false,
+          error: 'Failed to enqueue project failure summary',
+        });
       }
     }
   );
@@ -774,13 +625,12 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
       .prepare(
         `SELECT id FROM llm_tasks
          WHERE type = 'test_analysis'
-           AND testId = ? AND fileId = ? AND project = ? AND reportId = ?
+           AND testId = ? AND reportId = ?
            AND status IN ('queued','processing')
+         ORDER BY createdAt DESC
          LIMIT 1`
       )
-      .get(body.testId, keys.fileId, keys.project, body.reportId ?? '') as
-      | { id: string }
-      | undefined;
+      .get(body.testId, body.reportId ?? '') as { id: string } | undefined;
 
     let taskId: string;
     let deduped: boolean;

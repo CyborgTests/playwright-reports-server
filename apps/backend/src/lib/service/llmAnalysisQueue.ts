@@ -21,6 +21,7 @@ import { getDatabase } from './db/db.js';
 import { failureSummaryDb } from './db/failureSummary.sqlite.js';
 import type { LlmTaskRow } from './db/llmTasks.sqlite.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
+import { projectSummaryDb } from './db/projectSummary.sqlite.js';
 import { testAnalysisDb } from './db/testAnalysis.sqlite.js';
 import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
@@ -271,112 +272,144 @@ class LlmAnalysisQueue {
 
     const feedback = analysisFeedbackDb.getByTest(testId, fileId, project);
 
-    // Reuse the previous analysis when the error message + stack are identical.
-    // Four guards invalidate reuse:
+    // Compute the heuristic category up-front — needed for the strict reuse
+    // match below. (It's also used later for the prompt build + LLM/heuristic
+    // consensus rule)
+    const { detectFailureCategory, isKnownCategory } = await import('./testManagement.js');
+    const heuristicCategory = detectFailureCategory(details.message);
+
+    // Reuse a prior analysis only when it is definitely the same failure AND
+    // there is no analysis already covering the current (testId, reportId).
+    // The match is strict: same testId/fileId/project AND identical
+    // `error_signature` (the normalized hash from test_runs that strips
+    // numbers + quoted strings) AND identical heuristic `failure_category`
+    // AND the source row has non-empty analysis text. We exclude the current
+    // report from the search so we never reuse a row from this same run.
+    //
+    // Five guards invalidate an otherwise-eligible reuse:
     //   1. User-driven retry (task.isRetry) — the user explicitly asked for a fresh run,
     //      typically after switching models. Reusing would echo the prior model name and
     //      analysis verbatim, defeating the point of the retry.
-    //   2. Own-project feedback newer than the previous analysis — otherwise feedback
+    //   2. Existing analysis for THIS (testId, reportId) is non-empty — re-running the
+    //      task implies the user wants the row replaced; don't silently mirror something
+    //      else over the top of an analysis they may already have read.
+    //   3. Own-project feedback newer than the source analysis — otherwise feedback
     //      never reaches the model after the first generation.
-    //   3. Prior analysis older than REUSE_TTL_DAYS — environments drift; a "transient"
+    //   4. Source analysis older than REUSE_TTL_DAYS — environments drift; a "transient"
     //      diagnosis from last week may be a real bug today. Force a fresh look.
-    //   4. Same error_signature has recurred more than REUSE_RECURRENCE_LIMIT times
-    //      since the prior analysis was created — strong signal that the issue is
+    //   5. Same error_signature has recurred more than REUSE_RECURRENCE_LIMIT times
+    //      since the source analysis was created — strong signal that the issue is
     //      persistent, not transient, and deserves re-evaluation.
-    if (previousAnalysis?.analysis && !task.isRetry) {
-      const prevAnalysisAt = previousAnalysis.updatedAt || previousAnalysis.createdAt;
-      const feedbackIsNewer =
-        feedback &&
-        prevAnalysisAt &&
-        new Date(feedback.updatedAt).getTime() > new Date(prevAnalysisAt).getTime();
-
-      const prevAnalysisAgeMs = prevAnalysisAt
-        ? Date.now() - new Date(prevAnalysisAt).getTime()
-        : 0;
-      const ttlMs = REUSE_TTL_DAYS * 24 * 60 * 60 * 1000;
-      const ttlExpired = prevAnalysisAgeMs > ttlMs;
-
-      let recurrenceExceeded = false;
-      if (failedRun?.errorSignature && prevAnalysisAt) {
-        const db = getDatabase();
-        const recurrenceRow = db
-          .prepare(
-            `SELECT COUNT(*) as count FROM test_runs
-             WHERE testId = ? AND fileId = ? AND project = ?
-               AND error_signature = ? AND createdAt > ?`
-          )
-          .get(testId, fileId, project, failedRun.errorSignature, prevAnalysisAt) as {
-          count: number;
-        };
-        recurrenceExceeded = recurrenceRow.count > REUSE_RECURRENCE_LIMIT;
-      }
-
-      if (ttlExpired) {
-        console.log(
-          `[llmQueue] Task ${task.id}: prior analysis older than ${REUSE_TTL_DAYS}d — forcing fresh analysis for test ${testId}`
-        );
-      } else if (recurrenceExceeded) {
-        console.log(
-          `[llmQueue] Task ${task.id}: signature recurred >${REUSE_RECURRENCE_LIMIT} times since prior analysis — forcing fresh analysis for test ${testId}`
-        );
-      }
-
-      if (!feedbackIsNewer && !ttlExpired && !recurrenceExceeded) {
-        const db = getDatabase();
-        const prevTask = db
-          .prepare(
-            `SELECT prompt FROM llm_tasks WHERE testId = ? AND status = 'completed' AND prompt IS NOT NULL ORDER BY completedAt DESC LIMIT 1`
-          )
-          .get(testId) as { prompt: string } | undefined;
-
-        if (prevTask?.prompt) {
-          const errorSignature = `${details.message}\n${details.stackTrace || ''}`.trim();
-          const prevErrorMatch = prevTask.prompt.match(/## Error Message\n```\n([\s\S]*?)```/);
-          const prevStackMatch = prevTask.prompt.match(/## Stack Trace\n```\n([\s\S]*?)```/);
-          const prevSignature =
-            `${prevErrorMatch?.[1]?.trim() || ''}\n${prevStackMatch?.[1]?.trim() || ''}`.trim();
-
-          if (errorSignature && prevSignature && errorSignature === prevSignature) {
-            console.log(
-              `[llmQueue] Task ${task.id}: same error as previous analysis, reusing result for test ${testId}`
-            );
-            const attempt = details.attempt ?? 1;
-            // Reused = 0 tokens (no LLM call); inherit promptVersion from the source row.
-            const reuseExtras = {
-              usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-              promptVersion: previousAnalysis.promptVersion ?? undefined,
-            };
-            llmTasksDb.complete(
-              task.id,
-              previousAnalysis.analysis,
-              previousAnalysis.category ?? undefined,
-              previousAnalysis.model ?? undefined,
-              reuseExtras
-            );
-            // Mark the new row as reused so consumers can show "♻ Reused" rather than
-            // surface it as a fresh LLM-generated analysis.
-            testAnalysisDb.upsert(
-              testId,
-              fileId,
-              project,
-              reportId,
-              previousAnalysis.analysis,
-              previousAnalysis.category ?? undefined,
-              previousAnalysis.model ?? undefined,
-              attempt,
-              previousAnalysis.id,
-              reuseExtras
-            );
-
-            if (failedRun?.runId && previousAnalysis.category) {
-              testDb.updateFailureCategory(failedRun.runId, previousAnalysis.category);
-            }
-
-            if (reportId && llmTasksDb.areAllTestTasksComplete(reportId)) {
-              console.log(`[llmQueue] All test analyses for report ${reportId} complete`);
-            }
-            return;
+    const currentErrorSignature = failedRun?.errorSignature;
+    const existingForThisReport = testAnalysisDb.getByTestAndReport(testId, reportId);
+    const hasNonEmptyExisting =
+      !!existingForThisReport?.analysis && existingForThisReport.analysis.trim().length > 0;
+    if (!task.isRetry && !hasNonEmptyExisting && currentErrorSignature) {
+      const db = getDatabase();
+      const reuseSource = db
+        .prepare(
+          `SELECT tla.* FROM test_llm_analyses tla
+           JOIN test_runs tr ON tr.testId = tla.testId
+                            AND tr.fileId = tla.fileId
+                            AND tr.project = tla.project
+                            AND tr.reportId = tla.reportId
+           WHERE tla.testId = ? AND tla.fileId = ? AND tla.project = ?
+             AND tr.error_signature = ?
+             AND tr.failure_category = ?
+             AND tla.analysis IS NOT NULL
+             AND TRIM(tla.analysis) != ''
+             AND tla.reportId != ?
+           ORDER BY datetime(COALESCE(tla.updatedAt, tla.createdAt)) DESC
+           LIMIT 1`
+        )
+        .get(testId, fileId, project, currentErrorSignature, heuristicCategory, reportId) as
+        | {
+            id: string;
+            analysis: string;
+            category: string | null;
+            model: string | null;
+            createdAt: string;
+            updatedAt: string | null;
+            promptVersion: string | null;
           }
+        | undefined;
+
+      if (reuseSource) {
+        const sourceUpdatedAt = reuseSource.updatedAt || reuseSource.createdAt;
+        const feedbackIsNewer =
+          feedback &&
+          sourceUpdatedAt &&
+          new Date(feedback.updatedAt).getTime() > new Date(sourceUpdatedAt).getTime();
+
+        const ageMs = sourceUpdatedAt ? Date.now() - new Date(sourceUpdatedAt).getTime() : 0;
+        const ttlExpired = ageMs > REUSE_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+        let recurrenceExceeded = false;
+        if (sourceUpdatedAt) {
+          const recurrenceRow = db
+            .prepare(
+              `SELECT COUNT(*) as count FROM test_runs
+               WHERE testId = ? AND fileId = ? AND project = ?
+                 AND error_signature = ? AND createdAt > ?`
+            )
+            .get(testId, fileId, project, currentErrorSignature, sourceUpdatedAt) as {
+            count: number;
+          };
+          recurrenceExceeded = recurrenceRow.count > REUSE_RECURRENCE_LIMIT;
+        }
+
+        if (ttlExpired) {
+          console.log(
+            `[llmQueue] Task ${task.id}: source analysis older than ${REUSE_TTL_DAYS}d — forcing fresh analysis for test ${testId}`
+          );
+        } else if (recurrenceExceeded) {
+          console.log(
+            `[llmQueue] Task ${task.id}: signature recurred >${REUSE_RECURRENCE_LIMIT} times since source analysis — forcing fresh analysis for test ${testId}`
+          );
+        } else if (feedbackIsNewer) {
+          console.log(
+            `[llmQueue] Task ${task.id}: feedback newer than source analysis — forcing fresh analysis for test ${testId}`
+          );
+        } else {
+          console.log(
+            `[llmQueue] Task ${task.id}: error_signature + category match (source ${reuseSource.id}), reusing for test ${testId}`
+          );
+          const attempt = details.attempt ?? 1;
+          // Reused = 0 tokens (no LLM call); inherit promptVersion from the source row.
+          const reuseExtras = {
+            usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+            promptVersion: reuseSource.promptVersion ?? undefined,
+          };
+          llmTasksDb.complete(
+            task.id,
+            reuseSource.analysis,
+            reuseSource.category ?? undefined,
+            reuseSource.model ?? undefined,
+            reuseExtras
+          );
+          // Mark the new row as reused so consumers can show "♻ Reused" rather than
+          // surface it as a fresh LLM-generated analysis.
+          testAnalysisDb.upsert(
+            testId,
+            fileId,
+            project,
+            reportId,
+            reuseSource.analysis,
+            reuseSource.category ?? undefined,
+            reuseSource.model ?? undefined,
+            attempt,
+            reuseSource.id,
+            reuseExtras
+          );
+
+          if (failedRun?.runId && reuseSource.category) {
+            testDb.updateFailureCategory(failedRun.runId, reuseSource.category);
+          }
+
+          if (reportId && llmTasksDb.areAllTestTasksComplete(reportId)) {
+            console.log(`[llmQueue] All test analyses for report ${reportId} complete`);
+          }
+          return;
         }
       }
     }
@@ -389,8 +422,6 @@ class LlmAnalysisQueue {
     // corresponding baseline; mustache vars are substituted from a per-template
     // allowlist (see prompts/index.ts).
     const llmCfg = (config as any)?.llm ?? {};
-    const { detectFailureCategory, isKnownCategory } = await import('./testManagement.js');
-    const heuristicCategory = detectFailureCategory(details.message);
     const promptOverrides = {
       systemPrompt: llmCfg.customSystemPrompt as string | undefined,
       testAnalysisInstructions: llmCfg.customTestAnalysisInstructions as string | undefined,
@@ -509,31 +540,56 @@ class LlmAnalysisQueue {
       responseSchema: TEST_FAILURE_ANALYSIS_SCHEMA,
     });
 
-    // Prefer the typed structured output when present; otherwise parse the
-    // text response (regex+fences) as a backwards-compat fallback for models
-    // that don't support schema-driven output.
+    // Extract analysis text + category. Prefer typed structured output when
+    // present; fall back to fence-stripped JSON in response.content; finally
+    // raw text. Each branch produces a single `analysisText` and optional
+    // `llmCategory` so the empty-text guard below is uniform.
     let llmCategory: string | null = null;
-    let analysis = response.content;
+    let analysisText = '';
+    let extractionMode: 'structured' | 'json' | 'text' = 'text';
+
     if (response.structuredOutput && typeof response.structuredOutput === 'object') {
       const so = response.structuredOutput as { category?: string; analysis?: string };
       if (so.category) llmCategory = so.category;
-      if (so.analysis) analysis = so.analysis;
+      analysisText = typeof so.analysis === 'string' ? so.analysis.trim() : '';
+      extractionMode = 'structured';
     } else {
+      const trimmed = response.content.trim();
+      const fenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+      const jsonStr = fenceMatch ? fenceMatch[1].trim() : trimmed;
       try {
-        let jsonStr = response.content.trim();
-        const fenceMatch = jsonStr.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
-        if (fenceMatch) jsonStr = fenceMatch[1].trim();
         const parsed = JSON.parse(jsonStr);
-        if (parsed.category) llmCategory = parsed.category;
-        if (parsed.analysis) analysis = parsed.analysis;
+        if (parsed?.category && typeof parsed.category === 'string') {
+          llmCategory = parsed.category;
+        }
+        analysisText = typeof parsed?.analysis === 'string' ? parsed.analysis.trim() : '';
+        extractionMode = 'json';
       } catch {
-        // LLM didn't return JSON — leave llmCategory null and fall back to heuristic below.
+        analysisText = trimmed;
+        extractionMode = 'text';
       }
     }
+
     // Some local models emit markdown with literal `\n` escapes instead of
     // actual newlines (JSON-string style without the envelope). Unwind so
     // headers and code fences render correctly downstream.
-    analysis = unescapeLiteralNewlines(analysis);
+    analysisText = unescapeLiteralNewlines(analysisText).trim();
+
+    // Empty analysis after extraction means the model spent tokens but didn't
+    // produce usable text (common with structured-output mismatches or
+    // thinking-only outputs). Fail the task instead of upserting an empty
+    // row that the report viewer then treats as "still loading" forever.
+    if (!analysisText) {
+      console.warn(
+        `[llmQueue] Task ${task.id}: empty analysis after extraction ` +
+          `(mode=${extractionMode}, contentChars=${response.content.length}, ` +
+          `category=${llmCategory ?? 'none'}, model=${response.model || 'unknown'}, ` +
+          `outputTokens=${response.usage?.outputTokens ?? 'n/a'}). Raw head: ` +
+          JSON.stringify(response.content.slice(0, 400))
+      );
+      llmTasksDb.fail(task.id, `LLM returned empty analysis (extraction=${extractionMode})`);
+      return;
+    }
 
     // LLM precedence rule: the LLM may override only when it returns a known category AND
     // either the heuristic was 'unknown' or the LLM's choice agrees with the heuristic.
@@ -555,13 +611,13 @@ class LlmAnalysisQueue {
       usage: response.usage,
       promptVersion,
     };
-    llmTasksDb.complete(task.id, analysis, category, response.model, completionExtras);
+    llmTasksDb.complete(task.id, analysisText, category, response.model, completionExtras);
     testAnalysisDb.upsert(
       testId,
       fileId,
       project,
       reportId,
-      analysis,
+      analysisText,
       category,
       response.model,
       attempt,
@@ -947,6 +1003,25 @@ class LlmAnalysisQueue {
     llmTasksDb.complete(task.id, response.content, null, response.model, {
       usage: response.usage,
       promptVersion,
+    });
+
+    // Mirror to the persisted dashboard cache so the UI reflects the new summary
+    // on its next poll without re-running the LLM.
+    const reportTimes = latestReports
+      .map((r) => (r.createdAt ? new Date(String(r.createdAt)).getTime() : Number.NaN))
+      .filter((t) => Number.isFinite(t)) as number[];
+    projectSummaryDb.upsert({
+      project,
+      summary: response.content,
+      model: response.model,
+      lastReportId: latestReports[0]?.reportID,
+      reportCount: latestReports.length,
+      firstReportAt: reportTimes.length
+        ? new Date(Math.min(...reportTimes)).toISOString()
+        : undefined,
+      lastReportAt: reportTimes.length
+        ? new Date(Math.max(...reportTimes)).toISOString()
+        : undefined,
     });
   }
   /**

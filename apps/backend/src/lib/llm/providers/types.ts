@@ -35,7 +35,6 @@ export interface AnthropicRequest {
   }>;
   system?: string | AnthropicTextBlock[];
   temperature?: number;
-  stream?: boolean;
   tools?: AnthropicTool[];
   tool_choice?: { type: 'tool'; name: string } | { type: 'auto' } | { type: 'any' };
 }
@@ -103,7 +102,6 @@ export interface OpenAIRequest {
   }>;
   max_tokens?: number;
   temperature?: number;
-  stream?: boolean;
   response_format?: OpenAIResponseFormat;
 }
 
@@ -117,6 +115,7 @@ export interface OpenAIResponse {
     message: {
       role: string;
       content: string;
+      reasoning_content?: string;
     };
     finish_reason: string;
   }>;
@@ -136,60 +135,4 @@ export interface OpenAIModel {
 
 export interface OpenAIModelList {
   data: OpenAIModel[];
-}
-
-export interface OpenAIStreamChoice {
-  index: number;
-  delta: {
-    content?: string;
-    reasoning_content?: string;
-    role?: string;
-  };
-  finish_reason: string | null;
-}
-
-export interface OpenAIStreamUsage {
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
-}
-
-export interface OpenAIStreamChunk {
-  id: string;
-  object: string;
-  created: number;
-  model: string;
-  choices: OpenAIStreamChoice[];
-  usage?: OpenAIStreamUsage;
-}
-
-export interface AnthropicStreamContentBlockDelta {
-  type: string;
-  delta: {
-    type: string;
-    text?: string;
-  };
-}
-
-export interface AnthropicStreamChunk {
-  type: string;
-  index?: number;
-  delta?: {
-    type: string;
-    text?: string;
-    /** Set when delta.type === 'input_json_delta' (tool_use streaming).
-     *  Carries a JSON-string fragment of the tool's `input` field; the
-     *  concatenation of all deltas is valid JSON. */
-    partial_json?: string;
-  };
-  content_block?: AnthropicStreamContentBlockDelta;
-  usage?: {
-    output_tokens: number;
-  };
-  message?: {
-    usage: {
-      input_tokens: number;
-      output_tokens: number;
-    };
-  };
 }

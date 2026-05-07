@@ -243,7 +243,11 @@ export class LlmTasksDatabase {
       return rows;
     });
 
-    return transaction();
+    const claimed = transaction();
+    for (const row of claimed) {
+      this.fireUpdateEvent(row.id);
+    }
+    return claimed;
   }
 
   public complete(
@@ -295,6 +299,7 @@ export class LlmTasksDatabase {
 
   public cancel(id: string): void {
     this.cancelTaskStmt.run(id);
+    this.fireUpdateEvent(id);
   }
 
   /** Fail every task left in `processing` — called once at boot. A task in
@@ -317,6 +322,7 @@ export class LlmTasksDatabase {
 
   public retry(id: string): void {
     this.retryTaskStmt.run(id);
+    this.fireUpdateEvent(id);
   }
 
   public bulkDelete(ids: string[]): void {
@@ -361,6 +367,22 @@ export class LlmTasksDatabase {
          WHERE reportId = ? AND status IN ('queued','processing')`
       )
       .get(reportId) as { count: number } | undefined;
+    return row?.count ?? 0;
+  }
+
+  /**
+   * Count in-flight project_summary tasks for a project. Drives the dashboard's
+   * "Analysis ongoing" state and refetch polling on the cached summary endpoint.
+   */
+  public getInflightCountForProject(project: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) as count FROM llm_tasks
+         WHERE type = 'project_summary'
+           AND project = ?
+           AND status IN ('queued','processing')`
+      )
+      .get(project) as { count: number } | undefined;
     return row?.count ?? 0;
   }
 

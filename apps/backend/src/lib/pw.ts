@@ -5,9 +5,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import util from 'node:util';
 import { defaultConfig } from './config.js';
+import { siteConfigDb } from './service/db/siteConfig.sqlite.js';
 import { REPORTS_FOLDER, TMP_FOLDER } from './storage/constants.js';
 import { createDirectory } from './storage/folders.js';
-import { storage } from './storage/index.js';
 import type { ReportMetadata } from './storage/types.js';
 import { withError } from './withError.js';
 
@@ -35,8 +35,8 @@ export const generatePlaywrightReport = async (
 
   console.log(`[pw] generating report ${reportId} (playwright${versionTag || ' default'})`);
 
-  const { result: config } = await storage.readConfigFile();
-  const customReporters = config?.reporterPaths || defaultConfig.reporterPaths || [];
+  const config = siteConfigDb.get();
+  const customReporters = config.reporterPaths || defaultConfig.reporterPaths || [];
 
   const reporterArgs = ['html'];
 

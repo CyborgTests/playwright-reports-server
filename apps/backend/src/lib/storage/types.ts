@@ -1,10 +1,5 @@
 import type { PassThrough } from 'node:stream';
-import type {
-  ReportInfo,
-  ReportTest,
-  SiteWhiteLabelConfig,
-  UUID,
-} from '@playwright-reports/shared';
+import type { ReportInfo, ReportTest, UUID } from '@playwright-reports/shared';
 import type { Pagination } from './pagination.js';
 
 export interface Storage {
@@ -22,13 +17,9 @@ export interface Storage {
     zipFilePath: string,
     metadata?: ReportMetadata
   ) => Promise<{ reportPath: string; report: ReportHistory }>;
-  readConfigFile: () => Promise<{
-    result?: SiteWhiteLabelConfig;
-    error: Error | null;
-  }>;
-  saveConfigFile: (
-    config: Partial<SiteWhiteLabelConfig>
-  ) => Promise<{ result: SiteWhiteLabelConfig; error: Error | null }>;
+  uploadBrandingAsset: (relativePath: string) => Promise<void>;
+  ensureBrandingAsset: (relativePath: string) => Promise<void>;
+  deleteBrandingAsset: (relativePath: string) => Promise<void>;
 }
 
 export interface ReportPath {

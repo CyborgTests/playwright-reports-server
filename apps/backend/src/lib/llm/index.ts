@@ -1,12 +1,10 @@
 import { env } from '../../config/env.js';
-import { getCustomSystemPrompt, testFailedWithContext } from './prompts/index.js';
 import { AnthropicProvider } from './providers/anthropic.js';
 import { OpenAIProvider } from './providers/openai.js';
 import type {
   LLMProviderConfig,
   LLMResponse,
   LLMResponseSchema,
-  LLMStreamChunk,
   MultimodalMode,
   SegmentedPrompt,
   StructuredOutputMode,
@@ -83,65 +81,8 @@ export class LLMService {
     return this.provider.getAvailableModels();
   }
 
-  async sendMessage(
-    prompt: string,
-    systemPrompt?: string,
-    context?: {
-      totalRuns?: number;
-      averageDuration?: number;
-      isFlaky?: boolean;
-      recentFailures?: number;
-      additionalContext?: string;
-    }
-  ) {
-    if (!this.provider) {
-      throw new Error('LLM provider not initialized');
-    }
-
-    let enhancedPrompt = prompt;
-
-    if (context) {
-      enhancedPrompt = testFailedWithContext(prompt, context);
-    }
-
-    const finalSystemPrompt = getCustomSystemPrompt(systemPrompt);
-
-    return this.provider.sendMessage(enhancedPrompt, finalSystemPrompt);
-  }
-
-  async sendMessageStream(
-    prompt: string,
-    onChunk: (chunk: LLMStreamChunk) => void,
-    options?: {
-      systemPrompt?: string;
-      context?: {
-        totalRuns?: number;
-        averageDuration?: number;
-        isFlaky?: boolean;
-        recentFailures?: number;
-        additionalContext?: string;
-      };
-    }
-  ): Promise<void> {
-    if (!this.provider) {
-      throw new Error('LLM provider not initialized');
-    }
-
-    let enhancedPrompt = prompt;
-
-    if (options?.context) {
-      enhancedPrompt = testFailedWithContext(prompt, options.context);
-    }
-
-    const finalSystemPrompt = getCustomSystemPrompt(options?.systemPrompt);
-
-    return this.provider.sendMessageStream(enhancedPrompt, onChunk, finalSystemPrompt);
-  }
-
   /** Resolve the effective shape of a segmented call against current modes
-   *  and the per-(provider+model) blocklist. Used by both streaming and
-   *  non-streaming entry points so a blocklist memo set on one path is
-   *  honored by the other. */
+   *  and the per-(provider+model) blocklist. */
   private resolveCallShape(
     prompt: SegmentedPrompt,
     options: SegmentedSendOptions
@@ -315,27 +256,6 @@ export class LLMService {
       msg.includes('does not accept') ||
       msg.includes('not a vision model')
     );
-  }
-
-  async sendSegmentedMessageStream(
-    prompt: SegmentedPrompt,
-    onChunk: (chunk: LLMStreamChunk) => void,
-    options: SegmentedSendOptions = {}
-  ): Promise<void> {
-    if (!this.provider) {
-      throw new Error('LLM provider not initialized');
-    }
-    // Streaming can't retry mid-stream (SSE headers go out before we'd see
-    // a 400), but it can pre-apply the blocklist set by prior non-streaming
-    // calls so a model that's already known to reject schema/images is not
-    // sent the same payload again.
-    const { useSchema, useImages } = this.resolveCallShape(prompt, options);
-    const effectivePrompt = useImages ? prompt : this.stripImages(prompt);
-    const effectiveOptions: SegmentedSendOptions = {
-      ...options,
-      responseSchema: useSchema ? options.responseSchema : undefined,
-    };
-    return this.provider.sendSegmentedMessageStream(effectivePrompt, onChunk, effectiveOptions);
   }
 
   /** Active model context window in tokens, or null if unknown. */

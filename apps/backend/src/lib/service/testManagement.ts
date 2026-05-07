@@ -2,15 +2,13 @@ import type { TestManagementConfig } from '@playwright-reports/shared';
 import { ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import { defaultConfig } from '../config.js';
 import { llmService } from '../llm/index.js';
-import { extractFailureMessage, readErrorContextSync } from '../parser/failure-extraction.js';
+import { extractFailureMessage } from '../parser/failure-extraction.js';
 import type { ReportHistory } from '../storage/types.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import { projectSummaryDb } from './db/projectSummary.sqlite.js';
 import type { Test, TestRun, TestWithQuarantineInfo } from './db/tests.sqlite.js';
 import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
-
-export { readErrorContextSync };
 
 /**
  * Compute flakiness score (% of runs that triggered an instability event) from an

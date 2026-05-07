@@ -19,18 +19,15 @@ import {
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import getFolderSize from 'get-folder-size';
 import { Open } from 'unzipper';
 import { env } from '../../config/env.js';
 import { withError } from '../../lib/withError.js';
-import { defaultConfig, isConfigValid } from '../config.js';
 import { serveReportRoute } from '../constants.js';
 import { parse } from '../parser/index.js';
 import { generatePlaywrightReport } from '../pw.js';
 import { processWithConcurrency, Semaphore } from '../utils/semaphore.js';
 import {
-  APP_CONFIG_S3,
   DATA_FOLDER,
   DATA_PATH,
   REPORTS_BUCKET,
@@ -135,30 +132,6 @@ export class S3 implements Storage {
     console.error('[s3] failed to check that bucket exists:', error);
   }
 
-  private async write(
-    dir: string,
-    files: {
-      name: string;
-      content: Readable | Buffer | string;
-      size?: number;
-    }[]
-  ) {
-    await this.ensureBucketExist();
-    for (const file of files) {
-      const filePath = path.join(dir, file.name);
-
-      const content = typeof file.content === 'string' ? Buffer.from(file.content) : file.content;
-
-      await this.client.send(
-        new PutObjectCommand({
-          Bucket: this.bucket,
-          Key: path.normalize(filePath),
-          Body: content,
-        })
-      );
-    }
-  }
-
   private async read(targetPath: string, contentType?: string | null) {
     await this.ensureBucketExist();
 
@@ -218,6 +191,89 @@ export class S3 implements Storage {
         })
       );
     });
+  }
+
+  // S3 keys must use forward slashes regardless of host OS, so the remote key
+  // is built with `path.posix.join` while the local path uses the platform
+  // separator. Leading slashes on the stored config path are stripped so we
+  // don't produce an absolute path that escapes DATA_FOLDER.
+  private resolveBrandingAsset(relativePath: string): {
+    localPath: string;
+    remoteKey: string;
+  } {
+    const safeRelative = path.normalize(relativePath).replace(/^[/\\]+/, '');
+    return {
+      localPath: path.join(DATA_FOLDER, safeRelative),
+      remoteKey: path.posix.join(DATA_PATH, safeRelative.split(path.sep).join('/')),
+    };
+  }
+
+  async uploadBrandingAsset(relativePath: string): Promise<void> {
+    const { localPath, remoteKey } = this.resolveBrandingAsset(relativePath);
+
+    const { error: accessError } = await withError(fs.access(localPath));
+    if (accessError) {
+      console.warn(`[s3] branding asset not found locally, skipping upload: ${localPath}`);
+      return;
+    }
+
+    console.log(`[s3] uploading branding asset: ${remoteKey}`);
+    const { error } = await withError(this.uploadFileWithRetry(remoteKey, localPath));
+
+    if (error) {
+      console.error(`[s3] failed to upload branding asset: ${error.message}`);
+    }
+  }
+
+  async ensureBrandingAsset(relativePath: string): Promise<void> {
+    const { localPath, remoteKey } = this.resolveBrandingAsset(relativePath);
+
+    const { error: missingLocally } = await withError(fs.access(localPath));
+    if (!missingLocally) return; // file is on disk, nothing to download
+
+    await fs.mkdir(path.dirname(localPath), { recursive: true });
+
+    const { result: response, error: getError } = await withError(
+      this.client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: remoteKey,
+        })
+      )
+    );
+
+    if (getError || !response?.Body) {
+      console.warn(
+        `[s3] branding asset not found remotely: ${remoteKey}${getError ? ` (${getError.message})` : ''}`
+      );
+      return;
+    }
+
+    console.log(`[s3] downloading branding asset: ${remoteKey} -> ${localPath}`);
+    const stream = response.Body as Readable;
+    const writeStream = createWriteStream(localPath);
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        stream.pipe(writeStream);
+        writeStream.on('finish', () => resolve());
+        writeStream.on('error', reject);
+        stream.on('error', reject);
+      });
+    } catch (err) {
+      stream.destroy();
+      writeStream.destroy();
+      await withError(fs.unlink(localPath));
+      throw err;
+    }
+  }
+
+  async deleteBrandingAsset(relativePath: string): Promise<void> {
+    const { remoteKey } = this.resolveBrandingAsset(relativePath);
+    const { error } = await withError(this.clear(remoteKey));
+    if (error) {
+      console.warn(`[s3] failed to delete branding asset ${remoteKey}: ${error.message}`);
+    }
   }
 
   async getFolderSize(
@@ -694,170 +750,6 @@ export class S3 implements Storage {
     }
 
     return content;
-  }
-
-  async readConfigFile(): Promise<{
-    result?: SiteWhiteLabelConfig;
-    error: Error | null;
-  }> {
-    await this.ensureBucketExist();
-
-    const { result: response, error } = await withError(
-      this.client.send(
-        new GetObjectCommand({
-          Bucket: this.bucket,
-          Key: APP_CONFIG_S3,
-        })
-      )
-    );
-
-    if (error) {
-      console.error(`[s3] failed to read config file: ${error.message}`);
-
-      return { error };
-    }
-
-    const stream = response?.Body as Readable;
-    let existingConfig = '';
-
-    for await (const chunk of stream ?? []) {
-      existingConfig += chunk.toString();
-    }
-
-    try {
-      const parsed = JSON.parse(existingConfig);
-
-      const isValid = isConfigValid(parsed);
-
-      if (!isValid) {
-        return { error: new Error('invalid config') };
-      }
-
-      // Pull custom logo/favicon down so they are served locally without an S3 round trip.
-      for (const image of [
-        { path: parsed.faviconPath, default: defaultConfig.faviconPath },
-        { path: parsed.logoPath, default: defaultConfig.logoPath },
-      ]) {
-        if (!image) continue;
-        if (image.path === image.default) continue;
-
-        const localPath = path.join(DATA_FOLDER, image.path);
-        const { error: accessError } = await withError(fs.access(localPath));
-
-        if (accessError) {
-          const remotePath = path.join(DATA_PATH, image.path);
-
-          console.log(`[s3] downloading config image: ${remotePath} to ${localPath}`);
-
-          const response = await this.client.send(
-            new GetObjectCommand({
-              Bucket: this.bucket,
-              Key: remotePath,
-            })
-          );
-
-          const stream = response.Body as Readable;
-          const writeStream = createWriteStream(localPath);
-
-          await new Promise<void>((resolve, reject) => {
-            stream.pipe(writeStream);
-            writeStream.on('finish', resolve);
-            writeStream.on('error', reject);
-            stream.on('error', reject);
-          });
-        }
-      }
-
-      return { result: parsed, error: null };
-    } catch (e) {
-      return {
-        error: new Error(`failed to parse config: ${e instanceof Error ? e.message : e}`),
-      };
-    }
-  }
-
-  async saveConfigFile(config: Partial<SiteWhiteLabelConfig>) {
-    const { result: existingConfig, error: readExistingConfigError } = await this.readConfigFile();
-
-    if (readExistingConfigError) {
-      console.error(`[s3] failed to read existing config file: ${readExistingConfigError.message}`);
-    }
-
-    const { error: clearExistingConfigError } = await withError(this.clear(APP_CONFIG_S3));
-
-    if (clearExistingConfigError) {
-      console.error(
-        `[s3] failed to clear existing config file: ${clearExistingConfigError.message}`
-      );
-    }
-
-    const uploadConfig = {
-      ...(existingConfig ?? {}),
-      ...config,
-    } as SiteWhiteLabelConfig;
-
-    const isDefaultImage = (key: keyof SiteWhiteLabelConfig) =>
-      config[key] && config[key] === defaultConfig[key];
-
-    const shouldBeUploaded = async (key: keyof SiteWhiteLabelConfig) => {
-      if (!config[key]) return false;
-      if (isDefaultImage(key)) return false;
-
-      const imagePath = key === 'logoPath' ? uploadConfig.logoPath : uploadConfig.faviconPath;
-
-      const { result } = await withError(
-        this.client.send(
-          new HeadObjectCommand({
-            Bucket: this.bucket,
-            Key: path.join(DATA_PATH, imagePath),
-          })
-        )
-      );
-
-      if (!result) {
-        return true;
-      }
-
-      return false;
-    };
-
-    if (await shouldBeUploaded('logoPath')) {
-      await this.uploadConfigImage(uploadConfig.logoPath);
-    }
-
-    if (await shouldBeUploaded('faviconPath')) {
-      await this.uploadConfigImage(uploadConfig.faviconPath);
-    }
-
-    const { error } = await withError(
-      this.write(DATA_PATH, [
-        {
-          name: 'config.json',
-          content: JSON.stringify(uploadConfig, null, 2),
-        },
-      ])
-    );
-
-    if (error) console.error(`[s3] failed to write config file: ${error.message}`);
-
-    return { result: uploadConfig, error };
-  }
-
-  private async uploadConfigImage(imagePath: string): Promise<Error | null> {
-    console.log(`[s3] uploading config image: ${imagePath}`);
-
-    const localPath = path.join(DATA_FOLDER, imagePath);
-    const remotePath = path.join(DATA_PATH, imagePath);
-
-    const { error } = await withError(this.uploadFileWithRetry(remotePath, localPath));
-
-    if (error) {
-      console.error(`[s3] failed to upload config image: ${error.message}`);
-
-      return error;
-    }
-
-    return null;
   }
 
   async uploadReportFromZipFile(

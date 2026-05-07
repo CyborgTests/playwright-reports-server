@@ -204,6 +204,39 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
       const { reportId } = request.query as { reportId?: string };
 
       try {
+        const db = getDatabase();
+
+        // retry takes precedence over the stored row: while a
+        // retry-flagged task for this (testId, reportId) is still in flight,
+        // surface it as pending so the viewer renders "regenerating…" instead
+        // of the about-to-be-replaced analysis. Auto-queued (isRetry=0) tasks
+        // do NOT preempt — those run as background fill-in and shouldn't hide
+        // an existing analysis from the user.
+        const retryPendingQuery = reportId
+          ? db.prepare(
+              `SELECT id, status FROM llm_tasks
+               WHERE type = 'test_analysis' AND testId = ? AND reportId = ?
+                 AND status IN ('queued','processing') AND isRetry = 1
+               ORDER BY createdAt DESC LIMIT 1`
+            )
+          : db.prepare(
+              `SELECT id, status FROM llm_tasks
+               WHERE type = 'test_analysis' AND testId = ?
+                 AND status IN ('queued','processing') AND isRetry = 1
+               ORDER BY createdAt DESC LIMIT 1`
+            );
+        const retryPending = (
+          reportId ? retryPendingQuery.get(testId, reportId) : retryPendingQuery.get(testId)
+        ) as { id: string; status: string } | undefined;
+
+        if (retryPending) {
+          return reply.send({
+            success: true,
+            data: null,
+            pending: { taskId: retryPending.id, status: retryPending.status },
+          });
+        }
+
         const analysis = reportId
           ? testAnalysisDb.getByTestAndReport(testId, reportId)
           : testAnalysisDb.getByTestAndReport(testId, '');
@@ -213,7 +246,6 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         }
 
         // Fall back to llm_tasks table — the SSE endpoint saves results there
-        const db = getDatabase();
         const taskQuery = reportId
           ? db.prepare(
               `SELECT result AS analysis, model, category FROM llm_tasks WHERE testId = ? AND reportId = ? AND status = 'completed' AND result IS NOT NULL ORDER BY completedAt DESC LIMIT 1`

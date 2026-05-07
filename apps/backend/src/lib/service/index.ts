@@ -3,7 +3,6 @@ import path from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
 import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import { env } from '../../config/env.js';
-import { defaultConfig } from '../config.js';
 import { serveReportRoute } from '../constants.js';
 import { isValidPlaywrightVersion } from '../pw.js';
 import { DEFAULT_STREAM_CHUNK_SIZE, TMP_FOLDER } from '../storage/constants.js';
@@ -23,6 +22,7 @@ import type { S3 } from '../storage/s3.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
 import { reportDb, resultDb } from './db/index.js';
+import { siteConfigDb } from './db/siteConfig.sqlite.js';
 import { lifecycle } from './lifecycle.js';
 import { testManagementService } from './testManagement.js';
 
@@ -306,22 +306,13 @@ class Service {
       }
     }
 
-    const { result, error } = await storage.readConfigFile();
-
-    if (error) console.warn(`[service] getConfig | error: ${error.message}`);
-
-    return { ...defaultConfig, ...(result ?? {}) };
+    siteConfigDb.ensureSeeded();
+    return siteConfigDb.get();
   }
 
   public async updateConfig(config: Partial<SiteWhiteLabelConfig>) {
-    const { result, error } = await storage.saveConfigFile(config);
-
-    if (error) {
-      throw error;
-    }
-
+    const result = siteConfigDb.set(config);
     configCache.onChanged(result);
-
     return result;
   }
 }

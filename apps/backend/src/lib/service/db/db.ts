@@ -289,6 +289,14 @@ function initializeSchema(db: Database.Database): void {
   `);
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS site_config (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      config TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS analysis_feedback (
       id TEXT PRIMARY KEY,
       testId TEXT NOT NULL,

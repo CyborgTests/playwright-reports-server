@@ -25,8 +25,6 @@ export const defaultConfig: SiteWhiteLabelConfig = {
   },
 };
 
-export const noConfigErr = 'no config';
-
 export const isConfigValid = (config: unknown): config is SiteWhiteLabelConfig => {
   return (
     !!config &&

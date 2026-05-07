@@ -6,13 +6,15 @@ import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
+import { defaultConfig } from '../lib/config.js';
 import { llmService } from '../lib/llm/index.js';
-import { TASK_TEMPERATURE_DEFAULTS } from '../lib/service/llmAnalysisQueue.js';
 import { CronService, cronService } from '../lib/service/cron.js';
 import { getDatabaseStats } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
+import { TASK_TEMPERATURE_DEFAULTS } from '../lib/service/llmAnalysisQueue.js';
 import { testManagementService } from '../lib/service/testManagement.js';
 import { DATA_FOLDER } from '../lib/storage/constants.js';
+import { storage } from '../lib/storage/index.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
@@ -38,6 +40,14 @@ const BRANDING_ALLOWED_EXTENSIONS = new Set([
 function isCustomBrandingPath(p: string | undefined): boolean {
   if (!p) return false;
   return p.startsWith(`/${BRANDING_SUBDIR}/`);
+}
+
+const SAFE_BRANDING_PATH = /^\/branding\/[A-Za-z0-9._-]+$/;
+function isAllowedLogoPath(p: string): boolean {
+  return p === defaultConfig.logoPath || SAFE_BRANDING_PATH.test(p);
+}
+function isAllowedFaviconPath(p: string): boolean {
+  return p === defaultConfig.faviconPath || SAFE_BRANDING_PATH.test(p);
 }
 
 async function deleteCustomBrandingFile(brandingPath: string | undefined) {
@@ -212,12 +222,18 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       if (logoFileSaved) {
         config.logoPath = logoFileSaved;
       } else if (formData.logoPath !== undefined) {
+        if (!isAllowedLogoPath(formData.logoPath)) {
+          return reply.status(400).send({ error: 'invalid logoPath' });
+        }
         config.logoPath = formData.logoPath;
       }
 
       if (faviconFileSaved) {
         config.faviconPath = faviconFileSaved;
       } else if (formData.faviconPath !== undefined) {
+        if (!isAllowedFaviconPath(formData.faviconPath)) {
+          return reply.status(400).send({ error: 'invalid faviconPath' });
+        }
         config.faviconPath = formData.faviconPath;
       }
 
@@ -466,6 +482,25 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         config.testManagement.flakinessEvaluationWindowDays = windowDays;
       }
 
+      if (logoFileSaved && isCustomBrandingPath(logoFileSaved)) {
+        const { error } = await withError(storage.uploadBrandingAsset(logoFileSaved));
+        if (error) {
+          await withError(deleteCustomBrandingFile(logoFileSaved));
+          return reply.status(500).send({
+            error: `failed to upload logo: ${error.message}`,
+          });
+        }
+      }
+      if (faviconFileSaved && isCustomBrandingPath(faviconFileSaved)) {
+        const { error } = await withError(storage.uploadBrandingAsset(faviconFileSaved));
+        if (error) {
+          await withError(deleteCustomBrandingFile(faviconFileSaved));
+          return reply.status(500).send({
+            error: `failed to upload favicon: ${error.message}`,
+          });
+        }
+      }
+
       const { error: saveConfigError } = await withError(service.updateConfig(config));
 
       if (saveConfigError) {
@@ -476,9 +511,15 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
       if (config.logoPath !== previousLogoPath) {
         await withError(deleteCustomBrandingFile(previousLogoPath));
+        if (isCustomBrandingPath(previousLogoPath)) {
+          await withError(storage.deleteBrandingAsset(previousLogoPath as string));
+        }
       }
       if (config.faviconPath !== previousFaviconPath) {
         await withError(deleteCustomBrandingFile(previousFaviconPath));
+        if (isCustomBrandingPath(previousFaviconPath)) {
+          await withError(storage.deleteBrandingAsset(previousFaviconPath as string));
+        }
       }
 
       const testManagementConfigChanged = !!(

@@ -1,10 +1,4 @@
-import type {
-  LLMRequest,
-  LLMResponse,
-  LLMStreamChunk,
-  PromptSegment,
-  StreamAccumulator,
-} from '../types/index.js';
+import type { LLMRequest, LLMResponse, PromptSegment } from '../types/index.js';
 import { LLMProvider } from './base.js';
 import type {
   OpenAIImagePart,
@@ -12,16 +6,11 @@ import type {
   OpenAIModelList,
   OpenAIRequest,
   OpenAIResponse,
-  OpenAIStreamChunk,
   OpenAITextPart,
 } from './types.js';
 
 export class OpenAIProvider extends LLMProvider {
   protected getApiEndpoint(): string {
-    return `${this.config.baseUrl}/chat/completions`;
-  }
-
-  protected getStreamApiEndpoint(): string {
     return `${this.config.baseUrl}/chat/completions`;
   }
 
@@ -119,16 +108,10 @@ export class OpenAIProvider extends LLMProvider {
     return body;
   }
 
-  protected formatStreamRequestBody(request: LLMRequest): OpenAIRequest {
-    return {
-      ...this.formatRequestBody(request),
-      stream: true,
-    };
-  }
-
   protected async parseResponse(response: Response, request?: LLMRequest): Promise<LLMResponse> {
     const data = (await response.json()) as OpenAIResponse;
-    const content = data.choices?.[0]?.message?.content || '';
+    const message = data.choices?.[0]?.message;
+    const content = message?.content || message?.reasoning_content || '';
 
     // Only attempt structured-output extraction when the request actually
     // asked for it. Otherwise free-form analyses that happen to start with
@@ -156,57 +139,6 @@ export class OpenAIProvider extends LLMProvider {
       model: data.model || this.config.model,
       finishReason: data.choices?.[0]?.finish_reason,
     };
-  }
-
-  protected parseStreamLine(line: string, accumulator: StreamAccumulator): LLMStreamChunk | null {
-    if (!line.startsWith('data: ')) {
-      return null;
-    }
-
-    const data = line.slice(6); // Remove 'data: ' prefix
-
-    if (data.trim() === '[DONE]') {
-      return null;
-    }
-
-    try {
-      const chunk = JSON.parse(data) as OpenAIStreamChunk;
-      const choice = chunk.choices?.[0];
-
-      if (!choice) {
-        return null;
-      }
-
-      if (choice.delta?.reasoning_content) {
-        return {
-          type: 'thinking',
-          content: choice.delta.reasoning_content,
-        };
-      }
-
-      if (choice.delta?.content) {
-        return {
-          type: 'token',
-          content: choice.delta.content,
-        };
-      }
-
-      if (choice.finish_reason) {
-        accumulator.finishReason = choice.finish_reason;
-      }
-
-      if (chunk.usage) {
-        accumulator.usage = {
-          inputTokens: chunk.usage.prompt_tokens || 0,
-          outputTokens: chunk.usage.completion_tokens || 0,
-          totalTokens: chunk.usage.total_tokens || 0,
-        };
-      }
-
-      return null;
-    } catch {
-      return null;
-    }
   }
 
   protected extractModelIds(data: OpenAIModelList): string[] {

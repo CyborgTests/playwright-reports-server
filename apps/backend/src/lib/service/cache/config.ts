@@ -1,6 +1,5 @@
 import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
-import { defaultConfig } from '../../config.js';
-import { storage } from '../../storage/index.js';
+import { siteConfigDb } from '../db/siteConfig.sqlite.js';
 
 const initiatedConfigDb = Symbol.for('playwright.reports.db.config');
 const instance = globalThis as typeof globalThis & {
@@ -24,21 +23,8 @@ export class ConfigCache {
       return;
     }
 
-    const { result, error } = await storage.readConfigFile();
-
-    if (error) {
-      if (error.message.includes('Error: no config')) {
-        console.warn('[config cache] using default config');
-      } else {
-        console.error('[config cache] failed to read config file');
-      }
-      return;
-    }
-
-    const cache = ConfigCache.getInstance();
-
-    cache.config = result ?? defaultConfig;
-
+    siteConfigDb.ensureSeeded();
+    this.config = siteConfigDb.get();
     this.initialized = true;
   }
 
