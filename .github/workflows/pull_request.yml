@@ -17,11 +17,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "24"
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
       - name: Get pnpm store directory
         id: pnpm-cache
         shell: bash
@@ -47,11 +47,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "24"
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
       - name: Get pnpm store directory
         id: pnpm-cache
         shell: bash
@@ -69,25 +69,6 @@ jobs:
       - name: Run Biome lint
         run: pnpm run lint
 
-  # TODO: Add unit tests
-  # unit-tests:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v5
-  #     - name: Setup Node.js
-  #       uses: actions/setup-node@v6
-  #       with:
-  #         node-version: '20'
-  #     - name: Install pnpm
-  #       uses: pnpm/action-setup@v4
-  #       with:
-  #         version: 9
-  #     - name: Install dependencies
-  #       run: pnpm install
-  #     - name: Run unit tests
-  #       run: pnpm run test:unit
-
   api-tests:
     needs: [biome-format, biome-lint]
     runs-on: ubuntu-latest
@@ -97,11 +78,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "24"
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
       - name: Get pnpm store directory
         id: pnpm-cache
         shell: bash
