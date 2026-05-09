@@ -3,18 +3,6 @@
   "version": "6.3.0",
   "description": "Playwright Reports Server: Can be used to accept blobs, merge them, store and view Playwright reports",
   "type": "module",
-  "pnpm": {
-    "overrides": {
-      "@react-aria/selection": "3.27.0",
-      "@react-aria/utils": "3.32.0",
-      "@react-aria/interactions": "3.26.0",
-      "@react-aria/focus": "3.21.3",
-      "@react-aria/i18n": "3.12.14",
-      "@react-aria/ssr": "3.9.10",
-      "@react-aria/visually-hidden": "3.8.29",
-      "@react-types/shared": "3.32.1"
-    }
-  },
   "scripts": {
     "dev": "concurrently --kill-others-on-fail --restart-tries=1 \"pnpm --filter @playwright-reports/backend dev\" \"pnpm --filter @playwright-reports/frontend dev\"",
     "dev:backend": "pnpm --filter @playwright-reports/backend dev",
