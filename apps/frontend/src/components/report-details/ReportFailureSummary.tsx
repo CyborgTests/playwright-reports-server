@@ -94,9 +94,7 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
     }
   );
 
-  if (!config?.llm?.baseUrl) {
-    return null;
-  }
+  const llmConfigured = !!(config?.llm?.baseUrl && config?.llm?.apiKey);
 
   if (isLoading) {
     return null;
@@ -106,6 +104,10 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
   const hasFailures = summaryResponse?.hasFailures ?? false;
   const pendingAnalysisCount = summaryResponse?.pendingAnalysisCount ?? 0;
   const hasOngoingAnalysis = pendingAnalysisCount > 0 || isAnalyzing;
+
+  if (!summary && !llmConfigured) {
+    return null;
+  }
 
   if ((!summary || error) && !hasFailures) {
     return null;
@@ -185,14 +187,16 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
               </Tooltip>
             </TooltipProvider>
           ) : (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => triggerAnalysis({})}
-              title="Re-analyze failures"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            llmConfigured && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => triggerAnalysis({})}
+                title="Re-analyze failures"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            )
           )}
         </div>
       </CardHeader>

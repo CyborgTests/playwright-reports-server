@@ -12,167 +12,168 @@ import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
 export async function registerResultRoutes(fastify: FastifyInstance) {
-  fastify.get('/api/result/list', async (request, reply) => {
-    try {
-      const query = validateSchema(ListResultsQuerySchema, request.query);
-      const params = new URLSearchParams();
-      if (query.limit !== undefined) {
-        params.append('limit', query.limit.toString());
-      }
-      if (query.offset !== undefined) {
-        params.append('offset', query.offset.toString());
-      }
-      const pagination = parseFromRequest(params);
-      const tags = query.tags ? query.tags.split(',').filter(Boolean) : [];
+  await fastify.register(async (fastify) => {
+    fastify.addHook('preHandler', (request, reply) => authenticate(request as AuthRequest, reply));
 
-      const { result, error } = await withError(
-        service.getResults({
-          pagination,
-          project: query.project,
-          tags,
-          search: query.search,
-        })
-      );
+    fastify.get('/api/result/list', async (request, reply) => {
+      try {
+        const query = validateSchema(ListResultsQuerySchema, request.query);
+        const params = new URLSearchParams();
+        if (query.limit !== undefined) {
+          params.append('limit', query.limit.toString());
+        }
+        if (query.offset !== undefined) {
+          params.append('offset', query.offset.toString());
+        }
+        const pagination = parseFromRequest(params);
+        const tags = query.tags ? query.tags.split(',').filter(Boolean) : [];
+
+        const { result, error } = await withError(
+          service.getResults({
+            pagination,
+            project: query.project,
+            tags,
+            search: query.search,
+          })
+        );
+
+        if (error) {
+          return reply.status(400).send({ error: error.message });
+        }
+
+        return result;
+      } catch (error) {
+        console.error('[routes] list results error:', error);
+        return reply.status(500).send({ error: 'Internal server error' });
+      }
+    });
+
+    fastify.get('/api/result/projects', async (_request, reply) => {
+      const { result: projects, error } = await withError(service.getResultsProjects());
 
       if (error) {
         return reply.status(400).send({ error: error.message });
       }
 
-      return result;
-    } catch (error) {
-      console.error('[routes] list results error:', error);
-      return reply.status(500).send({ error: 'Internal server error' });
-    }
-  });
-
-  fastify.get('/api/result/projects', async (_, reply) => {
-    const { result: projects, error } = await withError(service.getResultsProjects());
-
-    if (error) {
-      return reply.status(400).send({ error: error.message });
-    }
-
-    return projects;
-  });
-
-  fastify.get('/api/result/tags', async (_, reply) => {
-    const { result: tags, error } = await withError(service.getResultsTags());
-
-    if (error) {
-      return reply.status(400).send({ error: error.message });
-    }
-
-    return tags;
-  });
-
-  fastify.delete(
-    '/api/result/delete',
-    {
-      config: {
-        rawBody: true,
-      },
-    },
-    async (request, reply) => {
-      try {
-        const body = (request.body as { resultsIds?: unknown }) || { resultsIds: [] };
-
-        if (!body.resultsIds || !Array.isArray(body.resultsIds)) {
-          return reply.status(400).send({ error: 'resultsIds array is required' });
-        }
-
-        if (body.resultsIds.length === 0) {
-          return reply.status(400).send({ error: 'At least one result ID must be provided' });
-        }
-
-        const validatedBody = validateSchema(DeleteResultsRequestSchema, body);
-
-        const { error } = await withError(service.deleteResults(validatedBody.resultsIds));
-
-        if (error) {
-          console.error(`[routes] delete results error:`, error);
-          return reply.status(404).send({ error: error.message });
-        }
-
-        return reply.status(200).send({
-          message: 'Results files deleted successfully',
-          resultsIds: validatedBody.resultsIds,
-        });
-      } catch (error) {
-        console.error('[routes] delete results validation error:', error);
-        return reply.status(400).send({ error: 'Invalid request format' });
-      }
-    }
-  );
-
-  fastify.put('/api/result/upload', async (request, reply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
-
-    const resultID = randomUUID();
-    const fileName = `${resultID}.zip`;
-
-    const query = request.query as Record<string, string>;
-    const contentLength = query['fileContentLength'] || '';
-
-    // When fileContentLength is provided we can hand back a presigned URL for direct upload.
-    const presignedUrl = contentLength ? await service.getPresignedUrl(fileName) : '';
-
-    const filePassThrough = new PassThrough({
-      highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
+      return projects;
     });
 
-    const { result, error: uploadError } = await withError(
-      processMultipartAndUpload(request, fileName, filePassThrough, {
-        presignedUrl,
-        contentLength,
-      })
-    );
+    fastify.get('/api/result/tags', async (_request, reply) => {
+      const { result: tags, error } = await withError(service.getResultsTags());
 
-    if (uploadError) {
-      await withError(service.deleteResults([resultID]));
-      return reply.status(400).send({
-        error: uploadError.message,
-      });
-    }
+      if (error) {
+        return reply.status(400).send({ error: error.message });
+      }
 
-    if (!result) {
-      await withError(service.deleteResults([resultID]));
-      return reply.status(400).send({ error: 'upload result failed: No result data' });
-    }
+      return tags;
+    });
 
-    const { result: uploadResult, error: uploadResultDetailsError } = await withError(
-      service.saveResultDetails(resultID, result.details, result.fileSize)
-    );
-
-    if (uploadResultDetailsError) {
-      await withError(service.deleteResults([resultID]));
-      return reply.status(400).send({
-        error: `upload result details failed: ${uploadResultDetailsError.message}`,
-      });
-    }
-
-    const { result: generatedReport, error: reportError } = await withError(
-      maybeGenerateReport(resultID, result.details)
-    );
-
-    if (reportError) {
-      return reply.status(400).send({
-        error: `failed to generate report: ${reportError.message}`,
-      });
-    }
-
-    if (generatedReport && typeof generatedReport === 'object' && 'reportId' in generatedReport) {
-      console.log(
-        `[upload] generated report ${(generatedReport as { reportId: string }).reportId}`
-      );
-    }
-
-    return reply.status(200).send({
-      message: 'Success',
-      data: {
-        ...uploadResult,
-        generatedReport,
+    fastify.delete(
+      '/api/result/delete',
+      {
+        config: {
+          rawBody: true,
+        },
       },
+      async (request, reply) => {
+        try {
+          const body = (request.body as { resultsIds?: unknown }) || { resultsIds: [] };
+
+          if (!body.resultsIds || !Array.isArray(body.resultsIds)) {
+            return reply.status(400).send({ error: 'resultsIds array is required' });
+          }
+
+          if (body.resultsIds.length === 0) {
+            return reply.status(400).send({ error: 'At least one result ID must be provided' });
+          }
+
+          const validatedBody = validateSchema(DeleteResultsRequestSchema, body);
+
+          const { error } = await withError(service.deleteResults(validatedBody.resultsIds));
+
+          if (error) {
+            console.error(`[routes] delete results error:`, error);
+            return reply.status(404).send({ error: error.message });
+          }
+
+          return reply.status(200).send({
+            message: 'Results files deleted successfully',
+            resultsIds: validatedBody.resultsIds,
+          });
+        } catch (error) {
+          console.error('[routes] delete results validation error:', error);
+          return reply.status(400).send({ error: 'Invalid request format' });
+        }
+      }
+    );
+
+    fastify.put('/api/result/upload', async (request, reply) => {
+      const resultID = randomUUID();
+      const fileName = `${resultID}.zip`;
+
+      const query = request.query as Record<string, string>;
+      const contentLength = query['fileContentLength'] || '';
+
+      // When fileContentLength is provided we can hand back a presigned URL for direct upload.
+      const presignedUrl = contentLength ? await service.getPresignedUrl(fileName) : '';
+
+      const filePassThrough = new PassThrough({
+        highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
+      });
+
+      const { result, error: uploadError } = await withError(
+        processMultipartAndUpload(request, fileName, filePassThrough, {
+          presignedUrl,
+          contentLength,
+        })
+      );
+
+      if (uploadError) {
+        await withError(service.deleteResults([resultID]));
+        return reply.status(400).send({
+          error: uploadError.message,
+        });
+      }
+
+      if (!result) {
+        await withError(service.deleteResults([resultID]));
+        return reply.status(400).send({ error: 'upload result failed: No result data' });
+      }
+
+      const { result: uploadResult, error: uploadResultDetailsError } = await withError(
+        service.saveResultDetails(resultID, result.details, result.fileSize)
+      );
+
+      if (uploadResultDetailsError) {
+        await withError(service.deleteResults([resultID]));
+        return reply.status(400).send({
+          error: `upload result details failed: ${uploadResultDetailsError.message}`,
+        });
+      }
+
+      const { result: generatedReport, error: reportError } = await withError(
+        maybeGenerateReport(resultID, result.details)
+      );
+
+      if (reportError) {
+        return reply.status(400).send({
+          error: `failed to generate report: ${reportError.message}`,
+        });
+      }
+
+      if (generatedReport && typeof generatedReport === 'object' && 'reportId' in generatedReport) {
+        console.log(
+          `[upload] generated report ${(generatedReport as { reportId: string }).reportId}`
+        );
+      }
+
+      return reply.status(200).send({
+        message: 'Success',
+        data: {
+          ...uploadResult,
+          generatedReport,
+        },
+      });
     });
   });
 }
@@ -191,7 +192,7 @@ async function processMultipartAndUpload(
   const savePromise = service.saveResult(fileName, passThrough, {
     presignedUrl: opts.presignedUrl,
     contentLength: opts.contentLength,
-    shouldStoreLocalCopy: false,
+    shouldStoreLocalCopy: true,
   });
 
   try {

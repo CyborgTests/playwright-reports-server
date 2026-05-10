@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useConfig } from '@/hooks/useConfig';
 import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 import { defaultProjectName } from '@/lib/constants';
@@ -49,6 +50,8 @@ export function FailureAnalysisSummary({
   totalFailures,
 }: Readonly<FailureAnalysisSummaryProps>) {
   const queryClient = useQueryClient();
+  const { data: config } = useConfig();
+  const llmConfigured = !!(config?.llm?.baseUrl && config?.llm?.apiKey);
 
   const cacheParams = new URLSearchParams();
   if (project && project !== defaultProjectName) cacheParams.append('project', project);
@@ -78,6 +81,10 @@ export function FailureAnalysisSummary({
   const hasOngoingAnalysis = pendingAnalysisCount > 0 || isEnqueuing;
 
   if (isLoading) {
+    return null;
+  }
+
+  if (!summary && !llmConfigured) {
     return null;
   }
 
@@ -126,21 +133,21 @@ export function FailureAnalysisSummary({
               Test health analysis based on the latest 10 runs
             </p>
           </div>
-          {hasOngoingAnalysis ? (
-            ongoingButton
-          ) : (
-            <Button variant="outline" size="sm" onClick={() => enqueueAnalysis({})}>
-              {summary ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-1" /> Re-generate
-                </>
-              ) : (
-                <>
-                  <Brain className="h-4 w-4 mr-1" /> Generate Analysis
-                </>
+          {hasOngoingAnalysis
+            ? ongoingButton
+            : llmConfigured && (
+                <Button variant="outline" size="sm" onClick={() => enqueueAnalysis({})}>
+                  {summary ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-1" /> Re-generate
+                    </>
+                  ) : (
+                    <>
+                      <Brain className="h-4 w-4 mr-1" /> Generate Analysis
+                    </>
+                  )}
+                </Button>
               )}
-            </Button>
-          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -182,7 +189,7 @@ export function FailureAnalysisSummary({
             )}
           </div>
         )}
-        {!hasOngoingAnalysis && !summary && (
+        {!hasOngoingAnalysis && !summary && llmConfigured && (
           <div className="text-center py-6 text-muted-foreground text-sm">
             Click "Generate Analysis" to get an LLM-powered health analysis of the latest runs
           </div>

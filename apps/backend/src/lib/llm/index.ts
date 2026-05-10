@@ -299,15 +299,22 @@ export class LLMService {
     return safeConfig;
   }
 
-  async restart(config?: Partial<LLMProviderConfig>): Promise<void> {
-    if (config) {
-      this.config = {
-        ...this.config,
-        ...config,
-      } as LLMProviderConfig;
-    }
-
+  /** Merge runtime overrides; drops undefined keys so partial payloads can't clobber
+   *  env-supplied values. Resets the cached provider. */
+  applyConfig(config?: Partial<LLMProviderConfig>): void {
+    if (!config) return;
+    const overrides = Object.fromEntries(
+      Object.entries(config).filter(([, v]) => v !== undefined)
+    ) as Partial<LLMProviderConfig>;
+    this.config = {
+      ...this.config,
+      ...overrides,
+    } as LLMProviderConfig;
     this.provider = null;
+  }
+
+  async restart(config?: Partial<LLMProviderConfig>): Promise<void> {
+    this.applyConfig(config);
     await this.initialize();
   }
 

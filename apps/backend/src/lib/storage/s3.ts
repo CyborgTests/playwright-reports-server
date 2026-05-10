@@ -26,6 +26,7 @@ import { withError } from '../../lib/withError.js';
 import { serveReportRoute } from '../constants.js';
 import { parse } from '../parser/index.js';
 import { generatePlaywrightReport } from '../pw.js';
+import { resultDb } from '../service/db/results.sqlite.js';
 import { processWithConcurrency, Semaphore } from '../utils/semaphore.js';
 import {
   DATA_FOLDER,
@@ -626,8 +627,14 @@ export class S3 implements Storage {
       const fileName = `${resultId}.zip`;
 
       // Reuse a local copy if one is already on disk to skip the round trip.
+      // Only trust the cache once the result is registered in SQLite — that
+      // happens after S3 upload completes, so this rules out partial copies
+      // and stale files for results that have since been deleted.
       const temporaryPath = path.join(TMP_FOLDER, 'results', fileName);
-      const { error: temporaryFileExistError } = await withError(fs.access(temporaryPath));
+      const isRegistered = !!resultDb.getByID(resultId);
+      const { error: temporaryFileExistError } = isRegistered
+        ? await withError(fs.access(temporaryPath))
+        : { error: new Error('result not registered') };
       if (!temporaryFileExistError) {
         const { error: copyError } = await withError(
           fs.copyFile(temporaryPath, path.join(tempFolder, fileName))
@@ -638,6 +645,12 @@ export class S3 implements Storage {
             `[s3] failed to copy existing result file for ${resultId}: ${copyError.message}`
           );
           break;
+        }
+
+        // Cache entry served its purpose — drop it now instead of waiting for the cron sweep.
+        const { error: unlinkError } = await withError(fs.unlink(temporaryPath));
+        if (unlinkError) {
+          console.warn(`[s3] failed to clear cache entry for ${resultId}: ${unlinkError.message}`);
         }
 
         continue;

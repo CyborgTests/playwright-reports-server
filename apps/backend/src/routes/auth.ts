@@ -48,6 +48,23 @@ const verifyToken = (token: string): JWTPayload | null => {
   }
 };
 
+export const isAuthenticated = async (request: AuthRequest): Promise<boolean> => {
+  if (!useAuth) return true;
+
+  const authHeader = request.headers.authorization;
+  const cookieToken = request.cookies?.token;
+
+  let token: string | null = null;
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+  } else if (cookieToken) {
+    token = cookieToken;
+  }
+
+  if (!token) return false;
+  return verifyToken(token) !== null;
+};
+
 export const authenticate = async (request: AuthRequest, reply: FastifyReply) => {
   if (!useAuth) {
     request.user = createNoAuthTokens();

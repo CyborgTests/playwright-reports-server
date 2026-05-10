@@ -53,7 +53,6 @@ export default function AnalyticsDashboard() {
     isFetching,
     isPending,
   } = useAnalyticsData(project, dateRange);
-  const llmConfigured = !!(config?.llm?.baseUrl && config?.llm?.apiKey);
   const { data: failureCategoryResponse, isLoading: isLoadingFailures } = useFailureCategoryData(
     project,
     dateRange
@@ -137,28 +136,24 @@ export default function AnalyticsDashboard() {
 
       <HealthGrid metrics={runHealthMetrics} isLoading={isLoading} />
 
-      {llmConfigured && (
+      {(failureCategoryResponse?.data?.totalFailures ?? 0) > 0 && (
         <>
-          {(failureCategoryResponse?.data?.totalFailures ?? 0) > 0 && (
-            <>
-              <FailureCategoryChart
-                categories={failureCategoryResponse?.data?.categories}
-                totalFailures={failureCategoryResponse?.data?.totalFailures}
-                isLoading={isLoadingFailures}
-              />
-              <TopFailuresWidget
-                errors={failureCategoryResponse?.data?.topErrors}
-                isLoading={isLoadingFailures}
-              />
-            </>
-          )}
-          <FailureAnalysisSummary
-            project={project}
-            dateRange={dateRange}
+          <FailureCategoryChart
+            categories={failureCategoryResponse?.data?.categories}
             totalFailures={failureCategoryResponse?.data?.totalFailures}
+            isLoading={isLoadingFailures}
+          />
+          <TopFailuresWidget
+            errors={failureCategoryResponse?.data?.topErrors}
+            isLoading={isLoadingFailures}
           />
         </>
       )}
+      <FailureAnalysisSummary
+        project={project}
+        dateRange={dateRange}
+        totalFailures={failureCategoryResponse?.data?.totalFailures}
+      />
 
       <TestManagementWidget project={project} dateRange={dateRange} />
 

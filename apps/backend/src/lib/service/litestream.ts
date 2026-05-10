@@ -2,8 +2,16 @@ import { type ChildProcess, exec, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { env } from '../../config/env.js';
 import { withError } from '../withError.js';
+
+const PREFLIGHT_KEY = 'litestream/.preflight-canary';
 
 const litestreamProcess = Symbol.for('playwright.reports.litestream');
 const instance = globalThis as typeof globalThis & {
@@ -71,6 +79,71 @@ dbs:
   public static getInstance(): LitestreamService {
     instance[litestreamProcess] ??= new LitestreamService();
     return instance[litestreamProcess];
+  }
+
+  /**
+   * Verifies S3 credentials and required permissions before Litestream is started.
+   * Performs a Put → Get → Delete roundtrip on a canary key under the litestream/
+   * prefix, asserting body equality to catch endpoint/bucket misroutes.
+   * Required IAM: s3:PutObject, s3:GetObject, s3:DeleteObject on the bucket.
+   * Throws on any failure so the app fails fast at boot.
+   */
+  public async preflight(): Promise<void> {
+    if (!this.usesS3) {
+      return;
+    }
+
+    const endpoint = env.S3_ENDPOINT;
+    const accessKey = env.S3_ACCESS_KEY;
+    const secretKey = env.S3_SECRET_KEY;
+    const bucket = env.S3_BUCKET;
+
+    if (!endpoint || !accessKey || !secretKey || !bucket) {
+      throw new Error(
+        '[litestream] preflight failed: S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, and S3_BUCKET are required when DATA_STORAGE=s3'
+      );
+    }
+
+    const protocol = 'https://';
+    const endpointUrl = env.S3_PORT
+      ? `${protocol}${endpoint}:${env.S3_PORT}`
+      : `${protocol}${endpoint}`;
+
+    const client = new S3Client({
+      region: env.S3_REGION || 'us-east-1',
+      endpoint: endpointUrl,
+      credentials: { accessKeyId: accessKey, secretAccessKey: secretKey },
+      forcePathStyle: true,
+    });
+
+    const expected = `${process.pid}:${Date.now()}`;
+    const target = `s3://${bucket}/${PREFLIGHT_KEY}`;
+    console.log(`[litestream] preflight: roundtrip against ${target}`);
+
+    try {
+      await client.send(
+        new PutObjectCommand({ Bucket: bucket, Key: PREFLIGHT_KEY, Body: expected })
+      );
+
+      const got = await client.send(new GetObjectCommand({ Bucket: bucket, Key: PREFLIGHT_KEY }));
+      const actual = (await got.Body?.transformToString()) ?? '';
+      if (actual !== expected) {
+        throw new Error(`canary roundtrip mismatch: wrote "${expected}", read "${actual}"`);
+      }
+
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: PREFLIGHT_KEY }));
+    } catch (error) {
+      const err = error as { name?: string; message?: string };
+      const code = err.name ?? 'UnknownError';
+      throw new Error(
+        `[litestream] preflight failed (${code}) on ${target}: ${err.message ?? String(error)}. ` +
+          'Ensure credentials are valid and have s3:PutObject, s3:GetObject, and s3:DeleteObject on the bucket.'
+      );
+    } finally {
+      client.destroy();
+    }
+
+    console.log(`[litestream] preflight OK: read/write/delete verified on s3://${bucket}`);
   }
 
   public async restoreIfNeeded(): Promise<boolean> {

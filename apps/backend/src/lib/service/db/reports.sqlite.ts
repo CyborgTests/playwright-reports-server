@@ -47,6 +47,7 @@ export class ReportDatabase {
   private readonly getAllStmt: Database.Statement<[]>;
   private readonly getByProjectStmt: Database.Statement<[string]>;
   private readonly searchStmt: Database.Statement<[string, string, string, string]>;
+  private readonly getExpiredIdsStmt: Database.Statement<[string, number]>;
 
   private constructor() {
     this.insertStmt = this.db.prepare(`
@@ -69,6 +70,18 @@ export class ReportDatabase {
       WHERE title LIKE ? OR reportID LIKE ? OR project LIKE ? OR metadata LIKE ?
       ORDER BY createdAt DESC
     `);
+
+    this.getExpiredIdsStmt = this.db.prepare(`
+      SELECT reportID FROM reports
+      WHERE datetime(createdAt) < datetime(?)
+      ORDER BY datetime(createdAt) ASC
+      LIMIT ?
+    `);
+  }
+
+  public getExpiredIds(cutoffISO: string, limit: number): string[] {
+    const rows = this.getExpiredIdsStmt.all(cutoffISO, limit) as Array<{ reportID: string }>;
+    return rows.map((row) => row.reportID);
   }
 
   public static getInstance(): ReportDatabase {

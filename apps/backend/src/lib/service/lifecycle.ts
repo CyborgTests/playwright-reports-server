@@ -1,3 +1,9 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { env } from '../../config/env.js';
+import { llmService } from '../llm/index.js';
+import type { LLMProviderConfig } from '../llm/types/index.js';
+import { TMP_FOLDER } from '../storage/constants.js';
 import { storage } from '../storage/index.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
@@ -34,12 +40,23 @@ export class Lifecycle {
     console.log('[lifecycle] Starting application initialization');
 
     try {
+      await litestreamService.preflight();
       const restored = await litestreamService.restoreIfNeeded();
 
       if (!restored) {
         await Promise.all([configCache.init(), reportDb.init(), resultDb.init()]);
         await reportDb.populateTestRuns();
         console.log('[lifecycle] Databases initialized successfully');
+      }
+
+      llmService.applyConfig(configCache.config?.llm as Partial<LLMProviderConfig> | undefined);
+
+      if (env.DATA_STORAGE === 's3') {
+        const cachePath = path.join(TMP_FOLDER, 'results');
+        const { error: mkdirError } = await withError(fs.mkdir(cachePath, { recursive: true }));
+        if (mkdirError) {
+          console.warn(`[lifecycle] failed to create result cache dir: ${mkdirError.message}`);
+        }
       }
 
       siteConfigDb.ensureSeeded();
@@ -88,7 +105,7 @@ export class Lifecycle {
 
     try {
       if (cronService.initialized) {
-        await cronService.restart();
+        cronService.stop();
         console.log('[lifecycle] Cron service stopped');
       }
 

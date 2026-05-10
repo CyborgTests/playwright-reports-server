@@ -1,6 +1,9 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { Cron } from 'croner';
 import { env } from '../../config/env.js';
 import { withError } from '../../lib/withError.js';
+import { TMP_FOLDER } from '../storage/constants.js';
 import { service } from './index.js';
 
 const runningCron = Symbol.for('playwright.reports.cron.service');
@@ -8,11 +11,19 @@ const instance = globalThis as typeof globalThis & {
   [runningCron]?: CronService;
 };
 
+interface JobSpec {
+  name: 'reports' | 'results';
+  expireDays: number | undefined;
+  expression: string | undefined;
+  task: () => Promise<void>;
+}
+
 export class CronService {
   public initialized = false;
 
-  private clearResultsJob: Cron | undefined;
   private clearReportsJob: Cron | undefined;
+  private clearResultsJob: Cron | undefined;
+  private clearResultCacheJob: Cron | undefined;
 
   public static getInstance() {
     instance[runningCron] ??= new CronService();
@@ -20,149 +31,247 @@ export class CronService {
     return instance[runningCron];
   }
 
-  private constructor() {
-    this.clearResultsJob = this.clearResultsTask();
-    this.clearReportsJob = this.clearReportsTask();
-  }
+  private constructor() {}
 
-  public async restart() {
-    console.log('[cron-job] restarting cron tasks...');
-
-    this.clearResultsJob?.stop();
-    this.clearReportsJob?.stop();
-
-    this.clearResultsJob = this.clearResultsTask();
-    this.clearReportsJob = this.clearReportsTask();
-
-    this.initialized = false;
-    await this.init();
-  }
-
-  private isExpired(date: Date, days: number) {
-    const millisecondsDays = days * 24 * 60 * 60 * 1000;
-
-    return date.getTime() < Date.now() - millisecondsDays;
+  public static validateExpression(expression: string): { valid: boolean; error?: string } {
+    try {
+      const probe = new Cron(expression, { paused: true });
+      probe.stop();
+      return { valid: true };
+    } catch (error) {
+      return {
+        valid: false,
+        error: error instanceof Error ? error.message : 'Invalid cron expression',
+      };
+    }
   }
 
   public async init() {
     if (this.initialized) {
       return;
     }
-    const cfg = await service.getConfig();
-    const reportExpireDays = cfg.cron?.reportExpireDays || env.REPORT_EXPIRE_DAYS;
-    const resultExpireDays = cfg.cron?.resultExpireDays || env.RESULT_EXPIRE_DAYS;
-    const reportExpireCronSchedule =
-      cfg.cron?.reportExpireCronSchedule || env.REPORT_EXPIRE_CRON_SCHEDULE;
-    const resultExpireCronSchedule =
-      cfg.cron?.resultExpireCronSchedule || env.RESULT_EXPIRE_CRON_SCHEDULE;
-
-    console.log(`[cron-job] initiating cron tasks...`);
-    for (const schedule of [
-      {
-        name: 'reports',
-        cron: this.clearReportsJob,
-        expireDays: reportExpireDays,
-        expression: reportExpireCronSchedule,
-      },
-      {
-        name: 'results',
-        cron: this.clearResultsJob,
-        expireDays: resultExpireDays,
-        expression: resultExpireCronSchedule,
-      },
-    ]) {
-      const message = schedule.cron
-        ? `found expiration task for ${schedule.name} older than ${schedule.expireDays} day(s) at "${schedule.expression}", starting...`
-        : `no expiration task for ${schedule.name}, skipping...`;
-
-      console.log(`[cron-job] ${message}`);
-
-      if (!schedule.cron) {
-        continue;
-      }
-
-      if (schedule.cron.isRunning()) {
-        continue;
-      }
-
-      schedule.cron?.resume();
-    }
-
+    await this.scheduleJobs();
     this.initialized = true;
   }
 
-  private createJob(scheduleExpression: string, task: () => Promise<void>) {
-    return new Cron(
-      scheduleExpression,
-      { catch: true, unref: true, paused: true, protect: true },
-      task
+  public async restart() {
+    console.log('[cron-job] restarting cron tasks...');
+    this.stopJobs();
+    this.initialized = false;
+    await this.init();
+  }
+
+  public stop() {
+    console.log('[cron-job] stopping cron tasks...');
+    this.stopJobs();
+    this.initialized = false;
+  }
+
+  private stopJobs() {
+    this.clearReportsJob?.stop();
+    this.clearResultsJob?.stop();
+    this.clearResultCacheJob?.stop();
+    this.clearReportsJob = undefined;
+    this.clearResultsJob = undefined;
+    this.clearResultCacheJob = undefined;
+  }
+
+  private async scheduleJobs() {
+    const cfg = await service.getConfig();
+    const reportDays = cfg.cron?.reportExpireDays ?? env.REPORT_EXPIRE_DAYS;
+    const resultDays = cfg.cron?.resultExpireDays ?? env.RESULT_EXPIRE_DAYS;
+    const reportSchedule = cfg.cron?.reportExpireCronSchedule ?? env.REPORT_EXPIRE_CRON_SCHEDULE;
+    const resultSchedule = cfg.cron?.resultExpireCronSchedule ?? env.RESULT_EXPIRE_CRON_SCHEDULE;
+
+    console.log('[cron-job] scheduling cron tasks...');
+    this.clearReportsJob = this.scheduleJob({
+      name: 'reports',
+      expireDays: reportDays,
+      expression: reportSchedule,
+      task: () => this.clearOutdatedReports(),
+    });
+    this.clearResultsJob = this.scheduleJob({
+      name: 'results',
+      expireDays: resultDays,
+      expression: resultSchedule,
+      task: () => this.clearOutdatedResults(),
+    });
+    if (env.DATA_STORAGE === 's3') {
+      this.clearResultCacheJob = this.scheduleResultCacheJob();
+    }
+  }
+
+  private scheduleResultCacheJob(): Cron | undefined {
+    const expression = CronService.RESULT_CACHE_SCHEDULE;
+    const validation = CronService.validateExpression(expression);
+    if (!validation.valid) {
+      console.error(
+        `[cron-job] result-cache cleanup has invalid cron expression "${expression}": ${validation.error}, skipping`
+      );
+      return undefined;
+    }
+
+    const job = new Cron(
+      expression,
+      {
+        unref: true,
+        protect: true,
+        catch: (err) => console.error('[cron-job] result-cache task error:', err),
+      },
+      () => this.clearStaleResultCache()
     );
+
+    const nextRun = job.nextRun();
+    console.log(
+      `[cron-job] scheduled result-cache cleanup (older than ${CronService.RESULT_CACHE_TTL_MS / 60_000}m) at "${expression}", next run: ${nextRun?.toISOString() ?? 'unknown'}`
+    );
+    return job;
   }
 
-  private clearReportsTask() {
-    const expireDays = env.REPORT_EXPIRE_DAYS;
+  private scheduleJob(spec: JobSpec): Cron | undefined {
+    if (!spec.expireDays || spec.expireDays <= 0) {
+      console.log(`[cron-job] ${spec.name} cleanup disabled (expireDays not set), skipping`);
+      return undefined;
+    }
+    if (!spec.expression) {
+      console.warn(
+        `[cron-job] ${spec.name} cleanup has expireDays=${spec.expireDays} but no schedule expression, skipping`
+      );
+      return undefined;
+    }
 
-    if (!expireDays) {
+    const validation = CronService.validateExpression(spec.expression);
+    if (!validation.valid) {
+      console.error(
+        `[cron-job] ${spec.name} cleanup has invalid cron expression "${spec.expression}": ${validation.error}, skipping`
+      );
+      return undefined;
+    }
+
+    const job = new Cron(
+      spec.expression,
+      {
+        unref: true,
+        protect: true,
+        catch: (err) => console.error(`[cron-job] ${spec.name} task error:`, err),
+      },
+      spec.task
+    );
+
+    const nextRun = job.nextRun();
+    console.log(
+      `[cron-job] scheduled ${spec.name} cleanup (older than ${spec.expireDays}d) at "${spec.expression}", next run: ${nextRun?.toISOString() ?? 'unknown'}`
+    );
+    return job;
+  }
+
+  private cutoffISO(days: number): string {
+    return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  private async clearOutdatedReports() {
+    const cfg = await service.getConfig();
+    const expireDays = cfg.cron?.reportExpireDays ?? env.REPORT_EXPIRE_DAYS;
+    if (!expireDays || expireDays <= 0) {
       return;
     }
 
-    const scheduleExpression = env.REPORT_EXPIRE_CRON_SCHEDULE;
+    const cutoff = this.cutoffISO(expireDays);
+    const batchSize = CronService.CLEANUP_BATCH_SIZE;
+    let totalDeleted = 0;
 
-    return this.createJob(scheduleExpression, async () => {
-      const cfg = await service.getConfig();
-      const expireDays = cfg.cron?.reportExpireDays || env.REPORT_EXPIRE_DAYS;
+    console.log(`[cron-job] starting outdated reports cleanup (cutoff=${cutoff})`);
 
-      console.log('[cron-job] starting outdated reports lookup...');
-      const reportsOutput = await service.getReports();
+    while (true) {
+      const ids = service.getExpiredReportIds(cutoff, batchSize);
+      if (ids.length === 0) {
+        break;
+      }
 
-      const outdated = reportsOutput.reports.filter((report) => {
-        const createdDate =
-          typeof report.createdAt === 'string' ? new Date(report.createdAt) : report.createdAt;
+      const { error } = await withError(service.deleteReports(ids));
+      if (error) {
+        console.error(`[cron-job] reports cleanup batch failed after ${totalDeleted}: ${error}`);
+        return;
+      }
 
-        return expireDays ? this.isExpired(createdDate, expireDays) : false;
-      });
+      totalDeleted += ids.length;
+      if (ids.length < batchSize) {
+        break;
+      }
+    }
 
-      console.log(`[cron-job] found ${outdated.length} outdated reports`);
-
-      const outdatedIds = outdated.map((report) => report.reportID);
-
-      const { error } = await withError(service.deleteReports(outdatedIds));
-
-      if (error) console.error(`[cron-job] error deleting outdated results: ${error}`);
-    });
+    console.log(`[cron-job] outdated reports cleanup finished, deleted ${totalDeleted}`);
   }
 
-  private clearResultsTask() {
-    const expireDays = env.RESULT_EXPIRE_DAYS;
-
-    if (!expireDays) {
+  private async clearOutdatedResults() {
+    const cfg = await service.getConfig();
+    const expireDays = cfg.cron?.resultExpireDays ?? env.RESULT_EXPIRE_DAYS;
+    if (!expireDays || expireDays <= 0) {
       return;
     }
-    const scheduleExpression = env.RESULT_EXPIRE_CRON_SCHEDULE;
 
-    return this.createJob(scheduleExpression, async () => {
-      const cfg = await service.getConfig();
-      const expireDays = cfg.cron?.resultExpireDays || env.RESULT_EXPIRE_DAYS;
+    const cutoff = this.cutoffISO(expireDays);
+    const batchSize = CronService.CLEANUP_BATCH_SIZE;
+    let totalDeleted = 0;
 
-      console.log('[cron-job] starting outdated results lookup...');
-      const resultsOutput = await service.getResults();
+    console.log(`[cron-job] starting outdated results cleanup (cutoff=${cutoff})`);
 
-      const outdated = resultsOutput.results
-        .map((result) => ({
-          ...result,
-          createdDate: new Date(result.createdAt),
-        }))
-        .filter((result) => (expireDays ? this.isExpired(result.createdDate, expireDays) : false));
+    while (true) {
+      const ids = service.getExpiredResultIds(cutoff, batchSize);
+      if (ids.length === 0) {
+        break;
+      }
 
-      console.log(`[cron-job] found ${outdated.length} outdated results`);
+      const { error } = await withError(service.deleteResults(ids));
+      if (error) {
+        console.error(`[cron-job] results cleanup batch failed after ${totalDeleted}: ${error}`);
+        return;
+      }
 
-      const outdatedIds = outdated.map((result) => result.resultID);
+      totalDeleted += ids.length;
+      if (ids.length < batchSize) {
+        break;
+      }
+    }
 
-      const { error } = await withError(service.deleteResults(outdatedIds));
-
-      if (error) console.error(`[cron-job] error deleting outdated results: ${error}`);
-    });
+    console.log(`[cron-job] outdated results cleanup finished, deleted ${totalDeleted}`);
   }
+
+  private async clearStaleResultCache() {
+    const cacheDir = path.join(TMP_FOLDER, 'results');
+    const { result: entries, error: readError } = await withError(fs.readdir(cacheDir));
+    if (readError || !entries) {
+      // Dir may not exist yet on a fresh deploy that hasn't received an upload — non-fatal.
+      return;
+    }
+
+    const cutoff = Date.now() - CronService.RESULT_CACHE_TTL_MS;
+    let deleted = 0;
+
+    for (const entry of entries) {
+      const fullPath = path.join(cacheDir, entry);
+      const { result: stats, error: statError } = await withError(fs.stat(fullPath));
+      if (statError || !stats?.isFile()) continue;
+      if (stats.mtimeMs >= cutoff) continue;
+
+      const { error: unlinkError } = await withError(fs.unlink(fullPath));
+      if (unlinkError) {
+        console.warn(
+          `[cron-job] failed to delete stale cache file ${entry}: ${unlinkError.message}`
+        );
+        continue;
+      }
+      deleted += 1;
+    }
+
+    if (deleted > 0) {
+      console.log(`[cron-job] result-cache cleanup deleted ${deleted} stale file(s)`);
+    }
+  }
+
+  private static readonly CLEANUP_BATCH_SIZE = 200;
+  private static readonly RESULT_CACHE_SCHEDULE = '*/15 * * * *';
+  private static readonly RESULT_CACHE_TTL_MS = 60 * 60 * 1000;
 }
 
 export const cronService = CronService.getInstance();

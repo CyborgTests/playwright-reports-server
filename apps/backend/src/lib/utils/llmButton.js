@@ -1,3 +1,6 @@
+// biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+const llmEnabled = typeof isLlmEnabled !== 'undefined' ? !!isLlmEnabled : true;
+
 function injectAskLLMButton() {
   const copyPromptButtons = Array.from(document.querySelectorAll('button')).filter((btn) =>
     btn.textContent?.includes('Copy prompt')
@@ -8,6 +11,18 @@ function injectAskLLMButton() {
   }
 
   const copyPromptButton = copyPromptButtons.at(0);
+
+  // Read-only mode: LLM is disabled but we still want to surface previously-
+  // generated analyses. Skip the Ask LLM button and the feedback panel.
+  // and only render an inline analysis when one is already persisted for this test.
+  if (!llmEnabled) {
+    const currentTestId = extractTestIdFromCurrentUrl();
+    if (!currentTestId || currentTestId === 'unknown') return;
+    if (!document.getElementById('llm-inline-analysis')) {
+      checkForPrecomputedAnalysis(currentTestId, copyPromptButton, null);
+    }
+    return true;
+  }
 
   const existingAskBtn = copyPromptButton.parentNode?.querySelector('.llm-ask-btn');
   if (existingAskBtn) {
@@ -548,7 +563,7 @@ function checkForPrecomputedAnalysis(testId, copyPromptButton, askBtn) {
     .then((data) => {
       if (data?.success && data?.data?.analysis) {
         renderInlineAnalysis(data.data, copyPromptButton, askBtn);
-      } else if (data?.success && data?.pending) {
+      } else if (data?.success && data?.pending && llmEnabled) {
         // Analysis is queued or processing — show a loading widget and poll until done.
         renderLoadingAnalysis(testId, rid, copyPromptButton, askBtn);
       }
@@ -805,6 +820,8 @@ function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
       ? `<span class="llm-reused-badge" title="Same error signature as a previous run — analysis was reused without calling the LLM. Click Retry to force a fresh analysis.">♻ Reused</span>`
       : '';
 
+    const retryBtnHtml = llmEnabled ? '<button class="llm-retry-btn">Retry</button>' : '';
+
     const section = document.createElement('div');
     section.id = 'llm-inline-analysis';
     section.innerHTML = `
@@ -815,7 +832,7 @@ function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
           ${reusedBadge}
           <span class="llm-model">${analysisData.model || ''}</span>
         </div>
-        <button class="llm-retry-btn">Retry</button>
+        ${retryBtnHtml}
       </div>
       <div class="llm-inline-body">
         ${markdownToHtml(analysisData.analysis)}
@@ -826,13 +843,16 @@ function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
     errorsSection.parentNode.insertBefore(section, errorsSection);
 
     // Retry button re-triggers Ask LLM flow
-    section.querySelector('.llm-retry-btn').onclick = () => {
-      section.remove();
-      if (askBtn) {
-        askBtn.style.display = '';
-        askBtn.click();
-      }
-    };
+    const retryBtn = section.querySelector('.llm-retry-btn');
+    if (retryBtn) {
+      retryBtn.onclick = () => {
+        section.remove();
+        if (askBtn) {
+          askBtn.style.display = '';
+          askBtn.click();
+        }
+      };
+    }
   });
 }
 
@@ -1272,6 +1292,14 @@ globalThis.addEventListener?.('hashchange', () => {
       if (copyPromptBtns.length === 0) return;
       const btn = copyPromptBtns[0];
       const askBtn = btn.parentNode?.querySelector('.llm-ask-btn');
+      // In read-only mode there's no Ask LLM button to inject; we only need to
+      // re-attempt when the inline analysis was wiped by a Playwright DOM swap.
+      if (!llmEnabled) {
+        if (!document.getElementById('llm-inline-analysis')) {
+          injectAskLLMButton();
+        }
+        return;
+      }
       const needsAskBtn = !askBtn;
       const needsInline = askBtn && !document.getElementById('llm-inline-analysis');
       const needsFeedback = askBtn && !document.getElementById('llm-feedback-panel');

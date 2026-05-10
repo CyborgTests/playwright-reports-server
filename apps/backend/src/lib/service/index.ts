@@ -1,10 +1,11 @@
 import { createWriteStream } from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
 import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import { env } from '../../config/env.js';
 import { serveReportRoute } from '../constants.js';
-import { isValidPlaywrightVersion } from '../pw.js';
+import { isValidPlaywrightVersion } from '../pw-cache.js';
 import { DEFAULT_STREAM_CHUNK_SIZE, TMP_FOLDER } from '../storage/constants.js';
 import { bytesToString, getUniqueProjectsList } from '../storage/format.js';
 import {
@@ -36,6 +37,14 @@ class Service {
 
   public async getReports(input?: ReadReportsInput) {
     return reportDb.query(input);
+  }
+
+  public getExpiredReportIds(cutoffISO: string, limit: number): string[] {
+    return reportDb.getExpiredIds(cutoffISO, limit);
+  }
+
+  public getExpiredResultIds(cutoffISO: string, limit: number): string[] {
+    return resultDb.getExpiredIds(cutoffISO, limit);
   }
 
   public async getReport(id: string) {
@@ -203,45 +212,84 @@ class Service {
     }
   ) {
     // Forks the upload to a local temp copy (S3 mode only) so it can be reused without re-downloading.
+    // Writes go to <filename>.part and are renamed to <filename> only after the S3 upload succeeds,
+    // so a partial blob is never visible to generateReport.
     const uploadStream = new PassThrough({ highWaterMark: DEFAULT_STREAM_CHUNK_SIZE });
+
+    let onUploadSuccess: (() => Promise<void>) | undefined;
+    let onUploadFailure: (() => Promise<void>) | undefined;
 
     if (options?.shouldStoreLocalCopy && env.DATA_STORAGE === 's3') {
       const localCopyStream = new PassThrough({ highWaterMark: DEFAULT_STREAM_CHUNK_SIZE });
       stream.pipe(localCopyStream);
-      const localCopyPath = path.join(TMP_FOLDER, 'results', filename);
-      const writeStream = createWriteStream(localCopyPath);
+      const finalPath = path.join(TMP_FOLDER, 'results', filename);
+      const partialPath = `${finalPath}.part`;
+      const writeStream = createWriteStream(partialPath);
       localCopyStream.pipe(writeStream);
 
+      let writeFailed = false;
       writeStream.on('error', (error) => {
-        console.error(`[service] local write error: ${error.message}`);
+        writeFailed = true;
+        console.error(`[service] local copy write error: ${error.message}`);
       });
+
+      const writeSettled = new Promise<void>((resolve) => {
+        writeStream.on('finish', () => resolve());
+        writeStream.on('close', () => resolve());
+      });
+
+      onUploadSuccess = async () => {
+        await writeSettled;
+        if (writeFailed) {
+          await withError(fs.unlink(partialPath));
+          return;
+        }
+        const { error } = await withError(fs.rename(partialPath, finalPath));
+        if (error) {
+          console.error(`[service] local copy rename error: ${error.message}`);
+          await withError(fs.unlink(partialPath));
+        }
+      };
+      onUploadFailure = async () => {
+        await writeSettled;
+        await withError(fs.unlink(partialPath));
+      };
     }
 
     stream.pipe(uploadStream);
 
-    if (!options?.presignedUrl) {
-      return await storage.saveResult(filename, uploadStream);
-    }
+    try {
+      if (!options?.presignedUrl) {
+        const result = await storage.saveResult(filename, uploadStream);
+        await onUploadSuccess?.();
+        return result;
+      }
 
-    const { error } = await withError(
-      fetch(options?.presignedUrl, {
-        method: 'PUT',
-        body: Readable.toWeb(uploadStream, {
-          strategy: {
-            highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
+      const { error } = await withError(
+        fetch(options?.presignedUrl, {
+          method: 'PUT',
+          body: Readable.toWeb(uploadStream, {
+            strategy: {
+              highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
+            },
+          }),
+          headers: {
+            'Content-Type': 'application/zip',
+            'Content-Length': options?.contentLength,
           },
-        }),
-        headers: {
-          'Content-Type': 'application/zip',
-          'Content-Length': options?.contentLength,
-        },
-        duplex: 'half',
-      } as RequestInit)
-    );
+          duplex: 'half',
+        } as RequestInit)
+      );
 
-    if (error) {
-      console.error(`[s3] saveResult | error: ${error.message}`);
-      throw error;
+      if (error) {
+        console.error(`[s3] saveResult | error: ${error.message}`);
+        throw error;
+      }
+
+      await onUploadSuccess?.();
+    } catch (err) {
+      await onUploadFailure?.();
+      throw err;
     }
   }
 

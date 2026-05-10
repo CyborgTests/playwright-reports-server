@@ -2,7 +2,11 @@ import fs from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import type { ParsedTestUrl } from './url-parser.js';
 
-export async function injectTestAnalysis(source: string, testUrl: ParsedTestUrl): Promise<string> {
+export async function injectTestAnalysis(
+  source: string,
+  testUrl: ParsedTestUrl,
+  isLlmEnabled: boolean
+): Promise<string> {
   if (!testUrl.reportId) {
     return source;
   }
@@ -11,7 +15,7 @@ export async function injectTestAnalysis(source: string, testUrl: ParsedTestUrl)
     const html = await injectCopyPromptToWindow(source);
     const dom = new JSDOM(html);
     const document = dom.window.document;
-    await injectClientSideScript(document, testUrl);
+    await injectClientSideScript(document, testUrl, isLlmEnabled);
     return dom.serialize();
   } catch (error) {
     console.error('[html-injector] Error injecting HTML:', error);
@@ -19,7 +23,11 @@ export async function injectTestAnalysis(source: string, testUrl: ParsedTestUrl)
   }
 }
 
-async function injectClientSideScript(document: any, testUrl: ParsedTestUrl): Promise<void> {
+async function injectClientSideScript(
+  document: any,
+  testUrl: ParsedTestUrl,
+  isLlmEnabled: boolean
+): Promise<void> {
   const style = document.createElement('style');
   style.textContent = `
     :root {
@@ -431,6 +439,7 @@ async function injectClientSideScript(document: any, testUrl: ParsedTestUrl): Pr
   const script = document.createElement('script');
   script.textContent = `
     const reportId = '${testUrl.reportId}';
+    const isLlmEnabled = ${isLlmEnabled ? 'true' : 'false'};
     ${await fs.readFile(new URL('./llmButton.js', import.meta.url), 'utf-8')}`;
   document.body.appendChild(script);
 }

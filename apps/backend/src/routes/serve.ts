@@ -48,7 +48,7 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       const isLlmEnabled = llmService.isConfigured();
       const isIndexHtml = contentType === 'text/html' && targetPath.endsWith('index.html');
 
-      if (isLlmEnabled && isIndexHtml) {
+      if (isIndexHtml) {
         const reportId = extractReportIdFromPath(targetPath);
 
         try {
@@ -65,7 +65,7 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
             isTestPage: false,
           };
 
-          reportHtml = await injectTestAnalysis(content.toString(), testUrl);
+          reportHtml = await injectTestAnalysis(content.toString(), testUrl, isLlmEnabled);
         } catch (injectionError) {
           // Fall through with the original content if injection fails.
           console.error('[serve] Failed to inject LLM analysis:', injectionError);

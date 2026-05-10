@@ -16,7 +16,7 @@ import { testManagementService } from '../lib/service/testManagement.js';
 import { DATA_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';
 import { withError } from '../lib/withError.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { type AuthRequest, authenticate, isAuthenticated } from './auth.js';
 
 interface MultipartFile {
   fieldname: string;
@@ -126,7 +126,7 @@ interface ConfigFormData {
 }
 
 export async function registerConfigRoutes(fastify: FastifyInstance) {
-  fastify.get('/api/config', async (_request, reply) => {
+  fastify.get('/api/config', async (request, reply) => {
     const { result: config, error } = await withError(service.getConfig());
 
     if (error) {
@@ -135,6 +135,20 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
     if (!config) {
       return reply.status(500).send({ error: 'failed to get config' });
+    }
+
+    const isAuthed = await isAuthenticated(request as AuthRequest);
+
+    const publicConfig = {
+      title: config.title,
+      logoPath: config.logoPath,
+      faviconPath: config.faviconPath,
+      headerLinks: config.headerLinks,
+      authRequired: !!env.API_TOKEN,
+    };
+
+    if (!isAuthed) {
+      return publicConfig;
     }
 
     const maskString = (str: string | undefined) => {
@@ -172,393 +186,416 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
     return { ...config, ...envInfo, llm: llmInfo };
   });
 
-  fastify.patch('/api/config', async (request: FastifyRequest, reply: FastifyReply) => {
-    try {
-      const authResult = await authenticate(request as AuthRequest, reply);
-      if (authResult) return authResult;
+  fastify.patch(
+    '/api/config',
+    { preHandler: (request, reply) => authenticate(request as AuthRequest, reply) },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const parts = request.parts({
+          limits: { files: 2, fileSize: BRANDING_FILE_SIZE_LIMIT },
+        });
 
-      const parts = request.parts({
-        limits: { files: 2, fileSize: BRANDING_FILE_SIZE_LIMIT },
-      });
+        const config = await service.getConfig();
 
-      const config = await service.getConfig();
+        if (!config) {
+          return reply.status(500).send({ error: 'failed to get config' });
+        }
 
-      if (!config) {
-        return reply.status(500).send({ error: 'failed to get config' });
-      }
+        const previousLogoPath = config.logoPath;
+        const previousFaviconPath = config.faviconPath;
 
-      const previousLogoPath = config.logoPath;
-      const previousFaviconPath = config.faviconPath;
+        const formData: ConfigFormData = {};
+        let hasParts = false;
+        let logoFileSaved: string | null = null;
+        let faviconFileSaved: string | null = null;
 
-      const formData: ConfigFormData = {};
-      let hasParts = false;
-      let logoFileSaved: string | null = null;
-      let faviconFileSaved: string | null = null;
-
-      for await (const part of parts) {
-        hasParts = true;
-        if (part.type === 'file') {
-          if (part.fieldname !== 'logo' && part.fieldname !== 'favicon') {
-            part.file.resume();
-            continue;
+        for await (const part of parts) {
+          hasParts = true;
+          if (part.type === 'file') {
+            if (part.fieldname !== 'logo' && part.fieldname !== 'favicon') {
+              part.file.resume();
+              continue;
+            }
+            const kind = part.fieldname;
+            const result = await persistBrandingFile(kind, part as unknown as MultipartFile);
+            if ('error' in result) {
+              return reply.status(400).send({ error: result.error });
+            }
+            if (kind === 'logo') logoFileSaved = result.relativePath;
+            else faviconFileSaved = result.relativePath;
+          } else if (part.type === 'field') {
+            const fieldName = part.fieldname as keyof ConfigFormData;
+            formData[fieldName] = part.value as string;
           }
-          const kind = part.fieldname;
-          const result = await persistBrandingFile(kind, part as unknown as MultipartFile);
-          if ('error' in result) {
-            return reply.status(400).send({ error: result.error });
+        }
+
+        if (!hasParts) {
+          return reply.status(400).send({ error: 'No data received' });
+        }
+
+        if (logoFileSaved) {
+          config.logoPath = logoFileSaved;
+        } else if (formData.logoPath !== undefined) {
+          if (!isAllowedLogoPath(formData.logoPath)) {
+            return reply.status(400).send({ error: 'invalid logoPath' });
           }
-          if (kind === 'logo') logoFileSaved = result.relativePath;
-          else faviconFileSaved = result.relativePath;
-        } else if (part.type === 'field') {
-          const fieldName = part.fieldname as keyof ConfigFormData;
-          formData[fieldName] = part.value as string;
+          config.logoPath = formData.logoPath;
         }
-      }
 
-      if (!hasParts) {
-        return reply.status(400).send({ error: 'No data received' });
-      }
-
-      if (logoFileSaved) {
-        config.logoPath = logoFileSaved;
-      } else if (formData.logoPath !== undefined) {
-        if (!isAllowedLogoPath(formData.logoPath)) {
-          return reply.status(400).send({ error: 'invalid logoPath' });
+        if (faviconFileSaved) {
+          config.faviconPath = faviconFileSaved;
+        } else if (formData.faviconPath !== undefined) {
+          if (!isAllowedFaviconPath(formData.faviconPath)) {
+            return reply.status(400).send({ error: 'invalid faviconPath' });
+          }
+          config.faviconPath = formData.faviconPath;
         }
-        config.logoPath = formData.logoPath;
-      }
 
-      if (faviconFileSaved) {
-        config.faviconPath = faviconFileSaved;
-      } else if (formData.faviconPath !== undefined) {
-        if (!isAllowedFaviconPath(formData.faviconPath)) {
-          return reply.status(400).send({ error: 'invalid faviconPath' });
+        if (formData.title !== undefined && formData.title !== '') {
+          config.title = formData.title;
         }
-        config.faviconPath = formData.faviconPath;
-      }
 
-      if (formData.title !== undefined && formData.title !== '') {
-        config.title = formData.title;
-      }
-
-      if (formData.reporterPaths !== undefined) {
-        try {
-          config.reporterPaths = JSON.parse(formData.reporterPaths);
-        } catch {
-          config.reporterPaths = [formData.reporterPaths];
+        if (formData.reporterPaths !== undefined) {
+          try {
+            config.reporterPaths = JSON.parse(formData.reporterPaths);
+          } catch {
+            config.reporterPaths = [formData.reporterPaths];
+          }
         }
-      }
 
-      if (formData.headerLinks !== undefined) {
-        try {
-          const parsedHeaderLinks = JSON.parse(formData.headerLinks);
-          if (parsedHeaderLinks) config.headerLinks = parsedHeaderLinks;
-        } catch (error) {
-          return reply.status(400).send({
-            error: `failed to parse header links: ${error instanceof Error ? error.message : 'Invalid JSON'}`,
-          });
+        if (formData.headerLinks !== undefined) {
+          try {
+            const parsedHeaderLinks = JSON.parse(formData.headerLinks);
+            if (parsedHeaderLinks) config.headerLinks = parsedHeaderLinks;
+          } catch (error) {
+            return reply.status(400).send({
+              error: `failed to parse header links: ${error instanceof Error ? error.message : 'Invalid JSON'}`,
+            });
+          }
         }
-      }
 
-      config.llm ??= {};
-
-      if (formData.llmProvider !== undefined) {
-        const provider = formData.llmProvider;
-        config.llm.provider = provider as any;
-      }
-      if (formData.llmBaseUrl !== undefined) config.llm.baseUrl = formData.llmBaseUrl;
-      if (formData.llmApiKey !== undefined) config.llm.apiKey = formData.llmApiKey;
-      if (formData.llmModel !== undefined) config.llm.model = formData.llmModel;
-      // Per-task temperature overrides. Empty string clears (provider falls
-      // back to env-driven default). Range is 0–2 (same as model APIs accept).
-      const parseTaskTemp = (
-        raw: string | undefined,
-        label: string
-      ): number | undefined | { error: string } => {
-        if (raw === undefined) return undefined;
-        const trimmed = raw.trim();
-        if (trimmed === '') return undefined; // explicit clear
-        const n = Number.parseFloat(trimmed);
-        if (Number.isNaN(n) || n < 0 || n > 2) {
-          return { error: `${label} must be a number between 0 and 2` };
-        }
-        return n;
-      };
-      for (const [key, label] of [
-        ['llmTestAnalysisTemperature', 'Test analysis temperature'],
-        ['llmReportSummaryTemperature', 'Report summary temperature'],
-        ['llmProjectSummaryTemperature', 'Project summary temperature'],
-      ] as const) {
-        const raw = formData[key as keyof typeof formData];
-        if (raw === undefined) continue;
-        const parsed = parseTaskTemp(raw, label);
-        if (parsed && typeof parsed === 'object' && 'error' in parsed) {
-          return reply.status(400).send({ error: parsed.error });
-        }
-        const cfgKey =
-          key === 'llmTestAnalysisTemperature'
-            ? 'testAnalysisTemperature'
-            : key === 'llmReportSummaryTemperature'
-              ? 'reportSummaryTemperature'
-              : 'projectSummaryTemperature';
-        config.llm[cfgKey] = parsed as number | undefined;
-      }
-
-      if (formData.llmParallelRequests !== undefined) {
-        const parallelRequests = Number.parseInt(formData.llmParallelRequests, 10);
-        if (Number.isNaN(parallelRequests) || parallelRequests < 1 || parallelRequests > 10) {
-          return reply
-            .status(400)
-            .send({ error: 'LLM parallel requests must be between 1 and 10' });
-        }
         config.llm ??= {};
-        config.llm.parallelRequests = parallelRequests;
-      }
 
-      if (formData.llmAutoAnalyzeNewReports !== undefined) {
-        config.llm.autoAnalyzeNewReports = formData.llmAutoAnalyzeNewReports === 'true';
-      }
-
-      // Max output tokens — blank/0 clears the override (provider falls back to env or default).
-      if (formData.llmMaxTokens !== undefined) {
-        const trimmed = formData.llmMaxTokens.trim();
-        if (trimmed === '') {
-          config.llm.maxTokens = undefined;
-        } else {
-          const n = Number.parseInt(trimmed, 10);
-          if (Number.isNaN(n) || n < 1) {
-            return reply.status(400).send({ error: 'LLM max tokens must be a positive integer' });
-          }
-          config.llm.maxTokens = n;
+        if (formData.llmProvider !== undefined) {
+          const provider = formData.llmProvider;
+          config.llm.provider = provider as any;
         }
-      }
+        if (formData.llmBaseUrl !== undefined) config.llm.baseUrl = formData.llmBaseUrl;
+        if (formData.llmApiKey !== undefined) config.llm.apiKey = formData.llmApiKey;
+        if (formData.llmModel !== undefined) config.llm.model = formData.llmModel;
+        // Per-task temperature overrides. Empty string clears (provider falls
+        // back to env-driven default). Range is 0–2 (same as model APIs accept).
+        const parseTaskTemp = (
+          raw: string | undefined,
+          label: string
+        ): number | undefined | { error: string } => {
+          if (raw === undefined) return undefined;
+          const trimmed = raw.trim();
+          if (trimmed === '') return undefined; // explicit clear
+          const n = Number.parseFloat(trimmed);
+          if (Number.isNaN(n) || n < 0 || n > 2) {
+            return { error: `${label} must be a number between 0 and 2` };
+          }
+          return n;
+        };
+        for (const [key, label] of [
+          ['llmTestAnalysisTemperature', 'Test analysis temperature'],
+          ['llmReportSummaryTemperature', 'Report summary temperature'],
+          ['llmProjectSummaryTemperature', 'Project summary temperature'],
+        ] as const) {
+          const raw = formData[key as keyof typeof formData];
+          if (raw === undefined) continue;
+          const parsed = parseTaskTemp(raw, label);
+          if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+            return reply.status(400).send({ error: parsed.error });
+          }
+          const cfgKey =
+            key === 'llmTestAnalysisTemperature'
+              ? 'testAnalysisTemperature'
+              : key === 'llmReportSummaryTemperature'
+                ? 'reportSummaryTemperature'
+                : 'projectSummaryTemperature';
+          config.llm[cfgKey] = parsed as number | undefined;
+        }
 
-      if (formData.llmContextWindow !== undefined) {
-        const trimmed = formData.llmContextWindow.trim();
-        if (trimmed === '') {
-          config.llm.contextWindow = undefined;
-        } else {
-          const n = Number.parseInt(trimmed, 10);
-          if (Number.isNaN(n) || n < 1024) {
+        if (formData.llmParallelRequests !== undefined) {
+          const parallelRequests = Number.parseInt(formData.llmParallelRequests, 10);
+          if (Number.isNaN(parallelRequests) || parallelRequests < 1 || parallelRequests > 10) {
             return reply
               .status(400)
-              .send({ error: 'LLM context window must be at least 1024 tokens' });
+              .send({ error: 'LLM parallel requests must be between 1 and 10' });
           }
-          config.llm.contextWindow = n;
+          config.llm ??= {};
+          config.llm.parallelRequests = parallelRequests;
         }
-      }
 
-      if (formData.llmStructuredOutputMode !== undefined) {
-        const v = formData.llmStructuredOutputMode;
-        if (v && !['auto', 'force', 'disabled'].includes(v)) {
-          return reply
-            .status(400)
-            .send({ error: 'LLM structured output mode must be auto, force, or disabled' });
+        if (formData.llmAutoAnalyzeNewReports !== undefined) {
+          config.llm.autoAnalyzeNewReports = formData.llmAutoAnalyzeNewReports === 'true';
         }
-        config.llm.structuredOutputMode = (v || undefined) as
-          | 'auto'
-          | 'force'
-          | 'disabled'
-          | undefined;
-      }
 
-      if (formData.llmMultimodalMode !== undefined) {
-        const v = formData.llmMultimodalMode;
-        if (v && !['auto', 'force', 'disabled'].includes(v)) {
-          return reply
-            .status(400)
-            .send({ error: 'LLM multimodal mode must be auto, force, or disabled' });
+        // Max output tokens — blank/0 clears the override (provider falls back to env or default).
+        if (formData.llmMaxTokens !== undefined) {
+          const trimmed = formData.llmMaxTokens.trim();
+          if (trimmed === '') {
+            config.llm.maxTokens = undefined;
+          } else {
+            const n = Number.parseInt(trimmed, 10);
+            if (Number.isNaN(n) || n < 1) {
+              return reply.status(400).send({ error: 'LLM max tokens must be a positive integer' });
+            }
+            config.llm.maxTokens = n;
+          }
         }
-        config.llm.multimodalMode = (v || undefined) as 'auto' | 'force' | 'disabled' | undefined;
-      }
 
-      // Custom prompt overrides — empty string clears the override (falls back to default).
-      if (formData.llmCustomSystemPrompt !== undefined) {
-        config.llm.customSystemPrompt = formData.llmCustomSystemPrompt || undefined;
-      }
-      if (formData.llmCustomTestAnalysisInstructions !== undefined) {
-        config.llm.customTestAnalysisInstructions =
-          formData.llmCustomTestAnalysisInstructions || undefined;
-      }
-      if (formData.llmCustomReportSummaryInstructions !== undefined) {
-        config.llm.customReportSummaryInstructions =
-          formData.llmCustomReportSummaryInstructions || undefined;
-      }
-      if (formData.llmCustomProjectSummaryInstructions !== undefined) {
-        config.llm.customProjectSummaryInstructions =
-          formData.llmCustomProjectSummaryInstructions || undefined;
-      }
-
-      const llmConfigChanged = !!(
-        formData.llmProvider ||
-        formData.llmBaseUrl ||
-        formData.llmApiKey ||
-        formData.llmModel ||
-        formData.llmTestAnalysisTemperature !== undefined ||
-        formData.llmReportSummaryTemperature !== undefined ||
-        formData.llmProjectSummaryTemperature !== undefined ||
-        formData.llmMaxTokens !== undefined ||
-        formData.llmContextWindow !== undefined ||
-        formData.llmStructuredOutputMode !== undefined ||
-        formData.llmMultimodalMode !== undefined
-      );
-
-      if (llmConfigChanged) {
-        await llmService.restart(config.llm);
-      }
-
-      config.cron ??= {};
-
-      if (formData.resultExpireDays !== undefined) {
-        config.cron.resultExpireDays = Number.parseInt(formData.resultExpireDays, 10);
-      }
-      if (formData.resultExpireCronSchedule !== undefined) {
-        config.cron.resultExpireCronSchedule = formData.resultExpireCronSchedule;
-      }
-      if (formData.reportExpireDays !== undefined) {
-        config.cron.reportExpireDays = Number.parseInt(formData.reportExpireDays, 10);
-      }
-      if (formData.reportExpireCronSchedule !== undefined) {
-        config.cron.reportExpireCronSchedule = formData.reportExpireCronSchedule;
-      }
-
-      if (
-        formData.resultExpireDays ||
-        formData.resultExpireCronSchedule ||
-        formData.reportExpireDays ||
-        formData.reportExpireCronSchedule
-      ) {
-        const instance = CronService.getInstance();
-        await instance.restart();
-      }
-
-      config.testManagement ??= {};
-
-      if (formData.testManagementQuarantineThresholdPercentage !== undefined) {
-        const threshold = Number.parseInt(formData.testManagementQuarantineThresholdPercentage, 10);
-        if (Number.isNaN(threshold) || threshold < 0 || threshold > 100) {
-          return reply.status(400).send({
-            error: 'Test management quarantine threshold must be a number between 0 and 100',
-          });
+        if (formData.llmContextWindow !== undefined) {
+          const trimmed = formData.llmContextWindow.trim();
+          if (trimmed === '') {
+            config.llm.contextWindow = undefined;
+          } else {
+            const n = Number.parseInt(trimmed, 10);
+            if (Number.isNaN(n) || n < 1024) {
+              return reply
+                .status(400)
+                .send({ error: 'LLM context window must be at least 1024 tokens' });
+            }
+            config.llm.contextWindow = n;
+          }
         }
-        config.testManagement.quarantineThresholdPercentage = threshold;
-      }
 
-      if (formData.testManagementWarningThresholdPercentage !== undefined) {
-        const threshold = Number.parseInt(formData.testManagementWarningThresholdPercentage, 10);
-        if (Number.isNaN(threshold) || threshold < 0 || threshold > 100) {
-          return reply.status(400).send({
-            error: 'Test management warning threshold must be a number between 0 and 100',
-          });
+        if (formData.llmStructuredOutputMode !== undefined) {
+          const v = formData.llmStructuredOutputMode;
+          if (v && !['auto', 'force', 'disabled'].includes(v)) {
+            return reply
+              .status(400)
+              .send({ error: 'LLM structured output mode must be auto, force, or disabled' });
+          }
+          config.llm.structuredOutputMode = (v || undefined) as
+            | 'auto'
+            | 'force'
+            | 'disabled'
+            | undefined;
         }
-        config.testManagement.warningThresholdPercentage = threshold;
-      }
 
-      if (formData.testManagementAutoQuarantineEnabled !== undefined) {
-        config.testManagement.autoQuarantineEnabled =
-          formData.testManagementAutoQuarantineEnabled === 'true';
-      }
-
-      if (formData.testManagementFlakinessMinRuns !== undefined) {
-        const minRuns = Number.parseInt(formData.testManagementFlakinessMinRuns, 10);
-        if (Number.isNaN(minRuns) || minRuns < 1) {
-          return reply.status(400).send({
-            error: 'Test management minimum runs must be a number greater than 0',
-          });
+        if (formData.llmMultimodalMode !== undefined) {
+          const v = formData.llmMultimodalMode;
+          if (v && !['auto', 'force', 'disabled'].includes(v)) {
+            return reply
+              .status(400)
+              .send({ error: 'LLM multimodal mode must be auto, force, or disabled' });
+          }
+          config.llm.multimodalMode = (v || undefined) as 'auto' | 'force' | 'disabled' | undefined;
         }
-        config.testManagement.flakinessMinRuns = minRuns;
-      }
 
-      if (formData.testManagementFlakinessEvaluationWindowDays !== undefined) {
-        const windowDays = Number.parseInt(
-          formData.testManagementFlakinessEvaluationWindowDays,
-          10
+        // Custom prompt overrides — empty string clears the override (falls back to default).
+        if (formData.llmCustomSystemPrompt !== undefined) {
+          config.llm.customSystemPrompt = formData.llmCustomSystemPrompt || undefined;
+        }
+        if (formData.llmCustomTestAnalysisInstructions !== undefined) {
+          config.llm.customTestAnalysisInstructions =
+            formData.llmCustomTestAnalysisInstructions || undefined;
+        }
+        if (formData.llmCustomReportSummaryInstructions !== undefined) {
+          config.llm.customReportSummaryInstructions =
+            formData.llmCustomReportSummaryInstructions || undefined;
+        }
+        if (formData.llmCustomProjectSummaryInstructions !== undefined) {
+          config.llm.customProjectSummaryInstructions =
+            formData.llmCustomProjectSummaryInstructions || undefined;
+        }
+
+        const llmConfigChanged = !!(
+          formData.llmProvider ||
+          formData.llmBaseUrl ||
+          formData.llmApiKey ||
+          formData.llmModel ||
+          formData.llmTestAnalysisTemperature !== undefined ||
+          formData.llmReportSummaryTemperature !== undefined ||
+          formData.llmProjectSummaryTemperature !== undefined ||
+          formData.llmMaxTokens !== undefined ||
+          formData.llmContextWindow !== undefined ||
+          formData.llmStructuredOutputMode !== undefined ||
+          formData.llmMultimodalMode !== undefined
         );
-        if (Number.isNaN(windowDays) || windowDays < 1) {
-          return reply.status(400).send({
-            error: 'Test management evaluation window must be a number of days greater than 0',
-          });
-        }
-        config.testManagement.flakinessEvaluationWindowDays = windowDays;
-      }
 
-      if (logoFileSaved && isCustomBrandingPath(logoFileSaved)) {
-        const { error } = await withError(storage.uploadBrandingAsset(logoFileSaved));
-        if (error) {
-          await withError(deleteCustomBrandingFile(logoFileSaved));
+        if (llmConfigChanged) {
+          await llmService.restart(config.llm);
+        }
+
+        config.cron ??= {};
+
+        if (formData.resultExpireDays !== undefined) {
+          const days = Number.parseInt(formData.resultExpireDays, 10);
+          if (Number.isNaN(days) || days < 0) {
+            return reply
+              .status(400)
+              .send({ error: 'resultExpireDays must be a non-negative integer' });
+          }
+          config.cron.resultExpireDays = days;
+        }
+        if (formData.reportExpireDays !== undefined) {
+          const days = Number.parseInt(formData.reportExpireDays, 10);
+          if (Number.isNaN(days) || days < 0) {
+            return reply
+              .status(400)
+              .send({ error: 'reportExpireDays must be a non-negative integer' });
+          }
+          config.cron.reportExpireDays = days;
+        }
+        if (formData.resultExpireCronSchedule !== undefined) {
+          const validation = CronService.validateExpression(formData.resultExpireCronSchedule);
+          if (!validation.valid) {
+            return reply
+              .status(400)
+              .send({ error: `resultExpireCronSchedule is invalid: ${validation.error}` });
+          }
+          config.cron.resultExpireCronSchedule = formData.resultExpireCronSchedule;
+        }
+        if (formData.reportExpireCronSchedule !== undefined) {
+          const validation = CronService.validateExpression(formData.reportExpireCronSchedule);
+          if (!validation.valid) {
+            return reply
+              .status(400)
+              .send({ error: `reportExpireCronSchedule is invalid: ${validation.error}` });
+          }
+          config.cron.reportExpireCronSchedule = formData.reportExpireCronSchedule;
+        }
+
+        const cronConfigChanged =
+          formData.resultExpireDays !== undefined ||
+          formData.resultExpireCronSchedule !== undefined ||
+          formData.reportExpireDays !== undefined ||
+          formData.reportExpireCronSchedule !== undefined;
+
+        config.testManagement ??= {};
+
+        if (formData.testManagementQuarantineThresholdPercentage !== undefined) {
+          const threshold = Number.parseInt(
+            formData.testManagementQuarantineThresholdPercentage,
+            10
+          );
+          if (Number.isNaN(threshold) || threshold < 0 || threshold > 100) {
+            return reply.status(400).send({
+              error: 'Test management quarantine threshold must be a number between 0 and 100',
+            });
+          }
+          config.testManagement.quarantineThresholdPercentage = threshold;
+        }
+
+        if (formData.testManagementWarningThresholdPercentage !== undefined) {
+          const threshold = Number.parseInt(formData.testManagementWarningThresholdPercentage, 10);
+          if (Number.isNaN(threshold) || threshold < 0 || threshold > 100) {
+            return reply.status(400).send({
+              error: 'Test management warning threshold must be a number between 0 and 100',
+            });
+          }
+          config.testManagement.warningThresholdPercentage = threshold;
+        }
+
+        if (formData.testManagementAutoQuarantineEnabled !== undefined) {
+          config.testManagement.autoQuarantineEnabled =
+            formData.testManagementAutoQuarantineEnabled === 'true';
+        }
+
+        if (formData.testManagementFlakinessMinRuns !== undefined) {
+          const minRuns = Number.parseInt(formData.testManagementFlakinessMinRuns, 10);
+          if (Number.isNaN(minRuns) || minRuns < 1) {
+            return reply.status(400).send({
+              error: 'Test management minimum runs must be a number greater than 0',
+            });
+          }
+          config.testManagement.flakinessMinRuns = minRuns;
+        }
+
+        if (formData.testManagementFlakinessEvaluationWindowDays !== undefined) {
+          const windowDays = Number.parseInt(
+            formData.testManagementFlakinessEvaluationWindowDays,
+            10
+          );
+          if (Number.isNaN(windowDays) || windowDays < 1) {
+            return reply.status(400).send({
+              error: 'Test management evaluation window must be a number of days greater than 0',
+            });
+          }
+          config.testManagement.flakinessEvaluationWindowDays = windowDays;
+        }
+
+        if (logoFileSaved && isCustomBrandingPath(logoFileSaved)) {
+          const { error } = await withError(storage.uploadBrandingAsset(logoFileSaved));
+          if (error) {
+            await withError(deleteCustomBrandingFile(logoFileSaved));
+            return reply.status(500).send({
+              error: `failed to upload logo: ${error.message}`,
+            });
+          }
+        }
+        if (faviconFileSaved && isCustomBrandingPath(faviconFileSaved)) {
+          const { error } = await withError(storage.uploadBrandingAsset(faviconFileSaved));
+          if (error) {
+            await withError(deleteCustomBrandingFile(faviconFileSaved));
+            return reply.status(500).send({
+              error: `failed to upload favicon: ${error.message}`,
+            });
+          }
+        }
+
+        const { error: saveConfigError } = await withError(service.updateConfig(config));
+
+        if (saveConfigError) {
           return reply.status(500).send({
-            error: `failed to upload logo: ${error.message}`,
+            error: `failed to save config: ${saveConfigError.message}`,
           });
         }
-      }
-      if (faviconFileSaved && isCustomBrandingPath(faviconFileSaved)) {
-        const { error } = await withError(storage.uploadBrandingAsset(faviconFileSaved));
-        if (error) {
-          await withError(deleteCustomBrandingFile(faviconFileSaved));
-          return reply.status(500).send({
-            error: `failed to upload favicon: ${error.message}`,
-          });
+
+        if (config.logoPath !== previousLogoPath) {
+          await withError(deleteCustomBrandingFile(previousLogoPath));
+          if (isCustomBrandingPath(previousLogoPath)) {
+            await withError(storage.deleteBrandingAsset(previousLogoPath as string));
+          }
         }
-      }
+        if (config.faviconPath !== previousFaviconPath) {
+          await withError(deleteCustomBrandingFile(previousFaviconPath));
+          if (isCustomBrandingPath(previousFaviconPath)) {
+            await withError(storage.deleteBrandingAsset(previousFaviconPath as string));
+          }
+        }
 
-      const { error: saveConfigError } = await withError(service.updateConfig(config));
+        const testManagementConfigChanged = !!(
+          formData.testManagementQuarantineThresholdPercentage ||
+          formData.testManagementWarningThresholdPercentage ||
+          formData.testManagementAutoQuarantineEnabled !== undefined ||
+          formData.testManagementFlakinessMinRuns ||
+          formData.testManagementFlakinessEvaluationWindowDays
+        );
 
-      if (saveConfigError) {
-        return reply.status(500).send({
-          error: `failed to save config: ${saveConfigError.message}`,
+        if (testManagementConfigChanged) {
+          await testManagementService.recalculateAllFlakinessScores();
+        }
+
+        if (cronConfigChanged) {
+          await cronService.restart();
+        }
+
+        return reply.send({ message: 'config saved' });
+      } catch (error) {
+        fastify.log.error({ error }, 'Config update error');
+        return reply.status(400).send({
+          error: `config update failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         });
       }
-
-      if (config.logoPath !== previousLogoPath) {
-        await withError(deleteCustomBrandingFile(previousLogoPath));
-        if (isCustomBrandingPath(previousLogoPath)) {
-          await withError(storage.deleteBrandingAsset(previousLogoPath as string));
-        }
-      }
-      if (config.faviconPath !== previousFaviconPath) {
-        await withError(deleteCustomBrandingFile(previousFaviconPath));
-        if (isCustomBrandingPath(previousFaviconPath)) {
-          await withError(storage.deleteBrandingAsset(previousFaviconPath as string));
-        }
-      }
-
-      const testManagementConfigChanged = !!(
-        formData.testManagementQuarantineThresholdPercentage ||
-        formData.testManagementWarningThresholdPercentage ||
-        formData.testManagementAutoQuarantineEnabled !== undefined ||
-        formData.testManagementFlakinessMinRuns ||
-        formData.testManagementFlakinessEvaluationWindowDays
-      );
-
-      if (testManagementConfigChanged) {
-        await testManagementService.recalculateAllFlakinessScores();
-      }
-
-      if (
-        config.cron?.resultExpireDays ||
-        config.cron?.resultExpireCronSchedule ||
-        config.cron?.reportExpireDays ||
-        config.cron?.reportExpireCronSchedule
-      ) {
-        await cronService.restart();
-      }
-
-      return reply.send({ message: 'config saved' });
-    } catch (error) {
-      fastify.log.error({ error }, 'Config update error');
-      return reply.status(400).send({
-        error: `config update failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      });
     }
-  });
+  );
 
-  fastify.get('/api/info', async (_request, reply) => {
-    const { result: info, error } = await withError(service.getServerInfo());
+  fastify.get(
+    '/api/info',
+    { preHandler: (request, reply) => authenticate(request as AuthRequest, reply) },
+    async (_request, reply) => {
+      const { result: info, error } = await withError(service.getServerInfo());
 
-    if (error) {
-      return reply.status(400).send({ error: error.message });
+      if (error) {
+        return reply.status(400).send({ error: error.message });
+      }
+
+      return info;
     }
-
-    return info;
-  });
+  );
 }
