@@ -216,29 +216,6 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
           </div>
         )}
 
-        {/* Error groups */}
-        {summary.errorGroups.length > 0 && (
-          <div className="space-y-2">
-            {summary.errorGroups.map((group) => (
-              <div key={group.pattern} className="rounded-lg border p-3 text-sm">
-                <div className="flex items-center justify-between mb-1">
-                  <span
-                    className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${getCategoryColor(group.category)}`}
-                  >
-                    {group.category}
-                  </span>
-                  <Badge variant="outline" className="text-xs">
-                    {group.count}x
-                  </Badge>
-                </div>
-                <p className="font-mono text-xs text-muted-foreground mt-1 break-all line-clamp-2">
-                  {group.pattern}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* LLM Summary */}
         {summary.llmSummary && (
           <div className="border-t pt-3">
