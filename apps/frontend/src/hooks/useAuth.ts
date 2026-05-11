@@ -32,7 +32,10 @@ export function useAuth(): AuthSession {
     queryFn: async () => {
       const response = await fetch(withBase('/api/auth/session'));
       if (!response.ok) {
-        if (response.status === 401 || response.status === 404) {
+        if (response.status === 401) {
+          throw new Error('Unauthorized');
+        }
+        if (response.status === 404) {
           return { user: undefined, expires: '' };
         }
         throw new Error('Failed to get session');

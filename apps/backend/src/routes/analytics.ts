@@ -66,7 +66,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/analytics', async (request, reply) => {
     try {
       const authResult = await authenticate(request as AuthRequest, reply);
-      if (authResult) return authResult;
+      if (authResult) return;
 
       const {
         project = 'all',
@@ -98,7 +98,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   fastify.post('/api/llm/analyze-failed-test', async (request, reply) => {
     try {
       const authResult = await authenticate(request as AuthRequest, reply);
-      if (authResult) return authResult;
+      if (authResult) return;
 
       const { testId, reportId } = request.body as { testId: string; reportId: string };
 
@@ -169,7 +169,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const authResult = await authenticate(request as AuthRequest, reply);
-        if (authResult) return authResult;
+        if (authResult) return;
 
         const { id } = request.params as { id: string };
         const summary = failureSummaryDb.getSummary(id);
@@ -203,7 +203,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   // POST /api/report/:id/analyze - trigger analysis for a specific report
   fastify.post('/api/report/:id/analyze', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     try {
       const { id } = request.params as { id: string };
@@ -348,7 +348,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const authResult = await authenticate(request as AuthRequest, reply);
-        if (authResult) return authResult;
+        if (authResult) return;
 
         const { project, from, to } = request.query as {
           project?: string;
@@ -382,7 +382,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const authResult = await authenticate(request as AuthRequest, reply);
-        if (authResult) return authResult;
+        if (authResult) return;
 
         const { project } = request.query as { project?: string };
         const projectKey = project ?? 'all';
@@ -406,7 +406,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const authResult = await authenticate(request as AuthRequest, reply);
-        if (authResult) return authResult;
+        if (authResult) return;
 
         const { project } = request.query as { project?: string };
 
@@ -531,7 +531,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   // GET /api/llm/feedback - get the single note for a test
   fastify.get('/api/llm/feedback', async (request, reply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     const parsed = GetFeedbackQuerySchema.safeParse(request.query);
     if (!parsed.success) {
@@ -550,7 +550,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   // PUT /api/llm/feedback - upsert (creates on first call, edits comment thereafter)
   fastify.put('/api/llm/feedback', async (request, reply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     const parsed = UpsertFeedbackRequestSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -591,7 +591,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   // DELETE /api/llm/feedback - clear the note for a test
   fastify.delete('/api/llm/feedback', async (request, reply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     const parsed = DeleteFeedbackRequestSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -609,7 +609,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   // cascadeReportSummary=true also enqueues a report_summary task for the request's reportId.
   fastify.post('/api/llm/regenerate', async (request, reply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     const parsed = FeedbackRegenerateRequestSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -685,7 +685,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   // injected Playwright panel — server resolves fileId+project from test_runs in the latter.
   fastify.get('/api/llm/feedback/related', async (request, reply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     const parsed = GetRelatedFeedbackQuerySchema.safeParse(request.query);
     if (!parsed.success) {
@@ -747,7 +747,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   // Same identity rules as /related: (testId+fileId+project+errorSignature) or (testId+reportId).
   fastify.get('/api/llm/test-history', async (request, reply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     const { testId, reportId, fileId, project, errorSignature } = request.query as {
       testId?: string;

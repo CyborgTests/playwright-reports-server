@@ -42,7 +42,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   // GET /api/llm/tasks - paginated task list with optional filters
   fastify.get('/api/llm/tasks', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     try {
       const { status, type, reportId, limit, offset } = request.query as {
@@ -78,7 +78,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   // the last N days. Powers the dashboard card on the queue page.
   fastify.get('/api/llm/usage-stats', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     try {
       const { days: daysRaw } = request.query as { days?: string };
@@ -172,7 +172,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   // GET /api/llm/tasks/stats - task queue statistics
   fastify.get('/api/llm/tasks/stats', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     try {
       const stats = llmTasksDb.getStats();
@@ -189,7 +189,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   // DELETE /api/llm/tasks - bulk delete tasks
   fastify.delete('/api/llm/tasks', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     try {
       const { ids } = request.body as { ids: string[] };
@@ -215,7 +215,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   // DELETE /api/llm/tasks/:id - delete a single task
   fastify.delete('/api/llm/tasks/:id', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     try {
       const { id } = request.params as { id: string };
@@ -233,7 +233,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   // DELETE /api/llm/tasks/clear - clear queued + cancelled tasks
   fastify.delete('/api/llm/tasks/clear', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     try {
       llmTasksDb.clearQueue();
@@ -252,7 +252,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     '/api/llm/tasks/:id/cancel',
     async (request: FastifyRequest, reply: FastifyReply) => {
       const authResult = await authenticate(request as AuthRequest, reply);
-      if (authResult) return authResult;
+      if (authResult) return;
 
       try {
         const { id } = request.params as { id: string };
@@ -271,7 +271,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   // POST /api/llm/tasks/:id/retry - retry a failed task
   fastify.post('/api/llm/tasks/:id/retry', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     try {
       const { id } = request.params as { id: string };
@@ -291,7 +291,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     '/api/llm/generate-existing',
     async (request: FastifyRequest, reply: FastifyReply) => {
       const authResult = await authenticate(request as AuthRequest, reply);
-      if (authResult) return authResult;
+      if (authResult) return;
 
       try {
         const rows = getFailedTestsWithoutAnalysis();
@@ -326,7 +326,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     '/api/llm/task-progress/:taskId',
     async (request: FastifyRequest, reply: FastifyReply) => {
       const authResult = await authenticate(request as AuthRequest, reply);
-      if (authResult) return authResult;
+      if (authResult) return;
 
       const { taskId } = request.params as { taskId: string };
       const db = getDatabase();
@@ -390,7 +390,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   // as a starting point. Static, doesn't touch the LLM provider.
   fastify.get('/api/llm/default-prompts', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     // The default `content` strings themselves embed {{var}} placeholders —
     // they're rendered through the same applyMustache path as user overrides.
@@ -423,7 +423,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   // Pass ?refresh=1 to bypass the cache.
   fastify.get('/api/llm/available-models', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     try {
       if (!llmService.isConfigured()) {
@@ -464,7 +464,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   // provider. Optional body lets the Settings UI test draft (unsaved) values.
   fastify.post('/api/llm/test-connection', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     const body = (request.body ?? {}) as {
       provider?: 'openai' | 'anthropic';
@@ -488,7 +488,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   // POST /api/llm/rerun-all - delete all analyses and re-queue
   fastify.post('/api/llm/rerun-all', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return authResult;
+    if (authResult) return;
 
     try {
       const db = getDatabase();

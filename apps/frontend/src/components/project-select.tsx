@@ -37,7 +37,7 @@ export default function ProjectSelect({
 
   const [localStorageProject, setLocalStorageProject] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
-  const items = [defaultProjectName, ...(projects ?? [])];
+  const items = [defaultProjectName, ...(Array.isArray(projects) ? projects : [])];
   const localStorageKey = `selected-project`;
 
   useEffect(() => {

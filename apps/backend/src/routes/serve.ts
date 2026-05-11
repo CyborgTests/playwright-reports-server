@@ -21,7 +21,7 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
 
       if (authRequired) {
         const authResult = await authenticate(request as AuthRequest, reply);
-        if (authResult) return authResult;
+        if (authResult) return;
       }
 
       const contentType = mime.getType(targetPath.split('/').pop() || '');
