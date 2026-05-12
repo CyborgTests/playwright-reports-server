@@ -20,7 +20,7 @@ export default defineConfig({
       '@playwright-reports/reporter',
       {
         enabled: process.env.CI === 'true',
-        url: 'https://associated-jacqui-shelexdev-028b131e.koyeb.app',
+        url: 'https://demo.shelex.dev',
         reportPath: 'test-results/blob.zip',
         resultDetails: {
           testsType: 'API',

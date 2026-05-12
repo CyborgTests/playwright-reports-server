@@ -28,7 +28,7 @@ Persistent state lives in `data/` (SQLite `metadata.db` via better-sqlite3 + raw
 
 ## Demo
 
-[Check out the live demo!](https://associated-jacqui-shelexdev-028b131e.koyeb.app)
+[Check out the live demo!](https://demo.shelex.dev)
 
 ## Table of Contents
 
