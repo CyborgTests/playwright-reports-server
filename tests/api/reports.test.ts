@@ -51,3 +51,46 @@ test('/api/report/list search return No Result  by not existing reportId', async
   expect(response.status()).toBe(200);
   expect(json).toEqual({ reports: [], total: 0 });
 });
+
+test('/api/report/list filter by date range returns items within range', async ({ request, generatedReport }) => {
+  const api = new ReportController(request);
+  const now = new Date();
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+
+  const { response, json } = await api.list({ dateFrom: yesterday, dateTo: tomorrow });
+  expect(response.status()).toBe(200);
+  expect(json.reports.length).toBeGreaterThan(0);
+  expect(json.reports.some((r: any) => r.reportID === generatedReport.body.reportId)).toBeTruthy();
+});
+
+test('/api/report/list filter by future date range returns empty list', async ({ request }) => {
+  const api = new ReportController(request);
+  const futureFrom = '2099-01-01T00:00:00.000Z';
+  const futureTo = '2099-12-31T23:59:59.999Z';
+
+  const { response, json } = await api.list({ dateFrom: futureFrom, dateTo: futureTo });
+  expect(response.status()).toBe(200);
+  expect(json.reports).toEqual([]);
+  expect(json.total).toBe(0);
+});
+
+test('/api/report/list filter by dateFrom only returns items from that date onwards', async ({ request, generatedReport }) => {
+  const api = new ReportController(request);
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const { response, json } = await api.list({ dateFrom: yesterday, project: 'Smoke', limit: 1000 });
+  expect(response.status()).toBe(200);
+  expect(json.reports.length).toBeGreaterThan(0);
+  expect(json.reports.some((r: any) => r.reportID === generatedReport.body.reportId)).toBeTruthy();
+});
+
+test('/api/report/list filter by dateTo only returns items up to that date', async ({ request, generatedReport }) => {
+  const api = new ReportController(request);
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  const { response, json } = await api.list({ dateTo: tomorrow, project: 'Smoke', limit: 1000 });
+  expect(response.status()).toBe(200);
+  expect(json.reports.length).toBeGreaterThan(0);
+  expect(json.reports.some((r: any) => r.reportID === generatedReport.body.reportId)).toBeTruthy();
+});

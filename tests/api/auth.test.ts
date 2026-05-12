@@ -1,25 +1,43 @@
-import { test } from './fixtures/base';
-import { expect } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-//  TO DO: investigate how run test with auth and without it
 
-// test ('should return success response if the Autorization header is right', async ({request}) => {
-//    const token = process.env.API_TOKEN;
-//    const response = await request.get('/api/result/list', {
-//     headers: {
-//       Authorization: `${token}`,
-//     },
-//   });
-//   expect(response.status()).toBe(200);
-//   expect(await response.text()).not.toBe('Unauthorized');
-// });
+test.describe('Authorization', () => {
+  test('returns 200 with correct Authorization header', async ({ playwright }) => {
+    const token = process.env.API_TOKEN;
+    test.skip(!token, 'API_TOKEN not set — auth tests require a token');
 
-// test ('should return unauthorised if the Autorization header is wrong', async ({request}) => {
-//    const response = await request.get('/api/report/list', {
-//     headers: {
-//       Authorization: `Bearer ${randomUUID()}`,
-//     },
-//   });
-//   expect(response.status()).toBe(401);
-//   expect(await response.text()).toBe('Unauthorized');
-// });
+    const ctx = await playwright.request.newContext({
+      baseURL: 'http://localhost:3000',
+      extraHTTPHeaders: { Authorization: token! },
+    });
+    const response = await ctx.get('/api/result/list');
+    await ctx.dispose();
+
+    expect(response.status()).toBe(200);
+  });
+
+  test('returns 401 with wrong Authorization header', async ({ playwright }) => {
+    const token = process.env.API_TOKEN;
+    test.skip(!token, 'API_TOKEN not set — auth tests require a token');
+
+    const ctx = await playwright.request.newContext({
+      baseURL: 'http://localhost:3000',
+      extraHTTPHeaders: { Authorization: `Bearer ${randomUUID()}` },
+    });
+    const response = await ctx.get('/api/result/list');
+    await ctx.dispose();
+
+    expect(response.status()).toBe(401);
+  });
+
+  test('returns 401 with no Authorization header', async ({ playwright }) => {
+    const token = process.env.API_TOKEN;
+    test.skip(!token, 'API_TOKEN not set — auth tests require a token');
+
+    const ctx = await playwright.request.newContext({ baseURL: 'http://localhost:3000' });
+    const response = await ctx.get('/api/result/list');
+    await ctx.dispose();
+
+    expect(response.status()).toBe(401);
+  });
+});

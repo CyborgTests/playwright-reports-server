@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  playwright-reports-server:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      # Basic Configuration
+      # Leave API_TOKEN empty to disable auth for local testing
+      - API_TOKEN=${API_TOKEN:-}
+      - AUTH_SECRET=${AUTH_SECRET:-local-dev-secret}
+      - UI_AUTH_EXPIRE_HOURS=${UI_AUTH_EXPIRE_HOURS:-2}
+
+      # Storage Configuration (Local filesystem by default)
+      - DATA_STORAGE=${DATA_STORAGE:-fs}
+
+      # S3 Configuration (uncomment and configure if using S3/MinIO)
+      # - S3_ENDPOINT=minio:9000
+      # - S3_ACCESS_KEY=minioadmin
+      # - S3_SECRET_KEY=minioadmin
+      # - S3_REGION=us-east-1
+      # - S3_BUCKET=playwright-reports-server
+      # - S3_USE_SSL=false
+      # - S3_BATCH_SIZE=10
+
+      # Optional: Jira Integration
+      # - JIRA_BASE_URL=https://your-domain.atlassian.net
+      # - JIRA_EMAIL=your-email@example.com
+      # - JIRA_API_TOKEN=your-jira-api-token
+      # - JIRA_PROJECT_KEY=YOUR_PROJECT_KEY
+
+      # Optional: Data expiration (uncomment to enable)
+      # - RESULT_EXPIRE_DAYS=30
+      # - REPORT_EXPIRE_DAYS=90
+    volumes:
+      # Local development: bind mount local directory
+      - ./data:/app/data
+
+      # For Azure File Share (uncomment and modify):
+      # - my-azure-file-share:/app/data
+
+      # For other cloud storage mounts:
+      # - /path/to/nfs/mount:/app/data
+      # - azure-file-volume:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - playwright-network
+
+  # Optional: MinIO S3-compatible storage
+  # Uncomment this section if you want to use MinIO instead of local storage
+  # minio:
+  #   image: minio/minio:latest
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+  #   environment:
+  #     - MINIO_ACCESS_KEY=minioadmin
+  #     - MINIO_SECRET_KEY=minioadmin
+  #   volumes:
+  #     - minio_data:/data
+  #   command: server /data --console-address ":9001"
+  #   restart: unless-stopped
+  #   networks:
+  #     - playwright-network
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+  #     interval: 30s
+  #     timeout: 20s
+  #     retries: 3
+
+  # Optional: MinIO Console (Web UI for MinIO)
+  # Uncomment if using MinIO
+  # minio-console:
+  #   image: minio/console:latest
+  #   ports:
+  #     - "9090:9090"
+  #   environment:
+  #     - CONSOLE_MINIO_SERVER=minio:9000
+  #   depends_on:
+  #     - minio
+  #   restart: unless-stopped
+  #   networks:
+  #     - playwright-network
+
+networks:
+  playwright-network:
+    driver: bridge
+
+# volumes:
+#   # Uncomment if using MinIO
+#   # minio_data:

@@ -31,6 +31,10 @@ export async function middleware(request: NextRequest) {
     },
     {
       methods: ['GET'],
+      path: '/api/download',
+    },
+    {
+      methods: ['GET'],
       path: '/api/static',
     },
     {
