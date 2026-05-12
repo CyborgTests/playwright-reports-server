@@ -1,5 +1,5 @@
 export interface StorageConfig {
-  type: 'fs' | 's3';
+  type: 'fs' | 's3' | 'azure';
   basePath?: string;
   endpoint?: string;
   bucket?: string;

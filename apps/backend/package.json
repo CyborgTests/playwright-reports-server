@@ -19,6 +19,7 @@
 		"@aws-sdk/client-s3": "^3.1041.0",
 		"@aws-sdk/lib-storage": "^3.1041.0",
 		"@aws-sdk/s3-request-presigner": "^3.1041.0",
+		"@azure/storage-blob": "^12.28.0",
 		"@fastify/cookie": "^11.0.2",
 		"@fastify/cors": "^11.2.0",
 		"@fastify/jwt": "^10.0.0",

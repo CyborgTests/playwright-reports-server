@@ -31,7 +31,11 @@ export const env = cleanEnv(process.env, {
     default: '2',
   }),
   AUTH_SECRET: str({ desc: 'Secret for JWT', default: undefined }),
-  DATA_STORAGE: str({ desc: 'Where to store data', default: 'fs' }),
+  DATA_STORAGE: str({
+    desc: 'Where to store data',
+    default: 'fs',
+    choices: ['fs', 's3', 'azure'],
+  }),
   // s3
   S3_ENDPOINT: str({ desc: 'S3 endpoint', default: undefined }),
   S3_ACCESS_KEY: str({ desc: 'S3 access key', default: undefined }),
@@ -44,6 +48,14 @@ export const env = cleanEnv(process.env, {
     desc: 'S3 multipart upload chunk size in MB',
     default: 25,
   }),
+  // azure blob storage
+  AZURE_ACCOUNT_NAME: str({ desc: 'Azure Storage account name', default: undefined }),
+  AZURE_ACCOUNT_KEY: str({ desc: 'Azure Storage account key', default: undefined }),
+  AZURE_CONTAINER: str({
+    desc: 'Azure Storage container name',
+    default: 'playwright-reports-server',
+  }),
+  AZURE_BATCH_SIZE: num({ desc: 'Azure batch size', default: 10 }),
   // cleanup task
   RESULT_EXPIRE_DAYS: num({
     desc: 'How much days to keep results',

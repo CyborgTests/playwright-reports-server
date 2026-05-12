@@ -162,6 +162,8 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       dataStorage: env.DATA_STORAGE,
       s3Endpoint: env.S3_ENDPOINT,
       s3Bucket: env.S3_BUCKET,
+      azureAccountName: env.AZURE_ACCOUNT_NAME,
+      azureContainer: env.AZURE_CONTAINER,
     };
 
     const llmInfo = {

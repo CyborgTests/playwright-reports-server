@@ -211,15 +211,17 @@ class Service {
       shouldStoreLocalCopy?: boolean;
     }
   ) {
-    // Forks the upload to a local temp copy (S3 mode only) so it can be reused without re-downloading.
-    // Writes go to <filename>.part and are renamed to <filename> only after the S3 upload succeeds,
-    // so a partial blob is never visible to generateReport.
+    // Forks the upload to a local temp copy (remote-storage modes only) so it can be reused without
+    // re-downloading. Writes go to <filename>.part and are renamed to <filename> only after the
+    // upload succeeds, so a partial blob is never visible to generateReport.
     const uploadStream = new PassThrough({ highWaterMark: DEFAULT_STREAM_CHUNK_SIZE });
 
     let onUploadSuccess: (() => Promise<void>) | undefined;
     let onUploadFailure: (() => Promise<void>) | undefined;
 
-    if (options?.shouldStoreLocalCopy && env.DATA_STORAGE === 's3') {
+    const usesRemoteStorage = env.DATA_STORAGE === 's3' || env.DATA_STORAGE === 'azure';
+
+    if (options?.shouldStoreLocalCopy && usesRemoteStorage) {
       const localCopyStream = new PassThrough({ highWaterMark: DEFAULT_STREAM_CHUNK_SIZE });
       stream.pipe(localCopyStream);
       const finalPath = path.join(TMP_FOLDER, 'results', filename);

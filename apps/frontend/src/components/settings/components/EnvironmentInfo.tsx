@@ -44,11 +44,18 @@ export default function EnvironmentInfo() {
               <p className="text-sm text-muted-foreground">{envInfo?.dataStorage || 'fs'}</p>
             )}
           </div>
-          {envInfo?.s3Endpoint && (
+          {envInfo?.dataStorage === 's3' && envInfo?.s3Endpoint && (
             <div>
               <span className="block text-sm font-medium mb-1">S3 Storage</span>
               <p className="text-sm text-muted-foreground">Endpoint: {envInfo.s3Endpoint}</p>
               <p className="text-sm text-muted-foreground">Bucket: {envInfo.s3Bucket}</p>
+            </div>
+          )}
+          {envInfo?.dataStorage === 'azure' && envInfo?.azureAccountName && (
+            <div>
+              <span className="block text-sm font-medium mb-1">Azure Blob Storage</span>
+              <p className="text-sm text-muted-foreground">Account: {envInfo.azureAccountName}</p>
+              <p className="text-sm text-muted-foreground">Container: {envInfo.azureContainer}</p>
             </div>
           )}
           <p className="text-sm text-muted-foreground">Total: {serverInfo?.dataFolderSizeinMB}</p>

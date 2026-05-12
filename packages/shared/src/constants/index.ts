@@ -49,6 +49,7 @@ export const TEST_OUTCOMES = {
 export const STORAGE_TYPES = {
   FILESYSTEM: 'fs',
   S3: 's3',
+  AZURE: 'azure',
 } as const;
 
 export const DEFAULT_CONFIG = {

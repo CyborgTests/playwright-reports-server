@@ -51,7 +51,7 @@ export class Lifecycle {
 
       llmService.applyConfig(configCache.config?.llm as Partial<LLMProviderConfig> | undefined);
 
-      if (env.DATA_STORAGE === 's3') {
+      if (env.DATA_STORAGE === 's3' || env.DATA_STORAGE === 'azure') {
         const cachePath = path.join(TMP_FOLDER, 'results');
         const { error: mkdirError } = await withError(fs.mkdir(cachePath, { recursive: true }));
         if (mkdirError) {

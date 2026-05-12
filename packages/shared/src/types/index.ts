@@ -68,6 +68,8 @@ export interface SiteWhiteLabelConfig {
   dataStorage?: string;
   s3Endpoint?: string;
   s3Bucket?: string;
+  azureAccountName?: string;
+  azureContainer?: string;
   cron?: {
     resultExpireDays?: number;
     resultExpireCronSchedule?: string;
@@ -91,6 +93,8 @@ export interface EnvInfo {
   dataStorage: string | undefined;
   s3Endpoint: string | undefined;
   s3Bucket: string | undefined;
+  azureAccountName: string | undefined;
+  azureContainer: string | undefined;
 }
 
 export interface Report {

@@ -24,6 +24,8 @@ export interface AuthConfig {
   dataStorage?: string;
   s3Endpoint?: string;
   s3Bucket?: string;
+  azureAccountName?: string;
+  azureContainer?: string;
 }
 
 export const getAuthSession = (): Promise<AuthSession> => {
