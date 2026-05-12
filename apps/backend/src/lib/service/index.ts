@@ -133,6 +133,13 @@ class Service {
       );
     }
 
+    const { error: cleanupErr } = await withError(storage.cleanupGeneratedReport(reportId));
+    if (cleanupErr) {
+      console.warn(
+        `[service] generateReport - failed to clean up local copy for ${reportId}: ${cleanupErr.message}`
+      );
+    }
+
     const reportUrl = `${serveReportRoute}/${reportId}/index.html`;
 
     return { reportId, reportUrl, metadata: metadataWithVersion };

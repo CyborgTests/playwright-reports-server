@@ -134,15 +134,14 @@ export class AzureBlob implements Storage {
 
     const { error: accessError } = await withError(fs.access(localPath));
     if (accessError) {
-      console.warn(`[azure] branding asset not found locally, skipping upload: ${localPath}`);
-      return;
+      throw new Error(`[azure] branding asset not found locally: ${localPath}`);
     }
 
     console.log(`[azure] uploading branding asset: ${remoteKey}`);
     const { error } = await withError(this.uploadFileWithRetry(remoteKey, localPath));
 
     if (error) {
-      console.error(`[azure] failed to upload branding asset: ${error.message}`);
+      throw new Error(`[azure] failed to upload branding asset ${remoteKey}: ${error.message}`);
     }
   }
 
@@ -282,7 +281,7 @@ export class AzureBlob implements Storage {
     console.log(`[azure] uploaded ${filename}`);
   }
 
-  private async uploadReport(reportId: string, reportPath: string, remotePath: string) {
+  private async uploadReport(reportPath: string, remotePath: string) {
     const files = await fs.readdir(reportPath, {
       recursive: true,
       withFileTypes: true,
@@ -293,21 +292,20 @@ export class AzureBlob implements Storage {
         return;
       }
 
-      const fileDir = (file as unknown as { path: string }).path;
-      const nestedPath = fileDir.split(reportId).pop();
+      const relativeDir = path.relative(reportPath, file.parentPath);
       const azurePath = path.posix.join(
         remotePath,
-        (nestedPath ?? '').split(path.sep).join('/'),
+        relativeDir ? relativeDir.split(path.sep).join('/') : '',
         file.name
       );
 
       const { error } = await withError(
-        this.uploadFileWithRetry(azurePath, path.join(fileDir, file.name))
+        this.uploadFileWithRetry(azurePath, path.join(file.parentPath, file.name))
       );
 
       if (error) {
-        console.error(`[azure] failed to upload report: ${error.message}`);
-        throw new Error(`[azure] failed to upload report: ${error.message}`);
+        console.error(`[azure] failed to upload report file ${azurePath}: ${error.message}`);
+        throw new Error(`[azure] failed to upload report file ${azurePath}: ${error.message}`);
       }
     });
   }
@@ -334,7 +332,12 @@ export class AzureBlob implements Storage {
 
   private async clearTempFolders(id?: string) {
     await withError(fs.rm(path.join(TMP_FOLDER, id ?? ''), { recursive: true, force: true }));
-    await withError(fs.rm(REPORTS_FOLDER, { recursive: true, force: true }));
+  }
+
+  async cleanupGeneratedReport(reportId: string): Promise<void> {
+    await withError(
+      fs.rm(path.join(REPORTS_FOLDER, reportId), { recursive: true, force: true })
+    );
   }
 
   async generateReport(
@@ -419,14 +422,15 @@ export class AzureBlob implements Storage {
     const remotePath = path.posix.join(REPORTS_BUCKET, reportId);
 
     const { error: uploadError } = await withError(
-      this.uploadReport(reportId, reportPath, remotePath)
+      this.uploadReport(reportPath, remotePath)
     );
 
-    if (uploadError) {
-      console.error(`[azure] failed to upload report: ${uploadError.message}`);
-    }
-
     await this.clearTempFolders(reportId);
+
+    if (uploadError) {
+      await this.cleanupGeneratedReport(reportId);
+      throw new Error(`[azure] failed to upload report: ${uploadError.message}`);
+    }
 
     return {
       reportId,

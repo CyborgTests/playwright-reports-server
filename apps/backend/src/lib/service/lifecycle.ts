@@ -63,8 +63,14 @@ export class Lifecycle {
 
       siteConfigDb.ensureSeeded();
       const cfg = siteConfigDb.get();
-      for (const candidate of [cfg.logoPath, cfg.faviconPath]) {
-        if (!candidate?.startsWith('/branding/')) continue;
+      const brandingCandidates: string[] = [];
+      if (cfg.logoPath) brandingCandidates.push(cfg.logoPath);
+      if (cfg.faviconPath) brandingCandidates.push(cfg.faviconPath);
+      for (const link of cfg.headerLinks ?? []) {
+        if (link.icon) brandingCandidates.push(link.icon);
+      }
+      for (const candidate of brandingCandidates) {
+        if (!candidate.startsWith('/branding/')) continue;
         const { error } = await withError(storage.ensureBrandingAsset(candidate));
         if (error) {
           console.warn(

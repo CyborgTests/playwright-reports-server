@@ -214,15 +214,14 @@ export class S3 implements Storage {
 
     const { error: accessError } = await withError(fs.access(localPath));
     if (accessError) {
-      console.warn(`[s3] branding asset not found locally, skipping upload: ${localPath}`);
-      return;
+      throw new Error(`[s3] branding asset not found locally: ${localPath}`);
     }
 
     console.log(`[s3] uploading branding asset: ${remoteKey}`);
     const { error } = await withError(this.uploadFileWithRetry(remoteKey, localPath));
 
     if (error) {
-      console.error(`[s3] failed to upload branding asset: ${error.message}`);
+      throw new Error(`[s3] failed to upload branding asset ${remoteKey}: ${error.message}`);
     }
   }
 
@@ -543,7 +542,7 @@ export class S3 implements Storage {
     }
   }
 
-  private async uploadReport(reportId: string, reportPath: string, remotePath: string) {
+  private async uploadReport(reportPath: string, remotePath: string) {
     const files = await fs.readdir(reportPath, {
       recursive: true,
       withFileTypes: true,
@@ -554,16 +553,20 @@ export class S3 implements Storage {
         return;
       }
 
-      const nestedPath = (file as any).path.split(reportId).pop();
-      const s3Path = path.join(remotePath, nestedPath ?? '', file.name);
+      const relativeDir = path.relative(reportPath, file.parentPath);
+      const s3Path = path.posix.join(
+        remotePath,
+        relativeDir ? relativeDir.split(path.sep).join('/') : '',
+        file.name
+      );
 
       const { error } = await withError(
-        this.uploadFileWithRetry(s3Path, path.join((file as any).path, file.name))
+        this.uploadFileWithRetry(s3Path, path.join(file.parentPath, file.name))
       );
 
       if (error) {
-        console.error(`[s3] failed to upload report: ${error.message}`);
-        throw new Error(`[s3] failed to upload report: ${error.message}`);
+        console.error(`[s3] failed to upload report file ${s3Path}: ${error.message}`);
+        throw new Error(`[s3] failed to upload report file ${s3Path}: ${error.message}`);
       }
     });
   }
@@ -598,7 +601,12 @@ export class S3 implements Storage {
 
   private async clearTempFolders(id?: string) {
     await withError(fs.rm(path.join(TMP_FOLDER, id ?? ''), { recursive: true, force: true }));
-    await withError(fs.rm(REPORTS_FOLDER, { recursive: true, force: true }));
+  }
+
+  async cleanupGeneratedReport(reportId: string): Promise<void> {
+    await withError(
+      fs.rm(path.join(REPORTS_FOLDER, reportId), { recursive: true, force: true })
+    );
   }
 
   async generateReport(
@@ -716,14 +724,15 @@ export class S3 implements Storage {
     const remotePath = path.join(REPORTS_BUCKET, reportId);
 
     const { error: uploadError } = await withError(
-      this.uploadReport(reportId, reportPath, remotePath)
+      this.uploadReport(reportPath, remotePath)
     );
 
-    if (uploadError) {
-      console.error(`[s3] failed to upload report: ${uploadError.message}`);
-    }
-
     await this.clearTempFolders(reportId);
+
+    if (uploadError) {
+      await this.cleanupGeneratedReport(reportId);
+      throw new Error(`[s3] failed to upload report: ${uploadError.message}`);
+    }
 
     return {
       reportId,

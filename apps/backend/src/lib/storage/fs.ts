@@ -238,6 +238,11 @@ async function noopBrandingAsset(_relativePath: string): Promise<void> {
   return;
 }
 
+// In FS mode the on-disk copy IS the report — never remove it after generation.
+async function noopCleanupGeneratedReport(_reportId: string): Promise<void> {
+  return;
+}
+
 export const FS: Storage = {
   getServerDataInfo,
   readFile,
@@ -246,6 +251,7 @@ export const FS: Storage = {
   saveResult,
   generateReport,
   uploadReportFromZipFile,
+  cleanupGeneratedReport: noopCleanupGeneratedReport,
   uploadBrandingAsset: noopBrandingAsset,
   ensureBrandingAsset: noopBrandingAsset,
   deleteBrandingAsset: noopBrandingAsset,

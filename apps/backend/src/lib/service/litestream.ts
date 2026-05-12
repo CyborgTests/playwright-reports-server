@@ -41,6 +41,7 @@ export class LitestreamService {
     const bucket = env.S3_BUCKET;
     const region = env.S3_REGION || 'us-east-1';
     const endpoint = env.S3_ENDPOINT;
+    const port = env.S3_PORT;
     const accessKeyId = env.S3_ACCESS_KEY;
     const secretAccessKey = env.S3_SECRET_KEY;
 
@@ -52,22 +53,38 @@ export class LitestreamService {
 
     const absoluteDbPath = path.resolve(this.dbPath);
 
-    return `
-# Litestream configuration for SQLite replication to S3
+    const y = (v: string) => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+
+    const protocol = endpoint?.startsWith('http') ? '' : 'https://';
+    const endpointUrl = endpoint
+      ? port
+        ? `${protocol}${endpoint}:${port}`
+        : `${protocol}${endpoint}`
+      : '';
+
+    const replicaLines = [
+      `      - url: ${y(`s3://${bucket}/${s3Path}/metadata.db`)}`,
+      `        access-key-id: ${y(accessKeyId)}`,
+      `        secret-access-key: ${y(secretAccessKey)}`,
+      `        region: ${y(region)}`,
+    ];
+    if (endpointUrl) {
+      replicaLines.push(`        endpoint: ${y(endpointUrl)}`);
+    }
+    replicaLines.push(
+      '        force-path-style: true',
+      '        sync-interval: 1s',
+      '        snapshot-interval: 3h',
+      '        retention: 24h',
+      '        retention-check-interval: 1h'
+    );
+
+    return `# Litestream configuration for SQLite replication to S3
 # See: https://litestream.io/reference/config/
 dbs:
-  - path: ${absoluteDbPath}
+  - path: ${y(absoluteDbPath)}
     replicas:
-      - url: s3://${bucket}/${s3Path}/metadata.db
-        access-key-id: ${accessKeyId}
-        secret-access-key: ${secretAccessKey}
-        region: ${region}
-        ${endpoint ? `endpoint: ${endpoint}` : ''}
-        force-path-style: true
-        sync-interval: 1s
-        snapshot-interval: 3h
-        retention: 24h
-        retention-check-interval: 1h
+${replicaLines.join('\n')}
 `;
   }
 
@@ -194,12 +211,20 @@ dbs:
     }
   }
 
+  private get cliDbArg(): string {
+    return `"${path.resolve(this.dbPath)}"`;
+  }
+
+  private get cliConfigArg(): string {
+    return `"${this.configPath}"`;
+  }
+
   private async hasRemoteBackup(): Promise<boolean> {
     const litestreamEnv = this.buildLitestreamEnv();
 
     return new Promise((resolve) => {
       exec(
-        `litestream generations -config ${this.configPath}`,
+        `litestream generations -config ${this.cliConfigArg} ${this.cliDbArg}`,
         { env: litestreamEnv, timeout: 30000 },
         (error, stdout) => {
           if (error) {
@@ -219,7 +244,7 @@ dbs:
 
     return new Promise((resolve) => {
       exec(
-        `litestream restore -config ${this.configPath} -o ${this.dbPath} --if-replica-exists`,
+        `litestream restore -config ${this.cliConfigArg} -o "${this.dbPath}" --if-replica-exists ${this.cliDbArg}`,
         { env: litestreamEnv, timeout: 60000 },
         (error) => {
           if (error) {
@@ -238,7 +263,7 @@ dbs:
 
     return new Promise((resolve) => {
       exec(
-        `litestream restore -config ${this.configPath} -o ${this.dbPath}`,
+        `litestream restore -config ${this.cliConfigArg} -o "${this.dbPath}" ${this.cliDbArg}`,
         { env: litestreamEnv, timeout: 60000 },
         (error) => {
           if (error) {

@@ -17,6 +17,7 @@ export interface Storage {
     zipFilePath: string,
     metadata?: ReportMetadata
   ) => Promise<{ reportPath: string; report: ReportHistory }>;
+  cleanupGeneratedReport: (reportId: string) => Promise<void>;
   uploadBrandingAsset: (relativePath: string) => Promise<void>;
   ensureBrandingAsset: (relativePath: string) => Promise<void>;
   deleteBrandingAsset: (relativePath: string) => Promise<void>;
