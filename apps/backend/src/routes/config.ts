@@ -351,7 +351,9 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           config.llm.provider = provider as any;
         }
         if (formData.llmBaseUrl !== undefined) config.llm.baseUrl = formData.llmBaseUrl;
-        if (formData.llmApiKey !== undefined) config.llm.apiKey = formData.llmApiKey;
+        if (formData.llmApiKey !== undefined && !/^\*+$/.test(formData.llmApiKey)) {
+          config.llm.apiKey = formData.llmApiKey;
+        }
         if (formData.llmModel !== undefined) config.llm.model = formData.llmModel;
         // Per-task temperature overrides. Empty string clears (provider falls
         // back to env-driven default). Range is 0–2 (same as model APIs accept).
@@ -476,7 +478,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         const llmConfigChanged = !!(
           formData.llmProvider ||
           formData.llmBaseUrl ||
-          formData.llmApiKey ||
+          (formData.llmApiKey && !/^\*+$/.test(formData.llmApiKey)) ||
           formData.llmModel ||
           formData.llmTestAnalysisTemperature !== undefined ||
           formData.llmReportSummaryTemperature !== undefined ||

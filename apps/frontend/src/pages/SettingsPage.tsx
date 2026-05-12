@@ -110,7 +110,7 @@ export default function SettingsPage() {
           if (tempConfig.llm.baseUrl) {
             formData.append('llmBaseUrl', tempConfig.llm.baseUrl);
           }
-          if (tempConfig.llm.apiKey) {
+          if (tempConfig.llm.apiKey && !/^\*+$/.test(tempConfig.llm.apiKey)) {
             formData.append('llmApiKey', tempConfig.llm.apiKey);
           }
           if (tempConfig.llm.model) {
