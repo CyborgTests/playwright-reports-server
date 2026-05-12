@@ -164,6 +164,10 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_test_runs_failure_category ON test_runs(failure_category);
     CREATE INDEX IF NOT EXISTS idx_test_runs_error_signature ON test_runs(error_signature);
   `);
+  addColumnIfMissing(db, 'test_runs', 'error_signature_global', 'TEXT');
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_test_runs_error_signature_global ON test_runs(error_signature_global)'
+  );
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS llm_tasks (

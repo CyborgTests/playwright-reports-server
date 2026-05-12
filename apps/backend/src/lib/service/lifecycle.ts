@@ -14,6 +14,7 @@ import { reportDb, resultDb } from './db/index.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import { siteConfigDb } from './db/siteConfig.sqlite.js';
 import { litestreamService } from './litestream.js';
+import { testManagementService } from './testManagement.js';
 
 const createdLifecycle = Symbol.for('playwright.reports.lifecycle');
 const instance = globalThis as typeof globalThis & {
@@ -85,6 +86,15 @@ export class Lifecycle {
       const reaped = llmTasksDb.failStaleProcessing();
       if (reaped > 0) {
         console.log(`[lifecycle] Failed ${reaped} stale processing LLM task(s) from prior run`);
+      }
+
+      // One-shot backfill for the filepath-independent error signature so the
+      // Most Common Failures widget aggregates pre-existing rows after upgrade.
+      const backfilled = testManagementService.backfillGlobalSignatures();
+      if (backfilled > 0) {
+        console.log(
+          `[lifecycle] Backfilled error_signature_global for ${backfilled} test_runs row(s)`
+        );
       }
 
       await litestreamService.start();

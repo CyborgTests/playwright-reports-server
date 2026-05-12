@@ -208,7 +208,8 @@ export class FailureSummaryDatabase {
 
     const sql = `
       SELECT testId, fileId, project, reportId, failure_category as category,
-             error_signature as signature, failure_details, createdAt
+             error_signature as signature, error_signature_global as signatureGlobal,
+             failure_details, createdAt
       FROM test_runs
       WHERE ${conditions.join(' AND ')}
       ORDER BY createdAt DESC
@@ -220,6 +221,7 @@ export class FailureSummaryDatabase {
       reportId: string;
       category: string;
       signature: string | null;
+      signatureGlobal: string | null;
       failure_details: string | null;
       createdAt: string;
     }>;
@@ -247,7 +249,7 @@ export class FailureSummaryDatabase {
       totalFailures++;
       categoryCounts[row.category] = (categoryCounts[row.category] ?? 0) + 1;
 
-      const groupKey = row.signature || `category::${row.category}`;
+      const groupKey = row.signatureGlobal || row.signature || `category::${row.category}`;
       const existing = errorMap.get(groupKey);
       if (existing) {
         existing.count++;

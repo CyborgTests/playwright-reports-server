@@ -34,6 +34,7 @@ export interface TestRun {
   failureCategory?: string;
   failureCategorySource?: FailureCategorySource;
   errorSignature?: string;
+  errorSignatureGlobal?: string;
 }
 
 export interface TestWithQuarantineInfo extends Test {
@@ -57,6 +58,7 @@ export class TestDatabase {
       failureCategory: row.failure_category || undefined,
       failureCategorySource: (row.failure_category_source as FailureCategorySource) || undefined,
       errorSignature: row.error_signature || undefined,
+      errorSignatureGlobal: row.error_signature_global || undefined,
     };
   }
 
@@ -85,8 +87,11 @@ export class TestDatabase {
       string | null,
       string | null,
       string | null,
+      string | null,
     ]
   >;
+  private readonly backfillGlobalSignatureStmt: Database.Statement<[string, string]>;
+  private readonly getRunsMissingGlobalSignatureStmt: Database.Statement<[]>;
   private readonly quarantineTestRunStmt: Database.Statement<[number, string | null, string]>;
   private readonly fixTestRunStmt: Database.Statement<[number, string]>;
   private readonly getTestRunsStmt: Database.Statement<[string, string, string]>;
@@ -123,8 +128,17 @@ export class TestDatabase {
     `);
 
     this.insertTestRunStmt = this.db.prepare(`
-      INSERT INTO test_runs (runId, testId, fileId, project, reportId, outcome, duration, createdAt, flakinessScore, quarantineReason, quarantined, failure_details, failure_category, failure_category_source, error_signature)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_runs (runId, testId, fileId, project, reportId, outcome, duration, createdAt, flakinessScore, quarantineReason, quarantined, failure_details, failure_category, failure_category_source, error_signature, error_signature_global)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    this.backfillGlobalSignatureStmt = this.db.prepare(`
+      UPDATE test_runs SET error_signature_global = ? WHERE runId = ?
+    `);
+
+    this.getRunsMissingGlobalSignatureStmt = this.db.prepare(`
+      SELECT runId, failure_details FROM test_runs
+      WHERE error_signature_global IS NULL AND failure_details IS NOT NULL
     `);
 
     this.quarantineTestRunStmt = this.db.prepare(`
@@ -302,6 +316,7 @@ export class TestDatabase {
       failureCategory: testRunWithId.failureCategory || null,
       failureCategorySource: testRunWithId.failureCategorySource || null,
       errorSignature: testRunWithId.errorSignature || null,
+      errorSignatureGlobal: testRunWithId.errorSignatureGlobal || null,
     };
 
     this.insertTestRunStmt.run(
@@ -319,7 +334,8 @@ export class TestDatabase {
       validatedParams.failureDetails,
       validatedParams.failureCategory,
       validatedParams.failureCategorySource,
-      validatedParams.errorSignature
+      validatedParams.errorSignature,
+      validatedParams.errorSignatureGlobal
     );
 
     return testRunWithId;
@@ -559,6 +575,33 @@ export class TestDatabase {
       priorOccurrenceCount: countRow?.c ?? 0,
       firstOccurrence: firstRow ?? null,
     };
+  }
+
+  public backfillGlobalSignatures(computeSignature: (message: string) => string): number {
+    const rows = this.getRunsMissingGlobalSignatureStmt.all() as Array<{
+      runId: string;
+      failure_details: string | null;
+    }>;
+    if (rows.length === 0) return 0;
+
+    let updated = 0;
+    const tx = this.db.transaction(() => {
+      for (const row of rows) {
+        if (!row.failure_details) continue;
+        let message = '';
+        try {
+          message = String((JSON.parse(row.failure_details) as { message?: string }).message ?? '');
+        } catch {
+          continue;
+        }
+        if (!message) continue;
+        const signature = computeSignature(message);
+        this.backfillGlobalSignatureStmt.run(signature, row.runId);
+        updated++;
+      }
+    });
+    tx();
+    return updated;
   }
 
   public clear(): void {

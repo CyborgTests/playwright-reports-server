@@ -285,6 +285,7 @@ export class TestManagementService {
       details: string;
       message: string;
       signature: string;
+      signatureGlobal: string;
       classification: { category: FailureCategory; source: 'heuristic' | 'consensus' };
     };
     const preparedByKey = new Map<string, PreparedFailure>();
@@ -306,11 +307,13 @@ export class TestManagementService {
           /* ignore */
         }
         const signature = this.computeErrorSignature(message, filePath);
+        const signatureGlobal = this.computeErrorSignature(message);
         const classification = classifyFailure(message, signature);
         preparedByKey.set(`${testId}::${fileId}`, {
           details,
           message,
           signature,
+          signatureGlobal,
           classification,
         });
       }
@@ -342,6 +345,7 @@ export class TestManagementService {
           const prepared = preparedByKey.get(`${testId}::${fileId}`);
           const failureDetails = prepared?.details ?? null;
           const errorSignature = prepared?.signature ?? null;
+          const errorSignatureGlobal = prepared?.signatureGlobal ?? null;
           const classification = prepared?.classification ?? null;
 
           const testRun = {
@@ -366,6 +370,7 @@ export class TestManagementService {
             failureCategory: classification?.category,
             failureCategorySource: classification?.source,
             errorSignature: errorSignature ?? undefined,
+            errorSignatureGlobal: errorSignatureGlobal ?? undefined,
           };
 
           if (
@@ -505,7 +510,7 @@ export class TestManagementService {
     return JSON.stringify(details);
   }
 
-  private computeErrorSignature(message: string, filePath: string): string {
+  public computeErrorSignature(message: string, filePath?: string): string {
     // Strip numbers, quoted strings, and excess whitespace so the same root failure groups together.
     const normalized = message
       .replace(/\d+/g, 'N')
@@ -515,13 +520,17 @@ export class TestManagementService {
       .substring(0, 500);
 
     let hash = 0;
-    const input = `${filePath}:${normalized}`;
+    const input = filePath !== undefined ? `${filePath}:${normalized}` : normalized;
     for (let i = 0; i < input.length; i++) {
       const char = input.charCodeAt(i);
       hash = (hash << 5) - hash + char;
       hash |= 0;
     }
     return hash.toString(36);
+  }
+
+  public backfillGlobalSignatures(): number {
+    return testDb.backfillGlobalSignatures((message) => this.computeErrorSignature(message));
   }
 
   private calculateFlakinessSync(
