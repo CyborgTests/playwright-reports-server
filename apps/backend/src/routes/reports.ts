@@ -20,7 +20,7 @@ import { storage } from '../lib/storage/index.js';
 import { parseFromRequest } from '../lib/storage/pagination.js';
 import { validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { type AuthRequest, authenticate, authenticateUpload } from './auth.js';
 
 export async function registerReportRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
@@ -176,6 +176,13 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: 'Invalid request format' });
       }
     });
+
+  });
+
+  await fastify.register(async (fastify) => {
+    fastify.addHook('preHandler', (request, reply) =>
+      authenticateUpload(request as AuthRequest, reply)
+    );
 
     fastify.post('/api/report/upload', async (request, reply) => {
       let metadata: Record<string, unknown> = {};

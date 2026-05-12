@@ -9,7 +9,7 @@ import { DEFAULT_STREAM_CHUNK_SIZE } from '../lib/storage/constants.js';
 import { parseFromRequest } from '../lib/storage/pagination.js';
 import { validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { type AuthRequest, authenticate, authenticateUpload } from './auth.js';
 
 export async function registerResultRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
@@ -105,6 +105,13 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
           return reply.status(400).send({ error: 'Invalid request format' });
         }
       }
+    );
+
+  });
+
+  await fastify.register(async (fastify) => {
+    fastify.addHook('preHandler', (request, reply) =>
+      authenticateUpload(request as AuthRequest, reply)
     );
 
     fastify.put('/api/result/upload', async (request, reply) => {

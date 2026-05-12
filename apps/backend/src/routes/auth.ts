@@ -65,6 +65,44 @@ export const isAuthenticated = async (request: AuthRequest): Promise<boolean> =>
   return verifyToken(token) !== null;
 };
 
+export const authenticateUpload = async (request: AuthRequest, reply: FastifyReply) => {
+  if (!useAuth) {
+    request.user = createNoAuthTokens();
+    return;
+  }
+
+  const authHeader = request.headers.authorization;
+  const cookieToken = request.cookies.token;
+
+  // Allow reporter to authenticate upload calls
+  // with the raw API_TOKEN - either plain or with a Bearer prefix.
+  if (authHeader) {
+    const candidate = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
+    if (candidate === env.API_TOKEN) {
+      request.user = createAuthTokens(env.API_TOKEN as string);
+      return;
+    }
+  }
+
+  let token: string | null = null;
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+  } else if (cookieToken) {
+    token = cookieToken;
+  }
+
+  if (!token) {
+    return reply.status(401).send({ error: 'Unauthorized: No token provided' });
+  }
+
+  const decoded = verifyToken(token);
+  if (!decoded) {
+    return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
+  }
+
+  request.user = { apiToken: decoded.apiToken, jwtToken: token };
+};
+
 export const authenticate = async (request: AuthRequest, reply: FastifyReply) => {
   if (!useAuth) {
     request.user = createNoAuthTokens();
