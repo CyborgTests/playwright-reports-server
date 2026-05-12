@@ -12,6 +12,11 @@ import cors from "cors";
 import { getOpenApiSpec, ROUTE_SPECS } from "./src/openapi";
 import AdmZip from "adm-zip";
 
+function routeParam(v: string | string[] | undefined): string | undefined {
+  if (v === undefined) return undefined;
+  return Array.isArray(v) ? v[0] : v;
+}
+
 async function startServer() {
   const app = express();
   const rawPort = process.env.PORT;
@@ -349,7 +354,8 @@ async function startServer() {
     },
 
     getReport: (req, res) => {
-    const { id } = req.params;
+    const id = routeParam(req.params.id);
+    if (!id) return res.status(404).json({ error: "Report not found" });
     const report = db.prepare("SELECT * FROM reports WHERE id = ?").get(id) as any;
     if (!report) return res.status(404).json({ error: "Report not found" });
 
@@ -556,7 +562,11 @@ async function startServer() {
     "/api/serve/:project/:reportId",
     authMiddleware,
     (req, res, next) => {
-      const { project, reportId } = req.params;
+      const project = routeParam(req.params.project);
+      const reportId = routeParam(req.params.reportId);
+      if (!project || !reportId) {
+        return res.status(404).send("Report not found");
+      }
       const reportPath = path.join(REPORTS_DIR, project, reportId);
       if (!fs.existsSync(reportPath) || !fs.statSync(reportPath).isDirectory()) {
         return res.status(404).send("Report not found");

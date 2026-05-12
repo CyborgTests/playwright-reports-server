@@ -102,7 +102,7 @@ export default function TrendsPage() {
 
           <div className="flex items-stretch gap-1.5 h-56 mb-2">
             {[...reports].reverse().map((r, i) => {
-              const raw = r.stats ?? {};
+              const raw: StatsLike = r.stats ?? {};
               const expected = raw.expected ?? raw.passed ?? 0;
               const unexpected = raw.unexpected ?? raw.failed ?? 0;
               const flaky = raw.flaky ?? 0;

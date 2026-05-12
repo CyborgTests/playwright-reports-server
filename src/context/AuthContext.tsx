@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const authHeader = apiToken ? { Authorization: apiToken } : {};
+  const authHeader: Record<string, string> = apiToken ? { Authorization: apiToken } : {};
 
   return (
     <AuthContext.Provider value={{ apiToken, setApiToken, isLoggedIn, login, logout, requireAuth, authHeader }}>

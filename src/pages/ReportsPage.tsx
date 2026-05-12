@@ -73,12 +73,12 @@ export default function ReportsPage() {
     });
   };
 
+  const reportId = (r: Report) => r.id ?? (r as any).reportID ?? '';
+
   const toggleSelectAll = () => {
     if (selectedIds.size === reports.length) setSelectedIds(new Set());
-    else setSelectedIds(new Set(reports.map((r) => r.id || r.reportID)));
+    else setSelectedIds(new Set(reports.map(reportId).filter((id) => id !== '')));
   };
-
-  const reportId = (r: Report) => r.id ?? (r as any).reportID ?? '';
 
   return (
     <motion.div
