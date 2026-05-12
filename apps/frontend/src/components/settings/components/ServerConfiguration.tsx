@@ -2,7 +2,7 @@
 
 import type { HeaderLink, ServerConfig } from '@playwright-reports/shared';
 import { useRef, useState } from 'react';
-import { getPresetIcon, HEADER_LINK_ICON_CATALOG } from '@/components/header-link-icons';
+import { HEADER_LINK_ICON_CATALOG } from '@/components/header-link-icons';
 import { LinkIcon } from '@/components/icons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

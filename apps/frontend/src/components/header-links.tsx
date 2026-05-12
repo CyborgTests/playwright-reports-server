@@ -1,7 +1,7 @@
 import type { HeaderLink, SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import { Link } from 'react-router-dom';
 import { withBase } from '@/lib/url';
-import { HEADER_LINK_ICON_CATALOG, getPresetIcon } from './header-link-icons';
+import { getPresetIcon, HEADER_LINK_ICON_CATALOG } from './header-link-icons';
 import { LinkIcon } from './icons';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
