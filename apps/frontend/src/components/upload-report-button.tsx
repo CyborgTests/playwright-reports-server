@@ -69,7 +69,7 @@ export default function UploadReportButton({
         method: 'POST',
         body: formData,
         headers: {
-          authorization: session.data?.user.apiToken ?? '',
+          authorization: session.data?.user.jwtToken ?? '',
         },
       });
 

@@ -77,7 +77,7 @@ export default function UploadResultsButton({
         method: 'PUT',
         body: formData,
         headers: {
-          authorization: session.data?.user.apiToken ?? '',
+          authorization: session.data?.user.jwtToken ?? '',
         },
       });
 
