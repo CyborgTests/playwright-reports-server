@@ -148,9 +148,9 @@ EXPOSE 3001
 ENV PORT=3001
 ENV FRONTEND_DIST=/app/apps/frontend/dist
 
-WORKDIR /app/apps/backend
+WORKDIR /app
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "apps/backend/dist/index.js"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:$PORT/api/ping || exit 1
