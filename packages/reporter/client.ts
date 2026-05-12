@@ -1,6 +1,7 @@
 import type { UUID } from 'node:crypto';
 import type { Stats } from 'node:fs';
 import fsp from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { makeBoundary, multipartStream } from './stream.js';
 
 export type ReportServerClientOptions = {
@@ -57,7 +58,7 @@ export class ReportServerClient {
 
     const zipSize = stat.size;
     const boundary = makeBoundary();
-    const body = multipartStream({
+    const iterable = multipartStream({
       boundary,
       fields,
       filePath: blobPath,
@@ -66,6 +67,7 @@ export class ReportServerClient {
       totalBytes: zipSize,
       logProgress,
     });
+    const body = Readable.toWeb(Readable.from(iterable));
 
     const uploadUrl = `${this.baseUrl}/api/result/upload?fileContentLength=${zipSize}`;
 

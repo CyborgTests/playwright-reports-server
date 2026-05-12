@@ -1,5 +1,5 @@
 {
-  "name": "@playwright-reports/reporter",
+  "name": "@shelex/playwright-reporter",
   "version": "1.0.0",
   "description": "Reporter that uploads your blob reports to playwright reports server",
   "main": "dist/index.js",
@@ -24,7 +24,7 @@
     "format:check": "biome format *.ts",
     "clean": "rm -rf dist"
   },
-  "author": "Oleksandr Khotemskyi <xotabu4@gmail.com>",
+  "author": "Oleksandr Shevtsov <ovr.shevtsov@gmail.com>",
   "license": "MIT",
   "files": [
     "dist/**",
