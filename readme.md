@@ -43,6 +43,7 @@ Persistent state lives in `data/` (SQLite `metadata.db` via better-sqlite3 + raw
   - [Configuration options](#configuration-options)
     - [General](#general)
     - [S3 Compatible Storage](#s3-compatible-storage)
+    - [Azure Blob Storage](#azure-blob-storage)
     - [LLM](#llm)
       - [Playwright Report — Per-Test Analysis](#playwright-report--per-test-analysis)
       - [Feedback widget (test-level)](#feedback-widget-test-level)
@@ -51,12 +52,14 @@ Persistent state lives in `data/` (SQLite `metadata.db` via better-sqlite3 + raw
       - [LLM Queue Page](#llm-queue-page)
       - [Background Processing](#background-processing)
     - [Test Management](#test-management)
+    - [GitHub Sync](#github-sync)
   - [API Routes](#api-routes)
   - [Authorization](#authorization)
   - [Test Quarantine](#test-quarantine)
   - [Storage Options](#storage-options)
     - [Local File System Storage](#local-file-system-storage)
     - [S3-Compatible Object Storage](#s3-compatible-object-storage)
+    - [Azure Blob Object Storage](#azure-blob-object-storage)
     - [Expiration task](#expiration-task)
   - [Docker Usage](#docker-usage)
   - [UI White-label](#ui-white-label)
@@ -110,12 +113,12 @@ All persistent state lives in the `data/` folder — `apps/backend/data/` for `p
 ### General
 The app is configured with environment variables, so it could be specified as `.env` file as well, however there are no mandatory options.
 
-| Name                   | Description                                                                                 | Default |
-|------------------------|---------------------------------------------------------------------------------------------|---------|
-| `API_TOKEN`            | API token for [Authorization](#authorization)                                               |         |
-| `AUTH_SECRET`          | Secret to encrypt JWT                                                                       |         |
-| `UI_AUTH_EXPIRE_HOURS` | Duration of auth session                                                                    | `"2"`   |
-| `DATA_STORAGE`         | Where to store data, check for additional configuration [Storage Options](#storage-options) | `"fs"`  |
+| Name                   | Description                                                                                  | Default |
+|------------------------|----------------------------------------------------------------------------------------------|---------|
+| `API_TOKEN`            | API token for [Authorization](#authorization)                                                |         |
+| `AUTH_SECRET`          | Secret to encrypt JWT                                                                        |         |
+| `UI_AUTH_EXPIRE_HOURS` | Duration of auth session                                                                     | `"2"`   |
+| `DATA_STORAGE`         | Where to store data: `fs` (local), `s3`, or `azure`. See [Storage Options](#storage-options) | `"fs"`  |
 
 ### S3 Compatible Storage
 
@@ -132,6 +135,19 @@ If you want to persist reports and results on S3 compatible storage, you need to
 | `S3_BATCH_SIZE`              | Number of concurrent requests to S3   | 10                        |
 | `S3_MULTIPART_CHUNK_SIZE_MB` | Chunk size for multipart upload in MB | 25                        |
 
+### Azure Blob Storage
+
+Set `DATA_STORAGE=azure` to persist reports and results in an Azure Storage container. Authentication is via shared key (account name + key).
+
+> Litestream SQLite replication is still S3-only — when running with Azure storage, the `metadata.db` file lives only on the local volume. Mount a persistent volume or take periodic backups of `/app/data/metadata.db`.
+
+| Name                 | Description                            | Default                   |
+|----------------------|----------------------------------------|---------------------------|
+| `AZURE_ACCOUNT_NAME` | Azure Storage account name             |                           |
+| `AZURE_ACCOUNT_KEY`  | Azure Storage account key              |                           |
+| `AZURE_CONTAINER`    | Container name (created if missing)    | playwright-reports-server |
+| `AZURE_BATCH_SIZE`   | Number of concurrent requests to Azure | 10                        |
+
 ### LLM
 
 When configured, the LLM integration provides failure analysis across the application. It is enabled ONLY if an LLM provider is configured.
@@ -141,17 +157,17 @@ When configured, the LLM integration provides failure analysis across the applic
 The minimum to enable LLM features is `LLM_BASE_URL` + `LLM_API_KEY`. Everything else has sensible defaults or is configurable at runtime via the Settings page.
 NB! Provider - not the exact company that serves your token casino, it's the API format.  
 
-| Name                          | Description                                                                                                                  | Default                |
-|-------------------------------|------------------------------------------------------------------------------------------------------------------------------|------------------------|
-| `LLM_PROVIDER`                | LLM provider (`openai` \| `anthropic`)                                                                                       | `openai`               |
-| `LLM_BASE_URL`                | Base URL for the LLM API                                                                                                     |                        |
-| `LLM_API_KEY`                 | API key for the LLM provider                                                                                                 |                        |
-| `LLM_MODEL`                   | Model to use; first model from `/models` endpoint when unset                                                                 | first available        |
-| `LLM_PARALLEL_REQUESTS`       | Concurrent LLM requests for the background analysis queue                                                                    | `1`                    |
-| `LLM_MAX_TOKENS`              | Cap on output tokens per request. OpenAI/local omit when blank; Anthropic falls back to a safe default (its API requires it) |                        |
-| `LLM_CONTEXT_WINDOW`          | Override detected model context window in tokens (useful for local models that don't advertise it)                           | auto-detect            |
-| `LLM_STRUCTURED_OUTPUT_MODE`  | `auto` (try; fall back to text on unsupported), `force`, `disabled`                                                          | `auto`                 |
-| `LLM_MULTIMODAL_MODE`         | `auto` (attach images; fall back on unsupported), `force`, `disabled`                                                        | `auto`                 |
+| Name                         | Description                                                                                                                  | Default         |
+|------------------------------|------------------------------------------------------------------------------------------------------------------------------|-----------------|
+| `LLM_PROVIDER`               | LLM provider (`openai` \| `anthropic`)                                                                                       | `openai`        |
+| `LLM_BASE_URL`               | Base URL for the LLM API                                                                                                     |                 |
+| `LLM_API_KEY`                | API key for the LLM provider                                                                                                 |                 |
+| `LLM_MODEL`                  | Model to use; first model from `/models` endpoint when unset                                                                 | first available |
+| `LLM_PARALLEL_REQUESTS`      | Concurrent LLM requests for the background analysis queue                                                                    | `1`             |
+| `LLM_MAX_TOKENS`             | Cap on output tokens per request. OpenAI/local omit when blank; Anthropic falls back to a safe default (its API requires it) |                 |
+| `LLM_CONTEXT_WINDOW`         | Override detected model context window in tokens (useful for local models that don't advertise it)                           | auto-detect     |
+| `LLM_STRUCTURED_OUTPUT_MODE` | `auto` (try; fall back to text on unsupported), `force`, `disabled`                                                          | `auto`          |
+| `LLM_MULTIMODAL_MODE`        | `auto` (attach images; fall back on unsupported), `force`, `disabled`                                                        | `auto`          |
 
 #### Settings UI
 
@@ -199,6 +215,61 @@ The Test Management feature is configured via the Settings page in the web UI. T
 | Auto-Quarantine Tests       | Automatically quarantine tests exceeding the quarantine threshold              | false   |
 | Minimum Runs for Evaluation | Minimum test runs before calculating flakiness score                           | 1       |
 | Evaluation Window (Days)    | Number of days to look back when calculating flakiness                         | 30      |
+
+### GitHub Sync
+
+The GitHub Sync feature periodically pulls Playwright report artifacts produced by GitHub Actions workflow runs and uploads them as native reports in the server. Each sync configuration is independent — different repos, workflows, schedules, and tokens can coexist — and runs on its own cron.
+
+Configuration lives on the Settings page (`/settings` → **GitHub Sync**). Each entry has:
+
+| Field                 | Description                                                                                                                                                                             |
+|-----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Name                  | Human-readable label shown in the configs list.                                                                                                                                         |
+| Repository            | GitHub repo in `owner/name` format.                                                                                                                                                     |
+| Workflow file         | Workflow filename (e.g. `playwright.yml`) whose runs will be scanned.                                                                                                                   |
+| GitHub token          | Optional per-config Personal Access Token. Stored encrypted (AES-256-GCM, key derived from `AUTH_SECRET`). If blank, falls back to the `GITHUB_TOKEN` env var.                          |
+| Start date & time     | Workflow runs completed before this point are ignored.                                                                                                                                  |
+| Cron schedule         | Standard cron expression (e.g. `*/30 * * * *`). Each config has its own cron job.                                                                                                       |
+| Artifact name regex   | Filters which artifacts on each run get uploaded. Use parentheses to capture parts of the artifact name — captures are available as `${match1}`, `${match2}`, … in the templates below. |
+| Project name template | String template that produces the report's `project` (used to group reports in the dashboard). Mix literal text with placeholders.                                                      |
+| Report title template | String template that produces the report's display title.                                                                                                                               |
+| Enabled               | When unchecked the cron is unscheduled; existing state and history are preserved (use **Pause / Resume** for the same effect from the row actions).                                     |
+
+#### Template placeholders
+
+Resolved per-artifact at sync time:
+
+| Placeholder       | Source                                                |
+|-------------------|-------------------------------------------------------|
+| `${match1..N}`    | Capture groups from the artifact name regex           |
+| `${branch}`       | `head_branch` from the workflow run                   |
+| `${runDate}`      | First 10 chars of the run's `created_at` (YYYY-MM-DD) |
+| `${runId}`        | GitHub workflow run id                                |
+| `${artifactName}` | Raw artifact name as returned by GitHub               |
+| `${workflowName}` | Workflow display name from GitHub                     |
+| `${workflowFile}` | Workflow filename (e.g. `playwright.yml`)             |
+| `${repo}`         | `owner/name` from the config                          |
+
+Example: `^playwright-report-(.+)$` + project template `${match1}:${branch}` on a run producing `playwright-report-chrome` on `main` → uploads a report into project `chrome:main`.
+
+#### Required GitHub token permissions
+
+Only read access is required — the sync never writes to your repo.
+
+- **Fine-grained PAT** (recommended): `Actions: Read-only` on the target repo. `Metadata: Read-only` is granted automatically.
+- **Classic PAT**: `repo` for private repos, or `public_repo` for public repos.
+
+If you don't paste a token in the UI, the server falls back to the `GITHUB_TOKEN` environment variable:
+
+| Name           | Description                                                                                 |
+|----------------|---------------------------------------------------------------------------------------------|
+| `GITHUB_TOKEN` | Default token used when a sync config has none of its own. Use this for the "shared" setup. |
+
+For local development with the `gh` CLI installed, you can wire its credential to the env var with:
+
+```bash
+export GITHUB_TOKEN="$(gh auth token)"
+```
 
 ## API Routes
 
@@ -511,7 +582,7 @@ To automatically skip quarantined tests during test execution:
 
 ## Storage Options
 
-The Playwright Reports Server uses local file system storage by default. However, it can be configured to use S3-compatible object storage for better scalability and persistence. Here are the details for both options:
+The Playwright Reports Server uses local file system storage by default. It can also be configured to use S3-compatible object storage or Azure Blob Storage for better scalability and persistence. Pick the backend with the `DATA_STORAGE` env var (`fs` / `s3` / `azure`).
 
 ### Local File System Storage
 
@@ -523,9 +594,8 @@ By default, all data is stored in the `data` folder.
 
 This includes both raw test results and generated reports. When using local file system:
 
-- Ensure the application has write permissions to the `/data/` directory.
-- For data persistence when using Docker image, mount a volume or host directory to `/app/data/`.
-- If you have own Docker setup, please note that by default it will be saved to `/apps/backend/data/` folder, as the executable will be in build resources.
+- Ensure the application has write permissions to the `data/` directory.
+- For data persistence when using the Docker image, mount a volume or host directory to `/app/data/`. The container resolves the data folder from the process working directory (`/app`), so this mount captures the SQLite metadata DB, reports, and results.
 
 Example Docker run command with a mounted volume:
 
@@ -566,6 +636,23 @@ As GCP has quite limited S3 API support, you need to ensure that:
 - a bucket with the name `playwright-reports-server` is created or just specify your own bucket name via `S3_BUCKET` environment variable.
 - you set the `S3_REGION` env variable to `auto`, as it does not support custom regions.
 - error message in logs `S3Error: The specified location constraint is not valid.` could mean that you do not have a bucket or not specified the `S3_REGION` env variable.
+
+### Azure Blob Object Storage
+
+Set `DATA_STORAGE=azure` to keep reports, results, and branding assets in an Azure Storage container. See [Azure Blob Storage](#azure-blob-storage) for the full env table.
+
+Minimal env:
+
+```
+DATA_STORAGE=azure
+AZURE_ACCOUNT_NAME=<your-account-name>
+AZURE_ACCOUNT_KEY=<your-account-key>
+AZURE_CONTAINER=<your-container-name>   # optional, defaults to "playwright-reports-server"
+```
+
+The container is created on first start if it doesn't already exist (account credentials must allow `Microsoft.Storage/storageAccounts/blobServices/containers/write`). All blob keys use forward slashes regardless of host OS, mirroring the S3 backend.
+
+> Litestream replication is not currently wired for Azure — the `metadata.db` SQLite file lives on the local volume. Mount a persistent volume to `/app/data/` or take periodic backups so it survives container restarts.
 
 ### Expiration task
 
@@ -619,7 +706,7 @@ curl --location --request PATCH 'localhost:3001/api/config' \
   --form 'title="YOUR_TITLE"' \
   --form 'logo=@"PATH_TO_YOUR_LOGO"' \
   --form 'favicon=@"PATH_TO_YOUR_FAVICON"' \
-  --form 'headerLinks="{\"someLink\": \"https://example.com\", \"github\": \"https://github.com/Shelex\"}"'
+  --form 'headerLinks="[{\"id\":\"my-github\",\"label\":\"GitHub\",\"url\":\"https://github.com/Shelex\",\"icon\":\"github\"}]"'
 ```
 
 ### Config File
@@ -629,10 +716,20 @@ curl --location --request PATCH 'localhost:3001/api/config' \
   ```json
   {
     "title": "Custom title",
-    "headerLinks": {
-      "someLink": "https://example.com",
-      "github": "https://github.com/YourName"
-    },
+    "headerLinks": [
+      {
+        "id": "my-github",
+        "label": "GitHub",
+        "url": "https://github.com/YourName",
+        "icon": "github"
+      },
+      {
+        "id": "internal-docs",
+        "label": "Docs",
+        "url": "https://example.com/docs",
+        "showLabel": true
+      }
+    ],
     "logoPath": "/logo.svg",
     "faviconPath": "/favicon.ico"
   }
@@ -641,6 +738,10 @@ curl --location --request PATCH 'localhost:3001/api/config' \
 
 ### Header links
 
-- is an object, where key is a name of the link and value is the external url
-- currently we have logo for: `telegram`, `github`, `discord`, `bitbucket`, `slack`
-- we will use specific logo for a link name if we have it, otherwise there will be a generic link icon with a link name
+- `headerLinks` is an **array** of `{ id, label, url, icon?, showLabel? }` objects.
+  - `id` — unique string identifier used for React keys and as a stable handle in the Settings UI.
+  - `label` — text shown as the link's title and as the tooltip / aria-label.
+  - `url` — external URL the link points to.
+  - `icon` (optional) — selects a built-in icon from the bundled set. Falls back to a generic link icon when omitted or unrecognised.
+  - `showLabel` (optional) — when `true`, the label is rendered next to the icon. When omitted/`false`, the link is icon-only.
+- Built-in icons: `github`, `slack`, `discord`, `telegram`, `bitbucket`.
