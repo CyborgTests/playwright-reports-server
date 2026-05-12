@@ -5,6 +5,11 @@ import { type Pagination } from './pagination';
 import { type SiteWhiteLabelConfig, type UUID } from '@/app/types';
 import { type ReportInfo, type ReportTest } from '@/app/lib/parser/types';
 
+export interface ReportFile {
+  relativePath: string;
+  storagePath: string;
+}
+
 export interface Storage {
   getServerDataInfo: () => Promise<ServerDataInfo>;
   readFile: (targetPath: string, contentType: string | null) => Promise<string | Buffer>;
@@ -15,6 +20,7 @@ export interface Storage {
   saveResult: (filename: string, stream: PassThrough) => Promise<void>;
   saveResultDetails: (resultID: string, resultDetails: ResultDetails, size: number) => Promise<Result>;
   generateReport: (resultsIds: string[], metadata?: ReportMetadata) => Promise<UUID>;
+  listReportFiles: (reportId: string, project: string) => Promise<ReportFile[]>;
   readConfigFile: () => Promise<{ result?: SiteWhiteLabelConfig; error: Error | null }>;
   saveConfigFile: (
     config: Partial<SiteWhiteLabelConfig>,
