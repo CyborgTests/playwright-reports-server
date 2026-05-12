@@ -1,6 +1,6 @@
 import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
-import { defaultConfig, isConfigValid } from '../../config.js';
+import { defaultConfig, isConfigValid, normalizeHeaderLinks } from '../../config.js';
 import { getDatabase } from './db.js';
 
 const initiated = Symbol.for('playwright.reports.db.siteConfig');
@@ -49,7 +49,11 @@ export class SiteConfigDatabase {
     try {
       const parsed = JSON.parse(row.config);
       if (isConfigValid(parsed)) {
-        return { ...defaultConfig, ...parsed };
+        return {
+          ...defaultConfig,
+          ...parsed,
+          headerLinks: normalizeHeaderLinks(parsed.headerLinks),
+        };
       }
       console.warn('[siteConfig] stored config failed validation — falling back to defaults');
     } catch (e) {

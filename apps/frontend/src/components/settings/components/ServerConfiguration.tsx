@@ -1,14 +1,36 @@
 'use client';
 
-import type { ServerConfig } from '@playwright-reports/shared';
-import { useRef } from 'react';
+import type { HeaderLink, ServerConfig } from '@playwright-reports/shared';
+import { useRef, useState } from 'react';
+import { getPresetIcon, HEADER_LINK_ICON_CATALOG } from '@/components/header-link-icons';
+import { LinkIcon } from '@/components/icons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { defaultLinks } from '@/config/site';
+import { withBase } from '@/lib/url';
+
+const CUSTOM_VALUE = '__custom__';
+const NONE_VALUE = '__none__';
+
+function isCustomIconPath(icon: string | undefined): boolean {
+  return !!icon && icon.startsWith('/branding/');
+}
+
+function iconChoiceFor(icon: string | undefined): string {
+  if (!icon) return NONE_VALUE;
+  return icon;
+}
 
 interface ServerConfigurationProps {
   config: ServerConfig;
@@ -17,11 +39,13 @@ interface ServerConfigurationProps {
   isUpdating: boolean;
   logoFile: File | null;
   faviconFile: File | null;
+  pendingLinkIcons: Record<string, File>;
   onEdit: () => void;
   onSave: () => void;
   onCancel: () => void;
   onUpdateTempConfig: (updates: Partial<ServerConfig>) => void;
   onAddHeaderLink: () => void;
+  onUpdateLinkIconFile: (linkId: string, file: File | null) => void;
   onLogoFileChange: (file: File | null) => void;
   onFaviconFileChange: (file: File | null) => void;
 }
@@ -33,31 +57,62 @@ export default function ServerConfiguration({
   isUpdating,
   logoFile,
   faviconFile,
+  pendingLinkIcons,
   onEdit,
   onSave,
   onCancel,
   onUpdateTempConfig,
   onAddHeaderLink,
+  onUpdateLinkIconFile,
   onLogoFileChange,
   onFaviconFileChange,
 }: Readonly<ServerConfigurationProps>) {
   const logoFileRef = useRef<HTMLInputElement>(null);
   const faviconFileRef = useRef<HTMLInputElement>(null);
+  const [pendingCustomLinks, setPendingCustomLinks] = useState<Set<string>>(new Set());
 
-  const updateHeaderLink = (key: string, value: string) => {
-    onUpdateTempConfig({
-      headerLinks: {
-        ...tempConfig.headerLinks,
-        [key]: value,
-      },
+  const markPendingCustom = (id: string, isCustom: boolean) => {
+    setPendingCustomLinks((prev) => {
+      const next = new Set(prev);
+      if (isCustom) next.add(id);
+      else next.delete(id);
+      return next;
     });
   };
 
-  const removeHeaderLink = (key: string) => {
-    const newHeaderLinks = { ...tempConfig.headerLinks };
+  const updateLink = (id: string, patch: Partial<HeaderLink>) => {
+    const links = tempConfig.headerLinks ?? [];
+    onUpdateTempConfig({
+      headerLinks: links.map((l) => (l.id === id ? { ...l, ...patch } : l)),
+    });
+  };
 
-    delete newHeaderLinks[key];
-    onUpdateTempConfig({ headerLinks: newHeaderLinks });
+  const removeLink = (id: string) => {
+    const links = tempConfig.headerLinks ?? [];
+    onUpdateTempConfig({ headerLinks: links.filter((l) => l.id !== id) });
+    onUpdateLinkIconFile(id, null);
+    markPendingCustom(id, false);
+  };
+
+  const handleIconChoice = (id: string, choice: string) => {
+    if (choice === CUSTOM_VALUE) {
+      markPendingCustom(id, true);
+      return;
+    }
+    if (choice === NONE_VALUE) {
+      updateLink(id, { icon: undefined });
+      onUpdateLinkIconFile(id, null);
+      markPendingCustom(id, false);
+      return;
+    }
+    updateLink(id, { icon: choice });
+    onUpdateLinkIconFile(id, null);
+    markPendingCustom(id, false);
+  };
+
+  const handleIconFile = (id: string, file: File | null) => {
+    onUpdateLinkIconFile(id, file);
+    if (file) markPendingCustom(id, false);
   };
 
   const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -308,67 +363,145 @@ export default function ServerConfiguration({
             <div className="flex justify-between items-center mb-2">
               <span className="block text-sm font-medium">Header Links</span>
               {editingSection === 'server' && (
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={onAddHeaderLink}>
-                    Add Link
-                  </Button>
-                </div>
+                <Button size="sm" onClick={onAddHeaderLink}>
+                  Add Link
+                </Button>
               )}
             </div>
-            <div className="space-y-2">
-              {Object.entries(
-                editingSection === 'server'
-                  ? tempConfig.headerLinks || {}
-                  : config.headerLinks || {}
-              )
-                .filter(([key]) => key !== 'cyborgTest')
-                .map(([key, value]) => {
-                  const isDefaultLink = ['github', 'telegram', 'discord'].includes(key);
-                  const canReset = ['github', 'telegram', 'discord'].includes(key);
+            <div className="space-y-3">
+              {(() => {
+                const linksForRender =
+                  editingSection === 'server'
+                    ? (tempConfig.headerLinks ?? [])
+                    : (config.headerLinks ?? []);
+                const customIconLabels = new Map<string, string>();
+                for (const l of linksForRender) {
+                  if (l.icon && isCustomIconPath(l.icon) && !customIconLabels.has(l.icon)) {
+                    customIconLabels.set(l.icon, l.label?.trim() || 'Custom');
+                  }
+                }
+                const customIconPaths = Array.from(customIconLabels.keys());
+
+                if (!linksForRender.length) {
+                  return (
+                    <p className="text-muted-foreground text-sm">No header links configured</p>
+                  );
+                }
+
+                return linksForRender.map((link) => {
+                  const choice =
+                    pendingLinkIcons[link.id] || pendingCustomLinks.has(link.id)
+                      ? CUSTOM_VALUE
+                      : iconChoiceFor(link.icon);
+                  const pendingFile = pendingLinkIcons[link.id];
+                  const isEditingServer = editingSection === 'server';
 
                   return (
-                    <div key={key} className="flex gap-2 items-center">
-                      <Input
-                        className="w-1/3"
-                        disabled={true}
-                        placeholder="Link name"
-                        value={key}
-                      />
-                      <Input
-                        className="flex-1"
-                        disabled={editingSection !== 'server' || isDefaultLink}
-                        placeholder="URL"
-                        value={value}
-                        onChange={(e) => updateHeaderLink(key, e.target.value)}
-                      />
-                      {editingSection === 'server' && !isDefaultLink && (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => removeHeaderLink(key)}
-                        >
-                          Remove
-                        </Button>
+                    <div
+                      key={link.id}
+                      className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2"
+                    >
+                      <Select
+                        value={choice}
+                        onValueChange={(value) => handleIconChoice(link.id, value)}
+                        disabled={!isEditingServer}
+                      >
+                        <SelectTrigger className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={CUSTOM_VALUE}>Upload new</SelectItem>
+                          {customIconPaths.map((path) => (
+                            <SelectItem key={path} value={path}>
+                              <span className="flex items-center gap-2">
+                                <img
+                                  alt=""
+                                  src={withBase(`/api/static${path}`)}
+                                  className="h-4 w-4 object-contain"
+                                />
+                                {customIconLabels.get(path)}
+                              </span>
+                            </SelectItem>
+                          ))}
+                          {HEADER_LINK_ICON_CATALOG.map((preset) => {
+                            const Icon = preset.Icon;
+                            return (
+                              <SelectItem key={preset.name} value={preset.name}>
+                                <span className="flex items-center gap-2">
+                                  <Icon size={16} />
+                                  {preset.title}
+                                </span>
+                              </SelectItem>
+                            );
+                          })}
+                          <SelectItem value={NONE_VALUE}>
+                            <span className="flex items-center gap-2">
+                              <LinkIcon width={16} height={16} />
+                              Link
+                            </span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {isEditingServer && choice === CUSTOM_VALUE && (
+                        <>
+                          <input
+                            id={`link-icon-file-${link.id}`}
+                            accept="image/png,image/svg+xml,image/webp,image/jpeg,image/gif,image/x-icon"
+                            type="file"
+                            className="hidden"
+                            onChange={(e) => handleIconFile(link.id, e.target.files?.[0] || null)}
+                          />
+                          <Button asChild size="sm" variant="outline">
+                            <label htmlFor={`link-icon-file-${link.id}`} className="cursor-pointer">
+                              {pendingFile ? 'Change…' : 'Upload…'}
+                            </label>
+                          </Button>
+                          {pendingFile && (
+                            <span className="max-w-[10rem] truncate text-xs text-muted-foreground">
+                              {pendingFile.name}
+                            </span>
+                          )}
+                        </>
                       )}
-                      {editingSection === 'server' && canReset && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => updateHeaderLink(key, defaultLinks[key] || '')}
+                      <Input
+                        className="w-36"
+                        disabled={!isEditingServer}
+                        placeholder="Label"
+                        value={link.label}
+                        onChange={(e) => updateLink(link.id, { label: e.target.value })}
+                      />
+                      <Input
+                        className="min-w-[12rem] flex-1"
+                        disabled={!isEditingServer}
+                        placeholder="https://example.com"
+                        value={link.url}
+                        onChange={(e) => updateLink(link.id, { url: e.target.value })}
+                      />
+                      <div className="flex items-center gap-1.5">
+                        <Checkbox
+                          id={`link-show-label-${link.id}`}
+                          checked={!!link.showLabel}
+                          disabled={!isEditingServer}
+                          onCheckedChange={(value) =>
+                            updateLink(link.id, { showLabel: value === true ? true : undefined })
+                          }
+                        />
+                        <Label
+                          htmlFor={`link-show-label-${link.id}`}
+                          className="cursor-pointer text-xs font-normal text-muted-foreground"
                         >
-                          Reset
+                          Show label
+                        </Label>
+                      </div>
+                      {isEditingServer && (
+                        <Button variant="destructive" size="sm" onClick={() => removeLink(link.id)}>
+                          Remove
                         </Button>
                       )}
                     </div>
                   );
-                })}
-              {Object.keys(
-                editingSection === 'server'
-                  ? tempConfig.headerLinks || {}
-                  : config.headerLinks || {}
-              ).length === 0 && (
-                <p className="text-muted-foreground text-sm">No header links configured</p>
-              )}
+                });
+              })()}
             </div>
           </div>
         </div>

@@ -47,7 +47,26 @@ export interface TestManagementConfig {
   flakinessEvaluationWindowDays?: number;
 }
 
-export type HeaderLinks = Record<string, string>;
+export const HEADER_LINK_PRESET_ICONS = [
+  'github',
+  'telegram',
+  'discord',
+  'slack',
+  'bitbucket',
+  'cyborgTest',
+] as const;
+
+export type HeaderLinkPresetIcon = (typeof HEADER_LINK_PRESET_ICONS)[number];
+
+export interface HeaderLink {
+  id: string;
+  label: string;
+  url: string;
+  icon?: string;
+  showLabel?: boolean;
+}
+
+export type HeaderLinks = HeaderLink[];
 
 export type IconSvgProps = {
   size?: number;
@@ -316,7 +335,7 @@ export interface ErrorResponse {
 
 export interface ServerConfig {
   title?: string;
-  headerLinks?: Record<string, string>;
+  headerLinks?: HeaderLink[];
   logoPath?: string;
   faviconPath?: string;
   reporterPaths?: string[];

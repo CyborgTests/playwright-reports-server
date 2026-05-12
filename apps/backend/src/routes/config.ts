@@ -59,7 +59,7 @@ async function deleteCustomBrandingFile(brandingPath: string | undefined) {
 }
 
 async function persistBrandingFile(
-  kind: 'logo' | 'favicon',
+  kind: 'logo' | 'favicon' | 'linkIcon',
   uploaded: MultipartFile
 ): Promise<{ relativePath: string } | { error: string }> {
   const original = uploaded.filename ?? '';
@@ -193,8 +193,10 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
     { preHandler: (request, reply) => authenticate(request as AuthRequest, reply) },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
+        // Bumped from 2 to allow logo + favicon + one icon per header link.
+        // 32 is plenty — anyone with that many header links has bigger problems.
         const parts = request.parts({
-          limits: { files: 2, fileSize: BRANDING_FILE_SIZE_LIMIT },
+          limits: { files: 32, fileSize: BRANDING_FILE_SIZE_LIMIT },
         });
 
         const config = await service.getConfig();
@@ -205,26 +207,40 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
         const previousLogoPath = config.logoPath;
         const previousFaviconPath = config.faviconPath;
+        const previousLinkIcons = new Set(
+          (config.headerLinks ?? [])
+            .map((l) => l.icon)
+            .filter((icon): icon is string => !!icon && isCustomBrandingPath(icon))
+        );
 
         const formData: ConfigFormData = {};
         let hasParts = false;
         let logoFileSaved: string | null = null;
         let faviconFileSaved: string | null = null;
+        const linkIconsSaved = new Map<string, string>();
 
         for await (const part of parts) {
           hasParts = true;
           if (part.type === 'file') {
-            if (part.fieldname !== 'logo' && part.fieldname !== 'favicon') {
+            const fieldname = part.fieldname;
+            const isLinkIcon = fieldname.startsWith('linkIcon:');
+            if (fieldname !== 'logo' && fieldname !== 'favicon' && !isLinkIcon) {
               part.file.resume();
               continue;
             }
-            const kind = part.fieldname;
+            const kind: 'logo' | 'favicon' | 'linkIcon' = isLinkIcon
+              ? 'linkIcon'
+              : (fieldname as 'logo' | 'favicon');
             const result = await persistBrandingFile(kind, part as unknown as MultipartFile);
             if ('error' in result) {
               return reply.status(400).send({ error: result.error });
             }
             if (kind === 'logo') logoFileSaved = result.relativePath;
-            else faviconFileSaved = result.relativePath;
+            else if (kind === 'favicon') faviconFileSaved = result.relativePath;
+            else {
+              const linkId = fieldname.slice('linkIcon:'.length);
+              linkIconsSaved.set(linkId, result.relativePath);
+            }
           } else if (part.type === 'field') {
             const fieldName = part.fieldname as keyof ConfigFormData;
             formData[fieldName] = part.value as string;
@@ -266,14 +282,66 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         }
 
         if (formData.headerLinks !== undefined) {
+          let parsed: unknown;
           try {
-            const parsedHeaderLinks = JSON.parse(formData.headerLinks);
-            if (parsedHeaderLinks) config.headerLinks = parsedHeaderLinks;
+            parsed = JSON.parse(formData.headerLinks);
           } catch (error) {
             return reply.status(400).send({
               error: `failed to parse header links: ${error instanceof Error ? error.message : 'Invalid JSON'}`,
             });
           }
+          if (!Array.isArray(parsed)) {
+            return reply.status(400).send({ error: 'headerLinks must be an array' });
+          }
+          const sanitized: typeof config.headerLinks = [];
+          for (const raw of parsed) {
+            if (!raw || typeof raw !== 'object') {
+              return reply.status(400).send({ error: 'header link entry must be an object' });
+            }
+            const entry = raw as {
+              id?: unknown;
+              label?: unknown;
+              url?: unknown;
+              icon?: unknown;
+              showLabel?: unknown;
+            };
+            if (typeof entry.id !== 'string' || !entry.id) {
+              return reply.status(400).send({ error: 'header link entry missing id' });
+            }
+            if (typeof entry.label !== 'string') {
+              return reply.status(400).send({ error: 'header link entry missing label' });
+            }
+            if (typeof entry.url !== 'string') {
+              return reply.status(400).send({ error: 'header link entry missing url' });
+            }
+            const iconRaw = typeof entry.icon === 'string' ? entry.icon : '';
+            // If a file was uploaded for this link, prefer its saved path.
+            const uploadedIcon = linkIconsSaved.get(entry.id);
+            let icon: string | undefined;
+            if (uploadedIcon) {
+              icon = uploadedIcon;
+            } else if (iconRaw?.startsWith('/branding/')) {
+              if (!SAFE_BRANDING_PATH.test(iconRaw)) {
+                return reply.status(400).send({ error: 'invalid header link icon path' });
+              }
+              icon = iconRaw;
+            } else if (iconRaw) {
+              icon = iconRaw;
+            }
+            sanitized.push({
+              id: entry.id,
+              label: entry.label,
+              url: entry.url,
+              icon,
+              showLabel: entry.showLabel === true ? true : undefined,
+            });
+          }
+          config.headerLinks = sanitized;
+        } else if (linkIconsSaved.size > 0) {
+          config.headerLinks = (config.headerLinks ?? []).map((link) => {
+            const uploaded = linkIconsSaved.get(link.id);
+            return uploaded ? { ...link, icon: uploaded } : link;
+          });
         }
 
         config.llm ??= {};
@@ -539,6 +607,16 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
             });
           }
         }
+        for (const iconPath of linkIconsSaved.values()) {
+          if (!isCustomBrandingPath(iconPath)) continue;
+          const { error } = await withError(storage.uploadBrandingAsset(iconPath));
+          if (error) {
+            await withError(deleteCustomBrandingFile(iconPath));
+            return reply.status(500).send({
+              error: `failed to upload link icon: ${error.message}`,
+            });
+          }
+        }
 
         const { error: saveConfigError } = await withError(service.updateConfig(config));
 
@@ -559,6 +637,17 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           if (isCustomBrandingPath(previousFaviconPath)) {
             await withError(storage.deleteBrandingAsset(previousFaviconPath as string));
           }
+        }
+
+        const currentLinkIcons = new Set(
+          (config.headerLinks ?? [])
+            .map((l) => l.icon)
+            .filter((icon): icon is string => !!icon && isCustomBrandingPath(icon))
+        );
+        for (const orphan of previousLinkIcons) {
+          if (currentLinkIcons.has(orphan)) continue;
+          await withError(deleteCustomBrandingFile(orphan));
+          await withError(storage.deleteBrandingAsset(orphan));
         }
 
         const testManagementConfigChanged = !!(

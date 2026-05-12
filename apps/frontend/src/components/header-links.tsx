@@ -1,53 +1,74 @@
-import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
+import type { HeaderLink, SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import { Link } from 'react-router-dom';
-import {
-  BitbucketIcon,
-  CyborgTestIcon,
-  DiscordIcon,
-  GithubIcon,
-  LinkIcon,
-  SlackIcon,
-  TelegramIcon,
-} from './icons';
+import { withBase } from '@/lib/url';
+import { HEADER_LINK_ICON_CATALOG, getPresetIcon } from './header-link-icons';
+import { LinkIcon } from './icons';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 interface HeaderLinksProps {
   config: SiteWhiteLabelConfig;
   withTitle?: boolean;
+  size?: number;
 }
 
-export const HeaderLinks: React.FC<HeaderLinksProps> = ({ config, withTitle = false }) => {
-  const links = config?.headerLinks;
+function isCustomIconPath(icon: string | undefined): boolean {
+  return !!icon && icon.startsWith('/branding/');
+}
 
-  const availableSocialLinkIcons = [
-    { name: 'telegram', Icon: TelegramIcon, title: 'Telegram' },
-    { name: 'discord', Icon: DiscordIcon, title: 'Discord' },
-    { name: 'github', Icon: GithubIcon, title: 'GitHub' },
-    { name: 'cyborgTest', Icon: CyborgTestIcon, title: 'Cyborg Test' },
-    { name: 'bitbucket', Icon: BitbucketIcon, title: 'Bitbucket' },
-    { name: 'slack', Icon: SlackIcon, title: 'Slack' },
-  ];
+function renderIcon(link: HeaderLink, size: number) {
+  const icon = link.icon;
+  if (isCustomIconPath(icon)) {
+    return (
+      <img
+        alt={`${link.label} icon`}
+        src={withBase(`/api/static${icon}`)}
+        style={{ height: size, width: size }}
+        className="object-contain"
+      />
+    );
+  }
+  const preset = icon ? getPresetIcon(icon) : undefined;
+  const Icon = preset?.Icon ?? LinkIcon;
+  return <Icon size={size} />;
+}
 
-  const socialLinks = Object.entries(links).map(([name, href]) => {
-    const availableLink = availableSocialLinkIcons.find((available) => available.name === name);
+function presetTitle(icon: string | undefined): string | undefined {
+  if (!icon || isCustomIconPath(icon)) return undefined;
+  return HEADER_LINK_ICON_CATALOG.find((c) => c.name === icon)?.title;
+}
 
-    const Icon = availableLink?.Icon ?? LinkIcon;
-    const title = availableLink?.title ?? name;
+export const HeaderLinks: React.FC<HeaderLinksProps> = ({
+  config,
+  withTitle = false,
+  size = 40,
+}) => {
+  const links = (config?.headerLinks ?? []).filter((link) => link.url);
 
-    return href ? (
-      <Link
-        key={name}
-        to={href}
-        target="_blank"
-        rel="noreferrer"
-        aria-label={title}
-        title={title}
-        className="text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <Icon size={40} />
-        {withTitle && <p className="ml-2">{title}</p>}
-      </Link>
-    ) : null;
-  });
+  if (!links.length) return null;
 
-  return socialLinks;
+  return (
+    <TooltipProvider delayDuration={150}>
+      {links.map((link) => {
+        const label = link.label || presetTitle(link.icon) || link.url;
+        const showInlineLabel = withTitle || !!link.showLabel;
+        return (
+          <Tooltip key={link.id}>
+            <TooltipTrigger asChild>
+              <Link
+                to={link.url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={label}
+                className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
+              >
+                {renderIcon(link, size)}
+                {showInlineLabel && <span className="hidden md:inline text-sm">{label}</span>}
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent>{label}</TooltipContent>
+          </Tooltip>
+        );
+      })}
+    </TooltipProvider>
+  );
 };

@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
+import { HeaderLinks } from '@/components/header-links';
 import { ReportIcon, ResultIcon, SettingsIcon, TrendIcon } from '@/components/icons';
 import { Skeleton } from '@/components/ui/skeleton';
 import { siteConfig as defaultConfig } from '@/config/site';
@@ -73,7 +74,12 @@ export function Navbar() {
         </nav>
 
         {/* Right side */}
-        <div className="ml-auto flex items-center space-x-2">
+        <div className="ml-auto flex items-center space-x-3">
+          {config?.headerLinks?.length ? (
+            <div className="flex items-center gap-2">
+              <HeaderLinks config={config} size={20} />
+            </div>
+          ) : null}
           <ThemeSwitch />
         </div>
       </div>

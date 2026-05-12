@@ -35,3 +35,40 @@ export const isConfigValid = (config: unknown): config is SiteWhiteLabelConfig =
     'faviconPath' in config
   );
 };
+
+export const normalizeHeaderLinks = (raw: unknown): SiteWhiteLabelConfig['headerLinks'] => {
+  if (Array.isArray(raw)) {
+    return raw
+      .filter(
+        (
+          entry
+        ): entry is {
+          id?: unknown;
+          label?: unknown;
+          url?: unknown;
+          icon?: unknown;
+          showLabel?: unknown;
+        } => {
+          return !!entry && typeof entry === 'object';
+        }
+      )
+      .map((entry, index) => ({
+        id: typeof entry.id === 'string' && entry.id ? entry.id : `link-${index}-${Date.now()}`,
+        label: typeof entry.label === 'string' ? entry.label : '',
+        url: typeof entry.url === 'string' ? entry.url : '',
+        icon: typeof entry.icon === 'string' ? entry.icon : undefined,
+        showLabel: entry.showLabel === true ? true : undefined,
+      }));
+  }
+  if (raw && typeof raw === 'object') {
+    return Object.entries(raw as Record<string, unknown>)
+      .filter(([, value]) => typeof value === 'string' && value)
+      .map(([key, value], index) => ({
+        id: `legacy-${key}-${index}`,
+        label: key,
+        url: value as string,
+        icon: key,
+      }));
+  }
+  return [];
+};

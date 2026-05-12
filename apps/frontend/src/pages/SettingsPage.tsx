@@ -1,5 +1,6 @@
-import type { ServerConfig } from '@playwright-reports/shared';
+import type { HeaderLink, ServerConfig } from '@playwright-reports/shared';
 import { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import AddLinkModal from '@/components/settings/components/AddLinkModal';
 import CronConfiguration from '@/components/settings/components/CronConfiguration';
@@ -21,7 +22,9 @@ export default function SettingsPage() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [faviconFile, setFaviconFile] = useState<File | null>(null);
   const [showAddLinkModal, setShowAddLinkModal] = useState(false);
-  const [newLinkData, setNewLinkData] = useState({ name: '', url: '' });
+  // Pending custom icon uploads, keyed by link id. Tracked separately from
+  // tempConfig.headerLinks so the JSON payload stays clean.
+  const [pendingLinkIcons, setPendingLinkIcons] = useState<Record<string, File>>({});
 
   const { data: serverConfig, refetch: refetchConfig } = useConfig();
   const [isUpdating, setIsUpdating] = useState(false);
@@ -67,13 +70,21 @@ export default function SettingsPage() {
           formData.append('reporterPaths', JSON.stringify(tempConfig.reporterPaths ?? []));
         }
 
-        const cleanHeaderLinks = Object.fromEntries(
-          Object.entries(tempConfig.headerLinks ?? {}).filter(([_, value]) => value !== undefined)
-        );
+        const cleanHeaderLinks = (tempConfig.headerLinks ?? []).map((link) => ({
+          id: link.id,
+          label: link.label ?? '',
+          url: link.url ?? '',
+          icon: link.icon,
+          showLabel: link.showLabel === true ? true : undefined,
+        }));
         const headerLinksChanged =
-          JSON.stringify(cleanHeaderLinks) !== JSON.stringify(config.headerLinks ?? {});
+          JSON.stringify(cleanHeaderLinks) !== JSON.stringify(config.headerLinks ?? []) ||
+          Object.keys(pendingLinkIcons).length > 0;
         if (headerLinksChanged) {
           formData.append('headerLinks', JSON.stringify(cleanHeaderLinks));
+        }
+        for (const [linkId, file] of Object.entries(pendingLinkIcons)) {
+          formData.append(`linkIcon:${linkId}`, file);
         }
       } else if (section === 'cron') {
         if (tempConfig.cron) {
@@ -221,6 +232,7 @@ export default function SettingsPage() {
       if (section === 'server') {
         setLogoFile(null);
         setFaviconFile(null);
+        setPendingLinkIcons({});
       }
       refetchConfig();
     } catch (error) {
@@ -240,7 +252,17 @@ export default function SettingsPage() {
     });
     setLogoFile(null);
     setFaviconFile(null);
+    setPendingLinkIcons({});
     setEditingSection('none');
+  };
+
+  const setLinkIconFile = (linkId: string, file: File | null) => {
+    setPendingLinkIcons((prev) => {
+      const next = { ...prev };
+      if (file) next[linkId] = file;
+      else delete next[linkId];
+      return next;
+    });
   };
 
   const updateTempConfig = (updates: Partial<ServerConfig>) => {
@@ -251,21 +273,17 @@ export default function SettingsPage() {
     setShowAddLinkModal(true);
   };
 
-  const handleAddLink = () => {
-    if (newLinkData.name && newLinkData.url) {
-      updateTempConfig({
-        headerLinks: {
-          ...tempConfig.headerLinks,
-          [newLinkData.name]: newLinkData.url,
-        },
-      });
-      setNewLinkData({ name: '', url: '' });
-      setShowAddLinkModal(false);
+  const handleAddLink = (link: HeaderLink, iconFile: File | null) => {
+    updateTempConfig({
+      headerLinks: [...(tempConfig.headerLinks ?? []), link],
+    });
+    if (iconFile) {
+      setLinkIconFile(link.id, iconFile);
     }
+    setShowAddLinkModal(false);
   };
 
   const cancelAddLink = () => {
-    setNewLinkData({ name: '', url: '' });
     setShowAddLinkModal(false);
   };
 
@@ -278,7 +296,7 @@ export default function SettingsPage() {
   }
 
   if (serverConfig?.authRequired === true && session.status === 'unauthenticated') {
-    return <div>Please log in to access settings.</div>;
+    return <Navigate to="/login" replace />;
   }
 
   return (
@@ -291,6 +309,7 @@ export default function SettingsPage() {
         faviconFile={faviconFile}
         isUpdating={isUpdating}
         logoFile={logoFile}
+        pendingLinkIcons={pendingLinkIcons}
         tempConfig={tempConfig}
         onAddHeaderLink={addHeaderLink}
         onCancel={handleCancel}
@@ -298,6 +317,7 @@ export default function SettingsPage() {
         onFaviconFileChange={setFaviconFile}
         onLogoFileChange={setLogoFile}
         onSave={() => handleSave('server')}
+        onUpdateLinkIconFile={setLinkIconFile}
         onUpdateTempConfig={updateTempConfig}
       />
 
@@ -336,13 +356,7 @@ export default function SettingsPage() {
 
       <EnvironmentInfo />
 
-      <AddLinkModal
-        isOpen={showAddLinkModal}
-        newLinkData={newLinkData}
-        onAddLink={handleAddLink}
-        onCancel={cancelAddLink}
-        onUpdateLinkData={setNewLinkData}
-      />
+      <AddLinkModal isOpen={showAddLinkModal} onAddLink={handleAddLink} onCancel={cancelAddLink} />
     </div>
   );
 }
