@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { env } from '../../config/env.js';
+import { githubSyncCron } from '../githubSync/cronManager.js';
 import { llmService } from '../llm/index.js';
 import type { LLMProviderConfig } from '../llm/types/index.js';
 import { TMP_FOLDER } from '../storage/constants.js';
@@ -8,6 +9,7 @@ import { storage } from '../storage/index.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
 import { cronService } from './cron.js';
+import { githubSyncDb } from './db/githubSync.sqlite.js';
 import { reportDb, resultDb } from './db/index.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import { siteConfigDb } from './db/siteConfig.sqlite.js';
@@ -86,6 +88,14 @@ export class Lifecycle {
         console.log('[lifecycle] Cron service initialized successfully');
       }
 
+      const reapedSyncRuns = githubSyncDb.failStaleRunning('process restarted');
+      if (reapedSyncRuns > 0) {
+        console.log(`[lifecycle] Failed ${reapedSyncRuns} stale GitHub sync run(s) from prior run`);
+      }
+
+      githubSyncCron.init();
+      console.log('[lifecycle] GitHub sync cron initialized');
+
       this.initialized = true;
       console.log('[lifecycle] Application initialization complete');
     } catch (error) {
@@ -108,6 +118,8 @@ export class Lifecycle {
         cronService.stop();
         console.log('[lifecycle] Cron service stopped');
       }
+
+      githubSyncCron.stop();
 
       await litestreamService.stop();
 

@@ -23,12 +23,20 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 
 const STORAGE_KEY = 'selected-date-range';
 
-type PresetId = 'today' | 'yesterday' | 'this-week' | 'this-month' | 'last-2-weeks' | 'all';
+type PresetId =
+  | 'today'
+  | 'yesterday'
+  | 'this-week'
+  | 'this-month'
+  | 'last-7-days'
+  | 'last-2-weeks'
+  | 'all';
 
 const PRESETS: Array<{ id: PresetId; label: string }> = [
   { id: 'today', label: 'Today' },
   { id: 'yesterday', label: 'Yesterday' },
   { id: 'this-week', label: 'This week' },
+  { id: 'last-7-days', label: 'Last 7 days' },
   { id: 'last-2-weeks', label: 'Last 2 weeks' },
   { id: 'this-month', label: 'This month' },
   { id: 'all', label: 'All time' },
@@ -48,6 +56,11 @@ function presetToRange(id: PresetId): SharedDateRange {
       return {
         from: startOfWeek(now, { weekStartsOn: 1 }).toISOString(),
         to: endOfWeek(now, { weekStartsOn: 1 }).toISOString(),
+      };
+    case 'last-7-days':
+      return {
+        from: startOfDay(subDays(now, 6)).toISOString(),
+        to: endOfDay(now).toISOString(),
       };
     case 'last-2-weeks':
       return {

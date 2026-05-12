@@ -297,6 +297,50 @@ function initializeSchema(db: Database.Database): void {
   `);
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS github_sync_configs (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      repo TEXT NOT NULL,
+      workflow TEXT NOT NULL,
+      tokenCipher TEXT,
+      startDate TEXT NOT NULL,
+      artifactPattern TEXT NOT NULL,
+      projectTemplate TEXT NOT NULL,
+      titleTemplate TEXT NOT NULL,
+      cronSchedule TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_github_sync_configs_enabled ON github_sync_configs(enabled);
+
+    CREATE TABLE IF NOT EXISTS github_sync_state (
+      artifactId TEXT PRIMARY KEY,
+      syncConfigId TEXT NOT NULL,
+      reportId TEXT NOT NULL,
+      runId TEXT NOT NULL,
+      env TEXT,
+      runDate TEXT,
+      uploadedAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_github_sync_state_config ON github_sync_state(syncConfigId);
+
+    CREATE TABLE IF NOT EXISTS github_sync_runs (
+      id TEXT PRIMARY KEY,
+      syncConfigId TEXT NOT NULL,
+      status TEXT NOT NULL,
+      trigger TEXT NOT NULL,
+      startedAt TEXT NOT NULL,
+      finishedAt TEXT,
+      uploaded INTEGER NOT NULL DEFAULT 0,
+      skipped INTEGER NOT NULL DEFAULT 0,
+      failed INTEGER NOT NULL DEFAULT 0,
+      message TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_github_sync_runs_config ON github_sync_runs(syncConfigId, startedAt DESC);
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS analysis_feedback (
       id TEXT PRIMARY KEY,
       testId TEXT NOT NULL,

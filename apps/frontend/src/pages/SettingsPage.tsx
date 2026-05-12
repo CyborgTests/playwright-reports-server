@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import AddLinkModal from '@/components/settings/components/AddLinkModal';
 import CronConfiguration from '@/components/settings/components/CronConfiguration';
 import EnvironmentInfo from '@/components/settings/components/EnvironmentInfo';
+import GithubSyncConfiguration from '@/components/settings/components/GithubSyncConfiguration';
 import LLMConfiguration from '@/components/settings/components/LLMConfiguration';
 import ServerConfiguration from '@/components/settings/components/ServerConfiguration';
 import TestManagementSettings from '@/components/settings/components/TestManagementSettings';
@@ -353,6 +354,8 @@ export default function SettingsPage() {
         onSave={() => handleSave('testManagement')}
         onUpdateTempConfig={updateTempConfig}
       />
+
+      <GithubSyncConfiguration />
 
       <EnvironmentInfo />
 

@@ -351,4 +351,5 @@ export interface ServerConfig {
 
 export * from './analytics.js';
 export * from './feedback.js';
+export * from './github-sync.js';
 export * from './test-management.js';
