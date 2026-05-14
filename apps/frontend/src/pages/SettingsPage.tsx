@@ -10,6 +10,7 @@ import LLMConfiguration from '@/components/settings/components/LLMConfiguration'
 import ServerConfiguration from '@/components/settings/components/ServerConfiguration';
 import TestManagementSettings from '@/components/settings/components/TestManagementSettings';
 import { Spinner } from '@/components/ui/spinner';
+import { useActiveSection } from '@/hooks/useActiveSection';
 import { useAuth } from '@/hooks/useAuth';
 import { useConfig } from '@/hooks/useConfig';
 import { cn } from '@/lib/utils';
@@ -22,44 +23,6 @@ const SECTION_NAV: Array<{ id: string; label: string }> = [
   { id: 'github', label: 'GitHub Sync' },
   { id: 'environment', label: 'Environment' },
 ];
-
-function useActiveSection(ids: string[]) {
-  const [active, setActive] = useState<string>(ids[0] ?? '');
-
-  useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') return;
-
-    const elements = ids
-      .map((id) => document.getElementById(id))
-      .filter((el): el is HTMLElement => el !== null);
-    if (elements.length === 0) return;
-
-    const visible = new Map<string, number>();
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            visible.set(entry.target.id, entry.boundingClientRect.top);
-          } else {
-            visible.delete(entry.target.id);
-          }
-        }
-        if (visible.size === 0) return;
-        const topmost = Array.from(visible.entries()).sort((a, b) => a[1] - b[1])[0][0];
-        setActive(topmost);
-      },
-      // Shrink the viewport: 72px reserved for the sticky navbar, 60% off the bottom
-      // so the "active" section is the one near the top of the readable area.
-      { rootMargin: '-72px 0px -60% 0px', threshold: 0 }
-    );
-
-    for (const el of elements) observer.observe(el);
-    return () => observer.disconnect();
-  }, [ids]);
-
-  return active;
-}
 
 export default function SettingsPage() {
   const session = useAuth();
@@ -350,12 +313,14 @@ export default function SettingsPage() {
 
   return (
     <div className="container py-6 lg:py-10">
-      <header className="mb-8 max-w-3xl">
+      <header className="mb-6 max-w-3xl">
         <h1 className="font-display text-3xl font-bold tracking-tight">Settings</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Configure your server, scheduled cleanup, LLM analysis, and test management policies.
         </p>
       </header>
+
+      <MobileSectionNav />
 
       <div className="flex gap-8">
         <aside className="hidden lg:block w-52 shrink-0">
@@ -452,6 +417,36 @@ function SectionNav() {
           </a>
         );
       })}
+    </nav>
+  );
+}
+
+function MobileSectionNav() {
+  const ids = SECTION_NAV.map((s) => s.id);
+  const active = useActiveSection(ids);
+
+  return (
+    <nav className="lg:hidden sticky top-14 z-30 -mx-4 px-4 mb-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border/40">
+      <div className="flex gap-1 overflow-x-auto py-2 text-sm">
+        {SECTION_NAV.map((item) => {
+          const isActive = active === item.id;
+          return (
+            <a
+              key={item.id}
+              href={`#${item.id}`}
+              aria-current={isActive ? 'true' : undefined}
+              className={cn(
+                'whitespace-nowrap rounded-md px-3 py-1.5 transition-colors shrink-0',
+                isActive
+                  ? 'bg-accent text-accent-foreground font-medium'
+                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+              )}
+            >
+              {item.label}
+            </a>
+          );
+        })}
+      </div>
     </nav>
   );
 }

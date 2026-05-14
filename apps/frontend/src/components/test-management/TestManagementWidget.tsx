@@ -333,7 +333,7 @@ export default function TestManagementWidget({
               <Spinner size="lg" />
             </div>
           ) : (
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>

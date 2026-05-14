@@ -443,7 +443,7 @@ export default function GithubSyncConfiguration() {
                 placeholder="e.g. nightly e2e"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="gs-repo">Repository</Label>
                 <Input
@@ -490,7 +490,7 @@ export default function GithubSyncConfiguration() {
                 </p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="gs-start">
                   Start date & time{' '}
@@ -608,7 +608,7 @@ export default function GithubSyncConfiguration() {
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <Label htmlFor="gs-project">Project name template</Label>
                         <Input

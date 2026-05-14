@@ -4,11 +4,13 @@ import type { DateRange } from '@playwright-reports/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { useActiveSection } from '../../hooks/useActiveSection';
 import { useAnalyticsData } from '../../hooks/useAnalyticsData';
 import { useConfig } from '../../hooks/useConfig';
 import { useFailureCategoryData } from '../../hooks/useFailureCategoryData';
 import useQuery from '../../hooks/useQuery';
 import { defaultProjectName } from '../../lib/constants';
+import { cn } from '../../lib/utils';
 import DateRangeSelect from '../date-range-select';
 import ProjectSelect from '../project-select';
 import TestManagementWidget from '../test-management/TestManagementWidget';
@@ -19,6 +21,22 @@ import { HealthGrid } from './HealthGrid';
 import { OverviewStatsCard } from './OverviewStats';
 import { TopFailuresWidget } from './TopFailuresWidget';
 import { TrendSparklines } from './TrendSparklines';
+
+const DASHBOARD_SECTIONS: Array<{ id: string; label: string }> = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'trends', label: 'Trends' },
+  { id: 'failures', label: 'Failures' },
+  { id: 'tests', label: 'Tests' },
+];
+
+interface DashboardSectionNavProps {
+  failedOnly: boolean;
+  onFailedOnlyChange: (value: boolean) => void;
+  dateRange: DateRange;
+  onDateRangeChange: (range: DateRange) => void;
+  project: string;
+  onProjectChange: (project: string) => void;
+}
 
 export default function AnalyticsDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -114,69 +132,61 @@ export default function AnalyticsDashboard() {
 
   return (
     <div className="w-[min(100%, 1200px)] mx-auto space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Analytics Dashboard</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Comprehensive insights into test performance and health
-          </p>
-        </div>
-        <div className="flex justify-end items-end gap-3 flex-wrap">
-          <label
-            htmlFor="dashboard-only-failures"
-            className="flex items-center gap-2 text-sm select-none cursor-pointer"
-          >
-            <Switch
-              id="dashboard-only-failures"
-              checked={failedOnly}
-              onCheckedChange={setFailedOnly}
-            />
-            <span className={failedOnly ? 'font-medium text-danger' : 'text-muted-foreground'}>
-              Only failures
-            </span>
-          </label>
-          <DateRangeSelect label="Period" selectedRange={dateRange} onSelect={onDateRangeChange} />
-          <ProjectSelect
-            label="Select project"
-            entity="report"
-            onSelect={onProjectChange}
-            selectedProject={project}
-          />
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Analytics Dashboard</h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">
+          Comprehensive insights into test performance and health
+        </p>
       </div>
 
-      <OverviewStatsCard
-        stats={overviewStats!}
-        totalTests={testsSummary?.total}
-        flakyCount={testsSummary?.flakyCount}
-        totalRuns={runHealthMetrics.length}
-      />
-
-      <TrendSparklines metrics={trendMetrics!} isLoading={isLoading} />
-
-      <HealthGrid metrics={runHealthMetrics} isLoading={isLoading} />
-
-      {(failureCategoryResponse?.data?.totalFailures ?? 0) > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <FailureCategoryChart
-            categories={failureCategoryResponse?.data?.categories}
-            totalFailures={failureCategoryResponse?.data?.totalFailures}
-            isLoading={isLoadingFailures}
-          />
-          <TopFailuresWidget
-            errors={failureCategoryResponse?.data?.topErrors}
-            isLoading={isLoadingFailures}
-          />
-        </div>
-      )}
-
-      <FailureAnalysisSummary
-        project={project}
+      <DashboardSectionNav
+        failedOnly={failedOnly}
+        onFailedOnlyChange={setFailedOnly}
         dateRange={dateRange}
-        totalFailures={failureCategoryResponse?.data?.totalFailures}
+        onDateRangeChange={onDateRangeChange}
+        project={project}
+        onProjectChange={onProjectChange}
       />
 
-      <TestManagementWidget project={project} dateRange={dateRange} />
+      <section id="overview" className="scroll-mt-32">
+        <OverviewStatsCard
+          stats={overviewStats!}
+          totalTests={testsSummary?.total}
+          flakyCount={testsSummary?.flakyCount}
+          totalRuns={runHealthMetrics.length}
+        />
+      </section>
+
+      <section id="trends" className="scroll-mt-32 space-y-6">
+        <TrendSparklines metrics={trendMetrics!} isLoading={isLoading} />
+        <HealthGrid metrics={runHealthMetrics} isLoading={isLoading} />
+      </section>
+
+      <section id="failures" className="scroll-mt-32 space-y-6">
+        {(failureCategoryResponse?.data?.totalFailures ?? 0) > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <FailureCategoryChart
+              categories={failureCategoryResponse?.data?.categories}
+              totalFailures={failureCategoryResponse?.data?.totalFailures}
+              isLoading={isLoadingFailures}
+            />
+            <TopFailuresWidget
+              errors={failureCategoryResponse?.data?.topErrors}
+              isLoading={isLoadingFailures}
+            />
+          </div>
+        )}
+
+        <FailureAnalysisSummary
+          project={project}
+          dateRange={dateRange}
+          totalFailures={failureCategoryResponse?.data?.totalFailures}
+        />
+      </section>
+
+      <section id="tests" className="scroll-mt-32">
+        <TestManagementWidget project={project} dateRange={dateRange} />
+      </section>
 
       {!isLoading && runHealthMetrics.length === 0 && (
         <div className="bg-warning-50 border border-warning/30 rounded-lg p-6">
@@ -190,5 +200,72 @@ export default function AnalyticsDashboard() {
         </div>
       )}
     </div>
+  );
+}
+
+function DashboardSectionNav({
+  failedOnly,
+  onFailedOnlyChange,
+  dateRange,
+  onDateRangeChange,
+  project,
+  onProjectChange,
+}: DashboardSectionNavProps) {
+  const ids = DASHBOARD_SECTIONS.map((s) => s.id);
+  const active = useActiveSection(ids);
+
+  return (
+    <nav className="sticky top-14 z-30 -mx-4 px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border/40">
+      <div className="flex flex-col gap-2 py-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex gap-1 overflow-x-auto text-sm">
+          {DASHBOARD_SECTIONS.map((item) => {
+            const isActive = active === item.id;
+            return (
+              <a
+                key={item.id}
+                href={`#${item.id}`}
+                aria-current={isActive ? 'true' : undefined}
+                className={cn(
+                  'whitespace-nowrap rounded-md px-3 py-1.5 transition-colors shrink-0',
+                  isActive
+                    ? 'bg-accent text-accent-foreground font-medium'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                )}
+              >
+                {item.label}
+              </a>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label
+            htmlFor="dashboard-only-failures"
+            className="flex items-center gap-2 text-sm select-none cursor-pointer"
+          >
+            <Switch
+              id="dashboard-only-failures"
+              checked={failedOnly}
+              onCheckedChange={onFailedOnlyChange}
+            />
+            <span className={failedOnly ? 'font-medium text-danger' : 'text-muted-foreground'}>
+              Only failures
+            </span>
+          </label>
+          <DateRangeSelect
+            selectedRange={dateRange}
+            onSelect={onDateRangeChange}
+            showLabel={false}
+            className="h-9 w-full sm:w-44 sm:min-w-32"
+          />
+          <ProjectSelect
+            entity="report"
+            onSelect={onProjectChange}
+            selectedProject={project}
+            showLabel={false}
+            className="h-9 w-full sm:w-44 sm:min-w-32"
+          />
+        </div>
+      </div>
+    </nav>
   );
 }

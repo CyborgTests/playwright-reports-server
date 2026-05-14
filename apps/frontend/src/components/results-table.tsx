@@ -288,7 +288,7 @@ export default function ResultsTable({
         selectedDateRange={dateRange}
         extraFilters={
           <Select value={usage} onValueChange={(v) => onUsageChange(v as UsageFilter)}>
-            <SelectTrigger className="w-48" aria-label="Filter by usage">
+            <SelectTrigger className="w-full sm:w-48" aria-label="Filter by usage">
               <SelectValue placeholder="Usage" />
             </SelectTrigger>
             <SelectContent>
@@ -301,7 +301,7 @@ export default function ResultsTable({
           </Select>
         }
       />
-      <div className="rounded-md border border-border/50">
+      <div className="rounded-md border border-border/50 overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>

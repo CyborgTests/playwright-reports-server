@@ -72,7 +72,7 @@ export default function TablePaginationOptions({
 
   return (
     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6">
-      <div className="flex flex-row flex-wrap gap-3 w-full sm:w-auto items-center">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 w-full sm:w-auto sm:items-center">
         <div className="relative w-full sm:w-48">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -87,13 +87,14 @@ export default function TablePaginationOptions({
           selectedProject={selectedProject}
           showLabel={false}
           label="Project"
+          className="w-full sm:w-64 sm:min-w-36"
         />
         {onDateRangeChange && (
           <DateRangeSelect
             selectedRange={selectedDateRange}
             onSelect={onDateRangeChange}
             showLabel={false}
-            className="w-56 min-w-44"
+            className="w-full sm:w-56 sm:min-w-44"
           />
         )}
         {onPassRateChange && (
@@ -101,7 +102,7 @@ export default function TablePaginationOptions({
             value={selectedPassRate}
             onValueChange={(v) => onPassRateChange(v as PassRateFilter)}
           >
-            <SelectTrigger className="w-48" aria-label="Filter by pass rate">
+            <SelectTrigger className="w-full sm:w-48" aria-label="Filter by pass rate">
               <SelectValue placeholder="Pass rate" />
             </SelectTrigger>
             <SelectContent>
@@ -114,11 +115,16 @@ export default function TablePaginationOptions({
           </Select>
         )}
         {onTagsChange && (
-          <TagSelect entity={entity} project={selectedProject} onSelect={onTagsChange} />
+          <TagSelect
+            entity={entity}
+            project={selectedProject}
+            onSelect={onTagsChange}
+            className="w-full sm:w-48"
+          />
         )}
         {extraFilters}
       </div>
-      <div className="flex flex-row gap-3 w-full sm:w-auto items-center justify-between sm:justify-end">
+      <div className="flex flex-row flex-wrap gap-3 w-full sm:w-auto items-center justify-between sm:justify-end">
         {selectedTags && selectedTags.length > 0 && (
           <div className="flex items-center gap-1 flex-wrap">
             {selectedTags.map((tag) => (
