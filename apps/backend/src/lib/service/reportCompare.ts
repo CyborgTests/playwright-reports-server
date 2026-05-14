@@ -94,7 +94,12 @@ const toReportRef = (report: ReportHistory): ReportRef => ({
   stats: report.stats,
 });
 
-const keyOf = (run: Pick<TestRun, 'testId' | 'fileId' | 'project'>) =>
+const matchKeyOf = (
+  run: Pick<TestRun, 'testId' | 'fileId' | 'project'>,
+  matchByTestIdOnly: boolean
+) => (matchByTestIdOnly ? run.testId : `${run.testId}::${run.fileId}::${run.project}`);
+
+const metaKeyOf = (run: Pick<TestRun, 'testId' | 'fileId' | 'project'>) =>
   `${run.testId}::${run.fileId}::${run.project}`;
 
 // One report can contain multiple runs for the same test (retries written as
@@ -109,10 +114,13 @@ const pickRunForTest = (runs: TestRun[]): TestRun => {
   );
 };
 
-const groupRunsByKey = (runs: TestRun[]): Map<string, TestRun> => {
+const groupRunsByKey = (
+  runs: TestRun[],
+  matchByTestIdOnly: boolean
+): Map<string, TestRun> => {
   const byKey = new Map<string, TestRun[]>();
   for (const run of runs) {
-    const k = keyOf(run);
+    const k = matchKeyOf(run, matchByTestIdOnly);
     const existing = byKey.get(k);
     if (existing) existing.push(run);
     else byKey.set(k, [run]);
@@ -161,12 +169,13 @@ export const compareReports = (
   if (!reportA) return { error: `Report ${reportAId} not found` };
   if (!reportB) return { error: `Report ${reportBId} not found` };
 
-  const runsA = groupRunsByKey(testDb.getTestRunsByReport(reportAId));
-  const runsB = groupRunsByKey(testDb.getTestRunsByReport(reportBId));
+  const matchByTestIdOnly = reportA.project !== reportB.project;
+  const runsA = groupRunsByKey(testDb.getTestRunsByReport(reportAId), matchByTestIdOnly);
+  const runsB = groupRunsByKey(testDb.getTestRunsByReport(reportBId), matchByTestIdOnly);
 
   const metaCache = new Map<string, Test | undefined>();
   const getMeta = (run: TestRun): Test | undefined => {
-    const k = keyOf(run);
+    const k = metaKeyOf(run);
     if (metaCache.has(k)) return metaCache.get(k);
     const meta = testDb.getTest(run.testId, run.fileId, run.project);
     metaCache.set(k, meta);

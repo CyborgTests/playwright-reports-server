@@ -99,16 +99,6 @@ export default function ReportsCompare() {
         </div>
       </div>
 
-      {projectMismatch && (
-        <Card className="border-warning/40 bg-warning/10">
-          <CardContent className="py-3 text-sm">
-            Heads up — these reports belong to different projects (
-            <strong>{reportA.project}</strong> vs <strong>{reportB.project}</strong>). Most tests
-            will appear as added/removed rather than diffed.
-          </CardContent>
-        </Card>
-      )}
-
       <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr] items-stretch">
         <ReportSummaryCard
           label="A — Baseline"
