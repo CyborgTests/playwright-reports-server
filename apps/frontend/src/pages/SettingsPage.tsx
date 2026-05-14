@@ -12,6 +12,54 @@ import TestManagementSettings from '@/components/settings/components/TestManagem
 import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/hooks/useAuth';
 import { useConfig } from '@/hooks/useConfig';
+import { cn } from '@/lib/utils';
+
+const SECTION_NAV: Array<{ id: string; label: string }> = [
+  { id: 'server', label: 'General' },
+  { id: 'cron', label: 'Schedules' },
+  { id: 'llm', label: 'LLM' },
+  { id: 'testManagement', label: 'Test Management' },
+  { id: 'github', label: 'GitHub Sync' },
+  { id: 'environment', label: 'Environment' },
+];
+
+function useActiveSection(ids: string[]) {
+  const [active, setActive] = useState<string>(ids[0] ?? '');
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+
+    const elements = ids
+      .map((id) => document.getElementById(id))
+      .filter((el): el is HTMLElement => el !== null);
+    if (elements.length === 0) return;
+
+    const visible = new Map<string, number>();
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            visible.set(entry.target.id, entry.boundingClientRect.top);
+          } else {
+            visible.delete(entry.target.id);
+          }
+        }
+        if (visible.size === 0) return;
+        const topmost = Array.from(visible.entries()).sort((a, b) => a[1] - b[1])[0][0];
+        setActive(topmost);
+      },
+      // Shrink the viewport: 72px reserved for the sticky navbar, 60% off the bottom
+      // so the "active" section is the one near the top of the readable area.
+      { rootMargin: '-72px 0px -60% 0px', threshold: 0 }
+    );
+
+    for (const el of elements) observer.observe(el);
+    return () => observer.disconnect();
+  }, [ids]);
+
+  return active;
+}
 
 export default function SettingsPage() {
   const session = useAuth();
@@ -301,65 +349,109 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
-      <h1 className="text-3xl font-bold mb-6">Settings</h1>
+    <div className="container py-6 lg:py-10">
+      <header className="mb-8 max-w-3xl">
+        <h1 className="font-display text-3xl font-bold tracking-tight">Settings</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Configure your server, scheduled cleanup, LLM analysis, and test management policies.
+        </p>
+      </header>
 
-      <ServerConfiguration
-        config={config}
-        editingSection={editingSection}
-        faviconFile={faviconFile}
-        isUpdating={isUpdating}
-        logoFile={logoFile}
-        pendingLinkIcons={pendingLinkIcons}
-        tempConfig={tempConfig}
-        onAddHeaderLink={addHeaderLink}
-        onCancel={handleCancel}
-        onEdit={() => setEditingSection('server')}
-        onFaviconFileChange={setFaviconFile}
-        onLogoFileChange={setLogoFile}
-        onSave={() => handleSave('server')}
-        onUpdateLinkIconFile={setLinkIconFile}
-        onUpdateTempConfig={updateTempConfig}
-      />
+      <div className="flex gap-8">
+        <aside className="hidden lg:block w-52 shrink-0">
+          <SectionNav />
+        </aside>
 
-      <CronConfiguration
-        config={config}
-        editingSection={editingSection}
-        isUpdating={isUpdating}
-        tempConfig={tempConfig}
-        onCancel={handleCancel}
-        onEdit={() => setEditingSection('cron')}
-        onSave={() => handleSave('cron')}
-        onUpdateTempConfig={updateTempConfig}
-      />
+        <div className="flex-1 min-w-0 max-w-5xl">
+          <ServerConfiguration
+            config={config}
+            editingSection={editingSection}
+            faviconFile={faviconFile}
+            isUpdating={isUpdating}
+            logoFile={logoFile}
+            pendingLinkIcons={pendingLinkIcons}
+            tempConfig={tempConfig}
+            onAddHeaderLink={addHeaderLink}
+            onCancel={handleCancel}
+            onEdit={() => setEditingSection('server')}
+            onFaviconFileChange={setFaviconFile}
+            onLogoFileChange={setLogoFile}
+            onSave={() => handleSave('server')}
+            onUpdateLinkIconFile={setLinkIconFile}
+            onUpdateTempConfig={updateTempConfig}
+          />
 
-      <LLMConfiguration
-        config={config}
-        editingSection={editingSection}
-        isUpdating={isUpdating}
-        tempConfig={tempConfig}
-        onCancel={handleCancel}
-        onEdit={() => setEditingSection('llm')}
-        onSave={() => handleSave('llm')}
-        onUpdateTempConfig={updateTempConfig}
-      />
+          <CronConfiguration
+            config={config}
+            editingSection={editingSection}
+            isUpdating={isUpdating}
+            tempConfig={tempConfig}
+            onCancel={handleCancel}
+            onEdit={() => setEditingSection('cron')}
+            onSave={() => handleSave('cron')}
+            onUpdateTempConfig={updateTempConfig}
+          />
 
-      <TestManagementSettings
-        config={config}
-        editingSection={editingSection}
-        isUpdating={isUpdating}
-        tempConfig={tempConfig}
-        onCancel={handleCancel}
-        onEdit={() => setEditingSection('testManagement')}
-        onSave={() => handleSave('testManagement')}
-        onUpdateTempConfig={updateTempConfig}
-      />
+          <LLMConfiguration
+            config={config}
+            editingSection={editingSection}
+            isUpdating={isUpdating}
+            tempConfig={tempConfig}
+            onCancel={handleCancel}
+            onEdit={() => setEditingSection('llm')}
+            onSave={() => handleSave('llm')}
+            onUpdateTempConfig={updateTempConfig}
+          />
 
-      <GithubSyncConfiguration />
+          <TestManagementSettings
+            config={config}
+            editingSection={editingSection}
+            isUpdating={isUpdating}
+            tempConfig={tempConfig}
+            onCancel={handleCancel}
+            onEdit={() => setEditingSection('testManagement')}
+            onSave={() => handleSave('testManagement')}
+            onUpdateTempConfig={updateTempConfig}
+          />
 
-      <EnvironmentInfo />
+          <GithubSyncConfiguration />
+
+          <EnvironmentInfo />
+        </div>
+      </div>
 
       <AddLinkModal isOpen={showAddLinkModal} onAddLink={handleAddLink} onCancel={cancelAddLink} />
     </div>
+  );
+}
+
+function SectionNav() {
+  const ids = SECTION_NAV.map((s) => s.id);
+  const active = useActiveSection(ids);
+
+  return (
+    <nav className="sticky top-20 space-y-1 text-sm">
+      <p className="px-3 mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        On this page
+      </p>
+      {SECTION_NAV.map((item) => {
+        const isActive = active === item.id;
+        return (
+          <a
+            key={item.id}
+            href={`#${item.id}`}
+            aria-current={isActive ? 'true' : undefined}
+            className={cn(
+              'block rounded-md px-3 py-1.5 transition-colors',
+              isActive
+                ? 'bg-accent text-accent-foreground font-medium'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            )}
+          >
+            {item.label}
+          </a>
+        );
+      })}
+    </nav>
   );
 }

@@ -55,7 +55,7 @@ const blankForm: FormState = {
 
 function statusBadge(cfg: GithubSyncConfigWithStatus) {
   if (cfg.status?.isRunning) {
-    return <Badge className="bg-blue-500 text-white">Running</Badge>;
+    return <Badge variant="info">Running</Badge>;
   }
   if (!cfg.enabled) {
     return <Badge variant="secondary">Paused</Badge>;
@@ -329,7 +329,7 @@ export default function GithubSyncConfiguration() {
   };
 
   return (
-    <Card className="mb-6 p-4">
+    <Card id="github" className="mb-6 scroll-mt-20 p-4">
       <CardHeader className="flex justify-between items-center flex-row">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold">GitHub Sync</h2>

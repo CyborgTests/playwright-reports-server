@@ -12,7 +12,7 @@ export default function EnvironmentInfo() {
   const { data: serverInfo } = useQuery<ServerDataInfo>('/api/info');
 
   return (
-    <Card className="p-4">
+    <Card id="environment" className="scroll-mt-20 p-4">
       <CardHeader>
         <h2 className="text-xl font-semibold">Environment Information</h2>
       </CardHeader>

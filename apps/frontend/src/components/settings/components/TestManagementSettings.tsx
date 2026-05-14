@@ -79,9 +79,9 @@ export default function TestManagementSettings({
     DEFAULT_FLAKINESS_EVALUATION_WINDOW_DAYS;
 
   return (
-    <Card className="mb-6 p-4">
+    <Card id="testManagement" className="mb-6 scroll-mt-20 p-4">
       <CardHeader
-        className={`flex justify-between items-center flex-row ${editingSection === 'testManagement' ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 -mx-4 px-4' : ''}`}
+        className={`flex justify-between items-center flex-row ${editingSection === 'testManagement' ? 'bg-primary/5 border-l-4 border-primary -mx-4 px-4' : ''}`}
       >
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold">Test Management</h2>
