@@ -88,6 +88,28 @@ const config = {
           500: 'hsl(var(--running-500))',
           900: 'hsl(var(--running-900))',
         },
+        // Semantic status colors
+        warning: {
+          DEFAULT: 'hsl(var(--warning))',
+          foreground: 'hsl(var(--warning-foreground))',
+          50: 'hsl(var(--warning-50))',
+          100: 'hsl(var(--warning-100))',
+          900: 'hsl(var(--warning-900))',
+        },
+        danger: {
+          DEFAULT: 'hsl(var(--danger))',
+          foreground: 'hsl(var(--danger-foreground))',
+          50: 'hsl(var(--danger-50))',
+          100: 'hsl(var(--danger-100))',
+          900: 'hsl(var(--danger-900))',
+        },
+        info: {
+          DEFAULT: 'hsl(var(--info))',
+          foreground: 'hsl(var(--info-foreground))',
+          50: 'hsl(var(--info-50))',
+          100: 'hsl(var(--info-100))',
+          900: 'hsl(var(--info-900))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',

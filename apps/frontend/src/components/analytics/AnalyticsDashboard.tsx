@@ -158,12 +158,10 @@ export default function AnalyticsDashboard() {
       <TestManagementWidget project={project} dateRange={dateRange} />
 
       {!isLoading && runHealthMetrics.length === 0 && (
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6">
+        <div className="bg-warning-50 border border-warning/30 rounded-lg p-6">
           <div className="text-center">
-            <div className="text-yellow-800 dark:text-yellow-200 font-medium mb-2">
-              Limited Data Available
-            </div>
-            <div className="text-yellow-600 dark:text-yellow-400 text-sm">
+            <div className="text-warning-900 font-medium mb-2">Limited Data Available</div>
+            <div className="text-warning text-sm">
               Analytics insights become more meaningful with at least 5-10 test runs. Continue
               generating reports to see detailed trends and patterns.
             </div>

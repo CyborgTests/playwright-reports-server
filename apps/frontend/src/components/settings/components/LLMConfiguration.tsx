@@ -725,16 +725,14 @@ export default function LLMConfiguration({
           {testResult && (
             <Alert
               className={
-                testResult.ok
-                  ? 'border-green-500/50 bg-green-50 dark:bg-green-900/20'
-                  : 'border-red-500/50 bg-red-50 dark:bg-red-900/20'
+                testResult.ok ? 'border-success/50 bg-success-50' : 'border-danger/50 bg-danger-50'
               }
             >
               <div className="flex items-start gap-2">
                 {testResult.ok ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" />
+                  <CheckCircle2 className="h-4 w-4 text-success mt-0.5" />
                 ) : (
-                  <XCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                  <XCircle className="h-4 w-4 text-danger mt-0.5" />
                 )}
                 <div className="flex-1">
                   <p className="text-sm font-medium">
@@ -761,9 +759,7 @@ export default function LLMConfiguration({
           {isConfigured ? (
             <div className="space-y-4">
               <div className="flex items-center gap-2">
-                <Badge variant="default" className="bg-green-600">
-                  Configured
-                </Badge>
+                <Badge variant="success">Configured</Badge>
                 <span className="text-sm text-muted-foreground">LLM integration is active</span>
               </div>
               {config.llm?.provider && (

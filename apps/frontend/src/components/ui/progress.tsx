@@ -26,6 +26,7 @@ interface CircularProgressProps extends React.HTMLAttributes<HTMLDivElement> {
   size?: number;
   strokeWidth?: number;
   showValueLabel?: boolean;
+  stroke?: string;
   className?: string;
 }
 
@@ -34,6 +35,7 @@ export function CircularProgress({
   size = 48,
   strokeWidth = 4,
   showValueLabel = false,
+  stroke = 'hsl(var(--success))',
   className,
   ...props
 }: CircularProgressProps) {
@@ -65,7 +67,7 @@ export function CircularProgress({
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke="hsl(var(--success))"
+          stroke={stroke}
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={offset}

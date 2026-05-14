@@ -61,6 +61,25 @@
     --running-500: 217 91% 60%;
     --running-900: 217 91% 30%;
 
+    /* Semantic status colors - Light mode */
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --warning-50: 38 92% 97%;
+    --warning-100: 38 92% 90%;
+    --warning-900: 38 92% 30%;
+
+    --danger: 0 84% 60%;
+    --danger-foreground: 0 0% 100%;
+    --danger-50: 0 84% 97%;
+    --danger-100: 0 84% 90%;
+    --danger-900: 0 84% 30%;
+
+    --info: 217 91% 60%;
+    --info-foreground: 0 0% 100%;
+    --info-50: 217 91% 97%;
+    --info-100: 217 91% 90%;
+    --info-900: 217 91% 30%;
+
     /* Glow colors */
     --glow-success: 142 76% 36%;
     --glow-failure: 0 84% 60%;
@@ -134,6 +153,25 @@
     --running-100: 199 89% 25%;
     --running-500: 199 89% 48%;
     --running-900: 199 89% 80%;
+
+    /* Semantic status colors - Dark mode */
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --warning-50: 38 92% 15%;
+    --warning-100: 38 92% 25%;
+    --warning-900: 38 92% 80%;
+
+    --danger: 0 72% 51%;
+    --danger-foreground: 0 0% 100%;
+    --danger-50: 0 72% 15%;
+    --danger-100: 0 72% 25%;
+    --danger-900: 0 72% 80%;
+
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+    --info-50: 199 89% 15%;
+    --info-100: 199 89% 25%;
+    --info-900: 199 89% 80%;
 
     /* Glow colors */
     --glow-success: 142 70% 50%;

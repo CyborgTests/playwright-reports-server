@@ -47,17 +47,15 @@ export function OverviewStatsCard({
     (trend === 'up' && higherIsBetter) || (trend === 'down' && !higherIsBetter);
 
   const getTrendIcon = (trend: 'up' | 'down' | 'stable', higherIsBetter: boolean) => {
-    if (trend === 'stable') return <Minus className="h-4 w-4 text-gray-500" />;
-    const colorClass = isPositive(trend, higherIsBetter) ? 'text-green-500' : 'text-red-500';
+    if (trend === 'stable') return <Minus className="h-4 w-4 text-muted-foreground" />;
+    const colorClass = isPositive(trend, higherIsBetter) ? 'text-success' : 'text-danger';
     const Icon = trend === 'up' ? TrendingUp : TrendingDown;
     return <Icon className={`h-4 w-4 ${colorClass}`} />;
   };
 
   const getTrendColor = (trend: 'up' | 'down' | 'stable', higherIsBetter: boolean) => {
-    if (trend === 'stable') return 'text-gray-600 dark:text-gray-400';
-    return isPositive(trend, higherIsBetter)
-      ? 'text-green-600 dark:text-green-400'
-      : 'text-red-600 dark:text-red-400';
+    if (trend === 'stable') return 'text-muted-foreground';
+    return isPositive(trend, higherIsBetter) ? 'text-success' : 'text-danger';
   };
 
   const {

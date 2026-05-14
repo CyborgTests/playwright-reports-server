@@ -16,13 +16,13 @@ export const badge = (variant: 'success' | 'error' | 'warning' | 'default' = 'de
   const baseClasses = 'px-2 py-1 rounded text-xs font-medium';
   switch (variant) {
     case 'success':
-      return `${baseClasses} bg-green-100 text-green-800`;
+      return `${baseClasses} bg-success-100 text-success-900`;
     case 'error':
-      return `${baseClasses} bg-red-100 text-red-800`;
+      return `${baseClasses} bg-danger-100 text-danger-900`;
     case 'warning':
-      return `${baseClasses} bg-yellow-100 text-yellow-800`;
+      return `${baseClasses} bg-warning-100 text-warning-900`;
     default:
-      return `${baseClasses} bg-gray-100 text-gray-800`;
+      return `${baseClasses} bg-muted text-muted-foreground`;
   }
 };
 

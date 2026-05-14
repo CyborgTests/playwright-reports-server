@@ -12,10 +12,10 @@ const SparklineChart = ({ recentRuns }: { recentRuns: Array<TestRun> }) => {
   const recentRunsSlice = recentRuns.slice(0, maxRuns).reverse();
 
   const colorPerOutcome: Record<string, string> = {
-    [ReportTestOutcomeEnum.Expected]: 'bg-green-500',
-    [ReportTestOutcomeEnum.Unexpected]: 'bg-red-500',
-    [ReportTestOutcomeEnum.Flaky]: 'bg-orange-400',
-    default: 'bg-gray-400',
+    [ReportTestOutcomeEnum.Expected]: 'bg-success',
+    [ReportTestOutcomeEnum.Unexpected]: 'bg-danger',
+    [ReportTestOutcomeEnum.Flaky]: 'bg-warning',
+    default: 'bg-muted-foreground',
   };
 
   return (
@@ -49,9 +49,9 @@ const SparklineChart = ({ recentRuns }: { recentRuns: Array<TestRun> }) => {
 };
 
 const getPassRateColor = (passRate: number) => {
-  if (passRate === 100) return 'text-green-600';
-  if (passRate >= 80) return 'text-yellow-600';
-  return 'text-red-600';
+  if (passRate >= 95) return 'text-success';
+  if (passRate >= 70) return 'text-warning';
+  return 'text-danger';
 };
 
 interface TrendSparklinesProps {

@@ -1,4 +1,9 @@
-import type { DateRange, TestFilters, TestWithQuarantineInfo } from '@playwright-reports/shared';
+import {
+  type DateRange,
+  ReportTestOutcomeEnum,
+  type TestFilters,
+  type TestWithQuarantineInfo,
+} from '@playwright-reports/shared';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Clock } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -186,6 +191,24 @@ export default function TestManagementWidget({
 
   const totalTests = testsData?.pages[0]?.total ?? 0;
 
+  const getOutcomeBadge = (outcome?: string) => {
+    if (!outcome) return <span className="text-sm text-muted-foreground">—</span>;
+    switch (outcome) {
+      case ReportTestOutcomeEnum.Expected:
+      case ReportTestOutcomeEnum.Passed:
+        return <Badge variant="success">Passed</Badge>;
+      case ReportTestOutcomeEnum.Flaky:
+        return <Badge variant="warning">Flaky</Badge>;
+      case ReportTestOutcomeEnum.Unexpected:
+      case ReportTestOutcomeEnum.Failed:
+        return <Badge variant="danger">Failed</Badge>;
+      case ReportTestOutcomeEnum.Skipped:
+        return <Badge variant="skipped">Skipped</Badge>;
+      default:
+        return <Badge variant="secondary">{outcome}</Badge>;
+    }
+  };
+
   const getStatusBadge = (test: TestWithQuarantineInfo) => {
     if (test.isQuarantined) {
       return (
@@ -199,20 +222,20 @@ export default function TestManagementWidget({
     }
     if (test.flakinessScore < warningThreshold) {
       return (
-        <Badge variant="default" className="bg-green-600 gap-1">
+        <Badge variant="success" className="gap-1">
           Stable
         </Badge>
       );
     }
     if (test.flakinessScore < quarantineThreshold) {
       return (
-        <Badge variant="secondary" className="bg-yellow-600 text-white gap-1">
-          ⚠️ Flaky
+        <Badge variant="warning" className="gap-1">
+          Flaky
         </Badge>
       );
     }
     return (
-      <Badge variant="destructive" className="gap-1">
+      <Badge variant="danger" className="gap-1">
         Critical
       </Badge>
     );
@@ -343,7 +366,7 @@ export default function TestManagementWidget({
                         <p className="text-sm break-words">{item.project}</p>
                       </TableCell>
                       <TableCell className="whitespace-nowrap w-px">
-                        <p className="text-sm">{item.runs?.at(0)?.outcome}</p>
+                        {getOutcomeBadge(item.runs?.at(0)?.outcome)}
                       </TableCell>
                       <TableCell className="whitespace-nowrap w-px">
                         {getStatusBadge(item)}
@@ -376,7 +399,7 @@ export default function TestManagementWidget({
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger>
-                                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                  <AlertTriangle className="h-4 w-4 text-warning" />
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   Not present in latest report — consider removing
@@ -397,14 +420,14 @@ export default function TestManagementWidget({
                           <DropdownMenuContent>
                             <DropdownMenuItem
                               onClick={() => handleQuarantineAction(item)}
-                              className={item.isQuarantined ? 'text-green-600' : 'text-red-600'}
+                              className={item.isQuarantined ? 'text-success' : 'text-danger'}
                             >
                               {item.isQuarantined ? 'Remove Quarantine' : 'Send Quarantine'}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               onClick={() => handleDeleteAction(item)}
-                              className="text-red-600"
+                              className="text-danger"
                             >
                               Delete Test
                             </DropdownMenuItem>
@@ -438,11 +461,11 @@ export default function TestManagementWidget({
           <div className="mt-4 text-xs text-muted-foreground border-t pt-3 w-full">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-1">
-                <span className="inline-block w-2 h-2 bg-green-500 rounded"></span>
+                <span className="inline-block w-2 h-2 bg-success rounded"></span>
                 <span>Passed run</span>
               </div>
               <div className="flex items-center gap-1">
-                <span className="inline-block w-2 h-2 bg-red-500 rounded"></span>
+                <span className="inline-block w-2 h-2 bg-danger rounded"></span>
                 <span>Failed run</span>
               </div>
             </div>

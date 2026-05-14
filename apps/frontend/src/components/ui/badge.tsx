@@ -18,6 +18,9 @@ const badgeVariants = cva(
         flaky: 'border-transparent bg-flaky text-flaky-foreground shadow-sm',
         skipped: 'border-transparent bg-muted text-muted-foreground',
         running: 'border-transparent bg-running text-running-foreground animate-pulse',
+        warning: 'border-transparent bg-warning text-warning-foreground shadow-sm',
+        danger: 'border-transparent bg-danger text-danger-foreground shadow-sm',
+        info: 'border-transparent bg-info text-info-foreground shadow-sm',
       },
     },
     defaultVariants: {

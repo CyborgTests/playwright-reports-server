@@ -63,7 +63,7 @@ function statusBadge(cfg: GithubSyncConfigWithStatus) {
   const last = cfg.status?.lastRun?.status;
   if (last === 'failed') return <Badge variant="destructive">Last run failed</Badge>;
   if (last === 'cancelled') return <Badge variant="secondary">Cancelled</Badge>;
-  if (last === 'success') return <Badge className="bg-emerald-500 text-white">OK</Badge>;
+  if (last === 'success') return <Badge variant="success">OK</Badge>;
   return <Badge variant="outline">Idle</Badge>;
 }
 

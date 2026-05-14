@@ -25,19 +25,19 @@ export const scrollbarStyles = {
 export const testStatusToColor = (status: string) => {
   switch (status) {
     case 'passed':
-      return { colorName: 'success', title: 'Passed', color: 'text-green-600' };
+      return { colorName: 'success', title: 'Passed', color: 'text-success' };
     case 'failed':
-      return { colorName: 'danger', title: 'Failed', color: 'text-red-600' };
+      return { colorName: 'danger', title: 'Failed', color: 'text-danger' };
     case 'skipped':
       return {
         colorName: 'warning',
         title: 'Skipped',
-        color: 'text-yellow-600',
+        color: 'text-warning',
       };
     case 'flaky':
-      return { colorName: 'default', title: 'Flaky', color: 'text-gray-600' };
+      return { colorName: 'default', title: 'Flaky', color: 'text-muted-foreground' };
     default:
-      return { colorName: 'default', title: 'Unknown', color: 'text-gray-600' };
+      return { colorName: 'default', title: 'Unknown', color: 'text-muted-foreground' };
   }
 };
 

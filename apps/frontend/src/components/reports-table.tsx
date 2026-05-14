@@ -31,7 +31,7 @@ import { withBase } from '@/lib/url';
 import FormattedDate from './date-format';
 import DeleteReportButton from './delete-report-button';
 import { BranchIcon, FolderIcon, LinkIcon } from './icons';
-import InlineStatsCircle from './inline-stats-circle';
+import PassRateBar from './pass-rate-bar';
 import TablePaginationOptions from './table-pagination-options';
 
 const columns = [
@@ -63,8 +63,11 @@ const coreFields = [
   'playwrightVersion',
 ];
 
+const isPrimitive = (value: unknown): value is string | number | boolean =>
+  typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+
 const getMetadataItems = (item: ReportHistory) => {
-  const metadata: Array<{ key: string; value: any; icon?: React.ReactNode }> = [];
+  const metadata: Array<{ key: string; value: string | number; icon?: React.ReactNode }> = [];
 
   // Cast to any to access dynamic properties that come from resultDetails
   const itemWithMetadata = item as any;
@@ -97,16 +100,29 @@ const getMetadataItems = (item: ReportHistory) => {
     });
   }
 
-  metadata.push({
-    key: 'workers',
-    value: itemWithMetadata.metadata?.actualWorkers,
-  });
+  if (itemWithMetadata.metadata?.actualWorkers !== undefined) {
+    metadata.push({
+      key: 'workers',
+      value: itemWithMetadata.metadata.actualWorkers,
+    });
+  }
 
-  // Add any other metadata fields
+  if (Array.isArray(itemWithMetadata.machines)) {
+    metadata.push({ key: 'machines', value: itemWithMetadata.machines.length });
+  } else if (
+    itemWithMetadata.machines &&
+    typeof itemWithMetadata.machines === 'object' &&
+    typeof itemWithMetadata.machines.count === 'number'
+  ) {
+    metadata.push({ key: 'machines', value: itemWithMetadata.machines.count });
+  }
+
+  // Add any other metadata fields — skip null/undefined/objects/arrays to avoid `[object Object]`
   Object.entries(itemWithMetadata).forEach(([key, value]) => {
-    if (!coreFields.includes(key) && !['environment', 'workingDir', 'branch'].includes(key)) {
-      metadata.push({ key, value });
-    }
+    if (coreFields.includes(key)) return;
+    if (['environment', 'workingDir', 'branch', 'machines'].includes(key)) return;
+    if (!isPrimitive(value)) return;
+    metadata.push({ key, value: typeof value === 'boolean' ? String(value) : value });
   });
 
   return metadata;
@@ -268,27 +284,33 @@ export default function ReportsTable({ onChange }: Readonly<ReportsTableProps>) 
                       </Link>
 
                       <div className="flex flex-wrap gap-1 mt-2">
-                        {getMetadataItems(item).map(({ key, value, icon }) => (
-                          <Badge
-                            key={`${item.reportID}-${key}`}
-                            variant="secondary"
-                            className="text-xs h-5 px-2 py-0"
-                            title={`${key}: ${value}`}
-                          >
-                            {icon}
-                            <span className="max-w-[150px] truncate">
-                              {key === 'branch' || key === 'workingDir'
-                                ? value
-                                : `${key}: ${value}`}
-                            </span>
-                          </Badge>
-                        ))}
+                        {getMetadataItems(item).map(({ key, value, icon }) => {
+                          const displayValue =
+                            typeof value === 'string' || typeof value === 'number'
+                              ? value
+                              : JSON.stringify(value);
+                          return (
+                            <Badge
+                              key={`${item.reportID}-${key}`}
+                              variant="secondary"
+                              className="text-xs h-5 px-2 py-0"
+                              title={`${key}: ${displayValue}`}
+                            >
+                              {icon}
+                              <span className="max-w-[150px] truncate">
+                                {key === 'branch' || key === 'workingDir'
+                                  ? displayValue
+                                  : `${key}: ${displayValue}`}
+                              </span>
+                            </Badge>
+                          );
+                        })}
                       </div>
                     </div>
                   </TableCell>
                   <TableCell className="w-1/6">{item.project}</TableCell>
                   <TableCell className="w-1/12">
-                    <InlineStatsCircle
+                    <PassRateBar
                       stats={
                         item.stats || {
                           total: 0,

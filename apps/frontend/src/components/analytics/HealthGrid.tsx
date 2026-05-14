@@ -54,15 +54,15 @@ export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
           <p className="text-sm text-gray-600 dark:text-gray-400">Run ID: {data.runId}</p>
           <div className="mt-2 space-y-1">
             <div className="flex justify-between text-sm">
-              <span className="text-green-600">Passed:</span>
+              <span className="text-success">Passed:</span>
               <span>{data.passed}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-red-600">Failed:</span>
+              <span className="text-danger">Failed:</span>
               <span>{data.failed}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-yellow-600">Flaky:</span>
+              <span className="text-warning">Flaky:</span>
               <span>{data.flaky}</span>
             </div>
             <div className="flex justify-between text-sm">
