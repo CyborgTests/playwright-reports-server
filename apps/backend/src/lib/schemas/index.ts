@@ -78,6 +78,79 @@ export const ListReportsResponseSchema = z.object({
   total: z.number(),
 });
 
+export const CompareReportsQuerySchema = z.object({
+  a: z.string().min(1),
+  b: z.string().min(1),
+});
+
+const DiffOutcomeSchema = z.enum(['pass', 'fail', 'flaky', 'skipped', 'unknown']);
+
+const ReportRefSchema = z.object({
+  reportID: z.string(),
+  title: z.string().optional(),
+  displayNumber: z.number().optional(),
+  project: z.string(),
+  createdAt: z.string(),
+  reportUrl: z.string(),
+  stats: z
+    .object({
+      total: z.number(),
+      expected: z.number().optional(),
+      unexpected: z.number().optional(),
+      flaky: z.number().optional(),
+      skipped: z.number().optional(),
+      ok: z.boolean().optional(),
+    })
+    .optional(),
+});
+
+const DiffTestEntrySchema = z.object({
+  testId: z.string(),
+  fileId: z.string(),
+  project: z.string(),
+  title: z.string(),
+  filePath: z.string(),
+  outcomeA: DiffOutcomeSchema.optional(),
+  outcomeB: DiffOutcomeSchema.optional(),
+  rawOutcomeA: z.string().optional(),
+  rawOutcomeB: z.string().optional(),
+  durationA: z.number().optional(),
+  durationB: z.number().optional(),
+});
+
+const DurationDeltaEntrySchema = DiffTestEntrySchema.extend({
+  durationA: z.number(),
+  durationB: z.number(),
+  deltaMs: z.number(),
+  deltaPct: z.number(),
+});
+
+export const CompareReportsResponseSchema = z.object({
+  reportA: ReportRefSchema,
+  reportB: ReportRefSchema,
+  summary: z.object({
+    totalA: z.number(),
+    totalB: z.number(),
+    newlyFailedCount: z.number(),
+    fixedCount: z.number(),
+    stillFailingCount: z.number(),
+    flakyToPassCount: z.number(),
+    passToFlakyCount: z.number(),
+    newTestsCount: z.number(),
+    removedTestsCount: z.number(),
+    durationRegressionsCount: z.number(),
+    durationImprovementsCount: z.number(),
+  }),
+  newlyFailed: z.array(DiffTestEntrySchema),
+  fixed: z.array(DiffTestEntrySchema),
+  stillFailing: z.array(DiffTestEntrySchema),
+  flakyToPass: z.array(DiffTestEntrySchema),
+  passToFlaky: z.array(DiffTestEntrySchema),
+  newTests: z.array(DiffTestEntrySchema),
+  removedTests: z.array(DiffTestEntrySchema),
+  durationDeltas: z.array(DurationDeltaEntrySchema),
+});
+
 export const DeleteReportsRequestSchema = z.object({
   reportsIds: z.array(z.string()).min(1),
 });

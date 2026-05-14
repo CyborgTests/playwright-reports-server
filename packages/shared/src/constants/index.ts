@@ -12,6 +12,7 @@ export const API_ENDPOINTS = {
   REPORTS_GENERATE: '/api/report/generate',
   REPORTS_DELETE: '/api/report/delete',
   REPORTS_TREND: '/api/report/trend',
+  REPORTS_COMPARE: '/api/report/compare',
 
   // Results
   RESULTS_LIST: '/api/result/list',

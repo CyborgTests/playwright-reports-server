@@ -6,6 +6,7 @@ import HomePage from '@/pages/HomePage';
 import LlmQueuePage from '@/pages/LlmQueuePage';
 import LoginPage from '@/pages/LoginPage';
 import ReportDetailPage from '@/pages/ReportDetailPage';
+import ReportsComparePage from '@/pages/ReportsComparePage';
 import ReportsPage from '@/pages/ReportsPage';
 import ResultsPage from '@/pages/ResultsPage';
 import SettingsPage from '@/pages/SettingsPage';
@@ -23,6 +24,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/reports" element={<ReportsPage />} />
+                <Route path="/reports/compare" element={<ReportsComparePage />} />
                 <Route path="/report/:id" element={<ReportDetailPage />} />
                 <Route path="/report/:id/:testId" element={<RedirectTestDetails />} />
                 <Route path="/results" element={<ResultsPage />} />

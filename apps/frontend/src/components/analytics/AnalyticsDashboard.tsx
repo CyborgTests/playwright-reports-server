@@ -253,7 +253,7 @@ function DashboardSectionNav({
             selectedRange={dateRange}
             onSelect={onDateRangeChange}
             showLabel={false}
-            className="h-9 w-full sm:w-44 sm:min-w-32"
+            className="h-9 w-full sm:w-80 sm:min-w-72"
           />
           <ProjectSelect
             entity="report"

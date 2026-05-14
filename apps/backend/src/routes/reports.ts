@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance } from 'fastify';
 import { serveReportRoute } from '../lib/constants.js';
 import {
+  CompareReportsQuerySchema,
   DeleteReportsRequestSchema,
   GenerateReportRequestSchema,
   GetReportParamsSchema,
@@ -15,10 +16,11 @@ import {
 } from '../lib/schemas/index.js';
 import { reportDb } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
+import { compareReports } from '../lib/service/reportCompare.js';
 import { testManagementService } from '../lib/service/testManagement.js';
 import { storage } from '../lib/storage/index.js';
 import { parseFromRequest } from '../lib/storage/pagination.js';
-import { validateSchema } from '../lib/validation/index.js';
+import { ValidationError, validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate, authenticateUpload } from './auth.js';
 
@@ -59,6 +61,27 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         return reports;
       } catch (error) {
         console.error('[routes] list reports error:', error);
+        return reply.status(500).send({ error: 'Internal server error' });
+      }
+    });
+
+    fastify.get('/api/report/compare', async (request, reply) => {
+      try {
+        const query = validateSchema(CompareReportsQuerySchema, request.query);
+        const { result, error } = compareReports(query.a, query.b);
+
+        if (error || !result) {
+          const message = error ?? 'Failed to compare reports';
+          const status = message.includes('not found') || message.includes('itself') ? 400 : 500;
+          return reply.status(status).send({ error: message });
+        }
+
+        return result;
+      } catch (error) {
+        if (error instanceof ValidationError) {
+          return reply.status(400).send({ error: error.message, details: error.details });
+        }
+        console.error('[routes] compare reports error:', error);
         return reply.status(500).send({ error: 'Internal server error' });
       }
     });

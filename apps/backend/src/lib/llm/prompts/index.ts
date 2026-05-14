@@ -579,6 +579,35 @@ export const buildTestFailureSegments = (args: {
   return { segments };
 };
 
+export interface ReportSummaryTrendContext {
+  previousReport: {
+    reportId: string;
+    title?: string;
+    displayNumber?: number;
+    createdAt: string;
+  };
+  counts: {
+    newlyFailed: number;
+    fixed: number;
+    stillFailing: number;
+    newTests: number;
+    removedTests: number;
+    durationRegressions: number;
+    durationImprovements: number;
+  };
+  newlyFailed: Array<{ title: string; filePath: string }>;
+  fixed: Array<{ title: string; filePath: string }>;
+  stillFailing: Array<{ title: string; filePath: string }>;
+  topDurationRegressions: Array<{
+    title: string;
+    filePath: string;
+    durationA: number;
+    durationB: number;
+    deltaMs: number;
+    deltaPct: number;
+  }>;
+}
+
 export const buildReportSummarySegments = (args: {
   systemPrompt?: string;
   reportId: string;
@@ -592,6 +621,7 @@ export const buildReportSummarySegments = (args: {
   }>;
   perTestAnalyses: Array<{ testTitle: string; category: string; analysis: string }>;
   perTestFeedback?: Array<{ testTitle?: string; comment: string; updatedAt: string }>;
+  trendContext?: ReportSummaryTrendContext;
   overrides?: CustomPromptOverrides;
 }): SegmentedPrompt => {
   const segments: PromptSegment[] = [];
@@ -662,6 +692,15 @@ export const buildReportSummarySegments = (args: {
     content: dataBlock.trimEnd(),
   });
 
+  if (args.trendContext) {
+    segments.push({
+      id: 'trend_context',
+      role: 'user',
+      stable: false,
+      content: renderReportTrendContext(args.trendContext),
+    });
+  }
+
   if (args.perTestFeedback && args.perTestFeedback.length > 0) {
     segments.push({
       id: 'per_test_feedback',
@@ -672,6 +711,66 @@ export const buildReportSummarySegments = (args: {
   }
 
   return { segments };
+};
+
+const formatMs = (ms: number): string => {
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  const rem = Math.round(s - m * 60);
+  return `${m}m ${rem}s`;
+};
+
+const renderReportTrendContext = (ctx: ReportSummaryTrendContext): string => {
+  const { previousReport, counts } = ctx;
+  const prevLabel = previousReport.displayNumber
+    ? `#${previousReport.displayNumber}`
+    : previousReport.title || previousReport.reportId.slice(0, 8);
+
+  const lines: string[] = [];
+  lines.push(`## Trend vs previous report (${prevLabel} from ${previousReport.createdAt})`);
+  lines.push('');
+  lines.push(
+    'Use this to call out what changed in your "Failure Patterns" and "Correlations" sections.'
+  );
+  lines.push('');
+  lines.push(`- Newly failed: **${counts.newlyFailed}**`);
+  lines.push(`- Fixed since previous: **${counts.fixed}**`);
+  lines.push(`- Still failing: **${counts.stillFailing}**`);
+  lines.push(`- New tests added: **${counts.newTests}**`);
+  lines.push(`- Tests removed: **${counts.removedTests}**`);
+  lines.push(
+    `- Duration regressions: **${counts.durationRegressions}** · improvements: **${counts.durationImprovements}**`
+  );
+  lines.push('');
+
+  const renderList = (heading: string, items: Array<{ title: string; filePath: string }>) => {
+    if (items.length === 0) return;
+    lines.push(`### ${heading}`);
+    for (const it of items.slice(0, 10)) {
+      lines.push(`- ${it.title} (${it.filePath})`);
+    }
+    if (items.length > 10) lines.push(`- …and ${items.length - 10} more`);
+    lines.push('');
+  };
+
+  renderList('Newly failed', ctx.newlyFailed);
+  renderList('Fixed since previous', ctx.fixed);
+  renderList('Still failing', ctx.stillFailing);
+
+  if (ctx.topDurationRegressions.length > 0) {
+    lines.push('### Top duration regressions');
+    for (const d of ctx.topDurationRegressions.slice(0, 10)) {
+      const sign = d.deltaMs > 0 ? '+' : '';
+      lines.push(
+        `- ${d.title} (${d.filePath}): ${formatMs(d.durationA)} → ${formatMs(d.durationB)} (${sign}${(d.deltaPct * 100).toFixed(0)}%)`
+      );
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n').trimEnd();
 };
 
 export const buildProjectSummarySegments = (args: {

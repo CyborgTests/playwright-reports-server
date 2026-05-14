@@ -7,7 +7,7 @@ import {
   parseProjectAnalysisStructured,
   renderProjectAnalysisAsMarkdown,
 } from '../llm/projectAnalysis.js';
-import type { FailureDetailsForPrompt } from '../llm/prompts/index.js';
+import type { FailureDetailsForPrompt, ReportSummaryTrendContext } from '../llm/prompts/index.js';
 import {
   buildProjectSummarySegments,
   buildReportSummarySegments,
@@ -31,6 +31,7 @@ import { projectSummaryDb } from './db/projectSummary.sqlite.js';
 import { testAnalysisDb } from './db/testAnalysis.sqlite.js';
 import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
+import { compareReports, findPreviousReportInProject } from './reportCompare.js';
 
 function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*m/g, '');
@@ -896,12 +897,14 @@ class LlmAnalysisQueue {
 
     const reportConfig = await service.getConfig();
     const reportLlmCfg = (reportConfig as any)?.llm ?? {};
+    const trendContext = await buildTrendContextForReport(reportId);
     const builtPrompt = buildReportSummarySegments({
       reportId,
       categories,
       errorGroups,
       perTestAnalyses,
       perTestFeedback: perTestFeedbackForPrompt,
+      trendContext,
       overrides: {
         systemPrompt: reportLlmCfg.customSystemPrompt,
         reportSummaryInstructions: reportLlmCfg.customReportSummaryInstructions,
@@ -1268,5 +1271,72 @@ export async function buildTestAnalysisRequest(opts: {
     details,
     failedRun,
     fitLog,
+  };
+}
+
+const MAX_TREND_LIST_ITEMS = 25;
+
+/**
+ * Build the trend context for a report-summary LLM prompt by diffing against
+ * the most recent prior report in the same project. Returns `undefined` when
+ * there is no prior report (first run for the project) or when the diff
+ * computation fails — the prompt simply omits the trend segment in that case.
+ */
+async function buildTrendContextForReport(
+  reportId: string
+): Promise<ReportSummaryTrendContext | undefined> {
+  const { reportDb } = await import('./db/reports.sqlite.js');
+  const current = reportDb.getByID(reportId);
+  if (!current) return undefined;
+
+  const createdAtISO =
+    current.createdAt instanceof Date
+      ? current.createdAt.toISOString()
+      : String(current.createdAt as unknown as string);
+
+  const previous = findPreviousReportInProject(current.project, createdAtISO, reportId);
+  if (!previous) return undefined;
+
+  const { result, error } = compareReports(previous.reportID, reportId);
+  if (error || !result) {
+    console.warn(`[llmQueue] trend context skipped for ${reportId}: ${error ?? 'unknown'}`);
+    return undefined;
+  }
+
+  const trimEntry = (e: { title: string; filePath: string }) => ({
+    title: e.title,
+    filePath: e.filePath,
+  });
+
+  return {
+    previousReport: {
+      reportId: result.reportA.reportID,
+      title: result.reportA.title,
+      displayNumber: result.reportA.displayNumber,
+      createdAt: result.reportA.createdAt,
+    },
+    counts: {
+      newlyFailed: result.summary.newlyFailedCount,
+      fixed: result.summary.fixedCount,
+      stillFailing: result.summary.stillFailingCount,
+      newTests: result.summary.newTestsCount,
+      removedTests: result.summary.removedTestsCount,
+      durationRegressions: result.summary.durationRegressionsCount,
+      durationImprovements: result.summary.durationImprovementsCount,
+    },
+    newlyFailed: result.newlyFailed.slice(0, MAX_TREND_LIST_ITEMS).map(trimEntry),
+    fixed: result.fixed.slice(0, MAX_TREND_LIST_ITEMS).map(trimEntry),
+    stillFailing: result.stillFailing.slice(0, MAX_TREND_LIST_ITEMS).map(trimEntry),
+    topDurationRegressions: result.durationDeltas
+      .filter((d) => d.deltaMs > 0)
+      .slice(0, MAX_TREND_LIST_ITEMS)
+      .map((d) => ({
+        title: d.title,
+        filePath: d.filePath,
+        durationA: d.durationA,
+        durationB: d.durationB,
+        deltaMs: d.deltaMs,
+        deltaPct: d.deltaPct,
+      })),
   };
 }
