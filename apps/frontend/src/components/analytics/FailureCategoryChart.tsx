@@ -83,14 +83,38 @@ export function FailureCategoryChart({
       </div>
 
       {isLoading ? (
-        <Skeleton className="h-[250px] w-full" />
+        <Skeleton className="h-[160px] w-full" />
       ) : chartData.length === 0 ? (
-        <div className="flex items-center justify-center h-48 text-gray-500">
+        <div className="flex items-center justify-center h-32 text-gray-500">
           No failure data available
         </div>
+      ) : chartData.length === 1 ? (
+        (() => {
+          const only = chartData[0];
+          const accent = categoryColors[only.category] ?? categoryColors.unknown;
+          return (
+            <div
+              className="flex items-center gap-4 rounded-md border bg-muted/30 p-4"
+              style={{ borderLeft: `4px solid ${accent}` }}
+            >
+              <div className="text-3xl font-bold tabular-nums">{only.count}</div>
+              <div className="text-sm">
+                <div className="font-medium">{formatCategoryName(only.category)}</div>
+                <div className="text-muted-foreground">
+                  All {only.count === 1 ? 'failure is' : 'failures are'} in this category
+                </div>
+              </div>
+            </div>
+          );
+        })()
       ) : (
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={chartData} layout="vertical" margin={{ left: 120 }}>
+        <ResponsiveContainer width="100%" height={Math.max(80, chartData.length * 28 + 40)}>
+          <BarChart
+            data={chartData}
+            layout="vertical"
+            barSize={16}
+            margin={{ left: 120, top: 8, bottom: 8 }}
+          >
             <CartesianGrid strokeDasharray="3 3" horizontal={false} />
             <XAxis type="number" />
             <YAxis

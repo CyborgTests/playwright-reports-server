@@ -42,6 +42,71 @@ const categoryVariant: Record<string, 'default' | 'secondary' | 'destructive' | 
   unknown: 'outline',
 };
 
+interface ExampleListProps {
+  tests: AffectedTest[];
+  totalCount: number;
+  groupKey: string;
+}
+
+function ExampleList({ tests, totalCount, groupKey }: Readonly<ExampleListProps>) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? tests : tests.slice(0, 1);
+  const hidden = tests.length - visible.length;
+
+  return (
+    <div className="text-xs">
+      <div className="font-medium mb-1 text-muted-foreground">
+        Examples ({tests.length}
+        {totalCount > tests.length ? ` of ${totalCount}` : ''})
+      </div>
+      <ul className="space-y-1">
+        {visible.map((t) => {
+          const link = t.reportUrl ? `${withBase(t.reportUrl)}#?testId=${t.testId}` : null;
+          return (
+            <li
+              key={`${groupKey}-${t.reportId}-${t.testId}-${t.project}`}
+              className="flex items-start gap-2"
+            >
+              <span className="text-muted-foreground shrink-0">•</span>
+              <div className="min-w-0 flex-1">
+                {link ? (
+                  <RouterLink
+                    to={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline break-words"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {t.title}
+                  </RouterLink>
+                ) : (
+                  <span className="break-words">{t.title}</span>
+                )}
+                <div className="text-muted-foreground break-words">
+                  {t.project}
+                  {t.filePath ? ` · ${t.filePath}` : ''}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {tests.length > 1 && (
+        <button
+          type="button"
+          className="mt-1 text-primary hover:underline"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowAll((v) => !v);
+          }}
+        >
+          {showAll ? 'Show less' : `Show ${hidden} more`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function TopFailuresWidget({ errors, isLoading }: Readonly<TopFailuresWidgetProps>) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const topErrors = (errors ?? []).slice(0, 5);
@@ -107,46 +172,11 @@ export function TopFailuresWidget({ errors, isLoading }: Readonly<TopFailuresWid
                       </RouterLink>
                     )}
                     {error.affectedTests && error.affectedTests.length > 0 && (
-                      <div className="text-xs">
-                        <div className="font-medium mb-1 text-muted-foreground">
-                          Examples ({error.affectedTests.length}
-                          {error.count > error.affectedTests.length ? ` of ${error.count}` : ''})
-                        </div>
-                        <ul className="space-y-1">
-                          {error.affectedTests.map((t) => {
-                            const link = t.reportUrl
-                              ? `${withBase(t.reportUrl)}#?testId=${t.testId}`
-                              : null;
-                            return (
-                              <li
-                                key={`${t.reportId}-${t.testId}-${t.project}`}
-                                className="flex items-start gap-2"
-                              >
-                                <span className="text-muted-foreground shrink-0">•</span>
-                                <div className="min-w-0 flex-1">
-                                  {link ? (
-                                    <RouterLink
-                                      to={link}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-primary hover:underline break-words"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      {t.title}
-                                    </RouterLink>
-                                  ) : (
-                                    <span className="break-words">{t.title}</span>
-                                  )}
-                                  <div className="text-muted-foreground break-words">
-                                    {t.project}
-                                    {t.filePath ? ` · ${t.filePath}` : ''}
-                                  </div>
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
+                      <ExampleList
+                        tests={error.affectedTests}
+                        totalCount={error.count}
+                        groupKey={error.signature}
+                      />
                     )}
                   </div>
                 )}

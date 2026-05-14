@@ -12,6 +12,7 @@ import { defaultProjectName } from '../../lib/constants';
 import DateRangeSelect from '../date-range-select';
 import ProjectSelect from '../project-select';
 import TestManagementWidget from '../test-management/TestManagementWidget';
+import { Switch } from '../ui/switch';
 import { FailureAnalysisSummary } from './FailureAnalysisSummary';
 import { FailureCategoryChart } from './FailureCategoryChart';
 import { HealthGrid } from './HealthGrid';
@@ -26,6 +27,9 @@ export default function AnalyticsDashboard() {
     from: searchParams.get('from') ?? undefined,
     to: searchParams.get('to') ?? undefined,
   }));
+  const [failedOnly, setFailedOnly] = useState(
+    () => searchParams.get('failedOnly') === '1' || searchParams.get('failedOnly') === 'true'
+  );
 
   // Reflect filter state into URL search params so the view is shareable.
   useEffect(() => {
@@ -36,10 +40,12 @@ export default function AnalyticsDashboard() {
     else next.delete('from');
     if (dateRange.to) next.set('to', dateRange.to);
     else next.delete('to');
+    if (failedOnly) next.set('failedOnly', '1');
+    else next.delete('failedOnly');
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [project, dateRange, searchParams, setSearchParams]);
+  }, [project, dateRange, failedOnly, searchParams, setSearchParams]);
 
   const {
     data: config,
@@ -52,7 +58,7 @@ export default function AnalyticsDashboard() {
     error,
     isFetching,
     isPending,
-  } = useAnalyticsData(project, dateRange);
+  } = useAnalyticsData(project, dateRange, failedOnly);
   const { data: failureCategoryResponse, isLoading: isLoadingFailures } = useFailureCategoryData(
     project,
     dateRange
@@ -116,6 +122,19 @@ export default function AnalyticsDashboard() {
           </p>
         </div>
         <div className="flex justify-end items-end gap-3 flex-wrap">
+          <label
+            htmlFor="dashboard-only-failures"
+            className="flex items-center gap-2 text-sm select-none cursor-pointer"
+          >
+            <Switch
+              id="dashboard-only-failures"
+              checked={failedOnly}
+              onCheckedChange={setFailedOnly}
+            />
+            <span className={failedOnly ? 'font-medium text-danger' : 'text-muted-foreground'}>
+              Only failures
+            </span>
+          </label>
           <DateRangeSelect label="Period" selectedRange={dateRange} onSelect={onDateRangeChange} />
           <ProjectSelect
             label="Select project"
@@ -132,12 +151,13 @@ export default function AnalyticsDashboard() {
         flakyCount={testsSummary?.flakyCount}
         totalRuns={runHealthMetrics.length}
       />
+
       <TrendSparklines metrics={trendMetrics!} isLoading={isLoading} />
 
       <HealthGrid metrics={runHealthMetrics} isLoading={isLoading} />
 
       {(failureCategoryResponse?.data?.totalFailures ?? 0) > 0 && (
-        <>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <FailureCategoryChart
             categories={failureCategoryResponse?.data?.categories}
             totalFailures={failureCategoryResponse?.data?.totalFailures}
@@ -147,8 +167,9 @@ export default function AnalyticsDashboard() {
             errors={failureCategoryResponse?.data?.topErrors}
             isLoading={isLoadingFailures}
           />
-        </>
+        </div>
       )}
+
       <FailureAnalysisSummary
         project={project}
         dateRange={dateRange}

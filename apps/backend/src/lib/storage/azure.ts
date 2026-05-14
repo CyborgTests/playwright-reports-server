@@ -335,9 +335,7 @@ export class AzureBlob implements Storage {
   }
 
   async cleanupGeneratedReport(reportId: string): Promise<void> {
-    await withError(
-      fs.rm(path.join(REPORTS_FOLDER, reportId), { recursive: true, force: true })
-    );
+    await withError(fs.rm(path.join(REPORTS_FOLDER, reportId), { recursive: true, force: true }));
   }
 
   async generateReport(
@@ -421,9 +419,7 @@ export class AzureBlob implements Storage {
 
     const remotePath = path.posix.join(REPORTS_BUCKET, reportId);
 
-    const { error: uploadError } = await withError(
-      this.uploadReport(reportPath, remotePath)
-    );
+    const { error: uploadError } = await withError(this.uploadReport(reportPath, remotePath));
 
     await this.clearTempFolders(reportId);
 

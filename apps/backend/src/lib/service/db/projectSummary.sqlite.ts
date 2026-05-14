@@ -9,6 +9,8 @@ const instance = globalThis as typeof globalThis & {
 export interface ProjectSummaryRow {
   project: string;
   summary: string;
+  /** JSON-serialized structured analysis. Parsed by the route handler before sending to the UI. */
+  structured: string | null;
   model: string | null;
   lastReportId: string | null;
   reportCount: number | null;
@@ -39,6 +41,7 @@ export class ProjectSummaryDatabase {
       string,
       string | null,
       string | null,
+      string | null,
       number | null,
       string | null,
       string | null,
@@ -52,10 +55,11 @@ export class ProjectSummaryDatabase {
   private constructor() {
     this.upsertStmt = this.db.prepare(`
       INSERT INTO project_llm_summaries
-        (project, summary, model, lastReportId, reportCount, firstReportAt, lastReportAt, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (project, summary, structured, model, lastReportId, reportCount, firstReportAt, lastReportAt, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (project) DO UPDATE SET
         summary = excluded.summary,
+        structured = excluded.structured,
         model = excluded.model,
         lastReportId = excluded.lastReportId,
         reportCount = excluded.reportCount,
@@ -86,6 +90,7 @@ export class ProjectSummaryDatabase {
   public upsert(opts: {
     project: string;
     summary: string;
+    structured?: string | null;
     model?: string;
     lastReportId?: string;
     reportCount?: number;
@@ -96,6 +101,7 @@ export class ProjectSummaryDatabase {
     this.upsertStmt.run(
       opts.project,
       opts.summary,
+      opts.structured ?? null,
       opts.model ?? null,
       opts.lastReportId ?? null,
       opts.reportCount ?? null,

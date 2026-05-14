@@ -111,19 +111,25 @@ export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklines
           Number of intermittently failing tests
         </p>
         <div className="h-20">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={flakyCountTrend.slice(-30).reverse()}>
-              <XAxis dataKey="date" hide tick={{ fontSize: 10 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Area
-                type="monotone"
-                dataKey="count"
-                stroke={flakyColor}
-                fill={flakyColor}
-                fillOpacity={0.3}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          {flakyCountTrend.reduce((sum, p) => sum + (p.count ?? 0), 0) === 0 ? (
+            <div className="flex h-full items-center justify-center text-success text-sm font-medium">
+              No new flaky tests 🎉
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={flakyCountTrend.slice(-30).reverse()}>
+                <XAxis dataKey="date" hide tick={{ fontSize: 10 }} />
+                <Tooltip content={<CustomTooltip />} />
+                <Area
+                  type="monotone"
+                  dataKey="count"
+                  stroke={flakyColor}
+                  fill={flakyColor}
+                  fillOpacity={0.3}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 

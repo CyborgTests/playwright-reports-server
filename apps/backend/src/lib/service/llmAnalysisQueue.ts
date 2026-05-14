@@ -2,6 +2,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { llmService } from '../llm/index.js';
+import {
+  parseProjectAnalysisFromText,
+  parseProjectAnalysisStructured,
+  renderProjectAnalysisAsMarkdown,
+} from '../llm/projectAnalysis.js';
 import type { FailureDetailsForPrompt } from '../llm/prompts/index.js';
 import {
   buildProjectSummarySegments,
@@ -9,6 +14,7 @@ import {
   buildTestFailureSegments,
   computePromptVersion,
   fitPromptToBudget,
+  PROJECT_ANALYSIS_SCHEMA,
   renderSegmentsForDebug,
   TEST_FAILURE_ANALYSIS_SCHEMA,
   unescapeLiteralNewlines,
@@ -998,9 +1004,28 @@ class LlmAnalysisQueue {
       projectLlmCfg.projectSummaryTemperature ?? TASK_TEMPERATURE_DEFAULTS.projectSummary;
     const response = await llmService.sendSegmentedMessage(segmentedPrompt, {
       temperature: projectTemp,
+      responseSchema: PROJECT_ANALYSIS_SCHEMA,
     });
 
-    llmTasksDb.complete(task.id, response.content, null, response.model, {
+    // Prefer the provider's parsed structured output. Fall back to JSON inside
+    // response.content if a provider returned only text (some local models do).
+    let structured =
+      parseProjectAnalysisStructured(response.structuredOutput) ??
+      parseProjectAnalysisFromText(response.content);
+
+    // Attach the latest reportId to the structured payload so the UI can map
+    // unqualified codeRefs to a concrete report link.
+    if (structured) {
+      structured = { ...structured, latestReportId: latestReports[0]?.reportID };
+    }
+
+    // The legacy `summary` column still feeds older clients and the report-
+    // viewer LLM injection. Always populate it; rebuild from structured when we
+    // have it so the markdown stays in sync with the JSON.
+    const summaryText = structured ? renderProjectAnalysisAsMarkdown(structured) : response.content;
+    const structuredJson = structured ? JSON.stringify(structured) : null;
+
+    llmTasksDb.complete(task.id, summaryText, null, response.model, {
       usage: response.usage,
       promptVersion,
     });
@@ -1012,7 +1037,8 @@ class LlmAnalysisQueue {
       .filter((t) => Number.isFinite(t)) as number[];
     projectSummaryDb.upsert({
       project,
-      summary: response.content,
+      summary: summaryText,
+      structured: structuredJson,
       model: response.model,
       lastReportId: latestReports[0]?.reportID,
       reportCount: latestReports.length,

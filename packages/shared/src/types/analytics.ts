@@ -1,3 +1,9 @@
+export interface StatDelta {
+  /** Percent change vs prior period. Null when prior period had no data. */
+  percent: number | null;
+  trend: 'up' | 'down' | 'stable';
+}
+
 export interface OverviewStats {
   totalTests: number;
   totalRuns: number;
@@ -7,6 +13,13 @@ export interface OverviewStats {
   averageTestRunDuration: number;
   passRateTrend: 'up' | 'down' | 'stable';
   flakyTestsTrend: 'up' | 'down' | 'stable';
+  /** Per-stat percent deltas vs prior period. */
+  deltas?: {
+    passRate?: StatDelta;
+    flakyTests?: StatDelta;
+    averageTestDuration?: StatDelta;
+    averageTestRunDuration?: StatDelta;
+  };
 }
 
 export interface RunHealthMetric {
@@ -49,6 +62,32 @@ export interface AnalyticsData {
   overviewStats: OverviewStats;
   runHealthMetrics: RunHealthMetric[];
   trendMetrics: TrendMetrics;
+}
+
+export type ProjectAnalysisVerdict = 'healthy' | 'stabilizing' | 'degrading' | 'failing';
+
+export interface ProjectAnalysisCodeRef {
+  file: string;
+  line?: number;
+  /** Optional report ID the reference belongs to — lets the UI link to a specific report. */
+  reportId?: string;
+}
+
+export interface ProjectAnalysisSection {
+  heading: string;
+  /** Markdown body. */
+  body: string;
+  /** Code references mentioned in this section. */
+  codeRefs?: ProjectAnalysisCodeRef[];
+}
+
+export interface ProjectAnalysisStructured {
+  verdict: ProjectAnalysisVerdict;
+  /** 1–3 sentence executive summary shown above the fold. */
+  summary: string;
+  sections: ProjectAnalysisSection[];
+  /** Latest report ID — used to link code references when their reportId is unset. */
+  latestReportId?: string;
 }
 
 export type LlmTaskType = 'test_analysis' | 'report_summary' | 'project_summary';

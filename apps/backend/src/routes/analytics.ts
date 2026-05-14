@@ -72,12 +72,20 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         project = 'all',
         from,
         to,
+        failedOnly,
       } = request.query as {
         project?: string;
         from?: string;
         to?: string;
+        failedOnly?: string;
       };
-      const analyticsData = await analyticsService.getAnalyticsData(project, from, to);
+      const failedOnlyFlag = failedOnly === 'true' || failedOnly === '1';
+      const analyticsData = await analyticsService.getAnalyticsData(
+        project,
+        from,
+        to,
+        failedOnlyFlag
+      );
 
       return { success: true, data: analyticsData };
     } catch (error) {
@@ -389,7 +397,37 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
 
         const row = projectSummaryDb.get(projectKey);
         const pendingAnalysisCount = llmTasksDb.getInflightCountForProject(projectKey);
-        return reply.send({ success: true, data: row ?? null, pendingAnalysisCount });
+        // Parse the JSON-serialized structured payload before sending to the
+        // client so the wire format stays a plain object, not a string-in-a-string.
+        let structured: unknown = null;
+        if (row?.structured) {
+          try {
+            structured = JSON.parse(row.structured);
+          } catch (err) {
+            fastify.log.warn(
+              `[analytics] failed to parse stored project_summary structured JSON: ${err instanceof Error ? err.message : String(err)}`
+            );
+          }
+        }
+        const responseData = row
+          ? {
+              project: row.project,
+              summary: row.summary,
+              structured,
+              model: row.model,
+              lastReportId: row.lastReportId,
+              reportCount: row.reportCount,
+              firstReportAt: row.firstReportAt,
+              lastReportAt: row.lastReportAt,
+              createdAt: row.createdAt,
+              updatedAt: row.updatedAt,
+            }
+          : null;
+        return reply.send({
+          success: true,
+          data: responseData,
+          pendingAnalysisCount,
+        });
       } catch (error) {
         fastify.log.error(error);
         return reply.status(500).send({ success: false, error: 'Failed to fetch project summary' });
@@ -445,9 +483,21 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
             ? new Date(Math.max(...reportTimes)).toISOString()
             : undefined;
           const msg = `All ${latestReports.length} latest test runs passed without failures. Everything is looking good!`;
+          const structuredAllGreen = {
+            verdict: 'healthy' as const,
+            summary: msg,
+            sections: [
+              {
+                heading: 'Health Assessment',
+                body: `All ${latestReports.length} latest runs passed cleanly. No failures observed.`,
+              },
+            ],
+            latestReportId: lastReportId,
+          };
           projectSummaryDb.upsert({
             project: projectKey,
             summary: msg,
+            structured: JSON.stringify(structuredAllGreen),
             lastReportId,
             reportCount: latestReports.length,
             firstReportAt,

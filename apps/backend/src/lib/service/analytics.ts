@@ -2,6 +2,7 @@ import type {
   AnalyticsData,
   OverviewStats,
   RunHealthMetric,
+  StatDelta,
   StepTimingTrend,
   TrendMetrics,
 } from '@playwright-reports/shared';
@@ -12,10 +13,21 @@ import { service } from './index.js';
 const HEALTH_GRID_UNBOUNDED_CAP = 200;
 
 export class AnalyticsService {
-  async getAnalyticsData(project?: string, from?: string, to?: string): Promise<AnalyticsData> {
+  async getAnalyticsData(
+    project?: string,
+    from?: string,
+    to?: string,
+    failedOnly = false
+  ): Promise<AnalyticsData> {
     const allReports = await this.getAllReportsForProject(project);
+    // failedOnly narrows EVERY computation to runs that actually had failures —
+    // applied before partitioning so the trend baseline ("previous period") is
+    // computed against the same filtered population.
+    const scoped = failedOnly
+      ? allReports.filter((r) => (r.stats?.unexpected ?? 0) > 0 || (r.stats?.flaky ?? 0) > 0)
+      : allReports;
     const { displayReports, recentForTrend, olderForTrend, isBounded } = this.partitionReports(
-      allReports,
+      scoped,
       from,
       to
     );
@@ -27,7 +39,7 @@ export class AnalyticsService {
         olderForTrend
       ),
       runHealthMetrics: await this.calculateRunHealthMetrics(displayReports, isBounded),
-      trendMetrics: await this.calculateTrendMetrics(displayReports, allReports),
+      trendMetrics: await this.calculateTrendMetrics(displayReports, scoped),
     };
   }
 
@@ -162,6 +174,29 @@ export class AnalyticsService {
       flakinessThreshold
     );
 
+    const olderTestDurations = await this.extractTestDurations(olderForTrend);
+    const olderAverageTestDuration =
+      olderTestDurations.length > 0
+        ? olderTestDurations.reduce((sum, d) => sum + d, 0) / olderTestDurations.length
+        : 0;
+
+    const olderAverageRunDuration =
+      olderForTrend.length > 0
+        ? olderForTrend.reduce((sum, report) => sum + (report.duration || 0), 0) /
+          olderForTrend.length
+        : 0;
+
+    const deltas = {
+      passRate: this.computeDelta(recentPassRate, olderPassRate, 2),
+      flakyTests: this.computeDelta(
+        recentFlakyOccurrences,
+        olderFlakyOccurrences,
+        flakinessThreshold
+      ),
+      averageTestDuration: this.computeDelta(averageTestDuration, olderAverageTestDuration, 5),
+      averageTestRunDuration: this.computeDelta(averageTestRunDuration, olderAverageRunDuration, 5),
+    };
+
     return {
       totalRuns: displayReports.length,
       totalTests,
@@ -171,7 +206,19 @@ export class AnalyticsService {
       averageTestRunDuration,
       passRateTrend,
       flakyTestsTrend,
+      deltas,
     };
+  }
+
+  private computeDelta(current: number, previous: number, thresholdPercent: number): StatDelta {
+    if (previous === 0) {
+      if (current === 0) return { percent: 0, trend: 'stable' };
+      return { percent: null, trend: 'up' };
+    }
+    const percent = ((current - previous) / previous) * 100;
+    const trend: 'up' | 'down' | 'stable' =
+      Math.abs(percent) < thresholdPercent ? 'stable' : percent > 0 ? 'up' : 'down';
+    return { percent: Math.round(percent * 10) / 10, trend };
   }
 
   private async calculateRunHealthMetrics(

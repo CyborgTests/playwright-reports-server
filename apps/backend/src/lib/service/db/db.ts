@@ -271,6 +271,7 @@ function initializeSchema(db: Database.Database): void {
   const expectedProjectSummaryColumns = [
     'project',
     'summary',
+    'structured',
     'model',
     'lastReportId',
     'reportCount',
@@ -293,6 +294,7 @@ function initializeSchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS project_llm_summaries (
       project TEXT PRIMARY KEY,
       summary TEXT NOT NULL,
+      structured TEXT,
       model TEXT,
       lastReportId TEXT,
       reportCount INTEGER,

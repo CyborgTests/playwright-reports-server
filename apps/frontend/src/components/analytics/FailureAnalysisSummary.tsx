@@ -1,6 +1,6 @@
 'use client';
 
-import type { DateRange } from '@playwright-reports/shared';
+import type { DateRange, ProjectAnalysisStructured } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Brain, RefreshCw } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
@@ -14,10 +14,13 @@ import { useConfig } from '@/hooks/useConfig';
 import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 import { defaultProjectName } from '@/lib/constants';
+import { LlmAnalysisRenderer, VerdictBadge } from './LlmAnalysisRenderer';
 
 interface CachedProjectSummary {
   project: string;
   summary: string;
+  /** Parsed structured payload — null for legacy rows generated before 5.1. */
+  structured: ProjectAnalysisStructured | null;
   model: string | null;
   updatedAt: string;
   reportCount: number | null;
@@ -123,12 +126,17 @@ export function FailureAnalysisSummary({
     </TooltipProvider>
   );
 
+  const structured = summary?.structured ?? null;
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold">LLM Failure Analysis</h3>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-lg font-semibold">LLM Failure Analysis</h3>
+              {structured && <VerdictBadge verdict={structured.verdict} />}
+            </div>
             <p className="text-sm text-muted-foreground">
               Test health analysis based on the latest 10 runs
             </p>
@@ -165,7 +173,11 @@ export function FailureAnalysisSummary({
         )}
         {summary && (
           <div className="space-y-3">
-            <MarkdownRenderer content={summary.summary} />
+            {structured ? (
+              <LlmAnalysisRenderer analysis={structured} />
+            ) : (
+              <MarkdownRenderer content={summary.summary} />
+            )}
             {(summary.model || summary.updatedAt || summary.reportCount) && (
               <div className="flex items-center gap-2 pt-3 border-t text-xs text-muted-foreground flex-wrap">
                 {summary.model && <Badge variant="outline">{summary.model}</Badge>}
@@ -174,9 +186,8 @@ export function FailureAnalysisSummary({
                   summary.firstReportAt &&
                   summary.lastReportAt && (
                     <span>
-                      Generated for {summary.reportCount}{' '}
-                      {summary.reportCount === 1 ? 'report' : 'reports'} between{' '}
-                      {new Date(summary.firstReportAt).toLocaleDateString()} and{' '}
+                      {summary.reportCount} {summary.reportCount === 1 ? 'report' : 'reports'}{' '}
+                      analyzed · {new Date(summary.firstReportAt).toLocaleDateString()} —{' '}
                       {new Date(summary.lastReportAt).toLocaleDateString()}
                     </span>
                   )}

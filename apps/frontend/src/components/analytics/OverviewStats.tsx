@@ -1,6 +1,6 @@
 'use client';
 
-import type { OverviewStats } from '@playwright-reports/shared';
+import type { OverviewStats, StatDelta } from '@playwright-reports/shared';
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { parseMilliseconds } from '@/lib/time';
@@ -11,6 +11,8 @@ interface OverviewStatsProps {
   flakyCount?: number;
   totalRuns?: number;
 }
+
+type Direction = 'up' | 'down' | 'stable';
 
 export function OverviewStatsCard({
   stats,
@@ -43,19 +45,34 @@ export function OverviewStatsCard({
     );
   }
 
-  const isPositive = (trend: 'up' | 'down' | 'stable', higherIsBetter: boolean) =>
+  const isGoodDirection = (trend: Direction, higherIsBetter: boolean) =>
     (trend === 'up' && higherIsBetter) || (trend === 'down' && !higherIsBetter);
 
-  const getTrendIcon = (trend: 'up' | 'down' | 'stable', higherIsBetter: boolean) => {
-    if (trend === 'stable') return <Minus className="h-4 w-4 text-muted-foreground" />;
-    const colorClass = isPositive(trend, higherIsBetter) ? 'text-success' : 'text-danger';
-    const Icon = trend === 'up' ? TrendingUp : TrendingDown;
-    return <Icon className={`h-4 w-4 ${colorClass}`} />;
+  const colorFor = (trend: Direction, higherIsBetter: boolean) => {
+    if (trend === 'stable') return 'text-muted-foreground';
+    return isGoodDirection(trend, higherIsBetter) ? 'text-success' : 'text-danger';
   };
 
-  const getTrendColor = (trend: 'up' | 'down' | 'stable', higherIsBetter: boolean) => {
-    if (trend === 'stable') return 'text-muted-foreground';
-    return isPositive(trend, higherIsBetter) ? 'text-success' : 'text-danger';
+  const formatPercent = (percent: number | null): string => {
+    if (percent === null) return 'new';
+    if (percent === 0) return '0%';
+    const rounded = Math.round(percent * 10) / 10;
+    const abs = Math.abs(rounded);
+    const sign = rounded > 0 ? '+' : '−';
+    return `${sign}${abs}%`;
+  };
+
+  const renderTrend = (delta: StatDelta | undefined, higherIsBetter: boolean) => {
+    if (!delta) return null;
+    const Icon =
+      delta.trend === 'stable' ? Minus : delta.trend === 'up' ? TrendingUp : TrendingDown;
+    const colorClass = colorFor(delta.trend, higherIsBetter);
+    return (
+      <span className={`inline-flex items-center gap-1 text-xs font-medium ${colorClass}`}>
+        <Icon className="h-3.5 w-3.5" />
+        {formatPercent(delta.percent)}
+      </span>
+    );
   };
 
   const {
@@ -64,38 +81,52 @@ export function OverviewStatsCard({
     averageTestRunDuration = 0,
     passRateTrend = 'stable' as const,
     flakyTestsTrend = 'stable' as const,
+    deltas,
   } = stats;
 
   const runsCount = totalRuns ?? 0;
-  const statsCards = [
+  type StatCard = {
+    title: string;
+    value: string;
+    subtitle: string;
+    delta?: StatDelta;
+    higherIsBetter: boolean;
+  };
+
+  const statsCards: StatCard[] = [
     {
       title: 'Total Runs',
       value: runsCount.toLocaleString(),
       subtitle: `With ${totalTests.toLocaleString()} ${totalTests === 1 ? 'test' : 'tests'}`,
+      higherIsBetter: true,
     },
     {
       title: 'Pass Rate',
       value: `${passRate.toFixed(2)}%`,
       subtitle: 'vs previous period',
-      icon: getTrendIcon(passRateTrend, true),
-      iconColor: getTrendColor(passRateTrend, true),
+      delta: deltas?.passRate ?? { percent: null, trend: passRateTrend },
+      higherIsBetter: true,
     },
     {
       title: 'Flaky Tests',
       value: (flakyCount ?? 0).toString(),
       subtitle: 'Failing intermittently',
-      icon: getTrendIcon(flakyTestsTrend, false),
-      iconColor: getTrendColor(flakyTestsTrend, false),
+      delta: deltas?.flakyTests ?? { percent: null, trend: flakyTestsTrend },
+      higherIsBetter: false,
     },
     {
-      title: 'Avg Test Duration',
+      title: 'Avg Per-Test Duration',
       value: parseMilliseconds(averageTestDuration),
-      subtitle: 'Mean execution time',
+      subtitle: 'Mean per-test execution time',
+      delta: deltas?.averageTestDuration,
+      higherIsBetter: false,
     },
     {
-      title: 'Average Run Time',
+      title: 'Avg Run Duration',
       value: parseMilliseconds(averageTestRunDuration),
-      subtitle: 'Average for latest runs',
+      subtitle: 'Mean full-run duration',
+      delta: deltas?.averageTestRunDuration,
+      higherIsBetter: false,
     },
   ];
 
@@ -109,12 +140,14 @@ export function OverviewStatsCard({
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{card.value}</p>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-2xl font-bold text-gray-900 dark:text-white truncate">
+                  {card.value}
+                </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{card.subtitle}</p>
               </div>
-              {card.icon && <div className={card.iconColor}>{card.icon}</div>}
+              <div className="shrink-0">{renderTrend(card.delta, card.higherIsBetter)}</div>
             </div>
           </CardContent>
         </Card>

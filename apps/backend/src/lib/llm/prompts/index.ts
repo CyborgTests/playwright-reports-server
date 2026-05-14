@@ -47,6 +47,85 @@ export const TEST_FAILURE_ANALYSIS_SCHEMA: LLMResponseSchema = {
   },
 };
 
+/** Verdict enum mirrored in shared/types ProjectAnalysisVerdict. Keep in sync. */
+export const PROJECT_VERDICT_ENUM = ['healthy', 'stabilizing', 'degrading', 'failing'] as const;
+
+/** Structured-output schema for the project-level health analysis. The model
+ *  emits a verdict, a short executive summary, and an ordered list of sections.
+ *  The UI renders the verdict as a status badge, the summary above the fold,
+ *  and the sections as collapsible blocks below. */
+export const PROJECT_ANALYSIS_SCHEMA: LLMResponseSchema = {
+  name: 'submit_project_health_analysis',
+  description:
+    'Submit a structured health analysis for a project across its latest runs. The verdict reflects the overall trend across the timeline; the summary is the executive headline; sections expand on health/recommendations/notable trends.',
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['verdict', 'summary', 'sections'],
+    properties: {
+      verdict: {
+        type: 'string',
+        enum: [...PROJECT_VERDICT_ENUM],
+        description:
+          'Overall project health verdict. healthy = no failures or only resolved transient ones; stabilizing = failures are decreasing or have been fixed recently; degrading = failures are increasing or new persistent ones appeared; failing = many runs are red.',
+      },
+      summary: {
+        type: 'string',
+        description:
+          '1–3 sentence executive headline shown above the fold. State the verdict in plain English and mention the most important detail.',
+      },
+      sections: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 4,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['heading', 'body'],
+          properties: {
+            heading: {
+              type: 'string',
+              description:
+                'Short section title without leading emoji or numbering (e.g., "Health Assessment", "Recommendations", "Notable Trends").',
+            },
+            body: {
+              type: 'string',
+              description:
+                'Markdown body for the section. Be specific and reference test files or report IDs when relevant. Do NOT repeat the section heading inside the body.',
+            },
+            codeRefs: {
+              type: 'array',
+              description:
+                'Code references mentioned in this section, e.g. test files or paths under tests/. Used by the UI to render clickable links.',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['file'],
+                properties: {
+                  file: {
+                    type: 'string',
+                    description: 'Path to the test file (relative to the repo root if known).',
+                  },
+                  line: {
+                    type: 'integer',
+                    minimum: 1,
+                    description: 'Optional 1-based line number.',
+                  },
+                  reportId: {
+                    type: 'string',
+                    description:
+                      'Optional report ID this reference belongs to. When set, the UI links into that specific report; otherwise it links into the latest one.',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
 export const getCustomSystemPrompt = (systemPrompt?: string): string =>
   systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
 
@@ -163,18 +242,24 @@ Any correlations between failure types (e.g., one infra issue surfacing as multi
 
 export const PROJECT_SUMMARY_TASK_INSTRUCTIONS = `Analyze the test health for project "{{project}}" across the latest {{totalRuns}} runs ({{passingRuns}} passed cleanly).
 
-Format your response as a markdown document with exactly these three sections, using the headers verbatim (including emojis):
+Respond with a structured JSON object matching the provided schema. The schema requires:
 
-## 🔍 Health Assessment
-Overall health verdict for the project. Distinguish transient failures (appeared then resolved on subsequent runs) from persistent ones (recurring across multiple runs). Call out any new issues that appeared recently and note whether they have been resolved.
+- **verdict**: one of \`healthy\`, \`stabilizing\`, \`degrading\`, \`failing\` — reflecting the overall trend across the full timeline.
+  - \`healthy\`: no failures, or only transient failures that already resolved AND the LATEST run passed.
+  - \`stabilizing\`: failures appeared earlier but the most recent runs are clean / improving.
+  - \`degrading\`: failures appeared recently or are increasing; new persistent issues introduced.
+  - \`failing\`: many runs are red right now, including the latest.
+  CRITICAL: a run that has any unexpected or flaky tests is NOT a passing run. Re-read the run table before choosing the verdict — if the latest run shows failures, do not classify the project as \`healthy\` or \`stabilizing\`.
+- **summary**: a 1–3 sentence executive headline. State the verdict in plain English and call out the single most important fact.
+- **sections**: an ordered list of up to 4 sections. Use these headings in this order (skip a section ONLY if you have no observations for it):
+  1. \`Health Assessment\` — overall verdict in detail. Distinguish transient vs persistent failures; call out new issues; note whether they were already resolved.
+  2. \`Recommendations\` — top 3 prioritized actions to improve stability. Lead with highest-impact; be specific to what the runs show, not generic advice.
+  3. \`Notable Trends\` — failure-rate movement, drifting categories, runs that look unusual.
+  4. (optional) \`Risks\` — anything else worth flagging.
 
-## 🛠️ Recommendations
-Top 3 prioritized recommendations for improving test stability. Lead with the highest-impact action. Be specific to what the runs show, not generic advice.
+Each section body is markdown. Do NOT repeat the section heading inside the body. When referencing tests, include their path under \`codeRefs\` so the UI can render clickable links.
 
-## 📝 Notable Trends
-Patterns worth highlighting that don't fit above — failure-rate movement, categories drifting, runs that look unusual. Omit this section only if there are no observations to make.
-
-IMPORTANT: Account for the full timeline. If tests were passing before and after a failure, that failure is likely transient/already resolved — do not treat it as an ongoing critical issue.`;
+IMPORTANT: account for the full timeline. If tests were passing before and after a failure, that failure is likely transient/already resolved — do not treat it as an ongoing critical issue. But if the LATEST run is red, the verdict cannot be \`healthy\` regardless of what came before.`;
 
 /** One entry in a test's retry timeline. Drawn from Playwright's
  *  `test.results[]` — each result is one attempt in execution order. */
@@ -613,7 +698,13 @@ export const buildProjectSummarySegments = (args: {
   });
 
   const totalRuns = args.runs.length;
-  const runsWithFailures = args.runs.filter((r) => r.totalFailures > 0);
+  // A run is "with failures" when ANY stat marks it red — not when the
+  // secondary failure-summary task happened to populate `totalFailures`.
+  // The failure-summary cache lags behind ingestion, so relying on it alone
+  // caused the model to label genuinely-failed runs as PASS.
+  const runHasFailures = (r: (typeof args.runs)[number]): boolean =>
+    r.totalFailures > 0 || (r.stats?.unexpected ?? 0) > 0 || (r.stats?.flaky ?? 0) > 0;
+  const runsWithFailures = args.runs.filter(runHasFailures);
   const passingRuns = totalRuns - runsWithFailures.length;
 
   // Unified path: default and override both go through applyMustache.
@@ -638,19 +729,26 @@ export const buildProjectSummarySegments = (args: {
     template: projectSub.substituted ? projectInstructionsTemplate : undefined,
   });
 
+  const latestRun = args.runs[0];
+  const latestStatus = latestRun ? (runHasFailures(latestRun) ? 'FAILURES' : 'PASS') : 'unknown';
+
   let dataBlock = `Project: "${args.project}", latest ${totalRuns} runs.\n\n`;
-  dataBlock += `**Overview:** ${passingRuns} of ${totalRuns} runs passed cleanly (no failures). ${runsWithFailures.length} runs had failures.\n\n`;
+  dataBlock += `**Overview:** ${passingRuns} of ${totalRuns} runs passed cleanly (no failures). ${runsWithFailures.length} runs had failures.\n`;
+  dataBlock += `**Latest run status:** ${latestStatus}${latestRun ? ` (${latestRun.reportId})` : ''} — use this to anchor the verdict.\n\n`;
   dataBlock += `Runs are listed from most recent to oldest:\n\n`;
 
   for (const run of args.runs) {
-    const status = run.totalFailures > 0 ? 'FAILURES' : 'PASS';
+    const status = runHasFailures(run) ? 'FAILURES' : 'PASS';
     dataBlock += `### Run ${run.reportId} (${run.createdAt}) — ${status}\n`;
     dataBlock += `- Tests: ${run.stats.total} total, ${run.stats.expected} passed, ${run.stats.unexpected} failed, ${run.stats.flaky} flaky, ${run.stats.skipped} skipped\n`;
-    if (run.totalFailures > 0) {
-      for (const [cat, count] of Object.entries(run.categories).sort((a, b) =>
-        b[1] !== a[1] ? b[1] - a[1] : a[0].localeCompare(b[0])
-      )) {
-        dataBlock += `  - ${cat}: ${count}\n`;
+    if (runHasFailures(run)) {
+      const categoryEntries = Object.entries(run.categories);
+      if (categoryEntries.length > 0) {
+        for (const [cat, count] of categoryEntries.sort((a, b) =>
+          b[1] !== a[1] ? b[1] - a[1] : a[0].localeCompare(b[0])
+        )) {
+          dataBlock += `  - ${cat}: ${count}\n`;
+        }
       }
       if (run.llmSummary) {
         dataBlock += `- Summary: ${run.llmSummary.substring(0, 300)}\n`;
