@@ -203,382 +203,415 @@ export default function LLMConfiguration({
         )}
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="llm-provider">LLM Provider</Label>
-            <Select
-              disabled={editingSection !== 'llm'}
-              value={
-                editingSection === 'llm'
-                  ? tempConfig.llm?.provider || ''
-                  : config.llm?.provider || ''
-              }
-              onValueChange={(value) => {
-                if (editingSection === 'llm') {
-                  onUpdateTempConfig({
-                    llm: { ...tempConfig.llm, provider: value as any },
-                  });
+        <div className="space-y-6">
+          <section className="space-y-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Connection
+            </h3>
+            <div className="space-y-2">
+              <Label htmlFor="llm-provider">LLM Provider</Label>
+              <Select
+                disabled={editingSection !== 'llm'}
+                value={
+                  editingSection === 'llm'
+                    ? tempConfig.llm?.provider || ''
+                    : config.llm?.provider || ''
                 }
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select LLM provider" />
-              </SelectTrigger>
-              <SelectContent>
-                {providers.map((provider) => (
-                  <SelectItem key={provider.key} value={provider.key}>
-                    {provider.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="llm-base-url">Base URL</Label>
-            <Input
-              id="llm-base-url"
-              disabled={editingSection !== 'llm'}
-              placeholder="https://api.openai.com/v1"
-              value={
-                editingSection === 'llm' ? tempConfig.llm?.baseUrl || '' : config.llm?.baseUrl || ''
-              }
-              onChange={(e) =>
-                editingSection === 'llm' &&
-                onUpdateTempConfig({
-                  llm: { ...tempConfig.llm, baseUrl: e.target.value },
-                })
-              }
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="llm-api-key">API Key</Label>
-            <Input
-              id="llm-api-key"
-              disabled={editingSection !== 'llm'}
-              placeholder="Your API key"
-              type="password"
-              value={
-                editingSection === 'llm' ? tempConfig.llm?.apiKey || '' : config.llm?.apiKey || ''
-              }
-              onChange={(e) =>
-                editingSection === 'llm' &&
-                onUpdateTempConfig({
-                  llm: { ...tempConfig.llm, apiKey: e.target.value },
-                })
-              }
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="llm-model">Model (Optional)</Label>
-            <Input
-              id="llm-model"
-              disabled={editingSection !== 'llm'}
-              placeholder="gpt-4, claude-3-sonnet, etc."
-              value={
-                editingSection === 'llm' ? tempConfig.llm?.model || '' : config.llm?.model || ''
-              }
-              onChange={(e) =>
-                editingSection === 'llm' &&
-                onUpdateTempConfig({
-                  llm: { ...tempConfig.llm, model: e.target.value },
-                })
-              }
-            />
-            <div className="flex items-start gap-2 flex-wrap">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!isConfigured || refreshingModels}
-                onClick={handleRefreshModels}
+                onValueChange={(value) => {
+                  if (editingSection === 'llm') {
+                    onUpdateTempConfig({
+                      llm: { ...tempConfig.llm, provider: value as any },
+                    });
+                  }
+                }}
               >
-                {refreshingModels ? <Spinner size="sm" /> : <RefreshCw className="h-3 w-3 mr-1" />}
-                {refreshingModels ? 'Fetching…' : 'Refresh available models'}
-              </Button>
-              {availableModels && availableModels.length > 0 && (
-                <div className="flex flex-wrap gap-1 flex-1">
-                  {availableModels.map((m) => (
-                    <Badge
-                      key={m}
-                      variant="outline"
-                      className={`text-xs font-mono cursor-pointer hover:bg-accent ${editingSection !== 'llm' ? 'opacity-60 cursor-not-allowed' : ''}`}
-                      onClick={() => {
-                        if (editingSection === 'llm') {
-                          onUpdateTempConfig({ llm: { ...tempConfig.llm, model: m } });
-                        }
-                      }}
-                      title={
-                        editingSection === 'llm'
-                          ? 'Click to use this model'
-                          : 'Enter edit mode to pick'
-                      }
-                    >
-                      {m}
-                    </Badge>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select LLM provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((provider) => (
+                    <SelectItem key={provider.key} value={provider.key}>
+                      {provider.label}
+                    </SelectItem>
                   ))}
-                </div>
-              )}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
 
-          {/* Per-task temperature. Each task type is set independently; no
+            <div className="space-y-2">
+              <Label htmlFor="llm-base-url">Base URL</Label>
+              <Input
+                id="llm-base-url"
+                disabled={editingSection !== 'llm'}
+                placeholder="https://api.openai.com/v1"
+                value={
+                  editingSection === 'llm'
+                    ? tempConfig.llm?.baseUrl || ''
+                    : config.llm?.baseUrl || ''
+                }
+                onChange={(e) =>
+                  editingSection === 'llm' &&
+                  onUpdateTempConfig({
+                    llm: { ...tempConfig.llm, baseUrl: e.target.value },
+                  })
+                }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="llm-api-key">API Key</Label>
+              <Input
+                id="llm-api-key"
+                disabled={editingSection !== 'llm'}
+                placeholder="Your API key"
+                type="password"
+                value={
+                  editingSection === 'llm' ? tempConfig.llm?.apiKey || '' : config.llm?.apiKey || ''
+                }
+                onChange={(e) =>
+                  editingSection === 'llm' &&
+                  onUpdateTempConfig({
+                    llm: { ...tempConfig.llm, apiKey: e.target.value },
+                  })
+                }
+              />
+            </div>
+          </section>
+
+          <section className="space-y-4 border-t pt-6">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Model
+            </h3>
+            <div className="space-y-2">
+              <Label htmlFor="llm-model">Model (Optional)</Label>
+              <Input
+                id="llm-model"
+                disabled={editingSection !== 'llm'}
+                placeholder="gpt-4, claude-3-sonnet, etc."
+                value={
+                  editingSection === 'llm' ? tempConfig.llm?.model || '' : config.llm?.model || ''
+                }
+                onChange={(e) =>
+                  editingSection === 'llm' &&
+                  onUpdateTempConfig({
+                    llm: { ...tempConfig.llm, model: e.target.value },
+                  })
+                }
+              />
+              <div className="flex items-start gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!isConfigured || refreshingModels}
+                  onClick={handleRefreshModels}
+                >
+                  {refreshingModels ? (
+                    <Spinner size="sm" />
+                  ) : (
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                  )}
+                  {refreshingModels ? 'Fetching…' : 'Refresh available models'}
+                </Button>
+                {availableModels && availableModels.length > 0 && (
+                  <div className="flex flex-wrap gap-1 flex-1">
+                    {availableModels.map((m) => (
+                      <Badge
+                        key={m}
+                        variant="outline"
+                        className={`text-xs font-mono cursor-pointer hover:bg-accent ${editingSection !== 'llm' ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        onClick={() => {
+                          if (editingSection === 'llm') {
+                            onUpdateTempConfig({ llm: { ...tempConfig.llm, model: m } });
+                          }
+                        }}
+                        title={
+                          editingSection === 'llm'
+                            ? 'Click to use this model'
+                            : 'Enter edit mode to pick'
+                        }
+                      >
+                        {m}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4 border-t pt-6">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Temperatures
+            </h3>
+            {/* Per-task temperature. Each task type is set independently; no
               shared default knob. Blank → falls through to the env default
               (LLM_TEMPERATURE, 0.3 if unset). Cooler values (≤0.3) bias
               toward classification accuracy; warmer (≥0.5) bias toward
               varied phrasing. */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Temperature per task (0–2)</Label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {(
-                [
-                  {
-                    id: 'llm-temp-test',
-                    label: 'Test analysis',
-                    key: 'testAnalysisTemperature' as const,
-                  },
-                  {
-                    id: 'llm-temp-report',
-                    label: 'Report summary',
-                    key: 'reportSummaryTemperature' as const,
-                  },
-                  {
-                    id: 'llm-temp-project',
-                    label: 'Project summary',
-                    key: 'projectSummaryTemperature' as const,
-                  },
-                ] as const
-              ).map(({ id, label, key }) => (
-                <div key={id} className="space-y-1">
-                  <Label htmlFor={id} className="text-xs text-muted-foreground">
-                    {label}
-                  </Label>
-                  <Input
-                    id={id}
-                    disabled={editingSection !== 'llm'}
-                    /* Placeholder shows the per-task default that will be used
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Temperature per task (0–2)</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {(
+                  [
+                    {
+                      id: 'llm-temp-test',
+                      label: 'Test analysis',
+                      key: 'testAnalysisTemperature' as const,
+                    },
+                    {
+                      id: 'llm-temp-report',
+                      label: 'Report summary',
+                      key: 'reportSummaryTemperature' as const,
+                    },
+                    {
+                      id: 'llm-temp-project',
+                      label: 'Project summary',
+                      key: 'projectSummaryTemperature' as const,
+                    },
+                  ] as const
+                ).map(({ id, label, key }) => (
+                  <div key={id} className="space-y-1">
+                    <Label htmlFor={id} className="text-xs text-muted-foreground">
+                      {label}
+                    </Label>
+                    <Input
+                      id={id}
+                      disabled={editingSection !== 'llm'}
+                      /* Placeholder shows the per-task default that will be used
                        when the field is blank — so the user sees what's active
                        at a glance without saving a value. */
-                    placeholder={
-                      llmTemperatureDefaults ? `default ${llmTemperatureDefaults[key]}` : 'default'
-                    }
-                    type="number"
-                    min="0"
-                    max="2"
-                    step="0.1"
-                    value={
-                      editingSection === 'llm'
-                        ? (tempConfig.llm?.[key]?.toString() ?? '')
-                        : (config.llm?.[key]?.toString() ?? '')
-                    }
-                    onChange={(e) =>
-                      editingSection === 'llm' &&
-                      onUpdateTempConfig({
-                        llm: {
-                          ...tempConfig.llm,
-                          [key]: e.target.value ? Number.parseFloat(e.target.value) : undefined,
-                        },
-                      })
-                    }
-                  />
-                </div>
-              ))}
+                      placeholder={
+                        llmTemperatureDefaults
+                          ? `default ${llmTemperatureDefaults[key]}`
+                          : 'default'
+                      }
+                      type="number"
+                      min="0"
+                      max="2"
+                      step="0.1"
+                      value={
+                        editingSection === 'llm'
+                          ? (tempConfig.llm?.[key]?.toString() ?? '')
+                          : (config.llm?.[key]?.toString() ?? '')
+                      }
+                      onChange={(e) =>
+                        editingSection === 'llm' &&
+                        onUpdateTempConfig({
+                          llm: {
+                            ...tempConfig.llm,
+                            [key]: e.target.value ? Number.parseFloat(e.target.value) : undefined,
+                          },
+                        })
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Leave blank to use the default temperature above. Test analysis usually benefits
+                from a cooler value (e.g. 0.2) for category accuracy.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Leave blank to use the default temperature above. Test analysis usually benefits from
-              a cooler value (e.g. 0.2) for category accuracy.
-            </p>
-          </div>
+          </section>
 
-          <div className="space-y-2">
-            <Label htmlFor="llm-parallel-requests">Parallel Requests (1-10)</Label>
-            <Input
-              id="llm-parallel-requests"
-              disabled={editingSection !== 'llm'}
-              placeholder="1"
-              type="number"
-              min="1"
-              max="10"
-              step="1"
-              value={
-                editingSection === 'llm'
-                  ? tempConfig.llm?.parallelRequests?.toString() || ''
-                  : config.llm?.parallelRequests?.toString() || ''
-              }
-              onChange={(e) =>
-                editingSection === 'llm' &&
-                onUpdateTempConfig({
-                  llm: {
-                    ...tempConfig.llm,
-                    parallelRequests: e.target.value
-                      ? Number.parseInt(e.target.value, 10)
-                      : undefined,
-                  },
-                })
-              }
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <section className="space-y-4 border-t pt-6">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Limits &amp; Output
+            </h3>
             <div className="space-y-2">
-              <Label htmlFor="llm-max-tokens">Max output tokens (optional)</Label>
+              <Label htmlFor="llm-parallel-requests">Parallel Requests (1-10)</Label>
               <Input
-                id="llm-max-tokens"
+                id="llm-parallel-requests"
                 disabled={editingSection !== 'llm'}
-                placeholder="leave blank for model default"
+                placeholder="1"
                 type="number"
                 min="1"
+                max="10"
                 step="1"
                 value={
                   editingSection === 'llm'
-                    ? (tempConfig.llm?.maxTokens?.toString() ?? '')
-                    : (config.llm?.maxTokens?.toString() ?? '')
+                    ? tempConfig.llm?.parallelRequests?.toString() || ''
+                    : config.llm?.parallelRequests?.toString() || ''
                 }
                 onChange={(e) =>
                   editingSection === 'llm' &&
                   onUpdateTempConfig({
                     llm: {
                       ...tempConfig.llm,
-                      maxTokens: e.target.value ? Number.parseInt(e.target.value, 10) : undefined,
-                    },
-                  })
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Cap on output tokens per request. OpenAI/local servers omit this when blank;
-                Anthropic falls back to a safe default (8000) since its API requires the field.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="llm-context-window">Context window override (optional)</Label>
-              <Input
-                id="llm-context-window"
-                disabled={editingSection !== 'llm'}
-                placeholder="auto-detect via /models"
-                type="number"
-                min="1024"
-                step="1024"
-                value={
-                  editingSection === 'llm'
-                    ? (tempConfig.llm?.contextWindow?.toString() ?? '')
-                    : (config.llm?.contextWindow?.toString() ?? '')
-                }
-                onChange={(e) =>
-                  editingSection === 'llm' &&
-                  onUpdateTempConfig({
-                    llm: {
-                      ...tempConfig.llm,
-                      contextWindow: e.target.value
+                      parallelRequests: e.target.value
                         ? Number.parseInt(e.target.value, 10)
                         : undefined,
                     },
                   })
                 }
               />
-              <p className="text-xs text-muted-foreground">
-                Total tokens the model accepts. Used to right-size the prompt before sending. Leave
-                blank to auto-detect from the provider's /models endpoint.
-              </p>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="llm-structured-mode">Structured output mode</Label>
-              <Select
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="llm-max-tokens">Max output tokens (optional)</Label>
+                <Input
+                  id="llm-max-tokens"
+                  disabled={editingSection !== 'llm'}
+                  placeholder="leave blank for model default"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={
+                    editingSection === 'llm'
+                      ? (tempConfig.llm?.maxTokens?.toString() ?? '')
+                      : (config.llm?.maxTokens?.toString() ?? '')
+                  }
+                  onChange={(e) =>
+                    editingSection === 'llm' &&
+                    onUpdateTempConfig({
+                      llm: {
+                        ...tempConfig.llm,
+                        maxTokens: e.target.value ? Number.parseInt(e.target.value, 10) : undefined,
+                      },
+                    })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Cap on output tokens per request. OpenAI/local servers omit this when blank;
+                  Anthropic falls back to a safe default (8000) since its API requires the field.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="llm-context-window">Context window override (optional)</Label>
+                <Input
+                  id="llm-context-window"
+                  disabled={editingSection !== 'llm'}
+                  placeholder="auto-detect via /models"
+                  type="number"
+                  min="1024"
+                  step="1024"
+                  value={
+                    editingSection === 'llm'
+                      ? (tempConfig.llm?.contextWindow?.toString() ?? '')
+                      : (config.llm?.contextWindow?.toString() ?? '')
+                  }
+                  onChange={(e) =>
+                    editingSection === 'llm' &&
+                    onUpdateTempConfig({
+                      llm: {
+                        ...tempConfig.llm,
+                        contextWindow: e.target.value
+                          ? Number.parseInt(e.target.value, 10)
+                          : undefined,
+                      },
+                    })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Total tokens the model accepts. Used to right-size the prompt before sending.
+                  Leave blank to auto-detect from the provider's /models endpoint.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="llm-structured-mode">Structured output mode</Label>
+                <Select
+                  disabled={editingSection !== 'llm'}
+                  value={
+                    editingSection === 'llm'
+                      ? (tempConfig.llm?.structuredOutputMode ?? 'auto')
+                      : (config.llm?.structuredOutputMode ?? 'auto')
+                  }
+                  onValueChange={(value) =>
+                    editingSection === 'llm' &&
+                    onUpdateTempConfig({
+                      llm: {
+                        ...tempConfig.llm,
+                        structuredOutputMode: value as 'auto' | 'force' | 'disabled',
+                      },
+                    })
+                  }
+                >
+                  <SelectTrigger id="llm-structured-mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto — try, fall back on unsupported</SelectItem>
+                    <SelectItem value="force">Force — require schema</SelectItem>
+                    <SelectItem value="disabled">Disabled — always use text</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  How to request typed JSON output (Anthropic tool use / OpenAI json_schema). Auto
+                  is safest — falls back to text parsing on models that don't support it.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="llm-multimodal-mode">Multimodal mode</Label>
+                <Select
+                  disabled={editingSection !== 'llm'}
+                  value={
+                    editingSection === 'llm'
+                      ? (tempConfig.llm?.multimodalMode ?? 'auto')
+                      : (config.llm?.multimodalMode ?? 'auto')
+                  }
+                  onValueChange={(value) =>
+                    editingSection === 'llm' &&
+                    onUpdateTempConfig({
+                      llm: {
+                        ...tempConfig.llm,
+                        multimodalMode: value as 'auto' | 'force' | 'disabled',
+                      },
+                    })
+                  }
+                >
+                  <SelectTrigger id="llm-multimodal-mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">
+                      Auto — attach images, fall back on unsupported
+                    </SelectItem>
+                    <SelectItem value="force">Force — require image support</SelectItem>
+                    <SelectItem value="disabled">Disabled — never attach images</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Whether to attach screenshots for visual failures (snapshot mismatch, element not
+                  visible / found). Disable on text-only models to skip the probe.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4 border-t pt-6">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Automation
+            </h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-medium">Auto-analyze new reports</h4>
+                <p className="text-xs text-muted-foreground mt-1">
+                  When enabled, every failed test in a newly ingested report is queued for LLM
+                  analysis automatically.
+                </p>
+              </div>
+              <Switch
                 disabled={editingSection !== 'llm'}
-                value={
+                checked={
                   editingSection === 'llm'
-                    ? (tempConfig.llm?.structuredOutputMode ?? 'auto')
-                    : (config.llm?.structuredOutputMode ?? 'auto')
+                    ? !!tempConfig.llm?.autoAnalyzeNewReports
+                    : !!config.llm?.autoAnalyzeNewReports
                 }
-                onValueChange={(value) =>
-                  editingSection === 'llm' &&
-                  onUpdateTempConfig({
-                    llm: {
-                      ...tempConfig.llm,
-                      structuredOutputMode: value as 'auto' | 'force' | 'disabled',
-                    },
-                  })
-                }
-              >
-                <SelectTrigger id="llm-structured-mode">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">Auto — try, fall back on unsupported</SelectItem>
-                  <SelectItem value="force">Force — require schema</SelectItem>
-                  <SelectItem value="disabled">Disabled — always use text</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                How to request typed JSON output (Anthropic tool use / OpenAI json_schema). Auto is
-                safest — falls back to text parsing on models that don't support it.
-              </p>
+                onCheckedChange={(checked) => {
+                  if (editingSection === 'llm') {
+                    onUpdateTempConfig({
+                      llm: { ...tempConfig.llm, autoAnalyzeNewReports: checked },
+                    });
+                  }
+                }}
+              />
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="llm-multimodal-mode">Multimodal mode</Label>
-              <Select
-                disabled={editingSection !== 'llm'}
-                value={
-                  editingSection === 'llm'
-                    ? (tempConfig.llm?.multimodalMode ?? 'auto')
-                    : (config.llm?.multimodalMode ?? 'auto')
-                }
-                onValueChange={(value) =>
-                  editingSection === 'llm' &&
-                  onUpdateTempConfig({
-                    llm: {
-                      ...tempConfig.llm,
-                      multimodalMode: value as 'auto' | 'force' | 'disabled',
-                    },
-                  })
-                }
-              >
-                <SelectTrigger id="llm-multimodal-mode">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">
-                    Auto — attach images, fall back on unsupported
-                  </SelectItem>
-                  <SelectItem value="force">Force — require image support</SelectItem>
-                  <SelectItem value="disabled">Disabled — never attach images</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Whether to attach screenshots for visual failures (snapshot mismatch, element not
-                visible / found). Disable on text-only models to skip the probe.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="text-sm font-medium">Auto-analyze new reports</h4>
-              <p className="text-xs text-muted-foreground mt-1">
-                When enabled, every failed test in a newly ingested report is queued for LLM
-                analysis automatically.
-              </p>
-            </div>
-            <Switch
-              disabled={editingSection !== 'llm'}
-              checked={
-                editingSection === 'llm'
-                  ? !!tempConfig.llm?.autoAnalyzeNewReports
-                  : !!config.llm?.autoAnalyzeNewReports
-              }
-              onCheckedChange={(checked) => {
-                if (editingSection === 'llm') {
-                  onUpdateTempConfig({
-                    llm: { ...tempConfig.llm, autoAnalyzeNewReports: checked },
-                  });
-                }
-              }}
-            />
-          </div>
+          </section>
 
           {/* Custom prompts — wrapped in an accordion since most users won't touch them.
               Empty string clears the override and falls back to the built-in default. */}

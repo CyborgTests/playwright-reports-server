@@ -3,6 +3,7 @@
 import type { RunHealthMetric } from '@playwright-reports/shared';
 import { useCallback, useLayoutEffect, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface HealthGridProps {
@@ -49,9 +50,9 @@ export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
     if (active && payload?.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg border">
+        <div className="bg-popover text-popover-foreground p-3 rounded-lg shadow-lg border">
           <p className="font-medium">{data.name}</p>
-          <p className="text-sm text-gray-600 dark:text-gray-400">Run ID: {data.runId}</p>
+          <p className="text-sm text-muted-foreground">Run ID: {data.runId}</p>
           <div className="mt-2 space-y-1">
             <div className="flex justify-between text-sm">
               <span className="text-success">Passed:</span>
@@ -104,46 +105,49 @@ export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
   }, [scrollContainer, chartWidth, isLoading]);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
-      <h3 className="text-lg font-semibold mb-4">Test Health Grid</h3>
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-        Stacked bar chart showing pass/fail breakdown across {metrics.length}{' '}
-        {metrics.length === 1 ? 'run' : 'runs'} in the selected period
-      </p>
-
-      {isLoading ? (
-        <Skeleton className="h-[300px] w-full" />
-      ) : metrics.length === 0 ? (
-        <div className="flex items-center justify-center h-64 text-gray-500">
-          No health data available
-        </div>
-      ) : (
-        <div ref={scrollContainerRef} className="overflow-x-auto">
-          <BarChart
-            width={chartWidth}
-            height={CHART_HEIGHT}
-            data={chartData.reverse()}
-            onClick={(e) => {
-              const reportId = e.activePayload?.[0]?.payload?.runId;
-              if (reportId) window.open(`/report/${reportId}`, '_blank');
-            }}
-          >
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis
-              dataKey="name"
-              tick={{ fontSize: 12 }}
-              angle={-45}
-              textAnchor="end"
-              height={80}
-            />
-            <YAxis />
-            <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="passed" stackId="a" fill={chartColors.passed} />
-            <Bar dataKey="flaky" stackId="a" fill={chartColors.flaky} />
-            <Bar dataKey="failed" stackId="a" fill={chartColors.failed} />
-          </BarChart>
-        </div>
-      )}
-    </div>
+    <Card>
+      <CardHeader>
+        <h3 className="text-lg font-semibold">Test Health Grid</h3>
+        <p className="text-sm text-muted-foreground">
+          Stacked bar chart showing pass/fail breakdown across {metrics.length}{' '}
+          {metrics.length === 1 ? 'run' : 'runs'} in the selected period
+        </p>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-[300px] w-full" />
+        ) : metrics.length === 0 ? (
+          <div className="flex items-center justify-center h-64 text-muted-foreground">
+            No health data available
+          </div>
+        ) : (
+          <div ref={scrollContainerRef} className="overflow-x-auto">
+            <BarChart
+              width={chartWidth}
+              height={CHART_HEIGHT}
+              data={chartData.reverse()}
+              onClick={(e) => {
+                const reportId = e.activePayload?.[0]?.payload?.runId;
+                if (reportId) window.open(`/report/${reportId}`, '_blank');
+              }}
+            >
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 12 }}
+                angle={-45}
+                textAnchor="end"
+                height={80}
+              />
+              <YAxis />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="passed" stackId="a" fill={chartColors.passed} />
+              <Bar dataKey="flaky" stackId="a" fill={chartColors.flaky} />
+              <Bar dataKey="failed" stackId="a" fill={chartColors.failed} />
+            </BarChart>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -117,10 +117,8 @@ export default function AnalyticsDashboard() {
     return (
       <div className="w-[min(100%, 1200px)] mx-auto">
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="text-gray-500 dark:text-gray-400 text-lg">
-            No analytics data available.
-          </div>
-          <div className="text-gray-400 dark:text-gray-500 text-sm mt-2">
+          <div className="text-muted-foreground text-lg">No analytics data available.</div>
+          <div className="text-muted-foreground/80 text-sm mt-2">
             Generate some reports first to see analytics.
           </div>
         </div>
@@ -133,8 +131,8 @@ export default function AnalyticsDashboard() {
   return (
     <div className="w-[min(100%, 1200px)] mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Analytics Dashboard</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">
+        <h1 className="text-2xl font-bold">Analytics Dashboard</h1>
+        <p className="text-muted-foreground mt-1">
           Comprehensive insights into test performance and health
         </p>
       </div>

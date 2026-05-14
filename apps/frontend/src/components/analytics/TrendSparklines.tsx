@@ -2,6 +2,7 @@
 
 import type { TrendMetrics } from '@playwright-reports/shared';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface TrendSparklinesProps {
@@ -13,13 +14,19 @@ const durationColor = 'hsl(217, 91%, 60%)'; // blue
 const flakyColor = 'hsl(38, 92%, 50%)'; // orange
 const slowColor = 'hsl(0, 84%, 60%)'; // red
 
-function SparklineSkeleton({ title, subtitle }: { title: string; subtitle: string }) {
+function SparklineCard({
+  title,
+  subtitle,
+  children,
+}: Readonly<{ title: string; subtitle: string; children: React.ReactNode }>) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
-      <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">{title}</h4>
-      <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">{subtitle}</p>
-      <Skeleton className="h-20 w-full" />
-    </div>
+    <Card>
+      <CardContent className="p-4 pt-4">
+        <h4 className="text-sm font-medium mb-1">{title}</h4>
+        <p className="text-xs text-muted-foreground mb-4">{subtitle}</p>
+        {children}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -27,12 +34,15 @@ export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklines
   if (isLoading || !metrics) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <SparklineSkeleton title="Duration Trend" subtitle="Total run duration over time" />
-        <SparklineSkeleton
-          title="Flaky Count Trend"
-          subtitle="Number of intermittently failing tests"
-        />
-        <SparklineSkeleton title="Slow Count Trend" subtitle="Tests slower than 95th percentile" />
+        <SparklineCard title="Duration Trend" subtitle="Total run duration over time">
+          <Skeleton className="h-20 w-full" />
+        </SparklineCard>
+        <SparklineCard title="Flaky Count Trend" subtitle="Number of intermittently failing tests">
+          <Skeleton className="h-20 w-full" />
+        </SparklineCard>
+        <SparklineCard title="Slow Count Trend" subtitle="Tests slower than 95th percentile">
+          <Skeleton className="h-20 w-full" />
+        </SparklineCard>
       </div>
     );
   }
@@ -63,7 +73,7 @@ export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklines
   }) => {
     if (active && payload?.length) {
       return (
-        <div className="bg-white dark:bg-gray-800 p-2 rounded shadow-lg border text-xs">
+        <div className="bg-popover text-popover-foreground p-2 rounded shadow-lg border text-xs">
           <p className="font-medium">{new Date(label ?? '').toLocaleDateString()}</p>
           <p>
             {payload[0].name}:{' '}
@@ -79,13 +89,7 @@ export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklines
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
-        <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">
-          Duration Trend
-        </h4>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-          Total run duration over time
-        </p>
+      <SparklineCard title="Duration Trend" subtitle="Total run duration over time">
         <div className="h-20">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={durationTrend.slice(-30).reverse()}>
@@ -101,15 +105,9 @@ export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklines
             </AreaChart>
           </ResponsiveContainer>
         </div>
-      </div>
+      </SparklineCard>
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
-        <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">
-          Flaky Count Trend
-        </h4>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-          Number of intermittently failing tests
-        </p>
+      <SparklineCard title="Flaky Count Trend" subtitle="Number of intermittently failing tests">
         <div className="h-20">
           {flakyCountTrend.reduce((sum, p) => sum + (p.count ?? 0), 0) === 0 ? (
             <div className="flex h-full items-center justify-center text-success text-sm font-medium">
@@ -131,15 +129,9 @@ export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklines
             </ResponsiveContainer>
           )}
         </div>
-      </div>
+      </SparklineCard>
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
-        <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">
-          Slow Count Trend
-        </h4>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-          Tests slower than 95th percentile
-        </p>
+      <SparklineCard title="Slow Count Trend" subtitle="Tests slower than 95th percentile">
         <div className="h-20">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={slowCountTrend.slice(-30).reverse()}>
@@ -155,7 +147,7 @@ export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklines
             </AreaChart>
           </ResponsiveContainer>
         </div>
-      </div>
+      </SparklineCard>
     </div>
   );
 }

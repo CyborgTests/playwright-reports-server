@@ -27,15 +27,15 @@ export function OverviewStatsCard({
           // biome-ignore lint/suspicious/noArrayIndexKey: that is just a placeholder for 5 elements
           <Card key={index} className="shadow-sm">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
                 Loading...
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-2xl font-bold text-gray-300 dark:text-gray-600">--</p>
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">No data</p>
+                  <p className="text-2xl font-bold text-muted-foreground/40">--</p>
+                  <p className="text-xs text-muted-foreground mt-1">No data</p>
                 </div>
               </div>
             </CardContent>
@@ -135,17 +135,15 @@ export function OverviewStatsCard({
       {statsCards.map((card) => (
         <Card key={card.title} className="shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
               {card.title}
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="text-2xl font-bold text-gray-900 dark:text-white truncate">
-                  {card.value}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{card.subtitle}</p>
+                <p className="text-2xl font-bold truncate">{card.value}</p>
+                <p className="text-xs text-muted-foreground mt-1">{card.subtitle}</p>
               </div>
               <div className="shrink-0">{renderTrend(card.delta, card.higherIsBetter)}</div>
             </div>

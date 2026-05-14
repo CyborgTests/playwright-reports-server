@@ -1,4 +1,4 @@
-import { Menu } from 'lucide-react';
+import { ListTodo, Menu } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { HeaderLinks } from '@/components/header-links';
 import { ReportIcon, ResultIcon, SettingsIcon, TrendIcon } from '@/components/icons';
@@ -23,16 +23,21 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-const navItems: NavItem[] = [
+const baseNavItems: NavItem[] = [
   { label: 'Dashboard', href: '/', icon: TrendIcon },
   { label: 'Reports', href: '/reports', icon: ReportIcon },
   { label: 'Results', href: '/results', icon: ResultIcon },
   { label: 'Settings', href: '/settings', icon: SettingsIcon },
 ];
 
+const llmQueueNavItem: NavItem = { label: 'LLM Queue', href: '/llm-queue', icon: ListTodo };
+
 export function Navbar() {
   const location = useLocation();
   const { data: config, isLoading } = useConfig();
+
+  const isLlmConfigured = !!(config?.llm?.baseUrl && config?.llm?.apiKey);
+  const navItems = isLlmConfigured ? [...baseNavItems, llmQueueNavItem] : baseNavItems;
 
   const isCustomLogo = config?.logoPath !== defaultConfig.logoPath;
   const isCustomTitle = config?.title && config?.title !== defaultConfig.title;
