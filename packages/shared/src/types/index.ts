@@ -127,6 +127,11 @@ export interface Report {
   sizeBytes: number;
 }
 
+export interface LinkedReportRef {
+  reportID: string;
+  displayNumber: number | null;
+}
+
 export interface Result {
   resultID: string;
   project: string;
@@ -135,6 +140,7 @@ export interface Result {
   size: string;
   sizeBytes: number;
   stats?: ReportStats;
+  linkedReports?: LinkedReportRef[];
 }
 
 export type ReportTestOutcome =

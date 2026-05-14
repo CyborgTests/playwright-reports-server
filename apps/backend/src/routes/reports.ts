@@ -37,12 +37,18 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
           params.append('offset', query.offset.toString());
         }
         const pagination = parseFromRequest(params);
+        const tags = query.tags ? query.tags.split(',').filter(Boolean) : undefined;
+        const passRate = query.passRate && query.passRate !== 'all' ? query.passRate : undefined;
 
         const { result: reports, error } = await withError(
           service.getReports({
             pagination,
             project: query.project,
             search: query.search,
+            tags,
+            from: query.from,
+            to: query.to,
+            passRate,
           })
         );
 
@@ -84,6 +90,22 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         return projects;
       } catch (error) {
         console.error('[routes] get projects error:', error);
+        return reply.status(500).send({ error: 'Internal server error' });
+      }
+    });
+
+    fastify.get('/api/report/tags', async (request, reply) => {
+      try {
+        const query = request.query as { project?: string };
+        const { result: tags, error } = await withError(service.getReportsTags(query.project));
+
+        if (error) {
+          return reply.status(400).send({ error: error.message });
+        }
+
+        return tags;
+      } catch (error) {
+        console.error('[routes] get report tags error:', error);
         return reply.status(500).send({ error: 'Internal server error' });
       }
     });
@@ -176,7 +198,6 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: 'Invalid request format' });
       }
     });
-
   });
 
   await fastify.register(async (fastify) => {

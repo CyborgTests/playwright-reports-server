@@ -1,13 +1,24 @@
 'use client';
 
+import type { DateRange } from '@playwright-reports/shared';
 import { Search, X } from 'lucide-react';
-import { useCallback } from 'react';
+import { type ReactNode, useCallback } from 'react';
+import DateRangeSelect from './date-range-select';
 import ProjectSelect from './project-select';
 import TagSelect from './tag-select';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+
+export type PassRateFilter = 'all' | 'passing' | 'failing' | 'below-threshold';
+
+const passRateOptions: Array<{ value: PassRateFilter; label: string }> = [
+  { value: 'all', label: 'All pass rates' },
+  { value: 'passing', label: 'Passing (100%)' },
+  { value: 'failing', label: 'Failing (<100%)' },
+  { value: 'below-threshold', label: 'Below threshold (<70%)' },
+];
 
 interface TablePaginationRowProps {
   total?: number;
@@ -17,10 +28,15 @@ interface TablePaginationRowProps {
   onProjectChange: (project: string) => void;
   onSearchChange?: (search: string) => void;
   onTagsChange?: (tags: string[]) => void;
+  onDateRangeChange?: (range: DateRange) => void;
+  onPassRateChange?: (passRate: PassRateFilter) => void;
   rowPerPageOptions?: number[];
   entity: 'report' | 'result';
   selectedProject?: string;
   selectedTags?: string[];
+  selectedDateRange?: DateRange;
+  selectedPassRate?: PassRateFilter;
+  extraFilters?: ReactNode;
 }
 
 const defaultRowPerPageOptions = [10, 20, 40];
@@ -35,8 +51,13 @@ export default function TablePaginationOptions({
   onProjectChange,
   onSearchChange,
   onTagsChange,
+  onDateRangeChange,
+  onPassRateChange,
   selectedProject,
   selectedTags = [],
+  selectedDateRange,
+  selectedPassRate = 'all',
+  extraFilters,
 }: Readonly<TablePaginationRowProps>) {
   const rowPerPageItems = rowPerPageOptions ?? defaultRowPerPageOptions;
 
@@ -51,7 +72,7 @@ export default function TablePaginationOptions({
 
   return (
     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6">
-      <div className="flex flex-row gap-3 w-full sm:w-auto items-center">
+      <div className="flex flex-row flex-wrap gap-3 w-full sm:w-auto items-center">
         <div className="relative w-full sm:w-48">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -67,12 +88,38 @@ export default function TablePaginationOptions({
           showLabel={false}
           label="Project"
         />
-        {entity === 'result' && onTagsChange && (
+        {onDateRangeChange && (
+          <DateRangeSelect
+            selectedRange={selectedDateRange}
+            onSelect={onDateRangeChange}
+            showLabel={false}
+            className="w-56 min-w-44"
+          />
+        )}
+        {onPassRateChange && (
+          <Select
+            value={selectedPassRate}
+            onValueChange={(v) => onPassRateChange(v as PassRateFilter)}
+          >
+            <SelectTrigger className="w-48" aria-label="Filter by pass rate">
+              <SelectValue placeholder="Pass rate" />
+            </SelectTrigger>
+            <SelectContent>
+              {passRateOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {onTagsChange && (
           <TagSelect entity={entity} project={selectedProject} onSelect={onTagsChange} />
         )}
+        {extraFilters}
       </div>
       <div className="flex flex-row gap-3 w-full sm:w-auto items-center justify-between sm:justify-end">
-        {entity === 'result' && selectedTags && selectedTags.length > 0 && (
+        {selectedTags && selectedTags.length > 0 && (
           <div className="flex items-center gap-1 flex-wrap">
             {selectedTags.map((tag) => (
               <Badge key={tag} variant="secondary" className="gap-1 pr-1">

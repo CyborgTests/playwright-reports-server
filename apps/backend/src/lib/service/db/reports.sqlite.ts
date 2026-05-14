@@ -396,6 +396,48 @@ export class ReportDatabase {
       params.push(searchTerm, searchTerm, searchTerm, searchTerm);
     }
 
+    if (input?.from) {
+      conditions.push('datetime(createdAt) >= datetime(?)');
+      params.push(input.from);
+    }
+
+    if (input?.to) {
+      conditions.push('datetime(createdAt) < datetime(?)');
+      params.push(input.to);
+    }
+
+    if (input?.tags && input.tags.length > 0) {
+      // Each tag is a "key: value" string; reports store the same shape inside the
+      // metadata JSON column (e.g. "branch":"main"). Match on the JSON repr.
+      for (const tag of input.tags) {
+        const colonIndex = tag.indexOf(':');
+        if (colonIndex === -1) {
+          conditions.push('LOWER(metadata) LIKE ?');
+          params.push(`%${tag.toLowerCase()}%`);
+          continue;
+        }
+        const key = tag.slice(0, colonIndex).trim();
+        const value = tag.slice(colonIndex + 1).trim();
+        conditions.push('LOWER(metadata) LIKE ?');
+        params.push(`%"${key.toLowerCase()}":"${value.toLowerCase()}"%`);
+      }
+    }
+
+    if (input?.passRate) {
+      // pass% = expected / (total - skipped). Reports without stats are excluded.
+      const denom =
+        "(CAST(json_extract(stats, '$.total') AS REAL) - COALESCE(CAST(json_extract(stats, '$.skipped') AS REAL), 0))";
+      const numer = "CAST(json_extract(stats, '$.expected') AS REAL)";
+      const passExpr = `(${numer} * 100.0 / NULLIF(${denom}, 0))`;
+      if (input.passRate === 'passing') {
+        conditions.push(`${passExpr} >= 100`);
+      } else if (input.passRate === 'failing') {
+        conditions.push(`${passExpr} < 100`);
+      } else if (input.passRate === 'below-threshold') {
+        conditions.push(`${passExpr} < 70`);
+      }
+    }
+
     if (conditions.length > 0) {
       query += ` WHERE ${conditions.join(' AND ')}`;
     }

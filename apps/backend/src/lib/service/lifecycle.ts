@@ -10,7 +10,7 @@ import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
 import { cronService } from './cron.js';
 import { githubSyncDb } from './db/githubSync.sqlite.js';
-import { reportDb, resultDb } from './db/index.js';
+import { reportDb, reportResultsDb, resultDb } from './db/index.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import { siteConfigDb } from './db/siteConfig.sqlite.js';
 import { litestreamService } from './litestream.js';
@@ -94,6 +94,15 @@ export class Lifecycle {
       if (backfilled > 0) {
         console.log(
           `[lifecycle] Backfilled error_signature_global for ${backfilled} test_runs row(s)`
+        );
+      }
+
+      // Backfill report ↔ result links for reports created before the join
+      // table existed. Best-effort via shared testRun metadata.
+      const { reports: rrReports, links: rrLinks } = reportResultsDb.backfillFromTestRun();
+      if (rrLinks > 0) {
+        console.log(
+          `[lifecycle] Linked ${rrLinks} result(s) to ${rrReports} pre-existing report(s) via testRun`
         );
       }
 

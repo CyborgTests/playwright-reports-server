@@ -4,6 +4,7 @@ import { pipeline } from 'node:stream/promises';
 import type { Result } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { DeleteResultsRequestSchema, ListResultsQuerySchema } from '../lib/schemas/index.js';
+import { reportResultsDb } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { DEFAULT_STREAM_CHUNK_SIZE } from '../lib/storage/constants.js';
 import { parseFromRequest } from '../lib/storage/pagination.js';
@@ -27,6 +28,7 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
         }
         const pagination = parseFromRequest(params);
         const tags = query.tags ? query.tags.split(',').filter(Boolean) : [];
+        const usage = query.usage && query.usage !== 'all' ? query.usage : undefined;
 
         const { result, error } = await withError(
           service.getResults({
@@ -34,11 +36,26 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
             project: query.project,
             tags,
             search: query.search,
+            from: query.from,
+            to: query.to,
+            usage,
           })
         );
 
         if (error) {
           return reply.status(400).send({ error: error.message });
+        }
+
+        if (result?.results?.length) {
+          const ids = result.results.map((r) => r.resultID);
+          const reportsByResult = reportResultsDb.getReportsForResultIds(ids);
+          for (const row of result.results) {
+            const linked = reportsByResult.get(row.resultID) ?? [];
+            (row as Record<string, unknown>).linkedReports = linked.map((r) => ({
+              reportID: r.reportID,
+              displayNumber: r.displayNumber,
+            }));
+          }
         }
 
         return result;
@@ -106,7 +123,6 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
         }
       }
     );
-
   });
 
   await fastify.register(async (fastify) => {

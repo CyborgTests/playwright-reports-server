@@ -1,6 +1,7 @@
-import type { ReadResultsOutput, Result } from '@playwright-reports/shared';
+import type { DateRange, ReadResultsOutput, Result } from '@playwright-reports/shared';
 import { keepPreviousData } from '@tanstack/react-query';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -12,6 +13,13 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import {
   Table,
@@ -24,20 +32,38 @@ import {
 import useQuery from '@/hooks/useQuery';
 import { defaultProjectName } from '@/lib/constants';
 import { withQueryParams } from '@/lib/network';
+import { withBase } from '@/lib/url';
 import FormattedDate from './date-format';
 import DeleteResultsButton from './delete-results-button';
 import TablePaginationOptions from './table-pagination-options';
+
+type UsageFilter = 'all' | 'used' | 'unused';
+
+const usageOptions: Array<{ value: UsageFilter; label: string }> = [
+  { value: 'all', label: 'All results' },
+  { value: 'used', label: 'Used in reports' },
+  { value: 'unused', label: 'Unused (no report)' },
+];
 
 const columns = [
   { name: 'Title', uid: 'title' },
   { name: 'Project', uid: 'project' },
   { name: 'Created at', uid: 'createdAt' },
+  { name: 'Used in', uid: 'usedIn' },
   { name: 'Tags', uid: 'tags' },
   { name: 'Size', uid: 'size' },
   { name: '', uid: 'actions' },
 ];
 
-const notMetadataKeys = new Set(['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project']);
+const notMetadataKeys = new Set([
+  'resultID',
+  'title',
+  'createdAt',
+  'size',
+  'sizeBytes',
+  'project',
+  'linkedReports',
+]);
 
 const getTags = (item: Result) => {
   return Object.entries(item).filter(([key]) => !notMetadataKeys.has(key));
@@ -55,12 +81,40 @@ export default function ResultsTable({
   selected,
 }: Readonly<ResultsTableProps>) {
   const resultListEndpoint = '/api/result/list';
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [project, setProject] = useState(defaultProjectName);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>(() => {
+    const raw = searchParams.get('tags');
+    return raw ? raw.split(',').filter(Boolean) : [];
+  });
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(selected ?? []));
+  const [dateRange, setDateRange] = useState<DateRange>(() => ({
+    from: searchParams.get('from') ?? undefined,
+    to: searchParams.get('to') ?? undefined,
+  }));
+  const [usage, setUsage] = useState<UsageFilter>(
+    () => (searchParams.get('usage') as UsageFilter) || 'all'
+  );
+
+  // Reflect filter state into URL search params so the view is shareable.
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (selectedTags.length > 0) next.set('tags', selectedTags.join(','));
+    else next.delete('tags');
+    if (dateRange.from) next.set('from', dateRange.from);
+    else next.delete('from');
+    if (dateRange.to) next.set('to', dateRange.to);
+    else next.delete('to');
+    if (usage && usage !== 'all') next.set('usage', usage);
+    else next.delete('usage');
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [selectedTags, dateRange, usage, searchParams, setSearchParams]);
 
   const getQueryParams = () => ({
     limit: rowsPerPage.toString(),
@@ -68,6 +122,9 @@ export default function ResultsTable({
     project,
     ...(selectedTags.length > 0 && { tags: selectedTags.join(',') }),
     ...(search.trim() && { search: search.trim() }),
+    ...(dateRange.from && { from: dateRange.from }),
+    ...(dateRange.to && { to: dateRange.to }),
+    ...(usage && usage !== 'all' && { usage }),
   });
 
   const {
@@ -76,7 +133,16 @@ export default function ResultsTable({
     error,
     refetch,
   } = useQuery<ReadResultsOutput>(withQueryParams(resultListEndpoint, getQueryParams()), {
-    dependencies: [project, selectedTags, search, rowsPerPage, page],
+    dependencies: [
+      project,
+      selectedTags,
+      search,
+      rowsPerPage,
+      page,
+      dateRange.from,
+      dateRange.to,
+      usage,
+    ],
     placeholderData: keepPreviousData,
   });
 
@@ -103,6 +169,16 @@ export default function ResultsTable({
 
   const onSearchChange = useCallback((searchTerm: string) => {
     setSearch(searchTerm);
+    setPage(1);
+  }, []);
+
+  const onDateRangeChange = useCallback((range: DateRange) => {
+    setDateRange(range);
+    setPage(1);
+  }, []);
+
+  const onUsageChange = useCallback((value: UsageFilter) => {
+    setUsage(value);
     setPage(1);
   }, []);
 
@@ -206,7 +282,24 @@ export default function ResultsTable({
         onProjectChange={onProjectChange}
         onSearchChange={onSearchChange}
         onTagsChange={onTagsChange}
+        onDateRangeChange={onDateRangeChange}
         selectedProject={project}
+        selectedTags={selectedTags}
+        selectedDateRange={dateRange}
+        extraFilters={
+          <Select value={usage} onValueChange={(v) => onUsageChange(v as UsageFilter)}>
+            <SelectTrigger className="w-48" aria-label="Filter by usage">
+              <SelectValue placeholder="Usage" />
+            </SelectTrigger>
+            <SelectContent>
+              {usageOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
       />
       <div className="rounded-md border border-border/50">
         <Table>
@@ -239,12 +332,41 @@ export default function ResultsTable({
                     aria-label={`Select ${item.title ?? item.resultID}`}
                   />
                 </TableCell>
-                <TableCell className="w-1/3">{item.title ?? item.resultID}</TableCell>
-                <TableCell className="w-1/6">{item.project}</TableCell>
+                <TableCell className="w-1/4">{item.title ?? item.resultID}</TableCell>
+                <TableCell className="w-1/12">{item.project}</TableCell>
                 <TableCell className="w-1/12">
                   <FormattedDate date={new Date(item.createdAt)} />
                 </TableCell>
-                <TableCell className="w-1/3">
+                <TableCell className="w-1/6">
+                  {item.linkedReports && item.linkedReports.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {item.linkedReports.slice(0, 3).map((ref) => (
+                        <Link
+                          key={ref.reportID}
+                          to={withBase(`/report/${ref.reportID}`)}
+                          className="text-xs hover:underline text-primary"
+                          title={`Open report ${ref.displayNumber ?? ref.reportID}`}
+                        >
+                          {ref.displayNumber ? `#${ref.displayNumber}` : ref.reportID.slice(0, 6)}
+                        </Link>
+                      ))}
+                      {item.linkedReports.length > 3 && (
+                        <span
+                          className="text-xs text-muted-foreground"
+                          title={item.linkedReports
+                            .slice(3)
+                            .map((r) => `#${r.displayNumber ?? r.reportID.slice(0, 6)}`)
+                            .join(', ')}
+                        >
+                          +{item.linkedReports.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="w-1/4">
                   <div className="flex flex-wrap gap-1">
                     {getTags(item).map(([key, value]) => (
                       <Badge
@@ -257,7 +379,7 @@ export default function ResultsTable({
                     ))}
                   </div>
                 </TableCell>
-                <TableCell className="w-1/4">{item.size}</TableCell>
+                <TableCell className="w-1/12">{item.size}</TableCell>
                 <TableCell className="w-1/12">
                   <div className="flex justify-center">
                     <DeleteResultsButton
@@ -270,11 +392,16 @@ export default function ResultsTable({
             ))}
             {(!results || results.length === 0) && (
               <TableRow>
-                <TableCell
-                  colSpan={columns.length + 1}
-                  className="text-center py-8 text-muted-foreground"
-                >
-                  No results found.
+                <TableCell colSpan={columns.length + 1} className="text-center py-8">
+                  <div className="flex flex-col items-center gap-2 py-4">
+                    <div className="text-muted-foreground">No results found.</div>
+                    {total === 0 && (
+                      <div className="text-xs text-muted-foreground max-w-md">
+                        Raw blob ZIPs uploaded by Playwright runs. They&apos;re merged into Reports
+                        and cleaned up afterwards.
+                      </div>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             )}

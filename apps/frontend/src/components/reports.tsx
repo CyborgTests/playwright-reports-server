@@ -1,3 +1,6 @@
+import type { ReportHistory } from '@playwright-reports/shared';
+import { useState } from 'react';
+import DeleteReportButton from './delete-report-button';
 import { title } from './primitives';
 import ReportsTable from './reports-table';
 import UploadReportButton from './upload-report-button';
@@ -7,6 +10,15 @@ interface ReportsProps {
 }
 
 export default function Reports({ onChange }: Readonly<ReportsProps>) {
+  const [selectedReports, setSelectedReports] = useState<ReportHistory[]>([]);
+
+  const selectedReportIds = selectedReports.map((r) => r.reportID);
+
+  const onListUpdate = () => {
+    setSelectedReports([]);
+    onChange?.();
+  };
+
   return (
     <>
       <div className="flex w-full">
@@ -14,11 +26,27 @@ export default function Reports({ onChange }: Readonly<ReportsProps>) {
           <h1 className={title()}>Reports</h1>
         </div>
         <div className="flex gap-2 w-2/3 flex-wrap justify-end items-center ml-2">
-          <UploadReportButton onUploadedReport={onChange} />
+          {selectedReports.length > 0 && (
+            <div className="text-sm pr-3 text-primary">
+              Reports selected: {selectedReports.length}
+            </div>
+          )}
+          <UploadReportButton onUploadedReport={onListUpdate} />
+          {selectedReports.length > 0 && (
+            <DeleteReportButton
+              label="Delete"
+              reportIds={selectedReportIds}
+              onDeleted={onListUpdate}
+            />
+          )}
         </div>
       </div>
       <br />
-      <ReportsTable onChange={onChange} />
+      <ReportsTable
+        selected={selectedReportIds}
+        onSelect={setSelectedReports}
+        onChange={onListUpdate}
+      />
     </>
   );
 }

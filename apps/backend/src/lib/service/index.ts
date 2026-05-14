@@ -22,7 +22,7 @@ import {
 import type { S3 } from '../storage/s3.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
-import { reportDb, resultDb } from './db/index.js';
+import { reportDb, reportResultsDb, resultDb } from './db/index.js';
 import { siteConfigDb } from './db/siteConfig.sqlite.js';
 import { lifecycle } from './lifecycle.js';
 import { testManagementService } from './testManagement.js';
@@ -125,6 +125,7 @@ class Service {
     const { reportId, report } = await storage.generateReport(resultsIds, metadataWithVersion);
 
     reportDb.onCreated(report);
+    reportResultsDb.linkReportToResults(reportId, resultsIds);
 
     const { error: testsErr } = await withError(testManagementService.processReport(report));
     if (testsErr) {
@@ -161,6 +162,7 @@ class Service {
     }
 
     reportDb.onDeleted(reportIDs);
+    reportResultsDb.deleteByReportIds(reportIDs);
   }
 
   public async getReportsProjects(): Promise<string[]> {
@@ -168,6 +170,43 @@ class Service {
     const projects = getUniqueProjectsList(reports);
 
     return projects;
+  }
+
+  public async getReportsTags(project?: string): Promise<string[]> {
+    const { reports } = await this.getReports(project ? { project } : undefined);
+
+    const coreKeys = new Set([
+      'reportID',
+      'title',
+      'displayNumber',
+      'project',
+      'createdAt',
+      'size',
+      'sizeBytes',
+      'reportUrl',
+      'metadata',
+      'stats',
+      'files',
+      'duration',
+      'startTime',
+      'errors',
+      'projectNames',
+      'options',
+    ]);
+    const allTags = new Set<string>();
+
+    reports.forEach((report) => {
+      Object.entries(report as unknown as Record<string, unknown>).forEach(([key, value]) => {
+        if (coreKeys.has(key)) return;
+        if (value === undefined || value === null) return;
+        if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+          return;
+        }
+        allTags.add(`${key}: ${value}`);
+      });
+    });
+
+    return Array.from(allTags).sort();
   }
 
   public async getResults(input?: ReadResultsInput): Promise<ReadResultsOutput> {
@@ -183,6 +222,7 @@ class Service {
     }
 
     resultDb.onDeleted(resultIDs);
+    reportResultsDb.deleteByResultIds(resultIDs);
   }
 
   public async getPresignedUrl(fileName: string): Promise<string | undefined> {

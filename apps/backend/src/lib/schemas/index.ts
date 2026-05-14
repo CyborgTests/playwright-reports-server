@@ -65,6 +65,10 @@ export const GenerateReportResponseSchema = z.object({
 export const ListReportsQuerySchema = z.object({
   project: z.string().default(''),
   search: z.string().default(''),
+  tags: z.string().optional(), // comma-separated
+  from: z.string().optional(),
+  to: z.string().optional(),
+  passRate: z.enum(['all', 'passing', 'failing', 'below-threshold']).optional(),
   limit: z.coerce.number().min(1).max(100).optional(),
   offset: z.coerce.number().min(0).optional(),
 });
@@ -87,6 +91,9 @@ export const ListResultsQuerySchema = z.object({
   project: z.string().default(''),
   search: z.string().default(''),
   tags: z.string().optional(), // comma-separated
+  from: z.string().optional(),
+  to: z.string().optional(),
+  usage: z.enum(['all', 'used', 'unused']).optional(),
   limit: z.coerce.number().min(1).max(100).optional(),
   offset: z.coerce.number().min(0).optional(),
 });

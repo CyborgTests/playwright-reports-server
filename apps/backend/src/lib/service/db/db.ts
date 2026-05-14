@@ -117,6 +117,17 @@ function initializeSchema(db: Database.Database): void {
   `);
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS report_results (
+      reportId TEXT NOT NULL,
+      resultId TEXT NOT NULL,
+      createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (reportId, resultId)
+    );
+    CREATE INDEX IF NOT EXISTS idx_report_results_result ON report_results(resultId);
+    CREATE INDEX IF NOT EXISTS idx_report_results_report ON report_results(reportId);
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS tests (
       testId TEXT NOT NULL,
       fileId TEXT NOT NULL,

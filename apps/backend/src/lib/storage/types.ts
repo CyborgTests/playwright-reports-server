@@ -34,6 +34,9 @@ export interface ReadResultsInput {
   testRun?: string;
   tags?: string[];
   search?: string;
+  from?: string;
+  to?: string;
+  usage?: 'used' | 'unused';
 }
 
 export interface ReadResultsOutput {
@@ -46,6 +49,10 @@ export interface ReadReportsInput {
   project?: string;
   ids?: string[];
   search?: string;
+  tags?: string[];
+  from?: string;
+  to?: string;
+  passRate?: 'passing' | 'failing' | 'below-threshold';
 }
 
 export interface ReadReportsOutput {

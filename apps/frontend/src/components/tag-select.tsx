@@ -3,7 +3,6 @@
 import { toast } from 'sonner';
 import useQuery from '../hooks/useQuery';
 import { buildUrl } from '../lib/url';
-import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 interface TagSelectProps {
@@ -11,6 +10,7 @@ interface TagSelectProps {
   refreshId?: string;
   entity: 'result' | 'report';
   project?: string;
+  className?: string;
 }
 
 export default function TagSelect({
@@ -18,6 +18,7 @@ export default function TagSelect({
   onSelect,
   entity,
   project,
+  className = 'w-48',
 }: Readonly<TagSelectProps>) {
   const {
     data: tags,
@@ -35,20 +36,17 @@ export default function TagSelect({
   error && toast.error(error.message);
 
   return (
-    <div className="flex flex-col gap-2">
-      <Label htmlFor="tag-select">Filter by tag</Label>
-      <Select onValueChange={handleChange} disabled={!tags?.length || isLoading}>
-        <SelectTrigger id="tag-select" className="w-48">
-          <SelectValue placeholder="Select tag" />
-        </SelectTrigger>
-        <SelectContent>
-          {tags?.map((tag) => (
-            <SelectItem key={tag} value={tag}>
-              {tag}
-            </SelectItem>
-          )) ?? []}
-        </SelectContent>
-      </Select>
-    </div>
+    <Select onValueChange={handleChange} disabled={!tags?.length || isLoading}>
+      <SelectTrigger id="tag-select" className={className} aria-label="Filter by tag">
+        <SelectValue placeholder="Filter by tag" />
+      </SelectTrigger>
+      <SelectContent>
+        {tags?.map((tag) => (
+          <SelectItem key={tag} value={tag}>
+            {tag}
+          </SelectItem>
+        )) ?? []}
+      </SelectContent>
+    </Select>
   );
 }

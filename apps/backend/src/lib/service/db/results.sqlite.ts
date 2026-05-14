@@ -209,6 +209,22 @@ export class ResultDatabase {
       params.push(searchTerm, searchTerm, searchTerm, searchTerm);
     }
 
+    if (input?.from) {
+      conditions.push('datetime(createdAt) >= datetime(?)');
+      params.push(input.from);
+    }
+
+    if (input?.to) {
+      conditions.push('datetime(createdAt) < datetime(?)');
+      params.push(input.to);
+    }
+
+    if (input?.usage === 'used') {
+      conditions.push('resultID IN (SELECT DISTINCT resultId FROM report_results)');
+    } else if (input?.usage === 'unused') {
+      conditions.push('resultID NOT IN (SELECT DISTINCT resultId FROM report_results)');
+    }
+
     if (conditions.length > 0) {
       query += ` WHERE ${conditions.join(' AND ')}`;
     }
