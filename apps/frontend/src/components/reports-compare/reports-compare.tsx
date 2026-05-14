@@ -86,7 +86,6 @@ export default function ReportsCompare() {
   }
 
   const { reportA, reportB, summary, durationDeltas } = diff;
-  const projectMismatch = reportA.project !== reportB.project;
 
   return (
     <div className="space-y-6">
