@@ -1,18 +1,22 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import JSZip from 'jszip';
 import { llmService } from '../llm/index.js';
 import {
   parseProjectAnalysisFromText,
   parseProjectAnalysisStructured,
   renderProjectAnalysisAsMarkdown,
 } from '../llm/projectAnalysis.js';
-import type { FailureDetailsForPrompt, ReportSummaryTrendContext } from '../llm/prompts/index.js';
+import type {
+  FailureDetailsForPrompt,
+  ProjectRootCause,
+  ReportSummaryTrendContext,
+} from '../llm/prompts/index.js';
 import {
   buildProjectSummarySegments,
   buildReportSummarySegments,
   buildTestFailureSegments,
   computePromptVersion,
+  extractRootCauseParagraph,
   fitPromptToBudget,
   PROJECT_ANALYSIS_SCHEMA,
   renderSegmentsForDebug,
@@ -20,6 +24,7 @@ import {
   unescapeLiteralNewlines,
 } from '../llm/prompts/index.js';
 import type { SegmentedPrompt } from '../llm/types/index.js';
+import { extractFailureEvidence, stripAnsi } from '../parser/failure-extraction.js';
 import { parseHtmlReport } from '../parser/index.js';
 import { REPORTS_FOLDER } from '../storage/constants.js';
 import { analysisFeedbackDb } from './db/analysisFeedback.sqlite.js';
@@ -33,11 +38,21 @@ import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
 import { compareReports, findPreviousReportInProject } from './reportCompare.js';
 
-function stripAnsi(str: string): string {
-  return str.replace(/\x1b\[[0-9;]*m/g, '');
-}
-
-const OUTPUT_RESERVE_TOKENS = 8000;
+/** Per-task output-token reserve used by fitToContextWindow. Each value
+ *  reflects the rough cap on how much markdown each task type tends to
+ *  produce: test-analysis is one diagnosis (~800–1500 tokens out, 4000 is
+ *  generous); report-summary is three sections of markdown across a run;
+ *  project-summary is verdict + ≤4 sections across the latest 10 runs and
+ *  needs the most headroom. Tuned alongside the prompt templates in
+ *  `prompts/index.ts`. */
+const OUTPUT_RESERVE_TOKENS_BY_TASK = {
+  testAnalysis: 4000,
+  reportSummary: 6000,
+  projectSummary: 8000,
+} as const;
+/** Generic fallback for callers (and existing default) when the caller
+ *  doesn't tell `fitToContextWindow` what kind of task it's serving. */
+const DEFAULT_OUTPUT_RESERVE_TOKENS = OUTPUT_RESERVE_TOKENS_BY_TASK.projectSummary;
 const SAFETY_MARGIN_TOKENS = 1000;
 
 /** Reuse-via-error-signature guards. Internal — not exposed via env or
@@ -85,6 +100,149 @@ async function readImageAttachment(
     return null;
   }
 }
+
+/** Cross-project context tuning. Shared by `processTestAnalysis` and the
+ *  user-driven `buildTestAnalysisRequest` so they pull the same candidate
+ *  pool and keep the same N entries. */
+const CROSS_PROJECT_CANDIDATE_POOL = 25;
+const CROSS_PROJECT_KEEP = 5;
+
+/** Caps on the recent-history lists rendered into the historical-context and
+ *  flakiness-rationale segments. `runs` is loaded with LIMIT 50; these slice
+ *  it further so a long-lived test doesn't dominate the prompt. */
+const RECENT_OUTCOMES_KEEP = 15;
+const RECENT_CATEGORIES_KEEP = 8;
+
+/**
+ * Build the cross-project context block input: same-test feedback in other
+ * projects, scored by (a) signature match, (b) recency, (c) whether a prior
+ * LLM analysis is attached. Returns the top N entries plus the total
+ * candidate pool size so the prompt can say "+M more not shown."
+ */
+function buildCrossProjectEntries(
+  testId: string,
+  fileId: string,
+  project: string,
+  currentSignature: string | undefined
+): {
+  entries: Array<{
+    project: string;
+    comment: string;
+    updatedAt: string;
+    errorSignatureMatchesCurrent: boolean;
+    latestAnalysis?: { content: string; updatedAt: string; model?: string };
+  }>;
+  totalCount: number;
+} {
+  const relatedRows = analysisFeedbackDb.getRelatedByTest(
+    testId,
+    fileId,
+    project,
+    CROSS_PROJECT_CANDIDATE_POOL
+  );
+  // Signature match dominates (>=100). Recency adds up to 30 (today=30, decays
+  // toward 0 with age). Having a prior LLM analysis attached adds 5 (tiebreaker only).
+  const score = (r: (typeof relatedRows)[number]): number => {
+    const sigMatch =
+      !!currentSignature && !!r.errorSignature && r.errorSignature === currentSignature;
+    const ageMs = Date.now() - new Date(r.updatedAt).getTime();
+    const days = Math.max(0, ageMs / (24 * 60 * 60 * 1000));
+    return (sigMatch ? 100 : 0) + 30 / (1 + days) + (r.latestAnalysis ? 5 : 0);
+  };
+  const ranked = [...relatedRows]
+    .map((r) => ({ row: r, s: score(r) }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, CROSS_PROJECT_KEEP)
+    .map(({ row: r }) => r);
+  const entries = ranked.map((r) => ({
+    project: r.project,
+    comment: r.comment,
+    updatedAt: r.updatedAt,
+    errorSignatureMatchesCurrent:
+      !!currentSignature && !!r.errorSignature && r.errorSignature === currentSignature,
+    latestAnalysis: r.latestAnalysis
+      ? {
+          content: r.latestAnalysis,
+          updatedAt: r.latestAnalysisUpdatedAt ?? r.updatedAt,
+          model: r.latestAnalysisModel ?? undefined,
+        }
+      : undefined,
+  }));
+  return { entries, totalCount: relatedRows.length };
+}
+
+/**
+ * Extract recent outcome + previous-category sequences from the test's run
+ * history. Both lists are most-recent first to match the historical-context
+ * block's chronological rendering. Returns plain arrays — no async I/O.
+ */
+function buildRecentHistoryFromRuns(runs: ReturnType<typeof testDb.getTestRuns>): {
+  recentOutcomes: string[];
+  previousCategoriesChronological: string[];
+} {
+  const recentOutcomes = runs.slice(0, RECENT_OUTCOMES_KEEP).map((r) => r.outcome);
+  const previousCategoriesChronological = runs
+    .map((r) => r.failureCategory)
+    .filter((c): c is string => !!c)
+    .slice(0, RECENT_CATEGORIES_KEEP);
+  return { recentOutcomes, previousCategoriesChronological };
+}
+
+/**
+ * Merge report-level Playwright version into the trace-derived environment
+ * (the trace doesn't carry the runner version). Best-effort lookup; failure
+ * here is silent — environment is optional context. Mutates `details.evidence`
+ * in place since we want both call sites to see the enrichment.
+ */
+async function enrichEnvironmentFromReport(
+  details: FailureDetailsForPrompt,
+  reportId: string
+): Promise<void> {
+  if (!details.evidence?.environment) return;
+  if (details.evidence.environment.playwrightVersion) return;
+  try {
+    const { reportDb } = await import('./db/reports.sqlite.js');
+    const reportRow = reportDb.getByID(reportId);
+    const pwVersion = (reportRow?.metadata as { playwrightVersion?: string } | undefined)
+      ?.playwrightVersion;
+    if (pwVersion) {
+      details.evidence = {
+        ...details.evidence,
+        environment: { ...details.evidence.environment, playwrightVersion: pwVersion },
+      };
+    }
+  } catch {
+    // ignore — environment is best-effort
+  }
+}
+
+/**
+ * Attach the first image attachment from the failure to the `current_failure`
+ * segment of a built prompt. Multimodal mode + the LLMService's blocklist gate
+ * whether the image actually goes on the wire; here we just stage it. Mutates
+ * `builtPrompt.segments` so the caller can keep using the same reference.
+ */
+async function attachScreenshotIfAny(
+  builtPrompt: SegmentedPrompt,
+  details: FailureDetailsForPrompt,
+  reportId: string,
+  logPrefix?: string
+): Promise<void> {
+  const imageAtt = details.attachments?.find((a) => a.contentType?.startsWith('image/'));
+  if (!imageAtt) return;
+  const img = await readImageAttachment(reportId, imageAtt);
+  if (!img) return;
+  const failureIdx = builtPrompt.segments.findIndex((s) => s.id === 'current_failure');
+  if (failureIdx < 0) return;
+  builtPrompt.segments[failureIdx] = {
+    ...builtPrompt.segments[failureIdx],
+    images: [img],
+  };
+  if (logPrefix) {
+    console.log(`${logPrefix}: attached screenshot ${imageAtt.path} (${img.mediaType})`);
+  }
+}
+
 /** Last-resort char cap when no context window can be detected. ~30k chars
  *  is the rough cap a 24k-token local model will accept for input. */
 const NO_CONTEXT_CHAR_FALLBACK = 30_000;
@@ -96,7 +254,7 @@ const NO_CONTEXT_CHAR_FALLBACK = 30_000;
  */
 async function fitToContextWindow(
   prompt: SegmentedPrompt,
-  outputReserveTokens: number = OUTPUT_RESERVE_TOKENS
+  outputReserveTokens: number = DEFAULT_OUTPUT_RESERVE_TOKENS
 ): Promise<{ prompt: SegmentedPrompt; log: string | null }> {
   const window = await llmService.getContextWindow().catch(() => null);
   const tokens = await llmService.countTokens(prompt).catch(() => null);
@@ -242,9 +400,13 @@ class LlmAnalysisQueue {
       // Stored details often have an empty message in merged reports — enrich from
       // attachments (error-context, trace) which carry the real error text. Also
       // enrich the attempt timeline for reports written before that field existed.
+      // Extract-on-read fallback for the structured evidence: rows persisted before
+      // the evidence schema landed have no `evidence` field; we re-extract here so
+      // the LLM prompt sees the same evidence as fresh uploads.
       const needsMessageEnrich = !details.message || details.message.trim() === '';
       const needsAttemptsEnrich = !details.attempts || details.attempts.length === 0;
-      if (needsMessageEnrich || needsAttemptsEnrich) {
+      const needsEvidenceEnrich = !details.evidence;
+      if (needsMessageEnrich || needsAttemptsEnrich || needsEvidenceEnrich) {
         const extracted = await this.extractDetailsFromReport(reportId, testId);
         if (extracted?.message && needsMessageEnrich) {
           details.message = extracted.message;
@@ -252,6 +414,9 @@ class LlmAnalysisQueue {
         }
         if (extracted?.attempts && needsAttemptsEnrich) {
           details.attempts = extracted.attempts;
+        }
+        if (extracted?.evidence && needsEvidenceEnrich) {
+          details.evidence = extracted.evidence;
         }
       }
     } else {
@@ -431,6 +596,9 @@ class LlmAnalysisQueue {
     const llmCfg = (config as any)?.llm ?? {};
     const promptOverrides = {
       systemPrompt: llmCfg.customSystemPrompt as string | undefined,
+      testAnalysisSystemPrompt: llmCfg.customTestAnalysisSystemPrompt as string | undefined,
+      reportSummarySystemPrompt: llmCfg.customReportSummarySystemPrompt as string | undefined,
+      projectSummarySystemPrompt: llmCfg.customProjectSummarySystemPrompt as string | undefined,
       testAnalysisInstructions: llmCfg.customTestAnalysisInstructions as string | undefined,
       reportSummaryInstructions: llmCfg.customReportSummaryInstructions as string | undefined,
       projectSummaryInstructions: llmCfg.customProjectSummaryInstructions as string | undefined,
@@ -438,93 +606,47 @@ class LlmAnalysisQueue {
       errorCategory: heuristicCategory,
     };
 
-    // Same-test feedback in other projects: pull a wider candidate pool, score
-    // each (signature match wins; recency and prior-analysis attached are
-    // tiebreakers), take the top N. Purely additive context — does NOT
-    // invalidate reuse (guard above checks only own-project).
-    const CROSS_PROJECT_CANDIDATE_POOL = 25;
-    const CROSS_PROJECT_KEEP = 5;
-    const relatedRows = analysisFeedbackDb.getRelatedByTest(
-      testId,
-      fileId,
-      project,
-      CROSS_PROJECT_CANDIDATE_POOL
-    );
-    const currentSignature = failedRun?.errorSignature ?? undefined;
-    const scoreEntry = (r: (typeof relatedRows)[number]): number => {
-      const sigMatch =
-        !!currentSignature && !!r.errorSignature && r.errorSignature === currentSignature;
-      const ageMs = Date.now() - new Date(r.updatedAt).getTime();
-      const days = Math.max(0, ageMs / (24 * 60 * 60 * 1000));
-      // Signature exact match dominates (>=100). Recency adds up to 30 (today=30, decays
-      // toward 0 with age). Having a prior LLM analysis attached adds 5 (tiebreaker only).
-      return (sigMatch ? 100 : 0) + 30 / (1 + days) + (r.latestAnalysis ? 5 : 0);
-    };
-    const ranked = [...relatedRows]
-      .map((r) => ({ row: r, score: scoreEntry(r) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, CROSS_PROJECT_KEEP)
-      .map(({ row: r }) => r);
-    const crossProjectEntries = ranked.map((r) => ({
-      project: r.project,
-      comment: r.comment,
-      updatedAt: r.updatedAt,
-      errorSignatureMatchesCurrent:
-        !!currentSignature && !!r.errorSignature && r.errorSignature === currentSignature,
-      latestAnalysis: r.latestAnalysis
-        ? {
-            content: r.latestAnalysis,
-            updatedAt: r.latestAnalysisUpdatedAt ?? r.updatedAt,
-            model: r.latestAnalysisModel ?? undefined,
-          }
-        : undefined,
-    }));
+    // Same-test feedback in other projects — purely additive context that
+    // does NOT invalidate reuse (the reuse guard above checks own-project only).
+    const { entries: crossProjectEntries, totalCount: crossProjectTotalCount } =
+      buildCrossProjectEntries(testId, fileId, project, failedRun?.errorSignature ?? undefined);
+
+    const { recentOutcomes, previousCategoriesChronological } = buildRecentHistoryFromRuns(runs);
+
+    await enrichEnvironmentFromReport(details, reportId);
 
     const builtPrompt = buildTestFailureSegments({
       failureDetails: details,
       historicalContext: {
         totalRuns,
         recentFailureCount: recentFailures,
+        flakinessScore,
+        flakinessThreshold: warningThreshold,
         isFlaky: flakinessScore >= warningThreshold,
         isNewFailure,
+        recentOutcomes,
+        previousCategories: previousCategoriesChronological,
       },
       feedback,
       crossProjectEntries,
-      crossProjectTotalCount: relatedRows.length,
+      crossProjectTotalCount,
       overrides: promptOverrides,
     });
 
-    // Attach the first image from the failure's attachments — regardless of
-    // failure category. A screenshot of the page at failure time helps
-    // vision-capable models reason about most failure types, not just visual
-    // ones. The LLMService layer (multimodal mode + blocklist) gates whether
-    // it actually goes on the wire and auto-falls-back to text-only when the
-    // active model rejects images.
-    if (details.attachments && details.attachments.length > 0) {
-      const imageAtt = details.attachments.find((a) => a.contentType?.startsWith('image/'));
-      if (imageAtt) {
-        const img = await readImageAttachment(reportId, imageAtt);
-        if (img) {
-          const failureIdx = builtPrompt.segments.findIndex((s) => s.id === 'current_failure');
-          if (failureIdx >= 0) {
-            builtPrompt.segments[failureIdx] = {
-              ...builtPrompt.segments[failureIdx],
-              images: [img],
-            };
-            console.log(
-              `[llmQueue] Task ${task.id}: attached screenshot ${imageAtt.path} (${img.mediaType})`
-            );
-          }
-        }
-      }
-    }
+    // Attach the first image attachment (screenshot) — regardless of failure
+    // category. The LLMService layer (multimodal mode + blocklist) auto-falls
+    // back to text when the active model rejects images.
+    await attachScreenshotIfAny(builtPrompt, details, reportId, `[llmQueue] Task ${task.id}`);
 
     // promptVersion is computed from the ORIGINAL prompt (template hash), not
     // the post-fit one — fit only mutates data segments, not templateOnly ones.
     const promptVersion = computePromptVersion(builtPrompt);
 
     await llmService.initialize();
-    const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(builtPrompt);
+    const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(
+      builtPrompt,
+      OUTPUT_RESERVE_TOKENS_BY_TASK.testAnalysis
+    );
 
     const debugPrompt = renderSegmentsForDebug(segmentedPrompt);
     llmTasksDb.updatePrompt(task.id, debugPrompt);
@@ -643,12 +765,13 @@ class LlmAnalysisQueue {
 
   /**
    * Extract failure details by parsing the report HTML from disk.
-   * Used as fallback when failure_details is not stored on the test_run record (older reports).
+   * Used as fallback when failure_details is not stored on the test_run record (older reports)
+   * AND as the "extract-on-read" enrichment path for rows that were persisted before the
+   * evidence schema landed.
    *
-   * Playwright stores error info in different ways:
-   * - results[].message — direct error text (older Playwright versions)
-   * - results[].attachments with name "error-context" — .md file with page snapshot / error context
-   * - results[].attachments with name "stderr"/"stdout" — captured output
+   * Delegates the actual error/console/network/action extraction to
+   * `failure-extraction.ts` so this module and `testManagement.ts` see
+   * identical evidence regardless of which code path produced it.
    */
   public async extractDetailsFromReport(
     reportId: string,
@@ -667,17 +790,27 @@ class LlmAnalysisQueue {
         for (const test of file.tests) {
           if (test.testId !== testId) continue;
 
-          let message = '';
-          let errorContextContent = '';
+          // Aggregate every attachment across results + the test-level set so the
+          // returned shape matches what processReportSummary expects (attachments
+          // listed by name).
           const allAttachments: Array<{ name: string; path: string; contentType: string }> = [];
-          // Per-attempt timeline. Includes passing retries so the LLM can spot
-          // "flaky → eventually passed" patterns vs "never recovered".
           const attempts: Array<{
             attempt: number;
             status: string;
             message?: string;
             durationMs?: number;
           }> = [];
+
+          // First non-passing result is the canonical attempt for the prompt's
+          // primary error block; the others contribute to the attempts timeline.
+          let firstFailedResult:
+            | {
+                status?: string;
+                message?: string;
+                duration?: number;
+                attachments?: Array<{ name: string; contentType: string; path: string }>;
+              }
+            | undefined;
 
           if (test.results) {
             for (let i = 0; i < test.results.length; i++) {
@@ -700,25 +833,12 @@ class LlmAnalysisQueue {
                 durationMs: typeof result.duration === 'number' ? result.duration : undefined,
               });
 
-              if (result.status === 'passed') continue;
-
-              if (result.message && !message) {
-                message = result.message;
+              if (result.status !== 'passed' && !firstFailedResult) {
+                firstFailedResult = result;
               }
 
-              // Read the error-context attachment (Playwright's "Copy prompt" source).
               if (result.attachments) {
                 for (const att of result.attachments) {
-                  if (att.name === 'error-context' && att.path && !errorContextContent) {
-                    try {
-                      errorContextContent = await fs.readFile(
-                        path.join(reportDir, att.path),
-                        'utf-8'
-                      );
-                    } catch {
-                      // attachment file may be missing — fall through
-                    }
-                  }
                   allAttachments.push({
                     name: att.name,
                     path: att.path,
@@ -739,45 +859,19 @@ class LlmAnalysisQueue {
             }
           }
 
-          // Trace ZIP carries structured error + stack — richest source when present.
-          let traceError: { message: string; stack: string } | null = null;
-          const traceAtt = allAttachments.find((a) => a.name === 'trace' && a.path);
-          if (traceAtt) {
-            traceError = await this.extractErrorFromTrace(reportDir, traceAtt.path);
-          }
-
-          // Pick the best message source in order: trace, result.message, synthetic fallback.
-          // The DOM snapshot is appended as supplementary context, not the error itself.
-          const MAX_CONTEXT_CHARS = 4000;
-          let bestMessage = '';
-          let stackTrace: string | undefined;
-
-          if (traceError) {
-            bestMessage = stripAnsi(traceError.message);
-            stackTrace = traceError.stack;
-          }
-          if (!bestMessage && message) {
-            bestMessage = message;
-            const stackIndex = message.indexOf('\n    at ');
-            if (stackIndex > 0) {
-              stackTrace = message.substring(stackIndex);
-              bestMessage = message.substring(0, stackIndex);
-            }
-          }
-          if (!bestMessage) {
-            bestMessage = `Test ${test.outcome}: ${test.title}`;
-          }
-          if (errorContextContent) {
-            const truncatedContext =
-              errorContextContent.length > MAX_CONTEXT_CHARS
-                ? errorContextContent.substring(0, MAX_CONTEXT_CHARS) + '\n\n... (truncated)'
-                : errorContextContent;
-            bestMessage += `\n\n# Page Context (DOM snapshot)\n\n${truncatedContext}`;
-          }
+          // Run the unified evidence extractor against the first failed
+          // result. When no failed result exists (e.g. a `flaky` test that
+          // eventually passed) fall back to a synthetic outcome shape so the
+          // page-snapshot / log readers still get a chance to run.
+          const evidence = await extractFailureEvidence(
+            reportId,
+            { title: test.title, outcome: test.outcome },
+            firstFailedResult ?? { status: test.outcome, attachments: allAttachments }
+          );
 
           return {
-            message: bestMessage,
-            stackTrace,
+            message: evidence.errorMessage,
+            stackTrace: evidence.stackTrace,
             testTitle: test.title,
             filePath: file.fileName || file.fileId,
             location: test.location,
@@ -785,6 +879,7 @@ class LlmAnalysisQueue {
             attempt: 1,
             status: test.outcome,
             attempts: attempts.length > 0 ? attempts : undefined,
+            evidence,
           };
         }
       }
@@ -907,6 +1002,7 @@ class LlmAnalysisQueue {
       trendContext,
       overrides: {
         systemPrompt: reportLlmCfg.customSystemPrompt,
+        reportSummarySystemPrompt: reportLlmCfg.customReportSummarySystemPrompt,
         reportSummaryInstructions: reportLlmCfg.customReportSummaryInstructions,
         project: project ?? undefined,
       },
@@ -914,7 +1010,10 @@ class LlmAnalysisQueue {
     const promptVersion = computePromptVersion(builtPrompt);
 
     await llmService.initialize();
-    const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(builtPrompt);
+    const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(
+      builtPrompt,
+      OUTPUT_RESERVE_TOKENS_BY_TASK.reportSummary
+    );
 
     const debugPrompt = renderSegmentsForDebug(segmentedPrompt);
     llmTasksDb.updatePrompt(task.id, debugPrompt);
@@ -950,7 +1049,7 @@ class LlmAnalysisQueue {
   }
 
   private async processProjectSummary(task: LlmTaskRow): Promise<void> {
-    const { project } = task;
+    const { project, reportIds: reportIdsJson } = task;
     if (!project) {
       llmTasksDb.fail(task.id, 'Missing project');
       return;
@@ -958,7 +1057,30 @@ class LlmAnalysisQueue {
 
     const { reportDb } = await import('./db/reports.sqlite.js');
 
-    const latestReports = reportDb.getLatestByProject(project, 10);
+    // Use the route-supplied report IDs verbatim when present (the route stores
+    // them already sorted newest-first and capped). Fall back to "latest 10 for
+    // project" only for older queued tasks that pre-date the reportIds column.
+    const explicitReportIds = (() => {
+      if (!reportIdsJson) return null;
+      try {
+        const parsed = JSON.parse(reportIdsJson);
+        return Array.isArray(parsed) && parsed.every((x) => typeof x === 'string')
+          ? (parsed as string[])
+          : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    let latestReports: ReturnType<typeof reportDb.getLatestByProject>;
+    if (explicitReportIds && explicitReportIds.length > 0) {
+      latestReports = explicitReportIds
+        .map((rid) => reportDb.getByID(rid))
+        .filter((r): r is NonNullable<typeof r> => !!r);
+    } else {
+      const projectArg = project === 'all' ? undefined : project;
+      latestReports = reportDb.getLatestByProject(projectArg, 10);
+    }
     if (latestReports.length === 0) {
       llmTasksDb.fail(task.id, 'No reports found for project');
       return;
@@ -966,6 +1088,16 @@ class LlmAnalysisQueue {
 
     const failureSummaryMap = new Map(
       failureSummaryDb.getSummariesByProject(project, 10).map((s) => [s.reportId, s] as const)
+    );
+
+    // Aggregate failures across the latest N reports by error_signature so the
+    // project-summary prompt can lead with "what's actually broken" instead of
+    // re-deriving it from per-run categories. Returns both the top-10 root
+    // causes (by total occurrences) and the persistent subset (signature seen
+    // in ≥3 distinct reports of the last N).
+    const { rootCauses, persistentFailures } = aggregateProjectRootCauses(
+      latestReports.map((r) => r.reportID),
+      { topN: 10, persistentMinReports: 3 }
     );
 
     const projectConfig = await service.getConfig();
@@ -989,15 +1121,21 @@ class LlmAnalysisQueue {
           llmSummary: summary?.llmSummary ?? undefined,
         };
       }),
+      rootCauses,
+      persistentFailures,
       overrides: {
         systemPrompt: projectLlmCfg.customSystemPrompt,
+        projectSummarySystemPrompt: projectLlmCfg.customProjectSummarySystemPrompt,
         projectSummaryInstructions: projectLlmCfg.customProjectSummaryInstructions,
       },
     });
     const promptVersion = computePromptVersion(builtPrompt);
 
     await llmService.initialize();
-    const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(builtPrompt);
+    const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(
+      builtPrompt,
+      OUTPUT_RESERVE_TOKENS_BY_TASK.projectSummary
+    );
 
     const debugPrompt = renderSegmentsForDebug(segmentedPrompt);
     llmTasksDb.updatePrompt(task.id, debugPrompt);
@@ -1053,62 +1191,6 @@ class LlmAnalysisQueue {
         : undefined,
     });
   }
-  /**
-   * Extract error message and stack trace from a Playwright trace ZIP file.
-   * The trace contains a test.trace JSONL file with error entries.
-   */
-  private async extractErrorFromTrace(
-    reportDir: string,
-    tracePath: string
-  ): Promise<{ message: string; stack: string } | null> {
-    try {
-      const zipBuffer = await fs.readFile(path.join(reportDir, tracePath));
-      const zip = await JSZip.loadAsync(zipBuffer);
-
-      const testTraceFile = zip.file('test.trace');
-      if (!testTraceFile) return null;
-
-      const content = await testTraceFile.async('string');
-      const lines = content.split('\n').filter((l: string) => l.trim());
-
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line);
-          // "error" entries carry the structured error message + stack.
-          if (entry.type === 'error' && entry.message) {
-            const stackLines = Array.isArray(entry.stack)
-              ? entry.stack
-                  .map(
-                    (s: { file?: string; line?: number; column?: number; function?: string }) =>
-                      `    at ${s.function ? s.function + ' ' : ''}(${s.file}:${s.line}:${s.column})`
-                  )
-                  .join('\n')
-              : typeof entry.stack === 'string'
-                ? entry.stack
-                : '';
-
-            return {
-              message: entry.message,
-              stack: stackLines,
-            };
-          }
-          if (entry.type === 'after' && entry.error?.message) {
-            return {
-              message: entry.error.message,
-              stack: typeof entry.error.stack === 'string' ? entry.error.stack : '',
-            };
-          }
-        } catch {
-          // skip unparseable lines
-        }
-      }
-
-      return null;
-    } catch (error) {
-      console.error(`[llmQueue] Failed to read trace ${tracePath}:`, error);
-      return null;
-    }
-  }
 }
 
 export const llmAnalysisQueue = LlmAnalysisQueue.getInstance();
@@ -1151,7 +1233,13 @@ export async function buildTestAnalysisRequest(opts: {
     } catch {
       details = null;
     }
-    if (details && (!details.message || !details.attempts || details.attempts.length === 0)) {
+    // Extract-on-read fallback: enrich missing message / attempts / evidence
+    // from the on-disk report so the prompt sees the same shape regardless of
+    // when the row was originally written.
+    if (
+      details &&
+      (!details.message || !details.attempts || details.attempts.length === 0 || !details.evidence)
+    ) {
       const extracted = await llmAnalysisQueue.extractDetailsFromReport(reportId, testId);
       if (extracted?.message && (!details.message || details.message.trim() === '')) {
         details.message = extracted.message;
@@ -1159,6 +1247,9 @@ export async function buildTestAnalysisRequest(opts: {
       }
       if (extracted?.attempts && (!details.attempts || details.attempts.length === 0)) {
         details.attempts = extracted.attempts;
+      }
+      if (extracted?.evidence && !details.evidence) {
+        details.evidence = extracted.evidence;
       }
     }
   }
@@ -1190,6 +1281,9 @@ export async function buildTestAnalysisRequest(opts: {
 
   const promptOverrides = {
     systemPrompt: llmCfg.customSystemPrompt as string | undefined,
+    testAnalysisSystemPrompt: llmCfg.customTestAnalysisSystemPrompt as string | undefined,
+    reportSummarySystemPrompt: llmCfg.customReportSummarySystemPrompt as string | undefined,
+    projectSummarySystemPrompt: llmCfg.customProjectSummarySystemPrompt as string | undefined,
     testAnalysisInstructions: llmCfg.customTestAnalysisInstructions as string | undefined,
     reportSummaryInstructions: llmCfg.customReportSummaryInstructions as string | undefined,
     projectSummaryInstructions: llmCfg.customProjectSummaryInstructions as string | undefined,
@@ -1197,70 +1291,39 @@ export async function buildTestAnalysisRequest(opts: {
     errorCategory: heuristicCategory,
   };
 
-  const relatedRows = analysisFeedbackDb.getRelatedByTest(testId, fileId, project, 25);
-  const currentSignature = failedRun?.errorSignature ?? undefined;
-  const ranked = [...relatedRows]
-    .map((r) => {
-      const sigMatch =
-        !!currentSignature && !!r.errorSignature && r.errorSignature === currentSignature;
-      const ageMs = Date.now() - new Date(r.updatedAt).getTime();
-      const days = Math.max(0, ageMs / (24 * 60 * 60 * 1000));
-      return {
-        row: r,
-        score: (sigMatch ? 100 : 0) + 30 / (1 + days) + (r.latestAnalysis ? 5 : 0),
-      };
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5)
-    .map(({ row: r }) => r);
-  const crossProjectEntries = ranked.map((r) => ({
-    project: r.project,
-    comment: r.comment,
-    updatedAt: r.updatedAt,
-    errorSignatureMatchesCurrent:
-      !!currentSignature && !!r.errorSignature && r.errorSignature === currentSignature,
-    latestAnalysis: r.latestAnalysis
-      ? {
-          content: r.latestAnalysis,
-          updatedAt: r.latestAnalysisUpdatedAt ?? r.updatedAt,
-          model: r.latestAnalysisModel ?? undefined,
-        }
-      : undefined,
-  }));
+  const { entries: crossProjectEntries, totalCount: crossProjectTotalCount } =
+    buildCrossProjectEntries(testId, fileId, project, failedRun?.errorSignature ?? undefined);
+
+  const { recentOutcomes, previousCategoriesChronological } = buildRecentHistoryFromRuns(runs);
+
+  await enrichEnvironmentFromReport(details, reportId);
 
   const builtPrompt = buildTestFailureSegments({
     failureDetails: details,
     historicalContext: {
       totalRuns,
       recentFailureCount: recentFailures,
+      flakinessScore,
+      flakinessThreshold: warningThreshold,
       isFlaky: flakinessScore >= warningThreshold,
       isNewFailure,
+      recentOutcomes,
+      previousCategories: previousCategoriesChronological,
     },
     feedback,
     crossProjectEntries,
-    crossProjectTotalCount: relatedRows.length,
+    crossProjectTotalCount,
     overrides: promptOverrides,
   });
 
-  if (details.attachments && details.attachments.length > 0) {
-    const imageAtt = details.attachments.find((a) => a.contentType?.startsWith('image/'));
-    if (imageAtt) {
-      const img = await readImageAttachment(reportId, imageAtt);
-      if (img) {
-        const failureIdx = builtPrompt.segments.findIndex((s) => s.id === 'current_failure');
-        if (failureIdx >= 0) {
-          builtPrompt.segments[failureIdx] = {
-            ...builtPrompt.segments[failureIdx],
-            images: [img],
-          };
-        }
-      }
-    }
-  }
+  await attachScreenshotIfAny(builtPrompt, details, reportId);
 
   const promptVersion = computePromptVersion(builtPrompt);
   await llmService.initialize();
-  const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(builtPrompt);
+  const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(
+    builtPrompt,
+    OUTPUT_RESERVE_TOKENS_BY_TASK.testAnalysis
+  );
   const debugPrompt = renderSegmentsForDebug(segmentedPrompt);
 
   return {
@@ -1275,6 +1338,115 @@ export async function buildTestAnalysisRequest(opts: {
 }
 
 const MAX_TREND_LIST_ITEMS = 25;
+
+interface AggregateOptions {
+  /** Cap on how many top-by-occurrence aggregates to return. */
+  topN: number;
+  /** Persistent threshold — signatures appearing in this many distinct reports
+   *  or more are added to the `persistentFailures` array. */
+  persistentMinReports: number;
+}
+
+/**
+ * Walk the test_runs for the given report IDs and aggregate failures by
+ * `error_signature`. Used by the project-summary prompt to lead with "what's
+ * actually broken across the last N runs" rather than ask the model to
+ * re-derive it from per-run categories.
+ *
+ * Synchronous SQLite reads only — safe to call inline from the queue worker.
+ */
+function aggregateProjectRootCauses(
+  reportIds: string[],
+  options: AggregateOptions
+): { rootCauses: ProjectRootCause[]; persistentFailures: ProjectRootCause[] } {
+  if (reportIds.length === 0) {
+    return { rootCauses: [], persistentFailures: [] };
+  }
+
+  type Mutable = Omit<ProjectRootCause, 'reportsAffected'> & {
+    reportsAffected: Set<string>;
+    seenTestKeys: Set<string>;
+  };
+  const map = new Map<string, Mutable>();
+
+  for (const reportId of reportIds) {
+    const runs = testDb.getTestRunsByReport(reportId);
+    for (const run of runs) {
+      if (!run.errorSignature || !run.failureDetails) continue;
+      let parsed: { message?: string } | null = null;
+      try {
+        parsed = JSON.parse(run.failureDetails);
+      } catch {
+        // Skip rows whose failure_details didn't parse — they still count for
+        // signature aggregation but won't contribute a sample message.
+      }
+
+      let agg = map.get(run.errorSignature);
+      if (!agg) {
+        agg = {
+          signature: run.errorSignature,
+          category: run.failureCategory || 'unknown',
+          occurrences: 0,
+          reportsAffected: new Set<string>(),
+          affectedTests: [],
+          sampleMessage: '',
+          seenTestKeys: new Set<string>(),
+        };
+        map.set(run.errorSignature, agg);
+      }
+      agg.occurrences++;
+      agg.reportsAffected.add(reportId);
+      if (!agg.sampleMessage && parsed?.message) {
+        agg.sampleMessage = parsed.message;
+      }
+      const testKey = `${run.testId}::${run.fileId}`;
+      if (!agg.seenTestKeys.has(testKey)) {
+        agg.seenTestKeys.add(testKey);
+        const t = testDb.getTest(run.testId, run.fileId, run.project);
+        agg.affectedTests.push({
+          testId: run.testId,
+          title: t?.title || run.testId,
+          filePath: t?.filePath || run.fileId,
+        });
+      }
+    }
+  }
+
+  const all = [...map.values()].map((m): ProjectRootCause => {
+    // Convert the mutable accumulator into the public shape (set → number).
+    const { reportsAffected, seenTestKeys: _seen, ...rest } = m;
+    return { ...rest, reportsAffected: reportsAffected.size };
+  });
+
+  // Sort by occurrences desc, with signature as tiebreaker for stable cache
+  // prefixes when two signatures have identical counts.
+  all.sort((a, b) =>
+    b.occurrences !== a.occurrences
+      ? b.occurrences - a.occurrences
+      : a.signature.localeCompare(b.signature)
+  );
+
+  const rootCauses = all.slice(0, options.topN);
+
+  // Enrich the top entries with the most recent LLM root-cause paragraph.
+  // Scanning reports newest-first means the first hit is the latest analysis.
+  for (const rc of rootCauses) {
+    const repTest = rc.affectedTests[0];
+    if (!repTest) continue;
+    for (const reportId of reportIds) {
+      const analysis = testAnalysisDb.getByTestAndReport(repTest.testId, reportId);
+      if (analysis?.analysis) {
+        rc.latestRootCause = extractRootCauseParagraph(analysis.analysis);
+        rc.latestAnalysisReportId = reportId;
+        break;
+      }
+    }
+  }
+
+  const persistentFailures = all.filter((a) => a.reportsAffected >= options.persistentMinReports);
+
+  return { rootCauses, persistentFailures };
+}
 
 /**
  * Build the trend context for a report-summary LLM prompt by diffing against

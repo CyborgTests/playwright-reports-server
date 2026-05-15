@@ -97,8 +97,7 @@ export function CompareToPicker({
   const excludeSet = useMemo(() => new Set(excludeReportIds), [excludeReportIds]);
   const totalAvailable = data?.pages?.[0]?.total ?? 0;
   const allLoaded = useMemo(
-    () =>
-      (data?.pages ?? []).flatMap((p) => p.reports).filter((r) => !excludeSet.has(r.reportID)),
+    () => (data?.pages ?? []).flatMap((p) => p.reports).filter((r) => !excludeSet.has(r.reportID)),
     [data, excludeSet]
   );
 

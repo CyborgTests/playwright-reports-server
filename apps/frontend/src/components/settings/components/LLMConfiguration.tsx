@@ -614,140 +614,216 @@ export default function LLMConfiguration({
           </section>
 
           {/* Custom prompts — wrapped in an accordion since most users won't touch them.
-              Empty string clears the override and falls back to the built-in default. */}
+              Empty string clears the override and falls back to the built-in default.
+              Organized by task (Test, Report, Project) so users can tune one task
+              without touching the others. The legacy `customSystemPrompt` field is
+              still honored server-side as a fallback when the task-specific field
+              is empty — we don't surface a separate UI input for it. */}
           <Accordion type="single" collapsible>
             <AccordionItem value="custom-prompts" className="border rounded-md px-3">
               <AccordionTrigger className="text-sm font-medium">
                 Custom prompts (advanced)
               </AccordionTrigger>
-              <AccordionContent className="space-y-4">
+              <AccordionContent className="space-y-6">
                 <p className="text-xs text-muted-foreground">
-                  Override the built-in prompt templates. Each field shows its built-in default
-                  inline as placeholder text — leave blank to use it, or type to override. Supports{' '}
+                  Override the built-in prompt templates for each task. Each field shows its
+                  built-in default inline as placeholder text — leave blank to use it, or type to
+                  override. Supports{' '}
                   <code className="text-xs bg-muted px-1 rounded">{'{{var}}'}</code> substitution
                   from a per-template allowlist; unknown vars are left intact and logged.
                 </p>
 
-                <div className="space-y-2">
-                  <Label htmlFor="llm-custom-system">System prompt</Label>
-                  <Textarea
-                    id="llm-custom-system"
-                    disabled={editingSection !== 'llm'}
-                    placeholder={
-                      defaultPrompts?.systemPrompt.content ??
-                      'You are a beautiful capybara glazing at a sunset…'
-                    }
-                    rows={6}
-                    value={
-                      editingSection === 'llm'
-                        ? (tempConfig.llm?.customSystemPrompt ?? '')
-                        : (config.llm?.customSystemPrompt ?? '')
-                    }
-                    onChange={(e) =>
-                      editingSection === 'llm' &&
-                      onUpdateTempConfig({
-                        llm: { ...tempConfig.llm, customSystemPrompt: e.target.value },
-                      })
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">No vars available.</p>
+                {/* Test analysis — per-test failure deep-dive. */}
+                <div className="space-y-3 rounded-md border p-3">
+                  <h4 className="text-sm font-semibold">Test</h4>
+                  <div className="space-y-2">
+                    <Label htmlFor="llm-custom-test-system">System prompt</Label>
+                    <Textarea
+                      id="llm-custom-test-system"
+                      disabled={editingSection !== 'llm'}
+                      placeholder={
+                        defaultPrompts?.testAnalysisSystemPrompt.content ??
+                        defaultPrompts?.systemPrompt.content ??
+                        'You are an expert test automation engineer…'
+                      }
+                      rows={5}
+                      value={
+                        editingSection === 'llm'
+                          ? (tempConfig.llm?.customTestAnalysisSystemPrompt ?? '')
+                          : (config.llm?.customTestAnalysisSystemPrompt ?? '')
+                      }
+                      onChange={(e) =>
+                        editingSection === 'llm' &&
+                        onUpdateTempConfig({
+                          llm: {
+                            ...tempConfig.llm,
+                            customTestAnalysisSystemPrompt: e.target.value,
+                          },
+                        })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">No vars available.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="llm-custom-test">Task instructions</Label>
+                    <Textarea
+                      id="llm-custom-test"
+                      disabled={editingSection !== 'llm'}
+                      placeholder={
+                        defaultPrompts?.testAnalysisInstructions.content ??
+                        'Analyze the Playwright test failure…'
+                      }
+                      rows={12}
+                      value={
+                        editingSection === 'llm'
+                          ? (tempConfig.llm?.customTestAnalysisInstructions ?? '')
+                          : (config.llm?.customTestAnalysisInstructions ?? '')
+                      }
+                      onChange={(e) =>
+                        editingSection === 'llm' &&
+                        onUpdateTempConfig({
+                          llm: {
+                            ...tempConfig.llm,
+                            customTestAnalysisInstructions: e.target.value,
+                          },
+                        })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Vars: <code className="text-xs">{'{{project}}'}</code>,{' '}
+                      <code className="text-xs">{'{{testTitle}}'}</code>,{' '}
+                      <code className="text-xs">{'{{filePath}}'}</code>,{' '}
+                      <code className="text-xs">{'{{errorCategory}}'}</code>
+                    </p>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="llm-custom-test">Test analysis instructions</Label>
-                  <Textarea
-                    id="llm-custom-test"
-                    disabled={editingSection !== 'llm'}
-                    placeholder={
-                      defaultPrompts?.testAnalysisInstructions.content ??
-                      'Analyze the Playwright test failure and make no mistakes'
-                    }
-                    rows={12}
-                    value={
-                      editingSection === 'llm'
-                        ? (tempConfig.llm?.customTestAnalysisInstructions ?? '')
-                        : (config.llm?.customTestAnalysisInstructions ?? '')
-                    }
-                    onChange={(e) =>
-                      editingSection === 'llm' &&
-                      onUpdateTempConfig({
-                        llm: {
-                          ...tempConfig.llm,
-                          customTestAnalysisInstructions: e.target.value,
-                        },
-                      })
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Vars: <code className="text-xs">{'{{project}}'}</code>,{' '}
-                    <code className="text-xs">{'{{testTitle}}'}</code>,{' '}
-                    <code className="text-xs">{'{{filePath}}'}</code>,{' '}
-                    <code className="text-xs">{'{{errorCategory}}'}</code>
-                  </p>
+                {/* Report summary — one-run aggregation across per-test analyses. */}
+                <div className="space-y-3 rounded-md border p-3">
+                  <h4 className="text-sm font-semibold">Report</h4>
+                  <div className="space-y-2">
+                    <Label htmlFor="llm-custom-report-system">System prompt</Label>
+                    <Textarea
+                      id="llm-custom-report-system"
+                      disabled={editingSection !== 'llm'}
+                      placeholder={
+                        defaultPrompts?.reportSummarySystemPrompt.content ??
+                        defaultPrompts?.systemPrompt.content ??
+                        'You are a test lead reviewing a single Playwright CI run…'
+                      }
+                      rows={5}
+                      value={
+                        editingSection === 'llm'
+                          ? (tempConfig.llm?.customReportSummarySystemPrompt ?? '')
+                          : (config.llm?.customReportSummarySystemPrompt ?? '')
+                      }
+                      onChange={(e) =>
+                        editingSection === 'llm' &&
+                        onUpdateTempConfig({
+                          llm: {
+                            ...tempConfig.llm,
+                            customReportSummarySystemPrompt: e.target.value,
+                          },
+                        })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">No vars available.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="llm-custom-report">Task instructions</Label>
+                    <Textarea
+                      id="llm-custom-report"
+                      disabled={editingSection !== 'llm'}
+                      placeholder={
+                        defaultPrompts?.reportSummaryInstructions.content ??
+                        'Summarize the failures from this Playwright report…'
+                      }
+                      rows={12}
+                      value={
+                        editingSection === 'llm'
+                          ? (tempConfig.llm?.customReportSummaryInstructions ?? '')
+                          : (config.llm?.customReportSummaryInstructions ?? '')
+                      }
+                      onChange={(e) =>
+                        editingSection === 'llm' &&
+                        onUpdateTempConfig({
+                          llm: {
+                            ...tempConfig.llm,
+                            customReportSummaryInstructions: e.target.value,
+                          },
+                        })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Vars: <code className="text-xs">{'{{reportId}}'}</code>,{' '}
+                      <code className="text-xs">{'{{project}}'}</code>,{' '}
+                      <code className="text-xs">{'{{totalFailures}}'}</code>
+                    </p>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="llm-custom-report">Report summary instructions</Label>
-                  <Textarea
-                    id="llm-custom-report"
-                    disabled={editingSection !== 'llm'}
-                    placeholder={
-                      defaultPrompts?.reportSummaryInstructions.content ??
-                      'Make some sense from this Playwright report...'
-                    }
-                    rows={12}
-                    value={
-                      editingSection === 'llm'
-                        ? (tempConfig.llm?.customReportSummaryInstructions ?? '')
-                        : (config.llm?.customReportSummaryInstructions ?? '')
-                    }
-                    onChange={(e) =>
-                      editingSection === 'llm' &&
-                      onUpdateTempConfig({
-                        llm: {
-                          ...tempConfig.llm,
-                          customReportSummaryInstructions: e.target.value,
-                        },
-                      })
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Vars: <code className="text-xs">{'{{reportId}}'}</code>,{' '}
-                    <code className="text-xs">{'{{project}}'}</code>,{' '}
-                    <code className="text-xs">{'{{totalFailures}}'}</code>
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="llm-custom-project">Project summary instructions</Label>
-                  <Textarea
-                    id="llm-custom-project"
-                    disabled={editingSection !== 'llm'}
-                    placeholder={
-                      defaultPrompts?.projectSummaryInstructions.content ??
-                      'Analyze the project test health…'
-                    }
-                    rows={12}
-                    value={
-                      editingSection === 'llm'
-                        ? (tempConfig.llm?.customProjectSummaryInstructions ?? '')
-                        : (config.llm?.customProjectSummaryInstructions ?? '')
-                    }
-                    onChange={(e) =>
-                      editingSection === 'llm' &&
-                      onUpdateTempConfig({
-                        llm: {
-                          ...tempConfig.llm,
-                          customProjectSummaryInstructions: e.target.value,
-                        },
-                      })
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Vars: <code className="text-xs">{'{{project}}'}</code>,{' '}
-                    <code className="text-xs">{'{{totalRuns}}'}</code>,{' '}
-                    <code className="text-xs">{'{{passingRuns}}'}</code>
-                  </p>
+                {/* Project summary — health roll-up across the latest N runs. */}
+                <div className="space-y-3 rounded-md border p-3">
+                  <h4 className="text-sm font-semibold">Project</h4>
+                  <div className="space-y-2">
+                    <Label htmlFor="llm-custom-project-system">System prompt</Label>
+                    <Textarea
+                      id="llm-custom-project-system"
+                      disabled={editingSection !== 'llm'}
+                      placeholder={
+                        defaultPrompts?.projectSummarySystemPrompt.content ??
+                        defaultPrompts?.systemPrompt.content ??
+                        'You are a QA lead writing a brief health summary…'
+                      }
+                      rows={5}
+                      value={
+                        editingSection === 'llm'
+                          ? (tempConfig.llm?.customProjectSummarySystemPrompt ?? '')
+                          : (config.llm?.customProjectSummarySystemPrompt ?? '')
+                      }
+                      onChange={(e) =>
+                        editingSection === 'llm' &&
+                        onUpdateTempConfig({
+                          llm: {
+                            ...tempConfig.llm,
+                            customProjectSummarySystemPrompt: e.target.value,
+                          },
+                        })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">No vars available.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="llm-custom-project">Task instructions</Label>
+                    <Textarea
+                      id="llm-custom-project"
+                      disabled={editingSection !== 'llm'}
+                      placeholder={
+                        defaultPrompts?.projectSummaryInstructions.content ??
+                        'Analyze the project test health…'
+                      }
+                      rows={12}
+                      value={
+                        editingSection === 'llm'
+                          ? (tempConfig.llm?.customProjectSummaryInstructions ?? '')
+                          : (config.llm?.customProjectSummaryInstructions ?? '')
+                      }
+                      onChange={(e) =>
+                        editingSection === 'llm' &&
+                        onUpdateTempConfig({
+                          llm: {
+                            ...tempConfig.llm,
+                            customProjectSummaryInstructions: e.target.value,
+                          },
+                        })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Vars: <code className="text-xs">{'{{project}}'}</code>,{' '}
+                      <code className="text-xs">{'{{totalRuns}}'}</code>,{' '}
+                      <code className="text-xs">{'{{passingRuns}}'}</code>
+                    </p>
+                  </div>
                 </div>
               </AccordionContent>
             </AccordionItem>

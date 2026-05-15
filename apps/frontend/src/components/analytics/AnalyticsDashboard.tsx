@@ -177,7 +177,7 @@ export default function AnalyticsDashboard() {
 
         <FailureAnalysisSummary
           project={project}
-          dateRange={dateRange}
+          reportIds={runHealthMetrics.map((m) => m.runId)}
           totalFailures={failureCategoryResponse?.data?.totalFailures}
         />
       </section>

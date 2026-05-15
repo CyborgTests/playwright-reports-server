@@ -279,6 +279,12 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
 
         project ??= run.project;
 
+        const existing = testAnalysisDb.getByTestAndReport(run.testId, id);
+        if (existing?.analysis && existing.analysis.trim() !== '') {
+          skipped++;
+          continue;
+        }
+
         // Strict propagation: only mirror an existing analysis when both the
         // normalized error_signature AND the heuristic failure category match
         // the prior run's. Otherwise enqueue a fresh test_analysis task — a
@@ -447,6 +453,10 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         if (authResult) return;
 
         const { project } = request.query as { project?: string };
+        const body = (request.body ?? {}) as { reportIds?: unknown };
+        const explicitReportIds: string[] | undefined = Array.isArray(body.reportIds)
+          ? (body.reportIds.filter((x) => typeof x === 'string') as string[])
+          : undefined;
 
         if (!llmService.isConfigured()) {
           return reply.status(400).send({
@@ -456,12 +466,28 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         }
 
         const projectKey = project || 'all';
+        const hasExplicit = !!explicitReportIds && explicitReportIds.length > 0;
 
-        const latestReports = reportDb.getLatestByProject(project || undefined, 10);
+        let latestReports: ReturnType<typeof reportDb.getLatestByProject>;
+        if (hasExplicit) {
+          const fetched = (explicitReportIds as string[])
+            .map((rid) => reportDb.getByID(rid))
+            .filter((r): r is NonNullable<typeof r> => !!r);
+          latestReports = fetched
+            .sort(
+              (a, b) =>
+                new Date(String(b.createdAt)).getTime() - new Date(String(a.createdAt)).getTime()
+            )
+            .slice(0, 10);
+        } else {
+          latestReports = reportDb.getLatestByProject(project || undefined, 10);
+        }
         if (latestReports.length === 0) {
           return reply.status(400).send({
             success: false,
-            error: 'No reports available for this project.',
+            error: hasExplicit
+              ? 'None of the supplied reportIds resolved to reports.'
+              : 'No reports available for this project.',
           });
         }
 
@@ -519,16 +545,20 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
           )
           .get(projectKey) as { id: string } | undefined;
 
+        const resolvedReportIds = hasExplicit ? latestReports.map((r) => r.reportID) : null;
+
         let taskId: string;
         let deduped: boolean;
         if (inflight) {
           taskId = inflight.id;
           deduped = true;
           llmTasksDb.markAsRetry(taskId);
+          llmTasksDb.updateReportIds(taskId, resolvedReportIds);
         } else {
           const created = llmTasksDb.createTask('project_summary', {
             project: projectKey,
             isRetry: true,
+            reportIds: resolvedReportIds ?? undefined,
           });
           taskId = created.id;
           deduped = false;

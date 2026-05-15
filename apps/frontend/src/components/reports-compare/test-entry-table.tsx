@@ -33,8 +33,7 @@ const outcomeVariant: Record<
   unknown: 'secondary',
 };
 
-const outcomeLabel = (raw?: string, classified?: DiffOutcome): string =>
-  raw ?? classified ?? '—';
+const outcomeLabel = (raw?: string, classified?: DiffOutcome): string => raw ?? classified ?? '—';
 
 function OutcomeCell({
   outcome,
@@ -108,11 +107,7 @@ function DeltaDisplay({ deltaMs, deltaPct }: { deltaMs: number; deltaPct: number
   );
 }
 
-const titleTarget = (
-  entry: DiffTestEntry,
-  reportAUrl: string,
-  reportBUrl: string
-): string => {
+const titleTarget = (entry: DiffTestEntry, reportAUrl: string, reportBUrl: string): string => {
   const url = entry.outcomeB ? reportBUrl : reportAUrl;
   return servedTestUrl(url, entry.testId);
 };

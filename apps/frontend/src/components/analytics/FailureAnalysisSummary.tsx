@@ -1,6 +1,6 @@
 'use client';
 
-import type { DateRange, ProjectAnalysisStructured } from '@playwright-reports/shared';
+import type { ProjectAnalysisStructured } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Brain, RefreshCw } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
@@ -43,14 +43,13 @@ interface EnqueueResponse {
 interface FailureAnalysisSummaryProps {
   project?: string;
   totalFailures?: number;
-  // Kept for API compatibility with the dashboard wiring; the queue handler
-  // always uses the latest 10 reports for the project, so range is ignored.
-  dateRange?: DateRange;
+  reportIds?: string[];
 }
 
 export function FailureAnalysisSummary({
   project,
   totalFailures,
+  reportIds,
 }: Readonly<FailureAnalysisSummaryProps>) {
   const queryClient = useQueryClient();
   const { data: config } = useConfig();
@@ -70,14 +69,14 @@ export function FailureAnalysisSummary({
   });
 
   const enqueuePath = `/api/analytics/failure-categories/llm?${cacheParams.toString()}`;
-  const { mutate: enqueueAnalysis, isPending: isEnqueuing } = useMutation<EnqueueResponse>(
-    enqueuePath,
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: [cachePath] });
-      },
-    }
-  );
+  const { mutate: enqueueAnalysis, isPending: isEnqueuing } = useMutation<
+    EnqueueResponse,
+    { reportIds?: string[] }
+  >(enqueuePath, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [cachePath] });
+    },
+  });
 
   const summary = cached?.data ?? null;
   const pendingAnalysisCount = cached?.pendingAnalysisCount ?? 0;
@@ -144,7 +143,11 @@ export function FailureAnalysisSummary({
           {hasOngoingAnalysis
             ? ongoingButton
             : llmConfigured && (
-                <Button variant="outline" size="sm" onClick={() => enqueueAnalysis({})}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => enqueueAnalysis({ body: { reportIds } })}
+                >
                   {summary ? (
                     <>
                       <RefreshCw className="h-4 w-4 mr-1" /> Re-generate

@@ -2,8 +2,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { llmService } from '../lib/llm/index.js';
 import {
   DEFAULT_SYSTEM_PROMPT,
+  PROJECT_SUMMARY_SYSTEM_PROMPT,
   PROJECT_SUMMARY_TASK_INSTRUCTIONS,
+  REPORT_SUMMARY_SYSTEM_PROMPT,
   REPORT_SUMMARY_TASK_INSTRUCTIONS,
+  TEST_ANALYSIS_SYSTEM_PROMPT,
   TEST_ANALYSIS_TASK_INSTRUCTIONS,
 } from '../lib/llm/prompts/index.js';
 import { getDatabase } from '../lib/service/db/db.js';
@@ -398,8 +401,25 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     return {
       success: true,
       data: {
+        // Legacy single-prompt field — kept for back-compat with older UIs
+        // that haven't been updated to the per-task overrides below.
         systemPrompt: {
           content: DEFAULT_SYSTEM_PROMPT,
+          vars: [],
+        },
+        // Per-task system prompts. The settings UI shows these alongside the
+        // task instructions in Test/Report/Project groups so users can
+        // override one task without touching the other two.
+        testAnalysisSystemPrompt: {
+          content: TEST_ANALYSIS_SYSTEM_PROMPT,
+          vars: [],
+        },
+        reportSummarySystemPrompt: {
+          content: REPORT_SUMMARY_SYSTEM_PROMPT,
+          vars: [],
+        },
+        projectSummarySystemPrompt: {
+          content: PROJECT_SUMMARY_SYSTEM_PROMPT,
           vars: [],
         },
         testAnalysisInstructions: {

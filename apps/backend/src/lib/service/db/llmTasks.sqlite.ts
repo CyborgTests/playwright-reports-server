@@ -35,6 +35,7 @@ export interface LlmTaskRow {
   totalTokens: number | null;
   promptVersion: string | null;
   isRetry: number;
+  reportIds: string | null;
 }
 
 export interface LlmTaskUsage {
@@ -57,6 +58,7 @@ export class LlmTasksDatabase {
       string | null,
       string,
       number,
+      string | null,
     ]
   >;
   private readonly selectQueuedStmt: Database.Statement<[number]>;
@@ -87,8 +89,8 @@ export class LlmTasksDatabase {
 
   private constructor() {
     this.insertTaskStmt = this.db.prepare(`
-      INSERT INTO llm_tasks (id, type, status, priority, reportId, testId, fileId, project, createdAt, isRetry)
-      VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO llm_tasks (id, type, status, priority, reportId, testId, fileId, project, createdAt, isRetry, reportIds)
+      VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     this.selectQueuedStmt = this.db.prepare(`
@@ -179,12 +181,15 @@ export class LlmTasksDatabase {
       project?: string;
       priority?: number;
       isRetry?: boolean;
+      reportIds?: string[];
     } = {}
   ): LlmTaskRow {
     const id = uuid();
     const now = new Date().toISOString();
     const priority = opts.priority ?? 0;
     const isRetry = opts.isRetry ? 1 : 0;
+    const reportIdsJson =
+      opts.reportIds && opts.reportIds.length > 0 ? JSON.stringify(opts.reportIds) : null;
 
     this.insertTaskStmt.run(
       id,
@@ -195,7 +200,8 @@ export class LlmTasksDatabase {
       opts.fileId ?? null,
       opts.project ?? null,
       now,
-      isRetry
+      isRetry,
+      reportIdsJson
     );
 
     return {
@@ -222,11 +228,21 @@ export class LlmTasksDatabase {
       totalTokens: null,
       promptVersion: null,
       isRetry,
+      reportIds: reportIdsJson,
     };
   }
 
   public markAsRetry(id: string): void {
     this.db.prepare(`UPDATE llm_tasks SET isRetry = 1 WHERE id = ? AND status = 'queued'`).run(id);
+  }
+
+  public updateReportIds(id: string, reportIds: string[] | null): void {
+    const json = reportIds && reportIds.length > 0 ? JSON.stringify(reportIds) : null;
+    this.db
+      .prepare(
+        `UPDATE llm_tasks SET reportIds = ? WHERE id = ? AND status IN ('queued','processing')`
+      )
+      .run(json, id);
   }
 
   public claimNext(count: number): LlmTaskRow[] {

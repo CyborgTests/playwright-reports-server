@@ -2,7 +2,7 @@ import type { TestManagementConfig } from '@playwright-reports/shared';
 import { ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import { defaultConfig } from '../config.js';
 import { llmService } from '../llm/index.js';
-import { extractFailureMessage } from '../parser/failure-extraction.js';
+import { extractFailureEvidence } from '../parser/failure-extraction.js';
 import type { ReportHistory } from '../storage/types.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import { projectSummaryDb } from './db/projectSummary.sqlite.js';
@@ -475,10 +475,12 @@ export class TestManagementService {
     const result = test.results?.[attempt - 1];
     if (!result || result.status === 'passed') return null;
 
-    // Pull the best error text we can find — `result.message` first, then the trace
-    // ZIP's structured error entry, then the error-context DOM snapshot, finally a
-    // synthetic "Test {outcome}: {title}" so signatures still group.
-    const { message, stackTrace } = await extractFailureMessage(reportId, test, result);
+    // Pull the full evidence payload: canonical error message + stack, page
+    // snapshot from the error-context attachment, and sanitized console /
+    // network / action events from the trace ZIP. Persisted alongside the
+    // legacy message/stack fields so the LLM queue can render dedicated
+    // segments without re-parsing the trace.
+    const evidence = await extractFailureEvidence(reportId, test, result);
 
     // Build the full retry timeline so the LLM can reason about flaky-vs-persistent
     // directly. Single-line message summaries keep this compact even with many retries.
@@ -495,9 +497,12 @@ export class TestManagementService {
       };
     });
 
+    // Persist message + stackTrace as flat fields for backward compatibility
+    // with the heuristic classifier (which only reads `message`). The full
+    // evidence payload is nested under `evidence` for the LLM prompt builder.
     const details = {
-      message,
-      stackTrace,
+      message: evidence.errorMessage,
+      stackTrace: evidence.stackTrace,
       testTitle: test.title,
       filePath,
       location: test.location,
@@ -505,6 +510,7 @@ export class TestManagementService {
       attempt,
       status: result.status || 'unknown',
       attempts: attempts.length > 0 ? attempts : undefined,
+      evidence,
     };
 
     return JSON.stringify(details);

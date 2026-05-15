@@ -114,10 +114,7 @@ const pickRunForTest = (runs: TestRun[]): TestRun => {
   );
 };
 
-const groupRunsByKey = (
-  runs: TestRun[],
-  matchByTestIdOnly: boolean
-): Map<string, TestRun> => {
+const groupRunsByKey = (runs: TestRun[], matchByTestIdOnly: boolean): Map<string, TestRun> => {
   const byKey = new Map<string, TestRun[]>();
   for (const run of runs) {
     const k = matchKeyOf(run, matchByTestIdOnly);

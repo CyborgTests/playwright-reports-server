@@ -71,9 +71,7 @@ function ReportDetailPage() {
               excludeReportIds={[id]}
               defaultProject={report?.project}
               // From the report detail page: baseline = picked (older), target = current.
-              buildHref={(otherId) =>
-                withBase(`/reports/compare?a=${otherId}&b=${id}`)
-              }
+              buildHref={(otherId) => withBase(`/reports/compare?a=${otherId}&b=${id}`)}
             />
           )}
         </div>

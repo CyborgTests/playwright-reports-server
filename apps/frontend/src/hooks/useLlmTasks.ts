@@ -46,6 +46,9 @@ export interface LlmDefaultPrompt {
 
 export interface LlmDefaultPrompts {
   systemPrompt: LlmDefaultPrompt;
+  testAnalysisSystemPrompt: LlmDefaultPrompt;
+  reportSummarySystemPrompt: LlmDefaultPrompt;
+  projectSummarySystemPrompt: LlmDefaultPrompt;
   testAnalysisInstructions: LlmDefaultPrompt;
   reportSummaryInstructions: LlmDefaultPrompt;
   projectSummaryInstructions: LlmDefaultPrompt;

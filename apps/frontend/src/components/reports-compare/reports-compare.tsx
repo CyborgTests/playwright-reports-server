@@ -108,9 +108,7 @@ export default function ReportsCompare() {
               defaultProject={reportA.project}
               openInNewTab={false}
               triggerLabel="Change baseline"
-              buildHref={(picked) =>
-                withBase(`/reports/compare?a=${picked}&b=${reportB.reportID}`)
-              }
+              buildHref={(picked) => withBase(`/reports/compare?a=${picked}&b=${reportB.reportID}`)}
             />
           }
         />
@@ -136,9 +134,7 @@ export default function ReportsCompare() {
               defaultProject={reportB.project}
               openInNewTab={false}
               triggerLabel="Change target"
-              buildHref={(picked) =>
-                withBase(`/reports/compare?a=${reportA.reportID}&b=${picked}`)
-              }
+              buildHref={(picked) => withBase(`/reports/compare?a=${reportA.reportID}&b=${picked}`)}
             />
           }
         />

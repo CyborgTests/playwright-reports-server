@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { FailureEvidence } from '../../parser/failure-extraction.js';
 import type { LLMResponseSchema, PromptSegment, SegmentedPrompt } from '../types/index.js';
 
 const FAILURE_CATEGORY_ENUM = [
@@ -23,11 +24,11 @@ const FAILURE_CATEGORY_ENUM = [
 export const TEST_FAILURE_ANALYSIS_SCHEMA: LLMResponseSchema = {
   name: 'submit_test_failure_analysis',
   description:
-    'Submit categorized analysis of a Playwright test failure. Choose category from the fixed enum; analysis is markdown text; isNew indicates first-occurrence vs recurring.',
+    'Submit categorized analysis of a Playwright test failure. Choose category from the fixed enum; analysis is markdown text.',
   schema: {
     type: 'object',
     additionalProperties: false,
-    required: ['category', 'analysis', 'isNew'],
+    required: ['category', 'analysis'],
     properties: {
       category: {
         type: 'string',
@@ -38,10 +39,6 @@ export const TEST_FAILURE_ANALYSIS_SCHEMA: LLMResponseSchema = {
         type: 'string',
         description:
           'Markdown analysis of root cause, suggested fix, and observations. Specific, actionable, concise.',
-      },
-      isNew: {
-        type: 'boolean',
-        description: 'true when this failure signature has not been seen before; false otherwise.',
       },
     },
   },
@@ -126,8 +123,13 @@ export const PROJECT_ANALYSIS_SCHEMA: LLMResponseSchema = {
   },
 };
 
-export const getCustomSystemPrompt = (systemPrompt?: string): string =>
-  systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
+export function resolveSystemPrompt(
+  builtInDefault: string,
+  legacyCustom?: string,
+  perTaskCustom?: string
+): string {
+  return perTaskCustom?.trim() || legacyCustom?.trim() || builtInDefault;
+}
 
 // Tiny `{{var}}` substitution with a per-template allowlist. Logic-free by
 // design — no conditionals, no loops, no partials. When substitution replaces
@@ -200,16 +202,20 @@ const FAILURE_CATEGORY_SCHEMA = `1. A failure **category** — pick exactly one 
    - **unknown** — only when none of the above clearly apply
 2. A concise **analysis** of the root cause
 3. A suggested **fix**
-4. Whether this appears to be a **new issue** or a recurring pattern
 
-Respond in JSON format: { "category": "...", "analysis": "markdown text", "isNew": true/false }`;
+Respond in JSON format: { "category": "...", "analysis": "markdown text" }`;
 
 export const DEFAULT_SYSTEM_PROMPT =
   'You are an expert test automation engineer and test failure analyst with deep knowledge of Playwright, testing best practices, and common failure patterns. Your role is to analyze test failures and suggest concrete improvements. Responses must be specific, actionable, and concise.';
+export const TEST_ANALYSIS_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT;
+export const REPORT_SUMMARY_SYSTEM_PROMPT =
+  'You are a test lead reviewing a single Playwright CI run. Cluster failures into the smallest set of root causes, prioritize fixes by how many tests each unblocks, and call out patterns that look systemic (shared fixtures, flaky infra) versus one-off. Keep findings concrete — cite specific files, categories, or signatures — and skip generic testing advice.';
+export const PROJECT_SUMMARY_SYSTEM_PROMPT =
+  'You are a QA lead writing a brief health summary for a Playwright test project across its latest runs. Lead with a verdict and a one-line headline. Distinguish transient flakes from persistent regressions, anchor your verdict on what the most recent runs show, and avoid restating per-run details the reader already has. Be concrete about which tests or areas regressed.';
 
 export const TEST_ANALYSIS_TASK_INSTRUCTIONS = `Analyze the Playwright test failure for \`{{testTitle}}\` in project "{{project}}" ({{filePath}}). The heuristic baseline category for this failure is \`{{errorCategory}}\` — use it as a hint, not a verdict. Provide the response specified by the schema above.
 
-The \`analysis\` field MUST be a markdown document organized into exactly these three sections, in order, using the headers verbatim (including emojis):
+The \`analysis\` field MUST be a markdown document with the first two sections in order, using the headers verbatim (including emojis). The third section is OPTIONAL — include it only when you can write a concrete, useful snippet; omit it entirely when the right answer is configuration, environment, or infra-shaped.
 
 ## 🔍 Root Cause
 A concise diagnosis of why the test failed — symptom, the underlying cause, and which code/state is responsible. Cite specific lines from the stack trace where helpful.
@@ -217,8 +223,8 @@ A concise diagnosis of why the test failed — symptom, the underlying cause, an
 ## 🛠️ Fix & Best Practice
 The recommended fix and any related best practice that prevents this class of failure (e.g., proper waiting strategies, selector resilience, fixture isolation). Be specific to the failure category — don't recite generic advice.
 
-## 📝 Code Snippet
-A minimal Playwright code example showing the fix. Use a fenced \`\`\`ts\`\`\` block. If no code change is appropriate (e.g., transient infra failure), state that explicitly here in one short line instead of inventing a snippet.
+## 📝 Code Snippet (optional)
+A minimal Playwright code example showing the fix. Use a fenced \`\`\`ts\`\`\` block. Include this section ONLY when (a) the fix is a code change, AND (b) you have enough context to write code that is meaningfully more specific than the surrounding prose. Skip the section entirely otherwise — do not write "no snippet needed" or invent illustrative code.
 
 When an Attempt History is present, use it to judge flakiness vs persistence:
 - "eventually passed" → likely transient/environmental; recommend retry tuning, not a code fix.
@@ -259,6 +265,10 @@ Respond with a structured JSON object matching the provided schema. The schema r
 
 Each section body is markdown. Do NOT repeat the section heading inside the body. When referencing tests, include their path under \`codeRefs\` so the UI can render clickable links.
 
+When the data includes a **Top Root Causes** block, treat it as the primary input — those are the actual failure signatures across the window, ranked by occurrence count. Build your "Health Assessment" and "Recommendations" sections around them: identify which one or two root causes are responsible for the most failures, name the specific tests they affect (from the listed affected tests), and call those out by file path in your \`codeRefs\`. The per-run category histograms below are supporting evidence, not the lead.
+
+When a **Persistent Failures** block is present, every entry is a signature that recurred in 3+ distinct runs — these are regressions that aren't being fixed and should anchor the "Recommendations" section.
+
 IMPORTANT: account for the full timeline. If tests were passing before and after a failure, that failure is likely transient/already resolved — do not treat it as an ongoing critical issue. But if the LATEST run is red, the verdict cannot be \`healthy\` regardless of what came before.`;
 
 /** One entry in a test's retry timeline. Drawn from Playwright's
@@ -287,6 +297,7 @@ export interface FailureDetailsForPrompt {
    *  persistence directly. The primary message/stack above still come from
    *  the first failing attempt to keep signature-reuse stable across runs. */
   attempts?: AttemptSummary[];
+  evidence?: FailureEvidence;
 }
 
 function relativeTime(iso: string): string {
@@ -378,13 +389,34 @@ function stableStringify(value: unknown): string {
   return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`;
 }
 
-function buildHistoricalContextBlock(historicalContext?: {
+const OUTCOME_LABELS: Record<string, string> = {
+  passed: 'P',
+  expected: 'P',
+  failed: 'F',
+  unexpected: 'F',
+  timedout: 'T',
+  timedOut: 'T',
+  flaky: 'f',
+  skipped: '·',
+  interrupted: 'I',
+};
+
+function outcomeLabel(outcome: string): string {
+  return OUTCOME_LABELS[outcome] ?? '?';
+}
+
+export interface HistoricalContextInput {
   totalRuns?: number;
   recentFailureCount?: number;
+  flakinessScore?: number;
+  flakinessThreshold?: number;
   isFlaky?: boolean;
   previousCategories?: string[];
   isNewFailure?: boolean;
-}): string {
+  recentOutcomes?: string[];
+}
+
+function buildHistoricalContextBlock(historicalContext?: HistoricalContextInput): string {
   if (!historicalContext) return '';
   let block = `## Historical Context\n`;
   if (historicalContext.totalRuns) {
@@ -393,19 +425,180 @@ function buildHistoricalContextBlock(historicalContext?: {
   if (historicalContext.recentFailureCount) {
     block += `- Recent failures: ${historicalContext.recentFailureCount}\n`;
   }
-  if (historicalContext.isFlaky) {
-    block += `- This test is flagged as flaky\n`;
-  }
   if (historicalContext.isNewFailure === true) {
     block += `- This failure signature has NOT been seen before — likely a new issue\n`;
   } else if (historicalContext.isNewFailure === false) {
     block += `- This failure signature has been seen before — recurring issue\n`;
   }
   if (historicalContext.previousCategories && historicalContext.previousCategories.length > 0) {
-    // Sorted for deterministic output (KV-cache prefix stability).
-    block += `- Previous failure categories: ${[...historicalContext.previousCategories].sort().join(', ')}\n`;
+    block += `- Recent failure categories (most-recent first): ${historicalContext.previousCategories.join(' → ')}\n`;
   }
   return block;
+}
+
+function buildFlakinessRationaleBlock(input?: HistoricalContextInput): string {
+  if (!input) return '';
+  const score = input.flakinessScore;
+  const threshold = input.flakinessThreshold;
+  const outcomes = input.recentOutcomes;
+  const isFlaky = input.isFlaky;
+  if (
+    score === undefined &&
+    threshold === undefined &&
+    (!outcomes || outcomes.length === 0) &&
+    isFlaky === undefined
+  ) {
+    return '';
+  }
+
+  let block = `## Flakiness Rationale\n`;
+  if (typeof score === 'number') {
+    block += `- Flakiness score: **${score.toFixed(1)}%**`;
+    if (typeof threshold === 'number') {
+      const cmp = score >= threshold ? '≥' : '<';
+      block += ` (threshold ${cmp} ${threshold}%)`;
+    }
+    block += '\n';
+  } else if (typeof threshold === 'number') {
+    block += `- Flakiness threshold: ${threshold}%\n`;
+  }
+  if (isFlaky === true) {
+    block += `- Verdict: **flaky** — recent runs swing between pass and fail.\n`;
+  } else if (isFlaky === false) {
+    block += `- Verdict: **not flagged flaky** — failure is the dominant pattern.\n`;
+  }
+  if (outcomes && outcomes.length > 0) {
+    const labels = outcomes.map(outcomeLabel).join('');
+    block += `- Recent outcomes (most-recent first, P=passed F=failed f=flaky T=timedOut ·=skipped): \`${labels}\`\n`;
+    const detail = outcomes.slice(0, 8).join(', ');
+    block += `- Recent outcomes verbatim: ${detail}${outcomes.length > 8 ? `, …(+${outcomes.length - 8} older)` : ''}\n`;
+  }
+  return block;
+}
+
+const NETWORK_HEADER_RENDER_KEYS = [
+  'content-type',
+  'content-length',
+  'x-request-id',
+  'x-correlation-id',
+  'cache-control',
+];
+
+function pickRenderHeaders(
+  headers: Record<string, string> | undefined
+): Record<string, string> | undefined {
+  if (!headers) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) {
+    const lower = k.toLowerCase();
+    if (NETWORK_HEADER_RENDER_KEYS.includes(lower) || v === '[redacted]') {
+      out[k] = v;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function buildPageSnapshotBlock(evidence: FailureEvidence | undefined): string {
+  if (!evidence?.pageSnapshot) return '';
+  return `## 📸 Page Snapshot (DOM at failure)\n\n${evidence.pageSnapshot}`;
+}
+
+function buildRecentActionsBlock(evidence: FailureEvidence | undefined): string {
+  if (!evidence?.actionLog || evidence.actionLog.length === 0) return '';
+  let block = `## 🪜 Recent Actions (chronological, last ~${evidence.actionLog.length})\n`;
+  const t0 = evidence.actionLog.find((a) => typeof a.startTime === 'number')?.startTime ?? 0;
+  for (const a of evidence.actionLog) {
+    const tStart = typeof a.startTime === 'number' ? `[t+${Math.round(a.startTime - t0)}ms] ` : '';
+    const dur =
+      typeof a.startTime === 'number' && typeof a.endTime === 'number'
+        ? ` (${Math.round(a.endTime - a.startTime)}ms)`
+        : '';
+    const tgt = a.target ? ` ${a.target}` : '';
+    const err = a.error ? ` — **error:** ${a.error.replace(/\s+/g, ' ').slice(0, 200)}` : '';
+    block += `- ${tStart}\`${a.action}\`${tgt}${dur}${err}\n`;
+  }
+  return block;
+}
+
+function buildConsoleLogBlock(evidence: FailureEvidence | undefined): string {
+  if (!evidence?.consoleEvents || evidence.consoleEvents.length === 0) return '';
+  const errors = evidence.consoleEvents.filter((e) => e.level === 'error' || e.level === 'warning');
+  const others = evidence.consoleEvents.filter((e) => e.level !== 'error' && e.level !== 'warning');
+  let block = `## 🖥️ Console Log (errors+warnings + last ${others.length} other)\n`;
+  const render = (events: typeof evidence.consoleEvents) => {
+    for (const ev of events) {
+      const loc = ev.location?.url
+        ? ` _${ev.location.url}${ev.location.lineNumber ? `:${ev.location.lineNumber}` : ''}_`
+        : '';
+      block += `- **${ev.level}:** ${ev.text}${loc}\n`;
+    }
+  };
+  if (errors.length > 0) render(errors);
+  if (others.length > 0) render(others);
+  return block;
+}
+
+function buildNetworkActivityBlock(evidence: FailureEvidence | undefined): string {
+  if (!evidence?.networkEvents || evidence.networkEvents.length === 0) return '';
+  const failed = evidence.networkEvents.filter(
+    (n) => !!n.failureText || (typeof n.status === 'number' && n.status >= 400)
+  );
+  let block = `## 🌐 Network Activity (failed + recent successful)\n`;
+  for (const ev of evidence.networkEvents) {
+    const isFailed = !!ev.failureText || (typeof ev.status === 'number' && ev.status >= 400);
+    const marker = isFailed ? '❌' : '✓';
+    const status = ev.failureText
+      ? `failed (${ev.failureText})`
+      : typeof ev.status === 'number'
+        ? String(ev.status)
+        : '—';
+    block += `- ${marker} \`${ev.method} ${ev.url}\` → ${status}\n`;
+    const reqHeaders = pickRenderHeaders(ev.requestHeaders);
+    const respHeaders = pickRenderHeaders(ev.responseHeaders);
+    if (reqHeaders) {
+      const headerList = Object.entries(reqHeaders)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('; ');
+      block += `  - req headers: ${headerList}\n`;
+    }
+    if (ev.requestBody) {
+      block += `  - req body: \`${ev.requestBody.replace(/\n/g, ' ').slice(0, 400)}\`\n`;
+    }
+    if (respHeaders) {
+      const headerList = Object.entries(respHeaders)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('; ');
+      block += `  - resp headers: ${headerList}\n`;
+    }
+    if (ev.responseBody && isFailed) {
+      block += `  - resp body: \`${ev.responseBody.replace(/\n/g, ' ').slice(0, 400)}\`\n`;
+    }
+  }
+  if (failed.length === 0) {
+    block += `_No failed requests recorded; the entries above are pre-failure context._\n`;
+  }
+  return block;
+}
+
+function buildEnvironmentBlock(evidence: FailureEvidence | undefined): string {
+  const env = evidence?.environment;
+  if (!env) return '';
+  const lines: string[] = [];
+  if (env.browserName) {
+    const channel = env.browserChannel ? ` (${env.browserChannel})` : '';
+    lines.push(`- Browser: **${env.browserName}**${channel}`);
+  }
+  if (env.viewport) {
+    lines.push(`- Viewport: ${env.viewport.width}×${env.viewport.height}`);
+  }
+  if (env.baseURL) lines.push(`- Base URL: ${env.baseURL}`);
+  if (env.locale) lines.push(`- Locale: ${env.locale}`);
+  if (env.timezone) lines.push(`- Timezone: ${env.timezone}`);
+  if (env.userAgent) lines.push(`- User Agent: ${env.userAgent}`);
+  if (env.playwrightVersion) lines.push(`- Playwright: ${env.playwrightVersion}`);
+  if (env.sdkLanguage) lines.push(`- SDK: ${env.sdkLanguage}`);
+  if (lines.length === 0) return '';
+  return `## 🧪 Environment\n${lines.join('\n')}`;
 }
 
 /** Truncate a single-line summary of an attempt's error message. Strips
@@ -414,6 +607,30 @@ function summarizeAttemptMessage(message: string | undefined, maxChars = 200): s
   if (!message) return '';
   const oneLine = message.replace(/\s+/g, ' ').trim();
   return oneLine.length > maxChars ? `${oneLine.substring(0, maxChars)}…` : oneLine;
+}
+
+/**
+ * Pull the `## 🔍 Root Cause` paragraph out of a per-test analysis markdown
+ * blob. Matches the section header with or without the leading emoji so older
+ * analyses (written before the emoji header convention) still parse.
+ */
+export function extractRootCauseParagraph(markdown: string, fallbackChars = 600): string {
+  if (!markdown) return '';
+  const rootCauseRe = /^#{1,3}\s*(?:🔍\s*)?Root Cause\b.*$/im;
+  const startMatch = markdown.match(rootCauseRe);
+  if (!startMatch) {
+    const trimmed = markdown.trim();
+    return trimmed.length > fallbackChars
+      ? `${trimmed.substring(0, fallbackChars).trim()}…`
+      : trimmed;
+  }
+  const startIdx = (startMatch.index ?? 0) + startMatch[0].length;
+  // Stop at the next heading at the same or higher level. The model can use
+  // ## or ### so we match both — anything starting with `##` ends the section.
+  const tail = markdown.slice(startIdx);
+  const endMatch = tail.match(/\n#{1,3}\s/);
+  const body = endMatch ? tail.slice(0, endMatch.index) : tail;
+  return body.replace(/^\s+|\s+$/g, '');
 }
 
 function buildFailureDetailsBlock(failureDetails: FailureDetailsForPrompt): string {
@@ -462,6 +679,9 @@ function buildFailureDetailsBlock(failureDetails: FailureDetailsForPrompt): stri
 
 export interface CustomPromptOverrides {
   systemPrompt?: string;
+  testAnalysisSystemPrompt?: string;
+  reportSummarySystemPrompt?: string;
+  projectSummarySystemPrompt?: string;
   testAnalysisInstructions?: string;
   reportSummaryInstructions?: string;
   projectSummaryInstructions?: string;
@@ -475,13 +695,7 @@ export interface CustomPromptOverrides {
 export const buildTestFailureSegments = (args: {
   systemPrompt?: string;
   failureDetails: FailureDetailsForPrompt;
-  historicalContext?: {
-    totalRuns?: number;
-    recentFailureCount?: number;
-    isFlaky?: boolean;
-    previousCategories?: string[];
-    isNewFailure?: boolean;
-  };
+  historicalContext?: HistoricalContextInput;
   feedback?: { comment: string; updatedAt: string } | null;
   crossProjectEntries?: CrossProjectEntry[];
   crossProjectTotalCount?: number;
@@ -489,14 +703,16 @@ export const buildTestFailureSegments = (args: {
 }): SegmentedPrompt => {
   const segments: PromptSegment[] = [];
 
-  // System prompt: prefer override → arg → built-in default. The system prompt
-  // doesn't accept mustache vars (no per-call data) so it stays templateOnly.
   segments.push({
     id: 'system_prompt',
     role: 'system',
     stable: true,
     templateOnly: true,
-    content: args.overrides?.systemPrompt ?? getCustomSystemPrompt(args.systemPrompt),
+    content: resolveSystemPrompt(
+      TEST_ANALYSIS_SYSTEM_PROMPT,
+      args.overrides?.systemPrompt ?? args.systemPrompt,
+      args.overrides?.testAnalysisSystemPrompt
+    ),
   });
 
   segments.push({
@@ -538,13 +754,33 @@ export const buildTestFailureSegments = (args: {
     template: taskSub.substituted ? taskInstructionsTemplate : undefined,
   });
 
+  const envBlock = buildEnvironmentBlock(args.failureDetails.evidence);
+  if (envBlock) {
+    segments.push({
+      id: 'environment',
+      role: 'user',
+      stable: false,
+      content: envBlock,
+    });
+  }
+
   const history = buildHistoricalContextBlock(args.historicalContext);
   if (history) {
     segments.push({
       id: 'historical_context',
       role: 'user',
-      stable: true,
+      stable: false,
       content: history,
+    });
+  }
+
+  const flakinessBlock = buildFlakinessRationaleBlock(args.historicalContext);
+  if (flakinessBlock) {
+    segments.push({
+      id: 'flakiness_rationale',
+      role: 'user',
+      stable: false,
+      content: flakinessBlock,
     });
   }
 
@@ -566,6 +802,43 @@ export const buildTestFailureSegments = (args: {
       role: 'user',
       stable: false,
       content: buildFeedbackContext(args.feedback).trim(),
+    });
+  }
+
+  const pageSnapshot = buildPageSnapshotBlock(args.failureDetails.evidence);
+  if (pageSnapshot) {
+    segments.push({
+      id: 'page_snapshot',
+      role: 'user',
+      stable: false,
+      content: pageSnapshot,
+    });
+  }
+  const recentActions = buildRecentActionsBlock(args.failureDetails.evidence);
+  if (recentActions) {
+    segments.push({
+      id: 'recent_actions',
+      role: 'user',
+      stable: false,
+      content: recentActions,
+    });
+  }
+  const consoleLog = buildConsoleLogBlock(args.failureDetails.evidence);
+  if (consoleLog) {
+    segments.push({
+      id: 'console_log',
+      role: 'user',
+      stable: false,
+      content: consoleLog,
+    });
+  }
+  const networkActivity = buildNetworkActivityBlock(args.failureDetails.evidence);
+  if (networkActivity) {
+    segments.push({
+      id: 'network_activity',
+      role: 'user',
+      stable: false,
+      content: networkActivity,
     });
   }
 
@@ -631,7 +904,11 @@ export const buildReportSummarySegments = (args: {
     role: 'system',
     stable: true,
     templateOnly: true,
-    content: args.overrides?.systemPrompt ?? getCustomSystemPrompt(args.systemPrompt),
+    content: resolveSystemPrompt(
+      REPORT_SUMMARY_SYSTEM_PROMPT,
+      args.overrides?.systemPrompt ?? args.systemPrompt,
+      args.overrides?.reportSummarySystemPrompt
+    ),
   });
 
   const totalFailures = Object.values(args.categories).reduce((sum, c) => sum + c, 0);
@@ -678,9 +955,45 @@ export const buildReportSummarySegments = (args: {
   }
 
   if (args.perTestAnalyses.length > 0) {
-    dataBlock += `## Per-Test Analyses\n`;
-    for (const analysis of args.perTestAnalyses.slice(0, 20)) {
-      dataBlock += `- **${analysis.testTitle}** [${analysis.category}]: ${analysis.analysis.substring(0, 200)}\n`;
+    // Rank analyses so the model sees a representative sample, not the first
+    // 20 in arbitrary arrival order. Strategy: take the top 3 dominant
+    // categories (by failure count in this report), include up to 5 tests per
+    // category, hard-cap at 20 total. Within each category, ordering is
+    // preserved from the input (DB ordering) for cache prefix stability.
+    const TOP_CATEGORIES = 3;
+    const PER_CATEGORY_CAP = 5;
+    const TOTAL_CAP = 20;
+    const topCategories = Object.entries(args.categories)
+      .sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : a[0].localeCompare(b[0])))
+      .slice(0, TOP_CATEGORIES)
+      .map(([cat]) => cat);
+    const ranked: typeof args.perTestAnalyses = [];
+    for (const cat of topCategories) {
+      const forCat = args.perTestAnalyses
+        .filter((a) => a.category === cat)
+        .slice(0, PER_CATEGORY_CAP);
+      ranked.push(...forCat);
+    }
+    // Fill remaining budget with whatever didn't make the top-3 (other
+    // categories, unknowns) so the model still sees the tail.
+    if (ranked.length < TOTAL_CAP) {
+      const seen = new Set(ranked.map((a) => `${a.testTitle}::${a.category}`));
+      for (const a of args.perTestAnalyses) {
+        if (ranked.length >= TOTAL_CAP) break;
+        if (seen.has(`${a.testTitle}::${a.category}`)) continue;
+        ranked.push(a);
+      }
+    }
+    const shown = ranked.slice(0, TOTAL_CAP);
+
+    dataBlock += `## Per-Test Analyses (root cause per test, top categories first)\n`;
+    for (const analysis of shown) {
+      const rootCause = extractRootCauseParagraph(analysis.analysis);
+      const indented = rootCause.replace(/\n/g, '\n  ');
+      dataBlock += `- **${analysis.testTitle}** [${analysis.category}]:\n  ${indented}\n`;
+    }
+    if (args.perTestAnalyses.length > shown.length) {
+      dataBlock += `\n_…and ${args.perTestAnalyses.length - shown.length} more per-test analyses not shown._\n`;
     }
     dataBlock += '\n';
   }
@@ -697,7 +1010,7 @@ export const buildReportSummarySegments = (args: {
       id: 'trend_context',
       role: 'user',
       stable: false,
-      content: renderReportTrendContext(args.trendContext),
+      content: renderReportTrendContext(args.trendContext, args.perTestAnalyses),
     });
   }
 
@@ -722,7 +1035,74 @@ const formatMs = (ms: number): string => {
   return `${m}m ${rem}s`;
 };
 
-const renderReportTrendContext = (ctx: ReportSummaryTrendContext): string => {
+/** First two path segments, e.g. `tests/auth/login.spec.ts` → `tests/auth`.
+ *  Falls back to the dirname when there's only one segment, or '.' when the
+ *  path is empty. Used to surface "X failures are in tests/auth/" insights. */
+function topDirectory(filePath: string): string {
+  if (!filePath) return '.';
+  const norm = filePath.replace(/\\/g, '/');
+  const parts = norm.split('/').filter(Boolean);
+  if (parts.length === 0) return '.';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]}/${parts[1]}`;
+}
+
+/**
+ * Compute short, model-readable insights from the newly-failed set:
+ *   - directory dominance: ≥50% of new failures share a top-level dir
+ *   - category dominance: ≥50% share a heuristic category (looked up from
+ *     perTestAnalyses by test title — best-effort, skip when missing)
+ * Returns at most one line per insight type. Returns [] when nothing notable.
+ */
+function computeTrendInsights(
+  newlyFailed: Array<{ title: string; filePath: string }>,
+  perTestAnalyses: Array<{ testTitle: string; category: string; analysis: string }>
+): string[] {
+  if (newlyFailed.length < 2) return [];
+
+  const total = newlyFailed.length;
+  const out: string[] = [];
+
+  const dirCounts = new Map<string, number>();
+  for (const t of newlyFailed) {
+    const dir = topDirectory(t.filePath);
+    dirCounts.set(dir, (dirCounts.get(dir) ?? 0) + 1);
+  }
+  const [topDir, topDirCount] = [...dirCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (topDirCount / total >= 0.5 && topDirCount >= 2) {
+    out.push(
+      `- **${topDirCount} of ${total}** new failures are in \`${topDir}/\` — likely shared root cause in that area.`
+    );
+  }
+
+  const categoryByTitle = new Map<string, string>();
+  for (const a of perTestAnalyses) {
+    if (a.category) categoryByTitle.set(a.testTitle, a.category);
+  }
+  const catCounts = new Map<string, number>();
+  let lookedUp = 0;
+  for (const t of newlyFailed) {
+    const c = categoryByTitle.get(t.title);
+    if (!c) continue;
+    lookedUp++;
+    catCounts.set(c, (catCounts.get(c) ?? 0) + 1);
+  }
+  if (lookedUp >= 2) {
+    const [topCat, topCatCount] = [...catCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (topCatCount / lookedUp >= 0.5 && topCatCount >= 2) {
+      out.push(
+        `- **${topCatCount} of ${lookedUp}** new failures share category \`${topCat}\` — likely one regression surfacing across multiple tests.`
+      );
+    }
+  }
+
+  return out;
+}
+
+const renderReportTrendContext = (
+  ctx: ReportSummaryTrendContext,
+  perTestAnalyses: Array<{ testTitle: string; category: string; analysis: string }> = []
+): string => {
   const { previousReport, counts } = ctx;
   const prevLabel = previousReport.displayNumber
     ? `#${previousReport.displayNumber}`
@@ -745,19 +1125,12 @@ const renderReportTrendContext = (ctx: ReportSummaryTrendContext): string => {
   );
   lines.push('');
 
-  const renderList = (heading: string, items: Array<{ title: string; filePath: string }>) => {
-    if (items.length === 0) return;
-    lines.push(`### ${heading}`);
-    for (const it of items.slice(0, 10)) {
-      lines.push(`- ${it.title} (${it.filePath})`);
-    }
-    if (items.length > 10) lines.push(`- …and ${items.length - 10} more`);
+  const insights = computeTrendInsights(ctx.newlyFailed, perTestAnalyses);
+  if (insights.length > 0) {
+    lines.push(`### Insights`);
+    lines.push(...insights);
     lines.push('');
-  };
-
-  renderList('Newly failed', ctx.newlyFailed);
-  renderList('Fixed since previous', ctx.fixed);
-  renderList('Still failing', ctx.stillFailing);
+  }
 
   if (ctx.topDurationRegressions.length > 0) {
     lines.push('### Top duration regressions');
@@ -773,6 +1146,19 @@ const renderReportTrendContext = (ctx: ReportSummaryTrendContext): string => {
   return lines.join('\n').trimEnd();
 };
 
+/** Aggregated root cause across the project's latest runs. Built by the
+ *  queue worker and passed in here so the prompt template stays pure. */
+export interface ProjectRootCause {
+  signature: string;
+  category: string;
+  occurrences: number;
+  reportsAffected: number;
+  affectedTests: Array<{ testId: string; title: string; filePath: string }>;
+  sampleMessage: string;
+  latestRootCause?: string;
+  latestAnalysisReportId?: string;
+}
+
 export const buildProjectSummarySegments = (args: {
   systemPrompt?: string;
   project: string;
@@ -784,6 +1170,8 @@ export const buildProjectSummarySegments = (args: {
     categories: Record<string, number>;
     llmSummary?: string;
   }>;
+  rootCauses?: ProjectRootCause[];
+  persistentFailures?: ProjectRootCause[];
   overrides?: CustomPromptOverrides;
 }): SegmentedPrompt => {
   const segments: PromptSegment[] = [];
@@ -793,7 +1181,11 @@ export const buildProjectSummarySegments = (args: {
     role: 'system',
     stable: true,
     templateOnly: true,
-    content: args.overrides?.systemPrompt ?? getCustomSystemPrompt(args.systemPrompt),
+    content: resolveSystemPrompt(
+      PROJECT_SUMMARY_SYSTEM_PROMPT,
+      args.overrides?.systemPrompt ?? args.systemPrompt,
+      args.overrides?.projectSummarySystemPrompt
+    ),
   });
 
   const totalRuns = args.runs.length;
@@ -834,6 +1226,44 @@ export const buildProjectSummarySegments = (args: {
   let dataBlock = `Project: "${args.project}", latest ${totalRuns} runs.\n\n`;
   dataBlock += `**Overview:** ${passingRuns} of ${totalRuns} runs passed cleanly (no failures). ${runsWithFailures.length} runs had failures.\n`;
   dataBlock += `**Latest run status:** ${latestStatus}${latestRun ? ` (${latestRun.reportId})` : ''} — use this to anchor the verdict.\n\n`;
+
+  if (args.rootCauses && args.rootCauses.length > 0) {
+    dataBlock += `## Top Root Causes (across last ${totalRuns} runs)\n`;
+    for (let i = 0; i < args.rootCauses.length; i++) {
+      const rc = args.rootCauses[i];
+      dataBlock += `\n### ${i + 1}. \`${rc.category}\` — ${rc.occurrences}× across ${rc.reportsAffected} run${rc.reportsAffected === 1 ? '' : 's'}\n`;
+      const sample = rc.sampleMessage.replace(/\s+/g, ' ').trim();
+      const sampleTrunc = sample.length > 300 ? `${sample.substring(0, 300)}…` : sample;
+      if (sampleTrunc) {
+        dataBlock += `- **Error:** \`${sampleTrunc}\`\n`;
+      }
+      const testsList = rc.affectedTests
+        .slice(0, 3)
+        .map((t) => `\`${t.title}\` (${t.filePath})`)
+        .join(', ');
+      const more = rc.affectedTests.length > 3 ? ` +${rc.affectedTests.length - 3} more` : '';
+      dataBlock += `- **Affected tests:** ${testsList}${more}\n`;
+      if (rc.latestRootCause) {
+        const indented = rc.latestRootCause.replace(/\n/g, '\n  ');
+        dataBlock += `- **Prior LLM root cause:**\n  ${indented}\n`;
+      }
+    }
+    dataBlock += '\n';
+  }
+
+  if (args.persistentFailures && args.persistentFailures.length > 0) {
+    dataBlock += `## Persistent Failures (signature seen in ≥3 distinct runs)\n`;
+    for (const rc of args.persistentFailures) {
+      const titles = rc.affectedTests
+        .slice(0, 3)
+        .map((t) => `\`${t.title}\``)
+        .join(', ');
+      const more = rc.affectedTests.length > 3 ? ` +${rc.affectedTests.length - 3} more` : '';
+      dataBlock += `- \`${rc.category}\` — ${rc.reportsAffected} runs, tests: ${titles}${more}\n`;
+    }
+    dataBlock += '\n';
+  }
+
   dataBlock += `Runs are listed from most recent to oldest:\n\n`;
 
   for (const run of args.runs) {
@@ -939,13 +1369,19 @@ export function truncateMiddle(text: string, maxChars: number): string {
 // Callers convert token budgets to char budgets via the chars-per-token ratio
 // from the initial count, avoiding repeated count_tokens round-trips.
 //
-// Priority order (least → most important to keep):
-// 1. cross_project_context — additive, not load-bearing.
-// 2. attachment list lines — drop names, keep count.
-// 3. older entries in historical_context — keep recent failure stats only.
-// 4. middle of current_failure — preserve head + tail (error top + stack tail).
-// 5. user_feedback — dropped only as a last resort.
-// 6. middle-truncate the whole rendered varying segments.
+// Priority order (lowest-priority changes first; cross-project survives a long
+// time because a validated prior analysis on the same signature is the single
+// strongest predictor of the right diagnosis):
+// 1. attachment list lines — drop names, keep count.
+// 2. page_snapshot — DOM markdown can be huge; tail-truncate to 1500 chars.
+// 3. network_activity — tail-truncate (failed-first ordering means head matters).
+// 4. console_log — tail-truncate.
+// 5. recent_actions — tail-truncate.
+// 6. historical_context — drop the categories line.
+// 7. middle of current_failure — preserve head + tail (error top + stack tail).
+// 8. user_feedback — drop entirely.
+// 9. cross_project_context — drop entirely (last-resort).
+// 10. middle-truncate everything non-stable to fit.
 
 export interface PromptFitResult {
   prompt: SegmentedPrompt;
@@ -993,9 +1429,17 @@ function shrinkFencedBlocks(content: string, blockMax: number): string {
   });
 }
 
-/** Drop the "Previous failure categories" line — least informative when budget tight. */
+/** Drop the recent-categories line — least informative when budget tight. */
 function shrinkHistoricalContext(content: string): string {
-  return content.replace(/- Previous failure categories: .*\n/, '');
+  return content.replace(/- Recent failure categories.*\n/, '');
+}
+
+/** Cap a block to a max char count by truncating from the tail (keeps the
+ *  header + first entries, drops the older ones). Used for evidence segments
+ *  whose entries are ordered "most informative first." */
+function truncateTail(content: string, maxChars: number): string {
+  if (content.length <= maxChars) return content;
+  return `${content.substring(0, maxChars)}\n[… truncated to fit budget …]`;
 }
 
 /**
@@ -1027,17 +1471,30 @@ export function fitPromptToBudget(prompt: SegmentedPrompt, charsBudget: number):
   };
 
   if (
-    tryStep('dropped cross-project context', (cur) => dropSegment(cur, 'cross_project_context'))
-  ) {
-    return { prompt: p, changes };
-  }
-
-  if (
     tryStep('omitted attachment names', (cur) =>
       transformSegment(cur, 'current_failure', shrinkAttachmentList)
     )
   ) {
     return { prompt: p, changes };
+  }
+
+  // Evidence segments — tail-truncate before dropping anything. Each block's
+  // most-informative entries are at the top (failed network requests first,
+  // error console messages first, errored action last) so head-preserving
+  // truncation keeps the highest-signal content.
+  for (const { id, cap } of [
+    { id: 'page_snapshot', cap: 1500 },
+    { id: 'network_activity', cap: 2000 },
+    { id: 'console_log', cap: 1200 },
+    { id: 'recent_actions', cap: 1000 },
+  ]) {
+    if (
+      tryStep(`tail-truncated ${id} to ${cap} chars`, (cur) =>
+        transformSegment(cur, id, (c) => truncateTail(c, cap))
+      )
+    ) {
+      return { prompt: p, changes };
+    }
   }
 
   if (
@@ -1061,6 +1518,15 @@ export function fitPromptToBudget(prompt: SegmentedPrompt, charsBudget: number):
   }
 
   if (tryStep('dropped user feedback', (cur) => dropSegment(cur, 'user_feedback'))) {
+    return { prompt: p, changes };
+  }
+
+  // Cross-project context drops only after every other shrink option is
+  // exhausted — a validated prior analysis on the same signature is the
+  // single strongest predictor of the right diagnosis.
+  if (
+    tryStep('dropped cross-project context', (cur) => dropSegment(cur, 'cross_project_context'))
+  ) {
     return { prompt: p, changes };
   }
 

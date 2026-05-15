@@ -115,6 +115,9 @@ interface ConfigFormData {
   llmStructuredOutputMode?: string;
   llmMultimodalMode?: string;
   llmCustomSystemPrompt?: string;
+  llmCustomTestAnalysisSystemPrompt?: string;
+  llmCustomReportSummarySystemPrompt?: string;
+  llmCustomProjectSummarySystemPrompt?: string;
   llmCustomTestAnalysisInstructions?: string;
   llmCustomReportSummaryInstructions?: string;
   llmCustomProjectSummaryInstructions?: string;
@@ -459,8 +462,21 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         }
 
         // Custom prompt overrides — empty string clears the override (falls back to default).
+        // Legacy single field stays for back-compat; per-task fields below win when set.
         if (formData.llmCustomSystemPrompt !== undefined) {
           config.llm.customSystemPrompt = formData.llmCustomSystemPrompt || undefined;
+        }
+        if (formData.llmCustomTestAnalysisSystemPrompt !== undefined) {
+          config.llm.customTestAnalysisSystemPrompt =
+            formData.llmCustomTestAnalysisSystemPrompt || undefined;
+        }
+        if (formData.llmCustomReportSummarySystemPrompt !== undefined) {
+          config.llm.customReportSummarySystemPrompt =
+            formData.llmCustomReportSummarySystemPrompt || undefined;
+        }
+        if (formData.llmCustomProjectSummarySystemPrompt !== undefined) {
+          config.llm.customProjectSummarySystemPrompt =
+            formData.llmCustomProjectSummarySystemPrompt || undefined;
         }
         if (formData.llmCustomTestAnalysisInstructions !== undefined) {
           config.llm.customTestAnalysisInstructions =

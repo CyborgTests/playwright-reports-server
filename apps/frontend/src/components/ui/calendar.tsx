@@ -15,7 +15,7 @@ export function Calendar({ className, classNames, ...props }: CalendarProps) {
         month: 'space-y-3',
         month_caption: 'flex justify-center items-center h-8 relative',
         caption_label: 'text-sm font-medium',
-        nav: 'flex items-center gap-1 absolute inset-x-1 top-0 h-8 justify-between',
+        nav: 'flex items-center gap-1 absolute inset-x-1 top-0 h-8 justify-between z-10',
         button_previous:
           'inline-flex items-center justify-center h-7 w-7 rounded-md border border-input bg-transparent hover:bg-accent hover:text-accent-foreground transition-colors',
         button_next:

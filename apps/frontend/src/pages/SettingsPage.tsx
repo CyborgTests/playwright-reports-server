@@ -170,7 +170,20 @@ export default function SettingsPage() {
           formData.append('llmStructuredOutputMode', tempConfig.llm.structuredOutputMode ?? '');
           formData.append('llmMultimodalMode', tempConfig.llm.multimodalMode ?? '');
           // Custom prompts — same "send always to allow clearing" pattern.
+          // Legacy single field kept for back-compat; per-task fields below win.
           formData.append('llmCustomSystemPrompt', tempConfig.llm.customSystemPrompt ?? '');
+          formData.append(
+            'llmCustomTestAnalysisSystemPrompt',
+            tempConfig.llm.customTestAnalysisSystemPrompt ?? ''
+          );
+          formData.append(
+            'llmCustomReportSummarySystemPrompt',
+            tempConfig.llm.customReportSummarySystemPrompt ?? ''
+          );
+          formData.append(
+            'llmCustomProjectSummarySystemPrompt',
+            tempConfig.llm.customProjectSummarySystemPrompt ?? ''
+          );
           formData.append(
             'llmCustomTestAnalysisInstructions',
             tempConfig.llm.customTestAnalysisInstructions ?? ''

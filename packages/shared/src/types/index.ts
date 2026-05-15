@@ -33,7 +33,14 @@ export interface LLMConfig {
   contextWindow?: number;
   structuredOutputMode?: LLMStructuredOutputMode;
   multimodalMode?: LLMMultimodalMode;
+  /** Legacy single system prompt — kept as a fallback for all three tasks so
+   *  pre-Phase-3 configs keep working. Per-task overrides below win when set. */
   customSystemPrompt?: string;
+  /** Task-specific system prompt overrides. Each falls back to
+   *  `customSystemPrompt`, then to the built-in default for its task. */
+  customTestAnalysisSystemPrompt?: string;
+  customReportSummarySystemPrompt?: string;
+  customProjectSummarySystemPrompt?: string;
   customTestAnalysisInstructions?: string;
   customReportSummaryInstructions?: string;
   customProjectSummaryInstructions?: string;

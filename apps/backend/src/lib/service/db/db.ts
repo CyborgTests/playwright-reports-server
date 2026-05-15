@@ -216,6 +216,10 @@ function initializeSchema(db: Database.Database): void {
   addColumnIfMissing(db, 'llm_tasks', 'totalTokens', 'INTEGER');
   addColumnIfMissing(db, 'llm_tasks', 'promptVersion', 'TEXT');
   addColumnIfMissing(db, 'llm_tasks', 'isRetry', 'INTEGER NOT NULL DEFAULT 0');
+  // JSON-encoded array of reportIDs to feed into the worker. Currently used
+  // only by project_summary so the dashboard's selected reports flow through
+  // to the LLM input. NULL keeps the legacy "latest N for project" behavior.
+  addColumnIfMissing(db, 'llm_tasks', 'reportIds', 'TEXT');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS report_failure_summaries (
