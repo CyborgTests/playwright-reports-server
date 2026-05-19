@@ -1,17 +1,16 @@
 'use client';
 
 import type { DateRange } from '@playwright-reports/shared';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useActiveSection } from '../../hooks/useActiveSection';
 import { useAnalyticsData } from '../../hooks/useAnalyticsData';
 import { useConfig } from '../../hooks/useConfig';
-import { useFailureCategoryData } from '../../hooks/useFailureCategoryData';
-import useQuery from '../../hooks/useQuery';
 import { defaultProjectName } from '../../lib/constants';
 import { cn } from '../../lib/utils';
 import DateRangeSelect from '../date-range-select';
+import LazyVisible from '../lazy-visible';
 import ProjectSelect from '../project-select';
 import TestManagementWidget from '../test-management/TestManagementWidget';
 import { Switch } from '../ui/switch';
@@ -66,21 +65,11 @@ export default function AnalyticsDashboard() {
   }, [project, dateRange, failedOnly, searchParams, setSearchParams]);
 
   const {
-    data: config,
-    error: configError,
-    isFetching: isFetchingConfig,
-    isPending: isPendingConfig,
-  } = useConfig();
-  const {
     data: analyticsData,
     error,
     isFetching,
     isPending,
   } = useAnalyticsData(project, dateRange, failedOnly);
-  const { data: failureCategoryResponse, isLoading: isLoadingFailures } = useFailureCategoryData(
-    project,
-    dateRange
-  );
 
   const onProjectChange = useCallback((project: string) => {
     setProject(project);
@@ -90,28 +79,9 @@ export default function AnalyticsDashboard() {
     setDateRangeState(range);
   }, []);
 
-  configError && toast.error(configError.message);
   error && toast.error(error.message);
 
-  const warningThreshold = config?.testManagement?.warningThresholdPercentage ?? 2;
-
-  const summaryUrl = useMemo(() => {
-    const params = new URLSearchParams();
-    if (project && project !== defaultProjectName) params.append('project', project);
-    params.append('warningThreshold', warningThreshold.toString());
-    if (dateRange.from) params.append('from', dateRange.from);
-    if (dateRange.to) params.append('to', dateRange.to);
-    return `/api/tests/summary?${params.toString()}`;
-  }, [project, warningThreshold, dateRange.from, dateRange.to]);
-
-  const { data: testsSummary, isLoading: isLoadingSummary } = useQuery<{
-    success: boolean;
-    total: number;
-    flakyCount: number;
-  }>(summaryUrl, { dependencies: [project, warningThreshold, dateRange.from, dateRange.to] });
-
-  const isLoading =
-    isPending || isFetching || isLoadingSummary || isFetchingConfig || isPendingConfig;
+  const isLoading = isPending || isFetching;
 
   if (!isLoading && !analyticsData) {
     return (
@@ -126,7 +96,14 @@ export default function AnalyticsDashboard() {
     );
   }
 
-  const { overviewStats, runHealthMetrics = [], trendMetrics } = analyticsData ?? {};
+  const {
+    overviewStats,
+    runHealthMetrics = [],
+    trendMetrics,
+    testsSummary,
+    failureCategories,
+  } = analyticsData ?? {};
+  const totalFailures = failureCategories?.totalFailures ?? 0;
 
   return (
     <div className="w-[min(100%, 1200px)] mx-auto space-y-6">
@@ -161,29 +138,30 @@ export default function AnalyticsDashboard() {
       </section>
 
       <section id="failures" className="scroll-mt-32 space-y-6">
-        {(failureCategoryResponse?.data?.totalFailures ?? 0) > 0 && (
+        {totalFailures > 0 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <FailureCategoryChart
-              categories={failureCategoryResponse?.data?.categories}
-              totalFailures={failureCategoryResponse?.data?.totalFailures}
-              isLoading={isLoadingFailures}
+              categories={failureCategories?.categories}
+              totalFailures={totalFailures}
+              isLoading={isLoading}
             />
-            <TopFailuresWidget
-              errors={failureCategoryResponse?.data?.topErrors}
-              isLoading={isLoadingFailures}
-            />
+            <TopFailuresWidget errors={failureCategories?.topErrors} isLoading={isLoading} />
           </div>
         )}
 
-        <FailureAnalysisSummary
-          project={project}
-          reportIds={runHealthMetrics.map((m) => m.runId)}
-          totalFailures={failureCategoryResponse?.data?.totalFailures}
-        />
+        <LazyVisible rootMargin="200px 0px">
+          <FailureAnalysisSummary
+            project={project}
+            reportIds={runHealthMetrics.map((m) => m.runId)}
+            totalFailures={totalFailures}
+          />
+        </LazyVisible>
       </section>
 
       <section id="tests" className="scroll-mt-32">
-        <TestManagementWidget project={project} dateRange={dateRange} />
+        <LazyVisible rootMargin="200px 0px" minHeight={320}>
+          <TestManagementWidget project={project} dateRange={dateRange} />
+        </LazyVisible>
       </section>
 
       {!isLoading && runHealthMetrics.length === 0 && (

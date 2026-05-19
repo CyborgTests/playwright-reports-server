@@ -60,10 +60,17 @@ export interface StepTimingTrend {
   };
 }
 
+export interface TestsSummary {
+  total: number;
+  flakyCount: number;
+}
+
 export interface AnalyticsData {
   overviewStats: OverviewStats;
   runHealthMetrics: RunHealthMetric[];
   trendMetrics: TrendMetrics;
+  testsSummary: TestsSummary;
+  failureCategories: FailureCategoryAnalytics;
 }
 
 export type ProjectAnalysisVerdict = 'healthy' | 'stabilizing' | 'degrading' | 'failing';

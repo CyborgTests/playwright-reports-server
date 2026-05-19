@@ -7,8 +7,10 @@ import type {
   TrendMetrics,
 } from '@playwright-reports/shared';
 import type { ReportHistory as BackendReportHistory } from '../storage/types.js';
+import { failureSummaryDb } from './db/failureSummary.sqlite.js';
 import { reportDb } from './db/reports.sqlite.js';
 import { service } from './index.js';
+import { testManagementService } from './testManagement.js';
 
 const HEALTH_GRID_UNBOUNDED_CAP = 200;
 
@@ -32,14 +34,25 @@ export class AnalyticsService {
       to
     );
 
+    const config = await service.getConfig();
+    const warningThreshold = config.testManagement?.warningThresholdPercentage ?? 2;
+    const projectKey = project && project !== 'all' ? project : undefined;
+
+    const [overviewStats, runHealthMetrics, trendMetrics, testsSummary, failureCategories] =
+      await Promise.all([
+        this.calculateOverviewStats(displayReports, recentForTrend, olderForTrend),
+        this.calculateRunHealthMetrics(displayReports, isBounded),
+        this.calculateTrendMetrics(displayReports, scoped),
+        testManagementService.getTestsSummary(projectKey, warningThreshold, { from, to }),
+        Promise.resolve(failureSummaryDb.getAggregatedCategories(projectKey, 10, { from, to })),
+      ]);
+
     return {
-      overviewStats: await this.calculateOverviewStats(
-        displayReports,
-        recentForTrend,
-        olderForTrend
-      ),
-      runHealthMetrics: await this.calculateRunHealthMetrics(displayReports, isBounded),
-      trendMetrics: await this.calculateTrendMetrics(displayReports, scoped),
+      overviewStats,
+      runHealthMetrics,
+      trendMetrics,
+      testsSummary,
+      failureCategories,
     };
   }
 

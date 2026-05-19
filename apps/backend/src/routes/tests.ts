@@ -46,30 +46,6 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
       }
     });
 
-    fastify.get('/api/tests/summary', async (request: FastifyRequest, reply: FastifyReply) => {
-      const { project, warningThreshold, from, to } = request.query as {
-        project?: string;
-        warningThreshold?: string;
-        from?: string;
-        to?: string;
-      };
-
-      try {
-        const threshold = warningThreshold ? Number.parseFloat(warningThreshold) : undefined;
-        const summary = await testManagementService.getTestsSummary(project, threshold, {
-          from,
-          to,
-        });
-        return reply.send({ success: true, ...summary });
-      } catch (error) {
-        fastify.log.error(error);
-        return reply.status(500).send({
-          success: false,
-          error: 'Failed to fetch tests summary',
-        });
-      }
-    });
-
     fastify.get(
       '/api/test/:fileId/:testId',
       async (request: FastifyRequest, reply: FastifyReply) => {

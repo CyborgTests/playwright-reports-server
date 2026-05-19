@@ -356,36 +356,6 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // GET /api/analytics/failure-categories - aggregate categories across reports
-  fastify.get(
-    '/api/analytics/failure-categories',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      try {
-        const authResult = await authenticate(request as AuthRequest, reply);
-        if (authResult) return;
-
-        const { project, from, to } = request.query as {
-          project?: string;
-          from?: string;
-          to?: string;
-        };
-
-        const result = failureSummaryDb.getAggregatedCategories(project || undefined, 10, {
-          from,
-          to,
-        });
-
-        return reply.send({ success: true, data: result });
-      } catch (error) {
-        fastify.log.error(error);
-        return reply.status(500).send({
-          success: false,
-          error: 'Failed to fetch failure categories',
-        });
-      }
-    }
-  );
-
   // GET /api/analytics/project-summary - return the persisted project-level LLM summary.
   // Keyed by project only — survives page refreshes (and date-range changes) until a new
   // report for the project arrives, which invalidates the cache server-side.
