@@ -15,8 +15,7 @@ import {
 import { Alert } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import useQuery from '@/hooks/useQuery';
-import { pluralize } from '@/lib/transformers';
-import FileSuitesTree from './suite-tree';
+import FileSuitesTree, { StatsBadges } from './suite-tree';
 import ReportFilters from './tests-filters';
 
 interface FileListProps {
@@ -79,14 +78,10 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
           {(filteredTests?.files ?? []).map((file) => (
             <AccordionItem key={file.fileId} value={file.fileId}>
               <AccordionTrigger className="hover:no-underline">
-                <div className="flex flex-row items-center gap-3 flex-1">
+                <div className="flex flex-row items-center gap-3 flex-1 flex-wrap pr-4">
                   <InlineStatsCircle stats={file.stats} />
-                  <p className="flex flex-row gap-5 justify-between">
-                    {file.fileName}
-                    <span className="text-muted-foreground">
-                      {file.tests.length} {pluralize(file.tests.length, 'test')}
-                    </span>
-                  </p>
+                  <span className="font-medium">{file.fileName}</span>
+                  <StatsBadges stats={file.stats} />
                 </div>
               </AccordionTrigger>
               <AccordionContent>
@@ -98,6 +93,7 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
                       file={file}
                       history={history ?? []}
                       reportId={report?.reportID}
+                      project={report?.project}
                     />
                   </div>
                 </div>

@@ -10,6 +10,7 @@ interface OverviewStatsProps {
   totalTests?: number;
   flakyCount?: number;
   totalRuns?: number;
+  onFlakyClick?: () => void;
 }
 
 type Direction = 'up' | 'down' | 'stable';
@@ -19,6 +20,7 @@ export function OverviewStatsCard({
   totalTests,
   flakyCount,
   totalRuns,
+  onFlakyClick,
 }: Readonly<OverviewStatsProps>) {
   if (!stats || totalTests === undefined) {
     return (
@@ -93,7 +95,9 @@ export function OverviewStatsCard({
     higherIsBetter: boolean;
   };
 
-  const statsCards: StatCard[] = [
+  type StatCardWithAction = StatCard & { onClick?: () => void };
+
+  const statsCards: StatCardWithAction[] = [
     {
       title: 'Total Runs',
       value: runsCount.toLocaleString(),
@@ -113,6 +117,7 @@ export function OverviewStatsCard({
       subtitle: 'Failing intermittently',
       delta: deltas?.flakyTests ?? { percent: null, trend: flakyTestsTrend },
       higherIsBetter: false,
+      onClick: onFlakyClick,
     },
     {
       title: 'Avg Per-Test Duration',
@@ -133,7 +138,11 @@ export function OverviewStatsCard({
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
       {statsCards.map((card) => (
-        <Card key={card.title} className="shadow-sm">
+        <Card
+          key={card.title}
+          onClick={card.onClick}
+          className={`shadow-sm ${card.onClick ? 'cursor-pointer hover:bg-accent/40 transition-colors' : ''}`}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               {card.title}

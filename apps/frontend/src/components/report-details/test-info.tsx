@@ -4,11 +4,13 @@ import type {
   ReportTestOutcome,
   TestHistory,
 } from '@playwright-reports/shared';
+import { ExternalLink } from 'lucide-react';
 import type { FC } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import FormattedDate from '@/components/date-format';
 import { LinkIcon } from '@/components/icons';
 import { subtitle } from '@/components/primitives';
+import { Button } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -24,6 +26,9 @@ import { withBase } from '@/lib/url';
 interface TestInfoProps {
   history: ReportHistory[];
   test: ReportTest;
+  fileId?: string;
+  /** The report's project (DB key), NOT the Playwright project name on the test. */
+  project?: string;
 }
 
 const getTestHistory = (testId: string, history: ReportHistory[]) => {
@@ -59,7 +64,7 @@ const getTestHistory = (testId: string, history: ReportHistory[]) => {
     .filter((item): item is TestHistory => item !== null);
 };
 
-const TestInfo: FC<TestInfoProps> = ({ test, history }: TestInfoProps) => {
+const TestInfo: FC<TestInfoProps> = ({ test, history, fileId, project }: TestInfoProps) => {
   if (!test) {
     return <div className="shadow-md rounded-lg p-6">No test data available</div>;
   }
@@ -67,6 +72,10 @@ const TestInfo: FC<TestInfoProps> = ({ test, history }: TestInfoProps) => {
   const formatted = testStatusToColor(test.outcome || 'expected');
   const safeHistory = Array.isArray(history) ? history : [];
   const testHistory = getTestHistory(test.testId || 'unknown', safeHistory);
+  const detailHref =
+    fileId && test.testId && project
+      ? `/test/${fileId}/${test.testId}?project=${encodeURIComponent(project)}`
+      : undefined;
 
   return (
     <div className="shadow-md rounded-lg p-6">
@@ -83,6 +92,16 @@ const TestInfo: FC<TestInfoProps> = ({ test, history }: TestInfoProps) => {
           <p>Annotations: {test.annotations.map((a) => JSON.stringify(a)).join(', ')}</p>
         )}
         {test.tags && test.tags.length > 0 && <p>Tags: {test.tags.join(', ')}</p>}
+        {detailHref && (
+          <div className="pt-2">
+            <Button variant="outline" size="sm" asChild>
+              <RouterLink to={detailHref}>
+                <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                View test details
+              </RouterLink>
+            </Button>
+          </div>
+        )}
       </div>
       {!!testHistory?.length && (
         <div>

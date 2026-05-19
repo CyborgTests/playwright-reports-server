@@ -1,9 +1,17 @@
-import type { TestManagementConfig } from '@playwright-reports/shared';
+import type {
+  TestCrossProjectOccurrence,
+  TestDetail,
+  TestDetailStats,
+  TestDurationStats,
+  TestFailureGroup,
+  TestManagementConfig,
+} from '@playwright-reports/shared';
 import { ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import { defaultConfig } from '../config.js';
 import { llmService } from '../llm/index.js';
 import { extractFailureEvidence } from '../parser/failure-extraction.js';
 import type { ReportHistory } from '../storage/types.js';
+import { getDatabase } from './db/db.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import { projectSummaryDb } from './db/projectSummary.sqlite.js';
 import type { Test, TestRun, TestWithQuarantineInfo } from './db/tests.sqlite.js';
@@ -45,6 +53,168 @@ export function computeFlakinessFromOutcomes(
   }
 
   return (events / runs.length) * 100;
+}
+
+function percentile(sortedAsc: number[], p: number): number {
+  if (sortedAsc.length === 0) return 0;
+  const idx = Math.min(sortedAsc.length - 1, Math.floor((sortedAsc.length - 1) * p));
+  return sortedAsc[idx];
+}
+
+function buildDurationStats(runs: TestRun[]): TestDurationStats | undefined {
+  const durations = runs
+    .map((r) => r.duration)
+    .filter((d): d is number => typeof d === 'number' && d >= 0);
+  if (durations.length === 0) return undefined;
+
+  const sorted = [...durations].sort((a, b) => a - b);
+  const mean = sorted.reduce((s, d) => s + d, 0) / sorted.length;
+  const median =
+    sorted.length % 2 === 0
+      ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+      : sorted[Math.floor(sorted.length / 2)];
+  const variance = sorted.reduce((s, d) => s + (d - mean) ** 2, 0) / sorted.length;
+  return {
+    mean: Math.round(mean),
+    median: Math.round(median),
+    p95: Math.round(percentile(sorted, 0.95)),
+    stdDev: Math.round(Math.sqrt(variance)),
+    min: sorted[0],
+    max: sorted[sorted.length - 1],
+  };
+}
+
+function buildTestDetailStats(runs: TestRun[]): TestDetailStats {
+  let passed = 0;
+  let failed = 0;
+  let flaky = 0;
+  let skipped = 0;
+  for (const run of runs) {
+    switch (run.outcome) {
+      case ReportTestOutcomeEnum.Expected:
+      case 'passed':
+        passed++;
+        break;
+      case ReportTestOutcomeEnum.Flaky:
+        flaky++;
+        break;
+      case ReportTestOutcomeEnum.Skipped:
+      case 'skipped':
+        skipped++;
+        break;
+      default:
+        failed++;
+        break;
+    }
+  }
+  const executed = passed + failed + flaky;
+  const passRate = executed > 0 ? Math.round(((passed + flaky) / executed) * 10000) / 100 : 0;
+  const sortedByDateAsc = [...runs].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+  return {
+    totalRuns: runs.length,
+    passed,
+    failed,
+    flaky,
+    skipped,
+    passRate,
+    firstRunAt: sortedByDateAsc.at(0)?.createdAt,
+    lastRunAt: sortedByDateAsc.at(-1)?.createdAt,
+    duration: buildDurationStats(runs),
+  };
+}
+
+function buildFailureGroups(runs: TestRun[]): TestFailureGroup[] {
+  const groups = new Map<
+    string,
+    {
+      signature: string;
+      category?: string;
+      sampleMessage: string;
+      runs: TestRun[];
+    }
+  >();
+  for (const run of runs) {
+    const sig = run.errorSignature;
+    const isFailure =
+      run.outcome !== ReportTestOutcomeEnum.Expected &&
+      run.outcome !== ReportTestOutcomeEnum.Skipped &&
+      run.outcome !== 'passed' &&
+      run.outcome !== 'skipped';
+    if (!sig || !isFailure) continue;
+
+    let bucket = groups.get(sig);
+    if (!bucket) {
+      let sampleMessage = '';
+      if (run.failureDetails) {
+        try {
+          sampleMessage = String(JSON.parse(run.failureDetails)?.message ?? '');
+        } catch {
+          sampleMessage = '';
+        }
+      }
+      bucket = {
+        signature: sig,
+        category: run.failureCategory,
+        sampleMessage,
+        runs: [],
+      };
+      groups.set(sig, bucket);
+    }
+    bucket.runs.push(run);
+  }
+
+  return Array.from(groups.values())
+    .map((g) => {
+      const sortedAsc = [...g.runs].sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+      const sortedDesc = [...sortedAsc].reverse();
+      return {
+        signature: g.signature,
+        category: g.category,
+        count: g.runs.length,
+        sampleMessage: g.sampleMessage,
+        firstSeen: sortedAsc[0].createdAt,
+        lastSeen: sortedDesc[0].createdAt,
+        recentReports: sortedDesc.slice(0, 5).map((r) => ({
+          reportId: r.reportId,
+          title: r.reportTitle,
+          displayNumber: r.reportDisplayNumber,
+        })),
+      };
+    })
+    .sort((a, b) => b.count - a.count);
+}
+
+function buildCrossProjectOccurrences(
+  testId: string,
+  excludeProject: string
+): TestCrossProjectOccurrence[] {
+  const db = getDatabase();
+  const rows = db
+    .prepare(
+      `SELECT project, fileId FROM tests
+       WHERE testId = ? AND project != ?
+       GROUP BY project, fileId`
+    )
+    .all(testId, excludeProject) as Array<{ project: string; fileId: string }>;
+
+  const occurrences: TestCrossProjectOccurrence[] = [];
+  for (const { project, fileId } of rows) {
+    const derived = testDb.getTestWithDerivedData(testId, fileId, project);
+    if (!derived) continue;
+    occurrences.push({
+      project,
+      fileId,
+      totalRuns: derived.totalRuns ?? 0,
+      flakinessScore: derived.flakinessScore,
+      isQuarantined: !!derived.isQuarantined,
+      lastRunAt: derived.lastRunAt,
+    });
+  }
+  return occurrences.sort((a, b) => (b.flakinessScore ?? 0) - (a.flakinessScore ?? 0));
 }
 
 /**
@@ -591,8 +761,9 @@ export class TestManagementService {
     project?: string,
     options?: {
       status?: 'all' | 'quarantined' | 'not-quarantined';
-      flakinessMin?: number;
-      flakinessMax?: number;
+      tiers?: Array<'stable' | 'flaky' | 'critical'>;
+      sort?: 'default' | 'slowest';
+      failureCategory?: string;
       limit?: number;
       offset?: number;
       from?: string;
@@ -638,13 +809,33 @@ export class TestManagementService {
         tests = tests.filter((test) => test.isQuarantined === shouldBeQuarantined);
       }
 
-      if (options.flakinessMin !== undefined || options.flakinessMax !== undefined) {
-        const min = Math.max(0, options.flakinessMin ?? 0);
-        const max = Math.min(100, options.flakinessMax ?? 100);
+      if (options.tiers && options.tiers.length > 0) {
+        const cfg = await this.getConfig();
+        const warning = cfg.warningThresholdPercentage ?? 10;
+        const quarantine = cfg.quarantineThresholdPercentage ?? 50;
+        const matchesTier = (score: number, tier: string) => {
+          switch (tier) {
+            case 'stable':
+              return score < warning;
+            case 'flaky':
+              return score >= warning && score < quarantine;
+            case 'critical':
+              return score >= quarantine;
+            default:
+              return false;
+          }
+        };
         tests = tests.filter((test) => {
-          const score = test.flakinessScore || 0;
-          return score >= min && score <= max;
+          const score = test.flakinessScore ?? 0;
+          return options.tiers!.some((tier) => matchesTier(score, tier));
         });
+      }
+
+      if (options.failureCategory) {
+        const target = options.failureCategory;
+        tests = tests.filter((test) =>
+          (test.runs ?? []).some((run) => run.failureCategory === target)
+        );
       }
 
       if (options.search) {
@@ -654,6 +845,23 @@ export class TestManagementService {
             test.title.toLowerCase().includes(term) || test.filePath.toLowerCase().includes(term)
         );
       }
+    }
+
+    if (options?.sort === 'slowest') {
+      const avgDuration = (t: TestWithQuarantineInfo) => {
+        const durations = (t.runs ?? [])
+          .map((r) => r.duration)
+          .filter((d): d is number => typeof d === 'number' && d >= 0);
+        if (durations.length === 0) return -1;
+        return durations.reduce((s, d) => s + d, 0) / durations.length;
+      };
+      tests.sort((a, b) => avgDuration(b) - avgDuration(a));
+      const total = tests.length;
+      if (options.limit !== undefined) {
+        const offset = options.offset ?? 0;
+        tests = tests.slice(offset, offset + options.limit);
+      }
+      return { data: tests, total };
     }
 
     // Sort: skipped last, unexpected first, high flakiness, low pass rate
@@ -756,6 +964,33 @@ export class TestManagementService {
     project: string
   ): Promise<TestWithQuarantineInfo | null> {
     return testDb.getTestWithDerivedData(testId, fileId, project) || null;
+  }
+
+  async getTestDetail(testId: string, fileId: string, project: string): Promise<TestDetail | null> {
+    const test = testDb.getTestWithDerivedData(testId, fileId, project);
+    if (!test) return null;
+
+    const runs = testDb.getTestRuns(testId, fileId, project);
+    const stats = buildTestDetailStats(runs);
+    const failureGroups = buildFailureGroups(runs);
+    const crossProject = buildCrossProjectOccurrences(testId, project);
+
+    return {
+      testId: test.testId,
+      fileId: test.fileId,
+      filePath: test.filePath,
+      project: test.project,
+      title: test.title,
+      createdAt: test.createdAt,
+      isQuarantined: !!test.isQuarantined,
+      quarantineReason: test.quarantineReason,
+      quarantinedAt: test.quarantinedAt,
+      flakinessScore: test.flakinessScore,
+      stats,
+      runs,
+      failureGroups,
+      crossProject,
+    };
   }
 
   async deleteTest(testId: string, fileId: string, project: string): Promise<void> {

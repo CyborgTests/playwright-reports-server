@@ -6,7 +6,6 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useActiveSection } from '../../hooks/useActiveSection';
 import { useAnalyticsData } from '../../hooks/useAnalyticsData';
-import { useConfig } from '../../hooks/useConfig';
 import { defaultProjectName } from '../../lib/constants';
 import { cn } from '../../lib/utils';
 import DateRangeSelect from '../date-range-select';
@@ -79,6 +78,34 @@ export default function AnalyticsDashboard() {
     setDateRangeState(range);
   }, []);
 
+  const scrollToTests = useCallback(() => {
+    document.getElementById('tests')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  const applyTestsFilter = useCallback(
+    (updates: Record<string, string | null>) => {
+      const next = new URLSearchParams(searchParams);
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === null) next.delete(key);
+        else next.set(key, value);
+      }
+      setSearchParams(next, { replace: true });
+      // Scroll after the URL update so the lazy section is mounted by then.
+      requestAnimationFrame(scrollToTests);
+    },
+    [searchParams, setSearchParams, scrollToTests]
+  );
+
+  const handleFlakyTileClick = useCallback(
+    () => applyTestsFilter({ tiers: 'flaky,critical', sort: null }),
+    [applyTestsFilter]
+  );
+
+  const handleSlowSparklineClick = useCallback(
+    () => applyTestsFilter({ sort: 'slowest', tiers: null }),
+    [applyTestsFilter]
+  );
+
   error && toast.error(error.message);
 
   const isLoading = isPending || isFetching;
@@ -129,11 +156,17 @@ export default function AnalyticsDashboard() {
           totalTests={testsSummary?.total}
           flakyCount={testsSummary?.flakyCount}
           totalRuns={runHealthMetrics.length}
+          onFlakyClick={handleFlakyTileClick}
         />
       </section>
 
       <section id="trends" className="scroll-mt-32 space-y-6">
-        <TrendSparklines metrics={trendMetrics!} isLoading={isLoading} />
+        <TrendSparklines
+          metrics={trendMetrics!}
+          isLoading={isLoading}
+          onSlowClick={handleSlowSparklineClick}
+          onFlakyClick={handleFlakyTileClick}
+        />
         <HealthGrid metrics={runHealthMetrics} isLoading={isLoading} />
       </section>
 

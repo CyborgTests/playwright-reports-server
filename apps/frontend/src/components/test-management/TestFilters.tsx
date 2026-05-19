@@ -1,11 +1,9 @@
-import type { TestFilters as TestFiltersType } from '@playwright-reports/shared';
-import { useMemo } from 'react';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
+import type {
+  FlakinessTier,
+  TestFilters as TestFiltersType,
+  TestsSort,
+} from '@playwright-reports/shared';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -18,13 +16,14 @@ import {
 import { useConfig } from '@/hooks/useConfig';
 import useQuery from '@/hooks/useQuery';
 import { formatCategoryName } from '@/lib/format';
+import { cn } from '@/lib/utils';
 
 interface TestFiltersProps {
   filters: TestFiltersType;
   onFiltersChange: (filters: TestFiltersType) => void;
 }
 
-type Tier = 'all' | 'stable' | 'flaky' | 'critical' | 'custom';
+const TIER_ORDER: FlakinessTier[] = ['stable', 'flaky', 'critical'];
 
 export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersProps>) {
   const { data: categoriesResponse } = useQuery<{ success: boolean; data: string[] }>(
@@ -36,25 +35,33 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
   const warningThreshold = config?.testManagement?.warningThresholdPercentage ?? 10;
   const quarantineThreshold = config?.testManagement?.quarantineThresholdPercentage ?? 50;
 
-  const stableMax = Math.max(0, warningThreshold - 1);
-  const flakyMax = Math.max(0, quarantineThreshold - 1);
+  const selectedTiers = filters.tiers ?? [];
+  const sort: TestsSort = filters.sort ?? 'default';
 
-  const tier = useMemo<Tier>(() => {
-    const min = filters.flakinessMin ?? 0;
-    const max = filters.flakinessMax ?? 100;
-    if (min === 0 && max === 100) return 'all';
-    if (min === 0 && max === stableMax) return 'stable';
-    if (min === warningThreshold && max === flakyMax) return 'flaky';
-    if (min === quarantineThreshold && max === 100) return 'critical';
-    return 'custom';
-  }, [
-    filters.flakinessMin,
-    filters.flakinessMax,
-    warningThreshold,
-    quarantineThreshold,
-    stableMax,
-    flakyMax,
-  ]);
+  const tierLabel = (tier: FlakinessTier) => {
+    switch (tier) {
+      case 'stable':
+        return `Stable (< ${warningThreshold}%)`;
+      case 'flaky':
+        return `Flaky (${warningThreshold}–${quarantineThreshold - 1}%)`;
+      case 'critical':
+        return `Critical (≥ ${quarantineThreshold}%)`;
+    }
+  };
+
+  const toggleTier = (tier: FlakinessTier) => {
+    const next = selectedTiers.includes(tier)
+      ? selectedTiers.filter((t) => t !== tier)
+      : [...selectedTiers, tier];
+    onFiltersChange({
+      ...filters,
+      tiers: next.length === 0 ? undefined : next,
+    });
+  };
+
+  const handleSortChange = (value: string) => {
+    onFiltersChange({ ...filters, sort: value as TestsSort });
+  };
 
   const handleFailureCategoryChange = (value: string) => {
     onFiltersChange({
@@ -67,59 +74,6 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
     onFiltersChange({
       ...filters,
       status: value as TestFiltersType['status'],
-    });
-  };
-
-  const handleTierChange = (value: string) => {
-    switch (value) {
-      case 'all':
-        onFiltersChange({ ...filters, flakinessMin: 0, flakinessMax: 100 });
-        return;
-      case 'stable':
-        onFiltersChange({ ...filters, flakinessMin: 0, flakinessMax: stableMax });
-        return;
-      case 'flaky':
-        onFiltersChange({
-          ...filters,
-          flakinessMin: warningThreshold,
-          flakinessMax: flakyMax,
-        });
-        return;
-      case 'critical':
-        onFiltersChange({
-          ...filters,
-          flakinessMin: quarantineThreshold,
-          flakinessMax: 100,
-        });
-        return;
-    }
-  };
-
-  const handleFlakinessMinChange = (value: string) => {
-    const numValue = Number.parseInt(value, 10);
-    const validatedValue = Number.isNaN(numValue) ? 0 : Math.min(Math.max(numValue, 0), 100);
-
-    onFiltersChange({
-      ...filters,
-      flakinessMin: validatedValue,
-      flakinessMax:
-        filters.flakinessMax && validatedValue > filters.flakinessMax
-          ? validatedValue
-          : filters.flakinessMax,
-    });
-  };
-
-  const handleFlakinessMaxChange = (value: string) => {
-    const numValue = Number.parseInt(value, 10);
-    const validatedValue = Number.isNaN(numValue) ? 100 : Math.min(Math.max(numValue, 0), 100);
-
-    onFiltersChange({
-      ...filters,
-      flakinessMin:
-        filters.flakinessMin && validatedValue < filters.flakinessMin
-          ? validatedValue
-          : filters.flakinessMin,
-      flakinessMax: validatedValue,
     });
   };
 
@@ -171,65 +125,52 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
           </div>
         )}
         <div className="space-y-2">
-          <Label htmlFor="tier-filter">Flakiness</Label>
-          <Select value={tier} onValueChange={handleTierChange}>
-            <SelectTrigger id="tier-filter">
+          <Label>Sort</Label>
+          <Select value={sort} onValueChange={handleSortChange}>
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="stable">Stable (&lt; {warningThreshold}%)</SelectItem>
-              <SelectItem value="flaky">
-                Flaky ({warningThreshold}–{flakyMax}%)
-              </SelectItem>
-              <SelectItem value="critical">Critical (≥ {quarantineThreshold}%)</SelectItem>
-              {tier === 'custom' && (
-                <SelectItem value="custom" disabled>
-                  Custom ({filters.flakinessMin ?? 0}–{filters.flakinessMax ?? 100}%)
-                </SelectItem>
-              )}
+              <SelectItem value="default">Default</SelectItem>
+              <SelectItem value="slowest">Slowest first</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </div>
 
-      <Accordion type="single" collapsible>
-        <AccordionItem value="advanced" className="border rounded-md px-3">
-          <AccordionTrigger className="text-sm font-medium">
-            Advanced — flakiness range
-          </AccordionTrigger>
-          <AccordionContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              <div className="space-y-2">
-                <Label htmlFor="min-flakiness">Min Flakiness (%)</Label>
-                <Input
-                  id="min-flakiness"
-                  type="number"
-                  placeholder="0"
-                  min={0}
-                  max={Math.min(filters.flakinessMax ?? 100, 100)}
-                  step={1}
-                  value={String(filters.flakinessMin ?? 0)}
-                  onChange={(e) => handleFlakinessMinChange(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="max-flakiness">Max Flakiness (%)</Label>
-                <Input
-                  id="max-flakiness"
-                  type="number"
-                  placeholder="100"
-                  min={Math.max(filters.flakinessMin ?? 0, 0)}
-                  max={100}
-                  step={1}
-                  value={String(filters.flakinessMax ?? 100)}
-                  onChange={(e) => handleFlakinessMaxChange(e.target.value)}
-                />
-              </div>
-            </div>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
+      <div className="space-y-2">
+        <Label>Flakiness</Label>
+        <div className="flex flex-wrap gap-2">
+          {TIER_ORDER.map((t) => {
+            const active = selectedTiers.includes(t);
+            return (
+              <Button
+                key={t}
+                type="button"
+                size="sm"
+                variant={active ? 'default' : 'outline'}
+                onClick={() => toggleTier(t)}
+                aria-pressed={active}
+                className={cn('h-8 text-xs', active && 'shadow-sm')}
+              >
+                {tierLabel(t)}
+              </Button>
+            );
+          })}
+          {selectedTiers.length > 0 && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => onFiltersChange({ ...filters, tiers: undefined })}
+              className="h-8 text-xs text-muted-foreground"
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+      </div>
+
     </div>
   );
 }

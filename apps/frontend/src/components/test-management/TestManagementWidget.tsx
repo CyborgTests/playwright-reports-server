@@ -1,12 +1,15 @@
 import {
   type DateRange,
+  type FlakinessTier,
   ReportTestOutcomeEnum,
   type TestFilters,
+  type TestsSort,
   type TestWithQuarantineInfo,
 } from '@playwright-reports/shared';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Clock } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -54,16 +57,33 @@ interface TestManagementWidgetProps {
   dateRange?: DateRange;
 }
 
+const VALID_TIERS: FlakinessTier[] = ['stable', 'flaky', 'critical'];
+
+function parseTiersParam(raw: string | null): FlakinessTier[] | undefined {
+  if (!raw) return undefined;
+  const tiers = raw
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t): t is FlakinessTier => (VALID_TIERS as string[]).includes(t));
+  return tiers.length > 0 ? tiers : undefined;
+}
+
+function parseSortParam(raw: string | null): TestsSort | undefined {
+  return raw === 'slowest' ? 'slowest' : undefined;
+}
+
 export default function TestManagementWidget({
   project,
   dateRange,
 }: Readonly<TestManagementWidgetProps>) {
-  const [filters, setFilters] = useState<TestFilters>({
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [filters, setFilters] = useState<TestFilters>(() => ({
     project: project ?? defaultProjectName,
     status: 'all',
-    flakinessMin: 0,
-    flakinessMax: 100,
-  });
+    tiers: parseTiersParam(searchParams.get('tiers')),
+    sort: parseSortParam(searchParams.get('sort')),
+  }));
   const [quarantineTest, setQuarantineTest] = useState<TestWithQuarantineInfo | null>(null);
   const [quarantineReason, setQuarantineReason] = useState('');
   const [isQuarantineModalOpen, setIsQuarantineModalOpen] = useState(false);
@@ -73,6 +93,36 @@ export default function TestManagementWidget({
   useEffect(() => {
     setFilters((prev) => ({ ...prev, project: project ?? defaultProjectName }));
   }, [project]);
+
+  // Pick up external changes to tiers/sort (e.g. a stat-widget click on the dashboard
+  // updating the URL). Compare against current state before setting to avoid loops.
+  useEffect(() => {
+    const urlTiers = parseTiersParam(searchParams.get('tiers'));
+    const urlSort = parseSortParam(searchParams.get('sort'));
+    setFilters((prev) => {
+      const sameTiers =
+        (prev.tiers?.length ?? 0) === (urlTiers?.length ?? 0) &&
+        (prev.tiers ?? []).every((t) => urlTiers?.includes(t));
+      if (sameTiers && prev.sort === urlSort) return prev;
+      return { ...prev, tiers: urlTiers, sort: urlSort };
+    });
+  }, [searchParams]);
+
+  // Sync tier/sort changes initiated inside the table back to the URL.
+  const handleFiltersChange = useCallback(
+    (next: TestFilters) => {
+      setFilters(next);
+      const params = new URLSearchParams(searchParams);
+      if (next.tiers && next.tiers.length > 0) params.set('tiers', next.tiers.join(','));
+      else params.delete('tiers');
+      if (next.sort && next.sort !== 'default') params.set('sort', next.sort);
+      else params.delete('sort');
+      if (params.toString() !== searchParams.toString()) {
+        setSearchParams(params, { replace: true });
+      }
+    },
+    [searchParams, setSearchParams]
+  );
 
   const queryClient = useQueryClient();
 
@@ -93,11 +143,14 @@ export default function TestManagementWidget({
       if (filters.status && filters.status !== 'all') {
         params.append('status', filters.status);
       }
-      if (filters.flakinessMin !== undefined && filters.flakinessMin > 0) {
-        params.append('flakinessMin', filters.flakinessMin.toString());
+      if (filters.tiers && filters.tiers.length > 0) {
+        params.append('tiers', filters.tiers.join(','));
       }
-      if (filters.flakinessMax !== undefined && filters.flakinessMax < 100) {
-        params.append('flakinessMax', filters.flakinessMax.toString());
+      if (filters.sort && filters.sort !== 'default') {
+        params.append('sort', filters.sort);
+      }
+      if (filters.failureCategory) {
+        params.append('failureCategory', filters.failureCategory);
       }
       if (filters.search) {
         params.append('search', filters.search);
@@ -312,7 +365,7 @@ export default function TestManagementWidget({
 
       <Card className="mb-4">
         <CardContent className="pt-6">
-          <TestFiltersComponent filters={filters} onFiltersChange={setFilters} />
+          <TestFiltersComponent filters={filters} onFiltersChange={handleFiltersChange} />
         </CardContent>
       </Card>
 
@@ -356,7 +409,12 @@ export default function TestManagementWidget({
                     <TableRow key={`${item.testId}-${item.fileId}-${item.project}`}>
                       <TableCell className="break-words">
                         <div>
-                          <p className="font-medium break-words">{item.title}</p>
+                          <RouterLink
+                            to={`/test/${item.fileId}/${item.testId}?project=${encodeURIComponent(item.project)}`}
+                            className="font-medium break-words hover:underline"
+                          >
+                            {item.title}
+                          </RouterLink>
                           <p className="text-sm text-muted-foreground break-words">
                             {item.filePath}
                           </p>

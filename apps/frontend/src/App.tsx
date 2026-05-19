@@ -10,6 +10,7 @@ import ReportsComparePage from '@/pages/ReportsComparePage';
 import ReportsPage from '@/pages/ReportsPage';
 import ResultsPage from '@/pages/ResultsPage';
 import SettingsPage from '@/pages/SettingsPage';
+import TestDetailPage from '@/pages/TestDetailPage';
 import { Providers } from '@/providers';
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
                 <Route path="/reports/compare" element={<ReportsComparePage />} />
                 <Route path="/report/:id" element={<ReportDetailPage />} />
                 <Route path="/report/:id/:testId" element={<RedirectTestDetails />} />
+                <Route path="/test/:fileId/:testId" element={<TestDetailPage />} />
                 <Route path="/results" element={<ResultsPage />} />
                 <Route path="/llm-queue" element={<LlmQueuePage />} />
                 <Route path="/settings" element={<SettingsPage />} />

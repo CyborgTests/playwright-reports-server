@@ -36,26 +36,78 @@ export interface TestRun {
   reportDisplayNumber?: number;
 }
 
-export interface TestDetailInfo {
+export interface TestDurationStats {
+  mean: number;
+  median: number;
+  p95: number;
+  stdDev: number;
+  min: number;
+  max: number;
+}
+
+export interface TestDetailStats {
+  totalRuns: number;
+  passed: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+  passRate: number;
+  firstRunAt?: string;
+  lastRunAt?: string;
+  duration?: TestDurationStats;
+}
+
+export interface FailureGroupReportRef {
+  reportId: string;
+  title?: string;
+  displayNumber?: number;
+}
+
+export interface TestFailureGroup {
+  signature: string;
+  category?: string;
+  count: number;
+  sampleMessage: string;
+  firstSeen: string;
+  lastSeen: string;
+  /** Most recent reports where this signature appeared, newest first. */
+  recentReports: FailureGroupReportRef[];
+}
+
+export interface TestCrossProjectOccurrence {
+  project: string;
+  fileId: string;
+  totalRuns: number;
+  flakinessScore?: number;
+  isQuarantined: boolean;
+  lastRunAt?: string;
+}
+
+export interface TestDetail {
   testId: string;
   fileId: string;
+  filePath: string;
   project: string;
   title: string;
   createdAt: string;
-  runs: TestRun[];
-  isQuarantined?: boolean;
-  quarantinedAt?: string;
+  isQuarantined: boolean;
   quarantineReason?: string;
+  quarantinedAt?: string;
   flakinessScore?: number;
-  totalRuns?: number;
-  lastRunAt?: string;
+  stats: TestDetailStats;
+  runs: TestRun[];
+  failureGroups: TestFailureGroup[];
+  crossProject: TestCrossProjectOccurrence[];
 }
+
+export type FlakinessTier = 'stable' | 'flaky' | 'critical';
+export type TestsSort = 'default' | 'slowest';
 
 export interface TestFilters {
   search?: string;
   status?: 'all' | 'quarantined' | 'not-quarantined';
-  flakinessMin?: number;
-  flakinessMax?: number;
+  tiers?: FlakinessTier[];
+  sort?: TestsSort;
   project?: string;
   failureCategory?: string;
 }

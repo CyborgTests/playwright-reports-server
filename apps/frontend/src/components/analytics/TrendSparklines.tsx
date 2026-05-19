@@ -8,6 +8,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 interface TrendSparklinesProps {
   metrics: TrendMetrics;
   isLoading?: boolean;
+  onSlowClick?: () => void;
+  onFlakyClick?: () => void;
 }
 
 const durationColor = 'hsl(217, 91%, 60%)'; // blue
@@ -18,9 +20,18 @@ function SparklineCard({
   title,
   subtitle,
   children,
-}: Readonly<{ title: string; subtitle: string; children: React.ReactNode }>) {
+  onClick,
+}: Readonly<{
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+  onClick?: () => void;
+}>) {
   return (
-    <Card>
+    <Card
+      onClick={onClick}
+      className={onClick ? 'cursor-pointer hover:bg-accent/40 transition-colors' : undefined}
+    >
       <CardContent className="p-4 pt-4">
         <h4 className="text-sm font-medium mb-1">{title}</h4>
         <p className="text-xs text-muted-foreground mb-4">{subtitle}</p>
@@ -30,7 +41,12 @@ function SparklineCard({
   );
 }
 
-export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklinesProps>) {
+export function TrendSparklines({
+  metrics,
+  isLoading,
+  onSlowClick,
+  onFlakyClick,
+}: Readonly<TrendSparklinesProps>) {
   if (isLoading || !metrics) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -107,7 +123,13 @@ export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklines
         </div>
       </SparklineCard>
 
-      <SparklineCard title="Flaky Count Trend" subtitle="Number of intermittently failing tests">
+      <SparklineCard
+        title="Flaky Count Trend"
+        subtitle={
+          'Number of intermittently failing tests'
+        }
+        onClick={onFlakyClick}
+      >
         <div className="h-20">
           {flakyCountTrend.reduce((sum, p) => sum + (p.count ?? 0), 0) === 0 ? (
             <div className="flex h-full items-center justify-center text-success text-sm font-medium">
@@ -131,7 +153,13 @@ export function TrendSparklines({ metrics, isLoading }: Readonly<TrendSparklines
         </div>
       </SparklineCard>
 
-      <SparklineCard title="Slow Count Trend" subtitle="Tests slower than 95th percentile">
+      <SparklineCard
+        title="Slow Count Trend"
+        subtitle={
+          onSlowClick ? 'Click to sort tests by slowest first' : 'Tests slower than 95th percentile'
+        }
+        onClick={onSlowClick}
+      >
         <div className="h-20">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={slowCountTrend.slice(-30).reverse()}>

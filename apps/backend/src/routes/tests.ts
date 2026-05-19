@@ -10,24 +10,44 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
     fastify.addHook('preHandler', (request, reply) => authenticate(request as AuthRequest, reply));
 
     fastify.get('/api/tests', async (request: FastifyRequest, reply: FastifyReply) => {
-      const { project, status, flakinessMin, flakinessMax, limit, offset, from, to, search } =
-        request.query as {
-          project?: string;
-          status?: string;
-          flakinessMin?: string;
-          flakinessMax?: string;
-          limit?: string;
-          offset?: string;
-          from?: string;
-          to?: string;
-          search?: string;
-        };
+      const {
+        project,
+        status,
+        tiers,
+        sort,
+        failureCategory,
+        limit,
+        offset,
+        from,
+        to,
+        search,
+      } = request.query as {
+        project?: string;
+        status?: string;
+        tiers?: string;
+        sort?: string;
+        failureCategory?: string;
+        limit?: string;
+        offset?: string;
+        from?: string;
+        to?: string;
+        search?: string;
+      };
 
       try {
+        const parsedTiers = tiers
+          ? (tiers
+              .split(',')
+              .map((t) => t.trim())
+              .filter((t) => t === 'stable' || t === 'flaky' || t === 'critical') as Array<
+              'stable' | 'flaky' | 'critical'
+            >)
+          : undefined;
         const options = {
           status: status as 'all' | 'quarantined' | 'not-quarantined' | undefined,
-          flakinessMin: flakinessMin ? Number.parseInt(flakinessMin, 10) : undefined,
-          flakinessMax: flakinessMax ? Number.parseInt(flakinessMax, 10) : undefined,
+          tiers: parsedTiers,
+          sort: sort === 'slowest' ? ('slowest' as const) : undefined,
+          failureCategory: failureCategory || undefined,
           limit: limit ? Number.parseInt(limit, 10) : undefined,
           offset: offset ? Number.parseInt(offset, 10) : undefined,
           from,
@@ -151,6 +171,35 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
             reason: body.reason,
           },
         });
+      }
+    );
+
+    fastify.get(
+      '/api/test/:fileId/:testId/detail',
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { fileId, testId } = request.params as { fileId: string; testId: string };
+        const { project } = request.query as { project?: string };
+
+        if (!project) {
+          return reply
+            .status(400)
+            .send({ success: false, error: 'project query parameter is required' });
+        }
+
+        const { result: detail, error } = await withError(
+          testManagementService.getTestDetail(testId, fileId, project)
+        );
+
+        if (error) {
+          fastify.log.error(error);
+          return reply.status(500).send({ success: false, error: 'Failed to fetch test detail' });
+        }
+
+        if (!detail) {
+          return reply.status(404).send({ success: false, error: 'Test not found' });
+        }
+
+        return reply.send({ success: true, data: detail });
       }
     );
 

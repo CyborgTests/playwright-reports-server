@@ -1,4 +1,9 @@
-import type { ReportFile, ReportHistory, ReportTest } from '@playwright-reports/shared';
+import type {
+  ReportFile,
+  ReportHistory,
+  ReportStats,
+  ReportTest,
+} from '@playwright-reports/shared';
 import {
   Accordion,
   AccordionContent,
@@ -7,12 +12,62 @@ import {
 } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { testStatusToColor } from '@/lib/tailwind';
+import { pluralize } from '@/lib/transformers';
 import TestInfo from './test-info';
 
 interface SuiteNode {
   name: string;
   children: SuiteNode[];
   tests: ReportTest[];
+}
+
+function computeSuiteStats(suite: SuiteNode): ReportStats {
+  const stats: Required<ReportStats> = {
+    total: 0,
+    expected: 0,
+    unexpected: 0,
+    flaky: 0,
+    skipped: 0,
+    ok: true,
+  };
+  const visit = (node: SuiteNode) => {
+    for (const test of node.tests) {
+      stats.total++;
+      switch (test.outcome) {
+        case 'expected':
+          stats.expected++;
+          break;
+        case 'flaky':
+          stats.flaky++;
+          break;
+        case 'skipped':
+          stats.skipped++;
+          break;
+        default:
+          stats.unexpected++;
+          stats.ok = false;
+          break;
+      }
+    }
+    for (const child of node.children) visit(child);
+  };
+  visit(suite);
+  return stats;
+}
+
+export function StatsBadges({ stats }: { stats: ReportStats }) {
+  if (!stats.total) return null;
+  return (
+    <span className="flex items-center gap-2 text-xs text-muted-foreground font-normal flex-wrap">
+      <span>
+        {stats.total} {pluralize(stats.total, 'test')}
+      </span>
+      {(stats.expected ?? 0) > 0 && <Badge variant="success">{stats.expected} passed</Badge>}
+      {(stats.unexpected ?? 0) > 0 && <Badge variant="danger">{stats.unexpected} failed</Badge>}
+      {(stats.flaky ?? 0) > 0 && <Badge variant="warning">{stats.flaky} flaky</Badge>}
+      {(stats.skipped ?? 0) > 0 && <Badge variant="secondary">{stats.skipped} skipped</Badge>}
+    </span>
+  );
 }
 
 function buildTestTree(rootName: string, tests: ReportTest[]): SuiteNode {
@@ -63,20 +118,42 @@ interface SuiteNodeComponentProps {
   suite: SuiteNode;
   history: ReportHistory[];
   reportId?: string;
+  fileId: string;
+  project?: string;
 }
 
-const SuiteNodeComponent = ({ suite, history, reportId }: SuiteNodeComponentProps) => {
+const SuiteNodeComponent = ({
+  suite,
+  history,
+  reportId,
+  fileId,
+  project,
+}: SuiteNodeComponentProps) => {
   return (
     <Accordion type="multiple" className="pl-4">
       {[
-        ...suite.children.map((child) => (
-          <AccordionItem key={child.name} value={child.name}>
-            <AccordionTrigger className="hover:no-underline">{child.name}</AccordionTrigger>
-            <AccordionContent>
-              <SuiteNodeComponent history={history} reportId={reportId} suite={child} />
-            </AccordionContent>
-          </AccordionItem>
-        )),
+        ...suite.children.map((child) => {
+          const childStats = computeSuiteStats(child);
+          return (
+            <AccordionItem key={child.name} value={child.name}>
+              <AccordionTrigger className="hover:no-underline">
+                <span className="flex flex-row gap-3 items-center w-full justify-between pr-4 flex-wrap">
+                  <span className="font-medium">{child.name}</span>
+                  <StatsBadges stats={childStats} />
+                </span>
+              </AccordionTrigger>
+              <AccordionContent>
+                <SuiteNodeComponent
+                  history={history}
+                  reportId={reportId}
+                  suite={child}
+                  fileId={fileId}
+                  project={project}
+                />
+              </AccordionContent>
+            </AccordionItem>
+          );
+        }),
         ...suite.tests.map((test) => {
           const status = testStatusToColor(test.outcome || 'passed');
 
@@ -94,7 +171,7 @@ const SuiteNodeComponent = ({ suite, history, reportId }: SuiteNodeComponentProp
                 </span>
               </AccordionTrigger>
               <AccordionContent>
-                <TestInfo history={history} test={test} />
+                <TestInfo history={history} test={test} fileId={fileId} project={project} />
               </AccordionContent>
             </AccordionItem>
           );
@@ -108,14 +185,21 @@ interface FileSuitesTreeProps {
   file: ReportFile;
   history: ReportHistory[];
   reportId?: string;
+  project?: string;
 }
 
-const FileSuitesTree = ({ file, history, reportId }: FileSuitesTreeProps) => {
+const FileSuitesTree = ({ file, history, reportId, project }: FileSuitesTreeProps) => {
   const suiteTree = buildTestTree(file.fileName || file.name || 'unknown', file.tests || []);
 
   return (
     <>
-      <SuiteNodeComponent history={history} reportId={reportId} suite={suiteTree} />
+      <SuiteNodeComponent
+        history={history}
+        reportId={reportId}
+        suite={suiteTree}
+        fileId={file.fileId}
+        project={project}
+      />
     </>
   );
 };
