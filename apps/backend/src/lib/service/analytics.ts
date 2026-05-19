@@ -241,6 +241,8 @@ export class AnalyticsService {
         failed,
         flaky,
         duration: report.duration || 0,
+        title: report.title,
+        displayNumber: report.displayNumber,
       };
     });
   }

@@ -35,6 +35,8 @@ export interface TestRun {
   failureCategorySource?: FailureCategorySource;
   errorSignature?: string;
   errorSignatureGlobal?: string;
+  reportTitle?: string;
+  reportDisplayNumber?: number;
 }
 
 export interface TestWithQuarantineInfo extends Test {
@@ -59,6 +61,8 @@ export class TestDatabase {
       failureCategorySource: (row.failure_category_source as FailureCategorySource) || undefined,
       errorSignature: row.error_signature || undefined,
       errorSignatureGlobal: row.error_signature_global || undefined,
+      reportTitle: row.reportTitle ?? undefined,
+      reportDisplayNumber: row.reportDisplayNumber ?? undefined,
     };
   }
 
@@ -154,9 +158,11 @@ export class TestDatabase {
     `);
 
     this.getTestRunsStmt = this.db.prepare(`
-      SELECT * FROM test_runs
-      WHERE testId = ? AND fileId = ? AND project = ?
-      ORDER BY createdAt DESC
+      SELECT tr.*, r.title AS reportTitle, r.displayNumber AS reportDisplayNumber
+      FROM test_runs tr
+      LEFT JOIN reports r ON r.reportID = tr.reportId
+      WHERE tr.testId = ? AND tr.fileId = ? AND tr.project = ?
+      ORDER BY tr.createdAt DESC
       LIMIT 50
     `);
 

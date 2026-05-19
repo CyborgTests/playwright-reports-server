@@ -7,6 +7,13 @@ const outcomeLabel = (outcome: string) => {
   return 'FAIL';
 };
 
+const reportLabel = (run: TestRun): string => {
+  const parts: string[] = [];
+  if (typeof run.reportDisplayNumber === 'number') parts.push(`#${run.reportDisplayNumber}`);
+  if (run.reportTitle) parts.push(run.reportTitle);
+  return parts.join(' ');
+};
+
 const SparklineChart = ({ recentRuns }: { recentRuns: Array<TestRun> }) => {
   const maxRuns = Math.min(recentRuns.length, 30);
   const recentRunsSlice = recentRuns.slice(0, maxRuns).reverse();
@@ -35,7 +42,11 @@ const SparklineChart = ({ recentRuns }: { recentRuns: Array<TestRun> }) => {
               </TooltipTrigger>
               <TooltipContent>
                 <p>
-                  {outcomeLabel(run.outcome)} &mdash; {new Date(run.createdAt).toLocaleDateString()}
+                  {outcomeLabel(run.outcome)}
+                  {reportLabel(run) && <> &mdash; {reportLabel(run)}</>}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {new Date(run.createdAt).toLocaleDateString()}
                 </p>
                 <p className="text-xs text-muted-foreground">Click to open report</p>
               </TooltipContent>

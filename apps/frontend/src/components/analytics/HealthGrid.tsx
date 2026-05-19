@@ -20,16 +20,34 @@ const chartColors = {
 const BAR_PX = 36;
 const CHART_HEIGHT = 300;
 
+const formatReportHeading = (
+  displayNumber: number | undefined,
+  title: string | undefined,
+  date: string
+): string => {
+  const parts: string[] = [];
+  if (typeof displayNumber === 'number') parts.push(`#${displayNumber}`);
+  if (title) parts.push(parts.length ? `— ${title}` : title);
+  return parts.length ? `${parts.join(' ')} (${date})` : date;
+};
+
+const formatAxisTick = (displayNumber: number | undefined, date: string): string =>
+  typeof displayNumber === 'number' ? `#${displayNumber}` : date;
+
 export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
-  const chartData = metrics.map((metric) => ({
-    name: new Date(metric.timestamp).toLocaleDateString(),
-    runId: metric.runId,
-    total: metric.totalTests,
-    passed: metric.passed,
-    failed: metric.failed,
-    flaky: metric.flaky,
-    duration: metric.duration,
-  }));
+  const chartData = metrics.map((metric) => {
+    const date = new Date(metric.timestamp).toLocaleDateString();
+    return {
+      name: formatAxisTick(metric.displayNumber, date),
+      heading: formatReportHeading(metric.displayNumber, metric.title, date),
+      runId: metric.runId,
+      total: metric.totalTests,
+      passed: metric.passed,
+      failed: metric.failed,
+      flaky: metric.flaky,
+      duration: metric.duration,
+    };
+  });
 
   const CustomTooltip = ({
     active,
@@ -39,6 +57,7 @@ export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
     payload?: Array<{
       payload: {
         name: string;
+        heading: string;
         runId: string;
         passed: number;
         failed: number;
@@ -51,7 +70,7 @@ export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
       const data = payload[0].payload;
       return (
         <div className="bg-popover text-popover-foreground p-3 rounded-lg shadow-lg border">
-          <p className="font-medium">{data.name}</p>
+          <p className="font-medium">{data.heading}</p>
           <p className="text-sm text-muted-foreground">Run ID: {data.runId}</p>
           <div className="mt-2 space-y-1">
             <div className="flex justify-between text-sm">

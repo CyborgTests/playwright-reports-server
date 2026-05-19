@@ -30,6 +30,8 @@ export interface RunHealthMetric {
   failed: number;
   flaky: number;
   duration: number;
+  title?: string;
+  displayNumber?: number;
 }
 
 export interface TrendMetrics {

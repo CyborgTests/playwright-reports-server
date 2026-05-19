@@ -32,6 +32,8 @@ export interface TestRun {
   failureCategory?: string;
   failureCategorySource?: FailureCategorySource;
   errorSignature?: string;
+  reportTitle?: string;
+  reportDisplayNumber?: number;
 }
 
 export interface TestDetailInfo {
