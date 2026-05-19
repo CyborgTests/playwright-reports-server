@@ -15,7 +15,6 @@ import {
   buildProjectSummarySegments,
   buildReportSummarySegments,
   buildTestFailureSegments,
-  computePromptVersion,
   extractRootCauseParagraph,
   fitPromptToBudget,
   PROJECT_ANALYSIS_SCHEMA,
@@ -502,7 +501,6 @@ class LlmAnalysisQueue {
             model: string | null;
             createdAt: string;
             updatedAt: string | null;
-            promptVersion: string | null;
           }
         | undefined;
 
@@ -547,10 +545,9 @@ class LlmAnalysisQueue {
             `[llmQueue] Task ${task.id}: error_signature + category match (source ${reuseSource.id}), reusing for test ${testId}`
           );
           const attempt = details.attempt ?? 1;
-          // Reused = 0 tokens (no LLM call); inherit promptVersion from the source row.
+          // Reused = 0 tokens (no LLM call).
           const reuseExtras = {
             usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-            promptVersion: reuseSource.promptVersion ?? undefined,
           };
           llmTasksDb.complete(
             task.id,
@@ -638,10 +635,6 @@ class LlmAnalysisQueue {
     // back to text when the active model rejects images.
     await attachScreenshotIfAny(builtPrompt, details, reportId, `[llmQueue] Task ${task.id}`);
 
-    // promptVersion is computed from the ORIGINAL prompt (template hash), not
-    // the post-fit one — fit only mutates data segments, not templateOnly ones.
-    const promptVersion = computePromptVersion(builtPrompt);
-
     await llmService.initialize();
     const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(
       builtPrompt,
@@ -652,7 +645,7 @@ class LlmAnalysisQueue {
     llmTasksDb.updatePrompt(task.id, debugPrompt);
 
     console.log(
-      `[llmQueue] Task ${task.id}: segments=${segmentedPrompt.segments.length} chars=${debugPrompt.length} ver=${promptVersion} for test ${testId}${fitLog ? ` ${fitLog}` : ''}`
+      `[llmQueue] Task ${task.id}: segments=${segmentedPrompt.segments.length} chars=${debugPrompt.length} for test ${testId}${fitLog ? ` ${fitLog}` : ''}`
     );
 
     // Per-task temperature: prefer the user's task-specific override, fall back
@@ -738,7 +731,6 @@ class LlmAnalysisQueue {
     const attempt = details.attempt ?? 1;
     const completionExtras = {
       usage: response.usage,
-      promptVersion,
     };
     llmTasksDb.complete(task.id, analysisText, category, response.model, completionExtras);
     testAnalysisDb.upsert(
@@ -1007,7 +999,6 @@ class LlmAnalysisQueue {
         project: project ?? undefined,
       },
     });
-    const promptVersion = computePromptVersion(builtPrompt);
 
     await llmService.initialize();
     const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(
@@ -1027,24 +1018,10 @@ class LlmAnalysisQueue {
 
     llmTasksDb.complete(task.id, response.content, null, response.model, {
       usage: response.usage,
-      promptVersion,
     });
 
     const totalFailures = Object.values(categories).reduce((s, c) => s + c, 0);
-    // Map to the ErrorGroup shape the DB expects (serialized as JSON).
-    const dbErrorGroups = errorGroups.map((g) => ({
-      pattern: g.sampleMessage,
-      count: g.count,
-      category: g.category,
-      testIds: g.affectedTests,
-    }));
-    failureSummaryDb.upsertSummary(
-      reportId,
-      project || '',
-      totalFailures,
-      categories,
-      dbErrorGroups
-    );
+    failureSummaryDb.upsertSummary(reportId, project || '', totalFailures, categories);
     failureSummaryDb.updateLlmSummary(reportId, response.content, response.model);
   }
 
@@ -1129,7 +1106,6 @@ class LlmAnalysisQueue {
         projectSummaryInstructions: projectLlmCfg.customProjectSummaryInstructions,
       },
     });
-    const promptVersion = computePromptVersion(builtPrompt);
 
     await llmService.initialize();
     const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(
@@ -1168,7 +1144,6 @@ class LlmAnalysisQueue {
 
     llmTasksDb.complete(task.id, summaryText, null, response.model, {
       usage: response.usage,
-      promptVersion,
     });
 
     // Mirror to the persisted dashboard cache so the UI reflects the new summary
@@ -1198,7 +1173,6 @@ export const llmAnalysisQueue = LlmAnalysisQueue.getInstance();
 export interface TestAnalysisRequest {
   segmentedPrompt: SegmentedPrompt;
   debugPrompt: string;
-  promptVersion: string;
   heuristicCategory: string;
   details: FailureDetailsForPrompt;
   failedRun: ReturnType<typeof testDb.getTestRuns>[number] | undefined;
@@ -1318,7 +1292,6 @@ export async function buildTestAnalysisRequest(opts: {
 
   await attachScreenshotIfAny(builtPrompt, details, reportId);
 
-  const promptVersion = computePromptVersion(builtPrompt);
   await llmService.initialize();
   const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(
     builtPrompt,
@@ -1329,7 +1302,6 @@ export async function buildTestAnalysisRequest(opts: {
   return {
     segmentedPrompt,
     debugPrompt,
-    promptVersion,
     heuristicCategory,
     details,
     failedRun,

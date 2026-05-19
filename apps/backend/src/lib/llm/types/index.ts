@@ -21,26 +21,15 @@ export interface PromptImage {
  *
  * - `stable` — content that doesn't change across calls within the cache TTL
  *   (system prompt, schema, per-test history). Used for cache_control placement.
- * - `templateOnly` — content with no per-test data, only template literals.
- *   Used to compute promptVersion (a hash of the templates that produced an
- *   analysis), so prior analyses remain attributable when prompts evolve.
  * - `images` — multimodal attachments. Providers emit image content blocks
- *   before text in the same role's message. Segments with images are never
- *   templateOnly (data-bearing).
+ *   before text in the same role's message.
  */
 export interface PromptSegment {
   id: string;
   role: 'system' | 'user';
   stable: boolean;
-  templateOnly?: boolean;
   /** Final rendered content sent to the provider. */
   content: string;
-  /** Pre-substitution template literal (with {{var}} placeholders intact).
-   *  Set when mustache substitution happened on this segment. Used by
-   *  computePromptVersion so the hash reflects the template revision, not
-   *  the per-call data — keeps versions stable across different test inputs
-   *  while still changing when the template itself is edited. */
-  template?: string;
   images?: PromptImage[];
 }
 

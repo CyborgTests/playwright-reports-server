@@ -15,19 +15,11 @@ interface ReportFailureSummaryProps {
   reportId: string;
 }
 
-interface ErrorGroup {
-  pattern: string;
-  count: number;
-  category: string;
-  testIds: string[];
-}
-
 interface FailureSummary {
   reportId: string;
   project: string;
   totalFailures: number;
   categories: Record<string, number>;
-  errorGroups: ErrorGroup[];
   llmSummary: string | null;
   llmModel: string | null;
   createdAt: string;

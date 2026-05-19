@@ -67,6 +67,18 @@ function addColumnIfMissing(
   }
 }
 
+/** Drop a column if it still exists on a persistent DB. SQLite supports
+ *  `ALTER TABLE … DROP COLUMN` from 3.35; better-sqlite3 ships a newer build.
+ *  Identifier args are interpolated raw — callers MUST pass static strings. */
+function dropColumnIfExists(db: Database.Database, table: string, column: string): void {
+  if (!SAFE_IDENT.test(table)) throw new Error(`dropColumnIfExists: unsafe table "${table}"`);
+  if (!SAFE_IDENT.test(column)) throw new Error(`dropColumnIfExists: unsafe column "${column}"`);
+  const cols = db.pragma(`table_info('${table}')`) as Array<{ name: string }>;
+  if (cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+  }
+}
+
 function initializeSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS results (
@@ -108,13 +120,7 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_reports_displayNumber ON reports(displayNumber);
   `);
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS cache_metadata (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
+  db.exec('DROP TABLE IF EXISTS cache_metadata');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS report_results (
@@ -203,7 +209,6 @@ function initializeSchema(db: Database.Database): void {
       inputTokens INTEGER,
       outputTokens INTEGER,
       totalTokens INTEGER,
-      promptVersion TEXT,
       isRetry INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_llm_tasks_status ON llm_tasks(status, priority DESC, createdAt);
@@ -214,8 +219,8 @@ function initializeSchema(db: Database.Database): void {
   addColumnIfMissing(db, 'llm_tasks', 'inputTokens', 'INTEGER');
   addColumnIfMissing(db, 'llm_tasks', 'outputTokens', 'INTEGER');
   addColumnIfMissing(db, 'llm_tasks', 'totalTokens', 'INTEGER');
-  addColumnIfMissing(db, 'llm_tasks', 'promptVersion', 'TEXT');
   addColumnIfMissing(db, 'llm_tasks', 'isRetry', 'INTEGER NOT NULL DEFAULT 0');
+  dropColumnIfExists(db, 'llm_tasks', 'promptVersion');
   // JSON-encoded array of reportIDs to feed into the worker. Currently used
   // only by project_summary so the dashboard's selected reports flow through
   // to the LLM input. NULL keeps the legacy "latest N for project" behavior.
@@ -227,7 +232,6 @@ function initializeSchema(db: Database.Database): void {
       project TEXT NOT NULL,
       totalFailures INTEGER NOT NULL DEFAULT 0,
       categories TEXT NOT NULL DEFAULT '{}',
-      errorGroups TEXT NOT NULL DEFAULT '[]',
       llmSummary TEXT,
       llmModel TEXT,
       createdAt TEXT NOT NULL,
@@ -238,6 +242,7 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_rfs_created ON report_failure_summaries(createdAt DESC);
   `);
   addColumnIfMissing(db, 'report_failure_summaries', 'llmModel', 'TEXT');
+  dropColumnIfExists(db, 'report_failure_summaries', 'errorGroups');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS test_llm_analyses (
@@ -257,7 +262,6 @@ function initializeSchema(db: Database.Database): void {
       inputTokens INTEGER,
       outputTokens INTEGER,
       totalTokens INTEGER,
-      promptVersion TEXT,
       UNIQUE(testId, fileId, project, reportId, attempt)
     );
     CREATE INDEX IF NOT EXISTS idx_tla_test ON test_llm_analyses(testId, fileId, project);
@@ -267,7 +271,7 @@ function initializeSchema(db: Database.Database): void {
   addColumnIfMissing(db, 'test_llm_analyses', 'inputTokens', 'INTEGER');
   addColumnIfMissing(db, 'test_llm_analyses', 'outputTokens', 'INTEGER');
   addColumnIfMissing(db, 'test_llm_analyses', 'totalTokens', 'INTEGER');
-  addColumnIfMissing(db, 'test_llm_analyses', 'promptVersion', 'TEXT');
+  dropColumnIfExists(db, 'test_llm_analyses', 'promptVersion');
 
   // Drop any pre-existing table that doesn't match the current schema, then recreate.
   // The cache is cheap to regenerate on demand, so a one-shot reset is preferable to
@@ -442,7 +446,6 @@ export function clearAll(): void {
   db.exec(`
     DELETE FROM results;
     DELETE FROM reports;
-    DELETE FROM cache_metadata;
     DELETE FROM test_runs;
     DELETE FROM tests;
     DELETE FROM llm_tasks;

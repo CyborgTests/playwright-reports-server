@@ -546,19 +546,7 @@ export default function LlmQueuePage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-sm">
-                    <div className="flex flex-col gap-0.5">
-                      <span>{TYPE_SHORT_LABEL[task.type] ?? formatCategoryName(task.type)}</span>
-                      {/* Prompt version (templateOnly hash) — surfaces which prompt revision
-                          produced this analysis, useful when debugging unexpected category drift. */}
-                      {task.promptVersion && (
-                        <span
-                          className="text-[11px] font-mono text-muted-foreground"
-                          title={`Prompt template version: ${task.promptVersion}`}
-                        >
-                          v{task.promptVersion.slice(0, 8)}
-                        </span>
-                      )}
-                    </div>
+                    {TYPE_SHORT_LABEL[task.type] ?? formatCategoryName(task.type)}
                   </TableCell>
                   <TableCell>
                     {task.reportId ? (

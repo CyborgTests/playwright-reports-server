@@ -115,10 +115,6 @@ export interface LlmTask {
   inputTokens?: number | null;
   outputTokens?: number | null;
   totalTokens?: number | null;
-  /** SHA-256 hex (16-char prefix) of the templateOnly segments that produced
-   *  this analysis. Lets the UI distinguish runs of the same test that were
-   *  produced by different prompt revisions. */
-  promptVersion?: string | null;
 }
 
 export interface LlmTaskStats {
@@ -153,13 +149,6 @@ export interface ReportFailureSummary {
   project: string;
   totalFailures: number;
   categories: Record<string, number>;
-  errorGroups: Array<{
-    signature: string;
-    category: string;
-    count: number;
-    sampleMessage: string;
-    affectedTests: string[];
-  }>;
   llmSummary?: string;
   createdAt: string;
   updatedAt?: string;

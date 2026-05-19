@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { FailureEvidence } from '../../parser/failure-extraction.js';
 import type { LLMResponseSchema, PromptSegment, SegmentedPrompt } from '../types/index.js';
 
@@ -133,8 +132,8 @@ export function resolveSystemPrompt(
 
 // Tiny `{{var}}` substitution with a per-template allowlist. Logic-free by
 // design — no conditionals, no loops, no partials. When substitution replaces
-// any text, the resulting segment is marked NOT templateOnly so promptVersion
-// reflects that this prompt is data-bearing rather than a stable template.
+// any text, the resulting segment is marked NOT stable so providers skip
+// cache_control on it (the rendered content varies per call).
 
 export interface MustacheSubstitution {
   /** Whether any vars were actually substituted (input != output). */
@@ -707,7 +706,6 @@ export const buildTestFailureSegments = (args: {
     id: 'system_prompt',
     role: 'system',
     stable: true,
-    templateOnly: true,
     content: resolveSystemPrompt(
       TEST_ANALYSIS_SYSTEM_PROMPT,
       args.overrides?.systemPrompt ?? args.systemPrompt,
@@ -719,7 +717,6 @@ export const buildTestFailureSegments = (args: {
     id: 'output_schema',
     role: 'system',
     stable: true,
-    templateOnly: true,
     content: FAILURE_CATEGORY_SCHEMA,
   });
 
@@ -740,18 +737,13 @@ export const buildTestFailureSegments = (args: {
     },
     TEST_ANALYSIS_VARS
   );
-  // When substitution changed text, the rendered content varies per call —
-  // not stable, not templateOnly. The pre-substitution template is preserved
-  // separately on the segment so computePromptVersion still hashes the
-  // template revision rather than the per-test data.
-  const taskTemplateOnly = !taskSub.substituted;
+  // When substitution changed text, the rendered content varies per call so the
+  // segment is no longer stable for cache_control purposes.
   segments.push({
     id: 'task_instructions',
     role: 'user',
-    stable: taskTemplateOnly,
-    templateOnly: taskTemplateOnly,
+    stable: !taskSub.substituted,
     content: taskSub.rendered,
-    template: taskSub.substituted ? taskInstructionsTemplate : undefined,
   });
 
   const envBlock = buildEnvironmentBlock(args.failureDetails.evidence);
@@ -903,7 +895,6 @@ export const buildReportSummarySegments = (args: {
     id: 'system_prompt',
     role: 'system',
     stable: true,
-    templateOnly: true,
     content: resolveSystemPrompt(
       REPORT_SUMMARY_SYSTEM_PROMPT,
       args.overrides?.systemPrompt ?? args.systemPrompt,
@@ -913,7 +904,7 @@ export const buildReportSummarySegments = (args: {
 
   const totalFailures = Object.values(args.categories).reduce((sum, c) => sum + c, 0);
   // Same unified path as test-analysis: default and override both go through
-  // applyMustache; the pre-substitution template is preserved for versioning.
+  // applyMustache.
   const reportInstructionsTemplate =
     args.overrides?.reportSummaryInstructions ?? REPORT_SUMMARY_TASK_INSTRUCTIONS;
   const reportSub = applyMustache(
@@ -925,14 +916,11 @@ export const buildReportSummarySegments = (args: {
     },
     REPORT_SUMMARY_VARS
   );
-  const reportTemplateOnly = !reportSub.substituted;
   segments.push({
     id: 'task_instructions',
     role: 'user',
-    stable: reportTemplateOnly,
-    templateOnly: reportTemplateOnly,
+    stable: !reportSub.substituted,
     content: reportSub.rendered,
-    template: reportSub.substituted ? reportInstructionsTemplate : undefined,
   });
 
   let dataBlock = `## Report: ${args.reportId}\n\n`;
@@ -1180,7 +1168,6 @@ export const buildProjectSummarySegments = (args: {
     id: 'system_prompt',
     role: 'system',
     stable: true,
-    templateOnly: true,
     content: resolveSystemPrompt(
       PROJECT_SUMMARY_SYSTEM_PROMPT,
       args.overrides?.systemPrompt ?? args.systemPrompt,
@@ -1210,14 +1197,11 @@ export const buildProjectSummarySegments = (args: {
     },
     PROJECT_SUMMARY_VARS
   );
-  const projectTemplateOnly = !projectSub.substituted;
   segments.push({
     id: 'task_instructions',
     role: 'user',
-    stable: projectTemplateOnly,
-    templateOnly: projectTemplateOnly,
+    stable: !projectSub.substituted,
     content: projectSub.rendered,
-    template: projectSub.substituted ? projectInstructionsTemplate : undefined,
   });
 
   const latestRun = args.runs[0];
@@ -1295,22 +1279,6 @@ export const buildProjectSummarySegments = (args: {
 
   return { segments };
 };
-
-/** SHA-256-based version of the prompt template (no per-test data). Used to
- *  attribute each persisted analysis to the prompt template that produced it
- *  so prior analyses remain comparable across template revisions.
- *
- *  Hashes either `template` (the pre-substitution literal, preferred when
- *  set) or `content` (when the segment was static and templateOnly). This
- *  way the version reflects the template revision regardless of whether
- *  per-call data was substituted into placeholders. */
-export function computePromptVersion(prompt: SegmentedPrompt): string {
-  const hashable = prompt.segments
-    .filter((s) => s.templateOnly || s.template)
-    .map((s) => `${s.id}:${s.template ?? s.content}`)
-    .join('|');
-  return createHash('sha256').update(hashable).digest('hex').substring(0, 16);
-}
 
 /** Render a SegmentedPrompt to a single human-readable string for debug
  *  storage and for legacy reuse-detection regexes. Order matches segments. */
@@ -1444,9 +1412,9 @@ function truncateTail(content: string, maxChars: number): string {
 
 /**
  * Fit a SegmentedPrompt to `charsBudget` by applying shrink steps in priority
- * order until size <= budget or all steps are exhausted. Stable + templateOnly
- * segments (system_prompt, output_schema, task_instructions) are never touched
- * — they're the cacheable prefix and dropping them would defeat caching for
+ * order until size <= budget or all steps are exhausted. Stable segments
+ * (system_prompt, output_schema, task_instructions) are never touched —
+ * they're the cacheable prefix and dropping them would defeat caching for
  * marginal char savings.
  */
 export function fitPromptToBudget(prompt: SegmentedPrompt, charsBudget: number): PromptFitResult {

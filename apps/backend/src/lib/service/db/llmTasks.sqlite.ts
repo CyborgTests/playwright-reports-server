@@ -33,7 +33,6 @@ export interface LlmTaskRow {
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
-  promptVersion: string | null;
   isRetry: number;
   reportIds: string | null;
 }
@@ -72,7 +71,6 @@ export class LlmTasksDatabase {
       number | null,
       number | null,
       number | null,
-      string | null,
       string,
     ]
   >;
@@ -109,7 +107,7 @@ export class LlmTasksDatabase {
     this.completeTaskStmt = this.db.prepare(`
       UPDATE llm_tasks
       SET status = 'completed', completedAt = ?, result = ?, category = ?, model = ?,
-          inputTokens = ?, outputTokens = ?, totalTokens = ?, promptVersion = ?
+          inputTokens = ?, outputTokens = ?, totalTokens = ?
       WHERE id = ?
     `);
 
@@ -226,7 +224,6 @@ export class LlmTasksDatabase {
       inputTokens: null,
       outputTokens: null,
       totalTokens: null,
-      promptVersion: null,
       isRetry,
       reportIds: reportIdsJson,
     };
@@ -271,7 +268,7 @@ export class LlmTasksDatabase {
     result: string,
     category?: string | null,
     model?: string | null,
-    extras?: { usage?: LlmTaskUsage; promptVersion?: string }
+    extras?: { usage?: LlmTaskUsage }
   ): void {
     const now = new Date().toISOString();
     const usage = extras?.usage;
@@ -283,7 +280,6 @@ export class LlmTasksDatabase {
       usage?.inputTokens ?? null,
       usage?.outputTokens ?? null,
       usage?.totalTokens ?? null,
-      extras?.promptVersion ?? null,
       id
     );
     this.fireUpdateEvent(id);

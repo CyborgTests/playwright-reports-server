@@ -6,19 +6,11 @@ const instance = globalThis as typeof globalThis & {
   [initiatedFailureSummaryDb]?: FailureSummaryDatabase;
 };
 
-export interface ErrorGroup {
-  pattern: string;
-  count: number;
-  category: string;
-  testIds: string[];
-}
-
 export interface FailureSummaryRow {
   reportId: string;
   project: string;
   totalFailures: number;
   categories: Record<string, number>;
-  errorGroups: ErrorGroup[];
   llmSummary: string | null;
   llmModel: string | null;
   createdAt: string;
@@ -30,7 +22,6 @@ interface FailureSummaryDbRow {
   project: string;
   totalFailures: number;
   categories: string;
-  errorGroups: string;
   llmSummary: string | null;
   llmModel: string | null;
   createdAt: string;
@@ -40,7 +31,7 @@ interface FailureSummaryDbRow {
 export class FailureSummaryDatabase {
   private readonly db = getDatabase();
 
-  private readonly upsertStmt: Database.Statement<[string, string, number, string, string, string]>;
+  private readonly upsertStmt: Database.Statement<[string, string, number, string, string]>;
   private readonly getStmt: Database.Statement<[string]>;
   private readonly updateLlmSummaryStmt: Database.Statement<
     [string, string | null, string, string]
@@ -49,8 +40,8 @@ export class FailureSummaryDatabase {
 
   private constructor() {
     this.upsertStmt = this.db.prepare(`
-      INSERT OR REPLACE INTO report_failure_summaries (reportId, project, totalFailures, categories, errorGroups, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO report_failure_summaries (reportId, project, totalFailures, categories, createdAt)
+      VALUES (?, ?, ?, ?, ?)
     `);
 
     this.getStmt = this.db.prepare(`
@@ -75,7 +66,6 @@ export class FailureSummaryDatabase {
     return {
       ...row,
       categories: JSON.parse(row.categories) as Record<string, number>,
-      errorGroups: JSON.parse(row.errorGroups) as ErrorGroup[],
     };
   }
 
@@ -83,18 +73,10 @@ export class FailureSummaryDatabase {
     reportId: string,
     project: string,
     totalFailures: number,
-    categories: Record<string, number>,
-    errorGroups: ErrorGroup[]
+    categories: Record<string, number>
   ): void {
     const now = new Date().toISOString();
-    this.upsertStmt.run(
-      reportId,
-      project,
-      totalFailures,
-      JSON.stringify(categories),
-      JSON.stringify(errorGroups),
-      now
-    );
+    this.upsertStmt.run(reportId, project, totalFailures, JSON.stringify(categories), now);
   }
 
   public getSummary(reportId: string): FailureSummaryRow | null {
@@ -155,12 +137,7 @@ export class FailureSummaryDatabase {
 
   /**
    * Aggregate failure categories and top error groups directly from `test_runs`.
-   *
-   * Previously this read from the cached `report_failure_summaries.errorGroups`,
-   * but those rows frequently store empty `pattern` strings (the cache was
-   * populated when `failure_details.message` was empty), so the dashboard fell
-   * back to showing just the category name in the Most Common Failures widget.
-   * Querying `test_runs` directly gives us:
+   * Gives us:
    *   - fresh categories (reflects post-recategorize labels)
    *   - real sample error messages
    *   - reportId + testId per top group, so the UI can deep-link to the

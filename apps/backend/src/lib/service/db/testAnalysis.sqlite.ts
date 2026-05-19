@@ -25,12 +25,10 @@ export interface TestAnalysisRow {
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
-  promptVersion: string | null;
 }
 
 export interface TestAnalysisExtras {
   usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
-  promptVersion?: string;
 }
 
 export class TestAnalysisDatabase {
@@ -53,7 +51,6 @@ export class TestAnalysisDatabase {
       number | null,
       number | null,
       number | null,
-      string | null,
     ]
   >;
   private readonly getByTestStmt: Database.Statement<[string, string, string]>;
@@ -63,8 +60,8 @@ export class TestAnalysisDatabase {
 
   private constructor() {
     this.upsertStmt = this.db.prepare(`
-      INSERT INTO test_llm_analyses (id, testId, fileId, project, reportId, attempt, analysis, category, model, createdAt, updatedAt, reusedFromAnalysisId, inputTokens, outputTokens, totalTokens, promptVersion)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_llm_analyses (id, testId, fileId, project, reportId, attempt, analysis, category, model, createdAt, updatedAt, reusedFromAnalysisId, inputTokens, outputTokens, totalTokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(testId, fileId, project, reportId, attempt) DO UPDATE SET
         analysis = excluded.analysis,
         category = excluded.category,
@@ -73,8 +70,7 @@ export class TestAnalysisDatabase {
         reusedFromAnalysisId = excluded.reusedFromAnalysisId,
         inputTokens = excluded.inputTokens,
         outputTokens = excluded.outputTokens,
-        totalTokens = excluded.totalTokens,
-        promptVersion = excluded.promptVersion
+        totalTokens = excluded.totalTokens
     `);
 
     this.getByTestStmt = this.db.prepare(`
@@ -130,8 +126,7 @@ export class TestAnalysisDatabase {
       reusedFromAnalysisId ?? null,
       usage?.inputTokens ?? null,
       usage?.outputTokens ?? null,
-      usage?.totalTokens ?? null,
-      extras?.promptVersion ?? null
+      usage?.totalTokens ?? null
     );
 
     return {
@@ -150,7 +145,6 @@ export class TestAnalysisDatabase {
       inputTokens: usage?.inputTokens ?? null,
       outputTokens: usage?.outputTokens ?? null,
       totalTokens: usage?.totalTokens ?? null,
-      promptVersion: extras?.promptVersion ?? null,
     };
   }
 
