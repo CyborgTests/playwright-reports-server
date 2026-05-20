@@ -36,11 +36,11 @@ export function writeConfigFile(next: CliConfig): void {
  */
 export function resolveConfig(): ResolvedConfig {
   const file = readConfigFile();
-  const server = process.env.PRS_SERVER_URL ?? file.server;
-  const token = process.env.PRS_API_TOKEN ?? file.token;
+  const server = process.env.PWRS_SERVER_URL ?? file.server;
+  const token = process.env.PWRS_API_TOKEN ?? file.token;
   if (!server) {
     throw new CliConfigError(
-      'No server URL configured. Set PRS_SERVER_URL or run: pwrs-cli config set server <url>'
+      'No server URL configured. Set PWRS_SERVER_URL or run: pwrs-cli config set server <url>'
     );
   }
   return { server: stripTrailingSlash(server), token };

@@ -132,4 +132,4 @@ For relative time periods, compute `--from` and `--to` correspondingly.
 pwrs-cli config set server https://reports.example.com
 pwrs-cli config set token <api-token>
 ```
-Or `PRS_SERVER_URL` / `PRS_API_TOKEN` env vars (override the saved config).
+Or `PWRS_SERVER_URL` / `PWRS_API_TOKEN` env vars (override the saved config).

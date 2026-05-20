@@ -60,10 +60,7 @@ const REPORT_LIST_MAX_LIMIT = 100;
 export async function runReportList(opts: ReportListOpts): Promise<void> {
   const config = resolveConfig();
   const limit = clampToRange(opts.limit ?? REPORT_LIST_DEFAULT_LIMIT, 1, REPORT_LIST_MAX_LIMIT);
-  if (
-    opts.passRate &&
-    !['all', 'passing', 'failing', 'below-threshold'].includes(opts.passRate)
-  ) {
+  if (opts.passRate && !['all', 'passing', 'failing', 'below-threshold'].includes(opts.passRate)) {
     throw new Error(
       `--pass-rate must be one of: all, passing, failing, below-threshold (got '${opts.passRate}')`
     );
@@ -135,7 +132,8 @@ export async function runReportCompare(
     b: reportB,
   });
 
-  const trim = <T extends DiffTestEntry | DurationDeltaEntry>(entries: T[]) => entries.slice(0, limit);
+  const trim = <T extends DiffTestEntry | DurationDeltaEntry>(entries: T[]) =>
+    entries.slice(0, limit);
 
   emitJson({
     reportA: comparison.reportA,
@@ -170,4 +168,3 @@ function anyBucketOver(c: ReportCompareResponse, limit: number): boolean {
 function clampToRange(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
-

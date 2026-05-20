@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "prepare": "npm run build",
     "dev": "tsc --watch",
     "lint": "biome check src",
     "lint:fix": "biome check src --write",
@@ -24,7 +25,26 @@
   "engines": {
     "node": ">=20"
   },
+  "author": "Oleksandr Shevtsov <ovr.shevtsov@gmail.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shelex/playwright-reports-server.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/shelex/playwright-reports-server/tree/main/packages/cli#readme",
+  "bugs": {
+    "url": "https://github.com/shelex/playwright-reports-server/issues"
+  },
+  "keywords": [
+    "playwright",
+    "playwright-reports-server",
+    "cli",
+    "agent",
+    "claude-code",
+    "codex",
+    "test-failure-analysis"
+  ],
   "devDependencies": {
     "@types/node": "^22.19.17",
     "typescript": "5.9.3"

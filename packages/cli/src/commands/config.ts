@@ -58,8 +58,8 @@ function showHelp(): void {
       '  pwrs-cli config get <server|token>   Show a single value',
       '',
       'Environment overrides (always win over saved config):',
-      '  PRS_SERVER_URL                       Server URL',
-      '  PRS_API_TOKEN                        API token',
+      '  PWRS_SERVER_URL                       Server URL',
+      '  PWRS_API_TOKEN                        API token',
       '',
     ].join('\n')
   );

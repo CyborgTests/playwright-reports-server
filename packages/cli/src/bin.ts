@@ -34,8 +34,8 @@ const HELP = [
   '  test from-file <path>[:line]           Resolve a spec file → testIds',
   '  test brief <testId> --file-id …        Everything we know about this test',
   '  test search [filters]                  Search tests by tier / status / sort / category',
-  '  report latest                          Latest report\'s brief (failed tests + clusters)',
-  '  report brief <reportId>                Specific report\'s brief',
+  "  report latest                          Latest report's brief (failed tests + clusters)",
+  "  report brief <reportId>                Specific report's brief",
   '',
   'Config:',
   '  config set <server|token> <value>     Persist config to ~/.config/pwrs-cli/config.json',
@@ -61,8 +61,8 @@ const HELP = [
   '  --help                                 Show this message',
   '',
   'Environment:',
-  '  PRS_SERVER_URL                         Server URL (overrides saved config)',
-  '  PRS_API_TOKEN                          API token (overrides saved config)',
+  '  PWRS_SERVER_URL                         Server URL (overrides saved config)',
+  '  PWRS_API_TOKEN                          API token (overrides saved config)',
   '',
 ].join('\n');
 

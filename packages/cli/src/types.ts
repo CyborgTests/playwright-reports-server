@@ -118,7 +118,10 @@ export interface AnalyticsResponse {
     averageTestRunDuration: number;
     passRateTrend?: 'up' | 'down' | 'stable';
     flakyTestsTrend?: 'up' | 'down' | 'stable';
-    deltas?: Record<string, { percent: number | null; trend: 'up' | 'down' | 'stable' } | undefined>;
+    deltas?: Record<
+      string,
+      { percent: number | null; trend: 'up' | 'down' | 'stable' } | undefined
+    >;
   };
   runHealthMetrics: Array<{
     runId: string;

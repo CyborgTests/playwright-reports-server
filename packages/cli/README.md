@@ -2,9 +2,24 @@
 
 Read-only CLI exposing Playwright Reports Server data to coding agents (Claude Code, Codex, GitHub Copilot, etc.). Outputs compact JSON tuned for agent context budgets.
 
-> Status: WIP — runs locally from the monorepo only. Not yet published to npm.
+Published on npm as [`@shelex/pwrs-cli`](https://www.npmjs.com/package/@shelex/pwrs-cli). The installed binary is `pwrs-cli`.
 
-## Install (local, from the monorepo)
+**Zero runtime dependencies.** Uses Node 20+ built-ins only.  
+
+## Install
+
+```bash
+npm install -g @shelex/pwrs-cli
+pwrs-cli --help
+```
+
+Or use without installing globally:
+
+```bash
+npx --package=@shelex/pwrs-cli pwrs-cli --help
+```
+
+### From source (contributors)
 
 ```bash
 pnpm install
@@ -12,10 +27,11 @@ pnpm --filter pwrs-cli run build
 node packages/cli/dist/bin.js --help
 ```
 
-(`pnpm --filter pwrs-cli exec pwrs-cli` doesn't work — `pnpm exec` only looks in
-`node_modules/.bin/`, and the workspace package's own bin isn't symlinked there.
-Use `node dist/bin.js` directly, or symlink it onto your `$PATH` — see the
-"Install the Claude Code skill locally" section in the root readme.)
+For Claude Code skill integration in a dev checkout, symlink the local build onto your `$PATH` so the skill's `Bash(pwrs-cli *)` permission resolves it:
+
+```bash
+sudo ln -sf "$(pwd)/packages/cli/dist/bin.js" /usr/local/bin/pwrs-cli
+```
 
 ## Configure
 
@@ -26,8 +42,8 @@ pwrs-cli config set token <api-token>   # omit if the server runs without API_TO
 
 Equivalent env vars (override the saved config):
 
-- `PRS_SERVER_URL`
-- `PRS_API_TOKEN`
+- `PWRS_SERVER_URL`
+- `PWRS_API_TOKEN`
 
 Saved to `~/.config/pwrs-cli/config.json`. Tokens are masked in `config get` output. The CLI sends `Authorization: Bearer <token>` — the same scheme the reporter package uses.
 

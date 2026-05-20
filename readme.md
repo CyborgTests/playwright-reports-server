@@ -18,9 +18,9 @@ This is a pnpm-workspaces monorepo:
 ```
 ├── apps/
 │   ├── backend/    Fastify API server (port 3001, serves the SPA in production)
-│   └── frontend/   React SPA (Vite, dev port 3000 — proxies /api to :3001)
+│   └── frontend/   React SPA (Vite, dev port 3000 - proxies /api to :3001)
 └── packages/
-    ├── shared/     @playwright-reports/shared — types, constants, utils
+    ├── shared/     @playwright-reports/shared - types, constants, utils
     └── reporter/   @playwright-reports/reporter (npm: @shelex/playwright-reporter)
 ```
 
@@ -40,15 +40,16 @@ Persistent state lives in `data/` (SQLite `metadata.db` via better-sqlite3 + raw
     - [Prerequisites](#prerequisites)
     - [Installation](#installation)
     - [Running the Server](#running-the-server)
+  - [Claude Code / Codex / Code Assistant - integration](#claude-code--codex--code-assistant---integration)
   - [Configuration options](#configuration-options)
     - [General](#general)
     - [S3 Compatible Storage](#s3-compatible-storage)
     - [Azure Blob Storage](#azure-blob-storage)
     - [LLM](#llm)
-      - [Playwright Report — Per-Test Analysis](#playwright-report--per-test-analysis)
+      - [Playwright Report - Per-Test Analysis](#playwright-report--per-test-analysis)
       - [Feedback widget (test-level)](#feedback-widget-test-level)
-      - [Report Detail Page — Failure Summary](#report-detail-page--failure-summary)
-      - [Analytics Dashboard — Failure Categories](#analytics-dashboard--failure-categories)
+      - [Report Detail Page - Failure Summary](#report-detail-page--failure-summary)
+      - [Analytics Dashboard - Failure Categories](#analytics-dashboard--failure-categories)
       - [LLM Queue Page](#llm-queue-page)
       - [Background Processing](#background-processing)
     - [Test Management](#test-management)
@@ -56,7 +57,6 @@ Persistent state lives in `data/` (SQLite `metadata.db` via better-sqlite3 + raw
   - [API Routes](#api-routes)
   - [Authorization](#authorization)
   - [Test Quarantine](#test-quarantine)
-  - [[WIP] Code assistant integration as skill](#wip-code-assistant-integration-as-skill)
   - [Storage Options](#storage-options)
     - [Local File System Storage](#local-file-system-storage)
     - [S3-Compatible Object Storage](#s3-compatible-object-storage)
@@ -107,7 +107,7 @@ pnpm run dev
 
 Starts the backend on `:3001` and the Vite dev frontend on `:3000` concurrently. The frontend proxies `/api/*` to `:3001`, so during dev you can hit either port for the UI but **API requests should target `:3001`** (or `:3000` only if you want to go through the Vite proxy).
 
-All persistent state lives in the `data/` folder — `apps/backend/data/` for `pnpm run start`/`dev`, `/app/data/` in the Docker image. Back this up to keep reports, results, and the SQLite metadata file safe.
+All persistent state lives in the `data/` folder - `apps/backend/data/` for `pnpm run start`/`dev`, `/app/data/` in the Docker image. Back this up to keep reports, results, and the SQLite metadata file safe.
 
 ## Configuration options
 
@@ -140,7 +140,7 @@ If you want to persist reports and results on S3 compatible storage, you need to
 
 Set `DATA_STORAGE=azure` to persist reports and results in an Azure Storage container. Authentication is via shared key (account name + key).
 
-> Litestream SQLite replication is still S3-only — when running with Azure storage, the `metadata.db` file lives only on the local volume. Mount a persistent volume or take periodic backups of `/app/data/metadata.db`.
+> Litestream SQLite replication is still S3-only - when running with Azure storage, the `metadata.db` file lives only on the local volume. Mount a persistent volume or take periodic backups of `/app/data/metadata.db`.
 
 | Name                 | Description                            | Default                   |
 |----------------------|----------------------------------------|---------------------------|
@@ -174,32 +174,32 @@ NB! Provider - not the exact company that serves your token casino, it's the API
 
 The Settings page (`/settings` → LLM Configuration) exposes everything tunable at runtime, restartless on save:
 
-- **Provider / base URL / API key / model** — same as env, but overridable per environment.
-- **Refresh available models** — calls the provider's `/models` endpoint
-- **Test connection** — validates draft config without mutating the active provider.
-- **Max output tokens / context window override** — both optional; blank uses provider default / auto-detect.
-- **Structured output mode** — `auto` / `force` / `disabled`. On `auto`, an unsupported-by-model error is memoized for 1h and the request retries text-only.
-- **Multimodal mode** — same shape, controls whether failure screenshots are attached to test analyses on vision-capable models.
-- **Per-task temperatures** — three independent fields (test analysis, report summary, project summary).
-- **Custom prompts** — tune the prompts if you are into prompt-engineering
-- **Auto-analyze new reports** — when enabled, every new failed test and report analysis tasks are queued automatically.
+- **Provider / base URL / API key / model** - same as env, but overridable per environment.
+- **Refresh available models** - calls the provider's `/models` endpoint
+- **Test connection** - validates draft config without mutating the active provider.
+- **Max output tokens / context window override** - both optional; blank uses provider default / auto-detect.
+- **Structured output mode** - `auto` / `force` / `disabled`. On `auto`, an unsupported-by-model error is memoized for 1h and the request retries text-only.
+- **Multimodal mode** - same shape, controls whether failure screenshots are attached to test analyses on vision-capable models.
+- **Per-task temperatures** - three independent fields (test analysis, report summary, project summary).
+- **Custom prompts** - tune the prompts if you are into prompt-engineering
+- **Auto-analyze new reports** - when enabled, every new failed test and report analysis tasks are queued automatically.
 
 #### Feedback widget (test-level)
 
 Below the analysis area, a **Feedback** panel is injected into the served Playwright report. It has an option to add a single shared note that becomes context for future LLM analyses.
 
-#### Report Detail Page — Failure Summary
+#### Report Detail Page - Failure Summary
 
 On each report's detail page a **Failure Summary** card appears when the report contains failed tests:
 
 - **"Summarize Failures"** button queues LLM analysis for all failed tests in the report, plus a report-level summary
 - Once analysis is completed, the card displays failure category breakdown, error groups with occurrence counts, and an LLM-generated markdown summary of the report's failures
 
-#### Analytics Dashboard — Failure Categories
+#### Analytics Dashboard - Failure Categories
 
-- **Failure Categories Chart** — horizontal bar chart showing the breakdown of failure types across the latest failed reports
-- **Most Common Failures** — card listing the top 5 error patterns with category badges, occurrence counts, and expandable error messages
-- **LLM Failure Analysis** — project-level summary with a "Generate Analysis" button that streams an LLM synthesis of failure trends across the latest failed reports
+- **Failure Categories Chart** - horizontal bar chart showing the breakdown of failure types across the latest failed reports
+- **Most Common Failures** - card listing the top 5 error patterns with category badges, occurrence counts, and expandable error messages
+- **LLM Failure Analysis** - project-level summary with a "Generate Analysis" button that streams an LLM synthesis of failure trends across the latest failed reports
 
 #### LLM Queue Page
 
@@ -219,7 +219,7 @@ The Test Management feature is configured via the Settings page in the web UI. T
 
 ### GitHub Sync
 
-The GitHub Sync feature periodically pulls Playwright report artifacts produced by GitHub Actions workflow runs and uploads them as native reports in the server. Each sync configuration is independent — different repos, workflows, schedules, and tokens can coexist — and runs on its own cron.
+The GitHub Sync feature periodically pulls Playwright report artifacts produced by GitHub Actions workflow runs and uploads them as native reports in the server. Each sync configuration is independent - different repos, workflows, schedules, and tokens can coexist - and runs on its own cron.
 
 Configuration lives on the Settings page (`/settings` → **GitHub Sync**). Each entry has:
 
@@ -231,7 +231,7 @@ Configuration lives on the Settings page (`/settings` → **GitHub Sync**). Each
 | GitHub token          | Optional per-config Personal Access Token. Stored encrypted (AES-256-GCM, key derived from `AUTH_SECRET`). If blank, falls back to the `GITHUB_TOKEN` env var.                          |
 | Start date & time     | Workflow runs completed before this point are ignored.                                                                                                                                  |
 | Cron schedule         | Standard cron expression (e.g. `*/30 * * * *`). Each config has its own cron job.                                                                                                       |
-| Artifact name regex   | Filters which artifacts on each run get uploaded. Use parentheses to capture parts of the artifact name — captures are available as `${match1}`, `${match2}`, … in the templates below. |
+| Artifact name regex   | Filters which artifacts on each run get uploaded. Use parentheses to capture parts of the artifact name - captures are available as `${match1}`, `${match2}`, … in the templates below. |
 | Project name template | String template that produces the report's `project` (used to group reports in the dashboard). Mix literal text with placeholders.                                                      |
 | Report title template | String template that produces the report's display title.                                                                                                                               |
 | Enabled               | When unchecked the cron is unscheduled; existing state and history are preserved (use **Pause / Resume** for the same effect from the row actions).                                     |
@@ -255,7 +255,7 @@ Example: `^playwright-report-(.+)$` + project template `${match1}:${branch}` on 
 
 #### Required GitHub token permissions
 
-Only read access is required — the sync never writes to your repo.
+Only read access is required - the sync never writes to your repo.
 
 - **Fine-grained PAT** (recommended): `Actions: Read-only` on the target repo. `Metadata: Read-only` is granted automatically.
 - **Classic PAT**: `repo` for private repos, or `public_repo` for public repos.
@@ -581,87 +581,76 @@ To automatically skip quarantined tests during test execution:
 - enable feature in the app
 - configure the reporter and use the extended `test` fixture from the "@shelex/playwright-reporter"
 
-## [WIP] Code assistant integration as skill
+## Claude Code / Codex / Code Assistant - integration
 
-> Status: in progress. The CLI runs from the monorepo today; nothing is published to npm yet, and the Claude Code plugin manifest is local. The surface (commands + brief shape) is stable enough to try locally, but expect rough edges.
+This integration exposes Playwright Reports Server data to coding agents (Claude Code, Codex, etc.) so they can fetch test history, failures, LLM analysis, team feedback, and failure clusters as context when debugging or fixing tests. It ships as two pieces:
 
-This integration exposes Playwright Reports Server data to coding agents (Claude Code, Codex, Copilot, …) so they can fetch test history, failures, LLM analysis, team feedback, and Failure clusters as context when debugging or fixing tests. It ships as two pieces:
+- **`@shelex/pwrs-cli`** ([npm](https://www.npmjs.com/package/@shelex/pwrs-cli), source: `packages/cli/`) - a small read-only CLI. **Zero runtime dependencies** (uses Node 20+ built-ins). Talks to the existing api routes that fan out test detail + analysis + feedback + history + clusters server-side.  
+- **`playwright-reports` Claude Code skill** (`packages/skill/`) - a `SKILL.md` + `plugin.json` that teach Claude Code when to invoke `pwrs-cli` and how to read the brief shape. Installed via the repo's marketplace manifest.
 
-- **`pwrs-cli`** (`packages/cli/`) — a tiny read-only CLI that prints compact JSON for the agent to consume. Talks to the existing `/api/...` routes plus a dedicated `/api/cli/.../brief` endpoint that fans out test detail + analysis + feedback + history + clusters server-side, so the agent never makes N round-trips per test.
-- **`playwright-reports` skill** (`packages/skill/`) — `SKILL.md` + `plugin.json` that teach the agent when to invoke `pwrs-cli` and how to read the brief shape. Loaded into Claude Code via a local marketplace manifest.
+See `packages/cli/README.md` for the full command reference.  
 
-See `packages/cli/README.md` for the full command reference. The headline commands are `test brief <id>` and `report brief <id>` — both return a single payload that's enough for the agent to decide *fix / skip-flaky / skip-quarantined / fix-the-cluster-not-the-test* without further calls.
-
-### Try it locally
-
-1. **Start the server in dev mode** (the CLI calls the running API):
-
-   ```bash
-   pnpm install
-   pnpm run dev          # backend on :3001, frontend on :3000
-   ```
-
-2. **Build the CLI** (no runtime deps, uses Node's built-in `parseArgs` + `fetch`):
-
-   ```bash
-   pnpm --filter pwrs-cli run build
-   ```
-
-3. **Configure the CLI** to point at your local server. Two options depending on whether your server has `API_TOKEN` set:
-
-   ```bash
-   # With auth (server started with API_TOKEN=…):
-   PRS_SERVER_URL=http://localhost:3001 PRS_API_TOKEN=<your-token> \
-     node packages/cli/dist/bin.js --help
-
-   # Without auth (server started with no API_TOKEN):
-   PRS_SERVER_URL=http://localhost:3001 \
-     node packages/cli/dist/bin.js --help
-   ```
-
-   Or persist the config so you don't have to set env vars each time:
-
-   ```bash
-   node packages/cli/dist/bin.js config set server http://localhost:3001
-   node packages/cli/dist/bin.js config set token <your-token>   # skip if no auth
-   ```
-
-   Saved to `~/.config/pwrs-cli/config.json`. The token is masked in `config get` output.
-
-4. **Smoke-test a few commands** to make sure it reaches your server:
-
-   ```bash
-   node packages/cli/dist/bin.js report latest
-   node packages/cli/dist/bin.js test find "should login"
-   node packages/cli/dist/bin.js report brief <reportId-from-step-above>
-   ```
-
-### Install the Claude Code skill locally
-
-The repo ships a marketplace manifest at `.claude-plugin/marketplace.json` pointing at the local `packages/skill/` source. To install it into your Claude Code session:
+### Step 1 - Install the CLI
 
 ```bash
-# In a Claude Code session, run:
-/plugin marketplace add /Users/<you>/repo/playwright-reports-server
-/plugin install playwright-reports
-```
-
-This registers the `playwright-reports` skill with `allowed-tools: Bash(pwrs-cli:*)` — meaning the agent can invoke `pwrs-cli` without permission prompts but can't run arbitrary shell commands through the skill.
-
-The skill assumes `pwrs-cli` is on your `$PATH`. While the binary isn't published yet, you can symlink the local build so the skill can find it:
-
-```bash
-chmod +x packages/cli/dist/bin.js
-sudo ln -sf $(pwd)/packages/cli/dist/bin.js /usr/local/bin/pwrs-cli
-# Verify:
+npm install -g @shelex/pwrs-cli
 pwrs-cli --help
 ```
 
-After this, prompts like *"why is `should redirect after login` failing?"* or *"triage the latest report"* should trigger the skill and the agent will invoke `pwrs-cli` to fetch context.
+Configure it to point at your Playwright Reports Server:
 
-### Without Claude Code
+```bash
+pwrs-cli config set server https://reports.example.com
+pwrs-cli config set token <api-token>   # skip if the server runs without API_TOKEN
+```
 
-The CLI is useful on its own. `pwrs-cli <command> --help` is self-documenting, and any agent (Codex, Copilot, a shell script) can pipe its JSON output. The skill is a convenience layer for Claude Code specifically — not a hard dependency.
+Or use env vars instead (override the saved config):
+
+- `PWRS_SERVER_URL`
+- `PWRS_API_TOKEN`
+
+Saved to `~/.config/pwrs-cli/config.json`. The token is masked in `config get` output.
+
+### Step 2 - Wire it into your code assistant
+
+#### Claude Code
+
+Install the plugin from this repo's marketplace manifest. From a Claude Code session:
+
+```
+/plugin marketplace add shelex/playwright-reports-server
+/plugin install playwright-reports
+```
+
+This registers the `playwright-reports` skill so the agent can call `pwrs-cli`.  
+
+Prompts like *"why is `should redirect after login` failing?"*, *"what's flaky this week?"*, or *"triage the latest report"* will trigger the skill, and the agent will use `pwrs-cli` to fetch context before responding. If your LLM is not domesticated yet - do not worry, you can ask explicitly "using playwright-report skill find what failed in latest report" - works even with the wildest llm-beasts.
+
+To run against local CLI, point the marketplace at a local checkout instead:
+
+```
+/plugin marketplace add /path/to/playwright-reports-server
+/plugin install playwright-reports
+```
+
+#### Codex CLI / Cursor / Continue / other agents
+
+These tools don't share Claude Code's plugin format, but the CLI is plain JSON-over-stdout and the skill content is portable. Two paths:
+
+1. **Project rules / system prompt.** Copy `packages/skill/skills/playwright-reports/SKILL.md` into your assistant's project-instructions surface (Codex `AGENTS.md`, Cursor `.cursor/rules`, Continue `config.json` system prompt, etc.). The body describes when to invoke `pwrs-cli` and how to read its output - those instructions work for any agent that can shell out.
+2. **Just give the agent the CLI.** With the CLI on `$PATH` and `pwrs-cli --help` available, most agents can be told *"use `pwrs-cli` (read-only) to fetch Playwright report data when debugging tests"* and they'll discover the rest from `--help`.
+
+### Run local CLI
+
+
+```bash
+pnpm install
+pnpm --filter pwrs-cli run build
+# Either run the dist directly:
+node packages/cli/dist/bin.js --help
+# Or symlink so Claude Code's plugin can find `pwrs-cli` on $PATH:
+sudo ln -sf "$(pwd)/packages/cli/dist/bin.js" /usr/local/bin/pwrs-cli
+```
 
 ## Storage Options
 
@@ -735,7 +724,7 @@ AZURE_CONTAINER=<your-container-name>   # optional, defaults to "playwright-repo
 
 The container is created on first start if it doesn't already exist (account credentials must allow `Microsoft.Storage/storageAccounts/blobServices/containers/write`). All blob keys use forward slashes regardless of host OS, mirroring the S3 backend.
 
-> Litestream replication is not currently wired for Azure — the `metadata.db` SQLite file lives on the local volume. Mount a persistent volume to `/app/data/` or take periodic backups so it survives container restarts.
+> Litestream replication is not currently wired for Azure - the `metadata.db` SQLite file lives on the local volume. Mount a persistent volume to `/app/data/` or take periodic backups so it survives container restarts.
 
 ### Expiration task
 
@@ -822,9 +811,9 @@ curl --location --request PATCH 'localhost:3001/api/config' \
 ### Header links
 
 - `headerLinks` is an **array** of `{ id, label, url, icon?, showLabel? }` objects.
-  - `id` — unique string identifier used for React keys and as a stable handle in the Settings UI.
-  - `label` — text shown as the link's title and as the tooltip / aria-label.
-  - `url` — external URL the link points to.
-  - `icon` (optional) — selects a built-in icon from the bundled set. Falls back to a generic link icon when omitted or unrecognised.
-  - `showLabel` (optional) — when `true`, the label is rendered next to the icon. When omitted/`false`, the link is icon-only.
+  - `id` - unique string identifier used for React keys and as a stable handle in the Settings UI.
+  - `label` - text shown as the link's title and as the tooltip / aria-label.
+  - `url` - external URL the link points to.
+  - `icon` (optional) - selects a built-in icon from the bundled set. Falls back to a generic link icon when omitted or unrecognised.
+  - `showLabel` (optional) - when `true`, the label is rendered next to the icon. When omitted/`false`, the link is icon-only.
 - Built-in icons: `github`, `slack`, `discord`, `telegram`, `bitbucket`.
