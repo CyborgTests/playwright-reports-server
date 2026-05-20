@@ -8,6 +8,7 @@ export const defaultConfig: SiteWhiteLabelConfig = {
   title: '', // Empty since logo contains text
   headerLinks: defaultLinks,
   logoPath: '/logo.svg',
+  logoInvertOnDark: true,
   faviconPath: '/favicon.ico',
   reporterPaths: [],
   cron: {

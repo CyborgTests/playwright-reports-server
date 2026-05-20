@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 import { withBase } from '@/lib/url';
 
 const CUSTOM_VALUE = '__custom__';
@@ -235,6 +236,31 @@ export default function ServerConfiguration({
                   )}
                 </div>
               )}
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="logo-invert-dark" className="cursor-pointer">
+                    Invert logo on dark theme
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Disable if your logo already looks correct on dark backgrounds.
+                  </p>
+                </div>
+                <Switch
+                  id="logo-invert-dark"
+                  disabled={editingSection !== 'server'}
+                  checked={
+                    editingSection === 'server'
+                      ? (tempConfig.logoInvertOnDark ?? true)
+                      : (config.logoInvertOnDark ?? true)
+                  }
+                  onCheckedChange={(checked) => {
+                    if (editingSection === 'server') {
+                      onUpdateTempConfig({ logoInvertOnDark: checked });
+                    }
+                  }}
+                />
+              </div>
             </div>
           </div>
 

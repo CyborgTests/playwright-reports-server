@@ -41,6 +41,7 @@ export function Navbar() {
 
   const isCustomLogo = config?.logoPath !== defaultConfig.logoPath;
   const isCustomTitle = config?.title && config?.title !== defaultConfig.title;
+  const invertLogoOnDark = config?.logoInvertOnDark !== false;
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -53,7 +54,11 @@ export function Navbar() {
             <>
               <img
                 alt="Logo"
-                className={cn('h-8 shrink-0', isCustomLogo ? 'w-auto' : 'w-[174px]', 'dark:invert')}
+                className={cn(
+                  'h-8 shrink-0',
+                  isCustomLogo ? 'w-auto' : 'w-[174px]',
+                  invertLogoOnDark && 'dark:invert'
+                )}
                 src={withBase(`/api/static${config?.logoPath ?? defaultConfig.logoPath}`)}
               />
               {isCustomTitle && config?.title && (

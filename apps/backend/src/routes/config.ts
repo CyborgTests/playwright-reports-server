@@ -94,6 +94,7 @@ async function persistBrandingFile(
 interface ConfigFormData {
   title?: string;
   logoPath?: string;
+  logoInvertOnDark?: string;
   faviconPath?: string;
   reporterPaths?: string;
   headerLinks?: string;
@@ -145,6 +146,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
     const publicConfig = {
       title: config.title,
       logoPath: config.logoPath,
+      logoInvertOnDark: config.logoInvertOnDark !== false,
       faviconPath: config.faviconPath,
       headerLinks: config.headerLinks,
       authRequired: !!env.API_TOKEN,
@@ -261,6 +263,10 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
             return reply.status(400).send({ error: 'invalid logoPath' });
           }
           config.logoPath = formData.logoPath;
+        }
+
+        if (formData.logoInvertOnDark !== undefined) {
+          config.logoInvertOnDark = formData.logoInvertOnDark === 'true';
         }
 
         if (faviconFileSaved) {

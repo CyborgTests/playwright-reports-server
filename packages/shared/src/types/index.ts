@@ -87,6 +87,7 @@ export interface SiteWhiteLabelConfig {
   title: string;
   headerLinks: HeaderLinks;
   logoPath: string;
+  logoInvertOnDark?: boolean;
   faviconPath: string;
   reporterPaths?: string[];
   authRequired?: boolean;
@@ -351,6 +352,7 @@ export interface ServerConfig {
   title?: string;
   headerLinks?: HeaderLink[];
   logoPath?: string;
+  logoInvertOnDark?: boolean;
   faviconPath?: string;
   reporterPaths?: string[];
   cron?: {

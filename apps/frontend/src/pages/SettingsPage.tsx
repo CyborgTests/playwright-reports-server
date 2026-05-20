@@ -69,6 +69,13 @@ export default function SettingsPage() {
           formData.append('logoPath', tempConfig.logoPath);
         }
 
+        if ((tempConfig.logoInvertOnDark ?? true) !== (config.logoInvertOnDark ?? true)) {
+          formData.append(
+            'logoInvertOnDark',
+            (tempConfig.logoInvertOnDark ?? true) ? 'true' : 'false'
+          );
+        }
+
         if (faviconFile) {
           formData.append('favicon', faviconFile);
         } else if (tempConfig.faviconPath && tempConfig.faviconPath !== config.faviconPath) {
