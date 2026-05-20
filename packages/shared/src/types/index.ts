@@ -276,6 +276,7 @@ export interface ReportHistory {
   files?: ReportFile[];
   duration?: number;
   metadata?: ReportMetadata;
+  previousReportId?: string | null;
 }
 
 export interface TestHistory extends ReportTest {

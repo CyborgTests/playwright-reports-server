@@ -233,6 +233,20 @@ export class ReportDatabase {
     return rows.map(this.rowToReport);
   }
 
+  public getPreviousReportId(reportID: string): string | null {
+    const row = this.db
+      .prepare(
+        `SELECT reportID FROM reports
+         WHERE project = (SELECT project FROM reports WHERE reportID = ?)
+           AND datetime(createdAt) < datetime((SELECT createdAt FROM reports WHERE reportID = ?))
+         ORDER BY datetime(createdAt) DESC
+         LIMIT 1`
+      )
+      .get(reportID, reportID) as { reportID: string } | undefined;
+
+    return row?.reportID ?? null;
+  }
+
   public getByID(reportID: string): ReportHistory | undefined {
     const row = this.getByIDStmt.get(reportID) as
       | {

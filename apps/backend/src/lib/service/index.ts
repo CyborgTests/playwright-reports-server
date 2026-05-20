@@ -54,7 +54,10 @@ class Service {
       throw new Error(`report ${id} not found`);
     }
 
-    return report;
+    return {
+      ...report,
+      previousReportId: reportDb.getPreviousReportId(id),
+    };
   }
 
   private async findLatestPlaywrightVersionFromResults(resultIds: string[]) {

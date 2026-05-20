@@ -1,4 +1,5 @@
 import type { ReportHistory } from '@playwright-reports/shared';
+import { GitCompare } from 'lucide-react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import FormattedDate from '@/components/date-format';
@@ -49,9 +50,29 @@ function ReportDetailPage() {
 
   return (
     <>
-      <h1 className={title()}>
-        {report?.displayNumber ? `#${report.displayNumber} ` : ''} {report?.title ?? ''}
-      </h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className={title()}>
+          {report?.displayNumber ? `#${report.displayNumber} ` : ''} {report?.title ?? ''}
+        </h1>
+        {id &&
+          (report?.previousReportId ? (
+            <Link
+              to={withBase(`/reports/compare?a=${report.previousReportId}&b=${id}`)}
+              target="_blank"
+            >
+              <Button variant="outline" size="sm" className="gap-2">
+                <GitCompare className="h-4 w-4" />
+                Compare with previous
+              </Button>
+            </Link>
+          ) : (
+            <CompareToPicker
+              excludeReportIds={[id]}
+              defaultProject={report?.project}
+              buildHref={(otherId) => withBase(`/reports/compare?a=${otherId}&b=${id}`)}
+            />
+          ))}
+      </div>
       {report?.createdAt && (
         <span className={`${subtitle()} mt-4 mb-6 text-right`}>
           <span className="text-sm">
@@ -66,14 +87,6 @@ function ReportDetailPage() {
           <Link to={withBase(report?.reportUrl ?? '')} target="_blank">
             <Button>Open report</Button>
           </Link>
-          {id && (
-            <CompareToPicker
-              excludeReportIds={[id]}
-              defaultProject={report?.project}
-              // From the report detail page: baseline = picked (older), target = current.
-              buildHref={(otherId) => withBase(`/reports/compare?a=${otherId}&b=${id}`)}
-            />
-          )}
         </div>
         <div className="md:w-3/4 max-w-full">
           {report && <FileList report={report} highlightTestId={highlightTestId} />}
