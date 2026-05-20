@@ -1,0 +1,180 @@
+import { v4 as uuid } from 'uuid';
+import { parseFailureDetails } from '../extractors/failure-details.js';
+import {
+  type ClusterWithRuns,
+  FAILED_OUTCOMES,
+  type FailedTestRun,
+  type TestKey,
+  testKey,
+} from '../types.js';
+
+export interface TemporalStrategyOptions {
+  minTests: number;
+  /** Joint failure rate threshold; pair must co-fail at this rate or higher. */
+  minRate?: number;
+  /** Minimum joint failure count required for a pair to qualify. */
+  minJoint?: number;
+  /** Cap on reports examined (newest first) — bounds the pair matrix size. */
+  maxReports?: number;
+}
+
+const DEFAULT_MIN_RATE = 0.6;
+const DEFAULT_MIN_JOINT = 2;
+const DEFAULT_MAX_REPORTS = 200;
+
+/**
+ * For each pair of tests, compute how often they failed together in the same
+ * report. Pairs with a high joint-failure rate are linked, and connected
+ * components form clusters — capturing infra / data-fixture issues that the
+ * signature- and stack-based strategies miss because the surface error text
+ * differs across tests.
+ */
+export function clusterByTemporal(
+  runs: FailedTestRun[],
+  opts: TemporalStrategyOptions
+): ClusterWithRuns[] {
+  const minRate = opts.minRate ?? DEFAULT_MIN_RATE;
+  const minJoint = opts.minJoint ?? DEFAULT_MIN_JOINT;
+  const maxReports = opts.maxReports ?? DEFAULT_MAX_REPORTS;
+
+  // Limit to the most recent `maxReports` distinct reports — bounds the
+  // pair matrix on long retention windows.
+  const reportsByTime = new Map<string, number>();
+  for (const run of runs) {
+    if (!FAILED_OUTCOMES.has(run.outcome)) continue;
+    const t = Date.parse(run.createdAt);
+    const existing = reportsByTime.get(run.reportId);
+    if (existing === undefined || t > existing) reportsByTime.set(run.reportId, t);
+  }
+  const recentReports = new Set(
+    [...reportsByTime.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, maxReports)
+      .map(([id]) => id)
+  );
+
+  // Bucket runs by report into sets of unique test keys.
+  const testsByReport = new Map<string, Set<TestKey>>();
+  const reportsByTest = new Map<TestKey, Set<string>>();
+  for (const run of runs) {
+    if (!FAILED_OUTCOMES.has(run.outcome)) continue;
+    if (!recentReports.has(run.reportId)) continue;
+    const key = testKey(run.testId, run.fileId, run.project);
+    const reportSet = testsByReport.get(run.reportId) ?? new Set<TestKey>();
+    reportSet.add(key);
+    testsByReport.set(run.reportId, reportSet);
+    const testReports = reportsByTest.get(key) ?? new Set<string>();
+    testReports.add(run.reportId);
+    reportsByTest.set(key, testReports);
+  }
+
+  // Compute joint failure counts. Walk each report's test set once and bump
+  // each unordered pair — O(sum_of_squares_of_set_sizes), acceptable while
+  // capped at `maxReports`.
+  const pairKey = (a: TestKey, b: TestKey) => (a < b ? `${a}|||${b}` : `${b}|||${a}`);
+  const jointCounts = new Map<string, number>();
+  for (const set of testsByReport.values()) {
+    if (set.size < 2) continue;
+    const arr = [...set];
+    for (let i = 0; i < arr.length; i++) {
+      for (let j = i + 1; j < arr.length; j++) {
+        const pk = pairKey(arr[i], arr[j]);
+        jointCounts.set(pk, (jointCounts.get(pk) ?? 0) + 1);
+      }
+    }
+  }
+
+  // Build an adjacency graph from qualifying pairs.
+  const adjacency = new Map<TestKey, Map<TestKey, { joint: number; rate: number }>>();
+  for (const [pk, joint] of jointCounts) {
+    if (joint < minJoint) continue;
+    const [a, b] = pk.split('|||') as [TestKey, TestKey];
+    const aFailCount = reportsByTest.get(a)?.size ?? 0;
+    const bFailCount = reportsByTest.get(b)?.size ?? 0;
+    const smaller = Math.min(aFailCount, bFailCount);
+    if (smaller === 0) continue;
+    const rate = joint / smaller;
+    if (rate < minRate) continue;
+
+    addEdge(adjacency, a, b, { joint, rate });
+    addEdge(adjacency, b, a, { joint, rate });
+  }
+
+  // Connected components → clusters.
+  const visited = new Set<TestKey>();
+  const components: TestKey[][] = [];
+  for (const node of adjacency.keys()) {
+    if (visited.has(node)) continue;
+    const stack: TestKey[] = [node];
+    const component: TestKey[] = [];
+    while (stack.length > 0) {
+      const cur = stack.pop();
+      if (cur === undefined) break;
+      if (visited.has(cur)) continue;
+      visited.add(cur);
+      component.push(cur);
+      const neighbours = adjacency.get(cur);
+      if (!neighbours) continue;
+      for (const n of neighbours.keys()) {
+        if (!visited.has(n)) stack.push(n);
+      }
+    }
+    if (component.length >= opts.minTests) components.push(component);
+  }
+
+  const result: ClusterWithRuns[] = [];
+  for (const component of components) {
+    const componentSet = new Set(component);
+    const clusterRuns = runs.filter((r) =>
+      componentSet.has(testKey(r.testId, r.fileId, r.project))
+    );
+
+    // Average pair rate within the component — the headline "how often these
+    // co-fail" number for the cluster card.
+    let pairCount = 0;
+    let rateSum = 0;
+    for (let i = 0; i < component.length; i++) {
+      for (let j = i + 1; j < component.length; j++) {
+        const edge = adjacency.get(component[i])?.get(component[j]);
+        if (edge) {
+          rateSum += edge.rate;
+          pairCount++;
+        }
+      }
+    }
+    const avgRate = pairCount > 0 ? rateSum / pairCount : 0;
+
+    const sampleMessage =
+      clusterRuns
+        .map((r) => parseFailureDetails(r.failureDetails)?.message ?? '')
+        .find((m) => m.length > 0) ?? '';
+
+    result.push({
+      cluster: {
+        id: uuid(),
+        strategy: 'temporal',
+        name: `${component.length} tests fail together`,
+        sampleMessage,
+        testCount: component.length,
+        failureCount: clusterRuns.length,
+        estimatedFixes: 1,
+        evidence: { coFailureRate: avgRate },
+        tests: [],
+      },
+      runs: clusterRuns,
+    });
+  }
+
+  return result.sort((a, b) => b.cluster.testCount - a.cluster.testCount);
+}
+
+function addEdge(
+  graph: Map<TestKey, Map<TestKey, { joint: number; rate: number }>>,
+  from: TestKey,
+  to: TestKey,
+  data: { joint: number; rate: number }
+): void {
+  const edges = graph.get(from) ?? new Map<TestKey, { joint: number; rate: number }>();
+  edges.set(to, data);
+  graph.set(from, edges);
+}

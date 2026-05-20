@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { Layout } from '@/components/Layout';
+import FailureClustersPage from '@/pages/FailureClustersPage';
 import HomePage from '@/pages/HomePage';
 import LlmQueuePage from '@/pages/LlmQueuePage';
 import LoginPage from '@/pages/LoginPage';
@@ -30,6 +31,7 @@ function App() {
                 <Route path="/report/:id/:testId" element={<RedirectTestDetails />} />
                 <Route path="/test/:fileId/:testId" element={<TestDetailPage />} />
                 <Route path="/results" element={<ResultsPage />} />
+                <Route path="/failures/clusters" element={<FailureClustersPage />} />
                 <Route path="/llm-queue" element={<LlmQueuePage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Routes>

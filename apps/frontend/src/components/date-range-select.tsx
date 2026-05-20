@@ -130,6 +130,9 @@ interface DateRangeSelectProps {
   label?: string;
   showLabel?: boolean;
   className?: string;
+  /** Opt out of cross-page localStorage hydration & writes. Use on pages
+   *  that should default to all-time and not influence other pages' default. */
+  disablePersistence?: boolean;
 }
 
 export default function DateRangeSelect({
@@ -138,13 +141,15 @@ export default function DateRangeSelect({
   label = 'Period',
   showLabel = true,
   className = 'w-64 min-w-44',
+  disablePersistence = false,
 }: Readonly<DateRangeSelectProps>) {
   const [open, setOpen] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [internalRange, setInternalRange] = useState<SharedDateRange>({});
 
   // Hydrate from localStorage if parent didn't seed a range. Parent (URL params) wins
-  // when it provides a non-empty selectedRange.
+  // when it provides a non-empty selectedRange. When `disablePersistence` is set,
+  // skip localStorage entirely so the page defaults to all-time.
   useEffect(() => {
     if (isInitialized) return;
     if (selectedRange && (selectedRange.from || selectedRange.to)) {
@@ -152,13 +157,15 @@ export default function DateRangeSelect({
       setIsInitialized(true);
       return;
     }
-    const stored = readFromStorage();
-    if (stored) {
-      setInternalRange(stored);
-      onSelect(stored);
+    if (!disablePersistence) {
+      const stored = readFromStorage();
+      if (stored) {
+        setInternalRange(stored);
+        onSelect(stored);
+      }
     }
     setIsInitialized(true);
-  }, [isInitialized, selectedRange, onSelect]);
+  }, [isInitialized, selectedRange, onSelect, disablePersistence]);
 
   // Track parent-driven changes (e.g. URL navigation)
   useEffect(() => {
@@ -176,10 +183,10 @@ export default function DateRangeSelect({
   const applyRange = useCallback(
     (range: SharedDateRange, stored: StoredSelection) => {
       setInternalRange(range);
-      writeToStorage(stored);
+      if (!disablePersistence) writeToStorage(stored);
       onSelect(range);
     },
-    [onSelect]
+    [onSelect, disablePersistence]
   );
 
   const handlePreset = (id: PresetId) => {

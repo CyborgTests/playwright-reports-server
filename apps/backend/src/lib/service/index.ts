@@ -5,6 +5,7 @@ import { PassThrough, Readable } from 'node:stream';
 import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import { env } from '../../config/env.js';
 import { serveReportRoute } from '../constants.js';
+import { invalidateFailureClustersCache } from '../failure-clustering/index.js';
 import { isValidPlaywrightVersion } from '../pw-cache.js';
 import { DEFAULT_STREAM_CHUNK_SIZE, TMP_FOLDER } from '../storage/constants.js';
 import { bytesToString, getUniqueProjectsList } from '../storage/format.js';
@@ -137,6 +138,11 @@ class Service {
       );
     }
 
+    // Failure clusters are derived from test_runs across the window — a new
+    // report can add tests, change occurrence counts, and form new clusters,
+    // so drop the cache rather than wait for the 60s TTL.
+    invalidateFailureClustersCache();
+
     const { error: cleanupErr } = await withError(storage.cleanupGeneratedReport(reportId));
     if (cleanupErr) {
       console.warn(
@@ -166,6 +172,7 @@ class Service {
 
     reportDb.onDeleted(reportIDs);
     reportResultsDb.deleteByReportIds(reportIDs);
+    invalidateFailureClustersCache();
   }
 
   public async getReportsProjects(): Promise<string[]> {

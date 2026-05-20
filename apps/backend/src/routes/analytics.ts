@@ -1,4 +1,6 @@
+import type { ClusterStrategy } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { getFailureClusters } from '../lib/failure-clustering/index.js';
 import { llmService } from '../lib/llm/index.js';
 import {
   DeleteFeedbackRequestSchema,
@@ -842,5 +844,60 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
       excludeReportId
     );
     return reply.send({ success: true, data: history });
+  });
+
+  // Groups failed test runs by shared evidence (currently exact normalized error
+  // signature) and emits clusters whose unique-test count meets `minTests`.
+  // When `reportId` is supplied, clusters are filtered to those that include at
+  // least one test that failed in that report.
+  fastify.get('/api/analytics/failure-clusters', async (request, reply) => {
+    try {
+      const authResult = await authenticate(request as AuthRequest, reply);
+      if (authResult) return;
+
+      const {
+        project,
+        from,
+        to,
+        minTests,
+        strategies,
+        reportId,
+      } = request.query as {
+        project?: string;
+        from?: string;
+        to?: string;
+        minTests?: string;
+        strategies?: string;
+        reportId?: string;
+      };
+
+      const parsedMinTests = minTests ? Number.parseInt(minTests, 10) : undefined;
+      const parsedStrategies = strategies
+        ? (strategies
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean) as ClusterStrategy[])
+        : undefined;
+
+      const report = await getFailureClusters({
+        project,
+        from,
+        to,
+        minTests:
+          parsedMinTests && Number.isFinite(parsedMinTests) && parsedMinTests > 0
+            ? parsedMinTests
+            : undefined,
+        strategies: parsedStrategies,
+        reportId,
+      });
+
+      return reply.send({ success: true, data: report });
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.status(500).send({
+        success: false,
+        error: `Failed to fetch failure clusters: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
   });
 }

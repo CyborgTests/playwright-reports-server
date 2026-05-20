@@ -1,5 +1,5 @@
 import type { ReportHistory } from '@playwright-reports/shared';
-import { GitCompare } from 'lucide-react';
+import { GitCompare, Users } from 'lucide-react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import FormattedDate from '@/components/date-format';
@@ -72,6 +72,20 @@ function ReportDetailPage() {
               buildHref={(otherId) => withBase(`/reports/compare?a=${otherId}&b=${id}`)}
             />
           ))}
+        {id && (
+          <Link
+            to={withBase(
+              `/failures/clusters?reportId=${id}${
+                report?.project ? `&project=${encodeURIComponent(report.project)}` : ''
+              }`
+            )}
+          >
+            <Button variant="outline" size="sm" className="gap-2">
+              <Users className="h-4 w-4" />
+              Failure clusters
+            </Button>
+          </Link>
+        )}
       </div>
       {report?.createdAt && (
         <span className={`${subtitle()} mt-4 mb-6 text-right`}>
