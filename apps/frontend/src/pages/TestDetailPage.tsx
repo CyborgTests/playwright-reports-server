@@ -67,6 +67,19 @@ function outcomeBadge(outcome: string) {
   }
 }
 
+const OUTCOME_COLOR: Record<string, string> = {
+  expected: 'hsl(var(--success))',
+  passed: 'hsl(var(--success))',
+  flaky: 'hsl(var(--warning))',
+  unexpected: 'hsl(var(--danger))',
+  failed: 'hsl(var(--danger))',
+  skipped: 'hsl(var(--skipped))',
+};
+
+function dotColor(outcome: string): string {
+  return OUTCOME_COLOR[outcome] ?? 'hsl(var(--muted-foreground))';
+}
+
 function StatTile({
   label,
   value,
@@ -106,6 +119,7 @@ interface DurationPoint {
   reportId: string;
   reportDisplayNumber?: number;
   reportTitle?: string;
+  isOutlier: boolean;
 }
 
 function DurationTooltip({
@@ -120,6 +134,7 @@ function DurationTooltip({
       <div className="flex items-center gap-2 flex-wrap">
         <span className="font-semibold">{reportLabel}</span>
         {outcomeBadge(p.outcome)}
+        {p.isOutlier && <Badge variant="outline">Outlier</Badge>}
       </div>
       {p.reportTitle && <div className="text-muted-foreground truncate">{p.reportTitle}</div>}
       <div className="text-muted-foreground">{new Date(p.createdAt).toLocaleString()}</div>
@@ -131,26 +146,63 @@ function DurationTooltip({
   );
 }
 
+interface OutcomeDotProps {
+  cx?: number;
+  cy?: number;
+  payload?: DurationPoint;
+  radius?: number;
+}
+
+function OutcomeDot({ cx, cy, payload, radius = 4.5 }: OutcomeDotProps) {
+  if (typeof cx !== 'number' || typeof cy !== 'number' || !payload) return null;
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={radius}
+      fill={dotColor(payload.outcome)}
+      stroke={payload.isOutlier ? 'hsl(var(--danger))' : 'transparent'}
+      strokeWidth={2}
+    />
+  );
+}
+
 function DurationTrend({
   runs,
   mean,
   p95,
+  stdDev,
   testId,
-}: Readonly<{ runs: TestRun[]; mean?: number; p95?: number; testId: string }>) {
+}: Readonly<{
+  runs: TestRun[];
+  mean?: number;
+  p95?: number;
+  stdDev?: number;
+  testId: string;
+}>) {
   const data = useMemo<DurationPoint[]>(
     () =>
       [...runs]
         .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
         .filter((r) => typeof r.duration === 'number')
-        .map((r) => ({
-          createdAt: r.createdAt,
-          duration: r.duration ?? 0,
-          outcome: r.outcome,
-          reportId: r.reportId,
-          reportDisplayNumber: r.reportDisplayNumber,
-          reportTitle: r.reportTitle,
-        })),
-    [runs]
+        .map((r) => {
+          const duration = r.duration ?? 0;
+          const isOutlier =
+            typeof mean === 'number' &&
+            typeof stdDev === 'number' &&
+            stdDev > 0 &&
+            Math.abs(duration - mean) > 2 * stdDev;
+          return {
+            createdAt: r.createdAt,
+            duration,
+            outcome: r.outcome,
+            reportId: r.reportId,
+            reportDisplayNumber: r.reportDisplayNumber,
+            reportTitle: r.reportTitle,
+            isOutlier,
+          };
+        }),
+    [runs, mean, stdDev]
   );
 
   if (data.length < 2) {
@@ -177,8 +229,8 @@ function DurationTrend({
       <CardHeader>
         <h3 className="text-lg font-semibold">Duration Trend</h3>
         <p className="text-sm text-muted-foreground">
-          Per-run duration with mean and p95 reference lines · click a point to open that run's
-          report
+          Per-run duration with mean and p95 reference lines · dot color encodes outcome, red ring
+          marks outliers · click a point to open that run's report
         </p>
       </CardHeader>
       <CardContent>
@@ -209,13 +261,59 @@ function DurationTrend({
                 dataKey="duration"
                 stroke="hsl(217, 91%, 60%)"
                 strokeWidth={2}
-                dot={{ r: 3 }}
-                activeDot={{ r: 5 }}
+                dot={(props: unknown) => {
+                  const p = props as OutcomeDotProps & { index?: number; key?: string };
+                  return <OutcomeDot key={p.key ?? `dot-${p.index}`} {...p} />;
+                }}
+                activeDot={(props: unknown) => {
+                  const p = props as OutcomeDotProps & { index?: number; key?: string };
+                  return <OutcomeDot key={p.key ?? `active-${p.index}`} {...p} radius={6} />;
+                }}
               />
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span
+              className="inline-block w-2.5 h-2.5 rounded-full"
+              style={{ background: dotColor('passed') }}
+              aria-hidden
+            />
+            Passed
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span
+              className="inline-block w-2.5 h-2.5 rounded-full"
+              style={{ background: dotColor('failed') }}
+              aria-hidden
+            />
+            Failed
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span
+              className="inline-block w-2.5 h-2.5 rounded-full"
+              style={{ background: dotColor('flaky') }}
+              aria-hidden
+            />
+            Flaky
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span
+              className="inline-block w-2.5 h-2.5 rounded-full"
+              style={{ background: dotColor('skipped') }}
+              aria-hidden
+            />
+            Skipped
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span
+              className="inline-block w-2.5 h-2.5 rounded-full bg-transparent"
+              style={{ boxShadow: 'inset 0 0 0 2px hsl(var(--danger))' }}
+              aria-hidden
+            />
+            Outlier (&gt;2σ from mean)
+          </span>
           <span className="flex items-center gap-2">
             <span
               className="inline-block w-6 border-t-2 border-dashed"
@@ -487,6 +585,7 @@ export default function TestDetailPage() {
         runs={runs}
         mean={stats.duration?.mean}
         p95={stats.duration?.p95}
+        stdDev={stats.duration?.stdDev}
         testId={testId}
       />
 
