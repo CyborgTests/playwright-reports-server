@@ -5,11 +5,12 @@ The Playwright Reports Server provides APIs for managing and generating reports 
 - Store HTML reports and easily view them without downloading locally
 - Merge results into one report from sharded runs together (see [Playwright Sharding](https://playwright.dev/docs/test-sharding))
 - Store raw results, and aggregate them together into one report
-- Check web ui for report trends and test history
-- Basic api token authorization for backend and web ui, reports are secured as well
-- Analyze test failures in Playwright reports with integrated LLM provider
-- Provide a feedback for LLM analyses to impact the direction for next test runs
+- Check web ui for report trends, test history and test analysis
+- Basic api token authorization for backend and web ui
+- Analyze test failures in Playwright reports with LLM provider of your choice (openai/anthropic compatible)
+- Provide a feedback for LLM analyses to impact the direction for next test runs analysis
 - Track test flakiness and quarantine unstable tests
+- Use `pwrs-cli` via Claude-Code skill (or with other code assistant of your choice) to explore, debug and fix tests
 
 ## Project structure
 
