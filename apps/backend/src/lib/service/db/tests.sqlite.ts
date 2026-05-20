@@ -491,6 +491,35 @@ export class TestDatabase {
     }>;
   }
 
+  public getTestRunsInWindow(
+    project: string | undefined,
+    from: string,
+    to: string
+  ): TestRun[] {
+    const conditions: string[] = ["tr.outcome != 'skipped'"];
+    const params: string[] = [];
+
+    conditions.push('datetime(tr.createdAt) >= datetime(?)');
+    params.push(from);
+    conditions.push('datetime(tr.createdAt) < datetime(?)');
+    params.push(to);
+
+    if (project && project !== 'all') {
+      conditions.push('tr.project = ?');
+      params.push(project);
+    }
+
+    const sql = `
+      SELECT tr.*, r.title AS reportTitle, r.displayNumber AS reportDisplayNumber
+      FROM test_runs tr
+      LEFT JOIN reports r ON r.reportID = tr.reportId
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY tr.createdAt DESC
+    `;
+    const rows = this.db.prepare(sql).all(...params);
+    return rows.map((row) => this.convertDbRowToTestRun(row));
+  }
+
   public updateFlakinessScore(runId: string, score: number): void {
     this.updateFlakinessScoreStmt.run(score, runId);
   }

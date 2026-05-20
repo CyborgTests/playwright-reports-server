@@ -774,13 +774,11 @@ export class TestManagementService {
     let tests = testDb.getAllAndDerivedData(project);
 
     if (options?.from || options?.to) {
-      const config = await this.getConfig();
-      const minRuns = config.flakinessMinRuns ?? 1;
       const from = options.from ?? '0001-01-01T00:00:00Z';
       const to = options.to ?? new Date(Date.now() + 60_000).toISOString();
-      const windowedRuns = testDb.getTestRunOutcomesInWindow(project, from, to);
+      const windowedRuns = testDb.getTestRunsInWindow(project, from, to);
 
-      const grouped = new Map<string, Array<{ outcome: ReportTestOutcomeEnum | string }>>();
+      const grouped = new Map<string, TestRun[]>();
       for (const run of windowedRuns) {
         const key = `${run.testId}::${run.fileId}::${run.project}`;
         let bucket = grouped.get(key);
@@ -788,7 +786,7 @@ export class TestManagementService {
           bucket = [];
           grouped.set(key, bucket);
         }
-        bucket.push({ outcome: run.outcome });
+        bucket.push(run);
       }
 
       tests = tests
@@ -797,7 +795,7 @@ export class TestManagementService {
           const runs = grouped.get(`${t.testId}::${t.fileId}::${t.project}`) ?? [];
           return {
             ...t,
-            flakinessScore: computeFlakinessFromOutcomes(runs, minRuns),
+            runs,
             totalRuns: runs.length,
           };
         });
