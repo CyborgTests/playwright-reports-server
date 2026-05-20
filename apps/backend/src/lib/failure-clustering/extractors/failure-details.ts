@@ -7,10 +7,24 @@
 
 const MESSAGE_MAX_CHARS = 2000;
 
+export interface FailureLocation {
+  file: string;
+  line: number;
+  column?: number;
+}
+
+export interface FailureAttachment {
+  name: string;
+  path: string;
+  contentType: string;
+}
+
 export interface ParsedFailureDetails {
   message: string;
   stackTrace?: string;
   filePath: string;
+  location?: FailureLocation;
+  attachments?: FailureAttachment[];
 }
 
 export function parseFailureDetails(details: string | undefined): ParsedFailureDetails | undefined {
@@ -20,11 +34,15 @@ export function parseFailureDetails(details: string | undefined): ParsedFailureD
       message?: string;
       stackTrace?: string;
       filePath?: string;
+      location?: FailureLocation;
+      attachments?: FailureAttachment[];
     };
     return {
       message: String(raw.message ?? '').slice(0, MESSAGE_MAX_CHARS),
       stackTrace: typeof raw.stackTrace === 'string' ? raw.stackTrace : undefined,
       filePath: String(raw.filePath ?? ''),
+      location: raw.location,
+      attachments: Array.isArray(raw.attachments) ? raw.attachments : undefined,
     };
   } catch {
     // Tolerate unparseable failure_details — older rows or schema drift.

@@ -56,6 +56,7 @@ Persistent state lives in `data/` (SQLite `metadata.db` via better-sqlite3 + raw
   - [API Routes](#api-routes)
   - [Authorization](#authorization)
   - [Test Quarantine](#test-quarantine)
+  - [[WIP] Code assistant integration as skill](#wip-code-assistant-integration-as-skill)
   - [Storage Options](#storage-options)
     - [Local File System Storage](#local-file-system-storage)
     - [S3-Compatible Object Storage](#s3-compatible-object-storage)
@@ -579,6 +580,88 @@ To automatically skip quarantined tests during test execution:
 
 - enable feature in the app
 - configure the reporter and use the extended `test` fixture from the "@shelex/playwright-reporter"
+
+## [WIP] Code assistant integration as skill
+
+> Status: in progress. The CLI runs from the monorepo today; nothing is published to npm yet, and the Claude Code plugin manifest is local. The surface (commands + brief shape) is stable enough to try locally, but expect rough edges.
+
+This integration exposes Playwright Reports Server data to coding agents (Claude Code, Codex, Copilot, …) so they can fetch test history, failures, LLM analysis, team feedback, and Failure clusters as context when debugging or fixing tests. It ships as two pieces:
+
+- **`pwrs-cli`** (`packages/cli/`) — a tiny read-only CLI that prints compact JSON for the agent to consume. Talks to the existing `/api/...` routes plus a dedicated `/api/cli/.../brief` endpoint that fans out test detail + analysis + feedback + history + clusters server-side, so the agent never makes N round-trips per test.
+- **`playwright-reports` skill** (`packages/skill/`) — `SKILL.md` + `plugin.json` that teach the agent when to invoke `pwrs-cli` and how to read the brief shape. Loaded into Claude Code via a local marketplace manifest.
+
+See `packages/cli/README.md` for the full command reference. The headline commands are `test brief <id>` and `report brief <id>` — both return a single payload that's enough for the agent to decide *fix / skip-flaky / skip-quarantined / fix-the-cluster-not-the-test* without further calls.
+
+### Try it locally
+
+1. **Start the server in dev mode** (the CLI calls the running API):
+
+   ```bash
+   pnpm install
+   pnpm run dev          # backend on :3001, frontend on :3000
+   ```
+
+2. **Build the CLI** (no runtime deps, uses Node's built-in `parseArgs` + `fetch`):
+
+   ```bash
+   pnpm --filter pwrs-cli run build
+   ```
+
+3. **Configure the CLI** to point at your local server. Two options depending on whether your server has `API_TOKEN` set:
+
+   ```bash
+   # With auth (server started with API_TOKEN=…):
+   PRS_SERVER_URL=http://localhost:3001 PRS_API_TOKEN=<your-token> \
+     node packages/cli/dist/bin.js --help
+
+   # Without auth (server started with no API_TOKEN):
+   PRS_SERVER_URL=http://localhost:3001 \
+     node packages/cli/dist/bin.js --help
+   ```
+
+   Or persist the config so you don't have to set env vars each time:
+
+   ```bash
+   node packages/cli/dist/bin.js config set server http://localhost:3001
+   node packages/cli/dist/bin.js config set token <your-token>   # skip if no auth
+   ```
+
+   Saved to `~/.config/pwrs-cli/config.json`. The token is masked in `config get` output.
+
+4. **Smoke-test a few commands** to make sure it reaches your server:
+
+   ```bash
+   node packages/cli/dist/bin.js report latest
+   node packages/cli/dist/bin.js test find "should login"
+   node packages/cli/dist/bin.js report brief <reportId-from-step-above>
+   ```
+
+### Install the Claude Code skill locally
+
+The repo ships a marketplace manifest at `.claude-plugin/marketplace.json` pointing at the local `packages/skill/` source. To install it into your Claude Code session:
+
+```bash
+# In a Claude Code session, run:
+/plugin marketplace add /Users/<you>/repo/playwright-reports-server
+/plugin install playwright-reports
+```
+
+This registers the `playwright-reports` skill with `allowed-tools: Bash(pwrs-cli:*)` — meaning the agent can invoke `pwrs-cli` without permission prompts but can't run arbitrary shell commands through the skill.
+
+The skill assumes `pwrs-cli` is on your `$PATH`. While the binary isn't published yet, you can symlink the local build so the skill can find it:
+
+```bash
+chmod +x packages/cli/dist/bin.js
+sudo ln -sf $(pwd)/packages/cli/dist/bin.js /usr/local/bin/pwrs-cli
+# Verify:
+pwrs-cli --help
+```
+
+After this, prompts like *"why is `should redirect after login` failing?"* or *"triage the latest report"* should trigger the skill and the agent will invoke `pwrs-cli` to fetch context.
+
+### Without Claude Code
+
+The CLI is useful on its own. `pwrs-cli <command> --help` is self-documenting, and any agent (Codex, Copilot, a shell script) can pipe its JSON output. The skill is a convenience layer for Claude Code specifically — not a hard dependency.
 
 ## Storage Options
 

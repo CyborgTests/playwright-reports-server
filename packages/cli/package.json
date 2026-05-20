@@ -1,0 +1,32 @@
+{
+  "name": "pwrs-cli",
+  "version": "0.0.1",
+  "description": "Read-only CLI exposing Playwright Reports Server data to coding agents (Claude Code, Codex, Copilot).",
+  "type": "module",
+  "bin": {
+    "pwrs-cli": "./dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "biome check src",
+    "lint:fix": "biome check src --write",
+    "format": "biome format src --write",
+    "format:check": "biome format src",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "files": [
+    "dist/**",
+    "README.md",
+    "package.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "typescript": "5.9.3"
+  }
+}
