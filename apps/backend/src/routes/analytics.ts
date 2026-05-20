@@ -855,14 +855,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
       const authResult = await authenticate(request as AuthRequest, reply);
       if (authResult) return;
 
-      const {
-        project,
-        from,
-        to,
-        minTests,
-        strategies,
-        reportId,
-      } = request.query as {
+      const { project, from, to, minTests, strategies, reportId } = request.query as {
         project?: string;
         from?: string;
         to?: string;

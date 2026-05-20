@@ -10,29 +10,19 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
     fastify.addHook('preHandler', (request, reply) => authenticate(request as AuthRequest, reply));
 
     fastify.get('/api/tests', async (request: FastifyRequest, reply: FastifyReply) => {
-      const {
-        project,
-        status,
-        tiers,
-        sort,
-        failureCategory,
-        limit,
-        offset,
-        from,
-        to,
-        search,
-      } = request.query as {
-        project?: string;
-        status?: string;
-        tiers?: string;
-        sort?: string;
-        failureCategory?: string;
-        limit?: string;
-        offset?: string;
-        from?: string;
-        to?: string;
-        search?: string;
-      };
+      const { project, status, tiers, sort, failureCategory, limit, offset, from, to, search } =
+        request.query as {
+          project?: string;
+          status?: string;
+          tiers?: string;
+          sort?: string;
+          failureCategory?: string;
+          limit?: string;
+          offset?: string;
+          from?: string;
+          to?: string;
+          search?: string;
+        };
 
       try {
         const parsedTiers = tiers

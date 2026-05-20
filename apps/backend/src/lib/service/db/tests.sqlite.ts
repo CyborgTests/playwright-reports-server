@@ -491,11 +491,7 @@ export class TestDatabase {
     }>;
   }
 
-  public getTestRunsInWindow(
-    project: string | undefined,
-    from: string,
-    to: string
-  ): TestRun[] {
+  public getTestRunsInWindow(project: string | undefined, from: string, to: string): TestRun[] {
     const conditions: string[] = ["tr.outcome != 'skipped'"];
     const params: string[] = [];
 

@@ -170,7 +170,6 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
           )}
         </div>
       </div>
-
     </div>
   );
 }

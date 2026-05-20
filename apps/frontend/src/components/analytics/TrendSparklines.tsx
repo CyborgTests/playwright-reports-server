@@ -125,9 +125,7 @@ export function TrendSparklines({
 
       <SparklineCard
         title="Flaky Count Trend"
-        subtitle={
-          'Number of intermittently failing tests'
-        }
+        subtitle={'Number of intermittently failing tests'}
         onClick={onFlakyClick}
       >
         <div className="h-20">
