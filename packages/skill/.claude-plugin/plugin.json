@@ -1,7 +1,7 @@
 {
   "name": "playwright-reports",
   "description": "Access Playwright Reports Server data (failures, flakiness, clusters) via the pwrs-cli read-only CLI.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "author": {
     "name": "shelex"
   }
