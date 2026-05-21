@@ -94,6 +94,16 @@ export class LlmTasksDatabase {
     this.selectQueuedStmt = this.db.prepare(`
       SELECT * FROM llm_tasks
       WHERE status = 'queued'
+        AND (
+          type != 'report_summary'
+          OR reportId IS NULL
+          OR NOT EXISTS (
+            SELECT 1 FROM llm_tasks sibling
+            WHERE sibling.reportId = t.reportId
+              AND sibling.type = 'test_analysis'
+              AND sibling.status IN ('queued', 'processing')
+          )
+        )
       ORDER BY priority DESC, createdAt ASC
       LIMIT ?
     `);

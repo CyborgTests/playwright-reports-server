@@ -290,6 +290,8 @@ class LlmAnalysisQueue {
   private running = false;
   private pollIntervalMs = 5000;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private activeTasks = 0;
+  private maxParallel = 1;
 
   static getInstance(): LlmAnalysisQueue {
     if (!LlmAnalysisQueue.instance) {
@@ -327,16 +329,11 @@ class LlmAnalysisQueue {
     if (!this.running) return;
 
     try {
-      if (!llmService.isConfigured()) {
-        this.schedulePoll();
-        return;
-      }
-
-      const parallelRequests = await this.getParallelRequests();
-      const tasks = llmTasksDb.claimNext(parallelRequests);
-
-      if (tasks.length > 0) {
-        await Promise.allSettled(tasks.map((task) => this.processTask(task)));
+      if (llmService.isConfigured()) {
+        this.maxParallel = await this.getParallelRequests();
+        while (this.running && this.activeTasks < this.maxParallel) {
+          if (!this.fillSlot()) break;
+        }
       }
     } catch (error) {
       console.error('[llmQueue] Poll error:', error);
@@ -348,6 +345,28 @@ class LlmAnalysisQueue {
   private schedulePoll(): void {
     if (!this.running) return;
     this.pollTimer = setTimeout(() => this.poll(), this.pollIntervalMs);
+  }
+
+  private fillSlot(): boolean {
+    if (!this.running) return false;
+    const [task] = llmTasksDb.claimNext(1);
+    if (!task) return false;
+    this.activeTasks++;
+    this.dispatch(task);
+    return true;
+  }
+
+  private dispatch(task: LlmTaskRow): void {
+    void this.processTask(task)
+      .catch((error) => {
+        console.error(`[llmQueue] Unhandled error in task ${task.id}:`, error);
+      })
+      .finally(() => {
+        this.activeTasks--;
+        if (this.running && this.activeTasks < this.maxParallel) {
+          this.fillSlot();
+        }
+      });
   }
 
   private async processTask(task: LlmTaskRow): Promise<void> {
