@@ -10,14 +10,21 @@
  * are passed through verbatim; the only hard cap is on the per-report
  * `failedTests` array size so a 500-failure run can't pull the whole report.
  */
+import type { ClusterEvidence } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { defaultConfig } from '../lib/config.js';
 import { parseFailureDetails } from '../lib/failure-clustering/extractors/failure-details.js';
 import { extractAppCodeFrame } from '../lib/failure-clustering/extractors/stack-trace.js';
 import { getFailureClusters } from '../lib/failure-clustering/index.js';
 import { analysisFeedbackDb } from '../lib/service/db/analysisFeedback.sqlite.js';
+import { getDatabase } from '../lib/service/db/db.js';
+import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
+import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
+import { projectSummaryDb } from '../lib/service/db/projectSummary.sqlite.js';
 import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
+import { service } from '../lib/service/index.js';
 import { testManagementService } from '../lib/service/testManagement.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
@@ -31,6 +38,17 @@ interface FailureLocation {
   column?: number;
 }
 
+type NormalizedOutcome = 'passed' | 'failed' | 'flaky' | 'skipped';
+
+function normalizeOutcome(raw: string): NormalizedOutcome {
+  if (raw === 'expected' || raw === 'passed') return 'passed';
+  if (raw === 'unexpected' || raw === 'failed') return 'failed';
+  if (raw === 'flaky') return 'flaky';
+  return 'skipped';
+}
+
+type FlakyTier = 'stable' | 'flaky' | 'critical';
+
 interface TestBrief {
   testId: string;
   fileId: string;
@@ -39,10 +57,20 @@ interface TestBrief {
   filePath: string;
   signals: {
     quarantined: boolean;
+    /** Flakiness percent (0–100). Compare against thresholds via `flakyTier`. */
     flakinessScore: number;
-    occurrenceCount: number;
-    firstSeen?: string;
-    isClustered: boolean;
+    /**
+     * Derived classification from `flakinessScore` and the active site config
+     * thresholds (warningThresholdPercentage / quarantineThresholdPercentage).
+     * - `stable` — below warning threshold (worth ignoring)
+     * - `flaky` — between warning and quarantine (worth flagging)
+     * - `critical` — at or above quarantine threshold (worth fixing now)
+     */
+    flakyTier: FlakyTier;
+    /** Count of prior runs sharing the same `latestFailure.signature`. */
+    signatureOccurrenceCount: number;
+    /** Timestamp this `signature` first appeared (not the test's first run). */
+    signatureFirstSeen?: string;
   };
   latestFailure: {
     error: string;
@@ -76,7 +104,28 @@ interface TestBrief {
   } | null;
 }
 
-interface ReportBrief {
+interface ReportBriefSummaryEntry {
+  testId: string;
+  fileId: string;
+  project: string;
+  title: string;
+  filePath: string;
+  category?: string;
+  errorFirstLine?: string;
+}
+
+interface ReportBriefCluster {
+  id: string;
+  strategy: string;
+  name: string;
+  sampleError: string;
+  testCount: number;
+  testIds: string[];
+  /** Top-N representative failures in this cluster, always populated. */
+  sampleFailedTests: ReportBriefSummaryEntry[];
+}
+
+interface ReportBriefBase {
   reportId: string;
   displayNumber?: number;
   title?: string;
@@ -84,18 +133,23 @@ interface ReportBrief {
   createdAt: string;
   reportUrl: string;
   stats: { total: number; passed: number; failed: number; flaky: number; skipped: number };
-  clusterSummary: Array<{
-    id: string;
-    strategy: string;
-    name: string;
-    sampleError: string;
-    testCount: number;
-    testIds: string[];
-  }>;
+  clusterSummary: ReportBriefCluster[];
   unclusteredFailures: number;
   failedTestsTruncated: boolean;
-  failedTests: TestBrief[];
 }
+
+// Discriminated by `mode` so the agent can statically pick the right payload
+// arm. Summary keeps payloads ~5 KB; full mode escalates to every failure's
+// brief and is intended for ~25-failure iterations.
+type ReportBrief =
+  | (ReportBriefBase & {
+      mode: 'summary';
+      sampleUnclusteredFailures: ReportBriefSummaryEntry[];
+    })
+  | (ReportBriefBase & {
+      mode: 'full';
+      failedTests: TestBrief[];
+    });
 
 export async function registerCliRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(async (api) => {
@@ -103,17 +157,24 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
 
     // GET /api/cli/test/:fileId/:testId/brief?project=...
     // One-shot "everything we know about this test" payload for an agent.
+    // `fileId` and `project` are optional in the path/query and may be resolved
+    // from `test_runs` when the agent only has a testId (e.g. lifted from a CI
+    // log). To resolve, pass `fileId=-` in the path and omit `project`.
     api.get(
       '/api/cli/test/:fileId/:testId/brief',
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { fileId, testId } = request.params as { fileId: string; testId: string };
         const { project } = request.query as { project?: string };
-        if (!project) {
-          return reply
-            .status(400)
-            .send({ success: false, error: 'project query parameter is required' });
+        const resolved = resolveTestIdentity(testId, fileId, project);
+        if (!resolved) {
+          return reply.status(404).send({
+            success: false,
+            error: 'Test not found — pass --file-id and --project, or ensure the testId has a run',
+          });
         }
-        const { result: brief, error } = await withError(buildTestBrief(testId, fileId, project));
+        const { result: brief, error } = await withError(
+          buildTestBrief(resolved.testId, resolved.fileId, resolved.project)
+        );
         if (error) {
           fastify.log.error(error);
           return reply.status(500).send({ success: false, error: 'Failed to build test brief' });
@@ -125,12 +186,85 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
       }
     );
 
-    // GET /api/cli/report/:id/brief
+    // GET /api/cli/test/:fileId/:testId/analysis?project=...
+    // Full persisted LLM analysis (the raw markdown). `test brief` returns a
+    // heuristic rootCause/fix split — use this when the agent wants the
+    // unmodified document or the regex split lost a section.
+    api.get(
+      '/api/cli/test/:fileId/:testId/analysis',
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { fileId, testId } = request.params as { fileId: string; testId: string };
+        const { project } = request.query as { project?: string };
+        const resolved = resolveTestIdentity(testId, fileId, project);
+        if (!resolved) {
+          return reply.status(404).send({
+            success: false,
+            error: 'Test not found — pass --file-id and --project, or ensure the testId has a run',
+          });
+        }
+        const { result: analysis, error } = await withError(
+          buildTestAnalysis(resolved.testId, resolved.fileId, resolved.project)
+        );
+        if (error) {
+          fastify.log.error(error);
+          return reply.status(500).send({ success: false, error: 'Failed to fetch test analysis' });
+        }
+        return reply.send({ success: true, data: analysis });
+      }
+    );
+
+    // GET /api/cli/test/:fileId/:testId/history?project=...&limit=N
+    // Compact per-run history. Same identifier-resolution rules as `brief`.
+    // Default limit 20; max 50 (matches the underlying getTestRuns cap).
+    api.get(
+      '/api/cli/test/:fileId/:testId/history',
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { fileId, testId } = request.params as { fileId: string; testId: string };
+        const { project, limit } = request.query as { project?: string; limit?: string };
+        const resolved = resolveTestIdentity(testId, fileId, project);
+        if (!resolved) {
+          return reply.status(404).send({
+            success: false,
+            error: 'Test not found — pass --file-id and --project, or ensure the testId has a run',
+          });
+        }
+        const requestedLimit = limit ? Number.parseInt(limit, 10) : DEFAULT_HISTORY_LIMIT;
+        const normalizedRequest = Number.isFinite(requestedLimit)
+          ? requestedLimit
+          : DEFAULT_HISTORY_LIMIT;
+        const cappedLimit = Math.min(Math.max(normalizedRequest, 1), MAX_HISTORY_LIMIT);
+        const { result: history, error } = await withError(
+          buildTestHistory(
+            resolved.testId,
+            resolved.fileId,
+            resolved.project,
+            cappedLimit,
+            normalizedRequest
+          )
+        );
+        if (error) {
+          fastify.log.error(error);
+          return reply.status(500).send({ success: false, error: 'Failed to build test history' });
+        }
+        if (!history) {
+          return reply.status(404).send({ success: false, error: 'Test not found' });
+        }
+        return reply.send({ success: true, data: history });
+      }
+    );
+
+    // GET /api/cli/report/:id/brief?mode=summary|full
     // The 25-failures-iteration entry point: returns metadata, cluster
-    // grouping for the failed tests, and a brief per failure (capped).
+    // grouping for the failed tests, and (in `full` mode) a brief per failure.
+    // Summary mode is the default — it returns stats + clusterSummary +
+    // sampleFailedTests (top 3 per cluster) and keeps payloads ~5 KB even for
+    // a 50-failure report. Pass `mode=full` (or `--with-failures` from the
+    // CLI) to get every failed test's full brief.
     api.get('/api/cli/report/:id/brief', async (request: FastifyRequest, reply: FastifyReply) => {
       const { id } = request.params as { id: string };
-      const { result: brief, error } = await withError(buildReportBrief(id));
+      const { mode } = request.query as { mode?: string };
+      const full = mode === 'full';
+      const { result: brief, error } = await withError(buildReportBrief(id, full));
       if (error) {
         fastify.log.error(error);
         return reply.status(500).send({ success: false, error: 'Failed to build report brief' });
@@ -140,14 +274,152 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
       }
       return reply.send({ success: true, data: brief });
     });
+
+    // GET /api/cli/cluster/:id/brief?project=...
+    // Drill into a single failure cluster: same shape returned in
+    // clusterSummary, plus every member test's brief (capped). Useful when an
+    // agent finds a cluster in `cluster list` or `report brief` and wants the
+    // full failure context for every member at once.
+    api.get('/api/cli/cluster/:id/brief', async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
+      const { project } = request.query as { project?: string };
+      const { result: brief, error } = await withError(buildClusterBrief(id, project));
+      if (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({ success: false, error: 'Failed to build cluster brief' });
+      }
+      if (!brief) {
+        return reply.status(404).send({ success: false, error: 'Cluster not found' });
+      }
+      return reply.send({ success: true, data: brief });
+    });
+
+    // GET /api/cli/report/:id/summary
+    // Persisted LLM failure summary for a single report (the same payload the
+    // "Summarize Failures" button shows in the UI). Returns 404 when no
+    // summary has been generated yet, so agents can distinguish "nothing yet"
+    // from "no failures in this report".
+    api.get('/api/cli/report/:id/summary', async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
+      const { result: summary, error } = await withError(buildReportSummary(id));
+      if (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({ success: false, error: 'Failed to fetch report summary' });
+      }
+      if (!summary) {
+        return reply.status(404).send({ success: false, error: 'Report not found' });
+      }
+      return reply.send({ success: true, data: summary });
+    });
+
+    // GET /api/cli/project/:project/summary
+    // Persisted LLM project summary (same payload powering the dashboard
+    // "Project Health" card). Use 'all' to query the cross-project summary.
+    api.get(
+      '/api/cli/project/:project/summary',
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { project } = request.params as { project: string };
+        const { result: summary, error } = await withError(buildProjectSummary(project || 'all'));
+        if (error) {
+          fastify.log.error(error);
+          return reply
+            .status(500)
+            .send({ success: false, error: 'Failed to fetch project summary' });
+        }
+        return reply.send({ success: true, data: summary });
+      }
+    );
+
+    // GET /api/cli/report/resolve?displayNumber=479&project=...
+    // Resolve a human-friendly displayNumber (the `#479` an agent sees in CI)
+    // to the UUID reportId that `report compare` / `report brief` accept.
+    // Returns matches (most-recent first) so the agent can disambiguate if the
+    // same displayNumber exists across multiple projects.
+    api.get('/api/cli/report/resolve', async (request: FastifyRequest, reply: FastifyReply) => {
+      const { displayNumber, project } = request.query as {
+        displayNumber?: string;
+        project?: string;
+      };
+      if (!displayNumber) {
+        return reply.status(400).send({
+          success: false,
+          error: 'displayNumber query parameter is required',
+        });
+      }
+      const parsed = Number.parseInt(displayNumber, 10);
+      if (!Number.isFinite(parsed)) {
+        return reply.status(400).send({
+          success: false,
+          error: `displayNumber must be an integer (got '${displayNumber}')`,
+        });
+      }
+      const { result: matches, error } = await withError(buildReportResolve(parsed, project));
+      if (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({ success: false, error: 'Failed to resolve displayNumber' });
+      }
+      return reply.send({
+        success: true,
+        data: { displayNumber: parsed, project: project ?? null, matches: matches ?? [] },
+      });
+    });
+
+    // GET /api/cli/categories?project=...
+    // Enumerate the failure categories the heuristic has emitted, so agents
+    // can pick a valid value for `test search --failure-category`. Pass
+    // `project=<p>` to scope to a single project (categories may differ).
+    api.get('/api/cli/categories', async (request: FastifyRequest, reply: FastifyReply) => {
+      const { project } = request.query as { project?: string };
+      const { result: categories, error } = await withError(buildFailureCategories(project));
+      if (error) {
+        fastify.log.error(error);
+        return reply
+          .status(500)
+          .send({ success: false, error: 'Failed to fetch failure categories' });
+      }
+      return reply.send({ success: true, data: { project: project ?? null, categories } });
+    });
   });
+}
+
+const DEFAULT_HISTORY_LIMIT = 20;
+const MAX_HISTORY_LIMIT = 50;
+
+/**
+ * The CLI exposes a `--file-id` and `--project` flag, but agents lifting a
+ * testId out of a CI log often don't have either. Pass `-` for fileId (and
+ * omit project) to ask the server to resolve from the most recent test_run.
+ */
+function resolveTestIdentity(
+  testId: string,
+  fileId: string,
+  project: string | undefined
+): { testId: string; fileId: string; project: string } | null {
+  if (fileId && fileId !== '-' && project) {
+    return { testId, fileId, project };
+  }
+  // Without fileId+project we can still find the test via its most recent run.
+  // Cheaper than scanning all reports — test_runs has indices on testId.
+  const db = getDatabase();
+  const row = db
+    .prepare(
+      'SELECT fileId, project FROM test_runs WHERE testId = ? ORDER BY datetime(createdAt) DESC LIMIT 1'
+    )
+    .get(testId) as { fileId: string; project: string } | undefined;
+  if (!row) return null;
+  return {
+    testId,
+    fileId: fileId && fileId !== '-' ? fileId : row.fileId,
+    project: project ?? row.project,
+  };
 }
 
 async function buildTestBrief(
   testId: string,
   fileId: string,
   project: string,
-  preFetchedClusters?: Awaited<ReturnType<typeof getFailureClusters>>
+  preFetchedClusters?: Awaited<ReturnType<typeof getFailureClusters>>,
+  preFetchedThresholds?: { warning: number; quarantine: number }
 ): Promise<TestBrief | null> {
   const detail = await testManagementService.getTestDetail(testId, fileId, project);
   if (!detail) return null;
@@ -169,6 +441,9 @@ async function buildTestBrief(
   const analysisRow = testAnalysisDb.getByTest(testId, fileId, project);
   const feedbackRow = analysisFeedbackDb.getByTest(testId, fileId, project);
 
+  const thresholds = preFetchedThresholds ?? (await getFlakinessThresholds());
+  const roundedScore = Math.round((detail.flakinessScore ?? 0) * 10) / 10;
+
   // Reuse the cluster report passed by `buildReportBrief` when present —
   // saves a per-test Map lookup when briefing every failure in a report.
   const clusterReport = preFetchedClusters ?? (await getFailureClusters({ project }));
@@ -184,10 +459,13 @@ async function buildTestBrief(
     filePath: detail.filePath,
     signals: {
       quarantined: detail.isQuarantined,
-      flakinessScore: Math.round((detail.flakinessScore ?? 0) * 10) / 10,
-      occurrenceCount: history.priorOccurrenceCount,
-      firstSeen: history.firstOccurrence?.createdAt,
-      isClustered: Boolean(containing),
+      // One-decimal precision is enough for an agent's purposes; rounding here
+      // means callers don't need to (and the CLI no longer double-rounds).
+      // Value is a percent in [0, 100].
+      flakinessScore: roundedScore,
+      flakyTier: classifyFlakyTier(roundedScore, thresholds),
+      signatureOccurrenceCount: history.priorOccurrenceCount,
+      signatureFirstSeen: history.firstOccurrence?.createdAt,
     },
     latestFailure: latestFailedRun
       ? (() => {
@@ -240,7 +518,41 @@ async function buildTestBrief(
   };
 }
 
-async function buildReportBrief(reportId: string): Promise<ReportBrief | null> {
+const SAMPLE_FAILED_TESTS_PER_CLUSTER = 3;
+const SAMPLE_UNCLUSTERED_FAILURES = 5;
+const ERROR_FIRST_LINE_MAX_CHARS = 240;
+
+/**
+ * Resolve the active flakiness thresholds. `service.getConfig()` is cached
+ * in-memory by `configCache`, so calling this per brief is cheap. Both
+ * thresholds fall back to the same defaults used by `testManagement.ts` so
+ * the tier classification matches the dashboard's tier filter.
+ */
+async function getFlakinessThresholds(): Promise<{ warning: number; quarantine: number }> {
+  const config = await service.getConfig();
+  const tm = config?.testManagement ?? {};
+  return {
+    warning:
+      tm.warningThresholdPercentage ??
+      defaultConfig.testManagement?.warningThresholdPercentage ??
+      2,
+    quarantine:
+      tm.quarantineThresholdPercentage ??
+      defaultConfig.testManagement?.quarantineThresholdPercentage ??
+      5,
+  };
+}
+
+function classifyFlakyTier(
+  score: number,
+  thresholds: { warning: number; quarantine: number }
+): FlakyTier {
+  if (score >= thresholds.quarantine) return 'critical';
+  if (score >= thresholds.warning) return 'flaky';
+  return 'stable';
+}
+
+async function buildReportBrief(reportId: string, full: boolean): Promise<ReportBrief | null> {
   const report = reportDb.getByID(reportId);
   if (!report) return null;
 
@@ -260,24 +572,33 @@ async function buildReportBrief(reportId: string): Promise<ReportBrief | null> {
   // a 60s in-memory cache so even when called per-test below it stays cheap,
   // but going through the report's project up front is the safe path.
   const clusterReport = await getFailureClusters({ project: report.project });
+  const thresholds = await getFlakinessThresholds();
 
   const briefs: TestBrief[] = [];
   for (const ref of refsToBrief) {
-    const brief = await buildTestBrief(ref.testId, ref.fileId, ref.project, clusterReport);
+    const brief = await buildTestBrief(
+      ref.testId,
+      ref.fileId,
+      ref.project,
+      clusterReport,
+      thresholds
+    );
     if (brief) briefs.push(brief);
   }
 
   // Roll up cluster membership across the report's failed tests so the agent
   // can fix the root cause once instead of iterating per-test.
-  const clusterIdToFailedTestIds = new Map<string, Set<string>>();
+  const clusterIdToFailedBriefs = new Map<string, TestBrief[]>();
   for (const brief of briefs) {
     if (!brief.cluster) continue;
-    const set = clusterIdToFailedTestIds.get(brief.cluster.id) ?? new Set<string>();
-    set.add(brief.testId);
-    clusterIdToFailedTestIds.set(brief.cluster.id, set);
+    const list = clusterIdToFailedBriefs.get(brief.cluster.id) ?? [];
+    list.push(brief);
+    clusterIdToFailedBriefs.set(brief.cluster.id, list);
   }
-  const clusterSummary = [...clusterIdToFailedTestIds.entries()]
-    .map(([id, testIds]) => {
+  // sampleFailedTests is always populated — useful in both modes as a skim view
+  // of who's in each cluster, even when `failedTests` is also present.
+  const clusterSummary: ReportBriefCluster[] = [...clusterIdToFailedBriefs.entries()]
+    .map(([id, members]): ReportBriefCluster | null => {
       const cluster = clusterReport.clusters.find((c) => c.id === id);
       if (!cluster) return null;
       return {
@@ -285,16 +606,20 @@ async function buildReportBrief(reportId: string): Promise<ReportBrief | null> {
         strategy: cluster.strategy,
         name: cluster.name,
         sampleError: cluster.sampleMessage,
-        testCount: testIds.size,
-        testIds: [...testIds],
+        testCount: members.length,
+        testIds: members.map((m) => m.testId),
+        sampleFailedTests: members
+          .slice(0, SAMPLE_FAILED_TESTS_PER_CLUSTER)
+          .map(briefToSummaryEntry),
       };
     })
-    .filter((c): c is NonNullable<typeof c> => c !== null)
+    .filter((c): c is ReportBriefCluster => c !== null)
     .sort((a, b) => b.testCount - a.testCount);
 
-  const unclusteredFailures = briefs.filter((b) => !b.cluster).length;
+  const unclustered = briefs.filter((b) => !b.cluster);
+  const unclusteredFailures = unclustered.length;
 
-  return {
+  const base: ReportBriefBase = {
     reportId: report.reportID,
     displayNumber: report.displayNumber,
     title: report.title,
@@ -312,8 +637,325 @@ async function buildReportBrief(reportId: string): Promise<ReportBrief | null> {
     clusterSummary,
     unclusteredFailures,
     failedTestsTruncated: truncated,
-    failedTests: briefs,
   };
+
+  if (full) {
+    return { ...base, mode: 'full', failedTests: briefs };
+  }
+  // Compact mode: a handful of unclustered failures sampled — every clustered
+  // failure is already represented via the cluster summary's `sampleFailedTests`.
+  return {
+    ...base,
+    mode: 'summary',
+    sampleUnclusteredFailures: unclustered
+      .slice(0, SAMPLE_UNCLUSTERED_FAILURES)
+      .map(briefToSummaryEntry),
+  };
+}
+
+function briefToSummaryEntry(brief: TestBrief) {
+  return {
+    testId: brief.testId,
+    fileId: brief.fileId,
+    project: brief.project,
+    title: brief.title,
+    filePath: brief.filePath,
+    category: brief.latestFailure?.category,
+    errorFirstLine: firstNonEmptyLine(brief.latestFailure?.error),
+  };
+}
+
+function firstNonEmptyLine(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (line.length > 0) return line.slice(0, ERROR_FIRST_LINE_MAX_CHARS);
+  }
+  return undefined;
+}
+
+interface TestHistoryRun {
+  reportId: string;
+  reportDisplayNumber?: number;
+  reportTitle?: string;
+  outcome: NormalizedOutcome;
+  durationMs?: number;
+  errorSignature?: string;
+  category?: string;
+  createdAt: string;
+}
+
+interface TestHistory {
+  testId: string;
+  fileId: string;
+  project: string;
+  title: string;
+  filePath: string;
+  totalReturned: number;
+  appliedLimit: number;
+  /** True when the caller-requested limit exceeded MAX_HISTORY_LIMIT. */
+  limitClamped: boolean;
+  hasMore: boolean;
+  stats: {
+    runs: number;
+    passed: number;
+    failed: number;
+    flaky: number;
+    skipped: number;
+  };
+  signatureGroups: Array<{
+    signature: string;
+    category?: string;
+    count: number;
+    firstSeen: string;
+    lastSeen: string;
+  }>;
+  runs: TestHistoryRun[];
+}
+
+async function buildTestHistory(
+  testId: string,
+  fileId: string,
+  project: string,
+  limit: number,
+  requestedLimit: number
+): Promise<TestHistory | null> {
+  const test = await testManagementService.getTest(testId, fileId, project);
+  if (!test) return null;
+  // getTestRuns is hard-capped at the 50 most-recent rows.
+  const runs = testDb.getTestRuns(testId, fileId, project);
+  const sliced = runs.slice(0, limit);
+
+  const stats = { runs: runs.length, passed: 0, failed: 0, flaky: 0, skipped: 0 };
+  for (const r of runs) {
+    if (r.outcome === 'expected' || r.outcome === 'passed') stats.passed++;
+    else if (r.outcome === 'unexpected' || r.outcome === 'failed') stats.failed++;
+    else if (r.outcome === 'flaky') stats.flaky++;
+    else if (r.outcome === 'skipped') stats.skipped++;
+  }
+
+  // Roll up by signature so the agent sees "this test failed the same way 6
+  // times, then a new signature appeared yesterday" without scanning every row.
+  const groupKey = (sig?: string) => (sig && sig.length > 0 ? sig : '__no_signature__');
+  const groups = new Map<
+    string,
+    { signature: string; category?: string; count: number; firstSeen: string; lastSeen: string }
+  >();
+  for (const r of runs) {
+    if (!FAILED_OUTCOMES.has(r.outcome)) continue;
+    const key = groupKey(r.errorSignature);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.count++;
+      if (r.createdAt < existing.firstSeen) existing.firstSeen = r.createdAt;
+      if (r.createdAt > existing.lastSeen) existing.lastSeen = r.createdAt;
+      if (!existing.category && r.failureCategory) existing.category = r.failureCategory;
+    } else {
+      groups.set(key, {
+        signature: r.errorSignature ?? '',
+        category: r.failureCategory,
+        count: 1,
+        firstSeen: r.createdAt,
+        lastSeen: r.createdAt,
+      });
+    }
+  }
+  const signatureGroups = [...groups.values()].sort((a, b) => b.count - a.count);
+
+  return {
+    testId: test.testId,
+    fileId: test.fileId,
+    project: test.project,
+    title: test.title,
+    filePath: test.filePath,
+    totalReturned: sliced.length,
+    appliedLimit: limit,
+    limitClamped: requestedLimit !== limit,
+    hasMore: runs.length > sliced.length,
+    stats,
+    signatureGroups,
+    runs: sliced.map((r) => ({
+      reportId: r.reportId,
+      reportDisplayNumber: r.reportDisplayNumber,
+      reportTitle: r.reportTitle,
+      outcome: normalizeOutcome(r.outcome),
+      durationMs: r.duration,
+      errorSignature: r.errorSignature,
+      category: r.failureCategory,
+      createdAt: r.createdAt,
+    })),
+  };
+}
+
+interface ClusterBrief {
+  cluster: {
+    id: string;
+    strategy: string;
+    name: string;
+    sampleError: string;
+    category?: string;
+    testCount: number;
+    failureCount: number;
+    evidence: ClusterEvidence;
+  };
+  members: TestBrief[];
+  membersTruncated: boolean;
+}
+
+async function buildClusterBrief(
+  clusterId: string,
+  project: string | undefined
+): Promise<ClusterBrief | null> {
+  // getFailureClusters has a 60s in-memory cache. We try the requested project
+  // first (when supplied) and fall back to a cross-project sweep — clusters
+  // are project-scoped at build time, so a wrong --project would otherwise
+  // 404 a valid clusterId.
+  const tryProjects: Array<string | undefined> = project ? [project, undefined] : [undefined];
+  let cluster: Awaited<ReturnType<typeof getFailureClusters>>['clusters'][number] | undefined;
+  let clusterReport: Awaited<ReturnType<typeof getFailureClusters>> | undefined;
+  for (const p of tryProjects) {
+    const report = await getFailureClusters({ project: p });
+    const found = report.clusters.find((c) => c.id === clusterId);
+    if (found) {
+      cluster = found;
+      clusterReport = report;
+      break;
+    }
+  }
+  if (!cluster || !clusterReport) return null;
+
+  const refsToBrief = cluster.tests.slice(0, FAILED_TESTS_PER_REPORT_MAX);
+  const truncated = cluster.tests.length > refsToBrief.length;
+  const thresholds = await getFlakinessThresholds();
+
+  const members: TestBrief[] = [];
+  for (const t of refsToBrief) {
+    const brief = await buildTestBrief(t.testId, t.fileId, t.project, clusterReport, thresholds);
+    if (brief) members.push(brief);
+  }
+
+  return {
+    cluster: {
+      id: cluster.id,
+      strategy: cluster.strategy,
+      name: cluster.name,
+      sampleError: cluster.sampleMessage,
+      category: cluster.category,
+      testCount: cluster.testCount,
+      failureCount: cluster.failureCount,
+      evidence: cluster.evidence,
+    },
+    members,
+    membersTruncated: truncated,
+  };
+}
+
+async function buildReportSummary(reportId: string) {
+  const report = reportDb.getByID(reportId);
+  if (!report) return null;
+  const summary = failureSummaryDb.getSummary(reportId);
+  const runs = testDb.getTestRunsByReport(reportId);
+  const hasFailures = runs.some((r) => FAILED_OUTCOMES.has(r.outcome));
+  const pendingAnalysisCount = llmTasksDb.getInflightCountForReport(reportId);
+  return {
+    reportId,
+    project: report.project,
+    displayNumber: report.displayNumber,
+    hasFailures,
+    pendingAnalysisCount,
+    summary: summary ?? null,
+  };
+}
+
+async function buildProjectSummary(projectKey: string) {
+  const row = projectSummaryDb.get(projectKey);
+  const pendingAnalysisCount = llmTasksDb.getInflightCountForProject(projectKey);
+  let structured: unknown = null;
+  if (row?.structured) {
+    try {
+      structured = JSON.parse(row.structured);
+    } catch {
+      // tolerate stale JSON — agent gets the prose summary either way
+    }
+  }
+  return {
+    project: projectKey,
+    pendingAnalysisCount,
+    summary: row
+      ? {
+          summary: row.summary,
+          structured,
+          model: row.model,
+          lastReportId: row.lastReportId,
+          reportCount: row.reportCount,
+          firstReportAt: row.firstReportAt,
+          lastReportAt: row.lastReportAt,
+          updatedAt: row.updatedAt,
+        }
+      : null,
+  };
+}
+
+async function buildTestAnalysis(testId: string, fileId: string, project: string) {
+  const row = testAnalysisDb.getByTest(testId, fileId, project);
+  return {
+    testId,
+    fileId,
+    project,
+    analysis: row?.analysis ?? null,
+    model: row?.model ?? null,
+    category: row?.category ?? null,
+    createdAt: row?.createdAt ?? null,
+    updatedAt: row?.updatedAt ?? null,
+  };
+}
+
+async function buildReportResolve(displayNumber: number, project?: string) {
+  const db = getDatabase();
+  const rows = (
+    project
+      ? db
+          .prepare(
+            'SELECT reportID, project, title, displayNumber, createdAt, reportUrl FROM reports WHERE displayNumber = ? AND project = ? ORDER BY datetime(createdAt) DESC'
+          )
+          .all(displayNumber, project)
+      : db
+          .prepare(
+            'SELECT reportID, project, title, displayNumber, createdAt, reportUrl FROM reports WHERE displayNumber = ? ORDER BY datetime(createdAt) DESC'
+          )
+          .all(displayNumber)
+  ) as Array<{
+    reportID: string;
+    project: string;
+    title: string | null;
+    displayNumber: number;
+    createdAt: string;
+    reportUrl: string;
+  }>;
+  return rows.map((r) => ({
+    reportId: r.reportID,
+    project: r.project,
+    title: r.title ?? undefined,
+    displayNumber: r.displayNumber,
+    createdAt: r.createdAt,
+    reportUrl: r.reportUrl,
+  }));
+}
+
+async function buildFailureCategories(project?: string) {
+  const db = getDatabase();
+  if (project) {
+    return db
+      .prepare(
+        'SELECT failure_category AS category, COUNT(*) AS occurrences FROM test_runs WHERE failure_category IS NOT NULL AND project = ? GROUP BY failure_category ORDER BY occurrences DESC'
+      )
+      .all(project) as Array<{ category: string; occurrences: number }>;
+  }
+  return db
+    .prepare(
+      'SELECT failure_category AS category, COUNT(*) AS occurrences FROM test_runs WHERE failure_category IS NOT NULL GROUP BY failure_category ORDER BY occurrences DESC'
+    )
+    .all() as Array<{ category: string; occurrences: number }>;
 }
 
 function buildAttachmentUrls(

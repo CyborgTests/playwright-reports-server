@@ -1,7 +1,7 @@
 import { apiGet } from '../client.js';
 import { resolveConfig } from '../config.js';
 import { emitJson } from '../format.js';
-import type { ClusterReport } from '../types.js';
+import type { ClusterBriefResponse, ClusterReport } from '../types.js';
 
 interface ClusterListOpts {
   project?: string;
@@ -30,11 +30,15 @@ export async function runClusterList(opts: ClusterListOpts): Promise<void> {
     strategies: opts.strategies,
   });
 
+  const trimmed = report.clusters.slice(0, limit);
   emitJson({
     window: { project: opts.project, from: opts.from, to: opts.to },
     totalFailures: report.totalFailures,
+    totalClusters: report.clusters.length,
+    appliedLimit: limit,
+    hasMore: report.clusters.length > trimmed.length,
     strategiesRun: report.strategiesRun,
-    clusters: report.clusters.slice(0, limit).map((c) => ({
+    clusters: trimmed.map((c) => ({
       id: c.id,
       strategy: c.strategy,
       name: c.name,
@@ -56,4 +60,26 @@ export async function runClusterList(opts: ClusterListOpts): Promise<void> {
     })),
     clustersTruncated: report.clusters.length > limit,
   });
+}
+
+interface ClusterBriefOpts {
+  project?: string;
+}
+
+/**
+ * Drill into a single cluster: agent-shaped brief for every member test.
+ * Use after `cluster list` (or after reading a cluster id off a `test brief`
+ * or `report brief` summary).
+ */
+export async function runClusterBrief(clusterId: string, opts: ClusterBriefOpts): Promise<void> {
+  if (!clusterId) {
+    throw new Error('Usage: pwrs-cli cluster brief <clusterId> [--project <p>]');
+  }
+  const config = resolveConfig();
+  const brief = await apiGet<ClusterBriefResponse>(
+    config,
+    `/api/cli/cluster/${encodeURIComponent(clusterId)}/brief`,
+    opts.project ? { project: opts.project } : {}
+  );
+  emitJson(brief);
 }

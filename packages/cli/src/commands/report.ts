@@ -1,16 +1,18 @@
 import { apiGet } from '../client.js';
 import { resolveConfig } from '../config.js';
-import { emitJson } from '../format.js';
+import { clampToRange, emitJson } from '../format.js';
 import type {
   DiffTestEntry,
   DurationDeltaEntry,
   ReportBrief,
   ReportCompareResponse,
   ReportListResponse,
+  ReportResolveResponse,
 } from '../types.js';
 
 interface LatestOpts {
   project?: string;
+  withFailures?: boolean;
 }
 
 export async function runReportLatest(opts: LatestOpts): Promise<void> {
@@ -26,19 +28,31 @@ export async function runReportLatest(opts: LatestOpts): Promise<void> {
   }
   const brief = await apiGet<ReportBrief>(
     config,
-    `/api/cli/report/${encodeURIComponent(latest.reportID)}/brief`
+    `/api/cli/report/${encodeURIComponent(latest.reportID)}/brief`,
+    opts.withFailures ? { mode: 'full' } : {}
   );
   emitJson(brief);
 }
 
-export async function runReportBrief(reportId: string): Promise<void> {
+interface ReportBriefOpts {
+  withFailures?: boolean;
+}
+
+/**
+ * Default mode returns a compact payload: stats + clusterSummary (with the
+ * first few failed tests sampled per cluster) + a few unclustered sample
+ * failures. Pass `--with-failures` to get every failed test's full brief —
+ * use sparingly, a 50-failure report in full mode is ~100 KB.
+ */
+export async function runReportBrief(reportId: string, opts: ReportBriefOpts): Promise<void> {
   if (!reportId) {
-    throw new Error('Usage: pwrs-cli report brief <reportId>');
+    throw new Error('Usage: pwrs-cli report brief <reportId> [--with-failures]');
   }
   const config = resolveConfig();
   const brief = await apiGet<ReportBrief>(
     config,
-    `/api/cli/report/${encodeURIComponent(reportId)}/brief`
+    `/api/cli/report/${encodeURIComponent(reportId)}/brief`,
+    opts.withFailures ? { mode: 'full' } : {}
   );
   emitJson(brief);
 }
@@ -59,7 +73,9 @@ const REPORT_LIST_MAX_LIMIT = 100;
 
 export async function runReportList(opts: ReportListOpts): Promise<void> {
   const config = resolveConfig();
-  const limit = clampToRange(opts.limit ?? REPORT_LIST_DEFAULT_LIMIT, 1, REPORT_LIST_MAX_LIMIT);
+  const requestedLimit = opts.limit ?? REPORT_LIST_DEFAULT_LIMIT;
+  const limit = clampToRange(requestedLimit, 1, REPORT_LIST_MAX_LIMIT);
+  const limitClamped = limit !== requestedLimit;
   if (opts.passRate && !['all', 'passing', 'failing', 'below-threshold'].includes(opts.passRate)) {
     throw new Error(
       `--pass-rate must be one of: all, passing, failing, below-threshold (got '${opts.passRate}')`
@@ -85,6 +101,9 @@ export async function runReportList(opts: ReportListOpts): Promise<void> {
       tags: opts.tags,
     },
     total: list.total,
+    appliedLimit: limit,
+    limitClamped,
+    hasMore: list.total > (opts.offset ?? 0) + list.reports.length,
     reports: list.reports.map((r) => ({
       reportId: r.reportID,
       project: r.project,
@@ -108,6 +127,7 @@ export async function runReportList(opts: ReportListOpts): Promise<void> {
 
 interface ReportCompareOpts {
   limit?: number;
+  project?: string;
 }
 
 const COMPARE_DEFAULT_PER_BUCKET = 20;
@@ -116,6 +136,10 @@ const COMPARE_DEFAULT_PER_BUCKET = 20;
  * `report compare` returns up to 8 diff buckets (newlyFailed, fixed,
  * stillFailing, …). Caps each bucket so a comparison of a 500-test report
  * doesn't dump 500 entries per bucket into the agent context.
+ *
+ * Either positional accepts the keywords `latest` (most recent report) or
+ * `prev` / `previous` (second most recent), resolved server-side. Use
+ * --project to scope keyword resolution to a single project.
  */
 export async function runReportCompare(
   reportA: string,
@@ -123,19 +147,23 @@ export async function runReportCompare(
   opts: ReportCompareOpts
 ): Promise<void> {
   if (!reportA || !reportB) {
-    throw new Error('Usage: pwrs-cli report compare <reportIdA> <reportIdB> [--limit N]');
+    throw new Error(
+      'Usage: pwrs-cli report compare <reportIdA|latest|prev> <reportIdB|latest|prev> [--project <p>] [--limit N]'
+    );
   }
   const config = resolveConfig();
   const limit = clampToRange(opts.limit ?? COMPARE_DEFAULT_PER_BUCKET, 1, 100);
   const comparison = await apiGet<ReportCompareResponse>(config, '/api/report/compare', {
     a: reportA,
     b: reportB,
+    project: opts.project,
   });
 
   const trim = <T extends DiffTestEntry | DurationDeltaEntry>(entries: T[]) =>
-    entries.slice(0, limit);
+    entries.slice(0, limit).map(normalizeEntry) as T[];
 
   emitJson({
+    // Server resolved `latest` / `prev` via reportA.reportID / reportB.reportID.
     reportA: comparison.reportA,
     reportB: comparison.reportB,
     summary: comparison.summary,
@@ -152,6 +180,46 @@ export async function runReportCompare(
   });
 }
 
+const RAW_TO_NORMALIZED: Record<string, 'passed' | 'failed' | 'flaky' | 'skipped' | 'unknown'> = {
+  pass: 'passed',
+  fail: 'failed',
+  flaky: 'flaky',
+  skipped: 'skipped',
+  unknown: 'unknown',
+};
+
+function normalizeEntry<T extends DiffTestEntry | DurationDeltaEntry>(entry: T): T {
+  return {
+    ...entry,
+    outcomeA: entry.outcomeA ? RAW_TO_NORMALIZED[entry.outcomeA] : undefined,
+    outcomeB: entry.outcomeB ? RAW_TO_NORMALIZED[entry.outcomeB] : undefined,
+  };
+}
+
+interface ReportResolveOpts {
+  project?: string;
+}
+
+/**
+ * Resolve a `#479`-style displayNumber to the UUID reportId(s) that
+ * `report compare` / `report brief` accept. Multiple matches when the same
+ * displayNumber exists across projects — pass `--project` to scope.
+ */
+export async function runReportResolve(
+  displayNumber: string,
+  opts: ReportResolveOpts
+): Promise<void> {
+  if (!displayNumber) {
+    throw new Error('Usage: pwrs-cli report resolve <displayNumber> [--project <p>]');
+  }
+  const config = resolveConfig();
+  const data = await apiGet<ReportResolveResponse>(config, '/api/cli/report/resolve', {
+    displayNumber,
+    project: opts.project,
+  });
+  emitJson(data);
+}
+
 function anyBucketOver(c: ReportCompareResponse, limit: number): boolean {
   return (
     c.newlyFailed.length > limit ||
@@ -163,8 +231,4 @@ function anyBucketOver(c: ReportCompareResponse, limit: number): boolean {
     c.removedTests.length > limit ||
     c.durationDeltas.length > limit
   );
-}
-
-function clampToRange(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
 }

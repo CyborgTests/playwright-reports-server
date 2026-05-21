@@ -22,6 +22,8 @@ export interface FailureLocation {
   column?: number;
 }
 
+export type NormalizedOutcome = 'passed' | 'failed' | 'flaky' | 'skipped';
+
 export interface TestBrief {
   testId: string;
   fileId: string;
@@ -31,9 +33,11 @@ export interface TestBrief {
   signals: {
     quarantined: boolean;
     flakinessScore: number;
-    occurrenceCount: number;
-    firstSeen?: string;
-    isClustered: boolean;
+    flakyTier: 'stable' | 'flaky' | 'critical';
+    /** Count of prior runs sharing the same `latestFailure.signature`. */
+    signatureOccurrenceCount: number;
+    /** Timestamp this `signature` first appeared (not the test's first run). */
+    signatureFirstSeen?: string;
   };
   latestFailure: {
     error: string;
@@ -63,7 +67,28 @@ export interface TestBrief {
   } | null;
 }
 
-export interface ReportBrief {
+export interface ReportBriefSummaryEntry {
+  testId: string;
+  fileId: string;
+  project: string;
+  title: string;
+  filePath: string;
+  category?: string;
+  errorFirstLine?: string;
+}
+
+export interface ReportBriefCluster {
+  id: string;
+  strategy: string;
+  name: string;
+  sampleError: string;
+  testCount: number;
+  testIds: string[];
+  /** Top-N representative failures in this cluster, always populated. */
+  sampleFailedTests: ReportBriefSummaryEntry[];
+}
+
+interface ReportBriefBase {
   reportId: string;
   displayNumber?: number;
   title?: string;
@@ -71,17 +96,141 @@ export interface ReportBrief {
   createdAt: string;
   reportUrl: string;
   stats: { total: number; passed: number; failed: number; flaky: number; skipped: number };
-  clusterSummary: Array<{
+  clusterSummary: ReportBriefCluster[];
+  unclusteredFailures: number;
+  failedTestsTruncated: boolean;
+}
+
+/** Discriminated by `mode` — agents can statically pick the right arm. */
+export type ReportBrief =
+  | (ReportBriefBase & {
+      mode: 'summary';
+      sampleUnclusteredFailures: ReportBriefSummaryEntry[];
+    })
+  | (ReportBriefBase & {
+      mode: 'full';
+      failedTests: TestBrief[];
+    });
+
+export interface TestHistoryRun {
+  reportId: string;
+  reportDisplayNumber?: number;
+  reportTitle?: string;
+  outcome: NormalizedOutcome;
+  durationMs?: number;
+  errorSignature?: string;
+  category?: string;
+  createdAt: string;
+}
+
+export interface TestHistory {
+  testId: string;
+  fileId: string;
+  project: string;
+  title: string;
+  filePath: string;
+  totalReturned: number;
+  appliedLimit: number;
+  limitClamped: boolean;
+  hasMore: boolean;
+  stats: { runs: number; passed: number; failed: number; flaky: number; skipped: number };
+  signatureGroups: Array<{
+    signature: string;
+    category?: string;
+    count: number;
+    firstSeen: string;
+    lastSeen: string;
+  }>;
+  runs: TestHistoryRun[];
+}
+
+export interface ClusterEvidence {
+  signature?: string;
+  stackFrame?: string;
+  fixturePhase?: 'beforeAll' | 'beforeEach' | 'afterAll' | 'afterEach';
+  coFailureRate?: number;
+  secondaryEvidence?: string[];
+}
+
+export interface ClusterBriefResponse {
+  cluster: {
     id: string;
     strategy: string;
     name: string;
     sampleError: string;
+    category?: string;
     testCount: number;
-    testIds: string[];
+    failureCount: number;
+    evidence: ClusterEvidence;
+  };
+  members: TestBrief[];
+  membersTruncated: boolean;
+}
+
+/** Mirrors the backend FailureSummaryRow shape (`failureSummary.sqlite.ts`). */
+export interface FailureSummaryRow {
+  reportId: string;
+  project: string;
+  totalFailures: number;
+  categories: Record<string, number>;
+  llmSummary: string | null;
+  llmModel: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface ReportSummary {
+  reportId: string;
+  project: string;
+  displayNumber?: number;
+  hasFailures: boolean;
+  pendingAnalysisCount: number;
+  /** Null when no failure summary has been generated for this report yet. */
+  summary: FailureSummaryRow | null;
+}
+
+export interface ProjectSummary {
+  project: string;
+  pendingAnalysisCount: number;
+  summary: {
+    summary: string;
+    structured: unknown;
+    model: string | null;
+    lastReportId: string | null;
+    reportCount: number;
+    firstReportAt: string | null;
+    lastReportAt: string | null;
+    updatedAt: string;
+  } | null;
+}
+
+export interface FailureCategoriesResponse {
+  project: string | null;
+  categories: Array<{ category: string; occurrences: number }>;
+}
+
+export interface TestAnalysis {
+  testId: string;
+  fileId: string;
+  project: string;
+  analysis: string | null;
+  model: string | null;
+  category: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface ReportResolveResponse {
+  displayNumber: number;
+  project: string | null;
+  matches: Array<{
+    reportId: string;
+    project: string;
+    title?: string;
+    displayNumber: number;
+    createdAt: string;
+    reportUrl: string;
   }>;
-  unclusteredFailures: number;
-  failedTestsTruncated: boolean;
-  failedTests: TestBrief[];
 }
 
 export interface ReportStats {
@@ -180,7 +329,7 @@ export interface ClusterReport {
   strategiesRun: string[];
 }
 
-export type DiffOutcome = 'pass' | 'fail' | 'flaky' | 'skipped' | 'unknown';
+export type DiffOutcome = 'passed' | 'failed' | 'flaky' | 'skipped' | 'unknown';
 
 export interface DiffTestEntry {
   testId: string;

@@ -81,6 +81,7 @@ export const ListReportsResponseSchema = z.object({
 export const CompareReportsQuerySchema = z.object({
   a: z.string().min(1),
   b: z.string().min(1),
+  project: z.string().optional(),
 });
 
 const DiffOutcomeSchema = z.enum(['pass', 'fail', 'flaky', 'skipped', 'unknown']);

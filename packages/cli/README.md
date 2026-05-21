@@ -53,33 +53,55 @@ Drill-down (you have an ID):
 
 ```
 pwrs-cli test find <query>                    Resolve a test name → testId
-pwrs-cli test from-file <path>[:line]         Resolve a spec file → testIds
+pwrs-cli test from-file <path>[:line]         Resolve a spec file → testIds (line narrows by proximity)
 pwrs-cli test brief <testId>                  Everything we know about this test (one call)
-pwrs-cli report latest                        Latest report's brief
-pwrs-cli report brief <reportId>              Specific report's brief
+pwrs-cli test analysis <testId>               Full persisted LLM analysis markdown
+pwrs-cli test history <testId> [--limit N]    Per-run history + signature rollup (default 20, max 50)
+pwrs-cli report latest [--with-failures]      Latest report's brief (compact by default)
+pwrs-cli report brief <reportId> [--with-failures]  Specific report's brief (compact by default)
+pwrs-cli report summary <reportId>            Persisted LLM failure summary for a report
+pwrs-cli report resolve <displayNumber>       Resolve a #479-style number to UUID reportId(s)
+pwrs-cli cluster brief <clusterId>            Drill into one cluster: brief per member test
+pwrs-cli attachment <url>                     Fetch screenshot/error-context/report with Bearer auth
 ```
 
 Discovery (no ID yet):
 
 ```
 pwrs-cli project list                         List known projects
+pwrs-cli project summary [--project <p>]      Persisted LLM project health summary
 pwrs-cli tag list [--project <p>]             List report tags
+pwrs-cli category list [--project <p>]        List failure categories (for --failure-category)
 pwrs-cli report list [filters]                Filtered report list (project, --from/--to, --pass-rate, …)
-pwrs-cli report compare <a> <b> [--limit N]   Diff two reports (newly failed / fixed / …)
+pwrs-cli report compare <a|latest|prev> <b|latest|prev> [--limit N]
+                                              Diff two reports (accepts `latest` / `prev` keywords)
 pwrs-cli test search [filters]                Search tests by tier / status / category / sort / window
 pwrs-cli stats [filters]                      Aggregate health + trend deltas for a window
 pwrs-cli cluster list [filters]               Active failure clusters across recent reports
 ```
 
-Config:
+Config and introspection:
 
 ```
 pwrs-cli config set <server|token> <value>    Persist config
-pwrs-cli config get [<key>]                   Show config (token masked)
+pwrs-cli config get [<key>]                   Show config (token always masked)
+pwrs-cli ping                                 Sanity-check the server is reachable
+pwrs-cli --version                            Print CLI version
+pwrs-cli help <command>                       Per-command usage (e.g. `help test`)
 ```
 
-All commands return JSON on stdout. Date filters use `--from YYYY-MM-DD` and
-`--to YYYY-MM-DD` (or full ISO timestamps) — there is no `--since` flag.
+Environment overrides (always win over saved config):
+
+```
+PWRS_SERVER_URL    Server URL
+PWRS_API_TOKEN     API token
+PWRS_PROJECT       Default --project for every command (explicit --project still wins)
+```
+
+All commands return JSON on stdout. Errors are JSON on stderr in the shape
+`{"success":false,"error":"…","kind":"http|config|unknown",…}` with a non-zero
+exit code. Date filters use `--from YYYY-MM-DD` and `--to YYYY-MM-DD` (or full
+ISO timestamps) — there is no `--since` flag.
 
 ## The two "brief" payloads
 
@@ -98,11 +120,11 @@ All commands return JSON on stdout. Date filters use `--from YYYY-MM-DD` and
   "testId": "…", "fileId": "…", "project": "…", "title": "…", "filePath": "…",
   "signals": {
     "quarantined": false,
-    "flakinessScore": 0.7,           // %, > 5 worth flagging
-    "occurrenceCount": 1,            // this signature's prior count
-    "firstSeen": "2026-05-18T…",     // when this signature first appeared
-    "isClustered": true
+    "flakinessScore": 12.5,                // percent in [0, 100]
+    "signatureOccurrenceCount": 6,         // prior runs sharing latestFailure.signature
+    "signatureFirstSeen": "2026-05-18T…"   // when *this signature* first appeared (not the test)
   },
+  // To check cluster membership, read `cluster` (null when not clustered).
   "latestFailure": {
     "error": "Error: expect(locator).toBeVisible() failed\n\nLocator: …\nTimeout: 15000ms\n…",
     "category": "element_not_visible",
@@ -133,12 +155,18 @@ All commands return JSON on stdout. Date filters use `--from YYYY-MM-DD` and
 }
 ```
 
+`screenshotUrl`, `errorContextUrl`, and `reportUrl` are server-relative paths. To fetch them via `WebFetch`, prepend `$PWRS_SERVER_URL` and send `Authorization: Bearer $PWRS_API_TOKEN`.
+
 ### `report brief` shape
 
-Same payload as `test brief` for each failed test, plus a top-level **clusterSummary** that rolls up which failures share a root cause — so an agent iterating over a 25-failure report fixes 2-3 clusters instead of 25 individual tests.
+`report brief` returns a discriminated union keyed on `mode`. Summary mode
+(default) is ~5 KB; full mode (from `--with-failures`) is ~100 KB for a
+50-failure report and includes a `TestBrief` per failure.
 
 ```jsonc
+// Summary mode (default) — has `sampleUnclusteredFailures`, no `failedTests`
 {
+  "mode": "summary",
   "reportId": "…", "displayNumber": 479, "title": "…", "project": "…",
   "createdAt": "…", "reportUrl": "…",
   "stats": { "total": 128, "passed": 117, "failed": 0, "flaky": 1, "skipped": 10 },
@@ -147,12 +175,45 @@ Same payload as `test brief` for each failed test, plus a top-level **clusterSum
       "id": "…", "strategy": "signature", "name": "…",
       "sampleError": "…",                  // full Playwright error message
       "testCount": 12,                     // 12 of 25 failures share root cause
-      "testIds": ["…", "…"]
+      "testIds": ["…", "…"],
+      "sampleFailedTests": [               // top 3 per cluster, always populated
+        { "testId": "…", "title": "…", "category": "timeout", "errorFirstLine": "…" }
+      ]
     }
   ],
   "unclusteredFailures": 10,
-  "failedTestsTruncated": false,           // true when more than 50 failed
-  "failedTests": [ <test brief>, <test brief>, … ]
+  "sampleUnclusteredFailures": [
+    { "testId": "…", "title": "…", "category": "…", "errorFirstLine": "…" }
+  ],
+  "failedTestsTruncated": false            // true when more than 50 failed
+}
+
+// Full mode (--with-failures) — has `failedTests`, no `sampleUnclusteredFailures`
+// `clusterSummary[].sampleFailedTests` is still present (cheap skim view).
+{
+  "mode": "full",
+  // …everything from summary mode except `sampleUnclusteredFailures`…
+  "failedTests": [ /* TestBrief, TestBrief, … */ ]
+}
+```
+
+### `test history` shape
+
+```jsonc
+{
+  "testId": "…", "fileId": "…", "project": "…", "title": "…", "filePath": "…",
+  "totalReturned": 20, "hasMore": true,
+  "stats": { "runs": 47, "passed": 35, "failed": 8, "flaky": 4, "skipped": 0 },
+  "signatureGroups": [
+    { "signature": "n4jnay", "category": "timeout", "count": 6,
+      "firstSeen": "2026-05-12T…", "lastSeen": "2026-05-20T…" }
+  ],
+  "runs": [
+    // outcome is one of: "passed" | "failed" | "flaky" | "skipped"
+    { "reportId": "…", "reportDisplayNumber": 479, "outcome": "failed",
+      "durationMs": 15203, "errorSignature": "n4jnay", "category": "timeout",
+      "createdAt": "2026-05-20T…" }
+  ]
 }
 ```
 

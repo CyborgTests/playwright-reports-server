@@ -24,6 +24,47 @@ import { ValidationError, validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate, authenticateUpload } from './auth.js';
 
+const COMPARE_KEYWORDS = new Set(['latest', 'prev', 'previous']);
+
+/**
+ * Resolve `latest` / `prev` / `previous` keywords for `report compare`. The
+ * keywords are recognized case-insensitively. Non-keyword strings pass through
+ * unchanged (they're treated as UUID reportIds by `compareReports`).
+ */
+function resolveCompareKeywords(
+  ids: [string, string],
+  project: string | undefined
+): { resolved: [string, string]; error?: string } {
+  const needs = ids.some((v) => COMPARE_KEYWORDS.has(v.toLowerCase()));
+  if (!needs) return { resolved: ids };
+
+  const latest = reportDb.getLatestByProject(project, 2);
+  if (latest.length === 0) {
+    return {
+      resolved: ids,
+      error: `Cannot resolve 'latest'/'prev' — no reports found${project ? ` for project '${project}'` : ''}.`,
+    };
+  }
+  const resolve = (raw: string): string | { error: string } => {
+    const key = raw.toLowerCase();
+    if (key === 'latest') return latest[0].reportID;
+    if (key === 'prev' || key === 'previous') {
+      if (latest.length < 2) {
+        return {
+          error: `Cannot resolve 'prev' — only one report found${project ? ` for project '${project}'` : ''}.`,
+        };
+      }
+      return latest[1].reportID;
+    }
+    return raw;
+  };
+  const a = resolve(ids[0]);
+  if (typeof a !== 'string') return { resolved: ids, error: a.error };
+  const b = resolve(ids[1]);
+  if (typeof b !== 'string') return { resolved: ids, error: b.error };
+  return { resolved: [a, b] };
+}
+
 export async function registerReportRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
     fastify.addHook('preHandler', (request, reply) => authenticate(request as AuthRequest, reply));
@@ -68,7 +109,15 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
     fastify.get('/api/report/compare', async (request, reply) => {
       try {
         const query = validateSchema(CompareReportsQuerySchema, request.query);
-        const { result, error } = compareReports(query.a, query.b);
+        const { resolved, error: resolveError } = resolveCompareKeywords(
+          [query.a, query.b],
+          query.project
+        );
+        if (resolveError) {
+          return reply.status(400).send({ error: resolveError });
+        }
+        const [resolvedA, resolvedB] = resolved;
+        const { result, error } = compareReports(resolvedA, resolvedB);
 
         if (error || !result) {
           const message = error ?? 'Failed to compare reports';

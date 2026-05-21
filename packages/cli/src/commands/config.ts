@@ -31,7 +31,7 @@ export async function runConfigCommand(args: string[]): Promise<void> {
       // Mask the token so the value is safe to print in transcripts.
       emitJson({
         server: current.server ?? null,
-        token: current.token ? `${current.token.slice(0, 4)}…` : null,
+        token: maskToken(current.token),
         path: configPath(),
       });
       return;
@@ -39,11 +39,19 @@ export async function runConfigCommand(args: string[]): Promise<void> {
     if (!isKey(key)) {
       throw new Error(`Unknown key: ${key}. Valid keys: ${KEYS.join(', ')}`);
     }
-    emitJson({ [key]: current[key] ?? null });
+    // Single-key get also masks the token — the raw value lives on disk if
+    // the user genuinely needs it.
+    const value = key === 'token' ? maskToken(current.token) : (current[key] ?? null);
+    emitJson({ [key]: value });
     return;
   }
 
   throw new Error(`Unknown config action: ${action}. Valid: set, get`);
+}
+
+function maskToken(token: string | undefined): string | null {
+  if (!token) return null;
+  return `${token.slice(0, 4)}…`;
 }
 
 function showHelp(): void {
