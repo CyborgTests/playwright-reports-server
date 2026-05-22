@@ -10,7 +10,7 @@ import {
 
 export interface TemporalStrategyOptions {
   minTests: number;
-  /** Joint failure rate threshold; pair must co-fail at this rate or higher. */
+  /** Pair must co-fail at this rate or higher to be considered linked. */
   minRate?: number;
   /** Minimum joint failure count required for a pair to qualify. */
   minJoint?: number;
@@ -18,7 +18,10 @@ export interface TemporalStrategyOptions {
   maxReports?: number;
 }
 
-const DEFAULT_MIN_RATE = 0.6;
+// Jaccard threshold: joint / (a + b - joint). Stricter than the old asymmetric
+// joint/min(a,b) — a chronic failer can no longer drag an unrelated test into
+// the cluster on the strength of two coincident co-failures.
+const DEFAULT_MIN_RATE = 0.5;
 const DEFAULT_MIN_JOINT = 2;
 const DEFAULT_MAX_REPORTS = 200;
 
@@ -91,9 +94,11 @@ export function clusterByTemporal(
     const [a, b] = pk.split('|||') as [TestKey, TestKey];
     const aFailCount = reportsByTest.get(a)?.size ?? 0;
     const bFailCount = reportsByTest.get(b)?.size ?? 0;
-    const smaller = Math.min(aFailCount, bFailCount);
-    if (smaller === 0) continue;
-    const rate = joint / smaller;
+    // Jaccard: shared / union. Symmetric — neither test can dominate the
+    // pair's score because it fails far more often than the other.
+    const union = aFailCount + bFailCount - joint;
+    if (union === 0) continue;
+    const rate = joint / union;
     if (rate < minRate) continue;
 
     addEdge(adjacency, a, b, { joint, rate });
@@ -157,7 +162,6 @@ export function clusterByTemporal(
         sampleMessage,
         testCount: component.length,
         failureCount: clusterRuns.length,
-        estimatedFixes: 1,
         evidence: { coFailureRate: avgRate },
         tests: [],
       },

@@ -109,7 +109,6 @@ export function clusterByFixture(
         category: 'setup_teardown',
         testCount: uniqueTests.size,
         failureCount: group.runs.length,
-        estimatedFixes: 1,
         evidence: { fixturePhase: group.phase, signature: group.signature },
         tests: [],
       },

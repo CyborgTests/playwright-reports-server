@@ -172,8 +172,7 @@ export default function FailureClusters() {
     <div className="w-full">
       <h1 className={`${title()} mb-2`}>Failure clusters</h1>
       <p className={`${subtitle()} mb-2`}>
-        Groups of failing tests likely caused by the same underlying defect — one fix should resolve
-        every test in a cluster.
+        Groups of failing tests likely caused by the same underlying defect.
       </p>
       {reportId && scopeLabel && (
         <p className="text-sm text-muted-foreground mb-6">
@@ -286,8 +285,9 @@ function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?
                 </Badge>
               )}
               {cluster.evidence.secondaryEvidence?.map((evidence) => (
-                <Badge key={evidence} variant="outline" className="text-xs">
-                  + {evidence}
+                <Badge key={evidence.strategy} variant="outline" className="text-xs">
+                  also: {STRATEGY_SHORT_LABELS[evidence.strategy].toLowerCase()}
+                  {evidence.count > 1 ? ` ×${evidence.count}` : ''}
                 </Badge>
               ))}
             </div>
@@ -381,6 +381,11 @@ function ClusterTestRow({ test, highlight }: { test: ClusterTest; highlight: boo
         <Badge variant="outline" className="text-xs">
           {test.project}
         </Badge>
+        {test.matchedOn.map((strategy) => (
+          <Badge key={strategy} variant="secondary" className="text-xs">
+            {STRATEGY_SHORT_LABELS[strategy].toLowerCase()}
+          </Badge>
+        ))}
         {highlight && (
           <span className="text-xs text-muted-foreground">{test.occurrences} occurrences</span>
         )}

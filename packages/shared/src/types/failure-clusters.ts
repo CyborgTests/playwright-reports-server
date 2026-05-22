@@ -23,6 +23,10 @@ export interface ClusterTest {
   occurrences: number;
   lastSeen: string;
   fellowTravellers: ClusterFellowTraveller[];
+  /** Strategies whose evidence placed this test in the cluster. The cluster's
+   *  primary strategy is always present; additional entries are added when a
+   *  test was independently matched by a folded-in cluster during merge. */
+  matchedOn: ClusterStrategy[];
   /** Most recent reportId where this test failed in the cluster — used to
    *  link to the served Playwright HTML report. */
   lastReportId?: string;
@@ -30,12 +34,17 @@ export interface ClusterTest {
   lastReportUrl?: string;
 }
 
+export interface SecondaryEvidence {
+  strategy: ClusterStrategy;
+  count: number;
+}
+
 export interface ClusterEvidence {
   signature?: string;
   stackFrame?: string;
   fixturePhase?: FixturePhase;
   coFailureRate?: number;
-  secondaryEvidence?: string[];
+  secondaryEvidence?: SecondaryEvidence[];
 }
 
 export interface FailureCluster {
@@ -46,7 +55,6 @@ export interface FailureCluster {
   category?: string;
   testCount: number;
   failureCount: number;
-  estimatedFixes: 1;
   evidence: ClusterEvidence;
   tests: ClusterTest[];
 }

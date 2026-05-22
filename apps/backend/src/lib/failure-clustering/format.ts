@@ -1,4 +1,4 @@
-import type { ClusterTest } from '@playwright-reports/shared';
+import type { ClusterStrategy, ClusterTest } from '@playwright-reports/shared';
 import { type FailedTestRun, type TestMeta, testKey } from './types.js';
 
 const MAX_FELLOW_TRAVELLERS = 5;
@@ -10,11 +10,16 @@ export type ReportUrlLookup = (reportId: string) => string | undefined;
  * "previously failing alongside" fellow-travellers list. A fellow traveller is
  * another test in the same cluster that failed in at least one of the same
  * reports as the focal test. Joint rate = joint reports / focal test's reports.
+ *
+ * `primaryStrategy` is the cluster's own strategy — every test starts with
+ * that signal in its `matchedOn` list. Additional signals are unioned in by
+ * `mergeClusters` when overlapping clusters fold into one another.
  */
 export function buildClusterTests(
   clusterRuns: FailedTestRun[],
   metaByKey: Map<string, TestMeta>,
-  resolveReportUrl: ReportUrlLookup
+  resolveReportUrl: ReportUrlLookup,
+  primaryStrategy: ClusterStrategy
 ): ClusterTest[] {
   // Group runs in the cluster by (test, report) so a retried failure within a
   // single report counts once when computing joint reports.
@@ -81,6 +86,7 @@ export function buildClusterTests(
       occurrences: focalRuns.length,
       lastSeen: latest?.createdAt ?? focalRuns[0].createdAt,
       fellowTravellers,
+      matchedOn: [primaryStrategy],
       lastReportId: latest?.reportId,
       lastReportUrl: latest?.reportId ? resolveReportUrl(latest.reportId) : undefined,
     });

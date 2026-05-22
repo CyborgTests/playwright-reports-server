@@ -81,7 +81,7 @@ export async function getFailureClusters(opts: ClusterOptions): Promise<ClusterR
   // re-derive membership from evidence (which doesn't work for temporal).
   const clusters: FailureCluster[] = rawClusters.map(({ cluster, runs }) => ({
     ...cluster,
-    tests: buildClusterTests(runs, metaByKey, resolveReportUrl),
+    tests: buildClusterTests(runs, metaByKey, resolveReportUrl, cluster.strategy),
   }));
 
   const merged = mergeClusters(clusters);

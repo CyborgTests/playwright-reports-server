@@ -121,6 +121,7 @@ ISO timestamps) — there is no `--since` flag.
   "signals": {
     "quarantined": false,
     "flakinessScore": 12.5,                // percent in [0, 100]
+    "flakyTier": "critical",               // backend-derived: 'stable' | 'flaky' | 'critical'
     "signatureOccurrenceCount": 6,         // prior runs sharing latestFailure.signature
     "signatureFirstSeen": "2026-05-18T…"   // when *this signature* first appeared (not the test)
   },

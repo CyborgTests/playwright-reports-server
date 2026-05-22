@@ -60,7 +60,6 @@ export function clusterByStackFrame(
         category,
         testCount: uniqueTests.size,
         failureCount: info.runs.length,
-        estimatedFixes: 1,
         evidence: { stackFrame: info.frame },
         tests: [],
       },
