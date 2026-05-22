@@ -617,15 +617,17 @@ export default function TestDetailPage() {
                     {typeof run.duration === 'number' ? parseMilliseconds(run.duration) : '—'}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    <RouterLink
-                      to={`/report/${run.reportId}`}
+                    <a
+                      href={servedReportUrl(run.reportId, testId)}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 underline text-sm"
                     >
                       {run.reportDisplayNumber
                         ? `#${run.reportDisplayNumber}`
                         : run.reportId.slice(0, 8)}
                       <ExternalLink className="h-3 w-3" />
-                    </RouterLink>
+                    </a>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {run.failureCategory ?? '—'}
