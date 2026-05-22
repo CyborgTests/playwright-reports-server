@@ -97,6 +97,67 @@ export async function runTestAnalysis(testId: string, opts: BriefOpts): Promise<
   emitJson(analysis);
 }
 
+interface PromptOpts {
+  project?: string;
+  fileId?: string;
+  reportId: string;
+}
+
+interface AnalysisPromptOpts extends PromptOpts {
+  taskId?: string;
+}
+
+/**
+ * Current would-be prompt the analysis queue would feed the LLM for this test
+ * right now, plus the typed evidence envelope. Lets an external coding agent
+ * pull every signal we have (codeframe, step tree, ARIA snapshot, git/CI
+ * context, console/network events, history) without going through the LLM.
+ */
+export async function runTestFailureContext(testId: string, opts: PromptOpts): Promise<void> {
+  if (!testId || !opts.reportId) {
+    throw new Error(
+      'Usage: pwrs-cli test failure-context <testId> --report-id <id> [--file-id <fileId>] [--project <p>]'
+    );
+  }
+  const config = resolveConfig();
+  const fileIdSegment = opts.fileId ? encodeURIComponent(opts.fileId) : '-';
+  const query: Record<string, string | undefined> = { reportId: opts.reportId };
+  if (opts.project) query.project = opts.project;
+  const data = await apiGet<unknown>(
+    config,
+    `/api/cli/test/${fileIdSegment}/${encodeURIComponent(testId)}/failure-context`,
+    query
+  );
+  emitJson(data);
+}
+
+/**
+ * Verbatim text of the prompt we sent on the latest completed test_analysis
+ * task for this (testId, reportId). Mirrors the in-report widget's "Copy
+ * prompt" button. Use `--task-id` to address a specific historical run.
+ */
+export async function runTestAnalysisPrompt(
+  testId: string,
+  opts: AnalysisPromptOpts
+): Promise<void> {
+  if (!testId || !opts.reportId) {
+    throw new Error(
+      'Usage: pwrs-cli test analysis-prompt <testId> --report-id <id> [--file-id <fileId>] [--project <p>] [--task-id <id>]'
+    );
+  }
+  const config = resolveConfig();
+  const fileIdSegment = opts.fileId ? encodeURIComponent(opts.fileId) : '-';
+  const query: Record<string, string | undefined> = { reportId: opts.reportId };
+  if (opts.project) query.project = opts.project;
+  if (opts.taskId) query.taskId = opts.taskId;
+  const data = await apiGet<unknown>(
+    config,
+    `/api/cli/test/${fileIdSegment}/${encodeURIComponent(testId)}/analysis-prompt`,
+    query
+  );
+  emitJson(data);
+}
+
 /**
  * Per-run history for a single test. Default 20 most-recent runs (max 50),
  * plus a signatureGroups rollup so the agent can spot "failed the same way 6

@@ -175,6 +175,31 @@ export class TestAnalysisDatabase {
   }
 
   /**
+   * Latest completed analysis for this (testId, fileId, project) from any
+   * report OTHER than `excludeReportId`. Used to surface the prior-run
+   * diagnosis into the next analysis prompt without echoing the model its own
+   * conclusion. Only rows with non-empty `analysis` text are returned.
+   */
+  public getLatestPriorByTest(
+    testId: string,
+    fileId: string,
+    project: string,
+    excludeReportId: string
+  ): TestAnalysisRow | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM test_llm_analyses
+         WHERE testId = ? AND fileId = ? AND project = ?
+           AND reportId != ?
+           AND analysis IS NOT NULL AND TRIM(analysis) != ''
+         ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC
+         LIMIT 1`
+      )
+      .get(testId, fileId, project, excludeReportId) as TestAnalysisRow | undefined;
+    return row ?? null;
+  }
+
+  /**
    * Get all analyses for a test in a specific report (one per attempt).
    */
   public getAllByTestAndReport(testId: string, reportId: string): TestAnalysisRow[] {

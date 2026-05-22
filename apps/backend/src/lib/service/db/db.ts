@@ -388,6 +388,51 @@ function initializeSchema(db: Database.Database): void {
       ON analysis_feedback(errorSignature)
       WHERE errorSignature IS NOT NULL;
   `);
+
+  // Drift cleanup: an older non-versioned schema in some deployed DBs left a
+  // `targetType` column with a NOT NULL constraint and no default. The current
+  // code never writes it, so every INSERT 500s with SQLITE_CONSTRAINT_NOTNULL.
+  // The same legacy schema also bound `targetType` into some indexes (e.g.
+  // `ux_af_test`), so a bare DROP COLUMN errors out — drop every index that
+  // mentions the column, then drop the column, then recreate the canonical
+  // indexes (which already exist via CREATE INDEX IF NOT EXISTS above for
+  // fresh DBs, but were missing the bare form on legacy ones).
+  dropAnalysisFeedbackTargetTypeIfPresent(db);
+}
+
+function dropAnalysisFeedbackTargetTypeIfPresent(db: Database.Database): void {
+  const cols = db.pragma(`table_info('analysis_feedback')`) as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === 'targetType')) return;
+
+  // Find every index whose definition references `targetType` and drop it.
+  // `sqlite_master.sql` is the canonical source for the index definition.
+  const indexes = db
+    .prepare(
+      `SELECT name, sql FROM sqlite_master
+       WHERE type = 'index' AND tbl_name = 'analysis_feedback' AND sql IS NOT NULL`
+    )
+    .all() as Array<{ name: string; sql: string }>;
+  for (const idx of indexes) {
+    if (idx.sql.includes('targetType') && SAFE_IDENT.test(idx.name)) {
+      db.exec(`DROP INDEX IF EXISTS ${idx.name}`);
+    }
+  }
+
+  db.exec('ALTER TABLE analysis_feedback DROP COLUMN targetType');
+
+  // Re-create the indexes the code expects. Idempotent — no-ops if they
+  // survived the targetType binding (i.e. were already on the right columns).
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_af_test
+      ON analysis_feedback(testId, fileId, project);
+    CREATE INDEX IF NOT EXISTS idx_af_updated
+      ON analysis_feedback(updatedAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_af_test_lookup
+      ON analysis_feedback(testId, fileId);
+    CREATE INDEX IF NOT EXISTS idx_af_signature
+      ON analysis_feedback(errorSignature)
+      WHERE errorSignature IS NOT NULL;
+  `);
 }
 
 export function getDatabase(): Database.Database {

@@ -1,4 +1,5 @@
 import type { FailureEvidence } from '../../parser/failure-extraction.js';
+import type { PerFileStep } from '../../parser/report-payload.js';
 import type { LLMResponseSchema, PromptSegment, SegmentedPrompt } from '../types/index.js';
 
 const FAILURE_CATEGORY_ENUM = [
@@ -17,27 +18,31 @@ const FAILURE_CATEGORY_ENUM = [
   'unknown',
 ] as const;
 
-/** JSON schema for structured-output test-failure analysis. Mirrors the text
- *  response format documented in FAILURE_CATEGORY_SCHEMA so heuristics work
- *  identically whether the provider returns text or schema-conformant JSON. */
+/** JSON schema for structured-output test-failure analysis. The `category`
+ *  field is optional — the model is asked to populate it only when it actively
+ *  disagrees with the heuristic baseline supplied via {{errorCategory}}. The
+ *  consensus rule at llmAnalysisQueue.ts:739 lets the heuristic win unless it
+ *  was `unknown` or the LLM agrees, so the model's category is only load-
+ *  bearing in the `unknown`-tiebreaker case. `analysis` stays required. */
 export const TEST_FAILURE_ANALYSIS_SCHEMA: LLMResponseSchema = {
   name: 'submit_test_failure_analysis',
   description:
-    'Submit categorized analysis of a Playwright test failure. Choose category from the fixed enum; analysis is markdown text.',
+    'Submit a root-cause analysis of a Playwright test failure. `analysis` is markdown text. `category` is optional — set it only when the heuristic baseline looks wrong.',
   schema: {
     type: 'object',
     additionalProperties: false,
-    required: ['category', 'analysis'],
+    required: ['analysis'],
     properties: {
       category: {
         type: 'string',
         enum: [...FAILURE_CATEGORY_ENUM],
-        description: 'Failure category from the fixed enum.',
+        description:
+          'Failure category from the fixed enum. OPTIONAL — populate only when you actively disagree with the heuristic baseline provided in the task instructions; otherwise omit.',
       },
       analysis: {
         type: 'string',
         description:
-          'Markdown analysis of root cause, suggested fix, and observations. Specific, actionable, concise.',
+          'Markdown analysis of root cause, what to verify, and a recommended direction. Specific, actionable, anchored in the evidence.',
       },
     },
   },
@@ -181,56 +186,34 @@ const PROJECT_SUMMARY_VARS = new Set([
   'passingRuns',
 ] as const) as ReadonlySet<string>;
 
-/**
- * Stable categorization enum + JSON output schema. Lives in its own segment so
- * the provider can mark it cacheable: it never varies across calls.
- */
-const FAILURE_CATEGORY_SCHEMA = `1. A failure **category** — pick exactly one from this fixed enum:
-   - **timeout** — Playwright's TimeoutError or a test-level timeout, with no specific locator/visibility context
-   - **element_not_visible** — \`expect(locator).toBeVisible()\` (or similar) timed out waiting for an element to appear/become interactable
-   - **element_not_found** — locator resolved to 0 elements, or strict-mode violation
-   - **assertion_error** — test-logic value mismatch (toEqual/toMatch/toContain/...) without timeout or locator context
-   - **snapshot_mismatch** — visual / screenshot / toMatchSnapshot failure
-   - **network_error** — \`net::ERR_*\`, ECONNREFUSED/ECONNRESET, transport-layer failure
-   - **api_error** — explicit 4xx/5xx response from the app under test (non-auth)
-   - **authentication_error** — 401/403, "Unauthorized", "Forbidden", or login/credential failures
-   - **navigation_error** — page.goto/reload failure, frame detached, navigation timeout (when not a network transport error)
-   - **browser_crash** — "Target closed", "Page crashed", browser/context disconnected
-   - **setup_teardown** — error originating in beforeAll/afterAll/beforeEach/afterEach/fixture
-   - **javascript_error** — ReferenceError/SyntaxError/TypeError, page.evaluate failures, uncaught promise rejections
-   - **unknown** — only when none of the above clearly apply
-2. A concise **analysis** of the root cause
-3. A suggested **fix**
-
-Respond in JSON format: { "category": "...", "analysis": "markdown text" }`;
-
 export const DEFAULT_SYSTEM_PROMPT =
-  'You are an expert test automation engineer and test failure analyst with deep knowledge of Playwright, testing best practices, and common failure patterns. Your role is to analyze test failures and suggest concrete improvements. Responses must be specific, actionable, and concise.';
+  'Playwright test failure analyst. Diagnose from the structured evidence below. Cite line numbers, file paths, signatures, and response codes. No filler, no generic advice.';
 export const TEST_ANALYSIS_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT;
 export const REPORT_SUMMARY_SYSTEM_PROMPT =
   'You are a test lead reviewing a single Playwright CI run. Cluster failures into the smallest set of root causes, prioritize fixes by how many tests each unblocks, and call out patterns that look systemic (shared fixtures, flaky infra) versus one-off. Keep findings concrete — cite specific files, categories, or signatures — and skip generic testing advice.';
 export const PROJECT_SUMMARY_SYSTEM_PROMPT =
   'You are a QA lead writing a brief health summary for a Playwright test project across its latest runs. Lead with a verdict and a one-line headline. Distinguish transient flakes from persistent regressions, anchor your verdict on what the most recent runs show, and avoid restating per-run details the reader already has. Be concrete about which tests or areas regressed.';
 
-export const TEST_ANALYSIS_TASK_INSTRUCTIONS = `Analyze the Playwright test failure for \`{{testTitle}}\` in project "{{project}}" ({{filePath}}). The heuristic baseline category for this failure is \`{{errorCategory}}\` — use it as a hint, not a verdict. Provide the response specified by the schema above.
+export const TEST_ANALYSIS_TASK_INSTRUCTIONS = `Test: \`{{testTitle}}\` (project "{{project}}", {{filePath}})
+Heuristic category: \`{{errorCategory}}\`. Treat as working hypothesis. Disagree only with evidence.
 
-The \`analysis\` field MUST be a markdown document with the first two sections in order, using the headers verbatim (including emojis). The third section is OPTIONAL — include it only when you can write a concrete, useful snippet; omit it entirely when the right answer is configuration, environment, or infra-shaped.
+Reply via the tool schema. \`analysis\` is markdown with these sections, headers verbatim. Sections 1 and 2 are required, section 3 is optional.
 
-## 🔍 Root Cause
-A concise diagnosis of why the test failed — symptom, the underlying cause, and which code/state is responsible. Cite specific lines from the stack trace where helpful.
+## Root Cause
+What broke. Anchor every claim to specific evidence: line numbers from Test Source / Step Tree / Stack, console errors, failed requests with status codes, attempt-history divergence. If \`{{errorCategory}}\` is wrong, state the better category and set the \`category\` field. Otherwise omit the heuristic from the prose.
 
-## 🛠️ Fix & Best Practice
-The recommended fix and any related best practice that prevents this class of failure (e.g., proper waiting strategies, selector resilience, fixture isolation). Be specific to the failure category — don't recite generic advice.
+## What to Verify
+2–3 concrete next checks to confirm or rule out the root cause. Each must be runnable — a log query, an env flag, a code path to inspect, a repro step. No generic advice.
 
-## 📝 Code Snippet (optional)
-A minimal Playwright code example showing the fix. Use a fenced \`\`\`ts\`\`\` block. Include this section ONLY when (a) the fix is a code change, AND (b) you have enough context to write code that is meaningfully more specific than the surrounding prose. Skip the section entirely otherwise — do not write "no snippet needed" or invent illustrative code.
+## Recommendation
+Optional. Include only when you can name a specific fix (code edit, config change, infra action). Omit when the right next step is "investigate further". A short code snippet is fine when it's concrete, not illustrative.
 
-When an Attempt History is present, use it to judge flakiness vs persistence:
-- "eventually passed" → likely transient/environmental; recommend retry tuning, not a code fix.
-- "never recovered" with the same error each attempt → genuine failure; focus on root cause.
-- Different error per attempt → the test is unstable; report state may be leaking between attempts.
+Attempt-history rules:
+- eventually passed → transient/environmental; lead with retry/wait diagnosis.
+- never recovered, same error each attempt → persistent defect; focus on code/state.
+- different error per attempt → state leaks between attempts; suspect fixtures.
 
-The primary Error Message and Stack Trace below come from the FIRST failing attempt; the Attempt History summarizes all attempts so you can see the full timeline.`;
+The canonical Error block is from the first failing attempt. Attempt History shows the full timeline.`;
 
 export const REPORT_SUMMARY_TASK_INSTRUCTIONS = `Summarize the test failures from Playwright report \`{{reportId}}\` for project "{{project}}" ({{totalFailures}} failures total).
 
@@ -314,7 +297,9 @@ export const buildFeedbackContext = (
   feedback: { comment: string; updatedAt: string } | null
 ): string => {
   if (!feedback) return '';
-  return `\n## Prior User Feedback\n${feedback.comment}\nUpdated: ${relativeTime(feedback.updatedAt)}\n`;
+  // Human-curated note about THIS test. Weight heavily; if it contradicts the
+  // evidence, surface the contradiction in Root Cause rather than ignore it.
+  return `\n## User Feedback (high-priority; weight heavily, surface contradictions with evidence)\n\n> ${feedback.comment.replace(/\n/g, '\n> ')}\n\n(updated ${relativeTime(feedback.updatedAt)})\n`;
 };
 
 export const buildPerTestFeedbackContext = (
@@ -346,29 +331,25 @@ export const buildCrossProjectContext = (
   totalCount = entries.length
 ): string => {
   if (entries.length === 0) return '';
-  let block = `\n## Same Test in Other Projects\n`;
+  let block = `\n## Cross-Project (same test, other projects)\n`;
   for (const e of entries) {
-    const sig = e.errorSignatureMatchesCurrent ? 'matches' : 'differs';
-    block += `\n### Project ${e.project} — feedback updated ${relativeTime(e.updatedAt)} — error signature: ${sig}\n`;
+    const sig = e.errorSignatureMatchesCurrent ? 'matching error' : 'different error';
+    block += `\n### ${e.project} (${sig}, updated ${relativeTime(e.updatedAt)})\n`;
     block += `${e.comment}\n`;
     if (e.latestAnalysis) {
-      const modelInfo = e.latestAnalysis.model ? `, model: ${e.latestAnalysis.model}` : '';
-      block += `Latest analysis there (${relativeTime(e.latestAnalysis.updatedAt)}${modelInfo}):\n${e.latestAnalysis.content}\n`;
+      const modelInfo = e.latestAnalysis.model ? ` · ${e.latestAnalysis.model}` : '';
+      block += `prior_analysis (${relativeTime(e.latestAnalysis.updatedAt)}${modelInfo}):\n${e.latestAnalysis.content}\n`;
     }
   }
   if (totalCount > entries.length) {
-    block += `\n… and ${totalCount - entries.length} more not shown.\n`;
+    block += `\n(+${totalCount - entries.length} more not shown)\n`;
   }
   return block;
 };
 
-// Builders produce SegmentedPrompt — segments emitted in stability order so
-// providers can apply cache_control hints (Anthropic) and the leading token
-// prefix matches across calls (OpenAI / LM Studio KV cache). Order:
-// system_prompt → output_schema → task_instructions → historical_context →
-// cross_project → user_feedback → current_failure. The first three are the
-// fully-stable cacheable prefix; per-test stable segments cache for retries
-// of the same test; varying segments come last.
+// Builders emit segments in stability order (most stable first) so providers
+// can apply cache_control hints and KV-cache prefixes match across calls.
+// `buildTestFailureSegments` is the canonical order.
 
 /**
  * Stable JSON.stringify alternative — sorts object keys recursively so
@@ -396,7 +377,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   timedout: 'T',
   timedOut: 'T',
   flaky: 'f',
-  skipped: '·',
+  skipped: '.',
   interrupted: 'I',
 };
 
@@ -417,20 +398,20 @@ export interface HistoricalContextInput {
 
 function buildHistoricalContextBlock(historicalContext?: HistoricalContextInput): string {
   if (!historicalContext) return '';
-  let block = `## Historical Context\n`;
+  let block = `## History\n`;
   if (historicalContext.totalRuns) {
-    block += `- Total runs for this test: ${historicalContext.totalRuns}\n`;
+    block += `- runs: ${historicalContext.totalRuns}\n`;
   }
   if (historicalContext.recentFailureCount) {
-    block += `- Recent failures: ${historicalContext.recentFailureCount}\n`;
+    block += `- recent_failures: ${historicalContext.recentFailureCount}\n`;
   }
   if (historicalContext.isNewFailure === true) {
-    block += `- This failure signature has NOT been seen before — likely a new issue\n`;
+    block += `- signature: new (not seen in prior runs)\n`;
   } else if (historicalContext.isNewFailure === false) {
-    block += `- This failure signature has been seen before — recurring issue\n`;
+    block += `- signature: recurring\n`;
   }
   if (historicalContext.previousCategories && historicalContext.previousCategories.length > 0) {
-    block += `- Recent failure categories (most-recent first): ${historicalContext.previousCategories.join(' → ')}\n`;
+    block += `- recent_categories (newest first): ${historicalContext.previousCategories.join(' -> ')}\n`;
   }
   return block;
 }
@@ -450,27 +431,25 @@ function buildFlakinessRationaleBlock(input?: HistoricalContextInput): string {
     return '';
   }
 
-  let block = `## Flakiness Rationale\n`;
+  let block = `## Flakiness\n`;
   if (typeof score === 'number') {
-    block += `- Flakiness score: **${score.toFixed(1)}%**`;
+    block += `- score: ${score.toFixed(1)}%`;
     if (typeof threshold === 'number') {
-      const cmp = score >= threshold ? '≥' : '<';
+      const cmp = score >= threshold ? '>=' : '<';
       block += ` (threshold ${cmp} ${threshold}%)`;
     }
     block += '\n';
   } else if (typeof threshold === 'number') {
-    block += `- Flakiness threshold: ${threshold}%\n`;
+    block += `- threshold: ${threshold}%\n`;
   }
   if (isFlaky === true) {
-    block += `- Verdict: **flaky** — recent runs swing between pass and fail.\n`;
+    block += `- verdict: flaky (recent runs swing pass/fail)\n`;
   } else if (isFlaky === false) {
-    block += `- Verdict: **not flagged flaky** — failure is the dominant pattern.\n`;
+    block += `- verdict: not flaky (failure is dominant)\n`;
   }
   if (outcomes && outcomes.length > 0) {
     const labels = outcomes.map(outcomeLabel).join('');
-    block += `- Recent outcomes (most-recent first, P=passed F=failed f=flaky T=timedOut ·=skipped): \`${labels}\`\n`;
-    const detail = outcomes.slice(0, 8).join(', ');
-    block += `- Recent outcomes verbatim: ${detail}${outcomes.length > 8 ? `, …(+${outcomes.length - 8} older)` : ''}\n`;
+    block += `- recent (newest first, P=pass F=fail f=flaky T=timeout .=skip): \`${labels}\`\n`;
   }
   return block;
 }
@@ -497,14 +476,151 @@ function pickRenderHeaders(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+function buildRunContextBlock(evidence: FailureEvidence | undefined): string {
+  const git = evidence?.gitCommit;
+  const ci = evidence?.ciBuild;
+  if (!git && !ci) return '';
+  const lines: string[] = [];
+  if (git?.branch) lines.push(`- branch: \`${git.branch}\``);
+  if (git?.shortHash || git?.hash) {
+    const sub = git.subject ? ` — ${git.subject.replace(/\s+/g, ' ').trim().slice(0, 200)}` : '';
+    lines.push(`- commit: \`${git.shortHash ?? git.hash}\`${sub}`);
+  } else if (git?.subject) {
+    lines.push(`- subject: ${git.subject.replace(/\s+/g, ' ').trim().slice(0, 200)}`);
+  }
+  if (ci?.buildHref) lines.push(`- ci_build: ${ci.buildHref}`);
+  if (ci?.commitHref) lines.push(`- ci_commit: ${ci.commitHref}`);
+  if (lines.length === 0) return '';
+  return `## Run\n${lines.join('\n')}`;
+}
+
+function buildTestMetadataBlock(evidence: FailureEvidence | undefined): string {
+  const meta = evidence?.testMeta;
+  if (!meta) return '';
+  const lines: string[] = [];
+  if (meta.titlePath && meta.titlePath.length > 0) {
+    lines.push(`- suite: ${meta.titlePath.map((p) => `\`${p}\``).join(' > ')}`);
+  }
+  if (meta.tags && meta.tags.length > 0) {
+    lines.push(`- tags: ${meta.tags.map((t) => `\`${t}\``).join(' ')}`);
+  }
+  if (meta.annotations && meta.annotations.length > 0) {
+    for (const a of meta.annotations) {
+      const type = a.type ?? 'annotation';
+      const desc = a.description ? `: ${a.description.replace(/\s+/g, ' ').trim()}` : '';
+      lines.push(`- ${type}${desc}`);
+    }
+  }
+  if (lines.length === 0) return '';
+  return `## Test Metadata\n${lines.join('\n')}`;
+}
+
+function buildTestSourceFrameBlock(evidence: FailureEvidence | undefined): string {
+  if (!evidence?.testSourceFrame) return '';
+  return `## Test Source\n\`\`\`\n${evidence.testSourceFrame}\n\`\`\``;
+}
+
+function buildPriorInProjectAnalysisBlock(
+  prior:
+    | {
+        analysis: string;
+        category?: string;
+        model?: string;
+        updatedAt?: string;
+      }
+    | undefined
+): string {
+  if (!prior?.analysis) return '';
+  const meta: string[] = [];
+  if (prior.category) meta.push(prior.category);
+  if (prior.model) meta.push(prior.model);
+  if (prior.updatedAt) meta.push(relativeTime(prior.updatedAt));
+  const header = meta.length > 0 ? ` (${meta.join(' · ')})` : '';
+  return `## Prior Analysis${header}\n${prior.analysis.trim()}`;
+}
+
+function buildStdoutBlock(evidence: FailureEvidence | undefined): string {
+  if (!evidence?.stdout) return '';
+  return `## Stdout\n\`\`\`\n${evidence.stdout}\n\`\`\``;
+}
+
+function buildStderrBlock(evidence: FailureEvidence | undefined): string {
+  if (!evidence?.stderr) return '';
+  return `## Stderr\n\`\`\`\n${evidence.stderr}\n\`\`\``;
+}
+
+function buildGitDiffBlock(evidence: FailureEvidence | undefined): string {
+  if (!evidence?.gitDiff) return '';
+  return `## Git Diff\n\`\`\`diff\n${evidence.gitDiff}\n\`\`\``;
+}
+
+function formatStepLocation(loc?: { file?: string; line?: number; column?: number }): string {
+  if (!loc?.file) return '';
+  const line = typeof loc.line === 'number' ? `:${loc.line}` : '';
+  return ` (${loc.file}${line})`;
+}
+
+function formatStepDuration(ms?: number): string {
+  if (typeof ms !== 'number' || ms <= 0) return '';
+  if (ms < 1000) return ` [${ms}ms]`;
+  return ` [${(ms / 1000).toFixed(1)}s]`;
+}
+
+/**
+ * Walk the step tree and render an indented bullet list. The errored step (and
+ * its ancestors, since errors bubble up) get a `[FAIL]` marker. The errored
+ * step's `snippet` (a ~3-line focused code frame) is rendered inline directly
+ * under its bullet so the model sees the failing line without scrolling to
+ * the separate Test Source segment.
+ */
+function renderStepTree(steps: PerFileStep[]): string {
+  const out: string[] = [];
+
+  const containsError = (s: PerFileStep): boolean => {
+    if (s.error?.message) return true;
+    return (s.steps ?? []).some(containsError);
+  };
+
+  const walk = (step: PerFileStep, depth: number): void => {
+    const indent = '  '.repeat(depth);
+    const title = (step.title ?? '').replace(/\s+/g, ' ').trim() || '(untitled step)';
+    const marker = containsError(step) ? ' [FAIL]' : '';
+    const dur = formatStepDuration(step.duration);
+    const loc = formatStepLocation(step.location);
+    out.push(`${indent}- ${title}${dur}${loc}${marker}`);
+    if (step.error?.message) {
+      const errLine = step.error.message.replace(/\s+/g, ' ').trim().slice(0, 240);
+      out.push(`${indent}  error: ${errLine}`);
+    }
+    if (step.snippet) {
+      out.push(`${indent}  \`\`\``);
+      for (const line of step.snippet.split('\n')) {
+        out.push(`${indent}  ${line}`);
+      }
+      out.push(`${indent}  \`\`\``);
+    }
+    if (step.steps && step.steps.length > 0) {
+      for (const child of step.steps) walk(child, depth + 1);
+    }
+  };
+
+  for (const root of steps) walk(root, 0);
+  return out.join('\n');
+}
+
+function buildStepTreeBlock(evidence: FailureEvidence | undefined): string {
+  if (!evidence?.stepTree || evidence.stepTree.length === 0) return '';
+  return `## Step Tree\n${renderStepTree(evidence.stepTree)}`;
+}
+
 function buildPageSnapshotBlock(evidence: FailureEvidence | undefined): string {
   if (!evidence?.pageSnapshot) return '';
-  return `## 📸 Page Snapshot (DOM at failure)\n\n${evidence.pageSnapshot}`;
+  return `## Page Snapshot\n\n${evidence.pageSnapshot}`;
 }
 
 function buildRecentActionsBlock(evidence: FailureEvidence | undefined): string {
   if (!evidence?.actionLog || evidence.actionLog.length === 0) return '';
-  let block = `## 🪜 Recent Actions (chronological, last ~${evidence.actionLog.length})\n`;
+  let block = `## Recent Actions (n=${evidence.actionLog.length})\n`;
   const t0 = evidence.actionLog.find((a) => typeof a.startTime === 'number')?.startTime ?? 0;
   for (const a of evidence.actionLog) {
     const tStart = typeof a.startTime === 'number' ? `[t+${Math.round(a.startTime - t0)}ms] ` : '';
@@ -512,9 +628,13 @@ function buildRecentActionsBlock(evidence: FailureEvidence | undefined): string 
       typeof a.startTime === 'number' && typeof a.endTime === 'number'
         ? ` (${Math.round(a.endTime - a.startTime)}ms)`
         : '';
-    const tgt = a.target ? ` ${a.target}` : '';
-    const err = a.error ? ` — **error:** ${a.error.replace(/\s+/g, ' ').slice(0, 200)}` : '';
-    block += `- ${tStart}\`${a.action}\`${tgt}${dur}${err}\n`;
+    // Namespace prefix (Locator / Page / Test) helps disambiguate the action
+    // when the title is just a verb like "click" or "fill". Skip the prefix
+    // when the title already includes it (e.g. "Locator.click").
+    const ns = a.namespace && a.action && !a.action.includes(a.namespace) ? `${a.namespace}.` : '';
+    const tgt = a.target ? ` \`${a.target.replace(/`/g, "'").slice(0, 200)}\`` : '';
+    const err = a.error ? ` -- error: ${a.error.replace(/\s+/g, ' ').slice(0, 200)}` : '';
+    block += `- ${tStart}\`${ns}${a.action}\`${tgt}${dur}${err}\n`;
   }
   return block;
 }
@@ -523,16 +643,19 @@ function buildConsoleLogBlock(evidence: FailureEvidence | undefined): string {
   if (!evidence?.consoleEvents || evidence.consoleEvents.length === 0) return '';
   const errors = evidence.consoleEvents.filter((e) => e.level === 'error' || e.level === 'warning');
   const others = evidence.consoleEvents.filter((e) => e.level !== 'error' && e.level !== 'warning');
-  let block = `## 🖥️ Console Log (errors+warnings + last ${others.length} other)\n`;
+  // Skip the "other" tail entirely when zero errors/warnings — info/log/debug
+  // alone are almost always noise unrelated to the failure.
+  if (errors.length === 0) return '';
+  let block = `## Console (errors+warnings, +${others.length} other)\n`;
   const render = (events: typeof evidence.consoleEvents) => {
     for (const ev of events) {
       const loc = ev.location?.url
-        ? ` _${ev.location.url}${ev.location.lineNumber ? `:${ev.location.lineNumber}` : ''}_`
+        ? ` @${ev.location.url}${ev.location.lineNumber ? `:${ev.location.lineNumber}` : ''}`
         : '';
-      block += `- **${ev.level}:** ${ev.text}${loc}\n`;
+      block += `- ${ev.level}: ${ev.text}${loc}\n`;
     }
   };
-  if (errors.length > 0) render(errors);
+  render(errors);
   if (others.length > 0) render(others);
   return block;
 }
@@ -542,39 +665,44 @@ function buildNetworkActivityBlock(evidence: FailureEvidence | undefined): strin
   const failed = evidence.networkEvents.filter(
     (n) => !!n.failureText || (typeof n.status === 'number' && n.status >= 400)
   );
-  let block = `## 🌐 Network Activity (failed + recent successful)\n`;
+  let block = `## Network (failed + recent successful)\n`;
   for (const ev of evidence.networkEvents) {
     const isFailed = !!ev.failureText || (typeof ev.status === 'number' && ev.status >= 400);
-    const marker = isFailed ? '❌' : '✓';
+    const marker = isFailed ? '[FAIL]' : '[OK]';
     const status = ev.failureText
       ? `failed (${ev.failureText})`
       : typeof ev.status === 'number'
         ? String(ev.status)
-        : '—';
-    block += `- ${marker} \`${ev.method} ${ev.url}\` → ${status}\n`;
-    const reqHeaders = pickRenderHeaders(ev.requestHeaders);
-    const respHeaders = pickRenderHeaders(ev.responseHeaders);
-    if (reqHeaders) {
-      const headerList = Object.entries(reqHeaders)
-        .map(([k, v]) => `${k}: ${v}`)
-        .join('; ');
-      block += `  - req headers: ${headerList}\n`;
-    }
-    if (ev.requestBody) {
-      block += `  - req body: \`${ev.requestBody.replace(/\n/g, ' ').slice(0, 400)}\`\n`;
-    }
-    if (respHeaders) {
-      const headerList = Object.entries(respHeaders)
-        .map(([k, v]) => `${k}: ${v}`)
-        .join('; ');
-      block += `  - resp headers: ${headerList}\n`;
-    }
-    if (ev.responseBody && isFailed) {
-      block += `  - resp body: \`${ev.responseBody.replace(/\n/g, ' ').slice(0, 400)}\`\n`;
+        : '-';
+    block += `- ${marker} \`${ev.method} ${ev.url}\` -> ${status}\n`;
+    // Headers are signal on failures, noise on 2xx — drop them for successful
+    // requests entirely. Bodies follow the same rule (we already only show
+    // response bodies for failures; same for request bodies below).
+    if (isFailed) {
+      const reqHeaders = pickRenderHeaders(ev.requestHeaders);
+      const respHeaders = pickRenderHeaders(ev.responseHeaders);
+      if (reqHeaders) {
+        const headerList = Object.entries(reqHeaders)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join('; ');
+        block += `  - req headers: ${headerList}\n`;
+      }
+      if (ev.requestBody) {
+        block += `  - req body: \`${ev.requestBody.replace(/\n/g, ' ').slice(0, 400)}\`\n`;
+      }
+      if (respHeaders) {
+        const headerList = Object.entries(respHeaders)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join('; ');
+        block += `  - resp headers: ${headerList}\n`;
+      }
+      if (ev.responseBody) {
+        block += `  - resp body: \`${ev.responseBody.replace(/\n/g, ' ').slice(0, 400)}\`\n`;
+      }
     }
   }
   if (failed.length === 0) {
-    block += `_No failed requests recorded; the entries above are pre-failure context._\n`;
+    block += `(no failed requests; entries above are pre-failure context)\n`;
   }
   return block;
 }
@@ -585,19 +713,19 @@ function buildEnvironmentBlock(evidence: FailureEvidence | undefined): string {
   const lines: string[] = [];
   if (env.browserName) {
     const channel = env.browserChannel ? ` (${env.browserChannel})` : '';
-    lines.push(`- Browser: **${env.browserName}**${channel}`);
+    lines.push(`- browser: ${env.browserName}${channel}`);
   }
   if (env.viewport) {
-    lines.push(`- Viewport: ${env.viewport.width}×${env.viewport.height}`);
+    lines.push(`- viewport: ${env.viewport.width}x${env.viewport.height}`);
   }
-  if (env.baseURL) lines.push(`- Base URL: ${env.baseURL}`);
-  if (env.locale) lines.push(`- Locale: ${env.locale}`);
-  if (env.timezone) lines.push(`- Timezone: ${env.timezone}`);
-  if (env.userAgent) lines.push(`- User Agent: ${env.userAgent}`);
-  if (env.playwrightVersion) lines.push(`- Playwright: ${env.playwrightVersion}`);
-  if (env.sdkLanguage) lines.push(`- SDK: ${env.sdkLanguage}`);
+  if (env.baseURL) lines.push(`- base_url: ${env.baseURL}`);
+  if (env.locale) lines.push(`- locale: ${env.locale}`);
+  if (env.timezone) lines.push(`- timezone: ${env.timezone}`);
+  if (env.userAgent) lines.push(`- user_agent: ${env.userAgent}`);
+  if (env.playwrightVersion) lines.push(`- playwright: ${env.playwrightVersion}`);
+  if (env.sdkLanguage) lines.push(`- sdk: ${env.sdkLanguage}`);
   if (lines.length === 0) return '';
-  return `## 🧪 Environment\n${lines.join('\n')}`;
+  return `## Environment\n${lines.join('\n')}`;
 }
 
 /** Truncate a single-line summary of an attempt's error message. Strips
@@ -608,11 +736,20 @@ function summarizeAttemptMessage(message: string | undefined, maxChars = 200): s
   return oneLine.length > maxChars ? `${oneLine.substring(0, maxChars)}…` : oneLine;
 }
 
-/**
- * Pull the `## 🔍 Root Cause` paragraph out of a per-test analysis markdown
- * blob. Matches the section header with or without the leading emoji so older
- * analyses (written before the emoji header convention) still parse.
- */
+/** Comparison-stable signature for grouping attempts that failed the same way.
+ *  Mirrors `computeErrorSignature`; kept local so prompts stay self-contained. */
+function normalizeAttemptSignature(message: string | undefined): string {
+  if (!message) return '';
+  return message
+    .replace(/\d+/g, 'N')
+    .replace(/['"`][^'"`]*['"`]/g, 'S')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 500);
+}
+
+/** Pull the "## Root Cause" paragraph from a per-test analysis. Tolerates the
+ *  legacy emoji prefix for older stored analyses. */
 export function extractRootCauseParagraph(markdown: string, fallbackChars = 600): string {
   if (!markdown) return '';
   const rootCauseRe = /^#{1,3}\s*(?:🔍\s*)?Root Cause\b.*$/im;
@@ -633,44 +770,68 @@ export function extractRootCauseParagraph(markdown: string, fallbackChars = 600)
 }
 
 function buildFailureDetailsBlock(failureDetails: FailureDetailsForPrompt): string {
-  let block = `## Test Details\n`;
-  block += `- **Test:** ${failureDetails.testTitle}\n`;
-  block += `- **File:** ${failureDetails.filePath}\n`;
-  if (failureDetails.location) {
-    block += `- **Location:** ${failureDetails.location.file}:${failureDetails.location.line}:${failureDetails.location.column}\n`;
-  }
-  block += `- **Attempt:** ${failureDetails.attempt}\n`;
-  block += `- **Status:** ${failureDetails.status}\n\n`;
+  // Test name / file / location / attempt are covered by the test_metadata
+  // segment + the title prefix in task_instructions; attachments are noise
+  // unless the LLM can actually open them (it can't). The block focuses on
+  // error message + stack trace + attempt timeline.
+  let block = '';
 
-  // Attempt timeline — rendered when the test was retried. Single attempt is
-  // omitted since the headline `## Test Details` block already conveys it.
   if (failureDetails.attempts && failureDetails.attempts.length > 1) {
-    const totalFailed = failureDetails.attempts.filter((a) => a.status !== 'passed').length;
-    const finalAttempt = failureDetails.attempts[failureDetails.attempts.length - 1];
+    const attempts = failureDetails.attempts;
+    const failedAttempts = attempts.filter((a) => a.status !== 'passed');
+    const totalFailed = failedAttempts.length;
+    const finalAttempt = attempts[attempts.length - 1];
     const finalOutcome = finalAttempt.status === 'passed' ? 'eventually passed' : 'never recovered';
-    block += `## Attempt History (${failureDetails.attempts.length} attempts, ${totalFailed} failed, ${finalOutcome})\n`;
-    for (const a of failureDetails.attempts) {
+
+    // Group failed attempts by normalized signature: collapse repeats to
+    // "same as #N", flag divergence in the header.
+    const sigByAttempt = new Map<number, string>();
+    const firstAttemptForSig = new Map<string, number>();
+    for (const a of failedAttempts) {
+      const sig = normalizeAttemptSignature(a.message);
+      sigByAttempt.set(a.attempt, sig);
+      if (sig && !firstAttemptForSig.has(sig)) firstAttemptForSig.set(sig, a.attempt);
+    }
+    const distinctFailureSigs = firstAttemptForSig.size;
+
+    const headerSuffix =
+      totalFailed <= 1
+        ? ''
+        : distinctFailureSigs === 1
+          ? '; all failures share the same signature'
+          : `; ${distinctFailureSigs} distinct signatures across ${totalFailed} failures`;
+
+    block += `## Attempts (n=${attempts.length}, failed=${totalFailed}, ${finalOutcome}${headerSuffix})\n`;
+
+    // When errors diverge, give each distinct error more room so the model
+    // sees what actually changed between attempts. When they're identical,
+    // a tight summary is enough — the first attempt's full message is
+    // already in the canonical ## Error block below.
+    const fullMsgCap = distinctFailureSigs > 1 ? 500 : 200;
+
+    for (const a of attempts) {
       const dur = a.durationMs !== undefined ? ` ${a.durationMs}ms` : '';
-      const summary = a.status === 'passed' ? '' : ` — ${summarizeAttemptMessage(a.message)}`;
-      block += `- **Attempt ${a.attempt}** (${a.status}${dur})${summary}\n`;
+      let detail = '';
+      if (a.status === 'passed') {
+        detail = '';
+      } else {
+        const sig = sigByAttempt.get(a.attempt) ?? '';
+        const firstForSig = sig ? firstAttemptForSig.get(sig) : undefined;
+        if (firstForSig !== undefined && firstForSig !== a.attempt) {
+          detail = ` -- same as #${firstForSig}`;
+        } else {
+          detail = ` -- ${summarizeAttemptMessage(a.message, fullMsgCap)}`;
+        }
+      }
+      block += `- #${a.attempt} (${a.status}${dur})${detail}\n`;
     }
     block += '\n';
   }
 
-  block += `## Error Message\n\`\`\`\n${failureDetails.message}\n\`\`\`\n\n`;
+  block += `## Error\n\`\`\`\n${failureDetails.message}\n\`\`\`\n`;
 
   if (failureDetails.stackTrace) {
-    block += `## Stack Trace\n\`\`\`\n${failureDetails.stackTrace}\n\`\`\`\n\n`;
-  }
-
-  if (failureDetails.attachments && failureDetails.attachments.length > 0) {
-    block += `## Attachments\n`;
-    // Sort by name for deterministic output.
-    const sorted = [...failureDetails.attachments].sort((a, b) => a.name.localeCompare(b.name));
-    for (const att of sorted) {
-      block += `- ${att.name} (${att.contentType})\n`;
-    }
-    block += '\n';
+    block += `\n## Stack\n\`\`\`\n${failureDetails.stackTrace}\n\`\`\`\n`;
   }
 
   return block.trimEnd();
@@ -691,6 +852,13 @@ export interface CustomPromptOverrides {
   project?: string;
 }
 
+export interface PriorInProjectAnalysis {
+  analysis: string;
+  category?: string;
+  model?: string;
+  updatedAt?: string;
+}
+
 export const buildTestFailureSegments = (args: {
   systemPrompt?: string;
   failureDetails: FailureDetailsForPrompt;
@@ -698,10 +866,16 @@ export const buildTestFailureSegments = (args: {
   feedback?: { comment: string; updatedAt: string } | null;
   crossProjectEntries?: CrossProjectEntry[];
   crossProjectTotalCount?: number;
+  /** Most recent completed LLM analysis for this same (testId, fileId, project)
+   *  from any prior run. Rendered as the `prior_in_project_analysis` segment. */
+  priorInProjectAnalysis?: PriorInProjectAnalysis | null;
   overrides?: CustomPromptOverrides;
 }): SegmentedPrompt => {
   const segments: PromptSegment[] = [];
+  const evidence = args.failureDetails.evidence;
 
+  // --- Cacheable prefix: system + task instructions. The output-schema text
+  //     segment is gone — the tool schema object alone binds the response. ---
   segments.push({
     id: 'system_prompt',
     role: 'system',
@@ -713,18 +887,6 @@ export const buildTestFailureSegments = (args: {
     ),
   });
 
-  segments.push({
-    id: 'output_schema',
-    role: 'system',
-    stable: true,
-    content: FAILURE_CATEGORY_SCHEMA,
-  });
-
-  // Task instructions: take the user's override if set, otherwise the built-in
-  // default. BOTH contain {{var}} placeholders and BOTH go through the same
-  // mustache substitution. Unifying the path means custom prompts render
-  // identically to defaults — what users see in "View default" is exactly
-  // what they'd write themselves to get the same result.
   const taskInstructionsTemplate =
     args.overrides?.testAnalysisInstructions ?? TEST_ANALYSIS_TASK_INSTRUCTIONS;
   const taskSub = applyMustache(
@@ -737,8 +899,6 @@ export const buildTestFailureSegments = (args: {
     },
     TEST_ANALYSIS_VARS
   );
-  // When substitution changed text, the rendered content varies per call so the
-  // segment is no longer stable for cache_control purposes.
   segments.push({
     id: 'task_instructions',
     role: 'user',
@@ -746,26 +906,26 @@ export const buildTestFailureSegments = (args: {
     content: taskSub.rendered,
   });
 
-  const envBlock = buildEnvironmentBlock(args.failureDetails.evidence);
+  // --- Run-level context (git commit, CI build, suite/tags/annotations,
+  //     environment). Mostly stable across retries of the same test. ---
+  const runContext = buildRunContextBlock(evidence);
+  if (runContext) {
+    segments.push({ id: 'run_context', role: 'user', stable: false, content: runContext });
+  }
+  const testMetadata = buildTestMetadataBlock(evidence);
+  if (testMetadata) {
+    segments.push({ id: 'test_metadata', role: 'user', stable: false, content: testMetadata });
+  }
+  const envBlock = buildEnvironmentBlock(evidence);
   if (envBlock) {
-    segments.push({
-      id: 'environment',
-      role: 'user',
-      stable: false,
-      content: envBlock,
-    });
+    segments.push({ id: 'environment', role: 'user', stable: false, content: envBlock });
   }
 
+  // --- Historical context (stable per-test). ---
   const history = buildHistoricalContextBlock(args.historicalContext);
   if (history) {
-    segments.push({
-      id: 'historical_context',
-      role: 'user',
-      stable: false,
-      content: history,
-    });
+    segments.push({ id: 'historical_context', role: 'user', stable: false, content: history });
   }
-
   const flakinessBlock = buildFlakinessRationaleBlock(args.historicalContext);
   if (flakinessBlock) {
     segments.push({
@@ -775,7 +935,6 @@ export const buildTestFailureSegments = (args: {
       content: flakinessBlock,
     });
   }
-
   if (args.crossProjectEntries && args.crossProjectEntries.length > 0) {
     segments.push({
       id: 'cross_project_context',
@@ -787,50 +946,68 @@ export const buildTestFailureSegments = (args: {
       ).trim(),
     });
   }
-
-  if (args.feedback) {
+  const priorBlock = buildPriorInProjectAnalysisBlock(args.priorInProjectAnalysis ?? undefined);
+  if (priorBlock) {
     segments.push({
-      id: 'user_feedback',
+      id: 'prior_in_project_analysis',
       role: 'user',
       stable: false,
-      content: buildFeedbackContext(args.feedback).trim(),
+      content: priorBlock,
     });
   }
 
-  const pageSnapshot = buildPageSnapshotBlock(args.failureDetails.evidence);
+  // --- Evidence: code frame + step tree + page snapshot + actions/console/network. ---
+  const stepTreeBlock = buildStepTreeBlock(evidence);
+  if (stepTreeBlock) {
+    segments.push({ id: 'step_tree', role: 'user', stable: false, content: stepTreeBlock });
+  }
+  const sourceFrame = buildTestSourceFrameBlock(evidence);
+  if (sourceFrame) {
+    segments.push({ id: 'test_source_frame', role: 'user', stable: false, content: sourceFrame });
+  }
+  const pageSnapshot = buildPageSnapshotBlock(evidence);
   if (pageSnapshot) {
-    segments.push({
-      id: 'page_snapshot',
-      role: 'user',
-      stable: false,
-      content: pageSnapshot,
-    });
+    segments.push({ id: 'page_snapshot', role: 'user', stable: false, content: pageSnapshot });
   }
-  const recentActions = buildRecentActionsBlock(args.failureDetails.evidence);
+  const recentActions = buildRecentActionsBlock(evidence);
   if (recentActions) {
-    segments.push({
-      id: 'recent_actions',
-      role: 'user',
-      stable: false,
-      content: recentActions,
-    });
+    segments.push({ id: 'recent_actions', role: 'user', stable: false, content: recentActions });
   }
-  const consoleLog = buildConsoleLogBlock(args.failureDetails.evidence);
+  const consoleLog = buildConsoleLogBlock(evidence);
   if (consoleLog) {
-    segments.push({
-      id: 'console_log',
-      role: 'user',
-      stable: false,
-      content: consoleLog,
-    });
+    segments.push({ id: 'console_log', role: 'user', stable: false, content: consoleLog });
   }
-  const networkActivity = buildNetworkActivityBlock(args.failureDetails.evidence);
+  const networkActivity = buildNetworkActivityBlock(evidence);
   if (networkActivity) {
     segments.push({
       id: 'network_activity',
       role: 'user',
       stable: false,
       content: networkActivity,
+    });
+  }
+
+  // --- Captured stdio / local changes. ---
+  const stdout = buildStdoutBlock(evidence);
+  if (stdout) {
+    segments.push({ id: 'stdout', role: 'user', stable: false, content: stdout });
+  }
+  const stderr = buildStderrBlock(evidence);
+  if (stderr) {
+    segments.push({ id: 'stderr', role: 'user', stable: false, content: stderr });
+  }
+  const gitDiff = buildGitDiffBlock(evidence);
+  if (gitDiff) {
+    segments.push({ id: 'git_diff', role: 'user', stable: false, content: gitDiff });
+  }
+
+  // --- Recency-biased tail: user feedback right before the error itself. ---
+  if (args.feedback) {
+    segments.push({
+      id: 'user_feedback',
+      role: 'user',
+      stable: false,
+      content: buildFeedbackContext(args.feedback).trim(),
     });
   }
 
@@ -1413,9 +1590,9 @@ function truncateTail(content: string, maxChars: number): string {
 /**
  * Fit a SegmentedPrompt to `charsBudget` by applying shrink steps in priority
  * order until size <= budget or all steps are exhausted. Stable segments
- * (system_prompt, output_schema, task_instructions) are never touched —
- * they're the cacheable prefix and dropping them would defeat caching for
- * marginal char savings.
+ * (system_prompt, task_instructions) are never touched — they're the
+ * cacheable prefix and dropping them would defeat caching for marginal char
+ * savings.
  */
 export function fitPromptToBudget(prompt: SegmentedPrompt, charsBudget: number): PromptFitResult {
   if (segmentChars(prompt) <= charsBudget) {

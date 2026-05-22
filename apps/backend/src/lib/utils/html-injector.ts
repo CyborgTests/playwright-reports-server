@@ -179,6 +179,19 @@ async function injectClientSideScript(
 
     .llm-retry-btn:hover { opacity: 0.8; }
 
+    .llm-copy-prompt-btn {
+      padding: 4px 10px;
+      font-size: 11px;
+      border: 1px solid var(--llm-btn-border);
+      border-radius: 4px;
+      background: transparent;
+      cursor: pointer;
+      color: var(--llm-btn-text);
+    }
+
+    .llm-copy-prompt-btn:hover:not(:disabled) { opacity: 0.8; }
+    .llm-copy-prompt-btn:disabled { cursor: default; }
+
     #llm-feedback-panel {
       margin: 12px 0;
       border: 1px solid var(--llm-btn-border);

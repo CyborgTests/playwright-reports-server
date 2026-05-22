@@ -465,6 +465,35 @@ export class LlmTasksDatabase {
     this.db.prepare('UPDATE llm_tasks SET prompt = ? WHERE id = ?').run(prompt, id);
   }
 
+  /** Direct lookup by id. Returns null when the id doesn't exist. */
+  public getById(id: string): LlmTaskRow | null {
+    const row = this.db.prepare('SELECT * FROM llm_tasks WHERE id = ?').get(id) as
+      | LlmTaskRow
+      | undefined;
+    return row ?? null;
+  }
+
+  /**
+   * Latest completed `test_analysis` task for (testId, reportId). Backing the
+   * "Copy prompt" button in the in-report widget and the `pwrs-cli test
+   * analysis-prompt` command — both render the exact text we sent on the most
+   * recent run. Returns null when no completed task exists.
+   */
+  public getLatestCompletedTestAnalysisTask(testId: string, reportId: string): LlmTaskRow | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM llm_tasks
+         WHERE type = 'test_analysis'
+           AND status = 'completed'
+           AND testId = ?
+           AND reportId = ?
+         ORDER BY datetime(COALESCE(completedAt, createdAt)) DESC
+         LIMIT 1`
+      )
+      .get(testId, reportId) as LlmTaskRow | undefined;
+    return row ?? null;
+  }
+
   public requeueWithRetryIncrement(id: string): void {
     this.db
       .prepare(

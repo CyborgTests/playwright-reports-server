@@ -13,6 +13,7 @@ import type {
   ReportSummaryTrendContext,
 } from '../llm/prompts/index.js';
 import {
+  type AttemptSummary,
   buildProjectSummarySegments,
   buildReportSummarySegments,
   buildTestFailureSegments,
@@ -24,7 +25,11 @@ import {
   unescapeLiteralNewlines,
 } from '../llm/prompts/index.js';
 import type { SegmentedPrompt } from '../llm/types/index.js';
-import { extractFailureEvidence, stripAnsi } from '../parser/failure-extraction.js';
+import {
+  type FailureEvidence,
+  extractFailureEvidence,
+  stripAnsi,
+} from '../parser/failure-extraction.js';
 import { parseHtmlReport } from '../parser/index.js';
 import { REPORTS_FOLDER } from '../storage/constants.js';
 import { analysisFeedbackDb } from './db/analysisFeedback.sqlite.js';
@@ -194,6 +199,35 @@ function buildRecentHistoryFromRuns(runs: ReturnType<typeof testDb.getTestRuns>)
  * here is silent — environment is optional context. Mutates `details.evidence`
  * in place since we want both call sites to see the enrichment.
  */
+/** Pre-PR evidence rows lack every payload-derived field and may still carry
+ *  the old 4 KB truncation marker — re-extract from the report when detected. */
+function isEvidenceStale(evidence: FailureEvidence | undefined): boolean {
+  if (!evidence) return true;
+  if (
+    typeof evidence.pageSnapshot === 'string' &&
+    evidence.pageSnapshot.endsWith('... (truncated)')
+  ) {
+    return true;
+  }
+  return !(
+    evidence.testSourceFrame ||
+    evidence.stepTree ||
+    evidence.stdout ||
+    evidence.stderr ||
+    evidence.testMeta ||
+    evidence.gitCommit ||
+    evidence.ciBuild ||
+    evidence.gitDiff
+  );
+}
+
+/** Pre-PR extractor wrote `status: result.status ?? 'unknown'` and merged-blob
+ *  reports leave `result.status` empty — every attempt came out 'unknown'. */
+function areAttemptsStale(attempts: AttemptSummary[] | undefined): boolean {
+  if (!attempts || attempts.length === 0) return true;
+  return attempts.every((a) => !a.status || a.status === 'unknown');
+}
+
 async function enrichEnvironmentFromReport(
   details: FailureDetailsForPrompt,
   reportId: string
@@ -416,15 +450,12 @@ class LlmAnalysisQueue {
         return;
       }
 
-      // Stored details often have an empty message in merged reports — enrich from
-      // attachments (error-context, trace) which carry the real error text. Also
-      // enrich the attempt timeline for reports written before that field existed.
-      // Extract-on-read fallback for the structured evidence: rows persisted before
-      // the evidence schema landed have no `evidence` field; we re-extract here so
-      // the LLM prompt sees the same evidence as fresh uploads.
+      // Re-extract from the report when stored details are missing/stale.
+      // Merged reports often leave message/attempts empty; pre-PR rows lack
+      // the payload-derived evidence. Payload cache makes this cheap.
       const needsMessageEnrich = !details.message || details.message.trim() === '';
-      const needsAttemptsEnrich = !details.attempts || details.attempts.length === 0;
-      const needsEvidenceEnrich = !details.evidence;
+      const needsAttemptsEnrich = areAttemptsStale(details.attempts);
+      const needsEvidenceEnrich = !details.evidence || isEvidenceStale(details.evidence);
       if (needsMessageEnrich || needsAttemptsEnrich || needsEvidenceEnrich) {
         const extracted = await this.extractDetailsFromReport(reportId, testId);
         if (extracted?.message && needsMessageEnrich) {
@@ -634,6 +665,7 @@ class LlmAnalysisQueue {
 
     await enrichEnvironmentFromReport(details, reportId);
 
+    const priorPrior = testAnalysisDb.getLatestPriorByTest(testId, fileId, project, reportId);
     const builtPrompt = buildTestFailureSegments({
       failureDetails: details,
       historicalContext: {
@@ -649,6 +681,14 @@ class LlmAnalysisQueue {
       feedback,
       crossProjectEntries,
       crossProjectTotalCount,
+      priorInProjectAnalysis: priorPrior?.analysis
+        ? {
+            analysis: priorPrior.analysis,
+            category: priorPrior.category ?? undefined,
+            model: priorPrior.model ?? undefined,
+            updatedAt: priorPrior.updatedAt ?? priorPrior.createdAt,
+          }
+        : null,
       overrides: promptOverrides,
     });
 
@@ -840,9 +880,13 @@ class LlmAnalysisQueue {
                   ? undefined
                   : (result.message ?? '').replace(/\s+/g, ' ').trim().substring(0, 300) ||
                     undefined;
+              // Merged-blob `report.json` often leaves `result.status` empty on
+              // failed results — fall back to the test-level outcome so the
+              // timeline doesn't render `(unknown)` for every attempt.
+              const resolvedStatus = result.status || test.outcome || 'unknown';
               attempts.push({
                 attempt: i + 1,
-                status: result.status ?? 'unknown',
+                status: resolvedStatus,
                 message: summary,
                 durationMs: typeof result.duration === 'number' ? result.duration : undefined,
               });
@@ -877,9 +921,12 @@ class LlmAnalysisQueue {
           // result. When no failed result exists (e.g. a `flaky` test that
           // eventually passed) fall back to a synthetic outcome shape so the
           // page-snapshot / log readers still get a chance to run.
+          // `testId` is required for the embedded report-payload lookup —
+          // without it the code-frame, step-tree, stdout/stderr, and git/CI
+          // segments stay empty.
           const evidence = await extractFailureEvidence(
             reportId,
-            { title: test.title, outcome: test.outcome },
+            { testId: test.testId, title: test.title, outcome: test.outcome },
             firstFailedResult ?? { status: test.outcome, attachments: allAttachments }
           );
 
@@ -891,7 +938,7 @@ class LlmAnalysisQueue {
             location: test.location,
             attachments: allAttachments,
             attempt: 1,
-            status: test.outcome,
+            status: test.outcome || 'failed',
             attempts: attempts.length > 0 ? attempts : undefined,
             evidence,
           };
@@ -1229,22 +1276,22 @@ export async function buildTestAnalysisRequest(opts: {
     } catch {
       details = null;
     }
-    // Extract-on-read fallback: enrich missing message / attempts / evidence
-    // from the on-disk report so the prompt sees the same shape regardless of
-    // when the row was originally written.
+    // Re-extract from the report when stored details are missing/stale.
+    // Stale = empty message, all-unknown attempts, or evidence missing every
+    // payload-derived field. See isEvidenceStale / areAttemptsStale.
     if (
       details &&
-      (!details.message || !details.attempts || details.attempts.length === 0 || !details.evidence)
+      (!details.message || areAttemptsStale(details.attempts) || isEvidenceStale(details.evidence))
     ) {
       const extracted = await llmAnalysisQueue.extractDetailsFromReport(reportId, testId);
       if (extracted?.message && (!details.message || details.message.trim() === '')) {
         details.message = extracted.message;
         details.stackTrace ??= extracted.stackTrace;
       }
-      if (extracted?.attempts && (!details.attempts || details.attempts.length === 0)) {
+      if (extracted?.attempts && areAttemptsStale(details.attempts)) {
         details.attempts = extracted.attempts;
       }
-      if (extracted?.evidence && !details.evidence) {
+      if (extracted?.evidence && isEvidenceStale(details.evidence)) {
         details.evidence = extracted.evidence;
       }
     }
@@ -1296,6 +1343,7 @@ export async function buildTestAnalysisRequest(opts: {
 
   await enrichEnvironmentFromReport(details, reportId);
 
+  const priorPrior = testAnalysisDb.getLatestPriorByTest(testId, fileId, project, reportId);
   const builtPrompt = buildTestFailureSegments({
     failureDetails: details,
     historicalContext: {
@@ -1311,6 +1359,14 @@ export async function buildTestAnalysisRequest(opts: {
     feedback,
     crossProjectEntries,
     crossProjectTotalCount,
+    priorInProjectAnalysis: priorPrior?.analysis
+      ? {
+          analysis: priorPrior.analysis,
+          category: priorPrior.category ?? undefined,
+          model: priorPrior.model ?? undefined,
+          updatedAt: priorPrior.updatedAt ?? priorPrior.createdAt,
+        }
+      : null,
     overrides: promptOverrides,
   });
 

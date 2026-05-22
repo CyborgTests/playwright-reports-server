@@ -632,6 +632,7 @@ export class TestManagementService {
 
   private async extractFailureDetails(
     test: {
+      testId?: string;
       title: string;
       outcome?: string;
       results?: Array<{
@@ -659,6 +660,9 @@ export class TestManagementService {
 
     // Build the full retry timeline so the LLM can reason about flaky-vs-persistent
     // directly. Single-line message summaries keep this compact even with many retries.
+    // Merged-blob `report.json` often leaves `result.status` empty on failed
+    // results — fall back to the test-level outcome so the timeline doesn't
+    // render `(unknown)` for every attempt.
     const attempts = (test.results ?? []).map((r, idx) => {
       const summary =
         r.status === 'passed'
@@ -666,7 +670,7 @@ export class TestManagementService {
           : (r.message ?? '').replace(/\s+/g, ' ').trim().substring(0, 300) || undefined;
       return {
         attempt: idx + 1,
-        status: r.status ?? 'unknown',
+        status: r.status || test.outcome || 'unknown',
         message: summary,
         durationMs: typeof r.duration === 'number' ? r.duration : undefined,
       };
@@ -683,7 +687,7 @@ export class TestManagementService {
       location: test.location,
       attachments: result.attachments || test.attachments,
       attempt,
-      status: result.status || 'unknown',
+      status: result.status || test.outcome || 'failed',
       attempts: attempts.length > 0 ? attempts : undefined,
       evidence,
     };

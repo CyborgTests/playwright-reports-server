@@ -20,7 +20,9 @@ import { runProjectSummary, runReportSummary } from './commands/summary.js';
 import { runTagList } from './commands/tag.js';
 import {
   runTestAnalysis,
+  runTestAnalysisPrompt,
   runTestBrief,
+  runTestFailureContext,
   runTestFind,
   runTestFromFile,
   runTestHistory,
@@ -54,6 +56,10 @@ const HELP = [
   '  test from-file <path>[:line]           Resolve a spec file → testIds (line narrows by proximity)',
   '  test brief <testId> [--file-id …]      Everything we know about this test',
   '  test analysis <testId>                 Full persisted LLM analysis markdown',
+  '  test failure-context <testId> --report-id <id>',
+  '                                          Current would-be prompt + typed evidence envelope',
+  '  test analysis-prompt <testId> --report-id <id>',
+  '                                          Verbatim prompt from the latest completed analysis task',
   '  test history <testId> [--limit N]      Per-run history + signature rollup',
   '  test search [filters]                  Search tests by tier / status / sort / category',
   "  report latest [--with-failures]        Latest report's brief (compact by default)",
@@ -112,6 +118,14 @@ const GROUP_HELP: Record<string, string> = {
     '      --file-id and --project optional — server resolves from latest test_runs row.',
     '  test analysis <testId> [--file-id <fileId>] [--project <p>]',
     '      Full persisted LLM analysis markdown (unmodified, no regex split).',
+    '  test failure-context <testId> --report-id <id> [--file-id <fileId>] [--project <p>]',
+    '      The prompt the analysis queue would feed the LLM for this test right now,',
+    '      plus a typed evidence envelope (codeframe, step tree, ARIA snapshot,',
+    '      git/CI metadata, console + network events, history). Lets external coding',
+    '      agents pull every signal we have without going through the LLM.',
+    '  test analysis-prompt <testId> --report-id <id> [--file-id <fileId>] [--project <p>] [--task-id <id>]',
+    '      Verbatim prompt from the latest completed test_analysis task (mirrors the',
+    '      in-report "Copy prompt" button). Pass --task-id to address a specific run.',
     '  test history <testId> [--file-id <fileId>] [--project <p>] [--limit N]',
     '      Per-run history + signatureGroups rollup. Default --limit 20, max 50.',
     '  test search [filters]',
@@ -234,6 +248,8 @@ interface CommonOpts {
   strategies?: string;
   minTests?: number;
   withFailures?: boolean;
+  reportId?: string;
+  taskId?: string;
 }
 
 function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonOpts } {
@@ -244,6 +260,8 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
     options: {
       project: { type: 'string' },
       'file-id': { type: 'string' },
+      'report-id': { type: 'string' },
+      'task-id': { type: 'string' },
       limit: { type: 'string' },
       offset: { type: 'string' },
       from: { type: 'string' },
@@ -296,6 +314,8 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
       strategies: str(v.strategies),
       minTests: parseIntOpt(v['min-tests']),
       withFailures: v['with-failures'] === true,
+      reportId: str(v['report-id']),
+      taskId: str(v['task-id']),
     },
   };
 }
@@ -358,6 +378,23 @@ async function dispatch(argv: string[]): Promise<void> {
         return;
       case 'analysis':
         await runTestAnalysis(arg0, { project: opts.project, fileId: opts.fileId });
+        return;
+      case 'failure-context':
+        if (!opts.reportId) throw new Error('--report-id is required for failure-context');
+        await runTestFailureContext(arg0, {
+          project: opts.project,
+          fileId: opts.fileId,
+          reportId: opts.reportId,
+        });
+        return;
+      case 'analysis-prompt':
+        if (!opts.reportId) throw new Error('--report-id is required for analysis-prompt');
+        await runTestAnalysisPrompt(arg0, {
+          project: opts.project,
+          fileId: opts.fileId,
+          reportId: opts.reportId,
+          taskId: opts.taskId,
+        });
         return;
       case 'history':
         await runTestHistory(arg0, {

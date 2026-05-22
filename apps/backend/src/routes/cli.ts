@@ -25,6 +25,7 @@ import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
 import { service } from '../lib/service/index.js';
+import { buildTestAnalysisRequest } from '../lib/service/llmAnalysisQueue.js';
 import { testManagementService } from '../lib/service/testManagement.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
@@ -210,6 +211,140 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
           return reply.status(500).send({ success: false, error: 'Failed to fetch test analysis' });
         }
         return reply.send({ success: true, data: analysis });
+      }
+    );
+
+    // GET /api/cli/test/:fileId/:testId/failure-context?project=&reportId=
+    // Fresh would-be prompt + typed evidence envelope. Same builder the queue
+    // uses. Agents wanting a different layout can render from `evidence`.
+    api.get(
+      '/api/cli/test/:fileId/:testId/failure-context',
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { fileId, testId } = request.params as { fileId: string; testId: string };
+        const { project, reportId } = request.query as { project?: string; reportId?: string };
+        if (!reportId) {
+          return reply
+            .status(400)
+            .send({ success: false, error: 'reportId query parameter is required' });
+        }
+        const resolved = resolveTestIdentity(testId, fileId, project);
+        if (!resolved) {
+          return reply.status(404).send({
+            success: false,
+            error: 'Test not found — pass --file-id and --project, or ensure the testId has a run',
+          });
+        }
+        const { result: built, error } = await withError(
+          buildTestAnalysisRequest({
+            testId: resolved.testId,
+            fileId: resolved.fileId,
+            project: resolved.project,
+            reportId,
+          })
+        );
+        if (error) {
+          fastify.log.error(error);
+          return reply
+            .status(500)
+            .send({ success: false, error: 'Failed to build failure context' });
+        }
+        if (!built) {
+          return reply
+            .status(404)
+            .send({ success: false, error: 'No failure details for this test+report' });
+        }
+        if ('error' in built) {
+          return reply.status(404).send({ success: false, error: built.error });
+        }
+        const evidence = built.details.evidence;
+        const reportRow = reportDb.getByID(reportId);
+        const attachmentUrls = buildAttachmentUrls(reportRow?.reportUrl, built.details.attachments);
+        return reply.send({
+          success: true,
+          data: {
+            markdown: built.debugPrompt,
+            segments: built.segmentedPrompt,
+            heuristicCategory: built.heuristicCategory,
+            attachments: attachmentUrls,
+            evidence: evidence
+              ? {
+                  errorMessage: evidence.errorMessage,
+                  stackTrace: evidence.stackTrace,
+                  testSourceFrame: evidence.testSourceFrame,
+                  stepTree: evidence.stepTree,
+                  pageSnapshot: evidence.pageSnapshot,
+                  stdout: evidence.stdout,
+                  stderr: evidence.stderr,
+                  testMeta: evidence.testMeta,
+                  gitCommit: evidence.gitCommit,
+                  ciBuild: evidence.ciBuild,
+                  gitDiff: evidence.gitDiff,
+                  environment: evidence.environment,
+                  consoleEvents: evidence.consoleEvents,
+                  networkEvents: evidence.networkEvents,
+                  actionLog: evidence.actionLog,
+                }
+              : null,
+            meta: {
+              testId: resolved.testId,
+              fileId: resolved.fileId,
+              project: resolved.project,
+              reportId,
+            },
+          },
+        });
+      }
+    );
+
+    // GET /api/cli/test/:fileId/:testId/analysis-prompt?reportId=...[&taskId=...]
+    // The *historical* prompt: returns the verbatim text we sent on the latest
+    // completed `test_analysis` task for this (testId, reportId). Mirrors the
+    // in-report widget's "Copy prompt" button. 404 when no task exists.
+    api.get(
+      '/api/cli/test/:fileId/:testId/analysis-prompt',
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { fileId, testId } = request.params as { fileId: string; testId: string };
+        const { project, reportId, taskId } = request.query as {
+          project?: string;
+          reportId?: string;
+          taskId?: string;
+        };
+        if (!reportId) {
+          return reply
+            .status(400)
+            .send({ success: false, error: 'reportId query parameter is required' });
+        }
+        const resolved = resolveTestIdentity(testId, fileId, project);
+        if (!resolved) {
+          return reply.status(404).send({ success: false, error: 'Test not found' });
+        }
+        let task = taskId ? llmTasksDb.getById(taskId) : null;
+        if (!task) {
+          task = llmTasksDb.getLatestCompletedTestAnalysisTask(resolved.testId, reportId);
+        }
+        if (!task || !task.prompt) {
+          return reply
+            .status(404)
+            .send({ success: false, error: 'No completed analysis task for this test+report' });
+        }
+        return reply.send({
+          success: true,
+          data: {
+            markdown: task.prompt,
+            taskId: task.id,
+            model: task.model,
+            completedAt: task.completedAt,
+            status: task.status,
+            category: task.category,
+            analysisText: task.result,
+            meta: {
+              testId: resolved.testId,
+              fileId: resolved.fileId,
+              project: resolved.project,
+              reportId,
+            },
+          },
+        });
       }
     );
 

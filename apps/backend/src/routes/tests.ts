@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getDatabase } from '../lib/service/db/db.js';
+import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testManagementService } from '../lib/service/testManagement.js';
 import { withError } from '../lib/withError.js';
@@ -316,6 +317,82 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
             error: 'Failed to fetch test analysis',
           });
         }
+      }
+    );
+
+    // GET /api/test-analysis/:testId/prompt?reportId=...[&refresh=1]
+    // The in-report Copy prompt button always passes refresh=1 and gets a
+    // fresh build via the same shared builder the queue uses. Callers that
+    // omit refresh get the stored llm_tasks.prompt from the latest completed
+    // task (the verbatim text we sent on that run); CLI `analysis-prompt`
+    // uses this path. Response `source` field is `'stored'` or `'fresh'`.
+    fastify.get(
+      '/api/test-analysis/:testId/prompt',
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { testId } = request.params as { testId: string };
+        const { reportId, refresh } = request.query as { reportId?: string; refresh?: string };
+        if (!reportId) {
+          return reply
+            .status(400)
+            .send({ success: false, error: 'reportId query parameter is required' });
+        }
+        // `refresh=1` forces a fresh build, bypassing the stored task. Used by
+        // the "Copy prompt (full)" button so the user always sees the prompt
+        // the queue would build right now (with the latest evidence shape,
+        // the latest history, etc.) — distinct from the verbatim historical
+        // prompt the in-analysis Copy prompt button returns.
+        const forceFresh = refresh === '1' || refresh === 'true';
+        const task = forceFresh
+          ? null
+          : llmTasksDb.getLatestCompletedTestAnalysisTask(testId, reportId);
+        if (task?.prompt) {
+          return reply.send({
+            success: true,
+            data: {
+              prompt: task.prompt,
+              source: 'stored',
+              taskId: task.id,
+              model: task.model,
+              completedAt: task.completedAt,
+            },
+          });
+        }
+
+        // No completed task — build a fresh would-be prompt. Resolve
+        // (fileId, project) from `test_runs` so the shared builder has
+        // everything it needs.
+        const db = getDatabase();
+        const row = db
+          .prepare(
+            `SELECT fileId, project FROM test_runs
+             WHERE testId = ? AND reportId = ?
+             ORDER BY datetime(createdAt) DESC LIMIT 1`
+          )
+          .get(testId, reportId) as { fileId: string; project: string } | undefined;
+        if (!row) {
+          return reply.status(404).send({
+            success: false,
+            error: 'No test run found for this test+report',
+          });
+        }
+        const { buildTestAnalysisRequest } = await import('../lib/service/llmAnalysisQueue.js');
+        const built = await buildTestAnalysisRequest({
+          testId,
+          fileId: row.fileId,
+          project: row.project,
+          reportId,
+        });
+        if ('error' in built) {
+          return reply.status(404).send({ success: false, error: built.error });
+        }
+        return reply.send({
+          success: true,
+          data: {
+            prompt: built.debugPrompt,
+            source: 'fresh',
+            heuristicCategory: built.heuristicCategory,
+          },
+        });
       }
     );
 

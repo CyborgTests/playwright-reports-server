@@ -1,28 +1,21 @@
 /**
- * Shared helpers for extracting Playwright failure context from on-disk reports.
- *
- * Why this exists: the merged-blob `report.json` format frequently leaves
- * `result.message` empty. The actual error text — plus everything the LLM
- * needs for a useful root-cause diagnosis — lives in attachment files:
- *
- *   - `error-context` — markdown DOM snapshot (Playwright's "Copy prompt" source).
- *     Useful for LLM context but doesn't contain the error string itself.
- *   - `trace` — ZIP containing `*.trace` and `*.network` JSONL files. Carries
- *     the structured error entry (canonical error source), console events,
- *     network requests/responses, and the action log.
- *
- * Both the upload-time heuristic (testManagement.processReport) and the LLM
- * analysis queue read this through the same `extractFailureEvidence` entry
- * point so the prompt sees the same evidence regardless of which code path
- * produced it.
+ * Single entry point for extracting Playwright failure context. Source routing:
+ *   - report payload (`report-payload.ts`): error, codeframe, steps, stdio, meta
+ *   - trace ZIP: console, network, action log, environment
+ *   - `error-context` attachment: ARIA page snapshot (read whole)
  */
 import * as fsSync from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import JSZip from 'jszip';
 import { REPORTS_FOLDER } from '../storage/constants.js';
+import {
+  extractFromReportPayload,
+  loadReportPayload,
+  type PerFileStep,
+  type ReportJsonMetadata,
+} from './report-payload.js';
 
-const ERROR_CONTEXT_MAX_CHARS = 4000;
 const ANSI_ESCAPE_RE = /\x1b\[[0-9;]*m/g;
 
 /** Per-message text cap. Console output is often huge (stringified objects,
@@ -69,7 +62,7 @@ interface AttachmentLike {
   path?: string;
 }
 
-export interface ConsoleEvent {
+interface ConsoleEvent {
   /** Normalized level — Playwright emits `messageType` like 'error'|'warning'|'log'|'info'|'debug'|'trace'. */
   level: 'error' | 'warning' | 'log' | 'info' | 'debug' | 'trace';
   text: string;
@@ -78,7 +71,7 @@ export interface ConsoleEvent {
   location?: { url?: string; lineNumber?: number };
 }
 
-export interface NetworkEvent {
+interface NetworkEvent {
   method: string;
   url: string;
   /** HTTP status code when a response was received. Absent on failed/aborted requests. */
@@ -96,9 +89,15 @@ export interface NetworkEvent {
   timestamp?: number;
 }
 
-export interface ActionEvent {
-  /** Action name like 'click', 'fill', 'goto', 'expect.toBeVisible'. */
+interface ActionEvent {
+  /** Action label — prefers the trace's human-readable `title` (e.g.
+   *  "Click getByRole('button', { name: 'Insert' })") and falls back to the
+   *  raw `method`/`apiName` (e.g. 'click', 'goto', 'hook'). */
   action: string;
+  /** Namespace hint from the trace's `class` field — e.g. 'Locator', 'Page',
+   *  'Test'. Helps the prompt distinguish a real user action from a framework
+   *  marker (hook / fixture / test.step). */
+  namespace?: string;
   /** Selector, URL, or other primary parameter — kept compact for the prompt. */
   target?: string;
   startTime?: number;
@@ -107,7 +106,7 @@ export interface ActionEvent {
   error?: string;
 }
 
-export interface EnvironmentContext {
+interface EnvironmentContext {
   /** Engine name: 'chromium' | 'firefox' | 'webkit'. */
   browserName?: string;
   /** Browser channel ('chrome', 'msedge', etc.) when distinct from the engine. */
@@ -125,13 +124,54 @@ export interface EnvironmentContext {
   playwrightVersion?: string;
 }
 
+interface TestMeta {
+  /** Suite hierarchy from `test.path` — e.g. `["Text styles", "Callout"]`. */
+  titlePath?: string[];
+  tags?: string[];
+  annotations?: Array<{ type?: string; description?: string }>;
+}
+
+interface GitCommitInfo {
+  hash?: string;
+  shortHash?: string;
+  branch?: string;
+  subject?: string;
+}
+
+interface CiBuildInfo {
+  buildHref?: string;
+  commitHref?: string;
+  commitHash?: string;
+}
+
 export interface FailureEvidence {
-  /** Canonical error message. Prefers trace's structured error, falls back to
-   *  result.message, finally to a synthetic "Test {outcome}: {title}". */
+  /** Canonical error message. Prefers the report payload's richest error,
+   *  falls back to result.message, finally to a synthetic "Test {outcome}: {title}". */
   errorMessage: string;
   stackTrace?: string;
-  /** DOM snapshot from the `error-context` attachment, truncated to ERROR_CONTEXT_MAX_CHARS. */
+  /** Page ARIA snapshot from the `error-context` attachment. Read whole — no
+   *  truncation, since input budgets are not the bottleneck and snapshots for
+   *  complex pages routinely exceed 4 KB. */
   pageSnapshot?: string;
+  /** ±100-line code frame around the failing line, from the report payload's
+   *  `errors[].codeframe`. ANSI-stripped, line numbers and `>` marker preserved. */
+  testSourceFrame?: string;
+  /** Full nested `result.steps[]` tree from the report payload. The errored
+   *  step carries `error` + `snippet`; the prompt builder walks the tree to
+   *  render the indented step list. */
+  stepTree?: PerFileStep[];
+  /** Joined `result.stdout` array from the report payload. ANSI-stripped. */
+  stdout?: string;
+  /** Joined `result.stderr` array from the report payload. ANSI-stripped. */
+  stderr?: string;
+  /** Suite path, tags, and annotations from the per-file test entry. */
+  testMeta?: TestMeta;
+  /** Git commit metadata from `report.metadata.gitCommit`. */
+  gitCommit?: GitCommitInfo;
+  /** CI build / commit links from `report.metadata.ci`. */
+  ciBuild?: CiBuildInfo;
+  /** `report.metadata.gitDiff` — present when Playwright captured a diff. */
+  gitDiff?: string;
   /** Console events ordered by timestamp — all errors/warnings + last N logs. */
   consoleEvents: ConsoleEvent[];
   /** Network events — all failed/non-2xx + a few successful ones immediately before the failure. */
@@ -145,9 +185,10 @@ export interface FailureEvidence {
 }
 
 /**
- * Synchronously read the `error-context` attachment file (truncated to
- * ERROR_CONTEXT_MAX_CHARS). Returns '' when no such attachment exists or the
- * file is missing/unreadable.
+ * Synchronously read the `error-context` attachment file in full. Returns ''
+ * when no such attachment exists or the file is missing/unreadable. Note: not
+ * truncated — observed prompts run 4–8 k input tokens, well within budget, and
+ * complex-page ARIA snapshots routinely exceed 4 KB.
  */
 function readErrorContextSync(reportId: string, attachments?: AttachmentLike[]): string {
   if (!attachments) return '';
@@ -156,10 +197,7 @@ function readErrorContextSync(reportId: string, attachments?: AttachmentLike[]):
     try {
       const full = path.join(REPORTS_FOLDER, reportId, att.path);
       const raw = fsSync.readFileSync(full, 'utf-8');
-      if (!raw) continue;
-      return raw.length > ERROR_CONTEXT_MAX_CHARS
-        ? `${raw.substring(0, ERROR_CONTEXT_MAX_CHARS)}\n\n... (truncated)`
-        : raw;
+      if (raw) return raw;
     } catch {
       // file may not exist or be unreadable — keep looking
     }
@@ -231,7 +269,6 @@ interface RawCollectors {
   console: ConsoleEvent[];
   network: Map<string, NetworkEvent>;
   actions: ActionEvent[];
-  error?: { message: string; stack: string };
   /** Highest action endTime seen — used as the "failure time" anchor when no
    *  explicit error timestamp is available. */
   lastActionEndTime?: number;
@@ -335,8 +372,16 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
   // 3. Action entries — `before` (start) + `after` (end, sometimes with error).
   //    Modern shape: a single `type:'action'` entry. We carry the latest
   //    end-time-of-an-action so prioritization can use it as the failure anchor.
+  //    Error message + stack are NOT pulled from the trace — those live in
+  //    the report payload (`result.errors[]`), which is the canonical source.
   if (type === 'before' || type === 'action') {
-    const action =
+    // Prefer the human-readable `title` (Playwright trace UI label, e.g.
+    // "Click getByRole('button', { name: 'Insert' })") over raw `method`/
+    // `apiName` (which often resolve to opaque categories like "hook" or
+    // "pw:api"). `class` (Locator / Page / Test) is captured separately as a
+    // namespace hint for the renderer.
+    const title = typeof e.title === 'string' && e.title.trim() ? e.title.trim() : undefined;
+    const method =
       typeof e.method === 'string'
         ? e.method
         : typeof (e.params as { method?: string } | undefined)?.method === 'string'
@@ -344,15 +389,19 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
           : typeof e.apiName === 'string'
             ? e.apiName
             : 'unknown';
+    const klass = typeof e.class === 'string' ? e.class : undefined;
     const selector =
       typeof (e.params as { selector?: string } | undefined)?.selector === 'string'
         ? (e.params as { selector: string }).selector
         : typeof (e.params as { url?: string } | undefined)?.url === 'string'
           ? (e.params as { url: string }).url
-          : undefined;
+          : typeof (e.params as { text?: string } | undefined)?.text === 'string'
+            ? (e.params as { text: string }).text
+            : undefined;
     c.actions.push({
-      action,
+      action: title || method,
       target: selector,
+      namespace: klass,
       startTime: typeof e.startTime === 'number' ? e.startTime : undefined,
       endTime: typeof e.endTime === 'number' ? e.endTime : undefined,
     });
@@ -362,7 +411,8 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
     return;
   }
   if (type === 'after') {
-    // Attach an error to the most recent action when present.
+    // Attach an error to the most recent action when present — used to mark
+    // the errored entry in `actionLog`, not as the canonical error source.
     const errorMsg =
       typeof (e.error as { message?: string } | undefined)?.message === 'string'
         ? (e.error as { message: string }).message
@@ -372,32 +422,6 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
     }
     if (typeof e.endTime === 'number') {
       c.lastActionEndTime = Math.max(c.lastActionEndTime ?? 0, e.endTime);
-    }
-    return;
-  }
-
-  // 4. Top-level error entries — used as the canonical error message + stack.
-  if (type === 'error' && typeof e.message === 'string' && e.message && !c.error) {
-    const stackLines = Array.isArray(e.stack)
-      ? (e.stack as Array<{ file?: string; line?: number; column?: number; function?: string }>)
-          .map(
-            (s) =>
-              `    at ${s.function ? `${s.function} ` : ''}(${s.file ?? ''}:${s.line ?? ''}:${s.column ?? ''})`
-          )
-          .join('\n')
-      : typeof e.stack === 'string'
-        ? e.stack
-        : '';
-    c.error = { message: e.message, stack: stackLines };
-    return;
-  }
-  if (type === 'after' && !c.error) {
-    const err = e.error as { message?: string; stack?: unknown } | undefined;
-    if (err?.message) {
-      c.error = {
-        message: err.message,
-        stack: typeof err.stack === 'string' ? err.stack : '',
-      };
     }
   }
 }
@@ -485,25 +509,44 @@ function prioritizeNetwork(events: NetworkEvent[], anchorTime?: number): Network
   ].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
 }
 
+/** Framework-marker action names that carry no actionable detail. The step
+ *  tree (rendered separately from the report payload) already shows the
+ *  hook/fixture/step hierarchy with proper titles; the trace-derived action
+ *  log doesn't need to repeat them noisily. */
+const ACTION_FRAMEWORK_MARKERS = new Set(['hook', 'fixture', 'test.step']);
+
+function isNoiseAction(a: ActionEvent): boolean {
+  if (a.error) return false;
+  if (a.target) return false;
+  return ACTION_FRAMEWORK_MARKERS.has(a.action.toLowerCase());
+}
+
 function prioritizeActions(actions: ActionEvent[]): ActionEvent[] {
   if (actions.length === 0) return actions;
+  // Drop framework-marker entries (`hook`/`fixture`/`test.step` with no
+  // target and no error) — the step tree already covers them and they add
+  // no diagnostic signal to the action log. Keep them when they DO carry an
+  // error (the errored entry stays so the renderer can mark the failure
+  // point).
+  const filtered = actions.filter((a) => !isNoiseAction(a));
+  if (filtered.length === 0) return filtered;
   // The action that errored (if any) plus the last N actions before it.
-  const erroredIdx = actions.findIndex((a) => !!a.error);
-  if (erroredIdx === -1) return actions.slice(-ACTION_LOG_KEEP);
+  const erroredIdx = filtered.findIndex((a) => !!a.error);
+  if (erroredIdx === -1) return filtered.slice(-ACTION_LOG_KEEP);
   const start = Math.max(0, erroredIdx - ACTION_LOG_KEEP + 1);
-  return actions.slice(start, erroredIdx + 1);
+  return filtered.slice(start, erroredIdx + 1);
 }
 
 /**
- * Read the full evidence payload from a Playwright trace ZIP — error, console,
- * network, action log. Heavyweight (decompresses + walks JSONL); call only
- * for failed-test attempts.
+ * Read console + network + action + environment context from a Playwright
+ * trace ZIP. Heavyweight (decompresses + walks JSONL); call only for failed
+ * attempts. The trace ZIP no longer owns error message / stack — those come
+ * from the report payload.
  */
 async function extractEvidenceFromTrace(
   reportId: string,
   tracePath: string
 ): Promise<{
-  error: { message: string; stack: string } | null;
   consoleEvents: ConsoleEvent[];
   networkEvents: NetworkEvent[];
   actionLog: ActionEvent[];
@@ -515,7 +558,6 @@ async function extractEvidenceFromTrace(
     const zip = await JSZip.loadAsync(zipBuffer);
     const collectors = await collectFromTraceZip(zip);
     return {
-      error: collectors.error ?? null,
       consoleEvents: prioritizeConsole(collectors.console),
       networkEvents: prioritizeNetwork(
         Array.from(collectors.network.values()),
@@ -530,54 +572,132 @@ async function extractEvidenceFromTrace(
   }
 }
 
+function splitMessageAndStack(raw: string): { message: string; stack?: string } {
+  const cleaned = stripAnsi(raw);
+  if (!cleaned) return { message: '' };
+  const stackIndex = cleaned.indexOf('\n    at ');
+  if (stackIndex > 0) {
+    return { message: cleaned.substring(0, stackIndex), stack: cleaned.substring(stackIndex) };
+  }
+  return { message: cleaned };
+}
+
+function metadataToGitCommit(
+  meta: ReportJsonMetadata['gitCommit'] | undefined
+): GitCommitInfo | undefined {
+  if (!meta) return undefined;
+  const info: GitCommitInfo = {
+    hash: meta.hash,
+    shortHash: meta.shortHash,
+    branch: meta.branch,
+    subject: meta.subject,
+  };
+  return Object.values(info).some((v) => typeof v === 'string' && v.length > 0) ? info : undefined;
+}
+
+function metadataToCiBuild(meta: ReportJsonMetadata['ci'] | undefined): CiBuildInfo | undefined {
+  if (!meta) return undefined;
+  const info: CiBuildInfo = {
+    buildHref: meta.buildHref,
+    commitHref: meta.commitHref,
+    commitHash: meta.commitHash,
+  };
+  return Object.values(info).some((v) => typeof v === 'string' && v.length > 0) ? info : undefined;
+}
+
+function buildTestMeta(slice: {
+  test: {
+    path?: string[];
+    tags?: string[];
+    annotations?: Array<{ type?: string; description?: string }>;
+  };
+}): TestMeta | undefined {
+  const titlePath = slice.test.path && slice.test.path.length > 0 ? slice.test.path : undefined;
+  const tags = slice.test.tags && slice.test.tags.length > 0 ? slice.test.tags : undefined;
+  const annotations =
+    slice.test.annotations && slice.test.annotations.length > 0
+      ? slice.test.annotations
+      : undefined;
+  if (!titlePath && !tags && !annotations) return undefined;
+  return { titlePath, tags, annotations };
+}
+
 /**
- * Best-effort full-evidence extraction for one failed test attempt. Combines:
- *   - `result.message` (split into message + stack when concatenated)
- *   - the trace ZIP's structured error entry (canonical when present)
- *   - the `error-context` attachment (DOM snapshot, surfaced as `pageSnapshot`)
- *   - console + network + action events from the trace
+ * Best-effort full-evidence extraction for one failed test attempt. Source
+ * routing:
+ *   - Error message, stack, code frame, step tree, stdout/stderr, test meta,
+ *     git commit, git diff, CI build links → embedded report payload
+ *     (`script#playwrightReportBase64`).
+ *   - Console events, network events, action log, environment → trace ZIP.
+ *   - Page snapshot → `error-context` attachment.
  *
- * `errorMessage` falls back to a synthetic "Test {outcome}: {title}" so
- * signature grouping still works even when no error source is recoverable.
+ * `testId` enables the report-payload lookup; when absent (or the payload is
+ * malformed / missing), all payload-derived fields stay `undefined` and the
+ * builder omits the corresponding segments. `errorMessage` still falls back
+ * to `result.message` → synthetic so signature grouping keeps working.
  */
 export async function extractFailureEvidence(
   reportId: string,
-  test: { title?: string; outcome?: string },
+  test: { testId?: string; title?: string; outcome?: string },
   result: {
     status?: string;
     message?: string;
     attachments?: Array<{ name?: string; path?: string; contentType?: string }>;
   }
 ): Promise<FailureEvidence> {
-  let message = stripAnsi(result.message ?? '');
-  let stackTrace: string | undefined;
+  let testSourceFrame: string | undefined;
+  let stepTree: PerFileStep[] | undefined;
+  let stdoutText: string | undefined;
+  let stderrText: string | undefined;
+  let testMeta: TestMeta | undefined;
+  let gitCommit: GitCommitInfo | undefined;
+  let ciBuild: CiBuildInfo | undefined;
+  let gitDiff: string | undefined;
 
-  // Some Playwright versions concatenate the stack onto the message — split.
-  if (message) {
-    const stackIndex = message.indexOf('\n    at ');
-    if (stackIndex > 0) {
-      stackTrace = message.substring(stackIndex);
-      message = message.substring(0, stackIndex);
+  // 1. Payload-derived fields. The richest error here wins for message/stack
+  //    because the trace no longer owns the canonical error path.
+  let payloadMessage: string | undefined;
+  let payloadStack: string | undefined;
+  if (test.testId) {
+    const payload = await loadReportPayload(reportId);
+    if (payload) {
+      const slice = extractFromReportPayload(payload, test.testId);
+      if (slice) {
+        if (slice.richestError?.message) {
+          payloadMessage = slice.richestError.message;
+          payloadStack = slice.richestError.stack;
+        }
+        testSourceFrame = slice.richestError?.codeframe || undefined;
+        stepTree = slice.steps;
+        stdoutText = slice.stdoutText;
+        stderrText = slice.stderrText;
+        testMeta = buildTestMeta(slice);
+        gitCommit = metadataToGitCommit(slice.metadata.gitCommit);
+        ciBuild = metadataToCiBuild(slice.metadata.ci);
+        gitDiff = slice.metadata.gitDiff;
+      }
     }
   }
 
+  // 2. Error message / stack: payload wins; fall back to result.message
+  //    (split into message + stack when concatenated), finally synthetic.
+  let message = payloadMessage ?? '';
+  let stackTrace = payloadStack;
+  if (!message) {
+    const split = splitMessageAndStack(result.message ?? '');
+    message = split.message;
+    if (!stackTrace) stackTrace = split.stack;
+  }
+
+  // 3. Trace ZIP — console + network + action + environment only.
   let consoleEvents: ConsoleEvent[] = [];
   let networkEvents: NetworkEvent[] = [];
   let actionLog: ActionEvent[] = [];
   let environment: EnvironmentContext | undefined;
-
   const traceAtt = result.attachments?.find((a) => a.name === 'trace' && a.path);
   if (traceAtt?.path) {
     const evidence = await extractEvidenceFromTrace(reportId, traceAtt.path);
     if (evidence) {
-      if (evidence.error?.message) {
-        const cleaned = stripAnsi(evidence.error.message);
-        // Trace beats result.message — merged-blob reports often leave message empty.
-        if (!message || message.length < cleaned.length) {
-          message = cleaned;
-          stackTrace = evidence.error.stack || stackTrace;
-        }
-      }
       consoleEvents = evidence.consoleEvents;
       networkEvents = evidence.networkEvents;
       actionLog = evidence.actionLog;
@@ -595,6 +715,14 @@ export async function extractFailureEvidence(
     errorMessage: message,
     stackTrace,
     pageSnapshot,
+    testSourceFrame,
+    stepTree,
+    stdout: stdoutText,
+    stderr: stderrText,
+    testMeta,
+    gitCommit,
+    ciBuild,
+    gitDiff,
     consoleEvents,
     networkEvents,
     actionLog,

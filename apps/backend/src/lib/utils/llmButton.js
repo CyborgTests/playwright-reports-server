@@ -2,8 +2,14 @@
 const llmEnabled = typeof isLlmEnabled !== 'undefined' ? !!isLlmEnabled : true;
 
 function injectAskLLMButton() {
-  const copyPromptButtons = Array.from(document.querySelectorAll('button')).filter((btn) =>
-    btn.textContent?.includes('Copy prompt')
+  // Only Playwright's native "Copy prompt" button — exclude our own
+  // .llm-copy-prompt-btn (which also contains the text "Copy prompt") so the
+  // injected widget can't pose as the anchor for sibling-button placement.
+  const copyPromptButtons = Array.from(document.querySelectorAll('button')).filter(
+    (btn) =>
+      btn.textContent?.includes('Copy prompt') &&
+      !btn.classList.contains('llm-copy-prompt-btn') &&
+      !btn.classList.contains('llm-copy-prompt-full-btn')
   );
 
   if (!copyPromptButtons.length) {
@@ -42,6 +48,10 @@ function injectAskLLMButton() {
       existingAskBtn.style.display = '';
       document.getElementById('llm-inline-analysis')?.remove();
       document.getElementById('llm-feedback-panel')?.remove();
+      // The previous test's inline-analysis may have hidden the next-to-
+      // Ask-LLM Copy prompt button; bring it back before re-checking, in
+      // case the new test has no analysis yet.
+      setFullCopyBtnVisibility(true);
       checkForPrecomputedAnalysis(currentTestId, copyPromptButton, existingAskBtn);
       // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
       injectFeedbackPanel(currentTestId, reportId, copyPromptButton);
@@ -74,6 +84,22 @@ function injectAskLLMButton() {
 
   copyPromptButton.parentNode?.insertBefore(askBtn, copyPromptButton.nextSibling);
 
+  // "Copy prompt" — visible next to Ask LLM by default; hidden when an
+  // inline analysis renders (the analysis-header sibling button takes over).
+  // Both locations always build fresh.
+  const fullCopyBtn = document.createElement('button');
+  fullCopyBtn.textContent = 'Copy prompt';
+  fullCopyBtn.className = 'button llm-copy-prompt-full-btn';
+  fullCopyBtn.style.marginLeft = '6px';
+  fullCopyBtn.title = 'Copy the LLM prompt that would be sent for this test+report right now.';
+  fullCopyBtn.onclick = () => {
+    const currentTestId = extractTestIdFromCurrentUrl();
+    if (!currentTestId || currentTestId === 'unknown') return;
+    // Always force fresh — this button surfaces the current would-be prompt.
+    copyLLMPromptToClipboard(fullCopyBtn, currentTestId);
+  };
+  askBtn.insertAdjacentElement('afterend', fullCopyBtn);
+
   // Check for pre-computed LLM analysis — if found, show inline and hide Ask LLM button
   const currentTestId = extractTestIdFromCurrentUrl();
   if (currentTestId && currentTestId !== 'unknown') {
@@ -84,6 +110,62 @@ function injectAskLLMButton() {
   }
 
   return true;
+}
+
+/**
+ * Show or hide the "Copy prompt" button that sits next to Ask LLM. Hidden
+ * when an inline analysis is rendered (the in-analysis sibling button takes
+ * over), shown otherwise.
+ */
+function setFullCopyBtnVisibility(visible) {
+  const btn = document.querySelector('.llm-copy-prompt-full-btn');
+  if (btn) btn.style.display = visible ? '' : 'none';
+}
+
+/**
+ * Fetch the prompt for the current (testId, reportId), write it to the
+ * clipboard, and flash a status label on `btn` for 1.5s. Always builds fresh
+ * (passes `refresh=1`) so the user sees the current would-be prompt rather
+ * than whatever was frozen at the last analysis. The historical verbatim
+ * prompt is still reachable via the CLI's analysis-prompt endpoint.
+ */
+async function copyLLMPromptToClipboard(btn, testId) {
+  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+  const rid = typeof reportId !== 'undefined' ? reportId : '';
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+  const restore = (label) => {
+    btn.textContent = label;
+    setTimeout(() => {
+      btn.textContent = originalLabel;
+      btn.disabled = false;
+      btn.style.opacity = '';
+    }, 1500);
+  };
+  try {
+    const r = await fetch(
+      `/api/test-analysis/${encodeURIComponent(testId)}/prompt?reportId=${encodeURIComponent(rid)}&refresh=1`
+    );
+    if (r.status === 404) {
+      restore('Not available');
+      return;
+    }
+    if (!r.ok) {
+      restore('Copy failed');
+      return;
+    }
+    const payload = await r.json();
+    const prompt = payload?.data?.prompt;
+    if (!prompt) {
+      restore('Not available');
+      return;
+    }
+    await navigator.clipboard.writeText(prompt);
+    restore('Copied');
+  } catch {
+    restore('Copy failed');
+  }
 }
 
 function extractTestIdFromCurrentUrl() {
@@ -261,7 +343,7 @@ function openTaskProgressModal({
       .then((payload) => {
         if (payload?.success && payload.data?.analysis) {
           if (modal) modal.style.display = 'none';
-          renderInlineAnalysis(payload.data, copyPromptButton, askBtn);
+          renderInlineAnalysis(payload.data, copyPromptButton, askBtn, testId);
         } else {
           renderModalError(content, 'Analysis completed but the result was empty.');
         }
@@ -318,7 +400,7 @@ function openTaskProgressModal({
           .then((payload) => {
             if (payload?.success && payload.data?.analysis) {
               if (modal) modal.style.display = 'none';
-              renderInlineAnalysis(payload.data, copyPromptButton, askBtn);
+              renderInlineAnalysis(payload.data, copyPromptButton, askBtn, testId);
               cleanup();
             }
           })
@@ -562,7 +644,7 @@ function checkForPrecomputedAnalysis(testId, copyPromptButton, askBtn) {
     })
     .then((data) => {
       if (data?.success && data?.data?.analysis) {
-        renderInlineAnalysis(data.data, copyPromptButton, askBtn);
+        renderInlineAnalysis(data.data, copyPromptButton, askBtn, testId);
       } else if (data?.success && data?.pending && llmEnabled) {
         // Analysis is queued or processing — show a loading widget and poll until done.
         renderLoadingAnalysis(testId, rid, copyPromptButton, askBtn);
@@ -589,6 +671,10 @@ function renderLoadingAnalysis(testId, rid, copyPromptButton, askBtn) {
 
 function renderLoadingInto(testId, rid, copyPromptButton, askBtn, errorsSection) {
   if (askBtn) askBtn.style.display = 'none';
+  // The loading widget owns the on-screen affordance for inspecting state
+  // while the analysis runs; hide the next-to-Ask-LLM Copy prompt button so
+  // we don't show two prompt entry points at once.
+  setFullCopyBtnVisibility(false);
 
   const section = document.createElement('div');
   section.id = 'llm-inline-analysis';
@@ -639,15 +725,17 @@ function renderLoadingInto(testId, rid, copyPromptButton, askBtn, errorsSection)
       .then((data) => {
         if (data?.success && data?.data?.analysis) {
           section.remove();
-          renderInlineAnalysis(data.data, copyPromptButton, askBtn);
+          renderInlineAnalysis(data.data, copyPromptButton, askBtn, testId);
         } else {
           // Task settled without producing an analysis (cancelled/failed).
           section.remove();
+          setFullCopyBtnVisibility(true);
           if (askBtn) askBtn.style.display = '';
         }
       })
       .catch(() => {
         section.remove();
+        setFullCopyBtnVisibility(true);
         if (askBtn) askBtn.style.display = '';
       });
   };
@@ -689,7 +777,7 @@ function renderLoadingInto(testId, rid, copyPromptButton, askBtn, errorsSection)
         .then((data) => {
           if (data?.success && data?.data?.analysis) {
             section.remove();
-            renderInlineAnalysis(data.data, copyPromptButton, askBtn);
+            renderInlineAnalysis(data.data, copyPromptButton, askBtn, testId);
             return;
           }
           if (data?.success && data?.pending && attempts < MAX_ATTEMPTS) {
@@ -697,6 +785,7 @@ function renderLoadingInto(testId, rid, copyPromptButton, askBtn, errorsSection)
             return;
           }
           section.remove();
+          setFullCopyBtnVisibility(true);
           if (askBtn) askBtn.style.display = '';
         })
         .catch(() => {
@@ -712,7 +801,7 @@ function renderLoadingInto(testId, rid, copyPromptButton, askBtn, errorsSection)
     .then((data) => {
       if (data?.success && data?.data?.analysis) {
         section.remove();
-        renderInlineAnalysis(data.data, copyPromptButton, askBtn);
+        renderInlineAnalysis(data.data, copyPromptButton, askBtn, testId);
         return;
       }
       if (data?.success && data?.pending?.taskId) {
@@ -779,7 +868,7 @@ function whenErrorsSectionReady(copyPromptButton, cb, timeoutMs = 2000) {
   setTimeout(() => obs.disconnect(), timeoutMs + 100);
 }
 
-function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
+function renderInlineAnalysis(analysisData, copyPromptButton, askBtn, testIdOverride) {
   // Remove any existing inline analysis
   const existing = document.getElementById('llm-inline-analysis');
   if (existing) existing.remove();
@@ -821,6 +910,18 @@ function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
       : '';
 
     const retryBtnHtml = llmEnabled ? '<button class="llm-retry-btn">Retry</button>' : '';
+    // Skip when we don't have a testId or when this row is a clone from a
+    // prior run (reused analyses sit next to the original; their prompt belongs
+    // to that other run, not this one).
+    const resolvedTestId =
+      testIdOverride ||
+      analysisData.testId ||
+      (copyPromptButton && copyPromptButton.dataset && copyPromptButton.dataset.testId) ||
+      '';
+    const copyPromptBtnHtml =
+      resolvedTestId && !analysisData.reusedFromAnalysisId
+        ? '<button class="llm-copy-prompt-btn" title="Copy the LLM prompt for this test">Copy prompt</button>'
+        : '';
 
     const section = document.createElement('div');
     section.id = 'llm-inline-analysis';
@@ -832,7 +933,10 @@ function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
           ${reusedBadge}
           <span class="llm-model">${analysisData.model || ''}</span>
         </div>
-        ${retryBtnHtml}
+        <div style="display: flex; align-items: center; gap: 6px;">
+          ${copyPromptBtnHtml}
+          ${retryBtnHtml}
+        </div>
       </div>
       <div class="llm-inline-body">
         ${markdownToHtml(analysisData.analysis)}
@@ -841,17 +945,38 @@ function renderInlineAnalysis(analysisData, copyPromptButton, askBtn) {
 
     // Insert above the errors section
     errorsSection.parentNode.insertBefore(section, errorsSection);
+    // Hide the sibling "Copy prompt" button next to Ask LLM — the analysis
+    // header owns that affordance while an analysis is rendered.
+    setFullCopyBtnVisibility(false);
+    // A fresh analysis just landed — re-evaluate the "feedback not in latest
+    // analysis" chip on the feedback panel. After Regenerate, the new
+    // analysisData.updatedAt is later than feedback.updatedAt, so the chip
+    // should hide. We compare against feedback fetched fresh from the server.
+    if (resolvedTestId) {
+      // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+      const rid = typeof reportId !== 'undefined' ? reportId : '';
+      refreshFeedbackStaleIndicator(resolvedTestId, rid);
+    }
 
     // Retry button re-triggers Ask LLM flow
     const retryBtn = section.querySelector('.llm-retry-btn');
     if (retryBtn) {
       retryBtn.onclick = () => {
         section.remove();
+        setFullCopyBtnVisibility(true);
         if (askBtn) {
           askBtn.style.display = '';
           askBtn.click();
         }
       };
+    }
+
+    // In-analysis Copy prompt — same fresh-build behavior as the
+    // next-to-Ask-LLM sibling. CLI `analysis-prompt` is the path for the
+    // verbatim historical prompt.
+    const copyPromptBtn = section.querySelector('.llm-copy-prompt-btn');
+    if (copyPromptBtn) {
+      copyPromptBtn.onclick = () => copyLLMPromptToClipboard(copyPromptBtn, resolvedTestId);
     }
   });
 }
@@ -1122,7 +1247,6 @@ function renderFeedbackPanel({
   const deleteBtn = panel.querySelector('.llm-feedback-delete');
   const regenBtn = panel.querySelector('.llm-feedback-regenerate');
   const statusEl = panel.querySelector('.llm-feedback-status');
-  const staleEl = panel.querySelector('.llm-feedback-stale');
   const cascadeCheckbox = panel.querySelector('.llm-feedback-cascade');
 
   textarea.value = draftSnapshot ?? feedback?.comment ?? '';
@@ -1220,20 +1344,39 @@ function renderFeedbackPanel({
     });
   };
 
-  // Resolve stale indicator: compare feedback.updatedAt with the persisted analysis updatedAt.
-  if (feedback) {
+  // Resolve stale indicator on initial render.
+  refreshFeedbackStaleIndicator(testId, rid);
+}
+
+/**
+ * Refresh the "⚠ Latest feedback not included in analysis" chip on the
+ * feedback panel. The chip is sticky from the initial render; this function
+ * re-fetches the latest analysis timestamp and toggles the chip, so a fresh
+ * Regenerate/Retry cycle clears the warning as soon as the new analysis
+ * lands. Safe to call when no panel exists — no-op in that case.
+ */
+async function refreshFeedbackStaleIndicator(testId, rid) {
+  const panel = document.getElementById('llm-feedback-panel');
+  if (!panel) return;
+  const staleEl = panel.querySelector('.llm-feedback-stale');
+  if (!staleEl) return;
+
+  const [feedback, analysis] = await Promise.all([
+    fetchFeedback(testId, rid),
     fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        const analysisAt = data?.data?.updatedAt || data?.data?.createdAt;
-        if (analysisAt && new Date(feedback.updatedAt).getTime() > new Date(analysisAt).getTime()) {
-          staleEl.removeAttribute('hidden');
-        }
-      })
-      .catch(() => {
-        // ignore — stale indicator is best-effort
-      });
-  }
+      .catch(() => null),
+  ]);
+
+  const feedbackAt = feedback?.updatedAt ? new Date(feedback.updatedAt).getTime() : 0;
+  const analysisAt = (() => {
+    const t = analysis?.data?.updatedAt || analysis?.data?.createdAt;
+    return t ? new Date(t).getTime() : 0;
+  })();
+
+  const stale = feedbackAt > 0 && analysisAt > 0 && feedbackAt > analysisAt;
+  if (stale) staleEl.removeAttribute('hidden');
+  else staleEl.setAttribute('hidden', '');
 }
 
 let llmButtonRetryCount = 0;
@@ -1286,8 +1429,9 @@ globalThis.addEventListener?.('hashchange', () => {
       // sibling Ask LLM button, or (b) an Ask LLM button exists but the inline
       // analysis is missing for the current testId. Avoids work on unrelated
       // mutations (e.g., the modal opening, our own DOM inserts).
-      const copyPromptBtns = Array.from(document.querySelectorAll('button')).filter((b) =>
-        b.textContent?.includes('Copy prompt')
+      const copyPromptBtns = Array.from(document.querySelectorAll('button')).filter(
+        (b) =>
+          b.textContent?.includes('Copy prompt') && !b.classList.contains('llm-copy-prompt-btn')
       );
       if (copyPromptBtns.length === 0) return;
       const btn = copyPromptBtns[0];
