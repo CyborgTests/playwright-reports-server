@@ -99,6 +99,48 @@ export interface ProjectAnalysisStructured {
   latestReportId?: string;
 }
 
+export type ReportAnalysisVerdict = 'isolated' | 'clustered' | 'widespread' | 'systemic';
+
+export type ReportAnalysisImpact = 'high' | 'medium' | 'low';
+
+export interface ReportAnalysisCodeRef {
+  /** Discriminator: 'test' links to /test/:fileId/:testId; 'file' opens the report viewer. */
+  kind: 'test' | 'file';
+  /** Display label (e.g., test title or file path). */
+  label: string;
+  /** Required when kind='test'. */
+  testId?: string;
+  /** Required when kind='test'; optional when kind='file'. */
+  fileId?: string;
+  /** Required when kind='file'; optional when kind='test'. */
+  filePath?: string;
+  /** Project the test/file belongs to. Injected server-side from the report's
+   *  project so the UI can build the `?project=…` query the test detail page
+   *  uses to scope its lookup. Not asked of the model. */
+  project?: string;
+  /** Optional 1-based line number. */
+  line?: number;
+}
+
+export interface ReportAnalysisSection {
+  heading: string;
+  /** Markdown body. */
+  body: string;
+  /** Optional severity tag rendered as a pill next to the heading. */
+  impact?: ReportAnalysisImpact;
+  /** Code references mentioned in this section. */
+  codeRefs?: ReportAnalysisCodeRef[];
+}
+
+export interface ReportAnalysisStructured {
+  verdict: ReportAnalysisVerdict;
+  /** 1–3 sentence executive summary shown above the fold. */
+  summary: string;
+  sections: ReportAnalysisSection[];
+  /** Report ID this analysis belongs to — used by the UI to scope codeRefs. */
+  reportId?: string;
+}
+
 export type LlmTaskType = 'test_analysis' | 'report_summary' | 'project_summary';
 export type LlmTaskStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
@@ -159,6 +201,11 @@ export interface ReportFailureSummary {
   totalFailures: number;
   categories: Record<string, number>;
   llmSummary?: string;
+  /** Structured LLM analysis (verdict + sections + codeRefs). Null when the
+   *  text-parse fallback couldn't recover structure from a plain-markdown
+   *  response — the UI falls back to rendering `llmSummary` as markdown. */
+  llmSummaryStructured?: ReportAnalysisStructured | null;
+  llmModel?: string | null;
   createdAt: string;
   updatedAt?: string;
 }

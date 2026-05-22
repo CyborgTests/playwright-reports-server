@@ -4,7 +4,6 @@ import {
   DEFAULT_SYSTEM_PROMPT,
   PROJECT_SUMMARY_SYSTEM_PROMPT,
   PROJECT_SUMMARY_TASK_INSTRUCTIONS,
-  REPORT_SUMMARY_SYSTEM_PROMPT,
   REPORT_SUMMARY_TASK_INSTRUCTIONS,
   TEST_ANALYSIS_SYSTEM_PROMPT,
   TEST_ANALYSIS_TASK_INSTRUCTIONS,
@@ -414,10 +413,6 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
           content: TEST_ANALYSIS_SYSTEM_PROMPT,
           vars: [],
         },
-        reportSummarySystemPrompt: {
-          content: REPORT_SUMMARY_SYSTEM_PROMPT,
-          vars: [],
-        },
         projectSummarySystemPrompt: {
           content: PROJECT_SUMMARY_SYSTEM_PROMPT,
           vars: [],
@@ -426,7 +421,10 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
           content: TEST_ANALYSIS_TASK_INSTRUCTIONS,
           vars: ['project', 'testTitle', 'filePath', 'errorCategory'],
         },
-        reportSummaryInstructions: {
+        // Combined override for the report-summary task. The system message
+        // is built-in and not user-overridable; this slot covers the entire
+        // user-facing instruction template.
+        reportSummaryPrompt: {
           content: REPORT_SUMMARY_TASK_INSTRUCTIONS,
           vars: ['reportId', 'project', 'totalFailures'],
         },

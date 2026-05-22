@@ -1,3 +1,4 @@
+import type { ReportAnalysisStructured } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import { getDatabase } from './db.js';
 
@@ -12,6 +13,9 @@ export interface FailureSummaryRow {
   totalFailures: number;
   categories: Record<string, number>;
   llmSummary: string | null;
+  /** Parsed structured analysis. Null when the worker couldn't recover
+   *  structure (text-only LLM response that the parser couldn't coerce). */
+  llmSummaryStructured: ReportAnalysisStructured | null;
   llmModel: string | null;
   createdAt: string;
   updatedAt: string | null;
@@ -23,6 +27,7 @@ interface FailureSummaryDbRow {
   totalFailures: number;
   categories: string;
   llmSummary: string | null;
+  llmSummaryStructured: string | null;
   llmModel: string | null;
   createdAt: string;
   updatedAt: string | null;
@@ -34,7 +39,7 @@ export class FailureSummaryDatabase {
   private readonly upsertStmt: Database.Statement<[string, string, number, string, string]>;
   private readonly getStmt: Database.Statement<[string]>;
   private readonly updateLlmSummaryStmt: Database.Statement<
-    [string, string | null, string, string]
+    [string, string | null, string | null, string, string]
   >;
   private readonly deleteStmt: Database.Statement<[string]>;
 
@@ -49,7 +54,9 @@ export class FailureSummaryDatabase {
     `);
 
     this.updateLlmSummaryStmt = this.db.prepare(`
-      UPDATE report_failure_summaries SET llmSummary = ?, llmModel = ?, updatedAt = ? WHERE reportId = ?
+      UPDATE report_failure_summaries
+      SET llmSummary = ?, llmSummaryStructured = ?, llmModel = ?, updatedAt = ?
+      WHERE reportId = ?
     `);
 
     this.deleteStmt = this.db.prepare(`
@@ -63,9 +70,24 @@ export class FailureSummaryDatabase {
   }
 
   private parseRow(row: FailureSummaryDbRow): FailureSummaryRow {
+    let structured: ReportAnalysisStructured | null = null;
+    if (row.llmSummaryStructured) {
+      try {
+        structured = JSON.parse(row.llmSummaryStructured) as ReportAnalysisStructured;
+      } catch {
+        structured = null;
+      }
+    }
     return {
-      ...row,
+      reportId: row.reportId,
+      project: row.project,
+      totalFailures: row.totalFailures,
       categories: JSON.parse(row.categories) as Record<string, number>,
+      llmSummary: row.llmSummary,
+      llmSummaryStructured: structured,
+      llmModel: row.llmModel,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     };
   }
 
@@ -85,9 +107,20 @@ export class FailureSummaryDatabase {
     return this.parseRow(row);
   }
 
-  public updateLlmSummary(reportId: string, llmSummary: string, llmModel?: string | null): void {
+  public updateLlmSummary(
+    reportId: string,
+    llmSummary: string,
+    structured: ReportAnalysisStructured | null,
+    llmModel?: string | null
+  ): void {
     const now = new Date().toISOString();
-    this.updateLlmSummaryStmt.run(llmSummary, llmModel ?? null, now, reportId);
+    this.updateLlmSummaryStmt.run(
+      llmSummary,
+      structured ? JSON.stringify(structured) : null,
+      llmModel ?? null,
+      now,
+      reportId
+    );
   }
 
   /**

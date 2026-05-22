@@ -117,10 +117,9 @@ interface ConfigFormData {
   llmMultimodalMode?: string;
   llmCustomSystemPrompt?: string;
   llmCustomTestAnalysisSystemPrompt?: string;
-  llmCustomReportSummarySystemPrompt?: string;
   llmCustomProjectSummarySystemPrompt?: string;
   llmCustomTestAnalysisInstructions?: string;
-  llmCustomReportSummaryInstructions?: string;
+  llmCustomReportSummaryPrompt?: string;
   llmCustomProjectSummaryInstructions?: string;
   testManagementQuarantineThresholdPercentage?: string;
   testManagementWarningThresholdPercentage?: string;
@@ -476,10 +475,6 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           config.llm.customTestAnalysisSystemPrompt =
             formData.llmCustomTestAnalysisSystemPrompt || undefined;
         }
-        if (formData.llmCustomReportSummarySystemPrompt !== undefined) {
-          config.llm.customReportSummarySystemPrompt =
-            formData.llmCustomReportSummarySystemPrompt || undefined;
-        }
         if (formData.llmCustomProjectSummarySystemPrompt !== undefined) {
           config.llm.customProjectSummarySystemPrompt =
             formData.llmCustomProjectSummarySystemPrompt || undefined;
@@ -488,9 +483,8 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           config.llm.customTestAnalysisInstructions =
             formData.llmCustomTestAnalysisInstructions || undefined;
         }
-        if (formData.llmCustomReportSummaryInstructions !== undefined) {
-          config.llm.customReportSummaryInstructions =
-            formData.llmCustomReportSummaryInstructions || undefined;
+        if (formData.llmCustomReportSummaryPrompt !== undefined) {
+          config.llm.customReportSummaryPrompt = formData.llmCustomReportSummaryPrompt || undefined;
         }
         if (formData.llmCustomProjectSummaryInstructions !== undefined) {
           config.llm.customProjectSummaryInstructions =

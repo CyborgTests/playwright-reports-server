@@ -79,7 +79,35 @@ function dropColumnIfExists(db: Database.Database, table: string, column: string
   }
 }
 
+/** One-shot migration marks. The table is a tiny key/value store of
+ *  migration identifiers that have already been applied on this DB. Use it
+ *  for one-time data migrations (e.g., cache wipes) that should not run on
+ *  every server start. */
+function ensureMigrationMarks(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migration_marks (
+      mark TEXT PRIMARY KEY,
+      appliedAt TEXT NOT NULL
+    );
+  `);
+}
+
+function hasMigrationMark(db: Database.Database, mark: string): boolean {
+  const row = db.prepare('SELECT 1 FROM schema_migration_marks WHERE mark = ?').get(mark) as
+    | { 1: number }
+    | undefined;
+  return !!row;
+}
+
+function setMigrationMark(db: Database.Database, mark: string): void {
+  db.prepare('INSERT OR IGNORE INTO schema_migration_marks (mark, appliedAt) VALUES (?, ?)').run(
+    mark,
+    new Date().toISOString()
+  );
+}
+
 function initializeSchema(db: Database.Database): void {
+  ensureMigrationMarks(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS results (
       resultID TEXT PRIMARY KEY,
@@ -243,6 +271,26 @@ function initializeSchema(db: Database.Database): void {
   `);
   addColumnIfMissing(db, 'report_failure_summaries', 'llmModel', 'TEXT');
   dropColumnIfExists(db, 'report_failure_summaries', 'errorGroups');
+  // Phase 1: structured output for report-level analysis. The column holds
+  // the JSON-encoded ReportAnalysisStructured; the legacy llmSummary column
+  // keeps a rendered-markdown fallback so older clients keep working.
+  addColumnIfMissing(db, 'report_failure_summaries', 'llmSummaryStructured', 'TEXT');
+  // One-shot cache wipe: prior summaries were unstructured markdown with the
+  // old three-section emoji format. Wipe them so users see the new structured
+  // UI on next view; per-report re-summarize triggers a fresh LLM call.
+  if (!hasMigrationMark(db, 'rfs_structured_v1')) {
+    db.exec('DELETE FROM report_failure_summaries');
+    setMigrationMark(db, 'rfs_structured_v1');
+  }
+  // Second wipe: cluster-shaped prompt + verdict semantics changed (flakes
+  // excluded from failure counts, CI/trend tags added). Existing structured
+  // payloads were written against the pre-cluster prompt and don't carry
+  // the project-on-codeRefs fix from the same release. Wipe so users see
+  // fresh analyses with the new shape on next view.
+  if (!hasMigrationMark(db, 'rfs_clusters_v2')) {
+    db.exec('DELETE FROM report_failure_summaries');
+    setMigrationMark(db, 'rfs_clusters_v2');
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS test_llm_analyses (

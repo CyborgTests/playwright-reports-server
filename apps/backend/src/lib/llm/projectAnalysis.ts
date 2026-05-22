@@ -4,6 +4,11 @@ import type {
   ProjectAnalysisStructured,
   ProjectAnalysisVerdict,
 } from '@playwright-reports/shared';
+import {
+  firstSentence,
+  parseMarkdownSections,
+  tryParseJsonAsStructured,
+} from './structured-analysis-utils.js';
 
 const VERDICTS: readonly ProjectAnalysisVerdict[] = [
   'healthy',
@@ -62,34 +67,17 @@ export function parseProjectAnalysisStructured(raw: unknown): ProjectAnalysisStr
 
 /**
  * Last-resort fallback when the provider returns plain text instead of
- * structured JSON. Strategies, in order:
- *
- *   1. Parse fenced JSON blocks or raw JSON.
- *   2. Parse a markdown document with `## Heading` sections — produces a
- *      structured payload by inferring verdict from keywords and treating
- *      each top-level heading as a section.
- *
- * Returns null only when none of these strategies recover usable content;
- * callers then surface the raw markdown via the legacy `summary` field.
+ * structured JSON. Tries fenced/raw JSON first, then falls back to parsing
+ * markdown `## Heading` sections with a heuristic verdict inferred from
+ * keywords. Returns null only when nothing usable could be recovered.
  */
 export function parseProjectAnalysisFromText(text: string): ProjectAnalysisStructured | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
-  // 1. JSON: fenced or raw.
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidates = [fenced?.[1], trimmed].filter((c): c is string => typeof c === 'string');
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate);
-      const structured = parseProjectAnalysisStructured(parsed);
-      if (structured) return structured;
-    } catch {
-      // ignore — try next
-    }
-  }
+  const fromJson = tryParseJsonAsStructured(trimmed, parseProjectAnalysisStructured);
+  if (fromJson) return fromJson;
 
-  // 2. Markdown headings.
   return parseProjectAnalysisFromMarkdown(trimmed);
 }
 
@@ -122,69 +110,24 @@ function inferVerdictFromText(text: string): ProjectAnalysisVerdict {
   return 'degrading';
 }
 
-const HEADING_RE = /^#{1,3}\s+(.+?)\s*$/;
-
-/**
- * Parse a markdown blob into a structured analysis by treating each top-level
- * heading as a section. Heading text is stripped of leading emoji/numbering
- * so `## 🔍 Health Assessment` and `## Health Assessment` produce the same
- * `heading` field — matches what the new prompt asks for and keeps legacy
- * outputs renderable.
- */
 function parseProjectAnalysisFromMarkdown(text: string): ProjectAnalysisStructured | null {
-  const lines = text.split('\n');
-  type Buf = { heading: string; bodyLines: string[] };
-  const sections: Buf[] = [];
-  let current: Buf | null = null;
-  let preamble = '';
-  for (const line of lines) {
-    const m = line.match(HEADING_RE);
-    if (m) {
-      if (current) sections.push(current);
-      const heading = m[1]
-        .replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s\d.)]+/u, '')
-        .trim();
-      current = { heading: heading || m[1].trim(), bodyLines: [] };
-    } else if (current) {
-      current.bodyLines.push(line);
-    } else {
-      preamble += `${line}\n`;
-    }
-  }
-  if (current) sections.push(current);
+  const { preamble, sections } = parseMarkdownSections(text);
 
-  const cleaned = sections
-    .map((s): ProjectAnalysisSection | null => {
-      const body = s.bodyLines.join('\n').trim();
-      if (!body) return null;
-      return { heading: s.heading, body };
-    })
-    .filter((s): s is ProjectAnalysisSection => s !== null);
-
-  // If no headings at all, treat the whole blob as a single section.
-  if (cleaned.length === 0) {
-    const body = preamble.trim();
-    if (!body) return null;
+  if (sections.length === 0) {
+    if (!preamble) return null;
     return {
-      verdict: inferVerdictFromText(body),
-      summary: firstSentence(body),
-      sections: [{ heading: 'Analysis', body }],
+      verdict: inferVerdictFromText(preamble),
+      summary: firstSentence(preamble),
+      sections: [{ heading: 'Analysis', body: preamble }],
     };
   }
 
-  const summary = preamble.trim() || firstSentence(cleaned[0].body);
+  const summary = preamble || firstSentence(sections[0].body);
   return {
     verdict: inferVerdictFromText(text),
-    summary: summary || cleaned[0].heading,
-    sections: cleaned,
+    summary: summary || sections[0].heading,
+    sections,
   };
-}
-
-function firstSentence(text: string): string {
-  const stripped = text.replace(/\s+/g, ' ').trim();
-  const match = stripped.match(/^(.+?[.!?])(\s|$)/);
-  if (match) return match[1];
-  return stripped.length > 280 ? `${stripped.slice(0, 277)}…` : stripped;
 }
 
 /**

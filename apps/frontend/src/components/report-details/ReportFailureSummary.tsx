@@ -1,3 +1,4 @@
+import type { ReportAnalysisStructured } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Brain, RefreshCw } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
@@ -10,6 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useConfig } from '@/hooks/useConfig';
 import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
+import { ReportAnalysisRenderer, ReportVerdictBadge } from './ReportAnalysisRenderer';
 
 interface ReportFailureSummaryProps {
   reportId: string;
@@ -21,6 +23,7 @@ interface FailureSummary {
   totalFailures: number;
   categories: Record<string, number>;
   llmSummary: string | null;
+  llmSummaryStructured: ReportAnalysisStructured | null;
   llmModel: string | null;
   createdAt: string;
   updatedAt: string | null;
@@ -157,6 +160,9 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
             <Badge variant="destructive" className="ml-1">
               {summary.totalFailures} {summary.totalFailures === 1 ? 'failure' : 'failures'}
             </Badge>
+            {summary.llmSummaryStructured && (
+              <ReportVerdictBadge verdict={summary.llmSummaryStructured.verdict} />
+            )}
           </CardTitle>
           {hasOngoingAnalysis ? (
             <TooltipProvider>
@@ -209,12 +215,22 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
         )}
 
         {/* LLM Summary */}
-        {summary.llmSummary && (
+        {(summary.llmSummaryStructured || summary.llmSummary) && (
           <div className="border-t pt-3">
             <p className="text-xs font-medium text-muted-foreground mb-2">LLM Summary</p>
-            <div className="prose prose-sm max-w-none">
-              <MarkdownRenderer content={summary.llmSummary} />
-            </div>
+            {summary.llmSummaryStructured ? (
+              <ReportAnalysisRenderer
+                analysis={summary.llmSummaryStructured}
+                fallbackProject={summary.project}
+              />
+            ) : (
+              // Fallback: structured parse failed (rare — empty or unparseable
+              // LLM response). Render the raw markdown so the user still sees
+              // whatever the model produced.
+              <div className="prose prose-sm max-w-none">
+                <MarkdownRenderer content={summary.llmSummary ?? ''} />
+              </div>
+            )}
             {(summary.llmModel || summary.updatedAt) && (
               <div className="flex items-center gap-2 pt-3 mt-3 border-t text-xs text-muted-foreground flex-wrap">
                 {summary.llmModel && <Badge variant="outline">{summary.llmModel}</Badge>}

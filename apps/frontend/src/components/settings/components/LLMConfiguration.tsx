@@ -698,58 +698,32 @@ export default function LLMConfiguration({
                   </div>
                 </div>
 
-                {/* Report summary — one-run aggregation across per-test analyses. */}
+                {/* Report summary — one-run aggregation across per-test analyses.
+                    Single prompt slot; the system message is built-in and not
+                    user-overridable for this task. */}
                 <div className="space-y-3 rounded-md border p-3">
                   <h4 className="text-sm font-semibold">Report</h4>
                   <div className="space-y-2">
-                    <Label htmlFor="llm-custom-report-system">System prompt</Label>
-                    <Textarea
-                      id="llm-custom-report-system"
-                      disabled={editingSection !== 'llm'}
-                      placeholder={
-                        defaultPrompts?.reportSummarySystemPrompt.content ??
-                        defaultPrompts?.systemPrompt.content ??
-                        'You are a test lead reviewing a single Playwright CI run…'
-                      }
-                      rows={5}
-                      value={
-                        editingSection === 'llm'
-                          ? (tempConfig.llm?.customReportSummarySystemPrompt ?? '')
-                          : (config.llm?.customReportSummarySystemPrompt ?? '')
-                      }
-                      onChange={(e) =>
-                        editingSection === 'llm' &&
-                        onUpdateTempConfig({
-                          llm: {
-                            ...tempConfig.llm,
-                            customReportSummarySystemPrompt: e.target.value,
-                          },
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">No vars available.</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="llm-custom-report">Task instructions</Label>
+                    <Label htmlFor="llm-custom-report">Prompt</Label>
                     <Textarea
                       id="llm-custom-report"
                       disabled={editingSection !== 'llm'}
                       placeholder={
-                        defaultPrompts?.reportSummaryInstructions.content ??
-                        'Summarize the failures from this Playwright report…'
+                        defaultPrompts?.reportSummaryPrompt.content ??
+                        'Analyze the failures from this Playwright report…'
                       }
-                      rows={12}
+                      rows={14}
                       value={
                         editingSection === 'llm'
-                          ? (tempConfig.llm?.customReportSummaryInstructions ?? '')
-                          : (config.llm?.customReportSummaryInstructions ?? '')
+                          ? (tempConfig.llm?.customReportSummaryPrompt ?? '')
+                          : (config.llm?.customReportSummaryPrompt ?? '')
                       }
                       onChange={(e) =>
                         editingSection === 'llm' &&
                         onUpdateTempConfig({
                           llm: {
                             ...tempConfig.llm,
-                            customReportSummaryInstructions: e.target.value,
+                            customReportSummaryPrompt: e.target.value,
                           },
                         })
                       }

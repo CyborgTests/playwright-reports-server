@@ -47,10 +47,11 @@ export interface LlmDefaultPrompt {
 export interface LlmDefaultPrompts {
   systemPrompt: LlmDefaultPrompt;
   testAnalysisSystemPrompt: LlmDefaultPrompt;
-  reportSummarySystemPrompt: LlmDefaultPrompt;
   projectSummarySystemPrompt: LlmDefaultPrompt;
   testAnalysisInstructions: LlmDefaultPrompt;
-  reportSummaryInstructions: LlmDefaultPrompt;
+  /** Combined override slot for report-summary (replaces the two-field
+   *  system+instructions surface in earlier versions). */
+  reportSummaryPrompt: LlmDefaultPrompt;
   projectSummaryInstructions: LlmDefaultPrompt;
 }
 

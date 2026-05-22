@@ -39,11 +39,13 @@ export interface LLMConfig {
   /** Task-specific system prompt overrides. Each falls back to
    *  `customSystemPrompt`, then to the built-in default for its task. */
   customTestAnalysisSystemPrompt?: string;
-  customReportSummarySystemPrompt?: string;
   customProjectSummarySystemPrompt?: string;
   customTestAnalysisInstructions?: string;
-  customReportSummaryInstructions?: string;
   customProjectSummaryInstructions?: string;
+  /** Single override for the report-summary task — combines what used to be
+   *  the system prompt + task instructions for this task. The system message
+   *  for report-summary is now built-in and not user-overridable. */
+  customReportSummaryPrompt?: string;
 }
 
 export interface TestManagementConfig {

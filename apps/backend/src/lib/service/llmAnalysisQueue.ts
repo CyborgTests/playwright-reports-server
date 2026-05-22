@@ -20,14 +20,20 @@ import {
   extractRootCauseParagraph,
   fitPromptToBudget,
   PROJECT_ANALYSIS_SCHEMA,
+  REPORT_ANALYSIS_SCHEMA,
   renderSegmentsForDebug,
   TEST_FAILURE_ANALYSIS_SCHEMA,
   unescapeLiteralNewlines,
 } from '../llm/prompts/index.js';
+import {
+  parseReportAnalysisFromText,
+  parseReportAnalysisStructured,
+  renderReportAnalysisAsMarkdown,
+} from '../llm/reportAnalysis.js';
 import type { SegmentedPrompt } from '../llm/types/index.js';
 import {
-  type FailureEvidence,
   extractFailureEvidence,
+  type FailureEvidence,
   stripAnsi,
 } from '../parser/failure-extraction.js';
 import { parseHtmlReport } from '../parser/index.js';
@@ -647,10 +653,9 @@ class LlmAnalysisQueue {
     const promptOverrides = {
       systemPrompt: llmCfg.customSystemPrompt as string | undefined,
       testAnalysisSystemPrompt: llmCfg.customTestAnalysisSystemPrompt as string | undefined,
-      reportSummarySystemPrompt: llmCfg.customReportSummarySystemPrompt as string | undefined,
       projectSummarySystemPrompt: llmCfg.customProjectSummarySystemPrompt as string | undefined,
       testAnalysisInstructions: llmCfg.customTestAnalysisInstructions as string | undefined,
-      reportSummaryInstructions: llmCfg.customReportSummaryInstructions as string | undefined,
+      reportSummaryPrompt: llmCfg.customReportSummaryPrompt as string | undefined,
       projectSummaryInstructions: llmCfg.customProjectSummaryInstructions as string | undefined,
       project,
       errorCategory: heuristicCategory,
@@ -972,99 +977,51 @@ class LlmAnalysisQueue {
       return;
     }
 
-    const testAnalyses = testAnalysisDb.getByReport(reportId);
-    const categories: Record<string, number> = {};
-    const perTestAnalyses: Array<{ testTitle: string; category: string; analysis: string }> = [];
+    const analysisByTest = collectPerTestAnalyses(reportId);
+    const { hardFailingByKey, flakyByKey } = partitionFailingRunsByOutcome(reportId);
 
-    for (const ta of testAnalyses) {
-      if (ta.category) {
-        categories[ta.category] = (categories[ta.category] || 0) + 1;
-      }
-      const test = testDb.getTest(ta.testId, ta.fileId, ta.project);
-      perTestAnalyses.push({
-        testTitle: test?.title || ta.testId,
-        category: ta.category || 'unknown',
-        analysis: ta.analysis || '',
-      });
-    }
-
-    const errorGroups: Array<{
-      signature: string;
-      category: string;
-      count: number;
-      sampleMessage: string;
-      affectedTests: string[];
-    }> = [];
-    const signatureMap = new Map<
-      string,
-      { category: string; count: number; message: string; tests: Set<string> }
-    >();
-
-    const reportRuns = testDb.getTestRunsByReport(reportId);
-    for (const run of reportRuns) {
-      if (!run.errorSignature || !run.failureDetails) continue;
-      let details: any;
-      try {
-        details = JSON.parse(run.failureDetails);
-      } catch {
-        continue;
-      }
-
-      const existing = signatureMap.get(run.errorSignature);
-      if (existing) {
-        existing.count++;
-        existing.tests.add(run.testId);
-      } else {
-        signatureMap.set(run.errorSignature, {
-          category: run.failureCategory || 'unknown',
-          count: 1,
-          message: details.message || '',
-          tests: new Set([run.testId]),
-        });
-      }
-    }
-
-    for (const [sig, data] of signatureMap) {
-      errorGroups.push({
-        signature: sig,
-        category: data.category,
-        count: data.count,
-        sampleMessage: data.message,
-        affectedTests: Array.from(data.tests),
-      });
-    }
-    errorGroups.sort((a, b) => b.count - a.count);
-
-    // Inject per-test feedback notes for tests in this report (capped at 10 by recency).
-    // The report summary is itself an aggregation of test analyses, so test-level feedback
-    // is what's relevant here; there is no separate report-level feedback.
-    const perTestFeedback = analysisFeedbackDb.getPerTestForReport(reportId, 10);
-    const perTestFeedbackForPrompt = perTestFeedback.map((f) => {
-      const t =
-        f.testId && f.fileId && f.project
-          ? testDb.getTest(f.testId, f.fileId, f.project)
-          : undefined;
-      return {
-        testTitle: t?.title,
-        comment: f.comment,
-        updatedAt: f.updatedAt,
-      };
+    // Fetch failure clusters scoped to this report. The full project history
+    // gives the clustering strategies enough data to identify cross-run
+    // patterns; scopeToReport then filters to clusters that contain at least
+    // one test that failed in this specific report.
+    const { getFailureClusters } = await import('../failure-clustering/index.js');
+    const clusterReport = await getFailureClusters({
+      project: project ?? undefined,
+      reportId,
     });
+
+    const trendContext = await buildTrendContextForReport(reportId);
+    const { clusters, unclustered, flakyTests, categories } = shapeClustersForPrompt({
+      clusterReport,
+      hardFailingByKey,
+      flakyByKey,
+      analysisByTest,
+      trendContext,
+    });
+
+    // Run context: git commit + CI links + Playwright env. The reports table
+    // spreads `report.metadata` onto each row at read time, so these fields
+    // are available directly on the report object (when the upload payload
+    // included them).
+    const { reportDb } = await import('./db/reports.sqlite.js');
+    const currentReport = reportDb.getByID(reportId) as
+      | (Record<string, unknown> & { createdAt?: string | Date })
+      | undefined;
+    const runContext = currentReport ? buildRunContextFromReport(currentReport) : undefined;
 
     const reportConfig = await service.getConfig();
     const reportLlmCfg = (reportConfig as any)?.llm ?? {};
-    const trendContext = await buildTrendContextForReport(reportId);
     const builtPrompt = buildReportSummarySegments({
       reportId,
       categories,
-      errorGroups,
-      perTestAnalyses,
-      perTestFeedback: perTestFeedbackForPrompt,
+      clusters,
+      unclustered,
+      flaky: flakyTests,
+      runContext,
       trendContext,
       overrides: {
         systemPrompt: reportLlmCfg.customSystemPrompt,
-        reportSummarySystemPrompt: reportLlmCfg.customReportSummarySystemPrompt,
-        reportSummaryInstructions: reportLlmCfg.customReportSummaryInstructions,
+        reportSummaryPrompt: reportLlmCfg.customReportSummaryPrompt,
         project: project ?? undefined,
       },
     });
@@ -1083,15 +1040,44 @@ class LlmAnalysisQueue {
       reportLlmCfg.reportSummaryTemperature ?? TASK_TEMPERATURE_DEFAULTS.reportSummary;
     const response = await llmService.sendSegmentedMessage(segmentedPrompt, {
       temperature: reportTemp,
+      responseSchema: REPORT_ANALYSIS_SCHEMA,
     });
 
-    llmTasksDb.complete(task.id, response.content, null, response.model, {
+    // Prefer the provider's parsed structured output. Fall back to JSON or
+    // markdown inside response.content for providers that don't honor the
+    // schema (some local models). The fallback parser sets a sane verdict
+    // based on keyword heuristics so the UI still renders the verdict badge.
+    let structured =
+      parseReportAnalysisStructured(response.structuredOutput) ??
+      parseReportAnalysisFromText(response.content);
+
+    if (structured) {
+      // Inject the report's project into every codeRef so the UI can build
+      // `?project=…` query params for test-detail links. A report has a
+      // single project, so we know it server-side — saves having the model
+      // emit it per ref.
+      structured = {
+        ...structured,
+        reportId,
+        sections: structured.sections.map((s) => ({
+          ...s,
+          codeRefs: s.codeRefs?.map((ref) => ({
+            ...ref,
+            project: ref.project ?? project ?? undefined,
+          })),
+        })),
+      };
+    }
+
+    const summaryText = structured ? renderReportAnalysisAsMarkdown(structured) : response.content;
+
+    llmTasksDb.complete(task.id, summaryText, null, response.model, {
       usage: response.usage,
     });
 
     const totalFailures = Object.values(categories).reduce((s, c) => s + c, 0);
     failureSummaryDb.upsertSummary(reportId, project || '', totalFailures, categories);
-    failureSummaryDb.updateLlmSummary(reportId, response.content, response.model);
+    failureSummaryDb.updateLlmSummary(reportId, summaryText, structured, response.model);
   }
 
   private async processProjectSummary(task: LlmTaskRow): Promise<void> {
@@ -1327,10 +1313,9 @@ export async function buildTestAnalysisRequest(opts: {
   const promptOverrides = {
     systemPrompt: llmCfg.customSystemPrompt as string | undefined,
     testAnalysisSystemPrompt: llmCfg.customTestAnalysisSystemPrompt as string | undefined,
-    reportSummarySystemPrompt: llmCfg.customReportSummarySystemPrompt as string | undefined,
     projectSummarySystemPrompt: llmCfg.customProjectSummarySystemPrompt as string | undefined,
     testAnalysisInstructions: llmCfg.customTestAnalysisInstructions as string | undefined,
-    reportSummaryInstructions: llmCfg.customReportSummaryInstructions as string | undefined,
+    reportSummaryPrompt: llmCfg.customReportSummaryPrompt as string | undefined,
     projectSummaryInstructions: llmCfg.customProjectSummaryInstructions as string | undefined,
     project,
     errorCategory: heuristicCategory,
@@ -1498,6 +1483,221 @@ function aggregateProjectRootCauses(
   const persistentFailures = all.filter((a) => a.reportsAffected >= options.persistentMinReports);
 
   return { rootCauses, persistentFailures };
+}
+
+type ReportFailureRecord = {
+  testId: string;
+  fileId: string;
+  project: string;
+  title: string;
+  filePath?: string;
+  category: string;
+  errorSignature?: string;
+  message: string;
+};
+
+type FailingByKey = Map<string, ReportFailureRecord>;
+
+type AnalysisByKey = Map<string, { category: string; analysis: string }>;
+
+/** Load per-test analyses for a report and index them by
+ *  `testId::fileId::project` so they can be attached to cluster members. */
+function collectPerTestAnalyses(reportId: string): AnalysisByKey {
+  const rows = testAnalysisDb.getByReport(reportId);
+  const out: AnalysisByKey = new Map();
+  for (const ta of rows) {
+    const key = `${ta.testId}::${ta.fileId}::${ta.project}`;
+    out.set(key, {
+      category: ta.category || 'unknown',
+      analysis: ta.analysis || '',
+    });
+  }
+  return out;
+}
+
+/** Split this report's failing runs into hard failures (`unexpected` /
+ *  `failed`) vs. flakes (`flaky` — failed at least once but passed on retry).
+ *  Verdict-driving inputs use the hard-failing map; flakes are surfaced as
+ *  observations. First row per (testId, fileId, project) key wins — report
+ *  payloads typically have one row per test. */
+function partitionFailingRunsByOutcome(
+  reportId: string
+): { hardFailingByKey: FailingByKey; flakyByKey: FailingByKey } {
+  const reportRuns = testDb.getTestRunsByReport(reportId);
+  const hardFailingByKey: FailingByKey = new Map();
+  const flakyByKey: FailingByKey = new Map();
+  for (const run of reportRuns) {
+    const isHardFail = run.outcome === 'unexpected' || run.outcome === 'failed';
+    const isFlaky = run.outcome === 'flaky';
+    if (!isHardFail && !isFlaky) continue;
+    let message = '';
+    if (run.failureDetails) {
+      try {
+        const parsed = JSON.parse(run.failureDetails);
+        message = String(parsed?.message ?? '');
+      } catch {
+        // ignore — empty message
+      }
+    }
+    const test = testDb.getTest(run.testId, run.fileId, run.project);
+    const key = `${run.testId}::${run.fileId}::${run.project}`;
+    const rec: ReportFailureRecord = {
+      testId: run.testId,
+      fileId: run.fileId,
+      project: run.project,
+      title: test?.title ?? run.testId,
+      filePath: test?.filePath,
+      category: run.failureCategory ?? 'unknown',
+      errorSignature: run.errorSignature ?? undefined,
+      message,
+    };
+    const target = isHardFail ? hardFailingByKey : flakyByKey;
+    if (!target.has(key)) target.set(key, rec);
+  }
+  return { hardFailingByKey, flakyByKey };
+}
+
+/** Shape the prompt-ready cluster / unclustered / flaky / categories inputs
+ *  from raw cluster data + per-report failing maps + the prev-report trend.
+ *  Each in-report cluster member and unclustered failure carries a `trend`
+ *  tag (`newlyFailed` / `stillFailing` / `unknown`) computed from the trend
+ *  context, keyed by (title, filePath). Historical cluster members (tests
+ *  that belong to the cluster but didn't fail in this run) leave `trend`
+ *  unset since the prev-report diff doesn't apply to them. */
+function shapeClustersForPrompt(args: {
+  clusterReport: Awaited<ReturnType<typeof import('../failure-clustering/index.js').getFailureClusters>>;
+  hardFailingByKey: FailingByKey;
+  flakyByKey: FailingByKey;
+  analysisByTest: AnalysisByKey;
+  trendContext: ReportSummaryTrendContext | undefined;
+}) {
+  const { clusterReport, hardFailingByKey, flakyByKey, analysisByTest, trendContext } = args;
+
+  type Trend = 'newlyFailed' | 'stillFailing' | 'unknown';
+  const trendByTitleFile = new Map<string, Trend>();
+  if (trendContext) {
+    const mkKey = (t: { title: string; filePath: string }) => `${t.title}::${t.filePath}`;
+    for (const t of trendContext.newlyFailed) trendByTitleFile.set(mkKey(t), 'newlyFailed');
+    for (const t of trendContext.stillFailing) trendByTitleFile.set(mkKey(t), 'stillFailing');
+  }
+  const trendFor = (title: string, filePath?: string): Trend =>
+    trendContext ? (trendByTitleFile.get(`${title}::${filePath ?? ''}`) ?? 'unknown') : 'unknown';
+
+  const clusters = clusterReport.clusters.map((c) => {
+    const members = c.tests.map((t) => {
+      const key = `${t.testId}::${t.fileId}::${t.project}`;
+      const rec = hardFailingByKey.get(key);
+      const a = analysisByTest.get(key);
+      const inThisReport = !!rec;
+      return {
+        testId: t.testId,
+        fileId: t.fileId,
+        project: t.project,
+        title: t.title,
+        filePath: t.filePath,
+        inThisReport,
+        category: rec?.category ?? a?.category ?? c.category,
+        message: rec?.message ?? '',
+        analysis: a?.analysis ?? '',
+        occurrences: t.occurrences,
+        trend: inThisReport ? trendFor(t.title, t.filePath) : undefined,
+      };
+    });
+    return {
+      id: c.id,
+      strategy: c.strategy,
+      name: c.name,
+      category: c.category,
+      sampleMessage: c.sampleMessage,
+      testCount: c.testCount,
+      failureCount: c.failureCount,
+      evidence: c.evidence,
+      members,
+    };
+  });
+
+  const clusteredKeys = new Set<string>();
+  for (const c of clusterReport.clusters) {
+    for (const t of c.tests) {
+      clusteredKeys.add(`${t.testId}::${t.fileId}::${t.project}`);
+    }
+  }
+
+  const unclustered: Array<ReportFailureRecord & { analysis: string; trend: Trend }> = [];
+  for (const [key, rec] of hardFailingByKey) {
+    if (clusteredKeys.has(key)) continue;
+    const a = analysisByTest.get(key);
+    unclustered.push({
+      ...rec,
+      analysis: a?.analysis ?? '',
+      trend: trendFor(rec.title, rec.filePath),
+    });
+  }
+
+  const flakyTests = Array.from(flakyByKey.values()).map((rec) => {
+    const key = `${rec.testId}::${rec.fileId}::${rec.project}`;
+    const a = analysisByTest.get(key);
+    return { ...rec, analysis: a?.analysis ?? '' };
+  });
+
+  // Categories histogram, derived from hard failures only. Prefer the
+  // LLM-corrected category from the per-test analysis when available; fall
+  // back to the heuristic on the run row.
+  const categories: Record<string, number> = {};
+  for (const [key, rec] of hardFailingByKey) {
+    const a = analysisByTest.get(key);
+    const cat = a?.category || rec.category || 'unknown';
+    categories[cat] = (categories[cat] ?? 0) + 1;
+  }
+
+  return { clusters, unclustered, flakyTests, categories };
+}
+
+/**
+ * Lift the run-context fields (git commit, CI links, Playwright env, createdAt)
+ * from a report row. The reports DB spreads `report.metadata` onto each row at
+ * read time, so these fields are looked up directly by name. Returns
+ * `undefined` when no recognized fields are present.
+ */
+function buildRunContextFromReport(
+  report: Record<string, unknown> & { createdAt?: string | Date }
+): import('../llm/prompts/index.js').ReportSummaryRunContext | undefined {
+  const gitCommitRaw = report.gitCommit as
+    | { hash?: string; shortHash?: string; branch?: string; subject?: string }
+    | undefined;
+  const ciRaw = report.ci as
+    | { buildHref?: string; commitHref?: string; commitHash?: string }
+    | undefined;
+  const playwrightVersion =
+    typeof report.playwrightVersion === 'string' ? report.playwrightVersion : undefined;
+  const actualWorkers =
+    typeof report.actualWorkers === 'number' ? report.actualWorkers : undefined;
+  const createdAt =
+    report.createdAt instanceof Date
+      ? report.createdAt.toISOString()
+      : typeof report.createdAt === 'string'
+        ? report.createdAt
+        : undefined;
+
+  const gitCommit =
+    gitCommitRaw &&
+    (gitCommitRaw.hash || gitCommitRaw.shortHash || gitCommitRaw.branch || gitCommitRaw.subject)
+      ? {
+          hash: gitCommitRaw.hash,
+          shortHash: gitCommitRaw.shortHash,
+          branch: gitCommitRaw.branch,
+          subject: gitCommitRaw.subject,
+        }
+      : undefined;
+  const ci =
+    ciRaw && (ciRaw.buildHref || ciRaw.commitHref || ciRaw.commitHash)
+      ? { buildHref: ciRaw.buildHref, commitHref: ciRaw.commitHref, commitHash: ciRaw.commitHash }
+      : undefined;
+
+  if (!gitCommit && !ci && !playwrightVersion && actualWorkers === undefined && !createdAt) {
+    return undefined;
+  }
+  return { gitCommit, ci, playwrightVersion, actualWorkers, createdAt };
 }
 
 /**

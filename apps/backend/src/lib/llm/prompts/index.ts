@@ -48,6 +48,107 @@ export const TEST_FAILURE_ANALYSIS_SCHEMA: LLMResponseSchema = {
   },
 };
 
+/** Verdict enum mirrored in shared/types ReportAnalysisVerdict. Keep in sync. */
+export const REPORT_VERDICT_ENUM = ['isolated', 'clustered', 'widespread', 'systemic'] as const;
+
+/** Impact enum mirrored in shared/types ReportAnalysisImpact. */
+const REPORT_IMPACT_ENUM = ['high', 'medium', 'low'] as const;
+
+/** Structured-output schema for the report-level failure analysis. The model
+ *  emits a verdict, a 1–3 sentence summary, and an ordered list of sections
+ *  with optional per-section impact tags and code references (test/file). */
+export const REPORT_ANALYSIS_SCHEMA: LLMResponseSchema = {
+  name: 'submit_report_failure_analysis',
+  description:
+    'Submit a structured failure analysis for a single Playwright report. The verdict reflects how concentrated the failures are; the summary is the executive headline; sections expand on patterns and recommendations.',
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['verdict', 'summary', 'sections'],
+    properties: {
+      verdict: {
+        type: 'string',
+        enum: [...REPORT_VERDICT_ENUM],
+        description:
+          'How concentrated are the failures? isolated = ≤2 distinct failures, no shared signature; clustered = 3+ failures dominated by 1–2 signatures or a single category; widespread = failures across 3+ categories with no dominant cluster; systemic = fixture/infra/setup signal — unrelated tests sharing a hook or setup path.',
+      },
+      summary: {
+        type: 'string',
+        description:
+          '1–3 sentence executive headline. State the verdict in plain English and call out the single most important fact.',
+      },
+      sections: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 3,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['heading', 'body'],
+          properties: {
+            heading: {
+              type: 'string',
+              description:
+                'Short section title without leading emoji or numbering (e.g., "Failure Patterns", "Recommendations", "Risks").',
+            },
+            body: {
+              type: 'string',
+              description:
+                'Markdown body for the section. Be specific and reference test files or signatures when relevant. Do NOT repeat the section heading inside the body.',
+            },
+            impact: {
+              type: 'string',
+              enum: [...REPORT_IMPACT_ENUM],
+              description:
+                'Optional severity tag — high when this section names the largest blocking issue; medium for important but smaller impact; low for minor observations.',
+            },
+            codeRefs: {
+              type: 'array',
+              description:
+                'Test or file references mentioned in this section. The UI renders these as clickable links — only include refs whose testId or filePath is present in the supplied data.',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['kind', 'label'],
+                properties: {
+                  kind: {
+                    type: 'string',
+                    enum: ['test', 'file'],
+                    description:
+                      "'test' links to the test detail page (requires testId, fileId); 'file' opens the report viewer for a spec file (requires filePath).",
+                  },
+                  label: {
+                    type: 'string',
+                    description: 'Display label (test title or file path).',
+                  },
+                  testId: {
+                    type: 'string',
+                    description:
+                      'Required when kind=test. Must be a testId from the supplied data.',
+                  },
+                  fileId: {
+                    type: 'string',
+                    description: 'Required when kind=test. The fileId the test belongs to.',
+                  },
+                  filePath: {
+                    type: 'string',
+                    description: 'Required when kind=file. Path to the spec file.',
+                  },
+                  line: {
+                    type: 'integer',
+                    minimum: 1,
+                    description: 'Optional 1-based line number.',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
 /** Verdict enum mirrored in shared/types ProjectAnalysisVerdict. Keep in sync. */
 export const PROJECT_VERDICT_ENUM = ['healthy', 'stabilizing', 'degrading', 'failing'] as const;
 
@@ -190,7 +291,7 @@ export const DEFAULT_SYSTEM_PROMPT =
   'Playwright test failure analyst. Diagnose from the structured evidence below. Cite line numbers, file paths, signatures, and response codes. No filler, no generic advice.';
 export const TEST_ANALYSIS_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT;
 export const REPORT_SUMMARY_SYSTEM_PROMPT =
-  'You are a test lead reviewing a single Playwright CI run. Cluster failures into the smallest set of root causes, prioritize fixes by how many tests each unblocks, and call out patterns that look systemic (shared fixtures, flaky infra) versus one-off. Keep findings concrete — cite specific files, categories, or signatures — and skip generic testing advice.';
+  'You are a test lead reviewing a single Playwright CI run. Cluster failures into the smallest set of root causes, prioritize fixes by how many tests each unblocks, and call out patterns that look systemic (shared fixtures, flaky infra) versus isolated. Keep findings concrete — cite specific files, categories, or signatures — and skip generic testing advice.';
 export const PROJECT_SUMMARY_SYSTEM_PROMPT =
   'You are a QA lead writing a brief health summary for a Playwright test project across its latest runs. Lead with a verdict and a one-line headline. Distinguish transient flakes from persistent regressions, anchor your verdict on what the most recent runs show, and avoid restating per-run details the reader already has. Be concrete about which tests or areas regressed.';
 
@@ -215,18 +316,28 @@ Attempt-history rules:
 
 The canonical Error block is from the first failing attempt. Attempt History shows the full timeline.`;
 
-export const REPORT_SUMMARY_TASK_INSTRUCTIONS = `Summarize the test failures from Playwright report \`{{reportId}}\` for project "{{project}}" ({{totalFailures}} failures total).
+export const REPORT_SUMMARY_TASK_INSTRUCTIONS = `Analyze the failures in Playwright report \`{{reportId}}\` for project "{{project}}" ({{totalFailures}} failures total).
 
-Format your response as a markdown document with exactly these three sections, using the headers verbatim (including emojis):
+The data block is structured around **failure clusters** — groups of failing tests that share evidence (error signature, stack frame, failing fixture, or temporal co-failure). Each cluster lists its member tests with their per-test root-cause analysis attached. Tests that didn't group into any multi-test cluster appear under "Unclustered Failures" with their own analyses. **Anchor your summary on this cluster shape.** A cluster spanning many tests usually points to a single root cause; an unclustered failure is usually an isolated bug.
 
-## 🔍 Failure Patterns
-Executive summary of the most impactful patterns in this report — which categories dominate, which tests cluster around the same root cause, and which look like one-off vs. systemic issues. Include root-cause hypotheses for each major category here.
+Respond with a structured JSON object matching the provided schema. The schema requires:
 
-## 🛠️ Recommendations
-Prioritized, actionable recommendations to reduce failures. Lead with the change that resolves the most tests; follow with quick wins. Be concrete (file paths, locator strategies, fixture changes) rather than generic.
+- **verdict**: one of \`isolated\`, \`clustered\`, \`widespread\`, \`systemic\` — describing how concentrated the failures are.
+  - \`isolated\`: ≤2 failures, all unclustered (no shared evidence with other failures in this run).
+  - \`clustered\`: failures dominated by 1–2 clusters; most tests share a signature, stack frame, or fixture.
+  - \`widespread\`: failures span many clusters with no clearly dominant one.
+  - \`systemic\`: a \`fixture\`-strategy cluster covers multiple tests, OR multiple clusters converge on a single root cause (shared setup, infra, env). Prefer this over \`clustered\` when you see a fixture cluster.
+- **summary**: a 1–3 sentence executive headline. State the verdict in plain English and call out the single most important fact (e.g., the dominant cluster's evidence, the suspected fixture).
+- **sections**: 1–3 sections in this order (skip a section only when you have no observations for it):
+  1. \`Failure Patterns\` — which clusters dominate, what root cause they share, which look systemic vs. isolated. Cite cluster strategies (\`signature\`, \`stack-frame\`, \`fixture\`, \`temporal\`) and their evidence (signature, stack frame, fixture phase) by name. Set \`impact: high\` when this names the largest blocking cluster.
+  2. \`Recommendations\` — prioritized, actionable fixes. Lead with the change that resolves the most tests (usually the largest cluster); follow with quick wins. Be concrete (file paths, fixture changes, locator strategies), not generic.
+  3. (optional) \`Risks\` — correlations between clusters, suspicious unclustered failures worth investigating, anything else worth flagging. Omit when there's nothing to say.
 
-## 📝 Correlations & Notes
-Any correlations between failure types (e.g., one infra issue surfacing as multiple categories), suspicious patterns worth investigating, and anything else useful that doesn't fit above. Omit this section only if there are no observations to make.`;
+Each section body is markdown. Do NOT repeat the section heading inside the body. When referencing specific tests or files, attach them under \`codeRefs\` so the UI can render clickable links — use \`kind: "test"\` with the test's \`testId\` and \`fileId\` for test refs, or \`kind: "file"\` with the spec \`filePath\` for file refs. Only cite testIds/filePaths that appear in the supplied data.
+
+Use the per-test analyses attached to each cluster member as the primary evidence for root cause. When the **Run Context** block is present, cite the git branch / commit / CI build in your prose so the reader can correlate the failures with the change under test. When the **trend** annotations are present on failing tests (\`newly failed since previous report\` vs. \`still failing from previous report\`), lead your recommendations with the newly-failed set — those are the regressions introduced by this run. Long-standing failures still matter but are usually known issues. The **trend context** block at the end gives the broader diff (newly-failed, fixed, still-failing, duration regressions); reference it when relevant.
+
+Flaky tests under the **Flaky Tests** block are NOT failures — they passed on retry. Do NOT count them in the failure total. Mention them only when their signature overlaps a real cluster (suggesting the cluster's issue is intermittent) or when they hint at infra instability worth flagging in \`Risks\`.`;
 
 export const PROJECT_SUMMARY_TASK_INSTRUCTIONS = `Analyze the test health for project "{{project}}" across the latest {{totalRuns}} runs ({{passingRuns}} passed cleanly).
 
@@ -840,11 +951,13 @@ function buildFailureDetailsBlock(failureDetails: FailureDetailsForPrompt): stri
 export interface CustomPromptOverrides {
   systemPrompt?: string;
   testAnalysisSystemPrompt?: string;
-  reportSummarySystemPrompt?: string;
   projectSummarySystemPrompt?: string;
   testAnalysisInstructions?: string;
-  reportSummaryInstructions?: string;
   projectSummaryInstructions?: string;
+  /** Single override for the report-summary task. Replaces the task
+   *  instructions template; the system message for this task is built-in
+   *  and not user-overridable. */
+  reportSummaryPrompt?: string;
   /** Failure category from the heuristic baseline — useful as a {{errorCategory}}
    *  binding when the user wants to bias the LLM toward / away from a baseline. */
   errorCategory?: string;
@@ -1050,40 +1163,135 @@ export interface ReportSummaryTrendContext {
   }>;
 }
 
+export type ReportSummaryClusterStrategy = 'signature' | 'stack-frame' | 'fixture' | 'temporal';
+
+/** Trend status of a failing test relative to the immediately previous report
+ *  in the same project. `newlyFailed` = didn't fail in the previous report;
+ *  `stillFailing` = also failed in the previous report; `unknown` = no
+ *  previous report or no trend data available. */
+export type ReportSummaryTrendStatus = 'newlyFailed' | 'stillFailing' | 'unknown';
+
+export interface ReportSummaryClusterMember {
+  testId: string;
+  fileId: string;
+  project: string;
+  title: string;
+  filePath?: string;
+  /** True when this member failed in the report being summarized; false when
+   *  the cluster includes a historical member who passed in this run. */
+  inThisReport: boolean;
+  /** Failure category from this report's run when available, otherwise from
+   *  the attached per-test analysis, otherwise from the cluster itself. */
+  category?: string;
+  /** Failure message from this report's run. Empty for members who didn't
+   *  fail in this run. NOT truncated. */
+  message: string;
+  /** Per-test LLM analysis. Empty when no analysis is attached yet. NOT truncated. */
+  analysis: string;
+  /** How many times this test appears in the cluster window. */
+  occurrences: number;
+  /** Trend tag computed from the prev-report diff. Only set when `inThisReport`
+   *  is true; otherwise the trend doesn't apply. */
+  trend?: ReportSummaryTrendStatus;
+}
+
+export interface ReportSummaryCluster {
+  id: string;
+  strategy: ReportSummaryClusterStrategy;
+  name: string;
+  category?: string;
+  /** Representative error message for the cluster. NOT truncated. */
+  sampleMessage: string;
+  testCount: number;
+  failureCount: number;
+  evidence: {
+    signature?: string;
+    stackFrame?: string;
+    fixturePhase?: string;
+    coFailureRate?: number;
+  };
+  members: ReportSummaryClusterMember[];
+}
+
+export interface ReportSummaryUnclusteredFailure {
+  testId: string;
+  fileId: string;
+  project: string;
+  title: string;
+  filePath?: string;
+  category: string;
+  errorSignature?: string;
+  /** Failure message from this report's run. NOT truncated. */
+  message: string;
+  /** Per-test LLM analysis. Empty when no analysis is attached yet. NOT truncated. */
+  analysis: string;
+  /** Trend tag computed from the prev-report diff. */
+  trend?: ReportSummaryTrendStatus;
+}
+
+export interface ReportSummaryFlakyTest {
+  testId: string;
+  fileId: string;
+  project: string;
+  title: string;
+  filePath?: string;
+  category: string;
+  errorSignature?: string;
+  /** Error message from the failing attempt. NOT truncated. */
+  message: string;
+  /** Per-test LLM analysis (analyzed because the test failed at least once
+   *  before retry passed). NOT truncated. */
+  analysis: string;
+}
+
+export interface ReportSummaryRunContext {
+  gitCommit?: {
+    hash?: string;
+    shortHash?: string;
+    branch?: string;
+    subject?: string;
+  };
+  ci?: {
+    buildHref?: string;
+    commitHref?: string;
+    commitHash?: string;
+  };
+  playwrightVersion?: string;
+  actualWorkers?: number;
+  /** Report createdAt — ISO string. */
+  createdAt?: string;
+}
+
 export const buildReportSummarySegments = (args: {
   systemPrompt?: string;
   reportId: string;
   categories: Record<string, number>;
-  errorGroups: Array<{
-    signature: string;
-    category: string;
-    count: number;
-    sampleMessage: string;
-    affectedTests: string[];
-  }>;
-  perTestAnalyses: Array<{ testTitle: string; category: string; analysis: string }>;
-  perTestFeedback?: Array<{ testTitle?: string; comment: string; updatedAt: string }>;
+  clusters: ReportSummaryCluster[];
+  unclustered: ReportSummaryUnclusteredFailure[];
+  flaky?: ReportSummaryFlakyTest[];
+  runContext?: ReportSummaryRunContext;
   trendContext?: ReportSummaryTrendContext;
   overrides?: CustomPromptOverrides;
 }): SegmentedPrompt => {
   const segments: PromptSegment[] = [];
 
+  // The report-summary system message is now built-in — no per-task override.
+  // The legacy `systemPrompt` fallback still applies for users who set the
+  // catch-all `customSystemPrompt` to bias all three tasks.
   segments.push({
     id: 'system_prompt',
     role: 'system',
     stable: true,
     content: resolveSystemPrompt(
       REPORT_SUMMARY_SYSTEM_PROMPT,
-      args.overrides?.systemPrompt ?? args.systemPrompt,
-      args.overrides?.reportSummarySystemPrompt
+      args.overrides?.systemPrompt ?? args.systemPrompt
     ),
   });
 
   const totalFailures = Object.values(args.categories).reduce((sum, c) => sum + c, 0);
-  // Same unified path as test-analysis: default and override both go through
-  // applyMustache.
+  // Single user-overridable surface for this task.
   const reportInstructionsTemplate =
-    args.overrides?.reportSummaryInstructions ?? REPORT_SUMMARY_TASK_INSTRUCTIONS;
+    args.overrides?.reportSummaryPrompt ?? REPORT_SUMMARY_TASK_INSTRUCTIONS;
   const reportSub = applyMustache(
     reportInstructionsTemplate,
     {
@@ -1100,8 +1308,44 @@ export const buildReportSummarySegments = (args: {
     content: reportSub.rendered,
   });
 
+  if (args.runContext) {
+    const ctx = args.runContext;
+    const lines: string[] = [];
+    if (ctx.gitCommit) {
+      const parts: string[] = [];
+      if (ctx.gitCommit.branch) parts.push(`branch \`${ctx.gitCommit.branch}\``);
+      if (ctx.gitCommit.shortHash || ctx.gitCommit.hash) {
+        parts.push(`commit \`${ctx.gitCommit.shortHash ?? ctx.gitCommit.hash}\``);
+      }
+      if (ctx.gitCommit.subject) parts.push(`subject "${ctx.gitCommit.subject}"`);
+      if (parts.length > 0) lines.push(`- Git: ${parts.join(' · ')}`);
+    }
+    if (ctx.ci) {
+      const ciParts: string[] = [];
+      if (ctx.ci.buildHref) ciParts.push(`build ${ctx.ci.buildHref}`);
+      if (ctx.ci.commitHref) ciParts.push(`commit ${ctx.ci.commitHref}`);
+      if (!ctx.ci.buildHref && !ctx.ci.commitHref && ctx.ci.commitHash) {
+        ciParts.push(`commit \`${ctx.ci.commitHash}\``);
+      }
+      if (ciParts.length > 0) lines.push(`- CI: ${ciParts.join(' · ')}`);
+    }
+    const envParts: string[] = [];
+    if (ctx.playwrightVersion) envParts.push(`Playwright ${ctx.playwrightVersion}`);
+    if (typeof ctx.actualWorkers === 'number') envParts.push(`${ctx.actualWorkers} workers`);
+    if (envParts.length > 0) lines.push(`- Env: ${envParts.join(' · ')}`);
+    if (ctx.createdAt) lines.push(`- Run timestamp: ${ctx.createdAt}`);
+    if (lines.length > 0) {
+      segments.push({
+        id: 'run_context',
+        role: 'user',
+        stable: false,
+        content: `## Run Context\n${lines.join('\n')}\n`,
+      });
+    }
+  }
+
   let dataBlock = `## Report: ${args.reportId}\n\n`;
-  dataBlock += `## Failure Categories (${totalFailures} total failures)\n`;
+  dataBlock += `## Failure Categories (${totalFailures} hard failures — excludes flaky tests, which are listed separately below)\n`;
   for (const [cat, count] of Object.entries(args.categories).sort((a, b) =>
     b[1] !== a[1] ? b[1] - a[1] : a[0].localeCompare(b[0])
   )) {
@@ -1109,58 +1353,102 @@ export const buildReportSummarySegments = (args: {
   }
   dataBlock += '\n';
 
-  if (args.errorGroups.length > 0) {
-    dataBlock += `## Top Error Groups\n`;
-    for (const group of args.errorGroups.slice(0, 10)) {
-      dataBlock += `### ${group.category} (${group.count}x across ${group.affectedTests.length} tests)\n`;
-      dataBlock += `\`\`\`\n${group.sampleMessage.substring(0, 500)}\n\`\`\`\n`;
-      const affected = [...group.affectedTests].sort();
-      dataBlock += `Affected: ${affected.slice(0, 5).join(', ')}${affected.length > 5 ? ` +${affected.length - 5} more` : ''}\n\n`;
+  if (args.clusters.length > 0) {
+    dataBlock += `## Failure Clusters (${args.clusters.length} clusters)\n`;
+    dataBlock += `Clusters group failing tests by shared evidence. \`signature\` clusters share an error signature; \`stack-frame\` clusters share the topmost user-code stack frame; \`fixture\` clusters share a failing setup/teardown hook; \`temporal\` clusters failed together in the same run window. Member tests carry their own per-test root-cause analysis below.\n\n`;
+    for (const cluster of args.clusters) {
+      dataBlock += `### Cluster: ${cluster.name} [strategy: ${cluster.strategy}, id: ${cluster.id}]\n`;
+      const factsParts: string[] = [];
+      if (cluster.category) factsParts.push(`category: \`${cluster.category}\``);
+      factsParts.push(`${cluster.testCount} tests`);
+      factsParts.push(`${cluster.failureCount} failures (window)`);
+      if (typeof cluster.evidence.coFailureRate === 'number') {
+        factsParts.push(`co-failure rate: ${(cluster.evidence.coFailureRate * 100).toFixed(0)}%`);
+      }
+      dataBlock += `- ${factsParts.join(' · ')}\n`;
+      const evParts: string[] = [];
+      if (cluster.evidence.signature) evParts.push(`signature \`${cluster.evidence.signature}\``);
+      if (cluster.evidence.stackFrame) evParts.push(`stack frame \`${cluster.evidence.stackFrame}\``);
+      if (cluster.evidence.fixturePhase) evParts.push(`fixture phase \`${cluster.evidence.fixturePhase}\``);
+      if (evParts.length > 0) {
+        dataBlock += `- Evidence: ${evParts.join(' · ')}\n`;
+      }
+      if (cluster.sampleMessage) {
+        dataBlock += `- Sample error:\n\`\`\`\n${cluster.sampleMessage}\n\`\`\`\n`;
+      }
+      const membersInRun = cluster.members.filter((m) => m.inThisReport);
+      const membersHistorical = cluster.members.filter((m) => !m.inThisReport);
+      dataBlock += `\n#### Members in this report (${membersInRun.length})\n`;
+      if (membersInRun.length === 0) {
+        dataBlock += `_None of this cluster's tests failed in this report._\n`;
+      }
+      for (const m of membersInRun) {
+        const fileSuffix = m.filePath ? ` (${m.filePath})` : '';
+        const catLabel = m.category ? ` [${m.category}]` : '';
+        const trendLabel = renderTrendLabel(m.trend);
+        dataBlock += `- **${m.title}** [testId: ${m.testId}, fileId: ${m.fileId}]${catLabel}${fileSuffix}${trendLabel}\n`;
+        if (m.message) {
+          const indentedMessage = m.message.replace(/\n/g, '\n    ');
+          dataBlock += `    Error: ${indentedMessage}\n`;
+        }
+        if (m.analysis) {
+          const rootCause = extractRootCauseParagraph(m.analysis);
+          const indented = rootCause.replace(/\n/g, '\n    ');
+          dataBlock += `    Per-test analysis:\n    ${indented}\n`;
+        }
+      }
+      if (membersHistorical.length > 0) {
+        dataBlock += `\n#### Historical members (${membersHistorical.length}) — failed in this cluster's window but not in this report\n`;
+        for (const m of membersHistorical) {
+          const fileSuffix = m.filePath ? ` (${m.filePath})` : '';
+          dataBlock += `- ${m.title} [testId: ${m.testId}, fileId: ${m.fileId}]${fileSuffix} (${m.occurrences} occurrences)\n`;
+        }
+      }
+      dataBlock += '\n';
     }
   }
 
-  if (args.perTestAnalyses.length > 0) {
-    // Rank analyses so the model sees a representative sample, not the first
-    // 20 in arbitrary arrival order. Strategy: take the top 3 dominant
-    // categories (by failure count in this report), include up to 5 tests per
-    // category, hard-cap at 20 total. Within each category, ordering is
-    // preserved from the input (DB ordering) for cache prefix stability.
-    const TOP_CATEGORIES = 3;
-    const PER_CATEGORY_CAP = 5;
-    const TOTAL_CAP = 20;
-    const topCategories = Object.entries(args.categories)
-      .sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : a[0].localeCompare(b[0])))
-      .slice(0, TOP_CATEGORIES)
-      .map(([cat]) => cat);
-    const ranked: typeof args.perTestAnalyses = [];
-    for (const cat of topCategories) {
-      const forCat = args.perTestAnalyses
-        .filter((a) => a.category === cat)
-        .slice(0, PER_CATEGORY_CAP);
-      ranked.push(...forCat);
-    }
-    // Fill remaining budget with whatever didn't make the top-3 (other
-    // categories, unknowns) so the model still sees the tail.
-    if (ranked.length < TOTAL_CAP) {
-      const seen = new Set(ranked.map((a) => `${a.testTitle}::${a.category}`));
-      for (const a of args.perTestAnalyses) {
-        if (ranked.length >= TOTAL_CAP) break;
-        if (seen.has(`${a.testTitle}::${a.category}`)) continue;
-        ranked.push(a);
+  if (args.unclustered.length > 0) {
+    dataBlock += `## Unclustered Failures (${args.unclustered.length})\n`;
+    dataBlock += `Failures in this report that didn't group into any multi-test cluster. Each carries its per-test analysis.\n\n`;
+    for (const f of args.unclustered) {
+      const fileSuffix = f.filePath ? ` (${f.filePath})` : '';
+      const trendLabel = renderTrendLabel(f.trend);
+      dataBlock += `### ${f.title} [testId: ${f.testId}, fileId: ${f.fileId}] [${f.category}]${fileSuffix}${trendLabel}\n`;
+      if (f.errorSignature) {
+        dataBlock += `- Signature: \`${f.errorSignature}\`\n`;
       }
+      if (f.message) {
+        dataBlock += `- Error:\n\`\`\`\n${f.message}\n\`\`\`\n`;
+      }
+      if (f.analysis) {
+        const rootCause = extractRootCauseParagraph(f.analysis);
+        const indented = rootCause.replace(/\n/g, '\n  ');
+        dataBlock += `- Per-test analysis:\n  ${indented}\n`;
+      }
+      dataBlock += '\n';
     }
-    const shown = ranked.slice(0, TOTAL_CAP);
+  }
 
-    dataBlock += `## Per-Test Analyses (root cause per test, top categories first)\n`;
-    for (const analysis of shown) {
-      const rootCause = extractRootCauseParagraph(analysis.analysis);
-      const indented = rootCause.replace(/\n/g, '\n  ');
-      dataBlock += `- **${analysis.testTitle}** [${analysis.category}]:\n  ${indented}\n`;
+  if (args.flaky && args.flaky.length > 0) {
+    dataBlock += `## Flaky Tests (${args.flaky.length})\n`;
+    dataBlock += `These tests failed at least once but eventually passed on retry. **They are NOT failures.** Do NOT include them in the failure count, do NOT let them drive the verdict. Mention them only as observations (e.g., "X test flaked — worth watching") if they share a signature with a real cluster or look systemic.\n\n`;
+    for (const f of args.flaky) {
+      const fileSuffix = f.filePath ? ` (${f.filePath})` : '';
+      dataBlock += `### ${f.title} [testId: ${f.testId}, fileId: ${f.fileId}] [${f.category}]${fileSuffix}\n`;
+      if (f.errorSignature) {
+        dataBlock += `- Signature: \`${f.errorSignature}\`\n`;
+      }
+      if (f.message) {
+        dataBlock += `- Error (from the failing attempt):\n\`\`\`\n${f.message}\n\`\`\`\n`;
+      }
+      if (f.analysis) {
+        const rootCause = extractRootCauseParagraph(f.analysis);
+        const indented = rootCause.replace(/\n/g, '\n  ');
+        dataBlock += `- Per-test analysis:\n  ${indented}\n`;
+      }
+      dataBlock += '\n';
     }
-    if (args.perTestAnalyses.length > shown.length) {
-      dataBlock += `\n_…and ${args.perTestAnalyses.length - shown.length} more per-test analyses not shown._\n`;
-    }
-    dataBlock += '\n';
   }
 
   segments.push({
@@ -1171,20 +1459,33 @@ export const buildReportSummarySegments = (args: {
   });
 
   if (args.trendContext) {
+    // The trend renderer's insight computer needs a flat (testTitle, category,
+    // analysis) list to look up "which category dominates the newly-failed
+    // set." Flatten cluster members + unclustered failures back into that
+    // shape for compatibility — only members that failed in this report.
+    const perTestForTrend: Array<{ testTitle: string; category: string; analysis: string }> = [];
+    for (const c of args.clusters) {
+      for (const m of c.members) {
+        if (!m.inThisReport) continue;
+        perTestForTrend.push({
+          testTitle: m.title,
+          category: m.category ?? c.category ?? 'unknown',
+          analysis: m.analysis,
+        });
+      }
+    }
+    for (const f of args.unclustered) {
+      perTestForTrend.push({
+        testTitle: f.title,
+        category: f.category,
+        analysis: f.analysis,
+      });
+    }
     segments.push({
       id: 'trend_context',
       role: 'user',
       stable: false,
-      content: renderReportTrendContext(args.trendContext, args.perTestAnalyses),
-    });
-  }
-
-  if (args.perTestFeedback && args.perTestFeedback.length > 0) {
-    segments.push({
-      id: 'per_test_feedback',
-      role: 'user',
-      stable: false,
-      content: buildPerTestFeedbackContext(args.perTestFeedback).trim(),
+      content: renderReportTrendContext(args.trendContext, perTestForTrend),
     });
   }
 
@@ -1262,6 +1563,15 @@ function computeTrendInsights(
   }
 
   return out;
+}
+
+/** Render a small inline trend tag for a failing test entry. Returns an
+ *  empty string when the trend is undefined or `unknown` so entries without
+ *  comparable history don't get a misleading label. */
+function renderTrendLabel(trend: ReportSummaryTrendStatus | undefined): string {
+  if (trend === 'newlyFailed') return ' — **newly failed since previous report**';
+  if (trend === 'stillFailing') return ' — still failing from previous report';
+  return '';
 }
 
 const renderReportTrendContext = (

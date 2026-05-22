@@ -184,10 +184,6 @@ export default function SettingsPage() {
             tempConfig.llm.customTestAnalysisSystemPrompt ?? ''
           );
           formData.append(
-            'llmCustomReportSummarySystemPrompt',
-            tempConfig.llm.customReportSummarySystemPrompt ?? ''
-          );
-          formData.append(
             'llmCustomProjectSummarySystemPrompt',
             tempConfig.llm.customProjectSummarySystemPrompt ?? ''
           );
@@ -196,8 +192,8 @@ export default function SettingsPage() {
             tempConfig.llm.customTestAnalysisInstructions ?? ''
           );
           formData.append(
-            'llmCustomReportSummaryInstructions',
-            tempConfig.llm.customReportSummaryInstructions ?? ''
+            'llmCustomReportSummaryPrompt',
+            tempConfig.llm.customReportSummaryPrompt ?? ''
           );
           formData.append(
             'llmCustomProjectSummaryInstructions',
