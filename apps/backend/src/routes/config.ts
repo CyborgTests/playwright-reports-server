@@ -111,6 +111,7 @@ interface ConfigFormData {
   llmProjectSummaryTemperature?: string;
   llmParallelRequests?: string;
   llmAutoAnalyzeNewReports?: string;
+  llmAnalyzeGreenWindows?: string;
   llmMaxTokens?: string;
   llmContextWindow?: string;
   llmStructuredOutputMode?: string;
@@ -180,6 +181,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       projectSummaryTemperature: config.llm?.projectSummaryTemperature,
       parallelRequests: config.llm?.parallelRequests || 1,
       autoAnalyzeNewReports: !!config.llm?.autoAnalyzeNewReports,
+      analyzeGreenWindows: !!config.llm?.analyzeGreenWindows,
       // Server-side per-task defaults — read-only, used by the UI to show
       // active defaults as input placeholders.
       defaults: {
@@ -411,6 +413,10 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
         if (formData.llmAutoAnalyzeNewReports !== undefined) {
           config.llm.autoAnalyzeNewReports = formData.llmAutoAnalyzeNewReports === 'true';
+        }
+
+        if (formData.llmAnalyzeGreenWindows !== undefined) {
+          config.llm.analyzeGreenWindows = formData.llmAnalyzeGreenWindows === 'true';
         }
 
         // Max output tokens — blank/0 clears the override (provider falls back to env or default).

@@ -17,22 +17,55 @@ const VERDICTS: readonly ProjectAnalysisVerdict[] = [
   'failing',
 ];
 
+const CODE_REF_KINDS = ['test', 'file'] as const;
+
 function isVerdict(value: unknown): value is ProjectAnalysisVerdict {
   return typeof value === 'string' && (VERDICTS as readonly string[]).includes(value);
 }
 
+function isKind(value: unknown): value is ProjectAnalysisCodeRef['kind'] {
+  return typeof value === 'string' && (CODE_REF_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * Coerce one model-emitted code ref into the strict shape. Accepts both:
+ *  - new shape: `{kind, label, testId?, fileId?, filePath?, line?, reportId?}`
+ *  - legacy shape: `{file, line?, reportId?}` — pre-R3 rows still in
+ *    `project_llm_summaries.structured`. Treated as `kind: 'file'`.
+ * Drops refs that lack the fields required to render a navigable link.
+ */
 function coerceCodeRef(raw: unknown): ProjectAnalysisCodeRef | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  const file = typeof r.file === 'string' ? r.file.trim() : '';
-  if (!file) return null;
   const line =
     typeof r.line === 'number' && Number.isFinite(r.line) && r.line > 0
       ? Math.floor(r.line)
       : undefined;
   const reportId =
     typeof r.reportId === 'string' && r.reportId.trim().length > 0 ? r.reportId.trim() : undefined;
-  return { file, line, reportId };
+
+  if (isKind(r.kind)) {
+    // New shape.
+    const kind = r.kind;
+    const label = typeof r.label === 'string' ? r.label.trim() : '';
+    if (!label) return null;
+    const testId = typeof r.testId === 'string' && r.testId.trim() ? r.testId.trim() : undefined;
+    const fileId = typeof r.fileId === 'string' && r.fileId.trim() ? r.fileId.trim() : undefined;
+    const filePath =
+      typeof r.filePath === 'string' && r.filePath.trim() ? r.filePath.trim() : undefined;
+    // A test ref needs at least a testId to be navigable. A file ref needs at
+    // least a filePath. Drop refs that can't render as a link.
+    if (kind === 'test' && !testId) return null;
+    if (kind === 'file' && !filePath) return null;
+    return { kind, label, testId, fileId, filePath, reportId, line };
+  }
+
+  // Legacy fallback: pre-R3 `{file, line?, reportId?}` shape still in cached
+  // structured payloads. Coerce to `kind: 'file'` so the renderer treats them
+  // uniformly with new entries.
+  const file = typeof r.file === 'string' ? r.file.trim() : '';
+  if (!file) return null;
+  return { kind: 'file', label: file, filePath: file, reportId, line };
 }
 
 function coerceSection(raw: unknown): ProjectAnalysisSection | null {
@@ -128,6 +161,32 @@ function parseProjectAnalysisFromMarkdown(text: string): ProjectAnalysisStructur
     summary: summary || sections[0].heading,
     sections,
   };
+}
+
+/**
+ * Strip code refs that point to data the UI can't resolve into a link:
+ *  - `kind: 'test'` refs whose testId isn't in `validTestIds`.
+ *  - any ref whose `reportId` is set but isn't in `validReportIds`.
+ *
+ * Models occasionally fabricate testIds/reportIds when they pattern-match the
+ * shape; without validation those render as 404 links. Returns a new
+ * structured payload — the input is left untouched.
+ */
+export function pruneInvalidCodeRefs(
+  s: ProjectAnalysisStructured,
+  validTestIds: ReadonlySet<string>,
+  validReportIds: ReadonlySet<string>
+): ProjectAnalysisStructured {
+  const cleanSections = s.sections.map((section): ProjectAnalysisSection => {
+    if (!section.codeRefs || section.codeRefs.length === 0) return section;
+    const kept = section.codeRefs.filter((ref) => {
+      if (ref.kind === 'test' && ref.testId && !validTestIds.has(ref.testId)) return false;
+      if (ref.reportId && !validReportIds.has(ref.reportId)) return false;
+      return true;
+    });
+    return { ...section, codeRefs: kept.length > 0 ? kept : undefined };
+  });
+  return { ...s, sections: cleanSections };
 }
 
 /**

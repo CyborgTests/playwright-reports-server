@@ -76,10 +76,23 @@ export interface AnalyticsData {
 export type ProjectAnalysisVerdict = 'healthy' | 'stabilizing' | 'degrading' | 'failing';
 
 export interface ProjectAnalysisCodeRef {
-  file: string;
-  line?: number;
+  /** Discriminator: 'test' links to /test/:fileId/:testId; 'file' opens the report viewer. */
+  kind: 'test' | 'file';
+  /** Display label (e.g., test title or file path). */
+  label: string;
+  /** Required when kind='test'. */
+  testId?: string;
+  /** Required when kind='test'; optional when kind='file'. */
+  fileId?: string;
+  /** Required when kind='file'; optional when kind='test'. */
+  filePath?: string;
+  /** Project the test/file belongs to. Injected server-side so the test
+   *  detail page can build its `?project=…` query. Not asked of the model. */
+  project?: string;
   /** Optional report ID the reference belongs to — lets the UI link to a specific report. */
   reportId?: string;
+  /** Optional 1-based line number. */
+  line?: number;
 }
 
 export interface ProjectAnalysisSection {

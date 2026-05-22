@@ -26,6 +26,14 @@ interface CachedProjectSummary {
   reportCount: number | null;
   firstReportAt: string | null;
   lastReportAt: string | null;
+  /** True when newer reports have been ingested since the analysis ran. */
+  isStale?: boolean;
+  /** True when the analysis trails the latest report by ≥7 days — UI hides
+   *  the verdict and prompts a re-generate. */
+  isTooStale?: boolean;
+  /** Server's view of the current newest report's createdAt — used for the
+   *  "X days behind" hint in the stale badge. */
+  currentLatestReportAt?: string;
 }
 
 interface CachedSummaryResponse {
@@ -126,6 +134,24 @@ export function FailureAnalysisSummary({
   );
 
   const structured = summary?.structured ?? null;
+  // `isTooStale` → the cached analysis trails the newest report by ≥7 days.
+  // Hide the verdict content and prompt the user to re-generate. We still
+  // show the card and the regenerate button so the action is obvious.
+  const showVerdict = !!summary && !summary.isTooStale;
+  // `isStale` → newer reports exist but the analysis is still fresh enough
+  // to surface as supporting context (with a badge calling out the gap).
+  const showStaleBadge = !!summary && summary.isStale && !summary.isTooStale;
+  const daysBehind =
+    summary?.lastReportAt && summary?.currentLatestReportAt
+      ? Math.max(
+          0,
+          Math.round(
+            (new Date(summary.currentLatestReportAt).getTime() -
+              new Date(summary.lastReportAt).getTime()) /
+              86_400_000
+          )
+        )
+      : 0;
 
   return (
     <Card>
@@ -134,10 +160,15 @@ export function FailureAnalysisSummary({
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-lg font-semibold">LLM Failure Analysis</h3>
-              {structured && <VerdictBadge verdict={structured.verdict} />}
+              {showVerdict && structured && <VerdictBadge verdict={structured.verdict} />}
+              {showStaleBadge && (
+                <Badge variant="warning" title={`Newer reports ingested since this analysis ran`}>
+                  Stale{daysBehind > 0 ? ` · ${daysBehind}d behind` : ''}
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-muted-foreground">
-              Test health analysis based on the latest 10 runs
+              Test health analysis based on the latest 20 runs
             </p>
           </div>
           {hasOngoingAnalysis
@@ -162,7 +193,7 @@ export function FailureAnalysisSummary({
         </div>
       </CardHeader>
       <CardContent>
-        {hasOngoingAnalysis && !summary && (
+        {hasOngoingAnalysis && !showVerdict && (
           <div className="flex items-center justify-center py-8 gap-2">
             <Spinner size="sm" />
             <span className="text-muted-foreground">
@@ -174,10 +205,10 @@ export function FailureAnalysisSummary({
             </span>
           </div>
         )}
-        {summary && (
+        {showVerdict && summary && (
           <div className="space-y-3">
             {structured ? (
-              <LlmAnalysisRenderer analysis={structured} />
+              <LlmAnalysisRenderer analysis={structured} fallbackProject={project} />
             ) : (
               <MarkdownRenderer content={summary.summary} />
             )}
@@ -201,6 +232,13 @@ export function FailureAnalysisSummary({
                 )}
               </div>
             )}
+          </div>
+        )}
+        {!hasOngoingAnalysis && summary?.isTooStale && (
+          <div className="text-center py-6 text-muted-foreground text-sm">
+            Previous analysis was generated{' '}
+            {summary.updatedAt && new Date(summary.updatedAt).toLocaleDateString()} and is now{' '}
+            {daysBehind} days behind the latest run. Click "Re-generate" for an up-to-date verdict.
           </div>
         )}
         {!hasOngoingAnalysis && !summary && llmConfigured && (

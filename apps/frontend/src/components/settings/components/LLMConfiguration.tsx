@@ -611,6 +611,31 @@ export default function LLMConfiguration({
                 }}
               />
             </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-medium">Analyze all-green windows</h4>
+                <p className="text-xs text-muted-foreground mt-1">
+                  When enabled, "Generate Analysis" runs the LLM even when no failures were
+                  observed — surfaces duration creep, near-flakes, quarantine churn, and suite
+                  shrinkage. Off by default to keep LLM spend predictable.
+                </p>
+              </div>
+              <Switch
+                disabled={editingSection !== 'llm'}
+                checked={
+                  editingSection === 'llm'
+                    ? !!tempConfig.llm?.analyzeGreenWindows
+                    : !!config.llm?.analyzeGreenWindows
+                }
+                onCheckedChange={(checked) => {
+                  if (editingSection === 'llm') {
+                    onUpdateTempConfig({
+                      llm: { ...tempConfig.llm, analyzeGreenWindows: checked },
+                    });
+                  }
+                }}
+              />
+            </div>
           </section>
 
           {/* Custom prompts — wrapped in an accordion since most users won't touch them.

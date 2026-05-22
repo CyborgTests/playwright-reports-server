@@ -162,6 +162,12 @@ export default function SettingsPage() {
               tempConfig.llm.autoAnalyzeNewReports.toString()
             );
           }
+          if (tempConfig.llm.analyzeGreenWindows !== undefined) {
+            formData.append(
+              'llmAnalyzeGreenWindows',
+              tempConfig.llm.analyzeGreenWindows.toString()
+            );
+          }
           // New mode/limit fields. We send them on every save so blanking a value
           // (set to undefined in temp state) clears the override on the backend.
           formData.append(

@@ -1,15 +1,20 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { ClusterStrategy } from '@playwright-reports/shared';
 import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import { llmService } from '../llm/index.js';
 import {
   parseProjectAnalysisFromText,
   parseProjectAnalysisStructured,
+  pruneInvalidCodeRefs,
   renderProjectAnalysisAsMarkdown,
 } from '../llm/projectAnalysis.js';
 import type {
   FailureDetailsForPrompt,
-  ProjectRootCause,
+  ProjectCluster,
+  ProjectCoverageScope,
+  ProjectTrendSignal,
+  ProjectTrendWindow,
   ReportSummaryTrendContext,
 } from '../llm/prompts/index.js';
 import {
@@ -49,11 +54,13 @@ import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
 import { compareReports, findPreviousReportInProject } from './reportCompare.js';
 
+export const PROJECT_SUMMARY_REPORT_LIMIT = 20;
+
 /** Per-task output-token reserve used by fitToContextWindow. Each value
  *  reflects the rough cap on how much markdown each task type tends to
  *  produce: test-analysis is one diagnosis (~800–1500 tokens out, 4000 is
  *  generous); report-summary is three sections of markdown across a run;
- *  project-summary is verdict + ≤4 sections across the latest 10 runs and
+ *  project-summary is verdict + ≤4 sections across the latest N runs and
  *  needs the most headroom. Tuned alongside the prompt templates in
  *  `prompts/index.ts`. */
 const OUTPUT_RESERVE_TOKENS_BY_TASK = {
@@ -1111,7 +1118,7 @@ class LlmAnalysisQueue {
         .filter((r): r is NonNullable<typeof r> => !!r);
     } else {
       const projectArg = project === 'all' ? undefined : project;
-      latestReports = reportDb.getLatestByProject(projectArg, 10);
+      latestReports = reportDb.getLatestByProject(projectArg, PROJECT_SUMMARY_REPORT_LIMIT);
     }
     if (latestReports.length === 0) {
       llmTasksDb.fail(task.id, 'No reports found for project');
@@ -1119,17 +1126,64 @@ class LlmAnalysisQueue {
     }
 
     const failureSummaryMap = new Map(
-      failureSummaryDb.getSummariesByProject(project, 10).map((s) => [s.reportId, s] as const)
+      failureSummaryDb
+        .getSummariesByProject(project, PROJECT_SUMMARY_REPORT_LIMIT)
+        .map((s) => [s.reportId, s] as const)
     );
 
-    // Aggregate failures across the latest N reports by error_signature so the
-    // project-summary prompt can lead with "what's actually broken" instead of
-    // re-deriving it from per-run categories. Returns both the top-10 root
-    // causes (by total occurrences) and the persistent subset (signature seen
-    // in ≥3 distinct reports of the last N).
-    const { rootCauses, persistentFailures } = aggregateProjectRootCauses(
+    // Aggregate failing test_runs into clusters via the shared
+    // `getFailureClusters` engine (signature / stack-frame / fixture /
+    // temporal strategies), then enrich each cluster with project-level
+    // lifecycle data. Lets the model see "fixture beforeEach spans 5 tests"
+    // as one entry rather than five separate signature root causes.
+    const clusters = await aggregateProjectClusters(
+      latestReports.map((r) => ({
+        reportId: r.reportID,
+        createdAt: String(r.createdAt),
+        displayNumber: r.displayNumber,
+      })),
+      project,
+      { topN: 10 }
+    );
+
+    // Fetch the prior window once and reuse for both the trend signal and
+    // coverage shrinkage. Prior window = same length, immediately preceding
+    // the oldest report in `latestReports`. Project='all' → cross-project.
+    const oldestReportCreatedAt = latestReports.length
+      ? String(latestReports[latestReports.length - 1].createdAt)
+      : '';
+    const latestReportCreatedAt = latestReports.length
+      ? String(latestReports[0].createdAt)
+      : '';
+    const { reportDb: trendReportDb } = await import('./db/reports.sqlite.js');
+    const priorReports = oldestReportCreatedAt
+      ? trendReportDb.getLatestByProjectBefore(
+          project === 'all' ? undefined : project,
+          oldestReportCreatedAt,
+          latestReports.length
+        )
+      : [];
+
+    // Trend signal: pass rate / flaky / duration deltas vs the prior window.
+    // Computed locally rather than via AnalyticsService because the inputs
+    // are "the latest N reports" not a date window.
+    const trendSignal = await computeProjectTrendSignal(
+      latestReports,
+      project,
+      clusters,
+      priorReports
+    );
+
+    // Coverage scope: suite size + quarantine churn + near-flakes + suite-
+    // shrinkage signal. Lets the verdict frame failure counts relative to
+    // the suite and surface signals that don't show up in the per-run
+    // histograms (quarantine-still-failing, near-flakes).
+    const coverage = computeProjectCoverageScope(
       latestReports.map((r) => r.reportID),
-      { topN: 10, persistentMinReports: 3 }
+      priorReports.length > 0 ? priorReports.map((r) => r.reportID) : null,
+      oldestReportCreatedAt,
+      latestReportCreatedAt,
+      project
     );
 
     const projectConfig = await service.getConfig();
@@ -1140,6 +1194,7 @@ class LlmAnalysisQueue {
         const summary = failureSummaryMap.get(r.reportID);
         return {
           reportId: r.reportID,
+          displayNumber: r.displayNumber,
           createdAt: String(r.createdAt),
           stats: {
             total: r.stats?.total ?? 0,
@@ -1151,10 +1206,12 @@ class LlmAnalysisQueue {
           totalFailures: summary?.totalFailures ?? 0,
           categories: summary?.categories ?? {},
           llmSummary: summary?.llmSummary ?? undefined,
+          runContext: buildRunContextFromReport(r as unknown as Record<string, unknown>),
         };
       }),
-      rootCauses,
-      persistentFailures,
+      clusters,
+      trendSignal,
+      coverage,
       overrides: {
         systemPrompt: projectLlmCfg.customSystemPrompt,
         projectSummarySystemPrompt: projectLlmCfg.customProjectSummarySystemPrompt,
@@ -1185,9 +1242,40 @@ class LlmAnalysisQueue {
       parseProjectAnalysisStructured(response.structuredOutput) ??
       parseProjectAnalysisFromText(response.content);
 
-    // Attach the latest reportId to the structured payload so the UI can map
-    // unqualified codeRefs to a concrete report link.
     if (structured) {
+      // Drop refs pointing at testIds / reportIds the model fabricated — those
+      // would render as 404 links. Valid IDs are the report IDs in the window
+      // and the testIds the aggregator surfaced as affected by some root cause.
+      const validReportIds = new Set(latestReports.map((r) => r.reportID));
+      const validTestIds = new Set<string>();
+      for (const c of clusters) {
+        for (const t of c.affectedTests) validTestIds.add(t.testId);
+      }
+      structured = pruneInvalidCodeRefs(structured, validTestIds, validReportIds);
+
+      // Inject `project` into test-kind code refs so the test detail page's
+      // `?project=…` lookup is scoped correctly (testId+fileId aren't unique
+      // across projects). The 'all' aggregate has no canonical project, so
+      // skip injection in that case — the frontend then renders the ref
+      // without a query, accepting a non-scoped lookup.
+      if (project !== 'all') {
+        structured = {
+          ...structured,
+          sections: structured.sections.map((section) =>
+            section.codeRefs
+              ? {
+                  ...section,
+                  codeRefs: section.codeRefs.map((ref) =>
+                    ref.kind === 'test' ? { ...ref, project } : ref
+                  ),
+                }
+              : section
+          ),
+        };
+      }
+
+      // Attach the latest reportId to the structured payload so the UI can map
+      // unqualified codeRefs to a concrete report link.
       structured = { ...structured, latestReportId: latestReports[0]?.reportID };
     }
 
@@ -1376,113 +1464,451 @@ export async function buildTestAnalysisRequest(opts: {
 
 const MAX_TREND_LIST_ITEMS = 25;
 
-interface AggregateOptions {
-  /** Cap on how many top-by-occurrence aggregates to return. */
-  topN: number;
-  /** Persistent threshold — signatures appearing in this many distinct reports
-   *  or more are added to the `persistentFailures` array. */
-  persistentMinReports: number;
+/** Run identifier + timestamp pair used for first/last-seen tracking.
+ *  Callers MUST pass entries newest-first — index 0 is the most recent run. */
+interface AggregateRun {
+  reportId: string;
+  createdAt: string;
+  /** Optional display number for readable run labels in the prompt. */
+  displayNumber?: number;
+}
+
+/** Derive a stable cross-window identity for a cluster from its strategy +
+ *  primary evidence. UUIDs aren't stable across `getFailureClusters` calls,
+ *  so the project-summary uses this key to detect which clusters are the
+ *  "same" cluster between windows. Temporal clusters get a member-test
+ *  fingerprint since they lack stable evidence. */
+function buildClusterStableKey(
+  strategy: ClusterStrategy,
+  evidence: { signature?: string; stackFrame?: string; fixturePhase?: string },
+  memberKeys: string[]
+): string {
+  if (evidence.signature) return `signature:${evidence.signature}`;
+  if (strategy === 'stack-frame' && evidence.stackFrame) return `stack-frame:${evidence.stackFrame}`;
+  if (strategy === 'fixture' && evidence.fixturePhase) {
+    return `fixture:${evidence.fixturePhase}:${evidence.stackFrame ?? evidence.signature ?? ''}`;
+  }
+  // Temporal (or any cluster missing primary evidence): identity is the sorted
+  // set of member testIds. Cheap fingerprint, stable for the same membership.
+  return `${strategy}:${[...memberKeys].sort().join(',')}`;
 }
 
 /**
- * Walk the test_runs for the given report IDs and aggregate failures by
- * `error_signature`. Used by the project-summary prompt to lead with "what's
- * actually broken across the last N runs" rather than ask the model to
- * re-derive it from per-run categories.
+ * Group failing test_runs into project-level clusters via the shared
+ * `getFailureClusters` engine, then enrich each cluster with project-level
+ * lifecycle data (first/last seen in window, retry recovery, latest LLM
+ * root-cause for a representative test).
  *
- * Synchronous SQLite reads only — safe to call inline from the queue worker.
+ * `getFailureClusters` runs strategies (signature, stack-frame, fixture,
+ * temporal) and merges overlapping clusters — so a fixture failure spanning
+ * 5 unrelated tests collapses into one entry tagged `strategy: fixture`,
+ * different from 5 separate signature-based root causes.
+ *
+ * Reports are passed newest-first.
  */
-function aggregateProjectRootCauses(
-  reportIds: string[],
-  options: AggregateOptions
-): { rootCauses: ProjectRootCause[]; persistentFailures: ProjectRootCause[] } {
-  if (reportIds.length === 0) {
-    return { rootCauses: [], persistentFailures: [] };
+async function aggregateProjectClusters(
+  reports: AggregateRun[],
+  project: string,
+  options: { topN: number }
+): Promise<ProjectCluster[]> {
+  if (reports.length === 0) return [];
+
+  const oldest = reports[reports.length - 1];
+  const latest = reports[0];
+  const projectArg = project === 'all' ? undefined : project;
+
+  const { getFailureClusters } = await import('../failure-clustering/index.js');
+  // minTests=1 catches single-test repeat failures (which the old signature
+  // aggregator handled natively); strategies emit single-test clusters at
+  // that threshold and merge with multi-test clusters where appropriate.
+  const clusterReport = await getFailureClusters({
+    project: projectArg,
+    from: oldest.createdAt,
+    to: latest.createdAt,
+    minTests: 1,
+  });
+
+  if (clusterReport.clusters.length === 0) return [];
+
+  // Index testKey → cluster.id so the per-run walk can attribute each failing
+  // test_run to its cluster.
+  const testKeyToClusterIds = new Map<string, string[]>();
+  for (const c of clusterReport.clusters) {
+    for (const t of c.tests) {
+      const key = `${t.testId}::${t.fileId}::${t.project}`;
+      const list = testKeyToClusterIds.get(key) ?? [];
+      list.push(c.id);
+      testKeyToClusterIds.set(key, list);
+    }
   }
 
-  type Mutable = Omit<ProjectRootCause, 'reportsAffected'> & {
-    reportsAffected: Set<string>;
-    seenTestKeys: Set<string>;
-  };
-  const map = new Map<string, Mutable>();
+  // Per-cluster lifecycle accumulator.
+  interface ClusterAgg {
+    reportIndices: Set<number>;
+    occurrences: number;
+    flakyOccurrences: number;
+    /** failure_category counts — most common is reported as the cluster's
+     *  category when the engine's own `category` field is empty. */
+    categories: Map<string, number>;
+  }
+  const aggByClusterId = new Map<string, ClusterAgg>();
+  for (const c of clusterReport.clusters) {
+    aggByClusterId.set(c.id, {
+      reportIndices: new Set(),
+      occurrences: 0,
+      flakyOccurrences: 0,
+      categories: new Map(),
+    });
+  }
 
-  for (const reportId of reportIds) {
-    const runs = testDb.getTestRunsByReport(reportId);
+  for (let i = 0; i < reports.length; i++) {
+    const runs = testDb.getTestRunsByReport(reports[i].reportId);
     for (const run of runs) {
-      if (!run.errorSignature || !run.failureDetails) continue;
-      let parsed: { message?: string } | null = null;
-      try {
-        parsed = JSON.parse(run.failureDetails);
-      } catch {
-        // Skip rows whose failure_details didn't parse — they still count for
-        // signature aggregation but won't contribute a sample message.
+      if (run.outcome === 'expected' || run.outcome === 'skipped' || run.outcome === 'passed') {
+        continue;
       }
-
-      let agg = map.get(run.errorSignature);
-      if (!agg) {
-        agg = {
-          signature: run.errorSignature,
-          category: run.failureCategory || 'unknown',
-          occurrences: 0,
-          reportsAffected: new Set<string>(),
-          affectedTests: [],
-          sampleMessage: '',
-          seenTestKeys: new Set<string>(),
-        };
-        map.set(run.errorSignature, agg);
-      }
-      agg.occurrences++;
-      agg.reportsAffected.add(reportId);
-      if (!agg.sampleMessage && parsed?.message) {
-        agg.sampleMessage = parsed.message;
-      }
-      const testKey = `${run.testId}::${run.fileId}`;
-      if (!agg.seenTestKeys.has(testKey)) {
-        agg.seenTestKeys.add(testKey);
-        const t = testDb.getTest(run.testId, run.fileId, run.project);
-        agg.affectedTests.push({
-          testId: run.testId,
-          title: t?.title || run.testId,
-          filePath: t?.filePath || run.fileId,
-        });
+      const key = `${run.testId}::${run.fileId}::${run.project}`;
+      const clusterIds = testKeyToClusterIds.get(key);
+      if (!clusterIds) continue;
+      for (const cid of clusterIds) {
+        const agg = aggByClusterId.get(cid);
+        if (!agg) continue;
+        agg.reportIndices.add(i);
+        agg.occurrences++;
+        if (run.outcome === 'flaky') agg.flakyOccurrences++;
+        const cat = run.failureCategory ?? 'unknown';
+        agg.categories.set(cat, (agg.categories.get(cat) ?? 0) + 1);
       }
     }
   }
 
-  const all = [...map.values()].map((m): ProjectRootCause => {
-    // Convert the mutable accumulator into the public shape (set → number).
-    const { reportsAffected, seenTestKeys: _seen, ...rest } = m;
-    return { ...rest, reportsAffected: reportsAffected.size };
+  const projectClusters: ProjectCluster[] = [];
+  for (const c of clusterReport.clusters) {
+    const agg = aggByClusterId.get(c.id);
+    if (!agg || agg.reportIndices.size === 0) continue;
+
+    const newestIdx = Math.min(...agg.reportIndices);
+    const oldestIdx = Math.max(...agg.reportIndices);
+    const firstSeen = reports[oldestIdx];
+    const lastSeen = reports[newestIdx];
+    let consecutive = 0;
+    while (agg.reportIndices.has(consecutive)) consecutive++;
+    const retryRecoveryRate =
+      agg.occurrences > 0 ? agg.flakyOccurrences / agg.occurrences : 0;
+
+    // Engine-provided category wins; fall back to most-common per-run category.
+    let category = c.category ?? '';
+    if (!category) {
+      const sorted = [...agg.categories.entries()].sort((a, b) => b[1] - a[1]);
+      category = sorted[0]?.[0] ?? 'unknown';
+    }
+
+    const memberKeys = c.tests.map((t) => `${t.testId}::${t.fileId}::${t.project}`);
+    const stableKey = buildClusterStableKey(c.strategy, c.evidence, memberKeys);
+
+    projectClusters.push({
+      stableKey,
+      strategy: c.strategy,
+      evidence: c.evidence,
+      category,
+      occurrences: agg.occurrences,
+      reportsAffected: agg.reportIndices.size,
+      affectedTests: c.tests.map((t) => ({
+        testId: t.testId,
+        fileId: t.fileId,
+        title: t.title,
+        filePath: t.filePath ?? t.fileId,
+      })),
+      sampleMessage: c.sampleMessage,
+      firstSeenReportId: firstSeen.reportId,
+      firstSeenAt: firstSeen.createdAt,
+      firstSeenDisplayNumber: firstSeen.displayNumber,
+      lastSeenReportId: lastSeen.reportId,
+      lastSeenAt: lastSeen.createdAt,
+      lastSeenDisplayNumber: lastSeen.displayNumber,
+      appearedInLatestRun: newestIdx === 0,
+      consecutiveLatestRuns: consecutive,
+      runsSinceLastSeen: newestIdx,
+      flakyOccurrences: agg.flakyOccurrences,
+      retryRecoveryRate,
+    });
+  }
+
+  // Sort by impact (occurrences desc, then reportsAffected desc, then stableKey
+  // as a deterministic tiebreaker for cache prefix stability).
+  projectClusters.sort((a, b) => {
+    if (b.occurrences !== a.occurrences) return b.occurrences - a.occurrences;
+    if (b.reportsAffected !== a.reportsAffected) return b.reportsAffected - a.reportsAffected;
+    return a.stableKey.localeCompare(b.stableKey);
   });
 
-  // Sort by occurrences desc, with signature as tiebreaker for stable cache
-  // prefixes when two signatures have identical counts.
-  all.sort((a, b) =>
-    b.occurrences !== a.occurrences
-      ? b.occurrences - a.occurrences
-      : a.signature.localeCompare(b.signature)
-  );
+  const top = projectClusters.slice(0, options.topN);
 
-  const rootCauses = all.slice(0, options.topN);
-
-  // Enrich the top entries with the most recent LLM root-cause paragraph.
-  // Scanning reports newest-first means the first hit is the latest analysis.
-  for (const rc of rootCauses) {
-    const repTest = rc.affectedTests[0];
+  // Enrich top entries with the most recent per-test LLM root-cause paragraph.
+  for (const cluster of top) {
+    const repTest = cluster.affectedTests[0];
     if (!repTest) continue;
-    for (const reportId of reportIds) {
-      const analysis = testAnalysisDb.getByTestAndReport(repTest.testId, reportId);
+    for (const r of reports) {
+      const analysis = testAnalysisDb.getByTestAndReport(repTest.testId, r.reportId);
       if (analysis?.analysis) {
-        rc.latestRootCause = extractRootCauseParagraph(analysis.analysis);
-        rc.latestAnalysisReportId = reportId;
+        cluster.latestRootCause = extractRootCauseParagraph(analysis.analysis);
         break;
       }
     }
   }
 
-  const persistentFailures = all.filter((a) => a.reportsAffected >= options.persistentMinReports);
+  return top;
+}
 
-  return { rootCauses, persistentFailures };
+/** Structural shape used by the trend-signal helpers — kept narrow so any
+ *  ReportHistory-like row from the DB satisfies it without coupling this file
+ *  to the full ReportHistory type. */
+interface TrendReportLike {
+  stats?: { expected?: number; unexpected?: number; flaky?: number };
+  duration?: number;
+  displayNumber?: number;
+}
+
+/** Collapse a list of reports into the window-aggregate used by the trend
+ *  signal. Pass rate counts only executed tests (skipped excluded). Duration
+ *  averages over reports that carry a value — reports without `duration`
+ *  aren't counted in the denominator. A run counts as "passing" when it has
+ *  zero unexpected AND zero flaky tests — matches the runHasFailures check
+ *  used elsewhere in the project-summary prompt. */
+function summarizeReportsForTrend(reports: TrendReportLike[]): ProjectTrendWindow {
+  let expected = 0;
+  let unexpected = 0;
+  let flaky = 0;
+  let durationSum = 0;
+  let durationDenom = 0;
+  let passingRuns = 0;
+  for (const r of reports) {
+    const e = r.stats?.expected ?? 0;
+    const u = r.stats?.unexpected ?? 0;
+    const f = r.stats?.flaky ?? 0;
+    expected += e;
+    unexpected += u;
+    flaky += f;
+    if (u === 0 && f === 0) passingRuns++;
+    if (typeof r.duration === 'number' && r.duration > 0) {
+      durationSum += r.duration;
+      durationDenom++;
+    }
+  }
+  const executed = expected + unexpected + flaky;
+  const passRatePct = executed > 0 ? (expected / executed) * 100 : 0;
+  return {
+    runs: reports.length,
+    passingRuns,
+    passRatePct,
+    flakyCount: flaky,
+    failureCount: unexpected + flaky,
+    avgRunDurationMs: durationDenom > 0 ? durationSum / durationDenom : 0,
+  };
+}
+
+/** Build the trend signal block input for the project-summary prompt:
+ *  current-window aggregates, prior-window aggregates (when supplied), the
+ *  in-window last-half-vs-first-half failure split (when the window has ≥4
+ *  runs), and the cross-window cluster flow (resolved / persisting / new). */
+async function computeProjectTrendSignal(
+  currentWindow: Array<TrendReportLike & { reportID: string; createdAt: string | Date }>,
+  project: string,
+  currentClusters: ProjectCluster[],
+  priorReports: Array<TrendReportLike & { reportID: string; createdAt: string | Date }>
+): Promise<ProjectTrendSignal | undefined> {
+  if (currentWindow.length === 0) return undefined;
+  const current = summarizeReportsForTrend(currentWindow);
+
+  const prior = priorReports.length > 0 ? summarizeReportsForTrend(priorReports) : undefined;
+
+  // In-window split: most recent half vs older half. Surface only when each
+  // half has ≥2 runs so the split is statistically meaningful.
+  let splits: ProjectTrendSignal['splits'];
+  if (currentWindow.length >= 4) {
+    const halfSize = Math.floor(currentWindow.length / 2);
+    const lastHalf = currentWindow.slice(0, halfSize);
+    const firstHalf = currentWindow.slice(currentWindow.length - halfSize);
+    const lastSum = summarizeReportsForTrend(lastHalf);
+    const firstSum = summarizeReportsForTrend(firstHalf);
+    splits = {
+      halfSize,
+      lastHalfFailures: lastSum.failureCount,
+      firstHalfFailures: firstSum.failureCount,
+    };
+  }
+
+  // Cluster flow: re-run the cluster aggregator over the prior window and
+  // compare stableKey membership with the current window's clusters. Resolved
+  // clusters (present in prior, absent in current) are the strongest recovery
+  // evidence; new clusters (present in current, absent in prior) are the
+  // strongest regression evidence.
+  let clusterFlow: ProjectTrendSignal['clusterFlow'];
+  if (priorReports.length > 0) {
+    const priorClusters = await aggregateProjectClusters(
+      priorReports.map((r) => ({
+        reportId: r.reportID,
+        createdAt: String(r.createdAt),
+        displayNumber: r.displayNumber,
+      })),
+      project,
+      { topN: 50 }
+    );
+    const currentKeys = new Set(currentClusters.map((c) => c.stableKey));
+    const priorKeys = new Set(priorClusters.map((c) => c.stableKey));
+    const resolved = priorClusters.filter((c) => !currentKeys.has(c.stableKey));
+    const persisting = priorClusters.filter((c) => currentKeys.has(c.stableKey));
+    const newCount = currentClusters.filter((c) => !priorKeys.has(c.stableKey)).length;
+    resolved.sort((a, b) => {
+      if (b.reportsAffected !== a.reportsAffected) return b.reportsAffected - a.reportsAffected;
+      return b.occurrences - a.occurrences;
+    });
+    clusterFlow = {
+      resolvedCount: resolved.length,
+      persistingCount: persisting.length,
+      newCount,
+      topResolved: resolved.slice(0, 3).map((c) => ({
+        strategy: c.strategy,
+        category: c.category,
+        reportsAffected: c.reportsAffected,
+        sampleTest: c.affectedTests[0]?.title,
+      })),
+    };
+  }
+
+  return { current, prior, splits, clusterFlow };
+}
+
+/** Compute the suite/quarantine/near-flake summary for the project-summary
+ *  prompt. Inline SQL via getDatabase() — none of these are reused elsewhere.
+ *  Project='all' → no project filter. `priorReportIds` is optional; when
+ *  supplied, the helper also returns `priorDistinctTests` so the model can
+ *  reason about suite shrinkage. */
+function computeProjectCoverageScope(
+  reportIds: string[],
+  priorReportIds: string[] | null,
+  windowStartIso: string,
+  windowEndIso: string,
+  project: string
+): ProjectCoverageScope | undefined {
+  if (reportIds.length === 0) return undefined;
+  const db = getDatabase();
+  const projectFilter = project === 'all' ? '' : ' AND project = ?';
+  const projectParams = project === 'all' ? [] : [project];
+
+  const totalTests = (
+    db
+      .prepare(`SELECT COUNT(*) AS c FROM tests WHERE 1=1${projectFilter}`)
+      .get(...projectParams) as { c: number }
+  ).c;
+
+  const testsAddedInWindow = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM tests WHERE createdAt >= ? AND createdAt <= ?${projectFilter}`
+      )
+      .get(windowStartIso, windowEndIso, ...projectParams) as { c: number }
+  ).c;
+
+  // Quarantined = the most recent test_run per (testId, fileId, project) has
+  // quarantined=1. Subquery picks the latest createdAt for each test; the
+  // outer count keeps rows whose latest run is quarantined.
+  const currentlyQuarantined = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM (
+           SELECT testId, fileId, project, MAX(createdAt) AS latest_at
+           FROM test_runs
+           WHERE 1=1${projectFilter}
+           GROUP BY testId, fileId, project
+         ) latest
+         JOIN test_runs tr
+           ON tr.testId = latest.testId
+           AND tr.fileId = latest.fileId
+           AND tr.project = latest.project
+           AND tr.createdAt = latest.latest_at
+         WHERE tr.quarantined = 1`
+      )
+      .get(...projectParams) as { c: number }
+  ).c;
+
+  const reportIdsPlaceholders = reportIds.map(() => '?').join(',');
+  const quarantineFailuresInWindow = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM test_runs
+         WHERE quarantined = 1
+           AND outcome IN ('unexpected', 'flaky', 'failed')
+           AND reportId IN (${reportIdsPlaceholders})`
+      )
+      .get(...reportIds) as { c: number }
+  ).c;
+
+  // Distinct tests with at least one run in the current window.
+  const windowDistinctTests = (
+    db
+      .prepare(
+        `SELECT COUNT(DISTINCT testId || '::' || fileId || '::' || project) AS c
+         FROM test_runs WHERE reportId IN (${reportIdsPlaceholders})`
+      )
+      .get(...reportIds) as { c: number }
+  ).c;
+
+  let priorDistinctTests: number | undefined;
+  if (priorReportIds && priorReportIds.length > 0) {
+    const priorPlaceholders = priorReportIds.map(() => '?').join(',');
+    priorDistinctTests = (
+      db
+        .prepare(
+          `SELECT COUNT(DISTINCT testId || '::' || fileId || '::' || project) AS c
+           FROM test_runs WHERE reportId IN (${priorPlaceholders})`
+        )
+        .get(...priorReportIds) as { c: number }
+    ).c;
+  }
+
+  // Near-flakes: tests with `flaky` outcome (passed on retry) in window
+  // reports. Group by (testId, fileId) and join `tests` for the title +
+  // filePath. Top 5 by occurrence count.
+  type NearFlakeRow = {
+    testId: string;
+    fileId: string;
+    title: string | null;
+    filePath: string | null;
+    c: number;
+  };
+  const nearFlakeRows = db
+    .prepare(
+      `SELECT tr.testId AS testId, tr.fileId AS fileId,
+              t.title AS title, t.filePath AS filePath,
+              COUNT(*) AS c
+       FROM test_runs tr
+       LEFT JOIN tests t
+         ON t.testId = tr.testId AND t.fileId = tr.fileId AND t.project = tr.project
+       WHERE tr.outcome = 'flaky'
+         AND tr.reportId IN (${reportIdsPlaceholders})
+       GROUP BY tr.testId, tr.fileId, tr.project
+       ORDER BY c DESC, tr.testId
+       LIMIT 5`
+    )
+    .all(...reportIds) as NearFlakeRow[];
+  const nearFlakes = nearFlakeRows.map((row) => ({
+    testId: row.testId,
+    fileId: row.fileId,
+    title: row.title ?? row.testId,
+    filePath: row.filePath ?? row.fileId,
+    flakyOccurrences: row.c,
+  }));
+
+  return {
+    totalTests,
+    testsAddedInWindow,
+    currentlyQuarantined,
+    quarantineFailuresInWindow,
+    windowDistinctTests,
+    priorDistinctTests,
+    nearFlakes,
+  };
 }
 
 type ReportFailureRecord = {

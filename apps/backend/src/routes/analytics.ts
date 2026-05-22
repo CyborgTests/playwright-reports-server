@@ -10,15 +10,23 @@ import {
   UpsertFeedbackRequestSchema,
 } from '../lib/schemas/index.js';
 import { analyticsService } from '../lib/service/analytics.js';
+import { service } from '../lib/service/index.js';
 import { analysisFeedbackDb } from '../lib/service/db/analysisFeedback.sqlite.js';
 import { getDatabase } from '../lib/service/db/db.js';
 import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
 import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
+import { PROJECT_SUMMARY_REPORT_LIMIT } from '../lib/service/llmAnalysisQueue.js';
 import { projectSummaryDb } from '../lib/service/db/projectSummary.sqlite.js';
 import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
 import { type AuthRequest, authenticate } from './auth.js';
+
+/** Project-summary cache is considered too stale to display when the newest
+ *  report is ≥7 days ahead of the analysis's lastReportAt. The UI then hides
+ *  the verdict and shows a "Re-generate" prompt rather than serving stale
+ *  conclusions. */
+const STALENESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function feedbackRowToShared(
   row: {
@@ -363,6 +371,12 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   // report for the project arrives, which invalidates the cache server-side.
   // Surfaces `pendingAnalysisCount` so the dashboard can drive refetch polling
   // while a project_summary task is in flight.
+  //
+  // Staleness flags compare the cached `lastReportAt` against the current
+  // newest report for the project:
+  //   - `isStale`     — newer reports have arrived since the analysis ran
+  //   - `isTooStale`  — analysis trails the latest report by ≥7 days; the UI
+  //                     should hide the verdict and prompt a re-generate
   fastify.get(
     '/api/analytics/project-summary',
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -387,6 +401,28 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
             );
           }
         }
+
+        // Compute staleness against the current newest report. Cheap: one
+        // indexed query for the latest report in the project (or globally).
+        let isStale = false;
+        let isTooStale = false;
+        let currentLatestReportAt: string | undefined;
+        if (row?.lastReportAt) {
+          const [currentLatest] = reportDb.getLatestByProject(
+            projectKey === 'all' ? undefined : projectKey,
+            1
+          );
+          if (currentLatest?.createdAt) {
+            currentLatestReportAt = String(currentLatest.createdAt);
+            const cachedAt = new Date(row.lastReportAt).getTime();
+            const currentAt = new Date(currentLatestReportAt).getTime();
+            if (Number.isFinite(cachedAt) && Number.isFinite(currentAt) && currentAt > cachedAt) {
+              isStale = true;
+              isTooStale = currentAt - cachedAt >= STALENESS_MAX_AGE_MS;
+            }
+          }
+        }
+
         const responseData = row
           ? {
               project: row.project,
@@ -399,6 +435,9 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
               lastReportAt: row.lastReportAt,
               createdAt: row.createdAt,
               updatedAt: row.updatedAt,
+              isStale,
+              isTooStale,
+              currentLatestReportAt,
             }
           : null;
         return reply.send({
@@ -450,9 +489,12 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
               (a, b) =>
                 new Date(String(b.createdAt)).getTime() - new Date(String(a.createdAt)).getTime()
             )
-            .slice(0, 10);
+            .slice(0, PROJECT_SUMMARY_REPORT_LIMIT);
         } else {
-          latestReports = reportDb.getLatestByProject(project || undefined, 10);
+          latestReports = reportDb.getLatestByProject(
+            project || undefined,
+            PROJECT_SUMMARY_REPORT_LIMIT
+          );
         }
         if (latestReports.length === 0) {
           return reply.status(400).send({
@@ -467,9 +509,16 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
           (r) => r.stats && ((r.stats.unexpected ?? 0) > 0 || (r.stats.flaky ?? 0) > 0)
         );
 
-        // No failures → no LLM call needed. Persist a canned all-green message
-        // synchronously so a refresh shows it.
-        if (!hasAnyFailures) {
+        // R6: when `llm.analyzeGreenWindows` is enabled, route all-green
+        // windows through the LLM too so the verdict can flag duration creep,
+        // near-flakes, quarantine churn and suite shrinkage. Default (false)
+        // preserves the legacy canned response to keep LLM spend predictable.
+        const projectConfig = await service.getConfig();
+        const analyzeGreen = (projectConfig as any)?.llm?.analyzeGreenWindows === true;
+
+        // No failures AND green-window analysis disabled → no LLM call needed.
+        // Persist a canned all-green message synchronously so a refresh shows it.
+        if (!hasAnyFailures && !analyzeGreen) {
           const lastReportId = latestReports[0]?.reportID;
           const reportTimes = latestReports
             .map((r) => (r.createdAt ? new Date(String(r.createdAt)).getTime() : Number.NaN))

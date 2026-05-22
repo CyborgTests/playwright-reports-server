@@ -374,6 +374,38 @@ export class ReportDatabase {
     return rows.map(this.rowToReport);
   }
 
+  /** Latest reports strictly before `beforeCreatedAt` (ISO). Used by the
+   *  project-summary trend signal to fetch the prior window. */
+  public getLatestByProjectBefore(
+    project: string | undefined,
+    beforeCreatedAt: string,
+    limit: number
+  ): ReportHistory[] {
+    type Row = {
+      reportID: string;
+      project: string;
+      title: string | null;
+      displayNumber: number | null;
+      createdAt: string;
+      reportUrl: string;
+      size: string | null;
+      sizeBytes: number;
+      stats: string | null;
+      metadata: string;
+    };
+    const rows =
+      project && project !== 'all'
+        ? (this.db
+            .prepare(
+              'SELECT * FROM reports WHERE project = ? AND createdAt < ? ORDER BY createdAt DESC LIMIT ?'
+            )
+            .all(project, beforeCreatedAt, limit) as Row[])
+        : (this.db
+            .prepare('SELECT * FROM reports WHERE createdAt < ? ORDER BY createdAt DESC LIMIT ?')
+            .all(beforeCreatedAt, limit) as Row[]);
+    return rows.map(this.rowToReport);
+  }
+
   public getCount(): number {
     const result = this.db.prepare('SELECT COUNT(*) as count FROM reports').get() as {
       count: number;

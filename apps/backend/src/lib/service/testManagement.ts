@@ -13,7 +13,6 @@ import { extractFailureEvidence } from '../parser/failure-extraction.js';
 import type { ReportHistory } from '../storage/types.js';
 import { getDatabase } from './db/db.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
-import { projectSummaryDb } from './db/projectSummary.sqlite.js';
 import type { Test, TestRun, TestWithQuarantineInfo } from './db/tests.sqlite.js';
 import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
@@ -576,11 +575,11 @@ export class TestManagementService {
       );
     }
 
-    // Invalidate any persisted project-level LLM summaries — they describe the latest 10
-    // runs, so once a new report exists for this project, the cached summary is stale.
-    // 'all' covers the dashboard case where no project filter was selected.
-    projectSummaryDb.deleteByProject(report.project);
-    projectSummaryDb.deleteByProject('all');
+    // Persist the cached project-level LLM summary across new-report ingest.
+    // Staleness is now surfaced at fetch time by the project-summary route
+    // (compares `lastReportAt` against the current newest report and emits
+    // `isStale` / `isTooStale` flags). Deleting here would defeat that signal —
+    // the UI would have no cached verdict to attach the "Stale" badge to.
 
     // After the transaction, queue LLM analysis for failed tests — but only if the user
     // opted in via Settings → LLM Configuration → "Auto-analyze new reports". Default off

@@ -1,3 +1,5 @@
+import { formatDuration } from '@playwright-reports/shared';
+import type { ClusterEvidence, ClusterStrategy } from '@playwright-reports/shared';
 import type { FailureEvidence } from '../../parser/failure-extraction.js';
 import type { PerFileStep } from '../../parser/report-payload.js';
 import type { LLMResponseSchema, PromptSegment, SegmentedPrompt } from '../types/index.js';
@@ -169,12 +171,12 @@ export const PROJECT_ANALYSIS_SCHEMA: LLMResponseSchema = {
         type: 'string',
         enum: [...PROJECT_VERDICT_ENUM],
         description:
-          'Overall project health verdict. healthy = no failures or only resolved transient ones; stabilizing = failures are decreasing or have been fixed recently; degrading = failures are increasing or new persistent ones appeared; failing = many runs are red.',
+          'Overall project health verdict. healthy = no active failure clusters AND the latest runs are clean (the recovery has held for several runs — applies whether the prior failures were transient flakes or real defects that have since been fixed); stabilizing = recovery is in-progress but unproven (cluster resolved only 1–2 runs ago, or only some clusters resolved while others persist); degrading = failure clusters are increasing or new persistent ones appeared; failing = many runs are red, including the latest.',
       },
       summary: {
         type: 'string',
         description:
-          '1–3 sentence executive headline shown above the fold. State the verdict in plain English and mention the most important detail.',
+          '1–3 sentence executive headline. Open with "Project is <status>" where <status> is the chosen verdict. Follow with one or two sentences citing the single most important supporting fact.',
       },
       sections: {
         type: 'array',
@@ -198,25 +200,44 @@ export const PROJECT_ANALYSIS_SCHEMA: LLMResponseSchema = {
             codeRefs: {
               type: 'array',
               description:
-                'Code references mentioned in this section, e.g. test files or paths under tests/. Used by the UI to render clickable links.',
+                'Test or file references mentioned in this section. The UI renders these as clickable links — only include refs whose testId or filePath is present in the supplied data.',
               items: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['file'],
+                required: ['kind', 'label'],
                 properties: {
-                  file: {
+                  kind: {
                     type: 'string',
-                    description: 'Path to the test file (relative to the repo root if known).',
+                    enum: ['test', 'file'],
+                    description:
+                      "'test' links to the test detail page (requires testId, fileId); 'file' opens the report viewer for a spec file (requires filePath).",
+                  },
+                  label: {
+                    type: 'string',
+                    description: 'Display label (test title or file path).',
+                  },
+                  testId: {
+                    type: 'string',
+                    description:
+                      'Required when kind=test. Must be a testId from the affected tests in the supplied data.',
+                  },
+                  fileId: {
+                    type: 'string',
+                    description: 'Required when kind=test. The fileId the test belongs to.',
+                  },
+                  filePath: {
+                    type: 'string',
+                    description: 'Required when kind=file. Path to the spec file.',
+                  },
+                  reportId: {
+                    type: 'string',
+                    description:
+                      'Optional report ID this reference belongs to. Must be one of the supplied run IDs when set; otherwise the UI links to the latest run.',
                   },
                   line: {
                     type: 'integer',
                     minimum: 1,
                     description: 'Optional 1-based line number.',
-                  },
-                  reportId: {
-                    type: 'string',
-                    description:
-                      'Optional report ID this reference belongs to. When set, the UI links into that specific report; otherwise it links into the latest one.',
                   },
                 },
               },
@@ -343,26 +364,59 @@ export const PROJECT_SUMMARY_TASK_INSTRUCTIONS = `Analyze the test health for pr
 
 Respond with a structured JSON object matching the provided schema. The schema requires:
 
-- **verdict**: one of \`healthy\`, \`stabilizing\`, \`degrading\`, \`failing\` — reflecting the overall trend across the full timeline.
-  - \`healthy\`: no failures, or only transient failures that already resolved AND the LATEST run passed.
-  - \`stabilizing\`: failures appeared earlier but the most recent runs are clean / improving.
-  - \`degrading\`: failures appeared recently or are increasing; new persistent issues introduced.
-  - \`failing\`: many runs are red right now, including the latest.
-  CRITICAL: a run that has any unexpected or flaky tests is NOT a passing run. Re-read the run table before choosing the verdict — if the latest run shows failures, do not classify the project as \`healthy\` or \`stabilizing\`.
-- **summary**: a 1–3 sentence executive headline. State the verdict in plain English and call out the single most important fact.
-- **sections**: an ordered list of up to 4 sections. Use these headings in this order (skip a section ONLY if you have no observations for it):
-  1. \`Health Assessment\` — overall verdict in detail. Distinguish transient vs persistent failures; call out new issues; note whether they were already resolved.
-  2. \`Recommendations\` — top 3 prioritized actions to improve stability. Lead with highest-impact; be specific to what the runs show, not generic advice.
+- **verdict**: one of \`healthy\`, \`stabilizing\`, \`degrading\`, \`failing\` — reflecting the project's current state, weighted toward the most recent runs.
+  - \`healthy\`: no active failure clusters AND the latest runs are clean. The prior failures may have been transient flakes OR real defects that were since fixed — either way, what matters is that the recovery has held. As a guide, treat the verdict as \`healthy\` once the latest run is green and either (a) all clusters are in the "Recently Resolved" bucket OR (b) all latest-run-failures are flake/infra signals already covered by quarantine. A fix that has held for ≥3 clean runs is \`healthy\`, not \`stabilizing\`.
+  - \`stabilizing\`: recovery is in-progress but unproven. Use this when the latest run is green BUT at least one cluster was active within the last 2 runs (i.e. \`last seen 1–2 runs ago\`), or when only some active clusters have resolved while others persist. "Stabilizing" implies "things are getting better but we're not done watching."
+  - \`degrading\`: at least one active failure cluster is present in the latest run (or the prior 1–2 runs) AND retry recovery is low; new persistent issues introduced; pass rate dropped meaningfully vs the prior window.
+  - \`failing\`: many recent runs are red, including the latest. Multiple active signatures, no recovery in sight.
+  CRITICAL: a run that has any unexpected or flaky tests is NOT a passing run. Re-read the run table before choosing the verdict — if the latest run shows failures, do not classify the project as \`healthy\`.
+- **summary**: a 1–3 sentence executive headline. Open with "Project is <status>." where <status> matches the chosen verdict (one of: healthy, stabilizing, degrading, failing). Follow with one or two sentences citing the single most important supporting fact.
+- **sections**: an ordered list of up to 4 sections. Use these headings in this order (skip a section when you have no observations for it):
+  1. \`Health Assessment\` — overall verdict in detail. Distinguish transient vs persistent clusters; call out new issues; cite recently-resolved clusters as recovery evidence when relevant.
+  2. \`Recommendations\` — concrete actions for **Active Failure Clusters only**.
   3. \`Notable Trends\` — failure-rate movement, drifting categories, runs that look unusual.
   4. (optional) \`Risks\` — anything else worth flagging.
 
-Each section body is markdown. Do NOT repeat the section heading inside the body. When referencing tests, include their path under \`codeRefs\` so the UI can render clickable links.
+Each section body is markdown. Do NOT repeat the section heading inside the body. When referencing specific tests or files, attach them under \`codeRefs\` so the UI can render clickable links — use \`kind: "test"\` with the test's \`testId\` and \`fileId\` for test refs, or \`kind: "file"\` with the spec \`filePath\` for file refs. Only cite testIds, fileIds, and filePaths that appear in the supplied data (under "Affected tests" lines). Setting \`reportId\` is optional; when set it must be one of the run IDs listed in the per-run dump.
 
-When the data includes a **Top Root Causes** block, treat it as the primary input — those are the actual failure signatures across the window, ranked by occurrence count. Build your "Health Assessment" and "Recommendations" sections around them: identify which one or two root causes are responsible for the most failures, name the specific tests they affect (from the listed affected tests), and call those out by file path in your \`codeRefs\`. The per-run category histograms below are supporting evidence, not the lead.
+**Active Failure Clusters** is the primary input when present — failing tests grouped by the clustering engine. Each cluster has a \`strategy\` that tells you the grouping basis:
+- \`signature\` — tests share the exact error signature. One root cause across the listed tests.
+- \`stack-frame\` — tests fail at the same stack frame; likely the same code path with slightly different error messages.
+- \`fixture\` — tests fail in a fixture (\`beforeAll\`/\`beforeEach\`/\`afterAll\`/\`afterEach\`). **Systemic** — the fix is in the fixture, not in any of the listed tests. Always frame Recommendations as a fixture-level change.
+- \`temporal\` — tests co-failed in time. Weakest grouping; investigate whether a shared infra event caused them rather than recommending per-test fixes.
 
-When a **Persistent Failures** block is present, every entry is a signature that recurred in 3+ distinct runs — these are regressions that aren't being fixed and should anchor the "Recommendations" section.
+Each cluster also has an **Evidence** line carrying the concrete signature / stack frame / fixture phase. Cite that evidence by name in your prose ("the cluster sharing stack frame \`x\`", not just "the cluster").
 
-IMPORTANT: account for the full timeline. If tests were passing before and after a failure, that failure is likely transient/already resolved — do not treat it as an ongoing critical issue. But if the LATEST run is red, the verdict cannot be \`healthy\` regardless of what came before.`;
+The data is split into two cluster buckets:
+- **Active Failure Clusters** — present in the latest run or within the last 2 runs. These are the ONLY clusters that may appear in Recommendations.
+- **Recently Resolved Failure Clusters** — last seen ≥3 runs ago. These are recovery evidence for Health Assessment. **Never** include resolved clusters in Recommendations, even if they had high prior occurrences or 0% recovery rate. A resolved cluster was fixed; recommending a fix for it is a hallucination.
+
+If the **Active Failure Clusters** block is empty, Recommendations should be **omitted entirely** (do not emit an empty section, do not invent recommendations to fill it). The verdict is \`healthy\` — every prior failure cluster is ≥3 runs old and the recovery has held. Health Assessment cites the resolved clusters as evidence of recovery. Do not pick \`stabilizing\` in this case; "stabilizing" requires at least one cluster last-seen within the past 2 runs (otherwise the recovery is no longer "unproven").
+
+Within Active Failure Clusters, each has a **Window** line and a **Retry recovery** percentage. Classify each cluster:
+- **in latest run, recovery <50%** → active regression. Lead Recommendations; cite consecutive count when ≥2.
+- **in latest run, recovery ≥50%** → flake/infra issue. Recommend stabilization (retry tuning, fixture hardening), not a code fix.
+- **last seen 1–2 runs ago** → recently transient. Mention in Health Assessment; include in Recommendations only when its evidence overlaps a currently-active cluster.
+- **recovery 0% with ≥3 occurrences** → hard failure; call out explicitly: "never recovers."
+
+When building \`codeRefs\` for an Active Failure Cluster, use \`kind: "test"\` with testId+fileId from the "Affected tests" line. For \`fixture\` clusters, prefer linking to the fixture file (\`kind: "file"\`) when you can identify it from the affected-tests file paths.
+
+**Trend Signal** is the numerical anchor for "Notable Trends" — cite the actual deltas (e.g. "pass rate dropped 12.3% vs the prior 10 runs") rather than eyeballing the per-run dump. The \`Prior N runs\` baseline and the \`Cluster flow vs prior window\` (resolved / persisting / new) line together drive the verdict:
+- High \`resolved\`, low \`new\`, latest run green → \`healthy\` if all resolved clusters are ≥3 runs old (the fix held); \`stabilizing\` if any resolved cluster was last seen within the past 2 runs. Either way, name the top resolved clusters in "Health Assessment".
+- High \`new\`, latest run red → \`degrading\` at minimum. Lead Recommendations with the new clusters.
+- High \`persisting\`, no \`new\` / \`resolved\` → stuck; verdict tracks current pass rate.
+- No prior data → fall back to per-cluster Window markers; don't claim trend without baseline.
+- \`Last N vs prior N (in-window)\` skewed to the recent half is a degrading signal even when overall pass rate looks flat.
+
+**Suite:** size calibrates severity — "5 failures across 30 tests" ≠ "5 failures across 3000". When \`quarantined runs still failing in window\` > 0, flag in "Risks" — the quarantine isn't suppressing the issue.
+
+**Suite coverage** delta ≤ −5% → flag suite shrinkage in "Notable Trends"; strongly positive after a green window may mean new untested coverage.
+
+**Near-flakes (passed on retry)** are not failures, but they signal instability. Mention in "Notable Trends" for a healthy verdict; surface in "Risks" when they overlap an active cluster.
+
+Per-run \`- Context:\` lines carry git branch / commit / CI build. When a cluster's first-seen run aligns with a branch transition or commit, cite that boundary — e.g. "appeared after merge to \`main\` at commit \`abc1234\`". Don't speculate beyond what the lines show.
+
+When **Active Failure Clusters** is absent (no failures in the window), focus on trend signal, suite coverage, and near-flakes. Health Assessment becomes one or two sentences confirming "no failures observed" and citing the supporting facts.`;
 
 /** One entry in a test's retry timeline. Drawn from Playwright's
  *  `test.results[]` — each result is one attempt in execution order. */
@@ -1621,17 +1675,286 @@ const renderReportTrendContext = (
   return lines.join('\n').trimEnd();
 };
 
-/** Aggregated root cause across the project's latest runs. Built by the
- *  queue worker and passed in here so the prompt template stays pure. */
-export interface ProjectRootCause {
-  signature: string;
+/** Aggregated failure cluster across the project's latest runs. Built by the
+ *  queue worker via the shared `getFailureClusters` engine, then enriched
+ *  with project-level lifecycle data (first/last seen, retry recovery).
+ *
+ *  A cluster groups failing tests by one of four strategies:
+ *  - `signature` — same error signature
+ *  - `stack-frame` — share a stack frame (likely same code path, different msg)
+ *  - `fixture` — fixture / setup-teardown failure (systemic, often spans tests)
+ *  - `temporal` — co-failed in time (suspicious correlation)
+ *  The strategy plus evidence shape lets the model frame "5 unrelated tests
+ *  share a beforeEach failure" differently from "5 separate timeouts." */
+export interface ProjectCluster {
+  /** Stable cross-window identity, derived from strategy + primary evidence.
+   *  Used by the trend signal to detect resolved/persisting/new clusters. */
+  stableKey: string;
+  strategy: ClusterStrategy;
+  evidence: ClusterEvidence;
+  /** Most common per-test failure category for tests in the cluster, or 'unknown'. */
   category: string;
+  /** Total failing test_runs across all cluster members within the window. */
   occurrences: number;
+  /** Distinct reports in the window where at least one cluster member failed. */
   reportsAffected: number;
-  affectedTests: Array<{ testId: string; title: string; filePath: string }>;
+  affectedTests: Array<{ testId: string; fileId: string; title: string; filePath: string }>;
   sampleMessage: string;
+  /** Most recent per-test LLM root-cause paragraph for a representative member,
+   *  surfaced so the project verdict can echo a known root cause without
+   *  rerunning per-test analysis. */
   latestRootCause?: string;
-  latestAnalysisReportId?: string;
+  /** Oldest run (within the window) where any cluster member failed. */
+  firstSeenReportId: string;
+  firstSeenAt: string;
+  firstSeenDisplayNumber?: number;
+  /** Most recent run (within the window) where any cluster member failed. */
+  lastSeenReportId: string;
+  lastSeenAt: string;
+  lastSeenDisplayNumber?: number;
+  /** True when the cluster has any failing member in the latest run. */
+  appearedInLatestRun: boolean;
+  consecutiveLatestRuns: number;
+  runsSinceLastSeen: number;
+  /** Cluster-wide `flaky` outcomes (ultimately passed on retry). */
+  flakyOccurrences: number;
+  /** `flakyOccurrences / occurrences` — 0..1. */
+  retryRecoveryRate: number;
+}
+
+/** Per-window aggregate metrics used by the trend signal block. */
+export interface ProjectTrendWindow {
+  runs: number;
+  /** Runs with no failures (unexpected + flaky == 0). */
+  passingRuns: number;
+  passRatePct: number;
+  flakyCount: number;
+  /** Total failed test occurrences (unexpected + flaky) summed across runs. */
+  failureCount: number;
+  /** Average per-run duration in milliseconds. */
+  avgRunDurationMs: number;
+}
+
+/** Cross-window classification of failure clusters: which prior-window
+ *  clusters are still present this window, which were resolved, and
+ *  which are new this window. Identity is the cluster's `stableKey`
+ *  (strategy + primary evidence). */
+export interface ClusterFlow {
+  resolvedCount: number;
+  persistingCount: number;
+  newCount: number;
+  /** Top resolved clusters (by occurrence in the prior window). Names them
+   *  so the model can cite "X is no longer firing" in the recovery framing. */
+  topResolved: Array<{
+    strategy: ClusterStrategy;
+    category: string;
+    reportsAffected: number;
+    sampleTest?: string;
+  }>;
+}
+
+/** Top "near-flake" — a test that passed on retry inside the window. Carries
+ *  enough metadata to populate a navigable codeRef. */
+export interface ProjectNearFlake {
+  testId: string;
+  fileId: string;
+  title: string;
+  filePath: string;
+  flakyOccurrences: number;
+}
+
+/** Suite-scope / quarantine summary for the project. Lets the model frame
+ *  "5 failures" relative to suite size and surface quarantine churn. */
+export interface ProjectCoverageScope {
+  /** Distinct tests currently in scope for the project. */
+  totalTests: number;
+  /** Tests whose `tests.createdAt` falls within the analyzed window. */
+  testsAddedInWindow: number;
+  /** Distinct tests whose latest test_run is quarantined. */
+  currentlyQuarantined: number;
+  /** Test_runs in the window's reports that were marked quarantined AND
+   *  failed anyway (outcome unexpected or flaky). High value here means
+   *  the quarantine isn't actually silencing the issue. */
+  quarantineFailuresInWindow: number;
+  /** Distinct tests with at least one run in the current window. */
+  windowDistinctTests: number;
+  /** Distinct tests with at least one run in the prior window. Undefined
+   *  when no prior window is available. Used by the model to flag suite
+   *  shrinkage. */
+  priorDistinctTests?: number;
+  /** Top tests that had at least one `flaky` outcome (passed on retry) in
+   *  the current window. Capped at 5; ordered by occurrence count. */
+  nearFlakes: ProjectNearFlake[];
+}
+
+/** Trend signal computed locally by the queue worker. All fields are
+ *  optional — the prompt skips the block when the project has too few
+ *  reports to build it. The `current` window is the same set the verdict
+ *  is generated against; `prior` is the equivalent block immediately
+ *  preceding; `splits` is the in-window last-half-vs-first-half split
+ *  (only emitted when the current window has ≥4 runs). */
+export interface ProjectTrendSignal {
+  current: ProjectTrendWindow;
+  prior?: ProjectTrendWindow;
+  splits?: {
+    halfSize: number;
+    lastHalfFailures: number;
+    firstHalfFailures: number;
+  };
+  clusterFlow?: ClusterFlow;
+}
+
+/** Format a signed delta with sign + one decimal; `+0.0` and `-0.0` collapse
+ *  to `0.0` so the line reads cleanly when nothing changed. */
+function formatSignedPct(delta: number): string {
+  const rounded = Math.round(delta * 10) / 10;
+  if (rounded === 0) return '0.0%';
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)}%`;
+}
+
+function formatSignedCount(delta: number): string {
+  if (delta === 0) return '0';
+  return `${delta > 0 ? '+' : ''}${delta}`;
+}
+
+function formatSignedDuration(deltaMs: number): string {
+  if (deltaMs === 0) return '±0';
+  const sign = deltaMs > 0 ? '+' : '-';
+  return `${sign}${formatDuration(Math.abs(deltaMs))}`;
+}
+
+/** "#42 (abc1234, …)" when displayNumber is known, else just the reportId.
+ *  Used for the run-dump header where readers want both forms to cross-
+ *  reference. The slimmer `formatRunRef` variant below is used in dense
+ *  in-line citations (root-cause Window lines) where the raw reportId is
+ *  noise. */
+function formatRunLabel(reportId: string, displayNumber?: number): string {
+  return typeof displayNumber === 'number'
+    ? `#${displayNumber} (${reportId})`
+    : reportId;
+}
+
+/** "#42" when displayNumber is known, else the reportId. For dense in-line
+ *  citations where the raw reportId is just visual noise. */
+function formatRunRef(reportId: string, displayNumber?: number): string {
+  return typeof displayNumber === 'number' ? `#${displayNumber}` : reportId;
+}
+
+/** ISO timestamp → `YYYY-MM-DD` for the calendar-only views. */
+function isoDate(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+/** Number of full days between two ISO dates. Used for the window-duration
+ *  header so the model knows whether "10 runs" means 1 day of CI or 2 months. */
+function daysBetweenIso(fromIso: string, toIso: string): number {
+  const from = new Date(fromIso).getTime();
+  const to = new Date(toIso).getTime();
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return 0;
+  return Math.max(1, Math.round((to - from) / 86_400_000));
+}
+
+/** Compact evidence line per cluster. The clustering engine guarantees at
+ *  least one piece of evidence per cluster — we surface them by precedence
+ *  (signature > stackFrame > fixturePhase > coFailureRate) so the model can
+ *  reason about the cluster's grouping basis. */
+function renderClusterEvidenceInline(
+  strategy: ClusterStrategy,
+  evidence: ClusterEvidence
+): string | null {
+  const parts: string[] = [`strategy=${strategy}`];
+  if (evidence.signature) parts.push(`signature=\`${evidence.signature}\``);
+  if (evidence.stackFrame) parts.push(`stack frame=\`${evidence.stackFrame}\``);
+  if (evidence.fixturePhase) parts.push(`fixture phase=\`${evidence.fixturePhase}\``);
+  if (typeof evidence.coFailureRate === 'number') {
+    parts.push(`co-failure rate=${(evidence.coFailureRate * 100).toFixed(0)}%`);
+  }
+  if (evidence.secondaryEvidence && evidence.secondaryEvidence.length > 0) {
+    const sec = evidence.secondaryEvidence.map((s) => `${s.strategy}×${s.count}`).join(', ');
+    parts.push(`also matched: ${sec}`);
+  }
+  return parts.join(' · ');
+}
+
+/** Compact one-line context for the per-run dump. Only fields with non-empty
+ *  values appear; returns null when nothing was set. */
+function renderRunContextInline(ctx: ReportSummaryRunContext): string | null {
+  const parts: string[] = [];
+  if (ctx.gitCommit) {
+    const g = ctx.gitCommit;
+    if (g.branch) parts.push(`branch=\`${g.branch}\``);
+    const hash = g.shortHash ?? g.hash;
+    if (hash) {
+      const subject = g.subject ? ` "${g.subject.replace(/"/g, "'")}"` : '';
+      parts.push(`commit=\`${hash}\`${subject}`);
+    } else if (g.subject) {
+      parts.push(`subject="${g.subject.replace(/"/g, "'")}"`);
+    }
+  }
+  if (ctx.ci) {
+    if (ctx.ci.buildHref) parts.push(`ci=${ctx.ci.buildHref}`);
+    else if (ctx.ci.commitHref) parts.push(`ci_commit=${ctx.ci.commitHref}`);
+    else if (ctx.ci.commitHash) parts.push(`ci_commit=\`${ctx.ci.commitHash}\``);
+  }
+  if (ctx.playwrightVersion) parts.push(`pw=${ctx.playwrightVersion}`);
+  if (typeof ctx.actualWorkers === 'number') parts.push(`workers=${ctx.actualWorkers}`);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+function renderTrendSignal(signal: ProjectTrendSignal): string {
+  let block = `## Trend Signal\n`;
+  const { current, prior, splits, clusterFlow } = signal;
+  const currentLine = (label: string, value: string, delta?: string): string =>
+    delta ? `- **${label}:** ${value} (Δ ${delta} vs prior ${prior?.runs ?? 0} runs)\n` : `- **${label}:** ${value}\n`;
+
+  block += currentLine(
+    'Pass rate',
+    `${current.passRatePct.toFixed(1)}%`,
+    prior ? formatSignedPct(current.passRatePct - prior.passRatePct) : undefined
+  );
+  // `Total failures` = unexpected + flaky. The model can read the per-run
+  // dump for the unexpected-vs-flaky split when it matters; collapsing to
+  // one delta removes the redundancy with a separate flaky-only line.
+  block += currentLine(
+    'Total failures',
+    `${current.failureCount} (${current.flakyCount} flaky)`,
+    prior ? formatSignedCount(current.failureCount - prior.failureCount) : undefined
+  );
+  block += currentLine(
+    'Avg run duration',
+    formatDuration(current.avgRunDurationMs),
+    prior ? formatSignedDuration(current.avgRunDurationMs - prior.avgRunDurationMs) : undefined
+  );
+  if (splits) {
+    block += `- **Last ${splits.halfSize} vs prior ${splits.halfSize} (in-window):** ${splits.lastHalfFailures} vs ${splits.firstHalfFailures} failures\n`;
+  }
+
+  // Explicit prior-window baseline: "X of N passed cleanly" mirrors the
+  // overview line for the current window so the model can frame "stabilizing"
+  // vs "degrading" against a concrete number, not a slope it has to estimate.
+  if (prior) {
+    block += `- **Prior ${prior.runs} runs:** ${prior.passingRuns} of ${prior.runs} passed cleanly · pass rate ${prior.passRatePct.toFixed(1)}% · ${prior.failureCount} failures\n`;
+  }
+
+  // Cluster flow across the window boundary. "Resolved" is the strongest
+  // recovery evidence; "new" hints at fresh regressions even when overall
+  // pass rate looks fine.
+  if (clusterFlow) {
+    block += `- **Cluster flow vs prior window:** ${clusterFlow.resolvedCount} resolved · ${clusterFlow.persistingCount} persisting · ${clusterFlow.newCount} new\n`;
+    if (clusterFlow.topResolved.length > 0) {
+      const resolvedList = clusterFlow.topResolved
+        .map((r) =>
+          r.sampleTest
+            ? `\`${r.strategy}\`/\`${r.category}\` (was in ${r.reportsAffected} prior runs, e.g. \`${r.sampleTest}\`)`
+            : `\`${r.strategy}\`/\`${r.category}\` (was in ${r.reportsAffected} prior runs)`
+        )
+        .join('; ');
+      block += `- **Top resolved:** ${resolvedList}\n`;
+    }
+  }
+
+  block += '\n';
+  return block;
 }
 
 export const buildProjectSummarySegments = (args: {
@@ -1639,14 +1962,22 @@ export const buildProjectSummarySegments = (args: {
   project: string;
   runs: Array<{
     reportId: string;
+    /** Optional human-friendly run number — `#42` reads better in prose than
+     *  a raw reportId. Falls back to a truncated reportId when absent. */
+    displayNumber?: number;
     createdAt: string;
     stats: { total: number; expected: number; unexpected: number; flaky: number; skipped: number };
     totalFailures: number;
     categories: Record<string, number>;
     llmSummary?: string;
+    /** Per-run git/CI/env context. Rendered as a compact one-liner inside the
+     *  run dump so the model can correlate signature onset with a branch /
+     *  commit / build. */
+    runContext?: ReportSummaryRunContext;
   }>;
-  rootCauses?: ProjectRootCause[];
-  persistentFailures?: ProjectRootCause[];
+  clusters?: ProjectCluster[];
+  trendSignal?: ProjectTrendSignal;
+  coverage?: ProjectCoverageScope;
   overrides?: CustomPromptOverrides;
 }): SegmentedPrompt => {
   const segments: PromptSegment[] = [];
@@ -1695,52 +2026,131 @@ export const buildProjectSummarySegments = (args: {
   const latestStatus = latestRun ? (runHasFailures(latestRun) ? 'FAILURES' : 'PASS') : 'unknown';
 
   let dataBlock = `Project: "${args.project}", latest ${totalRuns} runs.\n\n`;
+  // Window-duration line: makes the calendar span explicit so the model
+  // doesn't conflate "10 runs over 2 months" with "10 runs in one day."
+  const oldestRun = args.runs[totalRuns - 1];
+  if (latestRun && oldestRun) {
+    const days = daysBetweenIso(oldestRun.createdAt, latestRun.createdAt);
+    const oldestDay = oldestRun.createdAt.slice(0, 10);
+    const latestDay = latestRun.createdAt.slice(0, 10);
+    dataBlock += `**Window:** ${oldestDay} → ${latestDay} (${days} day${days === 1 ? '' : 's'}, ${totalRuns} run${totalRuns === 1 ? '' : 's'})\n`;
+  }
   dataBlock += `**Overview:** ${passingRuns} of ${totalRuns} runs passed cleanly (no failures). ${runsWithFailures.length} runs had failures.\n`;
-  dataBlock += `**Latest run status:** ${latestStatus}${latestRun ? ` (${latestRun.reportId})` : ''} — use this to anchor the verdict.\n\n`;
+  // Coverage scope: lets the model interpret "N failures" relative to suite
+  // size, and surface quarantine churn that wouldn't otherwise reach the
+  // verdict (quarantined-but-still-failing tests don't appear in the per-run
+  // category histograms).
+  if (args.coverage) {
+    const c = args.coverage;
+    const addedPart = c.testsAddedInWindow > 0 ? ` · ${c.testsAddedInWindow} added in window` : '';
+    const quarantinePart =
+      c.currentlyQuarantined > 0
+        ? ` · ${c.currentlyQuarantined} quarantined${c.quarantineFailuresInWindow > 0 ? ` (${c.quarantineFailuresInWindow} quarantined runs still failing in window)` : ''}`
+        : '';
+    dataBlock += `**Suite:** ${c.totalTests} tests${addedPart}${quarantinePart}\n`;
+    // Suite shrinkage signal: count of distinct tests touched by the current
+    // window vs the prior window. Surface as a delta so the model can flag a
+    // shrinking suite even when overall pass rate looks fine.
+    if (typeof c.priorDistinctTests === 'number') {
+      const delta = c.windowDistinctTests - c.priorDistinctTests;
+      const deltaLabel = delta === 0 ? '0' : delta > 0 ? `+${delta}` : String(delta);
+      dataBlock += `**Suite coverage:** ${c.windowDistinctTests} distinct tests ran this window (Δ ${deltaLabel} vs prior window's ${c.priorDistinctTests})\n`;
+    }
+    // Near-flakes: tests that passed on retry in the window. Tracked separately
+    // from root causes because they're not failures, but they signal infra
+    // instability that a "healthy" verdict should still mention.
+    if (c.nearFlakes.length > 0) {
+      const list = c.nearFlakes
+        .map((nf) => `\`${nf.title}\` (${nf.filePath}; testId=${nf.testId}, fileId=${nf.fileId}) — ${nf.flakyOccurrences}×`)
+        .join('; ');
+      dataBlock += `**Near-flakes (passed on retry):** ${list}\n`;
+    }
+  }
+  dataBlock += `**Latest run status:** ${latestStatus}${latestRun ? ` (${formatRunLabel(latestRun.reportId, latestRun.displayNumber)})` : ''} — use this to anchor the verdict.\n\n`;
 
-  if (args.rootCauses && args.rootCauses.length > 0) {
-    dataBlock += `## Top Root Causes (across last ${totalRuns} runs)\n`;
-    for (let i = 0; i < args.rootCauses.length; i++) {
-      const rc = args.rootCauses[i];
-      dataBlock += `\n### ${i + 1}. \`${rc.category}\` — ${rc.occurrences}× across ${rc.reportsAffected} run${rc.reportsAffected === 1 ? '' : 's'}\n`;
-      const sample = rc.sampleMessage.replace(/\s+/g, ' ').trim();
+  // Split clusters by lifecycle so the model can't accidentally recommend
+  // fixes for issues that are already resolved. A cluster is "active" if any
+  // member failed in the latest run OR within the past 2 runs. Otherwise it's
+  // "resolved" — informational only, never an action target.
+  const isActiveCluster = (c: ProjectCluster): boolean =>
+    c.appearedInLatestRun || c.runsSinceLastSeen <= 2;
+  const activeClusters = (args.clusters ?? []).filter(isActiveCluster);
+  const resolvedClusters = (args.clusters ?? []).filter((c) => !isActiveCluster(c));
+
+  if (activeClusters.length > 0) {
+    dataBlock += `## Active Failure Clusters (present in latest run or within last 2 runs — drive Recommendations)\n`;
+    for (let i = 0; i < activeClusters.length; i++) {
+      const c = activeClusters[i];
+      const evidenceLine = renderClusterEvidenceInline(c.strategy, c.evidence);
+      dataBlock += `\n### ${i + 1}. \`${c.strategy}\` cluster — \`${c.category}\` — ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'} (${c.affectedTests.length} test${c.affectedTests.length === 1 ? '' : 's'})\n`;
+      if (evidenceLine) {
+        dataBlock += `- **Evidence:** ${evidenceLine}\n`;
+      }
+      const sample = c.sampleMessage.replace(/\s+/g, ' ').trim();
       const sampleTrunc = sample.length > 300 ? `${sample.substring(0, 300)}…` : sample;
       if (sampleTrunc) {
-        dataBlock += `- **Error:** \`${sampleTrunc}\`\n`;
+        dataBlock += `- **Sample error:** \`${sampleTrunc}\`\n`;
       }
-      const testsList = rc.affectedTests
+      const testsList = c.affectedTests
         .slice(0, 3)
-        .map((t) => `\`${t.title}\` (${t.filePath})`)
+        .map((t) => `\`${t.title}\` (${t.filePath}; testId=${t.testId}, fileId=${t.fileId})`)
         .join(', ');
-      const more = rc.affectedTests.length > 3 ? ` +${rc.affectedTests.length - 3} more` : '';
+      const more = c.affectedTests.length > 3 ? ` +${c.affectedTests.length - 3} more` : '';
       dataBlock += `- **Affected tests:** ${testsList}${more}\n`;
-      if (rc.latestRootCause) {
-        const indented = rc.latestRootCause.replace(/\n/g, '\n  ');
+      const latestMarker = c.appearedInLatestRun
+        ? `**in latest run** (${c.consecutiveLatestRuns} consecutive)`
+        : `last seen ${c.runsSinceLastSeen} run${c.runsSinceLastSeen === 1 ? '' : 's'} ago`;
+      const firstSeenRef = formatRunRef(c.firstSeenReportId, c.firstSeenDisplayNumber);
+      const lastSeenRef = formatRunRef(c.lastSeenReportId, c.lastSeenDisplayNumber);
+      dataBlock += `- **Window:** first seen ${firstSeenRef} (${isoDate(c.firstSeenAt)}) → last seen ${lastSeenRef} (${isoDate(c.lastSeenAt)}); ${latestMarker}\n`;
+      if (c.occurrences > 0) {
+        const pct = Math.round(c.retryRecoveryRate * 100);
+        dataBlock += `- **Retry recovery:** ${pct}% (${c.flakyOccurrences} of ${c.occurrences} occurrences ultimately passed on retry)\n`;
+      }
+      if (c.latestRootCause) {
+        const indented = c.latestRootCause.replace(/\n/g, '\n  ');
         dataBlock += `- **Prior LLM root cause:**\n  ${indented}\n`;
       }
     }
     dataBlock += '\n';
   }
 
-  if (args.persistentFailures && args.persistentFailures.length > 0) {
-    dataBlock += `## Persistent Failures (signature seen in ≥3 distinct runs)\n`;
-    for (const rc of args.persistentFailures) {
-      const titles = rc.affectedTests
-        .slice(0, 3)
+  // Resolved clusters: compact list — enough for the model to cite
+  // "stabilized after the X cluster cleared" in Health Assessment, but not
+  // enough detail to invite a Recommendations bullet.
+  if (resolvedClusters.length > 0) {
+    dataBlock += `## Recently Resolved Failure Clusters (NOT for Recommendations — cite only as recovery evidence in Health Assessment)\n`;
+    for (const c of resolvedClusters) {
+      const lastSeenRef = formatRunRef(c.lastSeenReportId, c.lastSeenDisplayNumber);
+      const titles = c.affectedTests
+        .slice(0, 2)
         .map((t) => `\`${t.title}\``)
         .join(', ');
-      const more = rc.affectedTests.length > 3 ? ` +${rc.affectedTests.length - 3} more` : '';
-      dataBlock += `- \`${rc.category}\` — ${rc.reportsAffected} runs, tests: ${titles}${more}\n`;
+      const more = c.affectedTests.length > 2 ? ` +${c.affectedTests.length - 2} more` : '';
+      dataBlock += `- \`${c.strategy}\`/\`${c.category}\` — ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'}; last seen ${lastSeenRef} (${c.runsSinceLastSeen} runs ago); tests: ${titles}${more}\n`;
     }
     dataBlock += '\n';
+  }
+
+  // Trend signal: pass rate / flaky / duration deltas vs the prior window, plus
+  // the in-window last-half-vs-first-half failure split. Pre-computed so the
+  // verdict can be anchored on numbers rather than the model eyeballing the
+  // per-run dump for a slope.
+  if (args.trendSignal) {
+    dataBlock += renderTrendSignal(args.trendSignal);
   }
 
   dataBlock += `Runs are listed from most recent to oldest:\n\n`;
 
   for (const run of args.runs) {
     const status = runHasFailures(run) ? 'FAILURES' : 'PASS';
-    dataBlock += `### Run ${run.reportId} (${run.createdAt}) — ${status}\n`;
+    const runLabel = formatRunLabel(run.reportId, run.displayNumber);
+    dataBlock += `### Run ${runLabel} (${run.createdAt}) — ${status}\n`;
     dataBlock += `- Tests: ${run.stats.total} total, ${run.stats.expected} passed, ${run.stats.unexpected} failed, ${run.stats.flaky} flaky, ${run.stats.skipped} skipped\n`;
+    if (run.runContext) {
+      const ctxLine = renderRunContextInline(run.runContext);
+      if (ctxLine) dataBlock += `- Context: ${ctxLine}\n`;
+    }
     if (runHasFailures(run)) {
       const categoryEntries = Object.entries(run.categories);
       if (categoryEntries.length > 0) {
