@@ -51,6 +51,8 @@ pwrs-cli report summary <reportId>           # persisted LLM failure summary, if
 ```
 Compact `report brief` is ~5 KB even for a 50-failure report — every cluster includes `sampleFailedTests` (top 3 per cluster), plus a few unclustered samples. Only escalate to `--with-failures` when you genuinely need every test's full error / location / LLM analysis.
 
+`report summary` returns `{ hasFailures, pendingAnalysisCount, summary }` where `summary.llmSummaryStructured` (when present) is typed JSON: `{ verdict: 'isolated' | 'clustered' | 'widespread' | 'systemic', summary: <1–3 sentence executive summary>, sections: [{ heading, body, impact?, codeRefs[] }] }`. Read `verdict` first — `widespread`/`systemic` means the run is broken at a layer above any single test. `sections[].codeRefs` are pre-resolved `{ kind: 'test' | 'file', testId?, fileId?, filePath?, line? }` pointers so you can jump straight to the implicated tests/files.
+
 **When a cluster has N tests, fix the cluster once — don't iterate.** Use
 `pwrs-cli cluster brief <clusterId>` to get every member's brief at once.
 
@@ -92,7 +94,7 @@ Returns `{ total, hasMore, matches }`. Drill into any test with `test brief`.
 pwrs-cli stats [--project <p>] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--failed-only]
 pwrs-cli project summary [--project <p>]     # persisted LLM project health summary
 ```
-`stats` is the numeric digest (pass rate, trend deltas, flaky count, slowest steps). `project summary` is the LLM-written prose digest (when one exists).
+`stats` is the numeric digest (pass rate, trend deltas, flaky count, slowest steps). `project summary` is the LLM-written digest (when one exists) — returns `{ pendingAnalysisCount, summary: { summary, structured, model, lastReportId, reportCount, firstReportAt, lastReportAt, … } }`. `summary.structured` (when present) is typed JSON: `{ verdict: 'healthy' | 'stabilizing' | 'degrading' | 'failing', summary: <1–3 sentence executive summary>, sections: [{ heading, body, codeRefs[] }] }`. Use `verdict` for a one-token project-health read; drop into `sections` only when the user wants the narrative.
 
 **"What failure clusters are active?"** →
 ```
@@ -118,6 +120,7 @@ Returns `{ summary, newlyFailed, fixed, stillFailing, flakyToPass, passToFlaky, 
 - `llmAnalysis.rootCause` present → start from this hypothesis, don't re-derive. For the unmodified full markdown (e.g. when the regex-split lost a section), use `pwrs-cli test analysis <testId>`. To inspect the exact prompt+response we sent, use `test analysis-prompt <testId> --report-id <reportId>`. To bypass the LLM entirely and reason from raw evidence (codeframe, step tree, ARIA snapshot, console/network/action logs, git+CI), use `test failure-context <testId> --report-id <reportId>`.
 - `llmAnalysis: null` *with* a failing run → analysis hasn't been generated. Pull `pwrs-cli test failure-context <testId> --report-id <reportId>` and reason from the `evidence` envelope yourself rather than waiting.
 - `cluster` present → **fix the cluster, not the test** — every member resolves together
+- **Before assuming it's *your* test, check the report-level verdict.** `pwrs-cli report summary <reportId>` → `summary.llmSummaryStructured.verdict`: `widespread`/`systemic` means fix the run (infra, fixtures, deploy), not the test. For multi-day patterns, escalate one more level: `pwrs-cli project summary [--project <p>]` → `summary.structured.verdict` (`healthy` / `stabilizing` / `degrading` / `failing`).
 - `latestFailure.attachments.screenshotUrl` → fetch the PNG for UI failures
 - `latestFailure.attachments.errorContextUrl` → fetch the markdown (DOM snapshot + recent actions + console — Playwright generates this for AI agents)
 - `latestFailure.reportUrl` → the full Playwright HTML report
