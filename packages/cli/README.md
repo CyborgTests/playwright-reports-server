@@ -56,6 +56,10 @@ pwrs-cli test find <query>                    Resolve a test name → testId
 pwrs-cli test from-file <path>[:line]         Resolve a spec file → testIds (line narrows by proximity)
 pwrs-cli test brief <testId>                  Everything we know about this test (one call)
 pwrs-cli test analysis <testId>               Full persisted LLM analysis markdown
+pwrs-cli test analysis-prompt <testId> --report-id <id>
+                                              Verbatim prompt+response from the latest completed analysis task
+pwrs-cli test failure-context <testId> --report-id <id>
+                                              Fresh would-be prompt + typed evidence envelope (no LLM call)
 pwrs-cli test history <testId> [--limit N]    Per-run history + signature rollup (default 20, max 50)
 pwrs-cli report latest [--with-failures]      Latest report's brief (compact by default)
 pwrs-cli report brief <reportId> [--with-failures]  Specific report's brief (compact by default)

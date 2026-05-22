@@ -18,6 +18,17 @@ pwrs-cli test history <testId>        # per-run history — see "Per-run history
 Pass `--file-id <fileId> --project <project>` only when the server's
 auto-resolution returns the wrong run (e.g. an obsolete project for the same testId).
 
+**You have a testId AND a reportId, and the brief's `llmAnalysis` isn't enough** →
+```
+pwrs-cli test analysis <testId>                                # full LLM markdown (unmodified)
+pwrs-cli test analysis-prompt <testId> --report-id <reportId>  # the prompt+response we sent last time
+pwrs-cli test failure-context <testId> --report-id <reportId>  # fresh would-be prompt + raw evidence
+```
+Three escape hatches with different shapes:
+- `test analysis` → the LLM's persisted markdown output. Use when the regex split in `brief.llmAnalysis` lost a section.
+- `test analysis-prompt` → `{ markdown, taskId, model, completedAt, analysisText, … }`. The verbatim prompt the queue *previously* sent to the LLM for this `(testId, reportId)`, alongside the response. Mirrors the in-report "Copy prompt" button. Pass `--task-id <id>` to address a specific historical run. 404 if no completed task exists for this pair.
+- `test failure-context` → `{ markdown, segments, evidence, attachments, heuristicCategory, meta }`. The prompt the queue would build **right now** (no LLM call) plus a typed `evidence` envelope: `errorMessage`, `stackTrace`, `testSourceFrame` (codeframe), `stepTree`, `pageSnapshot` (ARIA), `stdout`, `stderr`, `testMeta`, `gitCommit`, `ciBuild`, `gitDiff`, `environment`, `consoleEvents`, `networkEvents`, `actionLog`. Use this when you want to reason from raw signals yourself instead of trusting the persisted analysis, or when no analysis exists yet.
+
 **You have a test name** (from a CI log, error, or the user) →
 ```
 pwrs-cli test find "fragment of the title" [--project <p>]
@@ -104,7 +115,8 @@ Returns `{ summary, newlyFailed, fixed, stillFailing, flakyToPass, passToFlaky, 
 - `signals.signatureOccurrenceCount` > 1 with stable `signature` → real regression, fix it. **This counts prior runs of the same `latestFailure.signature`, not total runs of the test.**
 - `signals.signatureFirstSeen` → when this `signature` first appeared (not the test's first run) → correlate with deploys / PRs
 - `feedback` present → read it first; it overrides everything else
-- `llmAnalysis.rootCause` present → start from this hypothesis, don't re-derive. For the unmodified full markdown (e.g. when the regex-split lost a section), use `pwrs-cli test analysis <testId>`.
+- `llmAnalysis.rootCause` present → start from this hypothesis, don't re-derive. For the unmodified full markdown (e.g. when the regex-split lost a section), use `pwrs-cli test analysis <testId>`. To inspect the exact prompt+response we sent, use `test analysis-prompt <testId> --report-id <reportId>`. To bypass the LLM entirely and reason from raw evidence (codeframe, step tree, ARIA snapshot, console/network/action logs, git+CI), use `test failure-context <testId> --report-id <reportId>`.
+- `llmAnalysis: null` *with* a failing run → analysis hasn't been generated. Pull `pwrs-cli test failure-context <testId> --report-id <reportId>` and reason from the `evidence` envelope yourself rather than waiting.
 - `cluster` present → **fix the cluster, not the test** — every member resolves together
 - `latestFailure.attachments.screenshotUrl` → fetch the PNG for UI failures
 - `latestFailure.attachments.errorContextUrl` → fetch the markdown (DOM snapshot + recent actions + console — Playwright generates this for AI agents)
