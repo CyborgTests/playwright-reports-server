@@ -73,3 +73,8 @@ export const PAGINATION_DEFAULTS = {
   MAX_LIMIT: 100,
   DEFAULT_PAGE: 1,
 } as const;
+
+export const FLAKINESS_THRESHOLDS = {
+  WARNING_PERCENTAGE: 2,
+  QUARANTINE_PERCENTAGE: 5,
+} as const;

@@ -6,7 +6,7 @@ import type {
   TestFailureGroup,
   TestManagementConfig,
 } from '@playwright-reports/shared';
-import { ReportTestOutcomeEnum } from '@playwright-reports/shared';
+import { FLAKINESS_THRESHOLDS, ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import { defaultConfig } from '../config.js';
 import { llmService } from '../llm/index.js';
 import { extractFailureEvidence } from '../parser/failure-extraction.js';
@@ -418,8 +418,11 @@ export class TestManagementService {
     const testManagementCfg = cfg.testManagement || {};
 
     this.config = {
-      quarantineThresholdPercentage: testManagementCfg.quarantineThresholdPercentage ?? 5,
-      warningThresholdPercentage: testManagementCfg.warningThresholdPercentage ?? 2,
+      quarantineThresholdPercentage:
+        testManagementCfg.quarantineThresholdPercentage ??
+        FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE,
+      warningThresholdPercentage:
+        testManagementCfg.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE,
       autoQuarantineEnabled: testManagementCfg.autoQuarantineEnabled ?? false,
       flakinessMinRuns: testManagementCfg.flakinessMinRuns ?? 1,
       flakinessEvaluationWindowDays: testManagementCfg.flakinessEvaluationWindowDays ?? 30,
@@ -547,14 +550,16 @@ export class TestManagementService {
             //TODO: test automatic quarantine feature
             // considering case when test is removed from quarantine but score is still high
             config.autoQuarantineEnabled &&
-            testRun.flakinessScore >= (config.quarantineThresholdPercentage ?? 5) &&
+            testRun.flakinessScore >=
+              (config.quarantineThresholdPercentage ??
+                FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE) &&
             testRun.quarantined
           ) {
             console.log(
               `[testManagement] Auto-quarantining testId=${testId} due to flakinessScore=${testRun.flakinessScore.toFixed(1)}%`
             );
             testRun.quarantined = true;
-            testRun.quarantineReason = `Auto-quarantined due to ${testRun.flakinessScore.toFixed(1)}% flakiness over treshold ${config.quarantineThresholdPercentage ?? 5}%`;
+            testRun.quarantineReason = `Auto-quarantined due to ${testRun.flakinessScore.toFixed(1)}% flakiness over treshold ${config.quarantineThresholdPercentage ?? FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE}%`;
           }
 
           testDb.createTestRun(testRun);
@@ -809,8 +814,9 @@ export class TestManagementService {
 
       if (options.tiers && options.tiers.length > 0) {
         const cfg = await this.getConfig();
-        const warning = cfg.warningThresholdPercentage ?? 10;
-        const quarantine = cfg.quarantineThresholdPercentage ?? 50;
+        const warning = cfg.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
+        const quarantine =
+          cfg.quarantineThresholdPercentage ?? FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE;
         const matchesTier = (score: number, tier: string) => {
           switch (tier) {
             case 'stable':
@@ -899,36 +905,27 @@ export class TestManagementService {
 
   async getTestsSummary(
     project?: string,
-    warningThreshold = 2,
+    warningThreshold: number = FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE,
     opts?: { from?: string; to?: string }
   ): Promise<{ total: number; flakyCount: number }> {
     if (opts?.from || opts?.to) {
-      const config = await this.getConfig();
-      const minRuns = config.flakinessMinRuns ?? 1;
       const from = opts.from ?? '0001-01-01T00:00:00Z';
       const to = opts.to ?? new Date(Date.now() + 60_000).toISOString();
       const runs = testDb.getTestRunOutcomesInWindow(project, from, to);
 
-      const grouped = new Map<string, Array<{ outcome: ReportTestOutcomeEnum | string }>>();
+      const lanesInWindow = new Set<string>();
       const uniqueTestIds = new Set<string>();
       for (const run of runs) {
         uniqueTestIds.add(run.testId);
-        const key = `${run.testId}::${run.fileId}::${run.project}`;
-        let bucket = grouped.get(key);
-        if (!bucket) {
-          bucket = [];
-          grouped.set(key, bucket);
-        }
-        bucket.push({ outcome: run.outcome });
+        lanesInWindow.add(`${run.testId}::${run.fileId}::${run.project}`);
       }
 
-      // A test is flaky if it's flaky in at least one (file, project) lane.
       const flakyTestIds = new Set<string>();
-      for (const [key, runsForTest] of grouped) {
-        const score = computeFlakinessFromOutcomes(runsForTest, minRuns);
-        if (score >= warningThreshold) {
-          const testId = key.split('::', 1)[0];
-          flakyTestIds.add(testId);
+      for (const test of testDb.getAllAndDerivedData(project)) {
+        const key = `${test.testId}::${test.fileId}::${test.project}`;
+        if (!lanesInWindow.has(key)) continue;
+        if ((test.flakinessScore ?? 0) >= warningThreshold) {
+          flakyTestIds.add(test.testId);
         }
       }
 

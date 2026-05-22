@@ -1,5 +1,6 @@
 import {
   type DateRange,
+  FLAKINESS_THRESHOLDS,
   type FlakinessTier,
   ReportTestOutcomeEnum,
   type TestFilters,
@@ -129,8 +130,11 @@ export default function TestManagementWidget({
   const { data: config } = useConfig();
   const session = useAuth();
 
-  const warningThreshold = config?.testManagement?.warningThresholdPercentage ?? 10;
-  const quarantineThreshold = config?.testManagement?.quarantineThresholdPercentage ?? 50;
+  const warningThreshold =
+    config?.testManagement?.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
+  const quarantineThreshold =
+    config?.testManagement?.quarantineThresholdPercentage ??
+    FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE;
 
   const PAGE_SIZE = 25;
 

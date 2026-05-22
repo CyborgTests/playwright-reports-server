@@ -1,7 +1,8 @@
-import type {
-  FlakinessTier,
-  TestFilters as TestFiltersType,
-  TestsSort,
+import {
+  FLAKINESS_THRESHOLDS,
+  type FlakinessTier,
+  type TestFilters as TestFiltersType,
+  type TestsSort,
 } from '@playwright-reports/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,8 +33,11 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
   const categories = categoriesResponse?.data ?? [];
 
   const { data: config } = useConfig();
-  const warningThreshold = config?.testManagement?.warningThresholdPercentage ?? 10;
-  const quarantineThreshold = config?.testManagement?.quarantineThresholdPercentage ?? 50;
+  const warningThreshold =
+    config?.testManagement?.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
+  const quarantineThreshold =
+    config?.testManagement?.quarantineThresholdPercentage ??
+    FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE;
 
   const selectedTiers = filters.tiers ?? [];
   const sort: TestsSort = filters.sort ?? 'default';

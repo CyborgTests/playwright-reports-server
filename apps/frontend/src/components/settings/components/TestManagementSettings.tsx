@@ -1,6 +1,6 @@
 'use client';
 
-import type { ServerConfig } from '@playwright-reports/shared';
+import { FLAKINESS_THRESHOLDS, type ServerConfig } from '@playwright-reports/shared';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,8 +22,8 @@ interface TestManagementSettingsProps {
   onUpdateTempConfig: (updates: Partial<ServerConfig>) => void;
 }
 
-const DEFAULT_QUARANTINE_THRESHOLD = 50;
-const DEFAULT_WARNING_THRESHOLD = 30;
+const DEFAULT_QUARANTINE_THRESHOLD = FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE;
+const DEFAULT_WARNING_THRESHOLD = FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
 const DEFAULT_FLAKINESS_MIN_RUNS = 5;
 const DEFAULT_FLAKINESS_EVALUATION_WINDOW_DAYS = 30;
 

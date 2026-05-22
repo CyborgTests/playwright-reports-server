@@ -6,6 +6,7 @@ import type {
   StepTimingTrend,
   TrendMetrics,
 } from '@playwright-reports/shared';
+import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import type { ReportHistory as BackendReportHistory } from '../storage/types.js';
 import { failureSummaryDb } from './db/failureSummary.sqlite.js';
 import { reportDb } from './db/reports.sqlite.js';
@@ -28,24 +29,47 @@ export class AnalyticsService {
     const scoped = failedOnly
       ? allReports.filter((r) => (r.stats?.unexpected ?? 0) > 0 || (r.stats?.flaky ?? 0) > 0)
       : allReports;
-    const { displayReports, recentForTrend, olderForTrend, isBounded } = this.partitionReports(
-      scoped,
-      from,
-      to
-    );
+    const { displayReports, recentForTrend, olderForTrend, olderRange, isBounded } =
+      this.partitionReports(scoped, from, to);
 
     const config = await service.getConfig();
-    const warningThreshold = config.testManagement?.warningThresholdPercentage ?? 2;
+    const warningThreshold =
+      config.testManagement?.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
     const projectKey = project && project !== 'all' ? project : undefined;
 
-    const [overviewStats, runHealthMetrics, trendMetrics, testsSummary, failureCategories] =
-      await Promise.all([
-        this.calculateOverviewStats(displayReports, recentForTrend, olderForTrend),
-        this.calculateRunHealthMetrics(displayReports, isBounded),
-        this.calculateTrendMetrics(displayReports, scoped),
-        testManagementService.getTestsSummary(projectKey, warningThreshold, { from, to }),
-        Promise.resolve(failureSummaryDb.getAggregatedCategories(projectKey, 10, { from, to })),
-      ]);
+    const [
+      overviewStats,
+      runHealthMetrics,
+      trendMetrics,
+      testsSummary,
+      previousTestsSummary,
+      failureCategories,
+    ] = await Promise.all([
+      this.calculateOverviewStats(displayReports, recentForTrend, olderForTrend),
+      this.calculateRunHealthMetrics(displayReports, isBounded),
+      this.calculateTrendMetrics(displayReports, scoped),
+      testManagementService.getTestsSummary(projectKey, warningThreshold, { from, to }),
+      olderRange
+        ? testManagementService.getTestsSummary(projectKey, warningThreshold, olderRange)
+        : Promise.resolve({ total: 0, flakyCount: 0 }),
+      Promise.resolve(failureSummaryDb.getAggregatedCategories(projectKey, 10, { from, to })),
+    ]);
+
+    if (olderRange) {
+      overviewStats.flakyTestsTrend = this.calculateTrend(
+        testsSummary.flakyCount,
+        previousTestsSummary.flakyCount,
+        warningThreshold
+      );
+      overviewStats.deltas = {
+        ...overviewStats.deltas,
+        flakyTests: this.computeDelta(
+          testsSummary.flakyCount,
+          previousTestsSummary.flakyCount,
+          warningThreshold
+        ),
+      };
+    }
 
     return {
       overviewStats,
@@ -84,6 +108,7 @@ export class AnalyticsService {
     displayReports: BackendReportHistory[];
     recentForTrend: BackendReportHistory[];
     olderForTrend: BackendReportHistory[];
+    olderRange: { from: string; to: string } | null;
     isBounded: boolean;
   } {
     if (from || to) {
@@ -96,6 +121,7 @@ export class AnalyticsService {
 
       const duration = Number.isFinite(toMs) && Number.isFinite(fromMs) ? toMs - fromMs : null;
       let older: BackendReportHistory[] = [];
+      let olderRange: { from: string; to: string } | null = null;
       if (duration !== null && duration > 0) {
         const compTo = fromMs;
         const compFrom = fromMs - duration;
@@ -103,11 +129,13 @@ export class AnalyticsService {
           const t = new Date(r.createdAt).getTime();
           return t >= compFrom && t < compTo;
         });
+        olderRange = { from: new Date(compFrom).toISOString(), to: new Date(compTo).toISOString() };
       }
       return {
         displayReports: display,
         recentForTrend: display,
         olderForTrend: older,
+        olderRange,
         isBounded: true,
       };
     }
@@ -117,6 +145,7 @@ export class AnalyticsService {
         displayReports: allReports,
         recentForTrend: allReports,
         olderForTrend: [],
+        olderRange: null,
         isBounded: false,
       };
     }
@@ -126,6 +155,7 @@ export class AnalyticsService {
       displayReports: allReports,
       recentForTrend: allReports.slice(0, mid),
       olderForTrend: allReports.slice(mid),
+      olderRange: null,
       isBounded: false,
     };
   }
@@ -171,7 +201,8 @@ export class AnalyticsService {
     const passRateTrend = this.calculateTrend(recentPassRate, olderPassRate, 2);
 
     const config = await service.getConfig();
-    const flakinessThreshold = config.testManagement?.warningThresholdPercentage ?? 2;
+    const flakinessThreshold =
+      config.testManagement?.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
 
     const recentFlakyOccurrences = recentForTrend.reduce(
       (sum, report) => sum + (report.stats?.flaky || 0),

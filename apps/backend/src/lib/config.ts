@@ -1,4 +1,5 @@
 import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
+import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import { defaultLinks } from '../config/site.js';
 
 const defaultReportExpirationDays = '90';
@@ -18,8 +19,12 @@ export const defaultConfig: SiteWhiteLabelConfig = {
     reportExpireCronSchedule: process.env.REPORT_EXPIRE_CRON_SCHEDULE ?? '0 3 * * *',
   },
   testManagement: {
-    quarantineThresholdPercentage: Number(process.env.TEST_FLAKINESS_QUARANTINE_THRESHOLD ?? 5),
-    warningThresholdPercentage: Number(process.env.TEST_FLAKINESS_WARNING_THRESHOLD ?? 2),
+    quarantineThresholdPercentage: Number(
+      process.env.TEST_FLAKINESS_QUARANTINE_THRESHOLD ?? FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE
+    ),
+    warningThresholdPercentage: Number(
+      process.env.TEST_FLAKINESS_WARNING_THRESHOLD ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE
+    ),
     autoQuarantineEnabled: process.env.TEST_FLAKINESS_AUTO_QUARANTINE === 'true',
     flakinessMinRuns: Number(process.env.TEST_FLAKINESS_MIN_RUNS ?? 1),
     flakinessEvaluationWindowDays: Number(process.env.TEST_FLAKINESS_EVALUATION_WINDOW_DAYS ?? 30),

@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import { llmService } from '../llm/index.js';
 import {
   parseProjectAnalysisFromText,
@@ -603,7 +604,9 @@ class LlmAnalysisQueue {
     }
 
     const config = await service.getConfig();
-    const warningThreshold = (config as any)?.testManagement?.warningThresholdPercentage ?? 2;
+    const warningThreshold =
+      (config as any)?.testManagement?.warningThresholdPercentage ??
+      FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
     const flakinessScore = failedRun?.flakinessScore ?? 0;
 
     // Runtime prompt overrides from settings. Each override replaces the
@@ -1266,7 +1269,9 @@ export async function buildTestAnalysisRequest(opts: {
   const feedback = analysisFeedbackDb.getByTest(testId, fileId, project);
 
   const config = await service.getConfig();
-  const warningThreshold = (config as any)?.testManagement?.warningThresholdPercentage ?? 2;
+  const warningThreshold =
+    (config as any)?.testManagement?.warningThresholdPercentage ??
+    FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
   const flakinessScore = failedRun?.flakinessScore ?? 0;
   const llmCfg = (config as any)?.llm ?? {};
   const { detectFailureCategory } = await import('./testManagement.js');
