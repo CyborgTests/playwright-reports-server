@@ -243,6 +243,20 @@ export class TestDatabase {
     return this.getTestStmt.get(testId, fileId, project) as Test | undefined;
   }
 
+  public findTestByIds(testId: string, fileId: string): Test | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT t.* FROM tests t
+         LEFT JOIN test_runs r ON r.testId = t.testId AND r.fileId = t.fileId AND r.project = t.project
+         WHERE t.testId = ? AND t.fileId = ?
+         GROUP BY t.testId, t.fileId, t.project
+         ORDER BY MAX(COALESCE(r.createdAt, t.createdAt)) DESC
+         LIMIT 1`
+      )
+      .get(testId, fileId) as Test | undefined;
+    return row;
+  }
+
   public getAllTests(): Test[] {
     return this.getAllTestsStmt.all() as Test[];
   }

@@ -171,14 +171,8 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         const { fileId, testId } = request.params as { fileId: string; testId: string };
         const { project } = request.query as { project?: string };
 
-        if (!project) {
-          return reply
-            .status(400)
-            .send({ success: false, error: 'project query parameter is required' });
-        }
-
         const { result: detail, error } = await withError(
-          testManagementService.getTestDetail(testId, fileId, project)
+          testManagementService.getTestDetail(testId, fileId, project ?? '')
         );
 
         if (error) {

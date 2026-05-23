@@ -1584,6 +1584,7 @@ async function aggregateProjectClusters(
         fileId: t.fileId,
         title: t.title,
         filePath: t.filePath ?? t.fileId,
+        project: t.project,
       })),
       sampleMessage: c.sampleMessage,
       firstSeenReportId: firstSeen.reportId,

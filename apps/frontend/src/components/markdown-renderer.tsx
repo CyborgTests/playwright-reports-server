@@ -14,21 +14,31 @@ import { Badge } from './ui/badge';
  *  navigation target — those render as styled labels instead of links so the
  *  user still sees the citation.
  *
- *  `fallbackProject` is appended as `?project=…` to test links so the test
- *  detail page can scope its lookup (testId+fileId isn't unique across
- *  projects). The analysis renderers pass the report/project the analysis
- *  was generated for. */
+ *  Test links carry the test's project in `?project=…`; the parser reads it
+ *  out and re-emits it on the SPA URL so /test/:fileId/:testId can scope its
+ *  lookup. `fallbackProject` only applies when the URL omits the query (legacy
+ *  markdown stored before per-link project encoding). */
 function resolvePwrsHref(href: string, fallbackProject?: string): string | null {
   const m = href.match(/^pwrs:(test|report)\/(.+)$/);
   if (!m) return null;
   const [, kind, target] = m;
   if (kind === 'test') {
+    const qIdx = target.indexOf('?');
+    const pathPart = qIdx === -1 ? target : target.slice(0, qIdx);
+    const queryStr = qIdx === -1 ? '' : target.slice(qIdx + 1);
     // FILE_ID/TEST_ID — both URL-safe (the /test/:fileId/:testId route
     // enforces single-segment values).
-    const slash = target.indexOf('/');
-    if (slash <= 0 || slash === target.length - 1) return null;
-    const query = fallbackProject ? `?project=${encodeURIComponent(fallbackProject)}` : '';
-    return `/test/${target.slice(0, slash)}/${target.slice(slash + 1)}${query}`;
+    const slash = pathPart.indexOf('/');
+    if (slash <= 0 || slash === pathPart.length - 1) return null;
+    let project: string | undefined;
+    if (queryStr) {
+      const params = new URLSearchParams(queryStr);
+      const raw = params.get('project');
+      if (raw) project = raw;
+    }
+    project = project ?? fallbackProject;
+    const query = project ? `?project=${encodeURIComponent(project)}` : '';
+    return `/test/${pathPart.slice(0, slash)}/${pathPart.slice(slash + 1)}${query}`;
   }
   return `/report/${target}`;
 }

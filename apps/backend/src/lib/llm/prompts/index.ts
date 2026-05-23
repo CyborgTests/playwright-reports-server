@@ -145,10 +145,10 @@ Do NOT repeat a section's heading inside its body.
 
 Reference tests inline with markdown links using the \`pwrs:test\` scheme so the UI can render them as clickable badges (this replaces the prior JSON \`codeRefs\` field). Write the link as plain markdown — do NOT wrap the whole \`[label](url)\` in backticks (that would render as inline code, not a link):
 
-    [test title here](pwrs:test/FILE_ID/TEST_ID)
+    [test title here](pwrs:test/FILE_ID/TEST_ID?project={{project}})
 
 Rules:
-- The test-link target is \`pwrs:test/FILE_ID/TEST_ID\` using the exact \`fileId\` and \`testId\` from the supplied data.
+- The test-link target is \`pwrs:test/FILE_ID/TEST_ID?project=PROJECT\` using the exact \`fileId\` and \`testId\` from the supplied data, with \`PROJECT\` set to \`{{project}}\` (this report's project) — every link in this analysis uses the same project value.
 - The visible label MUST be the test's title (the human-readable test name from the data), NOT its file path and NOT its testId. File paths and IDs go in the URL portion only.
 - Only cite testIds and fileIds that appear in the supplied data. Do NOT invent IDs.
 - For non-clickable mentions (file paths, signatures, etc.), use plain backticks — there is no \`pwrs:file\` scheme.
@@ -178,11 +178,11 @@ Do NOT repeat a section's heading inside its body.
 
 Reference tests and reports inline with markdown links using the \`pwrs:\` scheme so the UI can render them as clickable badges. Write the link as plain markdown — do NOT wrap the whole \`[label](url)\` in backticks (that would render as inline code, not a link):
 
-    [test title here](pwrs:test/FILE_ID/TEST_ID)
+    [test title here](pwrs:test/FILE_ID/TEST_ID?project=PROJECT_NAME)
     [run abc1234](pwrs:report/REPORT_ID)
 
 Rules:
-- The test-link target is \`pwrs:test/FILE_ID/TEST_ID\` using exact \`testId\`+\`fileId\` from "Affected tests" lines.
+- The test-link target is \`pwrs:test/FILE_ID/TEST_ID?project=PROJECT_NAME\` using exact \`testId\`+\`fileId\`+\`project\` from "Affected tests" lines. The \`project=\` query is REQUIRED — copy the \`project=…\` value verbatim from the test's "Affected tests" entry (different tests in this analysis may belong to different projects, especially when this is the cross-project "all" aggregate).
 - The test-link label MUST be the test's title (the human-readable test name from the data), NOT its file path and NOT its testId.
 - The report-link target is \`pwrs:report/REPORT_ID\` using only report IDs listed in the per-run dump.
 - Only cite testIds, fileIds, and reportIds that appear in the supplied data. Do NOT invent IDs.
@@ -208,7 +208,7 @@ Within Active Failure Clusters, each has a **Window** line and a **Retry recover
 - **last seen 1–2 runs ago** → recently transient. Mention in Health Assessment; include in Recommendations only when its evidence overlaps a currently-active cluster.
 - **recovery 0% with ≥3 occurrences** → hard failure; call out explicitly: "never recovers."
 
-When linking an Active Failure Cluster, use the plain markdown form \`[test title](pwrs:test/FILE_ID/TEST_ID)\` with the values from the "Affected tests" line — write it as a real markdown link, not as backtick-wrapped text. For \`fixture\` clusters, name the fixture file in plain backticked text (there is no clickable file link); link to one of the affected tests instead.
+When linking an Active Failure Cluster, use the plain markdown form \`[test title](pwrs:test/FILE_ID/TEST_ID?project=PROJECT_NAME)\` with the values from the "Affected tests" line — write it as a real markdown link, not as backtick-wrapped text. The \`project=…\` query is required so the test detail page resolves the right run. For \`fixture\` clusters, name the fixture file in plain backticked text (there is no clickable file link); link to one of the affected tests instead.
 
 **Trend Signal** is the numerical anchor for "Notable Trends" — cite the actual deltas (e.g. "pass rate dropped 12.3% vs the prior 10 runs") rather than eyeballing the per-run dump. The \`Prior N runs\` baseline and the \`Cluster flow vs prior window\` (resolved / persisting / new) line together drive the verdict:
 - High \`resolved\`, low \`new\`, latest run green → \`healthy\` if all resolved clusters are ≥3 runs old (the fix held); \`stabilizing\` if any resolved cluster was last seen within the past 2 runs. Either way, name the top resolved clusters in "Health Assessment".
@@ -1510,7 +1510,13 @@ export interface ProjectCluster {
   occurrences: number;
   /** Distinct reports in the window where at least one cluster member failed. */
   reportsAffected: number;
-  affectedTests: Array<{ testId: string; fileId: string; title: string; filePath: string }>;
+  affectedTests: Array<{
+    testId: string;
+    fileId: string;
+    title: string;
+    filePath: string;
+    project: string;
+  }>;
   sampleMessage: string;
   /** Most recent per-test LLM root-cause paragraph for a representative member,
    *  surfaced so the project verdict can echo a known root cause without
@@ -1838,6 +1844,20 @@ export const buildProjectSummarySegments = (args: {
   const latestStatus = latestRun ? (runHasFailures(latestRun) ? 'FAILURES' : 'PASS') : 'unknown';
 
   let dataBlock = `Project: "${args.project}", latest ${totalRuns} runs.\n\n`;
+  // Cross-project aggregate ("all")
+  if (args.project === 'all' && args.clusters && args.clusters.length > 0) {
+    const distinctProjects = new Set<string>();
+    for (const c of args.clusters) {
+      for (const t of c.affectedTests) distinctProjects.add(t.project);
+    }
+    if (distinctProjects.size > 1) {
+      const list = Array.from(distinctProjects)
+        .sort()
+        .map((p) => `\`${p}\``)
+        .join(', ');
+      dataBlock += `**Cross-project aggregate:** this window spans ${distinctProjects.size} distinct projects (${list}). Each project represents a separate area or test suite — a failure cluster in one project does NOT imply the same regression in another. When summarizing health, prefer per-project framing ("X is degrading, Y is healthy") over a single blended verdict; tie recommendations to the specific project of each cited test.\n\n`;
+    }
+  }
   // Window-duration line: makes the calendar span explicit so the model
   // doesn't conflate "10 runs over 2 months" with "10 runs in one day."
   const oldestRun = args.runs[totalRuns - 1];
@@ -1908,7 +1928,10 @@ export const buildProjectSummarySegments = (args: {
       }
       const testsList = c.affectedTests
         .slice(0, 3)
-        .map((t) => `\`${t.title}\` (${t.filePath}; testId=${t.testId}, fileId=${t.fileId})`)
+        .map(
+          (t) =>
+            `\`${t.title}\` (project=${t.project}; ${t.filePath}; testId=${t.testId}, fileId=${t.fileId})`
+        )
         .join(', ');
       const more = c.affectedTests.length > 3 ? ` +${c.affectedTests.length - 3} more` : '';
       dataBlock += `- **Affected tests:** ${testsList}${more}\n`;

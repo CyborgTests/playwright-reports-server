@@ -965,13 +965,23 @@ export class TestManagementService {
   }
 
   async getTestDetail(testId: string, fileId: string, project: string): Promise<TestDetail | null> {
-    const test = testDb.getTestWithDerivedData(testId, fileId, project);
+    // Aggregate links (`?project=all`) and stale/hand-typed URLs don't carry
+    // a real project — resolve to the canonical (most-recent) project for
+    // this test.
+    let resolvedProject = project;
+    if (!project || project === 'all') {
+      const canonical = testDb.findTestByIds(testId, fileId);
+      if (!canonical) return null;
+      resolvedProject = canonical.project;
+    }
+
+    const test = testDb.getTestWithDerivedData(testId, fileId, resolvedProject);
     if (!test) return null;
 
-    const runs = testDb.getTestRuns(testId, fileId, project);
+    const runs = testDb.getTestRuns(testId, fileId, resolvedProject);
     const stats = buildTestDetailStats(runs);
     const failureGroups = buildFailureGroups(runs);
-    const crossProject = buildCrossProjectOccurrences(testId, project);
+    const crossProject = buildCrossProjectOccurrences(testId, resolvedProject);
 
     return {
       testId: test.testId,

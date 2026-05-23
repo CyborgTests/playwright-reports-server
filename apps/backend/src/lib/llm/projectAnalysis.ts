@@ -86,8 +86,26 @@ function extractVerdict(text: string): {
 
 /** `[label](pwrs:(test|report)/TARGET)` link matcher. File refs are not
  *  emitted by the prompts (no per-file SPA route); plain backticked file
- *  paths cover that case in prose. */
+ *  paths cover that case in prose. Test refs carry `?project=…` so the
+ *  cross-project "all" aggregate can name each test's own project. */
 const PWRS_LINK_RE = /\[([^\]\n]+)\]\(pwrs:(test|report)\/([^)\n]+)\)/g;
+
+function parseProjectFromQuery(queryStr: string | undefined): string | undefined {
+  if (!queryStr) return undefined;
+  for (const pair of queryStr.split('&')) {
+    const eq = pair.indexOf('=');
+    if (eq <= 0) continue;
+    if (pair.slice(0, eq) !== 'project') continue;
+    const raw = pair.slice(eq + 1);
+    if (!raw) return undefined;
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+  return undefined;
+}
 
 function extractCodeRefsFromBody(body: string): ProjectAnalysisCodeRef[] {
   const refs: ProjectAnalysisCodeRef[] = [];
@@ -97,14 +115,18 @@ function extractCodeRefsFromBody(body: string): ProjectAnalysisCodeRef[] {
     const kind = m[2] as 'test' | 'report';
     const target = m[3].trim();
     if (kind === 'test') {
-      const slash = target.indexOf('/');
-      if (slash <= 0 || slash === target.length - 1) continue;
-      const fileId = target.slice(0, slash);
-      const testId = target.slice(slash + 1);
-      const key = `test:${fileId}:${testId}`;
+      const qIdx = target.indexOf('?');
+      const pathPart = qIdx === -1 ? target : target.slice(0, qIdx);
+      const queryStr = qIdx === -1 ? undefined : target.slice(qIdx + 1);
+      const slash = pathPart.indexOf('/');
+      if (slash <= 0 || slash === pathPart.length - 1) continue;
+      const fileId = pathPart.slice(0, slash);
+      const testId = pathPart.slice(slash + 1);
+      const project = parseProjectFromQuery(queryStr);
+      const key = `test:${fileId}:${testId}:${project ?? ''}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      refs.push({ kind: 'test', label, fileId, testId });
+      refs.push({ kind: 'test', label, fileId, testId, project });
       continue;
     }
     // report: encoded as { kind: 'file', label, reportId } because the

@@ -109,10 +109,29 @@ function splitImpactFromHeading(rawHeading: string): {
   return { heading: rawHeading.replace(IMPACT_SUFFIX_RE, '').trim(), impact: candidate };
 }
 
-/** `[label](pwrs:test/FILE_ID/TEST_ID)` link matcher. Only test refs are
- *  navigable from a single-report analysis; everything else stays as plain
- *  markdown. */
+/** `[label](pwrs:test/FILE_ID/TEST_ID?project=PROJECT)` link matcher. Only
+ *  test refs are navigable from a single-report analysis. The `?project=…`
+ *  query is read here so the persisted codeRefs carry the project the model
+ *  cited; the backend's report-project fallback fills it in if the model
+ *  forgot. */
 const PWRS_TEST_LINK_RE = /\[([^\]\n]+)\]\(pwrs:test\/([^)\n]+)\)/g;
+
+function parseProjectFromQuery(queryStr: string | undefined): string | undefined {
+  if (!queryStr) return undefined;
+  for (const pair of queryStr.split('&')) {
+    const eq = pair.indexOf('=');
+    if (eq <= 0) continue;
+    if (pair.slice(0, eq) !== 'project') continue;
+    const raw = pair.slice(eq + 1);
+    if (!raw) return undefined;
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+  return undefined;
+}
 
 function extractCodeRefsFromBody(body: string): ReportAnalysisCodeRef[] {
   const refs: ReportAnalysisCodeRef[] = [];
@@ -120,16 +139,20 @@ function extractCodeRefsFromBody(body: string): ReportAnalysisCodeRef[] {
   for (const m of body.matchAll(PWRS_TEST_LINK_RE)) {
     const label = m[1].trim();
     const target = m[2].trim();
+    const qIdx = target.indexOf('?');
+    const pathPart = qIdx === -1 ? target : target.slice(0, qIdx);
+    const queryStr = qIdx === -1 ? undefined : target.slice(qIdx + 1);
     // `FILE_ID/TEST_ID` — both IDs are URL-safe (no slashes); the route
     // shape /test/:fileId/:testId enforces that elsewhere.
-    const slash = target.indexOf('/');
-    if (slash <= 0 || slash === target.length - 1) continue;
-    const fileId = target.slice(0, slash);
-    const testId = target.slice(slash + 1);
-    const key = `${fileId}:${testId}`;
+    const slash = pathPart.indexOf('/');
+    if (slash <= 0 || slash === pathPart.length - 1) continue;
+    const fileId = pathPart.slice(0, slash);
+    const testId = pathPart.slice(slash + 1);
+    const project = parseProjectFromQuery(queryStr);
+    const key = `${fileId}:${testId}:${project ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    refs.push({ kind: 'test', label, fileId, testId });
+    refs.push({ kind: 'test', label, fileId, testId, project });
   }
   return refs;
 }
