@@ -94,11 +94,6 @@ export const env = cleanEnv(process.env, {
     default: undefined,
   }),
   LLM_PARALLEL_REQUESTS: num({ desc: 'Number of parallel LLM requests', default: 1 }),
-  LLM_STRUCTURED_OUTPUT_MODE: str({
-    desc: 'How to request structured output: auto (try; fall back to text on unsupported), force (require), disabled (always text).',
-    default: 'auto',
-    choices: ['auto', 'force', 'disabled'],
-  }),
   LLM_MULTIMODAL_MODE: str({
     desc: 'How to attach screenshots for visual failures: auto (try; fall back on unsupported), force (require), disabled (never attach images).',
     default: 'auto',

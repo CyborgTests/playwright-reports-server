@@ -5,11 +5,7 @@ import type {
   ReportAnalysisStructured,
   ReportAnalysisVerdict,
 } from '@playwright-reports/shared';
-import {
-  firstSentence,
-  parseMarkdownSections,
-  tryParseJsonAsStructured,
-} from './structured-analysis-utils.js';
+import { firstSentence, parseMarkdownSections } from './structured-analysis-utils.js';
 
 const VERDICTS: readonly ReportAnalysisVerdict[] = [
   'isolated',
@@ -20,80 +16,32 @@ const VERDICTS: readonly ReportAnalysisVerdict[] = [
 
 const IMPACTS: readonly ReportAnalysisImpact[] = ['high', 'medium', 'low'];
 
-const CODE_REF_KINDS = ['test', 'file'] as const;
-
-function isVerdict(value: unknown): value is ReportAnalysisVerdict {
-  return typeof value === 'string' && (VERDICTS as readonly string[]).includes(value);
+function isVerdict(value: string): value is ReportAnalysisVerdict {
+  return (VERDICTS as readonly string[]).includes(value);
 }
 
-function isImpact(value: unknown): value is ReportAnalysisImpact {
-  return typeof value === 'string' && (IMPACTS as readonly string[]).includes(value);
+function isImpact(value: string): value is ReportAnalysisImpact {
+  return (IMPACTS as readonly string[]).includes(value);
 }
 
-function isKind(value: unknown): value is ReportAnalysisCodeRef['kind'] {
-  return typeof value === 'string' && (CODE_REF_KINDS as readonly string[]).includes(value);
-}
-
-function coerceCodeRef(raw: unknown): ReportAnalysisCodeRef | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  const kind = isKind(r.kind) ? r.kind : null;
-  if (!kind) return null;
-  const label = typeof r.label === 'string' ? r.label.trim() : '';
-  if (!label) return null;
-  const testId = typeof r.testId === 'string' && r.testId.trim() ? r.testId.trim() : undefined;
-  const fileId = typeof r.fileId === 'string' && r.fileId.trim() ? r.fileId.trim() : undefined;
-  const filePath =
-    typeof r.filePath === 'string' && r.filePath.trim() ? r.filePath.trim() : undefined;
-  const line =
-    typeof r.line === 'number' && Number.isFinite(r.line) && r.line > 0
-      ? Math.floor(r.line)
-      : undefined;
-  // A test ref needs at least a testId to be navigable. A file ref needs at
-  // least a filePath. Drop refs that can't be rendered as a link.
-  if (kind === 'test' && !testId) return null;
-  if (kind === 'file' && !filePath) return null;
-  return { kind, label, testId, fileId, filePath, line };
-}
-
-function coerceSection(raw: unknown): ReportAnalysisSection | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  const heading = typeof r.heading === 'string' ? r.heading.trim() : '';
-  const body = typeof r.body === 'string' ? r.body.trim() : '';
-  if (!heading || !body) return null;
-  const impact = isImpact(r.impact) ? r.impact : undefined;
-  const codeRefs = Array.isArray(r.codeRefs)
-    ? r.codeRefs.map(coerceCodeRef).filter((x): x is ReportAnalysisCodeRef => x !== null)
-    : undefined;
-  return {
-    heading,
-    body,
-    impact,
-    codeRefs: codeRefs && codeRefs.length > 0 ? codeRefs : undefined,
-  };
-}
-
-export function parseReportAnalysisStructured(raw: unknown): ReportAnalysisStructured | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  const verdict = isVerdict(r.verdict) ? r.verdict : null;
-  const summary = typeof r.summary === 'string' ? r.summary.trim() : '';
-  if (!verdict || !summary) return null;
-  const sections = Array.isArray(r.sections)
-    ? r.sections.map(coerceSection).filter((s): s is ReportAnalysisSection => s !== null)
-    : [];
-  if (sections.length === 0) return null;
-  return { verdict, summary, sections };
-}
-
+/** Markdown the model is asked to emit:
+ *
+ *   **Verdict:** clustered
+ *
+ *   <executive summary paragraph>
+ *
+ *   ## Failure Patterns _(high impact)_
+ *   ...with [label](pwrs:test/FID/TID) and [label](pwrs:file/PATH:42) refs.
+ *
+ *   ## Recommendations
+ *   ...
+ *
+ * The parser recovers the verdict, summary, sections, per-section impact tag,
+ * and per-section code refs. Returns null only when the response is empty.
+ */
 export function parseReportAnalysisFromText(text: string): ReportAnalysisStructured | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
-
-  const fromJson = tryParseJsonAsStructured(trimmed, parseReportAnalysisStructured);
-  if (fromJson) return fromJson;
-
   return parseReportAnalysisFromMarkdown(trimmed);
 }
 
@@ -125,24 +73,93 @@ function inferVerdictFromText(text: string): ReportAnalysisVerdict {
   return 'clustered';
 }
 
+// `**Verdict:** clustered` — anywhere from the first 5 non-empty lines.
+// Tolerates `Verdict: clustered`, `**Verdict:** "clustered"`, surrounding
+// backticks, and a leading blank/whitespace.
+const VERDICT_LINE_RE =
+  /(?:^|\n)\s*(?:\*\*)?Verdict(?:\*\*)?\s*:?\s*\*?\*?\s*["`]?([a-zA-Z]+)["`]?\s*\*?\*?\s*(?=\n|$)/;
+
+function extractVerdict(text: string): {
+  verdict: ReportAnalysisVerdict;
+  remaining: string;
+} {
+  const match = text.match(VERDICT_LINE_RE);
+  if (match) {
+    const candidate = match[1].toLowerCase();
+    if (isVerdict(candidate)) {
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      const remaining = (text.slice(0, start) + text.slice(end)).trim();
+      return { verdict: candidate, remaining };
+    }
+  }
+  return { verdict: inferVerdictFromText(text), remaining: text };
+}
+
+const IMPACT_SUFFIX_RE = /\s*_\(\s*(high|medium|low)\s+impact\s*\)_\s*$/i;
+
+function splitImpactFromHeading(rawHeading: string): {
+  heading: string;
+  impact?: ReportAnalysisImpact;
+} {
+  const m = rawHeading.match(IMPACT_SUFFIX_RE);
+  if (!m) return { heading: rawHeading };
+  const candidate = m[1].toLowerCase();
+  if (!isImpact(candidate)) return { heading: rawHeading };
+  return { heading: rawHeading.replace(IMPACT_SUFFIX_RE, '').trim(), impact: candidate };
+}
+
+/** `[label](pwrs:test/FILE_ID/TEST_ID)` link matcher. Only test refs are
+ *  navigable from a single-report analysis; everything else stays as plain
+ *  markdown. */
+const PWRS_TEST_LINK_RE = /\[([^\]\n]+)\]\(pwrs:test\/([^)\n]+)\)/g;
+
+function extractCodeRefsFromBody(body: string): ReportAnalysisCodeRef[] {
+  const refs: ReportAnalysisCodeRef[] = [];
+  const seen = new Set<string>();
+  for (const m of body.matchAll(PWRS_TEST_LINK_RE)) {
+    const label = m[1].trim();
+    const target = m[2].trim();
+    // `FILE_ID/TEST_ID` — both IDs are URL-safe (no slashes); the route
+    // shape /test/:fileId/:testId enforces that elsewhere.
+    const slash = target.indexOf('/');
+    if (slash <= 0 || slash === target.length - 1) continue;
+    const fileId = target.slice(0, slash);
+    const testId = target.slice(slash + 1);
+    const key = `${fileId}:${testId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ kind: 'test', label, fileId, testId });
+  }
+  return refs;
+}
+
 function parseReportAnalysisFromMarkdown(text: string): ReportAnalysisStructured | null {
-  const { preamble, sections } = parseMarkdownSections(text);
+  const { verdict, remaining } = extractVerdict(text);
+  const { preamble, sections } = parseMarkdownSections(remaining);
 
   if (sections.length === 0) {
     if (!preamble) return null;
     return {
-      verdict: inferVerdictFromText(preamble),
+      verdict,
       summary: firstSentence(preamble),
       sections: [{ heading: 'Analysis', body: preamble }],
     };
   }
 
-  const summary = preamble || firstSentence(sections[0].body);
-  return {
-    verdict: inferVerdictFromText(text),
-    summary: summary || sections[0].heading,
-    sections,
-  };
+  const summary = preamble || firstSentence(sections[0].body) || sections[0].heading;
+  const enriched: ReportAnalysisSection[] = sections.map((s) => {
+    const { heading, impact } = splitImpactFromHeading(s.heading);
+    const codeRefs = extractCodeRefsFromBody(s.body);
+    return {
+      heading,
+      body: s.body,
+      impact,
+      codeRefs: codeRefs.length > 0 ? codeRefs : undefined,
+    };
+  });
+
+  return { verdict, summary, sections: enriched };
 }
 
 export function renderReportAnalysisAsMarkdown(s: ReportAnalysisStructured): string {

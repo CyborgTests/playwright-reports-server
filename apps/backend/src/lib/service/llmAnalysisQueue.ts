@@ -5,7 +5,6 @@ import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import { llmService } from '../llm/index.js';
 import {
   parseProjectAnalysisFromText,
-  parseProjectAnalysisStructured,
   pruneInvalidCodeRefs,
   renderProjectAnalysisAsMarkdown,
 } from '../llm/projectAnalysis.js';
@@ -24,18 +23,13 @@ import {
   buildTestFailureSegments,
   extractRootCauseParagraph,
   fitPromptToBudget,
-  PROJECT_ANALYSIS_SCHEMA,
-  REPORT_ANALYSIS_SCHEMA,
   renderSegmentsForDebug,
-  TEST_FAILURE_ANALYSIS_SCHEMA,
-  unescapeLiteralNewlines,
 } from '../llm/prompts/index.js';
 import {
   parseReportAnalysisFromText,
-  parseReportAnalysisStructured,
   renderReportAnalysisAsMarkdown,
 } from '../llm/reportAnalysis.js';
-import { halveEscapedBackslashes } from '../llm/structured-analysis-utils.js';
+import { extractTestAnalysisFromMarkdown } from '../llm/testAnalysis.js';
 import type { SegmentedPrompt } from '../llm/types/index.js';
 import {
   extractFailureEvidence,
@@ -730,87 +724,29 @@ class LlmAnalysisQueue {
     // Per-task temperature: prefer the user's task-specific override, fall back
     // to the base `llm.temperature`. The Settings UI exposes both. Cooler
     // values bias toward classification accuracy; warmer toward varied phrasing.
-    // Pass the response schema so the provider returns typed JSON via tool use
-    // (Anthropic) or response_format (OpenAI). LLMService respects the global
-    // mode (auto/force/disabled) and handles unsupported-by-provider fallback.
     // User's per-task override wins; otherwise the per-task default constant.
     const testAnalysisTemp =
       llmCfg.testAnalysisTemperature ?? TASK_TEMPERATURE_DEFAULTS.testAnalysis;
     const response = await llmService.sendSegmentedMessage(segmentedPrompt, {
       temperature: testAnalysisTemp,
-      responseSchema: TEST_FAILURE_ANALYSIS_SCHEMA,
     });
 
-    // Extract analysis text + category. Prefer typed structured output when
-    // present; fall back to fence-stripped JSON in response.content; finally
-    // raw text. Each branch produces a single `analysisText` and optional
-    // `llmCategory` so the empty-text guard below is uniform.
-    let llmCategory: string | null = null;
-    let analysisText = '';
-    let extractionMode: 'structured' | 'json' | 'text' = 'text';
+    // The model replies as plain markdown ending with an optional `Category:`
+    // footer (instructed in TEST_ANALYSIS_TASK_INSTRUCTIONS). Strip the footer
+    // out of the displayed analysis and feed it to the consensus rule below.
+    const { analysis: analysisText, category: llmCategory } = extractTestAnalysisFromMarkdown(
+      response.content
+    );
 
-    if (response.structuredOutput && typeof response.structuredOutput === 'object') {
-      const so = response.structuredOutput as { category?: string; analysis?: string };
-      if (so.category) llmCategory = so.category;
-      analysisText = typeof so.analysis === 'string' ? so.analysis.trim() : '';
-      extractionMode = 'structured';
-    } else {
-      const trimmed = response.content.trim();
-      // Unanchored: some local models emit a gibberish preamble before the
-      // fenced JSON. Find the fence wherever it is and fall back to the
-      // whole content if no fence is present.
-      const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-      const initialCandidate = (fenceMatch ? fenceMatch[1] : trimmed).trim();
-
-      // Iteratively halve runs of 2+ consecutive backslashes before each
-      // JSON.parse attempt. LM Studio/oMLX sometimes ignore json_schema
-      // and emit multi-level-escaped JSON;
-      // halving brings the payload back to standard JSON escape depth.
-      let parsed: { category?: unknown; analysis?: unknown } | null = null;
-      let cur = initialCandidate;
-      for (let i = 0; i < 8; i++) {
-        try {
-          const p = JSON.parse(cur);
-          if (p && typeof p === 'object') {
-            parsed = p as { category?: unknown; analysis?: unknown };
-            break;
-          }
-        } catch {
-          // halve and retry
-        }
-        const halved = halveEscapedBackslashes(cur);
-        if (halved === cur) break;
-        cur = halved;
-      }
-
-      if (parsed) {
-        if (typeof parsed.category === 'string') llmCategory = parsed.category;
-        analysisText = typeof parsed.analysis === 'string' ? parsed.analysis.trim() : '';
-        extractionMode = 'json';
-      } else {
-        analysisText = trimmed;
-        extractionMode = 'text';
-      }
-    }
-
-    // Some local models emit markdown with literal `\n` escapes instead of
-    // actual newlines (JSON-string style without the envelope). Unwind so
-    // headers and code fences render correctly downstream.
-    analysisText = unescapeLiteralNewlines(analysisText).trim();
-
-    // Empty analysis after extraction means the model spent tokens but didn't
-    // produce usable text (common with structured-output mismatches or
-    // thinking-only outputs). Fail the task instead of upserting an empty
-    // row that the report viewer then treats as "still loading" forever.
     if (!analysisText) {
       console.warn(
         `[llmQueue] Task ${task.id}: empty analysis after extraction ` +
-          `(mode=${extractionMode}, contentChars=${response.content.length}, ` +
+          `(contentChars=${response.content.length}, ` +
           `category=${llmCategory ?? 'none'}, model=${response.model || 'unknown'}, ` +
           `outputTokens=${response.usage?.outputTokens ?? 'n/a'}). Raw head: ` +
           JSON.stringify(response.content.slice(0, 400))
       );
-      llmTasksDb.fail(task.id, `LLM returned empty analysis (extraction=${extractionMode})`);
+      llmTasksDb.fail(task.id, `LLM returned empty analysis`);
       return;
     }
 
@@ -1079,16 +1015,13 @@ class LlmAnalysisQueue {
       reportLlmCfg.reportSummaryTemperature ?? TASK_TEMPERATURE_DEFAULTS.reportSummary;
     const response = await llmService.sendSegmentedMessage(segmentedPrompt, {
       temperature: reportTemp,
-      responseSchema: REPORT_ANALYSIS_SCHEMA,
     });
 
-    // Prefer the provider's parsed structured output. Fall back to JSON or
-    // markdown inside response.content for providers that don't honor the
-    // schema (some local models). The fallback parser sets a sane verdict
-    // based on keyword heuristics so the UI still renders the verdict badge.
-    let structured =
-      parseReportAnalysisStructured(response.structuredOutput) ??
-      parseReportAnalysisFromText(response.content);
+    // The model emits plain markdown with a `**Verdict:** …` opening line,
+    // an executive summary paragraph, and 1–3 `## Heading` sections. The
+    // parser recovers the structured shape via markdown sectioning + a
+    // keyword-driven verdict fallback when the opening line is malformed.
+    let structured = parseReportAnalysisFromText(response.content);
 
     if (structured) {
       // Inject the report's project into every codeRef so the UI can build
@@ -1268,14 +1201,11 @@ class LlmAnalysisQueue {
       projectLlmCfg.projectSummaryTemperature ?? TASK_TEMPERATURE_DEFAULTS.projectSummary;
     const response = await llmService.sendSegmentedMessage(segmentedPrompt, {
       temperature: projectTemp,
-      responseSchema: PROJECT_ANALYSIS_SCHEMA,
     });
 
-    // Prefer the provider's parsed structured output. Fall back to JSON inside
-    // response.content if a provider returned only text (some local models do).
-    let structured =
-      parseProjectAnalysisStructured(response.structuredOutput) ??
-      parseProjectAnalysisFromText(response.content);
+    // The model emits plain markdown with a `**Verdict:** …` opening line,
+    // an executive summary paragraph, and up to 4 `## Heading` sections.
+    let structured = parseProjectAnalysisFromText(response.content);
 
     if (structured) {
       // Drop refs pointing at testIds / reportIds the model fabricated — those

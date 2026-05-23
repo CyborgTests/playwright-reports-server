@@ -114,7 +114,6 @@ interface ConfigFormData {
   llmAnalyzeGreenWindows?: string;
   llmMaxTokens?: string;
   llmContextWindow?: string;
-  llmStructuredOutputMode?: string;
   llmMultimodalMode?: string;
   llmCustomSystemPrompt?: string;
   llmCustomTestAnalysisSystemPrompt?: string;
@@ -448,20 +447,6 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           }
         }
 
-        if (formData.llmStructuredOutputMode !== undefined) {
-          const v = formData.llmStructuredOutputMode;
-          if (v && !['auto', 'force', 'disabled'].includes(v)) {
-            return reply
-              .status(400)
-              .send({ error: 'LLM structured output mode must be auto, force, or disabled' });
-          }
-          config.llm.structuredOutputMode = (v || undefined) as
-            | 'auto'
-            | 'force'
-            | 'disabled'
-            | undefined;
-        }
-
         if (formData.llmMultimodalMode !== undefined) {
           const v = formData.llmMultimodalMode;
           if (v && !['auto', 'force', 'disabled'].includes(v)) {
@@ -507,7 +492,6 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           formData.llmProjectSummaryTemperature !== undefined ||
           formData.llmMaxTokens !== undefined ||
           formData.llmContextWindow !== undefined ||
-          formData.llmStructuredOutputMode !== undefined ||
           formData.llmMultimodalMode !== undefined
         );
 

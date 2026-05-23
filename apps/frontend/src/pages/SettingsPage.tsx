@@ -180,7 +180,6 @@ export default function SettingsPage() {
               ? tempConfig.llm.contextWindow.toString()
               : ''
           );
-          formData.append('llmStructuredOutputMode', tempConfig.llm.structuredOutputMode ?? '');
           formData.append('llmMultimodalMode', tempConfig.llm.multimodalMode ?? '');
           // Custom prompts — same "send always to allow clearing" pattern.
           // Legacy single field kept for back-compat; per-task fields below win.

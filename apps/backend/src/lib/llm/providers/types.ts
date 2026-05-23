@@ -20,12 +20,6 @@ export interface AnthropicImageBlock {
 
 export type AnthropicContentBlock = AnthropicTextBlock | AnthropicImageBlock;
 
-export interface AnthropicTool {
-  name: string;
-  description: string;
-  input_schema: Record<string, unknown>;
-}
-
 export interface AnthropicRequest {
   model: string;
   max_tokens: number;
@@ -35,16 +29,11 @@ export interface AnthropicRequest {
   }>;
   system?: string | AnthropicTextBlock[];
   temperature?: number;
-  tools?: AnthropicTool[];
-  tool_choice?: { type: 'tool'; name: string } | { type: 'auto' } | { type: 'any' };
 }
 
 export interface AnthropicResponseContentBlock {
-  type: 'text' | 'tool_use';
+  type: 'text';
   text?: string;
-  id?: string;
-  name?: string;
-  input?: unknown;
 }
 
 export interface AnthropicResponse {
@@ -72,16 +61,6 @@ export interface AnthropicModelList {
   data: AnthropicModel[];
 }
 
-export interface OpenAIResponseFormat {
-  type: 'json_schema';
-  json_schema: {
-    name: string;
-    description?: string;
-    schema: Record<string, unknown>;
-    strict?: boolean;
-  };
-}
-
 export interface OpenAITextPart {
   type: 'text';
   text: string;
@@ -102,7 +81,6 @@ export interface OpenAIRequest {
   }>;
   max_tokens?: number;
   temperature?: number;
-  response_format?: OpenAIResponseFormat;
 }
 
 export interface OpenAIResponse {

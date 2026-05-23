@@ -164,7 +164,7 @@ export function LlmAnalysisRenderer({
             </button>
             {isOpen && (
               <div className="mt-2">
-                <MarkdownRenderer content={section.body} />
+                <MarkdownRenderer content={section.body} fallbackProject={fallbackProject} />
                 {section.codeRefs && (
                   <CodeRefs
                     refs={section.codeRefs}

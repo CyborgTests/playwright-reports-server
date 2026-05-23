@@ -512,40 +512,6 @@ export default function LLMConfiguration({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="llm-structured-mode">Structured output mode</Label>
-                <Select
-                  disabled={editingSection !== 'llm'}
-                  value={
-                    editingSection === 'llm'
-                      ? (tempConfig.llm?.structuredOutputMode ?? 'auto')
-                      : (config.llm?.structuredOutputMode ?? 'auto')
-                  }
-                  onValueChange={(value) =>
-                    editingSection === 'llm' &&
-                    onUpdateTempConfig({
-                      llm: {
-                        ...tempConfig.llm,
-                        structuredOutputMode: value as 'auto' | 'force' | 'disabled',
-                      },
-                    })
-                  }
-                >
-                  <SelectTrigger id="llm-structured-mode">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto">Auto — try, fall back on unsupported</SelectItem>
-                    <SelectItem value="force">Force — require schema</SelectItem>
-                    <SelectItem value="disabled">Disabled — always use text</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  How to request typed JSON output (Anthropic tool use / OpenAI json_schema). Auto
-                  is safest — falls back to text parsing on models that don't support it.
-                </p>
-              </div>
-
-              <div className="space-y-2">
                 <Label htmlFor="llm-multimodal-mode">Multimodal mode</Label>
                 <Select
                   disabled={editingSection !== 'llm'}

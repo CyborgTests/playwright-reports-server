@@ -4,11 +4,7 @@ import type {
   ProjectAnalysisStructured,
   ProjectAnalysisVerdict,
 } from '@playwright-reports/shared';
-import {
-  firstSentence,
-  parseMarkdownSections,
-  tryParseJsonAsStructured,
-} from './structured-analysis-utils.js';
+import { firstSentence, parseMarkdownSections } from './structured-analysis-utils.js';
 
 const VERDICTS: readonly ProjectAnalysisVerdict[] = [
   'healthy',
@@ -17,100 +13,28 @@ const VERDICTS: readonly ProjectAnalysisVerdict[] = [
   'failing',
 ];
 
-const CODE_REF_KINDS = ['test', 'file'] as const;
-
-function isVerdict(value: unknown): value is ProjectAnalysisVerdict {
-  return typeof value === 'string' && (VERDICTS as readonly string[]).includes(value);
+function isVerdict(value: string): value is ProjectAnalysisVerdict {
+  return (VERDICTS as readonly string[]).includes(value);
 }
 
-function isKind(value: unknown): value is ProjectAnalysisCodeRef['kind'] {
-  return typeof value === 'string' && (CODE_REF_KINDS as readonly string[]).includes(value);
-}
-
-/**
- * Coerce one model-emitted code ref into the strict shape. Accepts both:
- *  - new shape: `{kind, label, testId?, fileId?, filePath?, line?, reportId?}`
- *  - legacy shape: `{file, line?, reportId?}` — pre-R3 rows still in
- *    `project_llm_summaries.structured`. Treated as `kind: 'file'`.
- * Drops refs that lack the fields required to render a navigable link.
- */
-function coerceCodeRef(raw: unknown): ProjectAnalysisCodeRef | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  const line =
-    typeof r.line === 'number' && Number.isFinite(r.line) && r.line > 0
-      ? Math.floor(r.line)
-      : undefined;
-  const reportId =
-    typeof r.reportId === 'string' && r.reportId.trim().length > 0 ? r.reportId.trim() : undefined;
-
-  if (isKind(r.kind)) {
-    // New shape.
-    const kind = r.kind;
-    const label = typeof r.label === 'string' ? r.label.trim() : '';
-    if (!label) return null;
-    const testId = typeof r.testId === 'string' && r.testId.trim() ? r.testId.trim() : undefined;
-    const fileId = typeof r.fileId === 'string' && r.fileId.trim() ? r.fileId.trim() : undefined;
-    const filePath =
-      typeof r.filePath === 'string' && r.filePath.trim() ? r.filePath.trim() : undefined;
-    // A test ref needs at least a testId to be navigable. A file ref needs at
-    // least a filePath. Drop refs that can't render as a link.
-    if (kind === 'test' && !testId) return null;
-    if (kind === 'file' && !filePath) return null;
-    return { kind, label, testId, fileId, filePath, reportId, line };
-  }
-
-  // Legacy fallback: pre-R3 `{file, line?, reportId?}` shape still in cached
-  // structured payloads. Coerce to `kind: 'file'` so the renderer treats them
-  // uniformly with new entries.
-  const file = typeof r.file === 'string' ? r.file.trim() : '';
-  if (!file) return null;
-  return { kind: 'file', label: file, filePath: file, reportId, line };
-}
-
-function coerceSection(raw: unknown): ProjectAnalysisSection | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  const heading = typeof r.heading === 'string' ? r.heading.trim() : '';
-  const body = typeof r.body === 'string' ? r.body.trim() : '';
-  if (!heading || !body) return null;
-  const codeRefs = Array.isArray(r.codeRefs)
-    ? r.codeRefs.map(coerceCodeRef).filter((x): x is ProjectAnalysisCodeRef => x !== null)
-    : undefined;
-  return { heading, body, codeRefs: codeRefs && codeRefs.length > 0 ? codeRefs : undefined };
-}
-
-/**
- * Coerce arbitrary LLM-emitted JSON into the strict ProjectAnalysisStructured
- * shape. Returns null when the payload is missing the required fields after
- * normalization — callers should fall back to plain-text rendering.
- */
-export function parseProjectAnalysisStructured(raw: unknown): ProjectAnalysisStructured | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  const verdict = isVerdict(r.verdict) ? r.verdict : null;
-  const summary = typeof r.summary === 'string' ? r.summary.trim() : '';
-  if (!verdict || !summary) return null;
-  const sections = Array.isArray(r.sections)
-    ? r.sections.map(coerceSection).filter((s): s is ProjectAnalysisSection => s !== null)
-    : [];
-  if (sections.length === 0) return null;
-  return { verdict, summary, sections };
-}
-
-/**
- * Last-resort fallback when the provider returns plain text instead of
- * structured JSON. Tries fenced/raw JSON first, then falls back to parsing
- * markdown `## Heading` sections with a heuristic verdict inferred from
- * keywords. Returns null only when nothing usable could be recovered.
+/** Markdown the model is asked to emit:
+ *
+ *   **Verdict:** stabilizing
+ *
+ *   Project is stabilizing. <one-line headline>.
+ *
+ *   ## Health Assessment
+ *   ...with [label](pwrs:test/FID/TID), [label](pwrs:file/PATH:42), and
+ *   [label](pwrs:report/RID) refs.
+ *
+ *   ## Recommendations
+ *   ...
+ *
+ * Returns null only when the response is empty.
  */
 export function parseProjectAnalysisFromText(text: string): ProjectAnalysisStructured | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
-
-  const fromJson = tryParseJsonAsStructured(trimmed, parseProjectAnalysisStructured);
-  if (fromJson) return fromJson;
-
   return parseProjectAnalysisFromMarkdown(trimmed);
 }
 
@@ -134,33 +58,93 @@ const VERDICT_HEURISTICS: Array<{ verdict: ProjectAnalysisVerdict; patterns: Reg
 ];
 
 function inferVerdictFromText(text: string): ProjectAnalysisVerdict {
-  // First match wins; ordering puts the most-severe verdicts first so an
-  // analysis that says "improving from failing" lands on 'failing' rather
-  // than 'stabilizing'.
   for (const { verdict, patterns } of VERDICT_HEURISTICS) {
     if (patterns.some((p) => p.test(text))) return verdict;
   }
   return 'degrading';
 }
 
+const VERDICT_LINE_RE =
+  /(?:^|\n)\s*(?:\*\*)?Verdict(?:\*\*)?\s*:?\s*\*?\*?\s*["`]?([a-zA-Z]+)["`]?\s*\*?\*?\s*(?=\n|$)/;
+
+function extractVerdict(text: string): {
+  verdict: ProjectAnalysisVerdict;
+  remaining: string;
+} {
+  const match = text.match(VERDICT_LINE_RE);
+  if (match) {
+    const candidate = match[1].toLowerCase();
+    if (isVerdict(candidate)) {
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      const remaining = (text.slice(0, start) + text.slice(end)).trim();
+      return { verdict: candidate, remaining };
+    }
+  }
+  return { verdict: inferVerdictFromText(text), remaining: text };
+}
+
+/** `[label](pwrs:(test|report)/TARGET)` link matcher. File refs are not
+ *  emitted by the prompts (no per-file SPA route); plain backticked file
+ *  paths cover that case in prose. */
+const PWRS_LINK_RE = /\[([^\]\n]+)\]\(pwrs:(test|report)\/([^)\n]+)\)/g;
+
+function extractCodeRefsFromBody(body: string): ProjectAnalysisCodeRef[] {
+  const refs: ProjectAnalysisCodeRef[] = [];
+  const seen = new Set<string>();
+  for (const m of body.matchAll(PWRS_LINK_RE)) {
+    const label = m[1].trim();
+    const kind = m[2] as 'test' | 'report';
+    const target = m[3].trim();
+    if (kind === 'test') {
+      const slash = target.indexOf('/');
+      if (slash <= 0 || slash === target.length - 1) continue;
+      const fileId = target.slice(0, slash);
+      const testId = target.slice(slash + 1);
+      const key = `test:${fileId}:${testId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      refs.push({ kind: 'test', label, fileId, testId });
+      continue;
+    }
+    // report: encoded as { kind: 'file', label, reportId } because the
+    // frontend renderer treats kind='file' + reportId as a /report/:id link
+    // without requiring a filePath. Adding a new discriminator would break
+    // backwards compatibility with cached structured payloads in the DB.
+    const reportId = target;
+    if (!reportId) continue;
+    const key = `report:${reportId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ kind: 'file', label, reportId });
+  }
+  return refs;
+}
+
 function parseProjectAnalysisFromMarkdown(text: string): ProjectAnalysisStructured | null {
-  const { preamble, sections } = parseMarkdownSections(text);
+  const { verdict, remaining } = extractVerdict(text);
+  const { preamble, sections } = parseMarkdownSections(remaining);
 
   if (sections.length === 0) {
     if (!preamble) return null;
     return {
-      verdict: inferVerdictFromText(preamble),
+      verdict,
       summary: firstSentence(preamble),
       sections: [{ heading: 'Analysis', body: preamble }],
     };
   }
 
-  const summary = preamble || firstSentence(sections[0].body);
-  return {
-    verdict: inferVerdictFromText(text),
-    summary: summary || sections[0].heading,
-    sections,
-  };
+  const summary = preamble || firstSentence(sections[0].body) || sections[0].heading;
+  const enriched: ProjectAnalysisSection[] = sections.map((s) => {
+    const codeRefs = extractCodeRefsFromBody(s.body);
+    return {
+      heading: s.heading,
+      body: s.body,
+      codeRefs: codeRefs.length > 0 ? codeRefs : undefined,
+    };
+  });
+
+  return { verdict, summary, sections: enriched };
 }
 
 /**
@@ -189,11 +173,6 @@ export function pruneInvalidCodeRefs(
   return { ...s, sections: cleanSections };
 }
 
-/**
- * Render a structured analysis back to markdown for the legacy `summary`
- * column (still consumed by the report-viewer LLM-injection feature and any
- * older clients that haven't been updated yet).
- */
 export function renderProjectAnalysisAsMarkdown(s: ProjectAnalysisStructured): string {
   let out = '';
   out += `**Verdict:** ${s.verdict[0].toUpperCase()}${s.verdict.slice(1)}\n\n`;

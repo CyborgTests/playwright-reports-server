@@ -118,20 +118,6 @@ export class AnthropicProvider extends LLMProvider {
       temperature: request.temperature,
     };
 
-    if (request.responseSchema) {
-      // Anthropic structured output via forced tool use: define a single tool
-      // matching the schema, then force the model to call it via tool_choice.
-      // The tool_use input block in the response carries the typed JSON.
-      body.tools = [
-        {
-          name: request.responseSchema.name,
-          description: request.responseSchema.description,
-          input_schema: request.responseSchema.schema,
-        },
-      ];
-      body.tool_choice = { type: 'tool', name: request.responseSchema.name };
-    }
-
     return body;
   }
 
@@ -153,28 +139,14 @@ export class AnthropicProvider extends LLMProvider {
     };
   }
 
-  protected async parseResponse(response: Response, _request?: LLMRequest): Promise<LLMResponse> {
+  protected async parseResponse(response: Response): Promise<LLMResponse> {
     const data = (await response.json()) as AnthropicResponse;
 
-    // Prefer tool_use input when present (structured output path); otherwise
-    // fall back to the first text block.
-    const toolBlock = data.content?.find((b) => b.type === 'tool_use');
     const textBlock = data.content?.find((b) => b.type === 'text');
-
-    let structuredOutput: unknown;
-    let content = '';
-    if (toolBlock?.input !== undefined) {
-      structuredOutput = toolBlock.input;
-      // Carry a JSON-stringified copy in `content` so legacy code paths that
-      // parse the text response keep working as a fallback.
-      content = JSON.stringify(toolBlock.input);
-    } else if (textBlock?.text) {
-      content = textBlock.text;
-    }
+    const content = textBlock?.text ?? '';
 
     return {
       content,
-      structuredOutput,
       usage: {
         inputTokens: data.usage?.input_tokens || 0,
         outputTokens: data.usage?.output_tokens || 0,

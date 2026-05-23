@@ -2,7 +2,7 @@ import type { ClusterEvidence, ClusterStrategy } from '@playwright-reports/share
 import { formatDuration } from '@playwright-reports/shared';
 import type { FailureEvidence } from '../../parser/failure-extraction.js';
 import type { PerFileStep } from '../../parser/report-payload.js';
-import type { LLMResponseSchema, PromptSegment, SegmentedPrompt } from '../types/index.js';
+import type { PromptSegment, SegmentedPrompt } from '../types/index.js';
 
 const FAILURE_CATEGORY_ENUM = [
   'timeout',
@@ -20,234 +20,15 @@ const FAILURE_CATEGORY_ENUM = [
   'unknown',
 ] as const;
 
-/** JSON schema for structured-output test-failure analysis. The `category`
- *  field is optional — the model is asked to populate it only when it actively
- *  disagrees with the heuristic baseline supplied via {{errorCategory}}. The
- *  consensus rule at llmAnalysisQueue.ts:739 lets the heuristic win unless it
- *  was `unknown` or the LLM agrees, so the model's category is only load-
- *  bearing in the `unknown`-tiebreaker case. `analysis` stays required. */
-export const TEST_FAILURE_ANALYSIS_SCHEMA: LLMResponseSchema = {
-  name: 'submit_test_failure_analysis',
-  description:
-    'Submit a root-cause analysis of a Playwright test failure. `analysis` is markdown text. `category` is optional — set it only when the heuristic baseline looks wrong.',
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['analysis'],
-    properties: {
-      category: {
-        type: 'string',
-        enum: [...FAILURE_CATEGORY_ENUM],
-        description:
-          'Failure category from the fixed enum. OPTIONAL — populate only when you actively disagree with the heuristic baseline provided in the task instructions; otherwise omit.',
-      },
-      analysis: {
-        type: 'string',
-        description:
-          'Markdown analysis of root cause, what to verify, and a recommended direction. Specific, actionable, anchored in the evidence.',
-      },
-    },
-  },
-};
+/** Comma-separated category enum, inlined into the test-analysis instructions
+ *  so the model sees the same list the heuristic uses. */
+const FAILURE_CATEGORY_LIST = FAILURE_CATEGORY_ENUM.join(', ');
 
 /** Verdict enum mirrored in shared/types ReportAnalysisVerdict. Keep in sync. */
 export const REPORT_VERDICT_ENUM = ['isolated', 'clustered', 'widespread', 'systemic'] as const;
 
-/** Impact enum mirrored in shared/types ReportAnalysisImpact. */
-const REPORT_IMPACT_ENUM = ['high', 'medium', 'low'] as const;
-
-/** Structured-output schema for the report-level failure analysis. The model
- *  emits a verdict, a 1–3 sentence summary, and an ordered list of sections
- *  with optional per-section impact tags and code references (test/file). */
-export const REPORT_ANALYSIS_SCHEMA: LLMResponseSchema = {
-  name: 'submit_report_failure_analysis',
-  description:
-    'Submit a structured failure analysis for a single Playwright report. The verdict reflects how concentrated the failures are; the summary is the executive headline; sections expand on patterns and recommendations.',
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['verdict', 'summary', 'sections'],
-    properties: {
-      verdict: {
-        type: 'string',
-        enum: [...REPORT_VERDICT_ENUM],
-        description:
-          'How concentrated are the failures? isolated = ≤2 distinct failures, no shared signature; clustered = 3+ failures dominated by 1–2 signatures or a single category; widespread = failures across 3+ categories with no dominant cluster; systemic = fixture/infra/setup signal — unrelated tests sharing a hook or setup path.',
-      },
-      summary: {
-        type: 'string',
-        description:
-          '1–3 sentence executive headline. State the verdict in plain English and call out the single most important fact.',
-      },
-      sections: {
-        type: 'array',
-        minItems: 1,
-        maxItems: 3,
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['heading', 'body'],
-          properties: {
-            heading: {
-              type: 'string',
-              description:
-                'Short section title without leading emoji or numbering (e.g., "Failure Patterns", "Recommendations", "Risks").',
-            },
-            body: {
-              type: 'string',
-              description:
-                'Markdown body for the section. Be specific and reference test files or signatures when relevant. Do NOT repeat the section heading inside the body.',
-            },
-            impact: {
-              type: 'string',
-              enum: [...REPORT_IMPACT_ENUM],
-              description:
-                'Optional severity tag — high when this section names the largest blocking issue; medium for important but smaller impact; low for minor observations.',
-            },
-            codeRefs: {
-              type: 'array',
-              description:
-                'Test or file references mentioned in this section. The UI renders these as clickable links — only include refs whose testId or filePath is present in the supplied data.',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['kind', 'label'],
-                properties: {
-                  kind: {
-                    type: 'string',
-                    enum: ['test', 'file'],
-                    description:
-                      "'test' links to the test detail page (requires testId, fileId); 'file' opens the report viewer for a spec file (requires filePath).",
-                  },
-                  label: {
-                    type: 'string',
-                    description: 'Display label (test title or file path).',
-                  },
-                  testId: {
-                    type: 'string',
-                    description:
-                      'Required when kind=test. Must be a testId from the supplied data.',
-                  },
-                  fileId: {
-                    type: 'string',
-                    description: 'Required when kind=test. The fileId the test belongs to.',
-                  },
-                  filePath: {
-                    type: 'string',
-                    description: 'Required when kind=file. Path to the spec file.',
-                  },
-                  line: {
-                    type: 'integer',
-                    minimum: 1,
-                    description: 'Optional 1-based line number.',
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-};
-
 /** Verdict enum mirrored in shared/types ProjectAnalysisVerdict. Keep in sync. */
 export const PROJECT_VERDICT_ENUM = ['healthy', 'stabilizing', 'degrading', 'failing'] as const;
-
-/** Structured-output schema for the project-level health analysis. The model
- *  emits a verdict, a short executive summary, and an ordered list of sections.
- *  The UI renders the verdict as a status badge, the summary above the fold,
- *  and the sections as collapsible blocks below. */
-export const PROJECT_ANALYSIS_SCHEMA: LLMResponseSchema = {
-  name: 'submit_project_health_analysis',
-  description:
-    'Submit a structured health analysis for a project across its latest runs. The verdict reflects the overall trend across the timeline; the summary is the executive headline; sections expand on health/recommendations/notable trends.',
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['verdict', 'summary', 'sections'],
-    properties: {
-      verdict: {
-        type: 'string',
-        enum: [...PROJECT_VERDICT_ENUM],
-        description:
-          'Overall project health verdict. healthy = no active failure clusters AND the latest runs are clean (the recovery has held for several runs — applies whether the prior failures were transient flakes or real defects that have since been fixed); stabilizing = recovery is in-progress but unproven (cluster resolved only 1–2 runs ago, or only some clusters resolved while others persist); degrading = failure clusters are increasing or new persistent ones appeared; failing = many runs are red, including the latest.',
-      },
-      summary: {
-        type: 'string',
-        description:
-          '1–3 sentence executive headline. Open with "Project is <status>" where <status> is the chosen verdict. Follow with one or two sentences citing the single most important supporting fact.',
-      },
-      sections: {
-        type: 'array',
-        minItems: 1,
-        maxItems: 4,
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['heading', 'body'],
-          properties: {
-            heading: {
-              type: 'string',
-              description:
-                'Short section title without leading emoji or numbering (e.g., "Health Assessment", "Recommendations", "Notable Trends").',
-            },
-            body: {
-              type: 'string',
-              description:
-                'Markdown body for the section. Be specific and reference test files or report IDs when relevant. Do NOT repeat the section heading inside the body.',
-            },
-            codeRefs: {
-              type: 'array',
-              description:
-                'Test or file references mentioned in this section. The UI renders these as clickable links — only include refs whose testId or filePath is present in the supplied data.',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['kind', 'label'],
-                properties: {
-                  kind: {
-                    type: 'string',
-                    enum: ['test', 'file'],
-                    description:
-                      "'test' links to the test detail page (requires testId, fileId); 'file' opens the report viewer for a spec file (requires filePath).",
-                  },
-                  label: {
-                    type: 'string',
-                    description: 'Display label (test title or file path).',
-                  },
-                  testId: {
-                    type: 'string',
-                    description:
-                      'Required when kind=test. Must be a testId from the affected tests in the supplied data.',
-                  },
-                  fileId: {
-                    type: 'string',
-                    description: 'Required when kind=test. The fileId the test belongs to.',
-                  },
-                  filePath: {
-                    type: 'string',
-                    description: 'Required when kind=file. Path to the spec file.',
-                  },
-                  reportId: {
-                    type: 'string',
-                    description:
-                      'Optional report ID this reference belongs to. Must be one of the supplied run IDs when set; otherwise the UI links to the latest run.',
-                  },
-                  line: {
-                    type: 'integer',
-                    minimum: 1,
-                    description: 'Optional 1-based line number.',
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-};
 
 export function resolveSystemPrompt(
   builtInDefault: string,
@@ -319,16 +100,22 @@ export const PROJECT_SUMMARY_SYSTEM_PROMPT =
 export const TEST_ANALYSIS_TASK_INSTRUCTIONS = `Test: \`{{testTitle}}\` (project "{{project}}", {{filePath}})
 Heuristic category: \`{{errorCategory}}\`. Treat as working hypothesis. Disagree only with evidence.
 
-Reply via the tool schema. \`analysis\` is markdown with these sections, headers verbatim. Sections 1 and 2 are required, section 3 is optional.
+Reply as plain markdown with these sections, headers verbatim. Sections 1 and 2 are required, section 3 is optional. Do NOT wrap your response in JSON or code fences.
 
 ## Root Cause
-What broke. Anchor every claim to specific evidence: line numbers from Test Source / Step Tree / Stack, console errors, failed requests with status codes, attempt-history divergence. If \`{{errorCategory}}\` is wrong, state the better category and set the \`category\` field. Otherwise omit the heuristic from the prose.
+What broke. Anchor every claim to specific evidence: line numbers from Test Source / Step Tree / Stack, console errors, failed requests with status codes, attempt-history divergence. If \`{{errorCategory}}\` is wrong, state the better category in the footer below. Otherwise omit the heuristic from the prose.
 
 ## What to Verify
 2–3 concrete next checks to confirm or rule out the root cause. Each must be runnable — a log query, an env flag, a code path to inspect, a repro step. No generic advice.
 
 ## Recommendation
 Optional. Include only when you can name a specific fix (code edit, config change, infra action). Omit when the right next step is "investigate further". A short code snippet is fine when it's concrete, not illustrative.
+
+After the sections above, end your response with exactly one footer line on its own (no extra heading, no extra prose):
+
+Category: <one of: ${FAILURE_CATEGORY_LIST}>
+
+Omit the Category line entirely if you agree with the heuristic — the heuristic baseline wins by default.
 
 Attempt-history rules:
 - eventually passed → transient/environmental; lead with retry/wait diagnosis.
@@ -341,20 +128,30 @@ export const REPORT_SUMMARY_TASK_INSTRUCTIONS = `Analyze the failures in Playwri
 
 The data block is structured around **failure clusters** — groups of failing tests that share evidence (error signature, stack frame, failing fixture, or temporal co-failure). Each cluster lists its member tests with their per-test root-cause analysis attached. Tests that didn't group into any multi-test cluster appear under "Unclustered Failures" with their own analyses. **Anchor your summary on this cluster shape.** A cluster spanning many tests usually points to a single root cause; an unclustered failure is usually an isolated bug.
 
-Respond with a structured JSON object matching the provided schema. The schema requires:
+Reply as plain markdown in this exact shape. Do NOT wrap your response in JSON or code fences.
 
-- **verdict**: one of \`isolated\`, \`clustered\`, \`widespread\`, \`systemic\` — describing how concentrated the failures are.
-  - \`isolated\`: ≤2 failures, all unclustered (no shared evidence with other failures in this run).
-  - \`clustered\`: failures dominated by 1–2 clusters; most tests share a signature, stack frame, or fixture.
-  - \`widespread\`: failures span many clusters with no clearly dominant one.
-  - \`systemic\`: a \`fixture\`-strategy cluster covers multiple tests, OR multiple clusters converge on a single root cause (shared setup, infra, env). Prefer this over \`clustered\` when you see a fixture cluster.
-- **summary**: a 1–3 sentence executive headline. State the verdict in plain English and call out the single most important fact (e.g., the dominant cluster's evidence, the suspected fixture).
-- **sections**: 1–3 sections in this order (skip a section only when you have no observations for it):
-  1. \`Failure Patterns\` — which clusters dominate, what root cause they share, which look systemic vs. isolated. Cite cluster strategies (\`signature\`, \`stack-frame\`, \`fixture\`, \`temporal\`) and their evidence (signature, stack frame, fixture phase) by name. Set \`impact: high\` when this names the largest blocking cluster.
-  2. \`Recommendations\` — prioritized, actionable fixes. Lead with the change that resolves the most tests (usually the largest cluster); follow with quick wins. Be concrete (file paths, fixture changes, locator strategies), not generic.
-  3. (optional) \`Risks\` — correlations between clusters, suspicious unclustered failures worth investigating, anything else worth flagging. Omit when there's nothing to say.
+1. Opening line: \`**Verdict:** <verdict>\` on its own line — exactly one of \`isolated\`, \`clustered\`, \`widespread\`, \`systemic\`.
+   - \`isolated\`: ≤2 failures, all unclustered (no shared evidence with other failures in this run).
+   - \`clustered\`: failures dominated by 1–2 clusters; most tests share a signature, stack frame, or fixture.
+   - \`widespread\`: failures span many clusters with no clearly dominant one.
+   - \`systemic\`: a \`fixture\`-strategy cluster covers multiple tests, OR multiple clusters converge on a single root cause (shared setup, infra, env). Prefer this over \`clustered\` when you see a fixture cluster.
+2. One blank line, then a 1–3 sentence executive **summary** as a paragraph (no heading). State the verdict in plain English and call out the single most important fact (e.g., the dominant cluster's evidence, the suspected fixture).
+3. Then 1–3 sections in this order with \`## Heading\` markers (skip a section only when you have no observations for it):
+   - \`## Failure Patterns\` — which clusters dominate, what root cause they share, which look systemic vs. isolated. Cite cluster strategies (\`signature\`, \`stack-frame\`, \`fixture\`, \`temporal\`) and their evidence (signature, stack frame, fixture phase) by name. If this section names the largest blocking cluster, append \` _(high impact)_\` to the heading; use \` _(medium impact)_\` or \` _(low impact)_\` for smaller-impact sections.
+   - \`## Recommendations\` — prioritized, actionable fixes. Lead with the change that resolves the most tests (usually the largest cluster); follow with quick wins. Be concrete (file paths, fixture changes, locator strategies), not generic.
+   - \`## Risks\` (optional) — correlations between clusters, suspicious unclustered failures worth investigating, anything else worth flagging. Omit when there's nothing to say.
 
-Each section body is markdown. Do NOT repeat the section heading inside the body. When referencing specific tests or files, attach them under \`codeRefs\` so the UI can render clickable links — use \`kind: "test"\` with the test's \`testId\` and \`fileId\` for test refs, or \`kind: "file"\` with the spec \`filePath\` for file refs. Only cite testIds/filePaths that appear in the supplied data.
+Do NOT repeat a section's heading inside its body.
+
+Reference tests inline with markdown links using the \`pwrs:test\` scheme so the UI can render them as clickable badges (this replaces the prior JSON \`codeRefs\` field). Write the link as plain markdown — do NOT wrap the whole \`[label](url)\` in backticks (that would render as inline code, not a link):
+
+    [test title here](pwrs:test/FILE_ID/TEST_ID)
+
+Rules:
+- The test-link target is \`pwrs:test/FILE_ID/TEST_ID\` using the exact \`fileId\` and \`testId\` from the supplied data.
+- The visible label MUST be the test's title (the human-readable test name from the data), NOT its file path and NOT its testId. File paths and IDs go in the URL portion only.
+- Only cite testIds and fileIds that appear in the supplied data. Do NOT invent IDs.
+- For non-clickable mentions (file paths, signatures, etc.), use plain backticks — there is no \`pwrs:file\` scheme.
 
 Use the per-test analyses attached to each cluster member as the primary evidence for root cause. When the **Run Context** block is present, cite the git branch / commit / CI build in your prose so the reader can correlate the failures with the change under test. When the **trend** annotations are present on failing tests (\`newly failed since previous report\` vs. \`still failing from previous report\`), lead your recommendations with the newly-failed set — those are the regressions introduced by this run. Long-standing failures still matter but are usually known issues. The **trend context** block at the end gives the broader diff (newly-failed, fixed, still-failing, duration regressions); reference it when relevant.
 
@@ -362,22 +159,34 @@ Flaky tests under the **Flaky Tests** block are NOT failures — they passed on 
 
 export const PROJECT_SUMMARY_TASK_INSTRUCTIONS = `Analyze the test health for project "{{project}}" across the latest {{totalRuns}} runs ({{passingRuns}} passed cleanly).
 
-Respond with a structured JSON object matching the provided schema. The schema requires:
+Reply as plain markdown in this exact shape. Do NOT wrap your response in JSON or code fences.
 
-- **verdict**: one of \`healthy\`, \`stabilizing\`, \`degrading\`, \`failing\` — reflecting the project's current state, weighted toward the most recent runs.
-  - \`healthy\`: no active failure clusters AND the latest runs are clean. The prior failures may have been transient flakes OR real defects that were since fixed — either way, what matters is that the recovery has held. As a guide, treat the verdict as \`healthy\` once the latest run is green and either (a) all clusters are in the "Recently Resolved" bucket OR (b) all latest-run-failures are flake/infra signals already covered by quarantine. A fix that has held for ≥3 clean runs is \`healthy\`, not \`stabilizing\`.
-  - \`stabilizing\`: recovery is in-progress but unproven. Use this when the latest run is green BUT at least one cluster was active within the last 2 runs (i.e. \`last seen 1–2 runs ago\`), or when only some active clusters have resolved while others persist. "Stabilizing" implies "things are getting better but we're not done watching."
-  - \`degrading\`: at least one active failure cluster is present in the latest run (or the prior 1–2 runs) AND retry recovery is low; new persistent issues introduced; pass rate dropped meaningfully vs the prior window.
-  - \`failing\`: many recent runs are red, including the latest. Multiple active signatures, no recovery in sight.
-  CRITICAL: a run that has any unexpected or flaky tests is NOT a passing run. Re-read the run table before choosing the verdict — if the latest run shows failures, do not classify the project as \`healthy\`.
-- **summary**: a 1–3 sentence executive headline. Open with "Project is <status>." where <status> matches the chosen verdict (one of: healthy, stabilizing, degrading, failing). Follow with one or two sentences citing the single most important supporting fact.
-- **sections**: an ordered list of up to 4 sections. Use these headings in this order (skip a section when you have no observations for it):
-  1. \`Health Assessment\` — overall verdict in detail. Distinguish transient vs persistent clusters; call out new issues; cite recently-resolved clusters as recovery evidence when relevant.
-  2. \`Recommendations\` — concrete actions for **Active Failure Clusters only**.
-  3. \`Notable Trends\` — failure-rate movement, drifting categories, runs that look unusual.
-  4. (optional) \`Risks\` — anything else worth flagging.
+1. Opening line: \`**Verdict:** <verdict>\` on its own line — exactly one of \`healthy\`, \`stabilizing\`, \`degrading\`, \`failing\`.
+   - \`healthy\`: no active failure clusters AND the latest runs are clean. The prior failures may have been transient flakes OR real defects that were since fixed — either way, what matters is that the recovery has held. As a guide, treat the verdict as \`healthy\` once the latest run is green and either (a) all clusters are in the "Recently Resolved" bucket OR (b) all latest-run-failures are flake/infra signals already covered by quarantine. A fix that has held for ≥3 clean runs is \`healthy\`, not \`stabilizing\`.
+   - \`stabilizing\`: recovery is in-progress but unproven. Use this when the latest run is green BUT at least one cluster was active within the last 2 runs (i.e. \`last seen 1–2 runs ago\`), or when only some active clusters have resolved while others persist. "Stabilizing" implies "things are getting better but we're not done watching."
+   - \`degrading\`: at least one active failure cluster is present in the latest run (or the prior 1–2 runs) AND retry recovery is low; new persistent issues introduced; pass rate dropped meaningfully vs the prior window.
+   - \`failing\`: many recent runs are red, including the latest. Multiple active signatures, no recovery in sight.
+   CRITICAL: a run that has any unexpected or flaky tests is NOT a passing run. Re-read the run table before choosing the verdict — if the latest run shows failures, do not classify the project as \`healthy\`.
+2. One blank line, then a 1–3 sentence executive **summary** as a paragraph (no heading). Open with "Project is <status>." where <status> matches the chosen verdict (one of: healthy, stabilizing, degrading, failing). Follow with one or two sentences citing the single most important supporting fact.
+3. Then up to 4 sections with \`## Heading\` markers in this order (skip a section when you have no observations for it):
+   - \`## Health Assessment\` — overall verdict in detail. Distinguish transient vs persistent clusters; call out new issues; cite recently-resolved clusters as recovery evidence when relevant.
+   - \`## Recommendations\` — concrete actions for **Active Failure Clusters only**.
+   - \`## Notable Trends\` — failure-rate movement, drifting categories, runs that look unusual.
+   - \`## Risks\` (optional) — anything else worth flagging.
 
-Each section body is markdown. Do NOT repeat the section heading inside the body. When referencing specific tests or files, attach them under \`codeRefs\` so the UI can render clickable links — use \`kind: "test"\` with the test's \`testId\` and \`fileId\` for test refs, or \`kind: "file"\` with the spec \`filePath\` for file refs. Only cite testIds, fileIds, and filePaths that appear in the supplied data (under "Affected tests" lines). Setting \`reportId\` is optional; when set it must be one of the run IDs listed in the per-run dump.
+Do NOT repeat a section's heading inside its body.
+
+Reference tests and reports inline with markdown links using the \`pwrs:\` scheme so the UI can render them as clickable badges. Write the link as plain markdown — do NOT wrap the whole \`[label](url)\` in backticks (that would render as inline code, not a link):
+
+    [test title here](pwrs:test/FILE_ID/TEST_ID)
+    [run abc1234](pwrs:report/REPORT_ID)
+
+Rules:
+- The test-link target is \`pwrs:test/FILE_ID/TEST_ID\` using exact \`testId\`+\`fileId\` from "Affected tests" lines.
+- The test-link label MUST be the test's title (the human-readable test name from the data), NOT its file path and NOT its testId.
+- The report-link target is \`pwrs:report/REPORT_ID\` using only report IDs listed in the per-run dump.
+- Only cite testIds, fileIds, and reportIds that appear in the supplied data. Do NOT invent IDs.
+- For non-clickable mentions (file paths, signatures, etc.), use plain backticks — there is no \`pwrs:file\` scheme.
 
 **Active Failure Clusters** is the primary input when present — failing tests grouped by the clustering engine. Each cluster has a \`strategy\` that tells you the grouping basis:
 - \`signature\` — tests share the exact error signature. One root cause across the listed tests.
@@ -399,7 +208,7 @@ Within Active Failure Clusters, each has a **Window** line and a **Retry recover
 - **last seen 1–2 runs ago** → recently transient. Mention in Health Assessment; include in Recommendations only when its evidence overlaps a currently-active cluster.
 - **recovery 0% with ≥3 occurrences** → hard failure; call out explicitly: "never recovers."
 
-When building \`codeRefs\` for an Active Failure Cluster, use \`kind: "test"\` with testId+fileId from the "Affected tests" line. For \`fixture\` clusters, prefer linking to the fixture file (\`kind: "file"\`) when you can identify it from the affected-tests file paths.
+When linking an Active Failure Cluster, use the plain markdown form \`[test title](pwrs:test/FILE_ID/TEST_ID)\` with the values from the "Affected tests" line — write it as a real markdown link, not as backtick-wrapped text. For \`fixture\` clusters, name the fixture file in plain backticked text (there is no clickable file link); link to one of the affected tests instead.
 
 **Trend Signal** is the numerical anchor for "Notable Trends" — cite the actual deltas (e.g. "pass rate dropped 12.3% vs the prior 10 runs") rather than eyeballing the per-run dump. The \`Prior N runs\` baseline and the \`Cluster flow vs prior window\` (resolved / persisting / new) line together drive the verdict:
 - High \`resolved\`, low \`new\`, latest run green → \`healthy\` if all resolved clusters are ≥3 runs old (the fix held); \`stabilizing\` if any resolved cluster was last seen within the past 2 runs. Either way, name the top resolved clusters in "Health Assessment".
@@ -1043,8 +852,7 @@ export const buildTestFailureSegments = (args: {
   const segments: PromptSegment[] = [];
   const evidence = args.failureDetails.evidence;
 
-  // --- Cacheable prefix: system + task instructions. The output-schema text
-  //     segment is gone — the tool schema object alone binds the response. ---
+  // --- Cacheable prefix: system + task instructions. ---
   segments.push({
     id: 'system_prompt',
     role: 'system',

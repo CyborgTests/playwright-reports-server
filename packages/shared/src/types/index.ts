@@ -7,7 +7,6 @@ export interface DateRange {
 
 export type LLMProviderType = 'openai' | 'anthropic';
 
-export type LLMStructuredOutputMode = 'auto' | 'force' | 'disabled';
 export type LLMMultimodalMode = 'auto' | 'force' | 'disabled';
 
 export interface LLMConfig {
@@ -36,7 +35,6 @@ export interface LLMConfig {
   analyzeGreenWindows?: boolean;
   maxTokens?: number;
   contextWindow?: number;
-  structuredOutputMode?: LLMStructuredOutputMode;
   multimodalMode?: LLMMultimodalMode;
   /** Legacy single system prompt — kept as a fallback for all three tasks so
    *  pre-Phase-3 configs keep working. Per-task overrides below win when set. */

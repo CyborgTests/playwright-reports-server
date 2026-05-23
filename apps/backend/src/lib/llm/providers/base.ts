@@ -1,16 +1,10 @@
 import { withError } from '../../withError.js';
-import type {
-  LLMRequest,
-  LLMResponse,
-  LLMResponseSchema,
-  SegmentedPrompt,
-} from '../types/index.js';
+import type { LLMRequest, LLMResponse, SegmentedPrompt } from '../types/index.js';
 import { BaseLLMProvider as BaseProvider, LLMProviderError } from '../types/index.js';
 
 export interface SendOptions {
   temperature?: number;
   maxTokens?: number;
-  responseSchema?: LLMResponseSchema;
 }
 
 /** Cached value with absolute expiry timestamp (ms since epoch). */
@@ -157,7 +151,6 @@ export abstract class LLMProvider extends BaseProvider {
       segments: prompt.segments,
       temperature: options.temperature ?? this.config.temperature,
       maxTokens: options.maxTokens ?? this.config.maxTokens,
-      responseSchema: options.responseSchema,
     };
   }
 

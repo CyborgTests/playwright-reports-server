@@ -2,11 +2,59 @@
 
 import { isValidElement, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { Link as RouterLink } from 'react-router-dom';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import { CopyButton } from './copy-button';
 import { Badge } from './ui/badge';
+
+/** Resolve a `pwrs:` URL (emitted by the LLM analyses for inline test/report
+ *  refs) into a React Router path. Returns null for refs without an SPA
+ *  navigation target — those render as styled labels instead of links so the
+ *  user still sees the citation.
+ *
+ *  `fallbackProject` is appended as `?project=…` to test links so the test
+ *  detail page can scope its lookup (testId+fileId isn't unique across
+ *  projects). The analysis renderers pass the report/project the analysis
+ *  was generated for. */
+function resolvePwrsHref(href: string, fallbackProject?: string): string | null {
+  const m = href.match(/^pwrs:(test|report)\/(.+)$/);
+  if (!m) return null;
+  const [, kind, target] = m;
+  if (kind === 'test') {
+    // FILE_ID/TEST_ID — both URL-safe (the /test/:fileId/:testId route
+    // enforces single-segment values).
+    const slash = target.indexOf('/');
+    if (slash <= 0 || slash === target.length - 1) return null;
+    const query = fallbackProject ? `?project=${encodeURIComponent(fallbackProject)}` : '';
+    return `/test/${target.slice(0, slash)}/${target.slice(slash + 1)}${query}`;
+  }
+  return `/report/${target}`;
+}
+
+/** react-markdown's default urlTransform sanitizes any non-http(s)/mailto/tel
+ *  scheme by replacing the href with an empty string. Our pwrs: scheme would
+ *  vanish before our `a` component runs, so allow it through here and let the
+ *  component decide how to render. Default safe-scheme behavior is preserved
+ *  for everything else. */
+function urlTransform(value: string): string {
+  if (typeof value === 'string' && value.startsWith('pwrs:')) return value;
+  const colon = value.indexOf(':');
+  const questionMark = value.indexOf('?');
+  const numberSign = value.indexOf('#');
+  const slash = value.indexOf('/');
+  if (
+    colon < 0 ||
+    (slash > -1 && colon > slash) ||
+    (questionMark > -1 && colon > questionMark) ||
+    (numberSign > -1 && colon > numberSign) ||
+    /^(?:https?|ircs?|mailto|xmpp|tel)$/i.test(value.slice(0, colon))
+  ) {
+    return value;
+  }
+  return '';
+}
 
 /** Recursively flatten a ReactNode tree to plain text. Needed because
  *  rehype-highlight wraps every code token in a `<span>` element, so
@@ -26,14 +74,23 @@ function reactNodeToText(node: ReactNode): string {
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  /** Scopes inline `pwrs:test/FID/TID` links to a project, so the test detail
+   *  page can find the right (testId, fileId, project) row. Pass the project
+   *  the surrounding analysis was generated for. */
+  fallbackProject?: string;
 }
 
-export function MarkdownRenderer({ content, className = '' }: Readonly<MarkdownRendererProps>) {
+export function MarkdownRenderer({
+  content,
+  className = '',
+  fallbackProject,
+}: Readonly<MarkdownRendererProps>) {
   return (
     <div className={`markdown-renderer ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight, rehypeRaw]}
+        urlTransform={urlTransform}
         components={{
           h1: ({ children, ...props }) => (
             <h1 className="text-2xl font-bold mb-4 mt-6 first:mt-0" {...props}>
@@ -73,17 +130,35 @@ export function MarkdownRenderer({ content, className = '' }: Readonly<MarkdownR
             </li>
           ),
 
-          a: ({ children, href, ...props }) => (
-            <a
-              href={href}
-              className="text-primary hover:underline transition-colors"
-              target="_blank"
-              rel="noopener noreferrer"
-              {...props}
-            >
-              {children}
-            </a>
-          ),
+          a: ({ children, href, ...props }) => {
+            if (href?.startsWith('pwrs:')) {
+              const target = resolvePwrsHref(href, fallbackProject);
+              if (target) {
+                return (
+                  <RouterLink
+                    to={target}
+                    className="text-primary hover:underline transition-colors"
+                  >
+                    {children}
+                  </RouterLink>
+                );
+              }
+              // Unknown pwrs: subscheme — render the label as plain muted
+              // text so a stale or fabricated ref doesn't show a broken link.
+              return <span className="text-muted-foreground">{children}</span>;
+            }
+            return (
+              <a
+                href={href}
+                className="text-primary hover:underline transition-colors"
+                target="_blank"
+                rel="noopener noreferrer"
+                {...props}
+              >
+                {children}
+              </a>
+            );
+          },
 
           strong: ({ children, ...props }) => (
             <strong className="font-semibold" {...props}>

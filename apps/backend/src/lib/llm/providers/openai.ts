@@ -92,56 +92,17 @@ export class OpenAIProvider extends LLMProvider {
     if (typeof request.maxTokens === 'number') {
       body.max_tokens = request.maxTokens;
     }
-    if (request.responseSchema) {
-      // OpenAI / LM Studio / vLLM strict json_schema. The model is constrained
-      // to emit JSON matching the schema; any other text causes an error.
-      body.response_format = {
-        type: 'json_schema',
-        json_schema: {
-          name: request.responseSchema.name,
-          description: request.responseSchema.description,
-          schema: request.responseSchema.schema,
-          strict: true,
-        },
-      };
-    }
     return body;
   }
 
-  protected async parseResponse(response: Response, request?: LLMRequest): Promise<LLMResponse> {
+  protected async parseResponse(response: Response): Promise<LLMResponse> {
     const data = (await response.json()) as OpenAIResponse;
     const message = data.choices?.[0]?.message;
     const rawContent = message?.content || '';
     const rawReasoning = message?.reasoning_content || '';
 
-    // Only attempt structured-output extraction when the request actually
-    // asked for it. Otherwise free-form analyses that happen to start with
-    // `{` or `[` (markdown snippets, stack-trace JSON fragments) get
-    // mis-classified as structured output and confuse downstream callers
-    // that prefer `structuredOutput` over `content`.
-    //
-    // Some local LLM runtimes claim json_schema support 
-    // but emit malformed text in `content` and put the actual JSON
-    // in `reasoning_content`. Try `content` first; 
-    // if it fails to parse, try `reasoning_content`.
-    let structuredOutput: unknown;
-    let content = rawContent || rawReasoning;
-    if (request?.responseSchema) {
-      const candidates = [rawContent, rawReasoning].filter((c) => c.length > 0);
-      for (const candidate of candidates) {
-        try {
-          structuredOutput = JSON.parse(candidate);
-          content = candidate;
-          break;
-        } catch {
-          // try next candidate
-        }
-      }
-    }
-
     return {
       content,
-      structuredOutput,
       usage: {
         inputTokens: data.usage?.prompt_tokens || 0,
         outputTokens: data.usage?.completion_tokens || 0,

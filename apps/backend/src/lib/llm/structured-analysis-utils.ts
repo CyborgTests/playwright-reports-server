@@ -1,8 +1,8 @@
 /**
- * Type-agnostic helpers shared by the structured-analysis parsers
- * (reportAnalysis.ts, projectAnalysis.ts). The per-domain parsers own the
- * coercion to their own typed shapes; this module owns the string-handling
- * skeletons that don't depend on which verdict enum or codeRef shape is in
+ * Markdown-handling helpers shared by the analysis parsers
+ * (reportAnalysis.ts, projectAnalysis.ts, testAnalysis.ts). The per-domain
+ * parsers own the coercion to their own typed shapes; this module owns the
+ * string-handling skeletons that don't depend on which verdict enum is in
  * play.
  */
 

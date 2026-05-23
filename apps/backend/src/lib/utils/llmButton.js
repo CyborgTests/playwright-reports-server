@@ -571,6 +571,35 @@ function markdownToHtml(text) {
     "<code style=\"background-color: var(--llm-code-bg); color: var(--llm-code-text); padding: 2px 6px; border-radius: 4px; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 14px;\">$1</code>"
   );
 
+  // Markdown links [label](url). pwrs:test/... and pwrs:report/... become
+  // in-app navigation; other URLs become external anchors. Unknown pwrs:
+  // subschemes degrade to muted plain text so a stale ref doesn't render as
+  // a broken link.
+  html = html.replaceAll(/\[([^\]\n]+)\]\(([^)\n]+)\)/g, (_, rawLabel, rawUrl) => {
+    const label = rawLabel.trim();
+    const url = rawUrl.trim();
+    const linkStyle = 'color: var(--llm-badge-text); text-decoration: underline;';
+    if (url.startsWith('pwrs:test/')) {
+      const target = url.slice('pwrs:test/'.length);
+      const slash = target.indexOf('/');
+      if (slash > 0 && slash < target.length - 1) {
+        const fileId = encodeURIComponent(target.slice(0, slash));
+        const testId = encodeURIComponent(target.slice(slash + 1));
+        return `<a href="/test/${fileId}/${testId}" style="${linkStyle}">${label}</a>`;
+      }
+      return `<span style="color: var(--llm-muted);">${label}</span>`;
+    }
+    if (url.startsWith('pwrs:report/')) {
+      const rid = encodeURIComponent(url.slice('pwrs:report/'.length));
+      return `<a href="/report/${rid}" style="${linkStyle}">${label}</a>`;
+    }
+    if (url.startsWith('pwrs:')) {
+      return `<span style="color: var(--llm-muted);">${label}</span>`;
+    }
+    const safeUrl = url.replace(/"/g, '&quot;');
+    return `<a href="${safeUrl}" target="_blank" rel="noopener" style="${linkStyle}">${label}</a>`;
+  });
+
   // bullet points
   html = html.replaceAll(
     /^\* (.+)$/gim,
@@ -874,22 +903,8 @@ function renderInlineAnalysis(analysisData, copyPromptButton, askBtn, testIdOver
   const existing = document.getElementById('llm-inline-analysis');
   if (existing) existing.remove();
 
-  // Handle analysis stored as JSON (possibly wrapped in markdown code fences)
-  if (analysisData.analysis && typeof analysisData.analysis === 'string') {
-    try {
-      let jsonStr = analysisData.analysis.trim();
-      // Strip markdown code fences: ```json ... ``` or ``` ... ```
-      const fenceMatch = jsonStr.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
-      if (fenceMatch) jsonStr = fenceMatch[1].trim();
-      const parsed = JSON.parse(jsonStr);
-      if (parsed.analysis) {
-        analysisData.analysis = parsed.analysis;
-        if (parsed.category && !analysisData.category) analysisData.category = parsed.category;
-      }
-    } catch {
-      /* not JSON — use as-is */
-    }
-  }
+  // The analysis is plain markdown (the Category footer is stripped
+  // server-side before persistence), so we can render it directly.
 
   // Defer to whenErrorsSectionReady so a still-rendering report (initial load
   // or a retry-tab swap) eventually gets the analysis inserted, instead of the

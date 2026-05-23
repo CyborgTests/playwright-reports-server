@@ -48,10 +48,6 @@ export interface LLMRequest {
    *  `messages` + `system` and apply cache_control / message ordering. */
   segments?: PromptSegment[];
   maxTokens?: number;
-  /** When set, the provider must request structured output matching this
-   *  schema. On unsupported-by-provider errors, the caller decides whether to
-   *  retry without schema (mode=auto) or fail (mode=force). */
-  responseSchema?: LLMResponseSchema;
 }
 
 export interface LLMResponse {
@@ -63,25 +59,7 @@ export interface LLMResponse {
   };
   model: string;
   finishReason?: string;
-  /** Parsed JSON object when the request used a response schema (Anthropic
-   *  tool_use input or OpenAI response_format json_schema). Undefined when
-   *  the request was unstructured or the provider rejected the schema. */
-  structuredOutput?: unknown;
 }
-
-/**
- * Describes the structured-output shape requested for a call. The provider
- * translates this to the right wire format: Anthropic tool use with the
- * `submit_<name>` tool forced via tool_choice, OpenAI response_format with
- * type 'json_schema' in strict mode.
- */
-export interface LLMResponseSchema {
-  name: string;
-  description: string;
-  schema: Record<string, unknown>;
-}
-
-export type StructuredOutputMode = 'auto' | 'force' | 'disabled';
 
 export interface LLMModelError {
   code: string;
@@ -111,11 +89,7 @@ export interface LLMProviderConfig {
   /** Manual override for context window. Useful for local models whose
    *  /models response does not advertise it. */
   contextWindow?: number;
-  /** Override for the global structured-output mode. When set on the runtime
-   *  config it wins over `LLM_STRUCTURED_OUTPUT_MODE`; falls back to env then
-   *  to 'auto'. */
-  structuredOutputMode?: StructuredOutputMode;
-  /** Override for the global multimodal mode. Same precedence rules as above. */
+  /** Override for the global multimodal mode. Same precedence rules as the env var. */
   multimodalMode?: MultimodalMode;
   requestTimeoutMs: number;
   maxRetries: number;

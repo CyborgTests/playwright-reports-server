@@ -4,32 +4,23 @@ import { OpenAIProvider } from './providers/openai.js';
 import type {
   LLMProviderConfig,
   LLMResponse,
-  LLMResponseSchema,
   MultimodalMode,
   SegmentedPrompt,
-  StructuredOutputMode,
 } from './types/index.js';
 import { LLMProviderError } from './types/index.js';
 
 export interface SegmentedSendOptions {
   temperature?: number;
   maxTokens?: number;
-  responseSchema?: LLMResponseSchema;
 }
 
-/** TTL for the "this provider+model rejected structured output" memo. We
- *  re-probe after this window in case the provider was upgraded. */
-const STRUCTURED_OUTPUT_BLOCKLIST_TTL_MS = 60 * 60 * 1000;
-/** Same pattern for multimodal — caches the "model rejected images" verdict. */
+/** Caches the "model rejected images" verdict for the active provider+model. */
 const MULTIMODAL_BLOCKLIST_TTL_MS = 60 * 60 * 1000;
 
 export class LLMService {
   private static instance: LLMService;
   private provider: OpenAIProvider | AnthropicProvider | null = null;
   private config: LLMProviderConfig | null = null;
-  /** Per-(provider+baseUrl+model) blocklist for structured output. Populated
-   *  on 400/422 with telltale "tool"/"response_format unsupported" markers. */
-  private structuredOutputBlocklist = new Map<string, number>();
   /** Per-(provider+baseUrl+model) blocklist for multimodal image input. */
   private multimodalBlocklist = new Map<string, number>();
 
@@ -43,7 +34,6 @@ export class LLMService {
       model: env.LLM_MODEL ?? '',
       maxTokens: env.LLM_MAX_TOKENS,
       contextWindow: env.LLM_CONTEXT_WINDOW,
-      structuredOutputMode: env.LLM_STRUCTURED_OUTPUT_MODE as StructuredOutputMode | undefined,
       multimodalMode: env.LLM_MULTIMODAL_MODE as MultimodalMode | undefined,
       requestTimeoutMs: 5 * 60 * 1000,
       maxRetries: 3,
@@ -90,29 +80,18 @@ export class LLMService {
     return this.provider.getAvailableModels();
   }
 
-  /** Resolve the effective shape of a segmented call against current modes
-   *  and the per-(provider+model) blocklist. */
-  private resolveCallShape(
-    prompt: SegmentedPrompt,
-    options: SegmentedSendOptions
-  ): {
-    schemaMode: StructuredOutputMode;
+  /** Resolve the effective image-attachment shape for a segmented call. */
+  private resolveCallShape(prompt: SegmentedPrompt): {
     imagesMode: MultimodalMode;
-    useSchema: boolean;
     useImages: boolean;
   } {
     // runtime config higher priority than env
-    const schemaMode = (this.config?.structuredOutputMode ??
-      env.LLM_STRUCTURED_OUTPUT_MODE ??
-      'auto') as StructuredOutputMode;
     const imagesMode = (this.config?.multimodalMode ??
       env.LLM_MULTIMODAL_MODE ??
       'auto') as MultimodalMode;
-    const useSchema =
-      !!options.responseSchema && schemaMode !== 'disabled' && !this.isStructuredOutputBlocked();
     const useImages =
       this.promptHasImages(prompt) && imagesMode !== 'disabled' && !this.isMultimodalBlocked();
-    return { schemaMode, imagesMode, useSchema, useImages };
+    return { imagesMode, useImages };
   }
 
   private stripImages(prompt: SegmentedPrompt): SegmentedPrompt {
@@ -127,42 +106,26 @@ export class LLMService {
       throw new Error('LLM provider not initialized');
     }
 
-    // Determine the effective shape (with/without schema, with/without images)
-    // before sending. Each capability can be force-disabled by mode or by the
-    // blocklist memoized from a prior unsupported-by-provider error.
-    const initial = this.resolveCallShape(prompt, options);
-    const { schemaMode, imagesMode } = initial;
-    let { useSchema, useImages } = initial;
+    // Determine whether images get attached before sending — the multimodal
+    // blocklist auto-disables them after a prior unsupported-by-provider error.
+    const initial = this.resolveCallShape(prompt);
+    const { imagesMode } = initial;
+    let { useImages } = initial;
 
-    const buildOptions = (): SegmentedSendOptions => ({
-      ...options,
-      responseSchema: useSchema ? options.responseSchema : undefined,
-    });
     const buildPrompt = (): SegmentedPrompt => (useImages ? prompt : this.stripImages(prompt));
 
     let lastErr: unknown;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        return await this.provider.sendSegmentedMessage(buildPrompt(), buildOptions());
+        return await this.provider.sendSegmentedMessage(buildPrompt(), options);
       } catch (err) {
         lastErr = err;
-        // Try image-disable first (safer fallback): some servers reject the
-        // entire request when content arrays include image_url they don't
-        // accept, even if the schema would otherwise be honored.
         if (useImages && imagesMode !== 'force' && this.isMultimodalUnsupportedError(err)) {
           this.markMultimodalBlocked();
           console.warn(
             `[llm] multimodal unsupported by ${this.providerKey()} — retrying without images`
           );
           useImages = false;
-          continue;
-        }
-        if (useSchema && schemaMode !== 'force' && this.isStructuredOutputUnsupportedError(err)) {
-          this.markStructuredOutputBlocked();
-          console.warn(
-            `[llm] structured output unsupported by ${this.providerKey()} — falling back to text mode`
-          );
-          useSchema = false;
           continue;
         }
         throw err;
@@ -186,48 +149,6 @@ export class LLMService {
   public getProviderKey(): string {
     const c = this.config;
     return `${c?.provider}:${c?.baseUrl}:${c?.model || '<auto>'}`;
-  }
-
-  private isStructuredOutputBlocked(): boolean {
-    const expiresAt = this.structuredOutputBlocklist.get(this.providerKey());
-    if (!expiresAt) return false;
-    if (Date.now() > expiresAt) {
-      this.structuredOutputBlocklist.delete(this.providerKey());
-      return false;
-    }
-    return true;
-  }
-
-  private markStructuredOutputBlocked(): void {
-    this.structuredOutputBlocklist.set(
-      this.providerKey(),
-      Date.now() + STRUCTURED_OUTPUT_BLOCKLIST_TTL_MS
-    );
-  }
-
-  /** Heuristic: treat 400/422 errors as "schema unsupported by this
-   *  provider/model" only when the message names the schema/tool feature
-   *  AND signals it. Both halves are required so that an
-   *  unrelated invalid_request that happens to mention "tools" doesn't
-   *  poison the blocklist for an hour.
-   *  Other errors (auth, rate limit, network) propagate. */
-  private isStructuredOutputUnsupportedError(err: unknown): boolean {
-    if (!(err instanceof LLMProviderError)) return false;
-    if (err.code !== 'invalid_request') return false;
-    const msg = err.message.toLowerCase();
-    const featureNamed =
-      msg.includes('tool_use') ||
-      msg.includes('tool_choice') ||
-      msg.includes('response_format') ||
-      msg.includes('json_schema') ||
-      /\btools?\s+(parameter|field|are|is)\b/.test(msg);
-    if (!featureNamed) return false;
-    return (
-      msg.includes('not supported') ||
-      msg.includes('unsupported') ||
-      msg.includes('does not support') ||
-      msg.includes("doesn't support")
-    );
   }
 
   private isMultimodalBlocked(): boolean {
@@ -303,8 +224,7 @@ export class LLMService {
       return {};
     }
 
-    // biome-ignore lint/correctness/noUnusedVariables: apiKey is intentionally extracted to exclude from safe config
-    const { apiKey, ...safeConfig } = this.config;
+    const { apiKey: _apiKey, ...safeConfig } = this.config;
     return safeConfig;
   }
 
