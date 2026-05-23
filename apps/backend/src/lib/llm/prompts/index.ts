@@ -408,7 +408,9 @@ When building \`codeRefs\` for an Active Failure Cluster, use \`kind: "test"\` w
 - No prior data → fall back to per-cluster Window markers; don't claim trend without baseline.
 - \`Last N vs prior N (in-window)\` skewed to the recent half is a degrading signal even when overall pass rate looks flat.
 
-**Suite:** size calibrates severity — "5 failures across 30 tests" ≠ "5 failures across 3000". When \`quarantined runs still failing in window\` > 0, flag in "Risks" — the quarantine isn't suppressing the issue.
+**Suite:** size calibrates severity — "5 failures across 30 tests" ≠ "5 failures across 3000".
+
+**Quarantine:** only discuss quarantine when the Suite line shows a \`quarantined\` count. If the Suite line has no \`quarantined\` segment, do NOT mention quarantine at all (no "quarantine effectiveness" subsection, no "no quarantined tests" filler — silence is correct). When quarantined tests are present, surface them in "Recommendations" as a reminder to fix and un-quarantine them (quarantine is a holding pen, not a resolution); if \`quarantined runs still failing in window\` > 0, additionally flag in "Risks" — the quarantine isn't suppressing the issue.
 
 **Suite coverage** delta ≤ −5% → flag suite shrinkage in "Notable Trends"; strongly positive after a green window may mean new untested coverage.
 
@@ -2196,16 +2198,17 @@ export { stableStringify };
  * to "respond in JSON" but produced just the value string without the JSON
  * envelope. The result renders as `\n` characters in the UI.
  *
- * Detect-and-unescape only when at least one such sequence is present, so
- * legitimate text containing a literal backslash-n is left alone.
+ * The pattern matches 1+ leading backslashes so multi-level over-escaping
+ * is collapsed in a single pass. Detect-and-unescape only when at
+ * least one such sequence is present, so legitimate text is left alone.
  */
 export function unescapeLiteralNewlines(text: string): string {
-  if (!text || !/\\[ntr"]/.test(text)) return text;
+  if (!text || !/\\+[ntr"]/.test(text)) return text;
   return text
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\r/g, '\r')
-    .replace(/\\"/g, '"');
+    .replace(/\\+n/g, '\n')
+    .replace(/\\+t/g, '\t')
+    .replace(/\\+r/g, '\r')
+    .replace(/\\+"/g, '"');
 }
 
 /**

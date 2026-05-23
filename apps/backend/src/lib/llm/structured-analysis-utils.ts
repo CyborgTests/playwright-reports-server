@@ -17,10 +17,28 @@ export function firstSentence(text: string): string {
 }
 
 /**
+ * Halve every run of 2+ consecutive backslashes — undoes one layer of
+ * over-escaping from local models that emit multi-level JSON (e.g.
+ * `\\\\\\\\n` where standard JSON would use `\\n` for an escaped newline).
+ * Returns the input unchanged when no such runs are present, which callers
+ * use as an idempotence signal to stop iterating.
+ */
+export function halveEscapedBackslashes(text: string): string {
+  return text.replace(/\\{2,}/g, (m) => '\\'.repeat(Math.ceil(m.length / 2)));
+}
+
+/**
  * Try to recover a structured payload from `text` by parsing it as JSON.
  * Tries fenced JSON (```json … ```) first, then the raw text. Each candidate
- * is handed to `parseStructured`; the first successful coercion wins. Returns
- * null when neither candidate yields a structured payload.
+ * is handed to `parseStructured`; the first successful coercion wins.
+ *
+ * Some local models emit multi-level-escaped JSON — e.g. `\\\\\\\\` 
+ * where standard JSON would use `\\` for a single backslash. We iteratively 
+ * halve runs of 2+ consecutive backslashes and retry `JSON.parse` 
+ * so those payloads recover instead of landing in the markdown-fallback path
+ * with backslashes still visible.
+ *
+ * Returns null when neither candidate yields a structured payload.
  */
 export function tryParseJsonAsStructured<T>(
   text: string,
@@ -29,12 +47,19 @@ export function tryParseJsonAsStructured<T>(
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidates = [fenced?.[1], text].filter((c): c is string => typeof c === 'string');
   for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate);
-      const structured = parseStructured(parsed);
-      if (structured) return structured;
-    } catch {
-      // try next candidate
+    let cur = candidate;
+    for (let i = 0; i < 8; i++) {
+      try {
+        const parsed = JSON.parse(cur);
+        const structured = parseStructured(parsed);
+        if (structured) return structured;
+        break;
+      } catch {
+        // halve and retry
+      }
+      const halved = halveEscapedBackslashes(cur);
+      if (halved === cur) break;
+      cur = halved;
     }
   }
   return null;

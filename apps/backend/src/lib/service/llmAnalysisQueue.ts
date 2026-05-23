@@ -35,6 +35,7 @@ import {
   parseReportAnalysisStructured,
   renderReportAnalysisAsMarkdown,
 } from '../llm/reportAnalysis.js';
+import { halveEscapedBackslashes } from '../llm/structured-analysis-utils.js';
 import type { SegmentedPrompt } from '../llm/types/index.js';
 import {
   extractFailureEvidence,
@@ -751,16 +752,38 @@ class LlmAnalysisQueue {
       extractionMode = 'structured';
     } else {
       const trimmed = response.content.trim();
-      const fenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
-      const jsonStr = fenceMatch ? fenceMatch[1].trim() : trimmed;
-      try {
-        const parsed = JSON.parse(jsonStr);
-        if (parsed?.category && typeof parsed.category === 'string') {
-          llmCategory = parsed.category;
+      // Unanchored: some local models emit a gibberish preamble before the
+      // fenced JSON. Find the fence wherever it is and fall back to the
+      // whole content if no fence is present.
+      const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+      const initialCandidate = (fenceMatch ? fenceMatch[1] : trimmed).trim();
+
+      // Iteratively halve runs of 2+ consecutive backslashes before each
+      // JSON.parse attempt. LM Studio/oMLX sometimes ignore json_schema
+      // and emit multi-level-escaped JSON;
+      // halving brings the payload back to standard JSON escape depth.
+      let parsed: { category?: unknown; analysis?: unknown } | null = null;
+      let cur = initialCandidate;
+      for (let i = 0; i < 8; i++) {
+        try {
+          const p = JSON.parse(cur);
+          if (p && typeof p === 'object') {
+            parsed = p as { category?: unknown; analysis?: unknown };
+            break;
+          }
+        } catch {
+          // halve and retry
         }
-        analysisText = typeof parsed?.analysis === 'string' ? parsed.analysis.trim() : '';
+        const halved = halveEscapedBackslashes(cur);
+        if (halved === cur) break;
+        cur = halved;
+      }
+
+      if (parsed) {
+        if (typeof parsed.category === 'string') llmCategory = parsed.category;
+        analysisText = typeof parsed.analysis === 'string' ? parsed.analysis.trim() : '';
         extractionMode = 'json';
-      } catch {
+      } else {
         analysisText = trimmed;
         extractionMode = 'text';
       }
