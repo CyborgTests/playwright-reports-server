@@ -35,6 +35,13 @@ export interface LlmTaskRow {
   totalTokens: number | null;
   isRetry: number;
   reportIds: string | null;
+  baseUrl: string | null;
+}
+
+export interface LlmTaskRowEnriched extends LlmTaskRow {
+  reportDisplayNumber: number | null;
+  reportTitle: string | null;
+  testTitle: string | null;
 }
 
 export interface LlmTaskUsage {
@@ -66,6 +73,7 @@ export class LlmTasksDatabase {
     [
       string,
       string,
+      string | null,
       string | null,
       string | null,
       number | null,
@@ -116,7 +124,7 @@ export class LlmTasksDatabase {
 
     this.completeTaskStmt = this.db.prepare(`
       UPDATE llm_tasks
-      SET status = 'completed', completedAt = ?, result = ?, category = ?, model = ?,
+      SET status = 'completed', completedAt = ?, result = ?, category = ?, model = ?, baseUrl = ?,
           inputTokens = ?, outputTokens = ?, totalTokens = ?
       WHERE id = ?
     `);
@@ -236,6 +244,7 @@ export class LlmTasksDatabase {
       totalTokens: null,
       isRetry,
       reportIds: reportIdsJson,
+      baseUrl: null,
     };
   }
 
@@ -278,7 +287,7 @@ export class LlmTasksDatabase {
     result: string,
     category?: string | null,
     model?: string | null,
-    extras?: { usage?: LlmTaskUsage }
+    extras?: { usage?: LlmTaskUsage; baseUrl?: string | null }
   ): void {
     const now = new Date().toISOString();
     const usage = extras?.usage;
@@ -287,6 +296,7 @@ export class LlmTasksDatabase {
       result,
       category ?? null,
       model ?? null,
+      extras?.baseUrl ?? null,
       usage?.inputTokens ?? null,
       usage?.outputTokens ?? null,
       usage?.totalTokens ?? null,
@@ -414,32 +424,45 @@ export class LlmTasksDatabase {
     reportId?: string;
     limit: number;
     offset: number;
-  }): { data: LlmTaskRow[]; total: number } {
+  }): { data: LlmTaskRowEnriched[]; total: number } {
     const conditions: string[] = [];
     const params: (string | number)[] = [];
 
     if (opts.status) {
-      conditions.push('status = ?');
+      conditions.push('t.status = ?');
       params.push(opts.status);
     }
     if (opts.type) {
-      conditions.push('type = ?');
+      conditions.push('t.type = ?');
       params.push(opts.type);
     }
     if (opts.reportId) {
-      conditions.push('reportId = ?');
+      conditions.push('t.reportId = ?');
       params.push(opts.reportId);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const countResult = this.db
-      .prepare(`SELECT COUNT(*) as total FROM llm_tasks ${whereClause}`)
+      .prepare(`SELECT COUNT(*) as total FROM llm_tasks t ${whereClause}`)
       .get(...params) as { total: number };
 
     const data = this.db
-      .prepare(`SELECT * FROM llm_tasks ${whereClause} ORDER BY createdAt DESC LIMIT ? OFFSET ?`)
-      .all(...params, opts.limit, opts.offset) as LlmTaskRow[];
+      .prepare(
+        `SELECT t.*,
+                r.displayNumber AS reportDisplayNumber,
+                r.title AS reportTitle,
+                te.title AS testTitle
+         FROM llm_tasks t
+         LEFT JOIN reports r ON r.reportID = t.reportId
+         LEFT JOIN tests te ON te.testId = t.testId
+                            AND te.fileId = t.fileId
+                            AND te.project = t.project
+         ${whereClause}
+         ORDER BY t.createdAt DESC
+         LIMIT ? OFFSET ?`
+      )
+      .all(...params, opts.limit, opts.offset) as LlmTaskRowEnriched[];
 
     return { data, total: countResult.total };
   }
@@ -461,8 +484,11 @@ export class LlmTasksDatabase {
     this.deleteByReportStmt.run(reportId);
   }
 
-  public updatePrompt(id: string, prompt: string): void {
-    this.db.prepare('UPDATE llm_tasks SET prompt = ? WHERE id = ?').run(prompt, id);
+  public updatePrompt(id: string, prompt: string, estimatedInputTokens: number): void {
+    this.db
+      .prepare('UPDATE llm_tasks SET prompt = ?, inputTokens = ? WHERE id = ?')
+      .run(prompt, estimatedInputTokens, id);
+    this.fireUpdateEvent(id);
   }
 
   /** Direct lookup by id. Returns null when the id doesn't exist. */

@@ -88,10 +88,11 @@ function injectAskLLMButton() {
   // inline analysis renders (the analysis-header sibling button takes over).
   // Both locations always build fresh.
   const fullCopyBtn = document.createElement('button');
-  fullCopyBtn.textContent = 'Copy prompt';
+  fullCopyBtn.textContent = 'Copy prompt with history';
   fullCopyBtn.className = 'button llm-copy-prompt-full-btn';
   fullCopyBtn.style.marginLeft = '6px';
-  fullCopyBtn.title = 'Copy the LLM prompt that would be sent for this test+report right now.';
+  fullCopyBtn.title =
+    'Copy the LLM prompt (with test history and feedback) that would be sent for this test+report right now.';
   fullCopyBtn.onclick = () => {
     const currentTestId = extractTestIdFromCurrentUrl();
     if (!currentTestId || currentTestId === 'unknown') return;
@@ -683,7 +684,7 @@ function renderLoadingInto(testId, rid, copyPromptButton, askBtn, errorsSection)
     <div class="llm-inline-header">
       <div style="display: flex; align-items: center; gap: 8px;">
         <span class="llm-title">LLM Analysis</span>
-        <span class="llm-model">analysis in progress…</span>
+        <span class="llm-model">in progress…</span>
       </div>
     </div>
     <div class="llm-inline-body">
@@ -697,7 +698,7 @@ function renderLoadingInto(testId, rid, copyPromptButton, askBtn, errorsSection)
           animation: llm-spin 1s linear infinite;
         "></div>
         <span style="color: var(--llm-muted); font-size: 13px;">
-          LLM analysis is queued or running. This panel will update automatically.
+          LLM analysis is already queued / running. This panel will update automagically.
         </span>
       </div>
       <style>
@@ -920,7 +921,7 @@ function renderInlineAnalysis(analysisData, copyPromptButton, askBtn, testIdOver
       '';
     const copyPromptBtnHtml =
       resolvedTestId && !analysisData.reusedFromAnalysisId
-        ? '<button class="llm-copy-prompt-btn" title="Copy the LLM prompt for this test">Copy prompt</button>'
+        ? '<button class="llm-copy-prompt-btn" title="Copy the LLM prompt (with test history and feedback) for this test.">Copy prompt with history</button>'
         : '';
 
     const section = document.createElement('div');

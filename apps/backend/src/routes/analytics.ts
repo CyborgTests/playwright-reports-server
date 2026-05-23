@@ -10,16 +10,16 @@ import {
   UpsertFeedbackRequestSchema,
 } from '../lib/schemas/index.js';
 import { analyticsService } from '../lib/service/analytics.js';
-import { service } from '../lib/service/index.js';
 import { analysisFeedbackDb } from '../lib/service/db/analysisFeedback.sqlite.js';
 import { getDatabase } from '../lib/service/db/db.js';
 import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
 import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
-import { PROJECT_SUMMARY_REPORT_LIMIT } from '../lib/service/llmAnalysisQueue.js';
 import { projectSummaryDb } from '../lib/service/db/projectSummary.sqlite.js';
 import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
+import { service } from '../lib/service/index.js';
+import { PROJECT_SUMMARY_REPORT_LIMIT } from '../lib/service/llmAnalysisQueue.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
 /** Project-summary cache is considered too stale to display when the newest

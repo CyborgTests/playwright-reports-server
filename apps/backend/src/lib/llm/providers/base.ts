@@ -66,6 +66,10 @@ export abstract class LLMProvider extends BaseProvider {
    * an exact value.
    */
   async countTokens(prompt: SegmentedPrompt): Promise<number> {
+    return this.estimateLocalTokens(prompt);
+  }
+
+  estimateLocalTokens(prompt: SegmentedPrompt): number {
     return (
       this.estimateTokensFromText(this.serializeSegmentsForCounting(prompt)) +
       this.estimateTokensFromImages(prompt)

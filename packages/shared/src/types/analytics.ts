@@ -170,6 +170,7 @@ export interface LlmTask {
   result?: string;
   category?: string;
   model?: string;
+  baseUrl?: string | null;
   error?: string;
   createdAt: string;
   startedAt?: string;
@@ -179,6 +180,9 @@ export interface LlmTask {
   inputTokens?: number | null;
   outputTokens?: number | null;
   totalTokens?: number | null;
+  reportDisplayNumber?: number | null;
+  reportTitle?: string | null;
+  testTitle?: string | null;
 }
 
 export interface LlmTaskStats {

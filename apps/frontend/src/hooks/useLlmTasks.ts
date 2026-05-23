@@ -69,6 +69,32 @@ export function useLlmUsageStats(days: number) {
   });
 }
 
+export interface LlmUsageByModelRow {
+  baseUrl: string;
+  model: string;
+  tasks: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+export interface LlmUsageByModel {
+  days: number;
+  fromDate: string;
+  rows: LlmUsageByModelRow[];
+}
+
+export function useLlmUsageByModel(days: number, enabled: boolean) {
+  return useQuery<{ success: boolean; data: LlmUsageByModel }>(
+    `/api/llm/usage-by-model?days=${days}`,
+    {
+      dependencies: [days, enabled],
+      staleTime: 30_000,
+      enabled,
+    }
+  );
+}
+
 export function useLlmTasks(filters: {
   status?: string;
   type?: string;

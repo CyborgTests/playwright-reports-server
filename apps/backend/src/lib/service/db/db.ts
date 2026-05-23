@@ -253,6 +253,7 @@ function initializeSchema(db: Database.Database): void {
   // only by project_summary so the dashboard's selected reports flow through
   // to the LLM input. NULL keeps the legacy "latest N for project" behavior.
   addColumnIfMissing(db, 'llm_tasks', 'reportIds', 'TEXT');
+  addColumnIfMissing(db, 'llm_tasks', 'baseUrl', 'TEXT');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS report_failure_summaries (

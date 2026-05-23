@@ -62,6 +62,15 @@ export class LLMService {
     return !!(this.config?.baseUrl && this.config?.apiKey);
   }
 
+  getBaseUrl(): string | null {
+    return this.config?.baseUrl ?? null;
+  }
+
+  estimateLocalInputTokens(prompt: SegmentedPrompt): number {
+    if (!this.provider) return 0;
+    return this.provider.estimateLocalTokens(prompt);
+  }
+
   async initialize(): Promise<void> {
     if (!this.isConfigured()) {
       throw new Error('LLM service is not enabled. Set LLM_BASE_URL and LLM_API_KEY to enable');

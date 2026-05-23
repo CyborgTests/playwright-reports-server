@@ -1,5 +1,5 @@
-import { formatDuration } from '@playwright-reports/shared';
 import type { ClusterEvidence, ClusterStrategy } from '@playwright-reports/shared';
+import { formatDuration } from '@playwright-reports/shared';
 import type { FailureEvidence } from '../../parser/failure-extraction.js';
 import type { PerFileStep } from '../../parser/report-payload.js';
 import type { LLMResponseSchema, PromptSegment, SegmentedPrompt } from '../types/index.js';
@@ -1424,8 +1424,10 @@ export const buildReportSummarySegments = (args: {
       dataBlock += `- ${factsParts.join(' · ')}\n`;
       const evParts: string[] = [];
       if (cluster.evidence.signature) evParts.push(`signature \`${cluster.evidence.signature}\``);
-      if (cluster.evidence.stackFrame) evParts.push(`stack frame \`${cluster.evidence.stackFrame}\``);
-      if (cluster.evidence.fixturePhase) evParts.push(`fixture phase \`${cluster.evidence.fixturePhase}\``);
+      if (cluster.evidence.stackFrame)
+        evParts.push(`stack frame \`${cluster.evidence.stackFrame}\``);
+      if (cluster.evidence.fixturePhase)
+        evParts.push(`fixture phase \`${cluster.evidence.fixturePhase}\``);
       if (evParts.length > 0) {
         dataBlock += `- Evidence: ${evParts.join(' · ')}\n`;
       }
@@ -1831,9 +1833,7 @@ function formatSignedDuration(deltaMs: number): string {
  *  in-line citations (root-cause Window lines) where the raw reportId is
  *  noise. */
 function formatRunLabel(reportId: string, displayNumber?: number): string {
-  return typeof displayNumber === 'number'
-    ? `#${displayNumber} (${reportId})`
-    : reportId;
+  return typeof displayNumber === 'number' ? `#${displayNumber} (${reportId})` : reportId;
 }
 
 /** "#42" when displayNumber is known, else the reportId. For dense in-line
@@ -1907,7 +1907,9 @@ function renderTrendSignal(signal: ProjectTrendSignal): string {
   let block = `## Trend Signal\n`;
   const { current, prior, splits, clusterFlow } = signal;
   const currentLine = (label: string, value: string, delta?: string): string =>
-    delta ? `- **${label}:** ${value} (Δ ${delta} vs prior ${prior?.runs ?? 0} runs)\n` : `- **${label}:** ${value}\n`;
+    delta
+      ? `- **${label}:** ${value} (Δ ${delta} vs prior ${prior?.runs ?? 0} runs)\n`
+      : `- **${label}:** ${value}\n`;
 
   block += currentLine(
     'Pass rate',
@@ -2063,7 +2065,10 @@ export const buildProjectSummarySegments = (args: {
     // instability that a "healthy" verdict should still mention.
     if (c.nearFlakes.length > 0) {
       const list = c.nearFlakes
-        .map((nf) => `\`${nf.title}\` (${nf.filePath}; testId=${nf.testId}, fileId=${nf.fileId}) — ${nf.flakyOccurrences}×`)
+        .map(
+          (nf) =>
+            `\`${nf.title}\` (${nf.filePath}; testId=${nf.testId}, fileId=${nf.fileId}) — ${nf.flakyOccurrences}×`
+        )
         .join('; ');
       dataBlock += `**Near-flakes (passed on retry):** ${list}\n`;
     }

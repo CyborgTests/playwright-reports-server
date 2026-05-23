@@ -717,7 +717,11 @@ class LlmAnalysisQueue {
     );
 
     const debugPrompt = renderSegmentsForDebug(segmentedPrompt);
-    llmTasksDb.updatePrompt(task.id, debugPrompt);
+    llmTasksDb.updatePrompt(
+      task.id,
+      debugPrompt,
+      llmService.estimateLocalInputTokens(segmentedPrompt)
+    );
 
     console.log(
       `[llmQueue] Task ${task.id}: segments=${segmentedPrompt.segments.length} chars=${debugPrompt.length} for test ${testId}${fitLog ? ` ${fitLog}` : ''}`
@@ -828,6 +832,7 @@ class LlmAnalysisQueue {
     const attempt = details.attempt ?? 1;
     const completionExtras = {
       usage: response.usage,
+      baseUrl: llmService.getBaseUrl(),
     };
     llmTasksDb.complete(task.id, analysisText, category, response.model, completionExtras);
     testAnalysisDb.upsert(
@@ -1063,7 +1068,11 @@ class LlmAnalysisQueue {
     );
 
     const debugPrompt = renderSegmentsForDebug(segmentedPrompt);
-    llmTasksDb.updatePrompt(task.id, debugPrompt);
+    llmTasksDb.updatePrompt(
+      task.id,
+      debugPrompt,
+      llmService.estimateLocalInputTokens(segmentedPrompt)
+    );
     if (fitLog) console.log(`[llmQueue] Task ${task.id}: ${fitLog}`);
 
     const reportTemp =
@@ -1103,6 +1112,7 @@ class LlmAnalysisQueue {
 
     llmTasksDb.complete(task.id, summaryText, null, response.model, {
       usage: response.usage,
+      baseUrl: llmService.getBaseUrl(),
     });
 
     const totalFailures = Object.values(categories).reduce((s, c) => s + c, 0);
@@ -1175,9 +1185,7 @@ class LlmAnalysisQueue {
     const oldestReportCreatedAt = latestReports.length
       ? String(latestReports[latestReports.length - 1].createdAt)
       : '';
-    const latestReportCreatedAt = latestReports.length
-      ? String(latestReports[0].createdAt)
-      : '';
+    const latestReportCreatedAt = latestReports.length ? String(latestReports[0].createdAt) : '';
     const { reportDb: trendReportDb } = await import('./db/reports.sqlite.js');
     const priorReports = oldestReportCreatedAt
       ? trendReportDb.getLatestByProjectBefore(
@@ -1249,7 +1257,11 @@ class LlmAnalysisQueue {
     );
 
     const debugPrompt = renderSegmentsForDebug(segmentedPrompt);
-    llmTasksDb.updatePrompt(task.id, debugPrompt);
+    llmTasksDb.updatePrompt(
+      task.id,
+      debugPrompt,
+      llmService.estimateLocalInputTokens(segmentedPrompt)
+    );
     if (fitLog) console.log(`[llmQueue] Task ${task.id}: ${fitLog}`);
 
     const projectTemp =
@@ -1310,6 +1322,7 @@ class LlmAnalysisQueue {
 
     llmTasksDb.complete(task.id, summaryText, null, response.model, {
       usage: response.usage,
+      baseUrl: llmService.getBaseUrl(),
     });
 
     // Mirror to the persisted dashboard cache so the UI reflects the new summary
@@ -1507,7 +1520,8 @@ function buildClusterStableKey(
   memberKeys: string[]
 ): string {
   if (evidence.signature) return `signature:${evidence.signature}`;
-  if (strategy === 'stack-frame' && evidence.stackFrame) return `stack-frame:${evidence.stackFrame}`;
+  if (strategy === 'stack-frame' && evidence.stackFrame)
+    return `stack-frame:${evidence.stackFrame}`;
   if (strategy === 'fixture' && evidence.fixturePhase) {
     return `fixture:${evidence.fixturePhase}:${evidence.stackFrame ?? evidence.signature ?? ''}`;
   }
@@ -1616,8 +1630,7 @@ async function aggregateProjectClusters(
     const lastSeen = reports[newestIdx];
     let consecutive = 0;
     while (agg.reportIndices.has(consecutive)) consecutive++;
-    const retryRecoveryRate =
-      agg.occurrences > 0 ? agg.flakyOccurrences / agg.occurrences : 0;
+    const retryRecoveryRate = agg.occurrences > 0 ? agg.flakyOccurrences / agg.occurrences : 0;
 
     // Engine-provided category wins; fall back to most-common per-run category.
     let category = c.category ?? '';
@@ -1969,9 +1982,10 @@ function collectPerTestAnalyses(reportId: string): AnalysisByKey {
  *  Verdict-driving inputs use the hard-failing map; flakes are surfaced as
  *  observations. First row per (testId, fileId, project) key wins — report
  *  payloads typically have one row per test. */
-function partitionFailingRunsByOutcome(
-  reportId: string
-): { hardFailingByKey: FailingByKey; flakyByKey: FailingByKey } {
+function partitionFailingRunsByOutcome(reportId: string): {
+  hardFailingByKey: FailingByKey;
+  flakyByKey: FailingByKey;
+} {
   const reportRuns = testDb.getTestRunsByReport(reportId);
   const hardFailingByKey: FailingByKey = new Map();
   const flakyByKey: FailingByKey = new Map();
@@ -2014,7 +2028,9 @@ function partitionFailingRunsByOutcome(
  *  that belong to the cluster but didn't fail in this run) leave `trend`
  *  unset since the prev-report diff doesn't apply to them. */
 function shapeClustersForPrompt(args: {
-  clusterReport: Awaited<ReturnType<typeof import('../failure-clustering/index.js').getFailureClusters>>;
+  clusterReport: Awaited<
+    ReturnType<typeof import('../failure-clustering/index.js').getFailureClusters>
+  >;
   hardFailingByKey: FailingByKey;
   flakyByKey: FailingByKey;
   analysisByTest: AnalysisByKey;
@@ -2119,8 +2135,7 @@ function buildRunContextFromReport(
     | undefined;
   const playwrightVersion =
     typeof report.playwrightVersion === 'string' ? report.playwrightVersion : undefined;
-  const actualWorkers =
-    typeof report.actualWorkers === 'number' ? report.actualWorkers : undefined;
+  const actualWorkers = typeof report.actualWorkers === 'number' ? report.actualWorkers : undefined;
   const createdAt =
     report.createdAt instanceof Date
       ? report.createdAt.toISOString()

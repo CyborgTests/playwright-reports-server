@@ -171,6 +171,61 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // GET /api/llm/usage-by-model?days=N - per-(baseUrl, model) breakdown of
+  // completed-task spend over the last N days. Lazy-loaded from the queue
+  // page's "Check by model" expandable section — kept separate from
+  // /usage-stats so the always-visible card stays cheap and this query only
+  // runs when the user opens the breakdown.
+  fastify.get('/api/llm/usage-by-model', async (request: FastifyRequest, reply: FastifyReply) => {
+    const authResult = await authenticate(request as AuthRequest, reply);
+    if (authResult) return;
+
+    try {
+      const { days: daysRaw } = request.query as { days?: string };
+      const parsed = daysRaw ? Number.parseInt(daysRaw, 10) : 7;
+      const days = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 365) : 7;
+      const fromDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      const db = getDatabase();
+      // Group by (baseUrl, model). NULLs collapse to the same bucket via
+      // COALESCE so historical rows (pre-baseUrl-column) and rows with a
+      // missing model don't fragment the table into a dozen empty buckets.
+      const rows = db
+        .prepare(
+          `SELECT
+               COALESCE(baseUrl, '') AS baseUrl,
+               COALESCE(model, '') AS model,
+               COUNT(*) AS tasks,
+               COALESCE(SUM(inputTokens), 0) AS inputTokens,
+               COALESCE(SUM(outputTokens), 0) AS outputTokens,
+               COALESCE(SUM(totalTokens), 0) AS totalTokens
+             FROM llm_tasks
+             WHERE status = 'completed' AND completedAt >= ?
+             GROUP BY COALESCE(baseUrl, ''), COALESCE(model, '')
+             ORDER BY totalTokens DESC`
+        )
+        .all(fromDate) as Array<{
+        baseUrl: string;
+        model: string;
+        tasks: number;
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+      }>;
+
+      return {
+        success: true,
+        data: { days, fromDate, rows },
+      };
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Failed to fetch LLM usage-by-model breakdown',
+      });
+    }
+  });
+
   // GET /api/llm/tasks/stats - task queue statistics
   fastify.get('/api/llm/tasks/stats', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);

@@ -21,7 +21,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useLlmTaskStats, useLlmTasks, useLlmUsageStats } from '@/hooks/useLlmTasks';
+import {
+  type LlmUsageByModelRow,
+  useLlmTaskStats,
+  useLlmTasks,
+  useLlmUsageByModel,
+  useLlmUsageStats,
+} from '@/hooks/useLlmTasks';
 import useMutation from '@/hooks/useMutation';
 import { formatCategoryName } from '@/lib/format';
 import { invalidateCache } from '@/lib/query-cache';
@@ -44,8 +50,16 @@ function buildServedTestUrl(reportId: string, testId?: string): string {
 }
 
 /** Compact "in / out" formatter for the Tokens column. Returns "-" when no
- *  usage was captured (queued task, or reused analysis with no LLM call). */
-function formatTokens(input?: number | null, output?: number | null): string {
+ *  usage was captured (queued task, or reused analysis with no LLM call).
+ *  For in-flight rows (`status === 'processing'`) with an inputTokens value,
+ *  renders the input as an estimate prefixed with "~" — the worker writes a
+ *  char/4 estimate when the prompt is built, then complete() overwrites it
+ *  with the provider's reported usage. So "~3319 / -" means "we've sent N
+ *  estimated tokens; waiting on the response." */
+function formatTokens(input?: number | null, output?: number | null, status?: string): string {
+  if (status === 'processing' && (input ?? 0) > 0) {
+    return `~${input} / -`;
+  }
   if ((input ?? 0) === 0 && (output ?? 0) === 0) return '-';
   return `${input ?? 0} / ${output ?? 0}`;
 }
@@ -122,6 +136,8 @@ export default function LlmQueuePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // Usage card period — 7d default, toggleable to 30d.
   const [usageDays, setUsageDays] = useState<7 | 30>(7);
+  // "Check by model" expandable section — lazy-loads its data on first open.
+  const [showByModel, setShowByModel] = useState(false);
 
   const { data: stats, refetch: refetchStats } = useLlmTaskStats();
   const { data: usageData, refetch: refetchUsage } = useLlmUsageStats(usageDays);
@@ -357,26 +373,31 @@ export default function LlmQueuePage() {
           </div>
         </div>
 
-        {/* Per-type breakdown — small, secondary. Helps the user see where the
-            tokens are going. Hidden when the period had no completed tasks. */}
         {usage && usage.totals.tasks > 0 && (
-          <div className="mt-4 pt-3 border-t border-border space-y-1">
-            {(['test_analysis', 'report_summary', 'project_summary'] as const).map((t) => {
-              const row = usage.byType[t];
-              if (!row) return null;
-              return (
-                <div
-                  key={t}
-                  className="flex items-center justify-between text-xs text-muted-foreground"
-                >
-                  <span className="font-medium">{TYPE_SHORT_LABEL[t]}</span>
-                  <span>
-                    {row.tasks} {row.tasks === 1 ? 'task' : 'tasks'} ·{' '}
-                    {formatCount(row.totalTokens)} tokens
+          <div className="mt-4 pt-3 border-t border-border">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+              {(['test_analysis', 'report_summary', 'project_summary'] as const).map((t) => {
+                const row = usage.byType[t];
+                if (!row) return null;
+                return (
+                  <span key={t} className="whitespace-nowrap">
+                    <span className="font-medium">{TYPE_SHORT_LABEL[t]}:</span> {row.tasks}{' '}
+                    {row.tasks === 1 ? 'task' : 'tasks'} · {formatCount(row.totalTokens)} tokens
                   </span>
-                </div>
-              );
-            })}
+                );
+              })}
+              <div className="ml-auto">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowByModel((v) => !v)}
+                  aria-expanded={showByModel}
+                >
+                  {showByModel ? 'Hide by model' : 'Check by model'}
+                </Button>
+              </div>
+            </div>
+            {showByModel && <UsageByModelBreakdown days={usageDays} />}
           </div>
         )}
       </Card>
@@ -553,8 +574,13 @@ export default function LlmQueuePage() {
                       <Link
                         to={`/report/${task.reportId}`}
                         className="text-sm text-primary hover:underline"
+                        // Full reportId on hover so the UUID is still discoverable
+                        // even though the cell shows the human-friendly displayNumber.
+                        title={task.reportId}
                       >
-                        {task.reportId.slice(0, 8)}...
+                        {task.reportDisplayNumber != null
+                          ? `#${task.reportDisplayNumber}`
+                          : `${task.reportId.slice(0, 8)}...`}
                       </Link>
                     ) : (
                       <span className="text-sm text-muted-foreground">-</span>
@@ -564,17 +590,21 @@ export default function LlmQueuePage() {
                     {task.testId && task.reportId ? (
                       // Link to the served Playwright report with a deep-link to this test.
                       // Opens in a new tab so the user keeps the queue page in place.
+                      // Show the human-readable test title when we have it; fall back to
+                      // the hashed testId for older rows or non-test task types. Full
+                      // testId still discoverable via the link's title attribute.
                       <a
                         href={buildServedTestUrl(task.reportId, task.testId)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-sm font-mono text-primary hover:underline break-all whitespace-normal"
+                        className="text-sm text-primary hover:underline break-words whitespace-normal"
+                        title={task.testId}
                       >
-                        {task.testId}
+                        {task.testTitle ?? task.testId}
                       </a>
                     ) : task.testId ? (
-                      <span className="text-sm font-mono break-all whitespace-normal">
-                        {task.testId}
+                      <span className="text-sm break-words whitespace-normal" title={task.testId}>
+                        {task.testTitle ?? task.testId}
                       </span>
                     ) : (
                       <span className="text-sm text-muted-foreground">-</span>
@@ -584,7 +614,7 @@ export default function LlmQueuePage() {
                     {task.model ?? <span className="text-muted-foreground">-</span>}
                   </TableCell>
                   <TableCell className="text-sm font-mono whitespace-nowrap">
-                    {formatTokens(task.inputTokens, task.outputTokens)}
+                    {formatTokens(task.inputTokens, task.outputTokens, task.status)}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {formatRelativeTime(task.createdAt)}
@@ -679,6 +709,80 @@ export default function LlmQueuePage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Per-(baseUrl, model) usage table for the Usage card. Owns its own data
+ *  fetch (gated by the parent's expanded state) so the always-visible card
+ *  doesn't pay the query cost. Renders a skeleton on first open. */
+function UsageByModelBreakdown({ days }: { days: number }) {
+  const { data, isLoading, isError } = useLlmUsageByModel(days, true);
+  const rows: LlmUsageByModelRow[] = data?.data.rows ?? [];
+
+  if (isLoading) {
+    return (
+      <div className="mt-3 space-y-2" aria-live="polite" aria-busy="true">
+        <div className="h-4 w-40 bg-muted animate-pulse rounded" />
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="h-8 w-full bg-muted/60 animate-pulse rounded" />
+        ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="mt-3 text-xs text-destructive">
+        Failed to load per-model breakdown. Try collapsing and re-opening.
+      </div>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="mt-3 text-xs text-muted-foreground">
+        No completed tasks recorded for this period.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 rounded border border-border overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Base URL</TableHead>
+            <TableHead>Model</TableHead>
+            <TableHead className="text-right">Tasks</TableHead>
+            <TableHead className="text-right">Input</TableHead>
+            <TableHead className="text-right">Output</TableHead>
+            <TableHead className="text-right">Total</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((r) => (
+            <TableRow key={`${r.baseUrl}|${r.model}`}>
+              <TableCell className="text-xs font-mono break-all whitespace-normal">
+                {r.baseUrl || <span className="text-muted-foreground">Unknown</span>}
+              </TableCell>
+              <TableCell className="text-xs font-mono break-all whitespace-normal">
+                {r.model || <span className="text-muted-foreground">Unknown</span>}
+              </TableCell>
+              <TableCell className="text-xs text-right">{r.tasks}</TableCell>
+              <TableCell className="text-xs font-mono text-right">
+                {formatCount(r.inputTokens)}
+              </TableCell>
+              <TableCell className="text-xs font-mono text-right">
+                {formatCount(r.outputTokens)}
+              </TableCell>
+              <TableCell className="text-xs font-mono text-right">
+                {formatCount(r.totalTokens)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }
