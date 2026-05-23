@@ -100,6 +100,7 @@ export class OpenAIProvider extends LLMProvider {
     const message = data.choices?.[0]?.message;
     const rawContent = message?.content || '';
     const rawReasoning = message?.reasoning_content || '';
+    const content = rawContent || rawReasoning;
 
     return {
       content,
