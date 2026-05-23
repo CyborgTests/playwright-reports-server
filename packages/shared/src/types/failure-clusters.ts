@@ -47,6 +47,19 @@ export interface ClusterEvidence {
   secondaryEvidence?: SecondaryEvidence[];
 }
 
+/** A subsumed cluster preserved on the winner — captured during merge so the
+ *  UI can show "N variants grouped" inside the parent card. Doesn't carry its
+ *  own tests array (those are already represented in the parent's tests). */
+export interface FailureClusterVariant {
+  id: string;
+  strategy: ClusterStrategy;
+  name: string;
+  sampleMessage: string;
+  testCount: number;
+  failureCount: number;
+  evidence: ClusterEvidence;
+}
+
 export interface FailureCluster {
   id: string;
   strategy: ClusterStrategy;
@@ -57,6 +70,10 @@ export interface FailureCluster {
   failureCount: number;
   evidence: ClusterEvidence;
   tests: ClusterTest[];
+  /** Clusters from other strategies that overlapped with this one during merge
+   *  (≥50% of their tests covered by this cluster). Populated when subsumption
+   *  picks the larger cluster as the winner. */
+  variants?: FailureClusterVariant[];
 }
 
 export interface ClusterReport {

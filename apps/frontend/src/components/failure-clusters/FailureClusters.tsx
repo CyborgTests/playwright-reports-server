@@ -7,6 +7,7 @@ import type {
   ClusterTest,
   DateRange,
   FailureCluster,
+  FailureClusterVariant,
   ReportHistory,
 } from '@playwright-reports/shared';
 import { ExternalLink, GitMerge, HelpCircle, Users } from 'lucide-react';
@@ -269,6 +270,8 @@ function ClusterList({ clusters, reportId }: { clusters: FailureCluster[]; repor
 }
 
 function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?: string }) {
+  const variantCount = cluster.variants?.length ?? 0;
+  const variantLabel = describeVariants(cluster.variants);
   return (
     <Card>
       <AccordionItem value={cluster.id} className="border-b-0">
@@ -297,6 +300,11 @@ function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?
               <span className="font-semibold text-foreground">{cluster.failureCount}</span> failures
               · <span className="text-foreground">assuming same root cause</span>
             </div>
+            {variantCount > 0 && (
+              <div className="text-xs text-muted-foreground">
+                {variantCount} {variantLabel} grouped — expand for details
+              </div>
+            )}
           </div>
         </AccordionTrigger>
         <AccordionContent className="px-6 pb-6">
@@ -307,7 +315,19 @@ function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?
   );
 }
 
+function describeVariants(variants: FailureClusterVariant[] | undefined): string {
+  if (!variants || variants.length === 0) return 'variants';
+  const strategies = new Set(variants.map((v) => v.strategy));
+  const noun = variants.length === 1 ? 'variant' : 'variants';
+  if (strategies.size === 1) {
+    const only = strategies.values().next().value as ClusterStrategy;
+    return `${STRATEGY_SHORT_LABELS[only].toLowerCase()} ${noun}`;
+  }
+  return noun;
+}
+
 function ClusterBody({ cluster, reportId }: { cluster: FailureCluster; reportId?: string }) {
+  const variants = cluster.variants ?? [];
   return (
     <div className="space-y-4">
       {cluster.sampleMessage && (
@@ -322,6 +342,7 @@ function ClusterBody({ cluster, reportId }: { cluster: FailureCluster; reportId?
           </pre>
         </div>
       )}
+      {variants.length > 0 && <ClusterVariants variants={variants} />}
       <div>
         <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
           Tests in this cluster
@@ -336,6 +357,34 @@ function ClusterBody({ cluster, reportId }: { cluster: FailureCluster; reportId?
           ))}
         </ul>
       </div>
+    </div>
+  );
+}
+
+function ClusterVariants({ variants }: { variants: FailureClusterVariant[] }) {
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
+        Variants grouped into this cluster
+      </div>
+      <ul className="space-y-2">
+        {variants.map((variant) => (
+          <li
+            key={variant.id}
+            className="rounded border border-border bg-muted/40 p-3 text-sm space-y-1"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="text-xs">
+                {STRATEGY_SHORT_LABELS[variant.strategy]}
+              </Badge>
+              <span className="text-muted-foreground text-xs">
+                {variant.testCount} tests · {variant.failureCount} failures
+              </span>
+            </div>
+            <div className="font-medium leading-snug break-words">{variant.name}</div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
