@@ -59,14 +59,17 @@ export default function SettingsPage() {
       const formData = new FormData();
 
       if (section === 'server') {
-        if (tempConfig.title && tempConfig.title !== config.title) {
-          formData.append('title', tempConfig.title);
+        // Branding fields: send any difference, including blanks. The backend
+        // treats blank/whitespace as "reset to default" so users can roll back
+        // a customization without re-uploading the original asset.
+        if ((tempConfig.title ?? '') !== (config.title ?? '')) {
+          formData.append('title', tempConfig.title ?? '');
         }
 
         if (logoFile) {
           formData.append('logo', logoFile);
-        } else if (tempConfig.logoPath && tempConfig.logoPath !== config.logoPath) {
-          formData.append('logoPath', tempConfig.logoPath);
+        } else if ((tempConfig.logoPath ?? '') !== (config.logoPath ?? '')) {
+          formData.append('logoPath', tempConfig.logoPath ?? '');
         }
 
         if ((tempConfig.logoInvertOnDark ?? true) !== (config.logoInvertOnDark ?? true)) {
@@ -78,8 +81,8 @@ export default function SettingsPage() {
 
         if (faviconFile) {
           formData.append('favicon', faviconFile);
-        } else if (tempConfig.faviconPath && tempConfig.faviconPath !== config.faviconPath) {
-          formData.append('faviconPath', tempConfig.faviconPath);
+        } else if ((tempConfig.faviconPath ?? '') !== (config.faviconPath ?? '')) {
+          formData.append('faviconPath', tempConfig.faviconPath ?? '');
         }
 
         const reporterPathsChanged =

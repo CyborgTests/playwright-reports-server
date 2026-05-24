@@ -39,8 +39,8 @@ export function Navbar() {
   const isLlmConfigured = !!(config?.llm?.baseUrl && config?.llm?.apiKey);
   const navItems = isLlmConfigured ? [...baseNavItems, llmQueueNavItem] : baseNavItems;
 
-  const isCustomLogo = config?.logoPath !== defaultConfig.logoPath;
-  const isCustomTitle = config?.title && config?.title !== defaultConfig.title;
+  const isCustomLogo = !!config?.logoPath && config.logoPath !== defaultConfig.logoPath;
+  const isCustomTitle = !!config?.title && config.title !== defaultConfig.title;
   const invertLogoOnDark = config?.logoInvertOnDark !== false;
 
   return (

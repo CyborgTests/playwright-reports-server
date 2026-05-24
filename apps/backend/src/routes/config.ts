@@ -259,10 +259,16 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         if (logoFileSaved) {
           config.logoPath = logoFileSaved;
         } else if (formData.logoPath !== undefined) {
-          if (!isAllowedLogoPath(formData.logoPath)) {
+          // Blank string resets to the built-in default so users can revert a
+          // custom logo without re-uploading the original asset.
+          const next = formData.logoPath.trim();
+          if (next === '') {
+            config.logoPath = defaultConfig.logoPath;
+          } else if (!isAllowedLogoPath(next)) {
             return reply.status(400).send({ error: 'invalid logoPath' });
+          } else {
+            config.logoPath = next;
           }
-          config.logoPath = formData.logoPath;
         }
 
         if (formData.logoInvertOnDark !== undefined) {
@@ -272,14 +278,18 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         if (faviconFileSaved) {
           config.faviconPath = faviconFileSaved;
         } else if (formData.faviconPath !== undefined) {
-          if (!isAllowedFaviconPath(formData.faviconPath)) {
+          const next = formData.faviconPath.trim();
+          if (next === '') {
+            config.faviconPath = defaultConfig.faviconPath;
+          } else if (!isAllowedFaviconPath(next)) {
             return reply.status(400).send({ error: 'invalid faviconPath' });
+          } else {
+            config.faviconPath = next;
           }
-          config.faviconPath = formData.faviconPath;
         }
 
-        if (formData.title !== undefined && formData.title !== '') {
-          config.title = formData.title;
+        if (formData.title !== undefined) {
+          config.title = formData.title.trim() === '' ? defaultConfig.title : formData.title;
         }
 
         if (formData.reporterPaths !== undefined) {
