@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReportAnalysisStructured, ReportAnalysisVerdict } from '@playwright-reports/shared';
+import { REPORT_VERDICT_DESCRIPTIONS } from '@playwright-reports/shared';
 import {
   Activity,
   AlertTriangle,
@@ -12,6 +13,7 @@ import {
 import { useState } from 'react';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface ReportAnalysisRendererProps {
   analysis: ReportAnalysisStructured;
@@ -50,7 +52,19 @@ const sectionIcon = (heading: string) => {
 
 export function ReportVerdictBadge({ verdict }: Readonly<{ verdict: ReportAnalysisVerdict }>) {
   const meta = verdictMeta[verdict];
-  return <Badge variant={meta.variant}>{meta.label}</Badge>;
+  const description = REPORT_VERDICT_DESCRIPTIONS[verdict];
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant={meta.variant} className="cursor-help">
+            {meta.label}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs text-xs">{description}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 export function ReportAnalysisRenderer({

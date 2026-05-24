@@ -1,4 +1,8 @@
-import type { ReportAnalysisStructured } from '@playwright-reports/shared';
+import {
+  FAILURE_CATEGORY_DESCRIPTIONS,
+  type FailureCategory,
+  type ReportAnalysisStructured,
+} from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Brain, RefreshCw } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
@@ -201,17 +205,30 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
       <CardContent className="space-y-4">
         {/* Category breakdown */}
         {categoryEntries.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {categoryEntries.map(([category, count]) => (
-              <span
-                key={category}
-                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-0.5 text-xs font-semibold ${getCategoryColor(category)}`}
-              >
-                {category}
-                <span className="font-bold">{count}</span>
-              </span>
-            ))}
-          </div>
+          <TooltipProvider delayDuration={150}>
+            <div className="flex flex-wrap gap-2">
+              {categoryEntries.map(([category, count]) => {
+                const description =
+                  FAILURE_CATEGORY_DESCRIPTIONS[category as FailureCategory] ?? null;
+                const chip = (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-0.5 text-xs font-semibold cursor-help ${getCategoryColor(category)}`}
+                  >
+                    {category}
+                    <span className="font-bold">{count}</span>
+                  </span>
+                );
+                return description ? (
+                  <Tooltip key={category}>
+                    <TooltipTrigger asChild>{chip}</TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-xs">{description}</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <span key={category}>{chip}</span>
+                );
+              })}
+            </div>
+          </TooltipProvider>
         )}
 
         {/* LLM Summary */}
