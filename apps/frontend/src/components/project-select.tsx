@@ -27,12 +27,17 @@ export default function ProjectSelect({
   label = 'Project',
   showLabel = true,
 }: Readonly<ProjectSelectProps>) {
+  // Defer the projects fetch until the dropdown is opened the first time.
+  // Most dashboard visits never expand the picker, so paying for that GET
+  // on every page load was wasted work.
+  const [hasOpened, setHasOpened] = useState(false);
   const {
     data: projects,
     error,
     isLoading,
   } = useQuery<string[]>(buildUrl(`/api/${entity}/projects`), {
     dependencies: [refreshId],
+    enabled: hasOpened,
   });
 
   const [localStorageProject, setLocalStorageProject] = useState<string | null>(null);
@@ -111,7 +116,9 @@ export default function ProjectSelect({
       <Select
         value={effectiveSelectedProject}
         onValueChange={handleChange}
-        disabled={items.length <= 1 || isLoading}
+        onOpenChange={(open) => {
+          if (open && !hasOpened) setHasOpened(true);
+        }}
       >
         <SelectTrigger id={selectId} className={className}>
           <SelectValue placeholder={showLabel ? `Select ${label.toLowerCase()}` : label} />
@@ -122,6 +129,9 @@ export default function ProjectSelect({
               {project}
             </SelectItem>
           ))}
+          {hasOpened && isLoading && (
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</div>
+          )}
         </SelectContent>
       </Select>
     </div>
