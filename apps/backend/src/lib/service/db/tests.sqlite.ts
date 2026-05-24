@@ -593,7 +593,12 @@ export class TestDatabase {
     excludeReportId: string
   ): {
     priorOccurrenceCount: number;
-    firstOccurrence: { reportId: string; createdAt: string } | null;
+    firstOccurrence: {
+      reportId: string;
+      createdAt: string;
+      displayNumber: number | null;
+      title: string | null;
+    } | null;
   } {
     if (!errorSignature) {
       return { priorOccurrenceCount: 0, firstOccurrence: null };
@@ -605,16 +610,21 @@ export class TestDatabase {
            AND error_signature = ? AND reportId != ?`
       )
       .get(testId, fileId, project, errorSignature, excludeReportId) as { c: number };
+    // Join with reports so the UI can display the user-friendly number + title
+    // instead of a sliced UUID. Left-join is unnecessary — every test_run
+    // FK-points at an existing report row.
     const firstRow = this.db
       .prepare(
-        `SELECT reportId, createdAt FROM test_runs
-         WHERE testId = ? AND fileId = ? AND project = ?
-           AND error_signature = ? AND reportId != ?
-         ORDER BY createdAt ASC
+        `SELECT tr.reportId, tr.createdAt, r.displayNumber, r.title
+         FROM test_runs tr
+         JOIN reports r ON r.reportID = tr.reportId
+         WHERE tr.testId = ? AND tr.fileId = ? AND tr.project = ?
+           AND tr.error_signature = ? AND tr.reportId != ?
+         ORDER BY tr.createdAt ASC
          LIMIT 1`
       )
       .get(testId, fileId, project, errorSignature, excludeReportId) as
-      | { reportId: string; createdAt: string }
+      | { reportId: string; createdAt: string; displayNumber: number | null; title: string | null }
       | undefined;
     return {
       priorOccurrenceCount: countRow?.c ?? 0,

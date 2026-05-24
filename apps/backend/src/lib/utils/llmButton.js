@@ -745,6 +745,30 @@ function feedbackBody(testId, rid, extra) {
   return JSON.stringify({ testId: testId, reportId: rid, ...extra });
 }
 
+/**
+ * Format a user-facing label for a report link. Prefers `#42 Title`, falls
+ * back to just the title, then to the title-less `#42`, and finally to an
+ * 8-char slice of the UUID so the link stays clickable even when the report
+ * row is missing metadata. Escapes the title to keep it HTML-safe.
+ */
+function reportLinkLabel(reportId, displayNumber, title) {
+  const safeTitle = typeof title === 'string' && title ? escapeHtml(title) : '';
+  if (typeof displayNumber === 'number' && displayNumber > 0) {
+    return safeTitle ? `#${displayNumber} ${safeTitle}` : `#${displayNumber}`;
+  }
+  if (safeTitle) return safeTitle;
+  return `report ${reportId.slice(0, 8)}`;
+}
+
+function escapeHtml(s) {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function fetchFeedback(testId, rid) {
   const url = `/api/llm/feedback?testId=${encodeURIComponent(testId)}&reportId=${encodeURIComponent(rid)}`;
   try {
@@ -877,7 +901,7 @@ function renderFeedbackPanel({
     feedback?.reportId && feedback?.createdAt && !originIsCurrent
       ? `<div class="llm-feedback-origin">
           First attached in
-          <a href="/report/${feedback.reportId}" target="_blank" rel="noopener">report ${feedback.reportId.slice(0, 8)}</a>
+          <a href="/report/${feedback.reportId}" target="_blank" rel="noopener">${reportLinkLabel(feedback.reportId, feedback.reportDisplayNumber, feedback.reportTitle)}</a>
           — ${relativeTimeShort(feedback.createdAt)}
         </div>`
       : '';
@@ -890,7 +914,7 @@ function renderFeedbackPanel({
     historyData.firstOccurrence && !firstOccIsCurrent
       ? `<span class="llm-feedback-firstfound">
           First found in
-          <a href="/report/${historyData.firstOccurrence.reportId}" target="_blank" rel="noopener">report ${historyData.firstOccurrence.reportId.slice(0, 8)}</a>
+          <a href="/report/${historyData.firstOccurrence.reportId}" target="_blank" rel="noopener">${reportLinkLabel(historyData.firstOccurrence.reportId, historyData.firstOccurrence.displayNumber, historyData.firstOccurrence.title)}</a>
           — ${relativeTimeShort(historyData.firstOccurrence.createdAt)}
         </span>`
       : '';

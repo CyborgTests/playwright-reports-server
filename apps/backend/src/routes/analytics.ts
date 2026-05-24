@@ -42,12 +42,17 @@ function feedbackRowToShared(
   } | null
 ) {
   if (!row) return null;
+  // Enrich with the origin report's user-facing number + title so the widget
+  // can render "#42 Nightly run" instead of an 8-char slice of the UUID.
+  const report = row.reportId ? reportDb.getByID(row.reportId) : undefined;
   return {
     id: row.id,
     testId: row.testId ?? undefined,
     fileId: row.fileId ?? undefined,
     project: row.project,
     reportId: row.reportId ?? undefined,
+    reportDisplayNumber: report?.displayNumber ?? undefined,
+    reportTitle: report?.title ?? undefined,
     errorSignature: row.errorSignature ?? undefined,
     comment: row.comment,
     createdAt: row.createdAt,
