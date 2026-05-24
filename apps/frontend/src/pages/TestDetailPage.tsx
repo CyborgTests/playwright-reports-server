@@ -6,7 +6,7 @@ import type {
   TestFailureGroup,
   TestRun,
 } from '@playwright-reports/shared';
-import { ArrowLeft, ExternalLink, Info } from 'lucide-react';
+import { ArrowLeft, ExternalLink, GitMerge, Info } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -30,7 +30,7 @@ import {
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import {
   Table,
@@ -387,89 +387,104 @@ function FailureGroupsList({
 }: Readonly<{ groups: TestFailureGroup[]; testId: string }>) {
   if (groups.length === 0) return null;
   return (
-    <Card>
-      <CardHeader>
-        <h3 className="text-lg font-semibold">Failure Groups</h3>
+    <div>
+      <div className="mb-3">
+        <h3 className="text-lg font-semibold">Failure clusters</h3>
         <p className="text-sm text-muted-foreground">
-          Failures grouped by error signature, most frequent first. Each card shows the clustering
-          metadata so you can see how often the same error shape recurs.
+          Failures for this test grouped by error signature — likely same root cause within each
+          cluster.
         </p>
-      </CardHeader>
-      <CardContent>
-        <Accordion type="multiple" className="w-full">
-          {groups.map((group) => {
-            const preview = firstLine(group.sampleMessage || group.signature);
-            return (
-              <AccordionItem key={group.signature} value={group.signature}>
-                <AccordionTrigger className="hover:no-underline">
-                  <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
-                    <Badge variant="secondary" className="shrink-0 text-[10px]" title="Clustering strategy">
-                      signature
-                    </Badge>
-                    <Badge variant="danger" className="shrink-0">
-                      ×{group.count}
-                    </Badge>
-                    {group.category && (
-                      <Badge variant="outline" className="shrink-0">
-                        {group.category}
-                      </Badge>
-                    )}
-                    <span
-                      className="font-mono text-sm text-muted-foreground truncate min-w-0 flex-1"
-                      title={preview}
-                    >
-                      {preview}
-                    </span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                      <span title="Stable fingerprint computed from the error class and trimmed message">
-                        Signature: <code>{group.signature.slice(0, 12)}</code>
-                      </span>
-                      <span>
-                        First seen: <FormattedDate date={group.firstSeen} />
-                      </span>
-                      <span>
-                        Last seen: <FormattedDate date={group.lastSeen} />
-                      </span>
-                    </div>
-                    {group.sampleMessage && (
-                      <pre className="bg-muted p-3 rounded text-xs whitespace-pre-wrap break-words">
-                        {group.sampleMessage}
-                      </pre>
-                    )}
-                    {group.recentReports.length > 0 && (
-                      <div className="flex flex-wrap gap-2 items-center">
-                        <span className="text-xs text-muted-foreground">Recent reports:</span>
-                        {group.recentReports.map((ref) => {
-                          const label = ref.displayNumber
-                            ? `#${ref.displayNumber}${ref.title ? ` ${ref.title}` : ''}`
-                            : ref.title || ref.reportId.slice(0, 8);
-                          return (
-                            <a
-                              key={ref.reportId}
-                              href={servedReportUrl(ref.reportId, testId)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs underline inline-flex items-center gap-1 max-w-xs truncate"
-                              title={ref.title ?? ref.reportId}
-                            >
-                              {label}
-                              <ExternalLink className="h-3 w-3 shrink-0" />
-                            </a>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            );
-          })}
-        </Accordion>
-      </CardContent>
+      </div>
+      <Accordion type="multiple" className="space-y-3">
+        {groups.map((group) => (
+          <FailureClusterCard key={group.signature} group={group} testId={testId} />
+        ))}
+      </Accordion>
+    </div>
+  );
+}
+
+function FailureClusterCard({
+  group,
+  testId,
+}: Readonly<{ group: TestFailureGroup; testId: string }>) {
+  const name = firstLine(group.sampleMessage || group.signature);
+  return (
+    <Card>
+      <AccordionItem value={group.signature} className="border-b-0">
+        <AccordionTrigger className="px-6 hover:no-underline">
+          <div className="flex flex-1 flex-col items-start gap-1 text-left">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="gap-1">
+                <GitMerge className="h-3 w-3" />
+                signature
+              </Badge>
+              {group.category && (
+                <Badge variant="secondary" className="font-mono text-xs">
+                  {group.category}
+                </Badge>
+              )}
+            </div>
+            <CardTitle className="text-base font-medium leading-snug break-words">{name}</CardTitle>
+            <div className="text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">{group.count}</span>{' '}
+              {group.count === 1 ? 'occurrence' : 'occurrences'} ·{' '}
+              <span>
+                first <FormattedDate date={group.firstSeen} />
+              </span>{' '}
+              ·{' '}
+              <span>
+                last <FormattedDate date={group.lastSeen} />
+              </span>
+            </div>
+          </div>
+        </AccordionTrigger>
+        <AccordionContent className="px-6 pb-6">
+          <div className="space-y-4">
+            {group.sampleMessage && (
+              <div>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                  Sample error
+                </div>
+                <pre className="bg-muted rounded p-3 text-xs whitespace-pre-wrap break-words font-mono">
+                  {group.sampleMessage}
+                </pre>
+              </div>
+            )}
+            <div className="text-xs text-muted-foreground">
+              Signature: <code>{group.signature.slice(0, 12)}</code>
+            </div>
+            {group.recentReports.length > 0 && (
+              <div>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
+                  Recent reports
+                </div>
+                <ul className="space-y-1">
+                  {group.recentReports.map((ref) => {
+                    const label = ref.displayNumber
+                      ? `#${ref.displayNumber}${ref.title ? ` ${ref.title}` : ''}`
+                      : (ref.title ?? ref.reportId.slice(0, 8));
+                    return (
+                      <li key={ref.reportId}>
+                        <a
+                          href={servedReportUrl(ref.reportId, testId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm hover:underline inline-flex items-baseline gap-1"
+                          title={ref.title ?? ref.reportId}
+                        >
+                          {label}
+                          <ExternalLink className="h-3 w-3 shrink-0" />
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+        </AccordionContent>
+      </AccordionItem>
     </Card>
   );
 }
@@ -481,7 +496,9 @@ export default function TestDetailPage() {
 
   // Always land at the top when navigating in to a different test — without
   // this, the browser may restore the previous page's scroll position and
-  // drop the user into the middle of the new test's content.
+  // drop the user into the middle of the new test's content. fileId/testId
+  // are unused inside the effect but serve as the trigger.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: trigger-only deps
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [fileId, testId]);
