@@ -1,6 +1,10 @@
 'use client';
 
-import type { ProjectAnalysisStructured, ProjectAnalysisVerdict } from '@playwright-reports/shared';
+import type {
+  ProjectAnalysisCodeRef,
+  ProjectAnalysisStructured,
+  ProjectAnalysisVerdict,
+} from '@playwright-reports/shared';
 import {
   Activity,
   AlertTriangle,
@@ -10,7 +14,8 @@ import {
   Stethoscope,
   TrendingUp,
 } from 'lucide-react';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 
@@ -20,6 +25,56 @@ interface LlmAnalysisRendererProps {
    *  that didn't carry a project (so /test/:fileId/:testId can still scope
    *  its lookup by `?project=…`). */
   fallbackProject?: string;
+}
+
+function refHref(
+  ref: ProjectAnalysisCodeRef,
+  latestReportId: string | undefined,
+  fallbackProject: string | undefined
+): string | null {
+  if (ref.kind === 'test' && ref.testId && ref.fileId) {
+    const project = ref.project ?? fallbackProject;
+    const query = project ? `?project=${encodeURIComponent(project)}` : '';
+    return `/test/${ref.fileId}/${ref.testId}${query}`;
+  }
+  if (ref.kind === 'file') {
+    const target = ref.reportId ?? latestReportId;
+    if (target) return `/report/${target}`;
+  }
+  return null;
+}
+
+function InlineRefs({
+  refs,
+  latestReportId,
+  fallbackProject,
+}: {
+  refs: ProjectAnalysisCodeRef[];
+  latestReportId: string | undefined;
+  fallbackProject: string | undefined;
+}) {
+  if (refs.length === 0) return null;
+  return (
+    <p className="mt-2 text-sm text-muted-foreground">
+      Related:{' '}
+      {refs.map((ref, i) => {
+        const href = refHref(ref, latestReportId, fallbackProject);
+        const key = `${ref.kind}-${ref.label}-${i}`;
+        return (
+          <Fragment key={key}>
+            {i > 0 && ', '}
+            {href ? (
+              <RouterLink to={href} className="text-primary hover:underline">
+                {ref.label}
+              </RouterLink>
+            ) : (
+              <span>{ref.label}</span>
+            )}
+          </Fragment>
+        );
+      })}
+    </p>
+  );
 }
 
 const verdictMeta: Record<
@@ -50,7 +105,7 @@ export function LlmAnalysisRenderer({
   analysis,
   fallbackProject,
 }: Readonly<LlmAnalysisRendererProps>) {
-  const { sections, summary } = analysis;
+  const { sections, summary, latestReportId } = analysis;
   // First section is always open; rest are collapsed by default. Index 0 is
   // never in this Set; the entries here are explicitly toggled-open sections.
   const [openExtras, setOpenExtras] = useState<Set<number>>(new Set());
@@ -97,6 +152,13 @@ export function LlmAnalysisRenderer({
             {isOpen && (
               <div className="mt-2">
                 <MarkdownRenderer content={section.body} fallbackProject={fallbackProject} />
+                {section.codeRefs && section.codeRefs.length > 0 && (
+                  <InlineRefs
+                    refs={section.codeRefs}
+                    latestReportId={latestReportId}
+                    fallbackProject={fallbackProject}
+                  />
+                )}
               </div>
             )}
           </div>
