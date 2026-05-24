@@ -137,6 +137,7 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
             <SelectContent>
               <SelectItem value="default">Default</SelectItem>
               <SelectItem value="slowest">Slowest first</SelectItem>
+              <SelectItem value="stale">Tests not running</SelectItem>
             </SelectContent>
           </Select>
         </div>

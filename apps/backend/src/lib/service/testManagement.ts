@@ -770,7 +770,7 @@ export class TestManagementService {
     options?: {
       status?: 'all' | 'quarantined' | 'not-quarantined';
       tiers?: Array<'stable' | 'flaky' | 'critical'>;
-      sort?: 'default' | 'slowest';
+      sort?: 'default' | 'slowest' | 'stale';
       failureCategory?: string;
       limit?: number;
       offset?: number;
@@ -863,6 +863,21 @@ export class TestManagementService {
         return durations.reduce((s, d) => s + d, 0) / durations.length;
       };
       tests.sort((a, b) => avgDuration(b) - avgDuration(a));
+      const total = tests.length;
+      if (options.limit !== undefined) {
+        const offset = options.offset ?? 0;
+        tests = tests.slice(offset, offset + options.limit);
+      }
+      return { data: tests, total };
+    }
+
+    if (options?.sort === 'stale') {
+      // Oldest-last-seen first — surfaces tests that haven't run recently and
+      // may have been deleted or renamed without a quarantine entry. Tests
+      // with no recorded runs sort to the top (Infinity-old).
+      const lastSeen = (t: TestWithQuarantineInfo) =>
+        t.lastRunAt ? Date.parse(t.lastRunAt) : 0;
+      tests.sort((a, b) => lastSeen(a) - lastSeen(b));
       const total = tests.length;
       if (options.limit !== undefined) {
         const offset = options.offset ?? 0;

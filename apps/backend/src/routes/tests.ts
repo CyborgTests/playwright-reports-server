@@ -37,7 +37,12 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         const options = {
           status: status as 'all' | 'quarantined' | 'not-quarantined' | undefined,
           tiers: parsedTiers,
-          sort: sort === 'slowest' ? ('slowest' as const) : undefined,
+          sort:
+            sort === 'slowest'
+              ? ('slowest' as const)
+              : sort === 'stale'
+                ? ('stale' as const)
+                : undefined,
           failureCategory: failureCategory || undefined,
           limit: limit ? Number.parseInt(limit, 10) : undefined,
           offset: offset ? Number.parseInt(offset, 10) : undefined,

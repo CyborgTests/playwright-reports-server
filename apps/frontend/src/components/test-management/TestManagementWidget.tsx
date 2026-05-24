@@ -70,7 +70,8 @@ function parseTiersParam(raw: string | null): FlakinessTier[] | undefined {
 }
 
 function parseSortParam(raw: string | null): TestsSort | undefined {
-  return raw === 'slowest' ? 'slowest' : undefined;
+  if (raw === 'slowest' || raw === 'stale') return raw;
+  return undefined;
 }
 
 export default function TestManagementWidget({

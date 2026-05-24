@@ -101,7 +101,7 @@ export interface TestDetail {
 }
 
 export type FlakinessTier = 'stable' | 'flaky' | 'critical';
-export type TestsSort = 'default' | 'slowest';
+export type TestsSort = 'default' | 'slowest' | 'stale';
 
 export interface TestFilters {
   search?: string;
