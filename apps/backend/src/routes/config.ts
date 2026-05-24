@@ -181,8 +181,19 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       parallelRequests: config.llm?.parallelRequests || 1,
       autoAnalyzeNewReports: !!config.llm?.autoAnalyzeNewReports,
       analyzeGreenWindows: !!config.llm?.analyzeGreenWindows,
+      maxTokens: config.llm?.maxTokens,
+      contextWindow: config.llm?.contextWindow,
+      multimodalMode: config.llm?.multimodalMode,
+      // Custom prompt overrides — surfaced so the Settings UI can pre-fill
+      // textareas with what's actually saved instead of just the default.
+      customSystemPrompt: config.llm?.customSystemPrompt,
+      customTestAnalysisSystemPrompt: config.llm?.customTestAnalysisSystemPrompt,
+      customTestAnalysisInstructions: config.llm?.customTestAnalysisInstructions,
+      customReportSummaryPrompt: config.llm?.customReportSummaryPrompt,
+      customProjectSummarySystemPrompt: config.llm?.customProjectSummarySystemPrompt,
+      customProjectSummaryInstructions: config.llm?.customProjectSummaryInstructions,
       // Server-side per-task defaults — read-only, used by the UI to show
-      // active defaults as input placeholders.
+      // active defaults next to the override inputs.
       defaults: {
         testAnalysisTemperature: TASK_TEMPERATURE_DEFAULTS.testAnalysis,
         reportSummaryTemperature: TASK_TEMPERATURE_DEFAULTS.reportSummary,

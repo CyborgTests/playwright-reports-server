@@ -159,6 +159,19 @@ export default function LLMConfiguration({
     'not-configured': 'outline',
   }[llmStatus] as 'destructive' | 'success' | 'outline';
 
+  // Read the override for a prompt field: tempConfig while editing, saved
+  // config otherwise. Keyed by the LLMConfig field name.
+  type PromptKey =
+    | 'customTestAnalysisSystemPrompt'
+    | 'customTestAnalysisInstructions'
+    | 'customReportSummaryPrompt'
+    | 'customProjectSummarySystemPrompt'
+    | 'customProjectSummaryInstructions';
+  const getPromptOverride = (key: PromptKey) =>
+    isEditing ? tempConfig.llm?.[key] : config.llm?.[key];
+  const setPromptOverride = (key: PromptKey) => (next: string | undefined) =>
+    onUpdateTempConfig({ llm: { ...tempConfig.llm, [key]: next } });
+
   return (
     <Card id="llm" className="mb-6 scroll-mt-20 p-4">
       <CardHeader
@@ -633,12 +646,10 @@ export default function LLMConfiguration({
             </div>
           </section>
 
-          {/* Custom prompts — wrapped in an accordion since most users won't touch them.
-              Empty string clears the override and falls back to the built-in default.
-              Organized by task (Test, Report, Project) so users can tune one task
-              without touching the others. The legacy `customSystemPrompt` field is
-              still honored server-side as a fallback when the task-specific field
-              is empty — we don't surface a separate UI input for it. */}
+          {/* Custom prompts — each textarea is pre-populated with the resolved
+              prompt (saved override OR built-in default) so users can edit
+              what's already in effect. Saving text identical to the default
+              clears the override so future default updates flow through. */}
           <Accordion type="single" collapsible>
             <AccordionItem value="custom-prompts" className="border rounded-md px-3">
               <AccordionTrigger className="text-sm font-medium">
@@ -646,9 +657,9 @@ export default function LLMConfiguration({
               </AccordionTrigger>
               <AccordionContent className="space-y-6">
                 <p className="text-xs text-muted-foreground">
-                  Override the built-in prompt templates for each task. Each field shows its
-                  built-in default inline as placeholder text — leave blank to use it, or type to
-                  override. Supports{' '}
+                  Override the built-in prompt templates for each task. Each field is pre-filled
+                  with the prompt currently in effect — edit to override, or click "Reset to
+                  default" to roll back. Supports{' '}
                   <code className="text-xs bg-muted px-1 rounded">{'{{var}}'}</code> substitution
                   from a per-template allowlist; unknown vars are left intact and logged.
                 </p>
@@ -656,168 +667,91 @@ export default function LLMConfiguration({
                 {/* Test analysis — per-test failure deep-dive. */}
                 <div className="space-y-3 rounded-md border p-3">
                   <h4 className="text-sm font-semibold">Test</h4>
-                  <div className="space-y-2">
-                    <Label htmlFor="llm-custom-test-system">System prompt</Label>
-                    <Textarea
-                      id="llm-custom-test-system"
-                      disabled={editingSection !== 'llm'}
-                      placeholder={
-                        defaultPrompts?.testAnalysisSystemPrompt.content ??
-                        defaultPrompts?.systemPrompt.content ??
-                        'You are an expert test automation engineer…'
-                      }
-                      rows={5}
-                      value={
-                        editingSection === 'llm'
-                          ? (tempConfig.llm?.customTestAnalysisSystemPrompt ?? '')
-                          : (config.llm?.customTestAnalysisSystemPrompt ?? '')
-                      }
-                      onChange={(e) =>
-                        editingSection === 'llm' &&
-                        onUpdateTempConfig({
-                          llm: {
-                            ...tempConfig.llm,
-                            customTestAnalysisSystemPrompt: e.target.value,
-                          },
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">No vars available.</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="llm-custom-test">Task instructions</Label>
-                    <Textarea
-                      id="llm-custom-test"
-                      disabled={editingSection !== 'llm'}
-                      placeholder={
-                        defaultPrompts?.testAnalysisInstructions.content ??
-                        'Analyze the Playwright test failure…'
-                      }
-                      rows={12}
-                      value={
-                        editingSection === 'llm'
-                          ? (tempConfig.llm?.customTestAnalysisInstructions ?? '')
-                          : (config.llm?.customTestAnalysisInstructions ?? '')
-                      }
-                      onChange={(e) =>
-                        editingSection === 'llm' &&
-                        onUpdateTempConfig({
-                          llm: {
-                            ...tempConfig.llm,
-                            customTestAnalysisInstructions: e.target.value,
-                          },
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Vars: <code className="text-xs">{'{{project}}'}</code>,{' '}
-                      <code className="text-xs">{'{{testTitle}}'}</code>,{' '}
-                      <code className="text-xs">{'{{filePath}}'}</code>,{' '}
-                      <code className="text-xs">{'{{errorCategory}}'}</code>
-                    </p>
-                  </div>
+                  <CustomPromptField
+                    id="llm-custom-test-system"
+                    label="System prompt"
+                    rows={5}
+                    disabled={!isEditing}
+                    defaultPrompt={
+                      defaultPrompts?.testAnalysisSystemPrompt.content ??
+                      defaultPrompts?.systemPrompt.content
+                    }
+                    override={getPromptOverride('customTestAnalysisSystemPrompt')}
+                    helper={<>No vars available.</>}
+                    onChange={setPromptOverride('customTestAnalysisSystemPrompt')}
+                  />
+                  <CustomPromptField
+                    id="llm-custom-test"
+                    label="Task instructions"
+                    rows={12}
+                    disabled={!isEditing}
+                    defaultPrompt={defaultPrompts?.testAnalysisInstructions.content}
+                    override={getPromptOverride('customTestAnalysisInstructions')}
+                    helper={
+                      <>
+                        Vars: <code className="text-xs">{'{{project}}'}</code>,{' '}
+                        <code className="text-xs">{'{{testTitle}}'}</code>,{' '}
+                        <code className="text-xs">{'{{filePath}}'}</code>,{' '}
+                        <code className="text-xs">{'{{errorCategory}}'}</code>
+                      </>
+                    }
+                    onChange={setPromptOverride('customTestAnalysisInstructions')}
+                  />
                 </div>
 
-                {/* Report summary — one-run aggregation across per-test analyses.
-                    Single prompt slot; the system message is built-in and not
-                    user-overridable for this task. */}
+                {/* Report summary — one-run aggregation across per-test analyses. */}
                 <div className="space-y-3 rounded-md border p-3">
                   <h4 className="text-sm font-semibold">Report</h4>
-                  <div className="space-y-2">
-                    <Label htmlFor="llm-custom-report">Prompt</Label>
-                    <Textarea
-                      id="llm-custom-report"
-                      disabled={editingSection !== 'llm'}
-                      placeholder={
-                        defaultPrompts?.reportSummaryPrompt.content ??
-                        'Analyze the failures from this Playwright report…'
-                      }
-                      rows={14}
-                      value={
-                        editingSection === 'llm'
-                          ? (tempConfig.llm?.customReportSummaryPrompt ?? '')
-                          : (config.llm?.customReportSummaryPrompt ?? '')
-                      }
-                      onChange={(e) =>
-                        editingSection === 'llm' &&
-                        onUpdateTempConfig({
-                          llm: {
-                            ...tempConfig.llm,
-                            customReportSummaryPrompt: e.target.value,
-                          },
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Vars: <code className="text-xs">{'{{reportId}}'}</code>,{' '}
-                      <code className="text-xs">{'{{project}}'}</code>,{' '}
-                      <code className="text-xs">{'{{totalFailures}}'}</code>
-                    </p>
-                  </div>
+                  <CustomPromptField
+                    id="llm-custom-report"
+                    label="Prompt"
+                    rows={14}
+                    disabled={!isEditing}
+                    defaultPrompt={defaultPrompts?.reportSummaryPrompt.content}
+                    override={getPromptOverride('customReportSummaryPrompt')}
+                    helper={
+                      <>
+                        Vars: <code className="text-xs">{'{{reportId}}'}</code>,{' '}
+                        <code className="text-xs">{'{{project}}'}</code>,{' '}
+                        <code className="text-xs">{'{{totalFailures}}'}</code>
+                      </>
+                    }
+                    onChange={setPromptOverride('customReportSummaryPrompt')}
+                  />
                 </div>
 
                 {/* Project summary — health roll-up across the latest N runs. */}
                 <div className="space-y-3 rounded-md border p-3">
                   <h4 className="text-sm font-semibold">Project</h4>
-                  <div className="space-y-2">
-                    <Label htmlFor="llm-custom-project-system">System prompt</Label>
-                    <Textarea
-                      id="llm-custom-project-system"
-                      disabled={editingSection !== 'llm'}
-                      placeholder={
-                        defaultPrompts?.projectSummarySystemPrompt.content ??
-                        defaultPrompts?.systemPrompt.content ??
-                        'You are a QA lead writing a brief health summary…'
-                      }
-                      rows={5}
-                      value={
-                        editingSection === 'llm'
-                          ? (tempConfig.llm?.customProjectSummarySystemPrompt ?? '')
-                          : (config.llm?.customProjectSummarySystemPrompt ?? '')
-                      }
-                      onChange={(e) =>
-                        editingSection === 'llm' &&
-                        onUpdateTempConfig({
-                          llm: {
-                            ...tempConfig.llm,
-                            customProjectSummarySystemPrompt: e.target.value,
-                          },
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">No vars available.</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="llm-custom-project">Task instructions</Label>
-                    <Textarea
-                      id="llm-custom-project"
-                      disabled={editingSection !== 'llm'}
-                      placeholder={
-                        defaultPrompts?.projectSummaryInstructions.content ??
-                        'Analyze the project test health…'
-                      }
-                      rows={12}
-                      value={
-                        editingSection === 'llm'
-                          ? (tempConfig.llm?.customProjectSummaryInstructions ?? '')
-                          : (config.llm?.customProjectSummaryInstructions ?? '')
-                      }
-                      onChange={(e) =>
-                        editingSection === 'llm' &&
-                        onUpdateTempConfig({
-                          llm: {
-                            ...tempConfig.llm,
-                            customProjectSummaryInstructions: e.target.value,
-                          },
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Vars: <code className="text-xs">{'{{project}}'}</code>,{' '}
-                      <code className="text-xs">{'{{totalRuns}}'}</code>,{' '}
-                      <code className="text-xs">{'{{passingRuns}}'}</code>
-                    </p>
-                  </div>
+                  <CustomPromptField
+                    id="llm-custom-project-system"
+                    label="System prompt"
+                    rows={5}
+                    disabled={!isEditing}
+                    defaultPrompt={
+                      defaultPrompts?.projectSummarySystemPrompt.content ??
+                      defaultPrompts?.systemPrompt.content
+                    }
+                    override={getPromptOverride('customProjectSummarySystemPrompt')}
+                    helper={<>No vars available.</>}
+                    onChange={setPromptOverride('customProjectSummarySystemPrompt')}
+                  />
+                  <CustomPromptField
+                    id="llm-custom-project"
+                    label="Task instructions"
+                    rows={12}
+                    disabled={!isEditing}
+                    defaultPrompt={defaultPrompts?.projectSummaryInstructions.content}
+                    override={getPromptOverride('customProjectSummaryInstructions')}
+                    helper={
+                      <>
+                        Vars: <code className="text-xs">{'{{project}}'}</code>,{' '}
+                        <code className="text-xs">{'{{totalRuns}}'}</code>,{' '}
+                        <code className="text-xs">{'{{passingRuns}}'}</code>
+                      </>
+                    }
+                    onChange={setPromptOverride('customProjectSummaryInstructions')}
+                  />
                 </div>
               </AccordionContent>
             </AccordionItem>
@@ -858,5 +792,59 @@ export default function LLMConfiguration({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+interface CustomPromptFieldProps {
+  id: string;
+  label: string;
+  rows: number;
+  disabled: boolean;
+  defaultPrompt: string | undefined;
+  override: string | undefined;
+  helper: React.ReactNode;
+  onChange: (next: string | undefined) => void;
+}
+
+function CustomPromptField({
+  id,
+  label,
+  rows,
+  disabled,
+  defaultPrompt,
+  override,
+  helper,
+  onChange,
+}: CustomPromptFieldProps) {
+  const resolved = override ?? defaultPrompt ?? '';
+  // Override is "active" only when it differs from the default. Editing back to
+  // the default is treated as a reset so future default updates flow through.
+  const isCustom = override !== undefined && override !== '' && override !== defaultPrompt;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label htmlFor={id}>{label}</Label>
+        {!disabled && isCustom && (
+          <button
+            type="button"
+            className="text-xs text-primary hover:underline"
+            onClick={() => onChange(undefined)}
+          >
+            Reset to default
+          </button>
+        )}
+      </div>
+      <Textarea
+        id={id}
+        disabled={disabled}
+        rows={rows}
+        value={resolved}
+        onChange={(e) => {
+          const next = e.target.value;
+          onChange(next === defaultPrompt || next === '' ? undefined : next);
+        }}
+      />
+      <p className="text-xs text-muted-foreground">{helper}</p>
+    </div>
   );
 }
