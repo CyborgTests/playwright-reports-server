@@ -16,7 +16,12 @@ import { Providers } from '@/providers';
 
 function App() {
   return (
-    <Providers attribute="class" defaultTheme="system">
+    <Providers
+      attribute="class"
+      themes={['light-mode', 'dark-mode']}
+      defaultTheme="dark-mode"
+      enableSystem={false}
+    >
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route
