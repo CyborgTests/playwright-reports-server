@@ -24,7 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -106,16 +105,15 @@ export default function LLMConfiguration({
     setTesting(true);
     setTestResult(null);
     try {
-      // When editing, test the draft values; otherwise test the saved config.
+      // Always test the values currently in the form — tempConfig while editing,
+      // config otherwise — so the result reflects exactly what the user sees.
       const source = isEditing ? tempConfig.llm : config.llm;
       const body: Record<string, unknown> = {};
-      if (isEditing) {
-        if (source?.provider) body.provider = source.provider;
-        if (source?.baseUrl) body.baseUrl = source.baseUrl;
-        // The saved apiKey is masked (****) — only forward when the user typed something new.
-        if (source?.apiKey && !/^\*+$/.test(source.apiKey)) body.apiKey = source.apiKey;
-        if (source?.model) body.model = source.model;
-      }
+      if (source?.provider) body.provider = source.provider;
+      if (source?.baseUrl) body.baseUrl = source.baseUrl;
+      // Saved apiKey may be masked (****) — only forward what the user typed.
+      if (source?.apiKey && !/^\*+$/.test(source.apiKey)) body.apiKey = source.apiKey;
+      if (source?.model) body.model = source.model;
 
       const res = await fetch('/api/llm/test-connection', {
         method: 'POST',
@@ -148,6 +146,19 @@ export default function LLMConfiguration({
     return !!(source?.baseUrl && source?.apiKey);
   })();
 
+  const llmStatus: 'error' | 'connected' | 'not-configured' =
+    testResult && !testResult.ok ? 'error' : isConfigured ? 'connected' : 'not-configured';
+  const llmStatusLabel = {
+    error: 'Error',
+    connected: 'Connected',
+    'not-configured': 'Not configured',
+  }[llmStatus];
+  const llmStatusVariant = {
+    error: 'destructive',
+    connected: 'success',
+    'not-configured': 'outline',
+  }[llmStatus] as 'destructive' | 'success' | 'outline';
+
   return (
     <Card id="llm" className="mb-6 scroll-mt-20 p-4">
       <CardHeader
@@ -155,6 +166,9 @@ export default function LLMConfiguration({
       >
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold">LLM Configuration</h2>
+          <Badge variant={llmStatusVariant} aria-label={`LLM status: ${llmStatusLabel}`}>
+            {llmStatusLabel}
+          </Badge>
           {editingSection === 'llm' && (
             <Badge variant="secondary" className="text-xs">
               Editing
@@ -204,6 +218,18 @@ export default function LLMConfiguration({
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
+          {!isConfigured && (
+            <Alert>
+              <p className="font-medium mb-2">To enable LLM integration:</p>
+              <p className="text-sm text-muted-foreground mb-2">
+                Fill in the LLM configuration fields below and save the configuration.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                You can also set environment variables as a fallback: LLM_PROVIDER, LLM_BASE_URL,
+                LLM_API_KEY, LLM_MODEL, LLM_TEMPERATURE
+              </p>
+            </Alert>
+          )}
           <section className="space-y-4">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Connection
@@ -794,8 +820,6 @@ export default function LLMConfiguration({
             </AccordionItem>
           </Accordion>
 
-          <Separator />
-
           {testResult && (
             <Alert
               className={
@@ -827,48 +851,6 @@ export default function LLMConfiguration({
                 </div>
               </div>
             </Alert>
-          )}
-
-          {/* Status Display */}
-          {isConfigured ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Badge variant="success">Configured</Badge>
-                <span className="text-sm text-muted-foreground">LLM integration is active</span>
-              </div>
-              {config.llm?.provider && (
-                <div>
-                  <span className="block text-sm font-medium mb-2">Provider</span>
-                  <Badge variant="secondary">
-                    {providers.find((p) => p.key === config.llm?.provider)?.label ||
-                      config.llm.provider}
-                  </Badge>
-                </div>
-              )}
-              {config.llm?.model && (
-                <div>
-                  <span className="block text-sm font-medium mb-2">Model</span>
-                  <Badge variant="secondary">{config.llm.model}</Badge>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">Not Configured</Badge>
-                <span className="text-sm text-muted-foreground">LLM integration is not set up</span>
-              </div>
-              <Alert>
-                <p className="font-medium mb-2">To enable LLM integration:</p>
-                <p className="text-sm text-muted-foreground mb-2">
-                  Fill in the LLM configuration fields above and save the configuration.
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  You can also set environment variables as a fallback: LLM_PROVIDER, LLM_BASE_URL,
-                  LLM_API_KEY, LLM_MODEL, LLM_TEMPERATURE
-                </p>
-              </Alert>
-            </div>
           )}
         </div>
       </CardContent>
