@@ -7,7 +7,7 @@ import type {
   TestRun,
 } from '@playwright-reports/shared';
 import { ArrowLeft, ExternalLink, Info } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom';
 import {
   CartesianGrid,
@@ -391,7 +391,8 @@ function FailureGroupsList({
       <CardHeader>
         <h3 className="text-lg font-semibold">Failure Groups</h3>
         <p className="text-sm text-muted-foreground">
-          Failures grouped by error signature, most frequent first
+          Failures grouped by error signature, most frequent first. Each card shows the clustering
+          metadata so you can see how often the same error shape recurs.
         </p>
       </CardHeader>
       <CardContent>
@@ -402,6 +403,9 @@ function FailureGroupsList({
               <AccordionItem key={group.signature} value={group.signature}>
                 <AccordionTrigger className="hover:no-underline">
                   <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
+                    <Badge variant="secondary" className="shrink-0 text-[10px]" title="Clustering strategy">
+                      signature
+                    </Badge>
                     <Badge variant="danger" className="shrink-0">
                       ×{group.count}
                     </Badge>
@@ -421,6 +425,9 @@ function FailureGroupsList({
                 <AccordionContent>
                   <div className="space-y-3 text-sm">
                     <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                      <span title="Stable fingerprint computed from the error class and trimmed message">
+                        Signature: <code>{group.signature.slice(0, 12)}</code>
+                      </span>
                       <span>
                         First seen: <FormattedDate date={group.firstSeen} />
                       </span>
@@ -471,6 +478,13 @@ export default function TestDetailPage() {
   const { fileId = '', testId = '' } = useParams<{ fileId: string; testId: string }>();
   const [searchParams] = useSearchParams();
   const project = searchParams.get('project') ?? defaultProjectName;
+
+  // Always land at the top when navigating in to a different test — without
+  // this, the browser may restore the previous page's scroll position and
+  // drop the user into the middle of the new test's content.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [fileId, testId]);
 
   const detailUrl = `/api/test/${fileId}/${testId}/detail?project=${encodeURIComponent(project)}`;
   const { data, isLoading, error } = useQuery<ApiResponse<TestDetail>>(detailUrl, {
