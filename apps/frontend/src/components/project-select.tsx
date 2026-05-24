@@ -42,8 +42,12 @@ export default function ProjectSelect({
 
   const [localStorageProject, setLocalStorageProject] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
-  const items = [defaultProjectName, ...(Array.isArray(projects) ? projects : [])];
   const localStorageKey = `selected-project`;
+
+  const effectiveSelectedProject = localStorageProject || selectedProject || defaultProjectName;
+  const candidate = effectiveSelectedProject !== defaultProjectName ? effectiveSelectedProject : null;
+  const fetched = Array.isArray(projects) ? projects : [];
+  const items = [defaultProjectName, ...fetched, ...(candidate && !fetched.includes(candidate) ? [candidate] : [])];
 
   useEffect(() => {
     if (isInitialized) return;
@@ -65,7 +69,7 @@ export default function ProjectSelect({
   }, [isInitialized]);
 
   useEffect(() => {
-    if (!isInitialized || !localStorageProject) return;
+    if (!isInitialized || !localStorageProject || !hasOpened) return;
 
     try {
       if (
@@ -79,9 +83,7 @@ export default function ProjectSelect({
     } catch (error) {
       console.warn('Failed to validate localStorage project:', error);
     }
-  }, [localStorageProject, isInitialized, items.includes, isLoading]);
-
-  const effectiveSelectedProject = localStorageProject || selectedProject || defaultProjectName;
+  }, [localStorageProject, isInitialized, items.includes, isLoading, hasOpened]);
 
   useEffect(() => {
     onSelect?.(effectiveSelectedProject);
