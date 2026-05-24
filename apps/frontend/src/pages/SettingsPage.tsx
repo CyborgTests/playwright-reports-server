@@ -42,15 +42,15 @@ export default function SettingsPage() {
   const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
-    if (serverConfig) {
-      setConfig(serverConfig);
-      setTempConfig({
-        ...serverConfig,
-        llm: serverConfig.llm || {},
-        testManagement: serverConfig.testManagement || {},
-      });
-    }
-  }, [serverConfig]);
+    if (!serverConfig) return;
+    setConfig(serverConfig);
+    if (editingSection !== 'none') return;
+    setTempConfig({
+      ...serverConfig,
+      llm: serverConfig.llm || {},
+      testManagement: serverConfig.testManagement || {},
+    });
+  }, [serverConfig, editingSection]);
 
   const handleSave = async (section: 'server' | 'cron' | 'llm' | 'testManagement') => {
     setIsUpdating(true);
