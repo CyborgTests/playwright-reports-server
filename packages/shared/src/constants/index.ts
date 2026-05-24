@@ -78,3 +78,36 @@ export const FLAKINESS_THRESHOLDS = {
   WARNING_PERCENTAGE: 2,
   QUARANTINE_PERCENTAGE: 5,
 } as const;
+
+export interface PromptVariable {
+  name: string;
+  description: string;
+}
+
+/**
+ * Per-prompt {{var}} allowlist. Backend substitutes only these names; the
+ * Settings UI surfaces them as autocomplete suggestions when the user types
+ * `{{` in the corresponding prompt textarea.
+ */
+export const PROMPT_VARIABLES = {
+  customTestAnalysisSystemPrompt: [] as PromptVariable[],
+  customTestAnalysisInstructions: [
+    { name: 'project', description: 'Project name from the report' },
+    { name: 'testTitle', description: 'Full test title with describe path' },
+    { name: 'filePath', description: 'Relative path to the test file' },
+    { name: 'errorCategory', description: 'Categorized failure label' },
+  ],
+  customReportSummaryPrompt: [
+    { name: 'reportId', description: 'Report identifier' },
+    { name: 'project', description: 'Project name from the report' },
+    { name: 'totalFailures', description: 'Number of failing tests in the run' },
+  ],
+  customProjectSummarySystemPrompt: [] as PromptVariable[],
+  customProjectSummaryInstructions: [
+    { name: 'project', description: 'Project name from the report' },
+    { name: 'totalRuns', description: 'Number of runs in the evaluation window' },
+    { name: 'passingRuns', description: 'Number of fully passing runs in that window' },
+  ],
+} as const;
+
+export type PromptVariableKey = keyof typeof PROMPT_VARIABLES;

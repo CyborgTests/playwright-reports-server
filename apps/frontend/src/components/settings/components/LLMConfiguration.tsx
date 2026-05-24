@@ -1,8 +1,9 @@
 'use client';
 
-import type { ServerConfig } from '@playwright-reports/shared';
+import type { PromptVariable, ServerConfig } from '@playwright-reports/shared';
+import { PROMPT_VARIABLES } from '@playwright-reports/shared';
 import { CheckCircle2, ListTodo, Plug, RefreshCw, XCircle } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -678,6 +679,7 @@ export default function LLMConfiguration({
                     }
                     override={getPromptOverride('customTestAnalysisSystemPrompt')}
                     helper={<>No vars available.</>}
+                    variables={PROMPT_VARIABLES.customTestAnalysisSystemPrompt}
                     onChange={setPromptOverride('customTestAnalysisSystemPrompt')}
                   />
                   <CustomPromptField
@@ -687,14 +689,8 @@ export default function LLMConfiguration({
                     disabled={!isEditing}
                     defaultPrompt={defaultPrompts?.testAnalysisInstructions.content}
                     override={getPromptOverride('customTestAnalysisInstructions')}
-                    helper={
-                      <>
-                        Vars: <code className="text-xs">{'{{project}}'}</code>,{' '}
-                        <code className="text-xs">{'{{testTitle}}'}</code>,{' '}
-                        <code className="text-xs">{'{{filePath}}'}</code>,{' '}
-                        <code className="text-xs">{'{{errorCategory}}'}</code>
-                      </>
-                    }
+                    helper={<>Type {'{{'} for variable suggestions.</>}
+                    variables={PROMPT_VARIABLES.customTestAnalysisInstructions}
                     onChange={setPromptOverride('customTestAnalysisInstructions')}
                   />
                 </div>
@@ -709,13 +705,8 @@ export default function LLMConfiguration({
                     disabled={!isEditing}
                     defaultPrompt={defaultPrompts?.reportSummaryPrompt.content}
                     override={getPromptOverride('customReportSummaryPrompt')}
-                    helper={
-                      <>
-                        Vars: <code className="text-xs">{'{{reportId}}'}</code>,{' '}
-                        <code className="text-xs">{'{{project}}'}</code>,{' '}
-                        <code className="text-xs">{'{{totalFailures}}'}</code>
-                      </>
-                    }
+                    helper={<>Type {'{{'} for variable suggestions.</>}
+                    variables={PROMPT_VARIABLES.customReportSummaryPrompt}
                     onChange={setPromptOverride('customReportSummaryPrompt')}
                   />
                 </div>
@@ -734,6 +725,7 @@ export default function LLMConfiguration({
                     }
                     override={getPromptOverride('customProjectSummarySystemPrompt')}
                     helper={<>No vars available.</>}
+                    variables={PROMPT_VARIABLES.customProjectSummarySystemPrompt}
                     onChange={setPromptOverride('customProjectSummarySystemPrompt')}
                   />
                   <CustomPromptField
@@ -743,13 +735,8 @@ export default function LLMConfiguration({
                     disabled={!isEditing}
                     defaultPrompt={defaultPrompts?.projectSummaryInstructions.content}
                     override={getPromptOverride('customProjectSummaryInstructions')}
-                    helper={
-                      <>
-                        Vars: <code className="text-xs">{'{{project}}'}</code>,{' '}
-                        <code className="text-xs">{'{{totalRuns}}'}</code>,{' '}
-                        <code className="text-xs">{'{{passingRuns}}'}</code>
-                      </>
-                    }
+                    helper={<>Type {'{{'} for variable suggestions.</>}
+                    variables={PROMPT_VARIABLES.customProjectSummaryInstructions}
                     onChange={setPromptOverride('customProjectSummaryInstructions')}
                   />
                 </div>
@@ -803,6 +790,7 @@ interface CustomPromptFieldProps {
   defaultPrompt: string | undefined;
   override: string | undefined;
   helper: React.ReactNode;
+  variables: readonly PromptVariable[];
   onChange: (next: string | undefined) => void;
 }
 
@@ -814,12 +802,66 @@ function CustomPromptField({
   defaultPrompt,
   override,
   helper,
+  variables,
   onChange,
 }: CustomPromptFieldProps) {
   const resolved = override ?? defaultPrompt ?? '';
   // Override is "active" only when it differs from the default. Editing back to
   // the default is treated as a reset so future default updates flow through.
   const isCustom = override !== undefined && override !== '' && override !== defaultPrompt;
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Autocomplete state for {{var}} suggestions. Opens when the cursor sits
+  // inside an unclosed `{{…` token, narrows by what's typed after the braces,
+  // and closes on `}}`, newline, or Escape.
+  const [acOpen, setAcOpen] = useState(false);
+  const [acFilter, setAcFilter] = useState('');
+  const [acIndex, setAcIndex] = useState(0);
+  const filtered = variables.filter((v) => v.name.toLowerCase().includes(acFilter.toLowerCase()));
+
+  const recomputeAutocomplete = (text: string, cursor: number) => {
+    if (variables.length === 0) {
+      setAcOpen(false);
+      return;
+    }
+    const before = text.slice(0, cursor);
+    const lastOpen = before.lastIndexOf('{{');
+    if (lastOpen === -1) {
+      setAcOpen(false);
+      return;
+    }
+    const between = before.slice(lastOpen + 2);
+    if (between.includes('}}') || between.includes('\n')) {
+      setAcOpen(false);
+      return;
+    }
+    setAcFilter(between);
+    setAcIndex(0);
+    setAcOpen(true);
+  };
+
+  const insertVariable = (name: string) => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const cursor = ta.selectionStart;
+    const before = resolved.slice(0, cursor);
+    const lastOpen = before.lastIndexOf('{{');
+    if (lastOpen === -1) return;
+    const after = resolved.slice(cursor);
+    const token = `{{${name}}}`;
+    const next = resolved.slice(0, lastOpen) + token + after;
+    onChange(next === defaultPrompt || next === '' ? undefined : next);
+    setAcOpen(false);
+    // Defer focus restoration until after the controlled value updates.
+    queueMicrotask(() => {
+      const node = textareaRef.current;
+      if (!node) return;
+      const newCursor = lastOpen + token.length;
+      node.focus();
+      node.setSelectionRange(newCursor, newCursor);
+    });
+  };
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -834,16 +876,57 @@ function CustomPromptField({
           </button>
         )}
       </div>
-      <Textarea
-        id={id}
-        disabled={disabled}
-        rows={rows}
-        value={resolved}
-        onChange={(e) => {
-          const next = e.target.value;
-          onChange(next === defaultPrompt || next === '' ? undefined : next);
-        }}
-      />
+      <div className="relative">
+        <Textarea
+          ref={textareaRef}
+          id={id}
+          disabled={disabled}
+          rows={rows}
+          value={resolved}
+          onChange={(e) => {
+            const next = e.target.value;
+            onChange(next === defaultPrompt || next === '' ? undefined : next);
+            recomputeAutocomplete(next, e.target.selectionStart);
+          }}
+          onKeyDown={(e) => {
+            if (!acOpen || filtered.length === 0) return;
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setAcIndex((i) => (i + 1) % filtered.length);
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setAcIndex((i) => (i - 1 + filtered.length) % filtered.length);
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
+              e.preventDefault();
+              insertVariable(filtered[acIndex].name);
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              setAcOpen(false);
+            }
+          }}
+          onBlur={() => setAcOpen(false)}
+        />
+        {acOpen && filtered.length > 0 && (
+          <div className="absolute left-0 right-0 mt-1 z-20 border bg-popover rounded-md shadow-md max-h-48 overflow-auto">
+            {filtered.map((v, i) => (
+              <button
+                key={v.name}
+                type="button"
+                className={`w-full text-left px-2 py-1.5 text-sm flex items-center gap-2 hover:bg-accent ${
+                  i === acIndex ? 'bg-accent' : ''
+                }`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertVariable(v.name);
+                }}
+              >
+                <span className="font-mono text-xs">{`{{${v.name}}}`}</span>
+                <span className="text-xs text-muted-foreground truncate">{v.description}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <p className="text-xs text-muted-foreground">{helper}</p>
     </div>
   );
