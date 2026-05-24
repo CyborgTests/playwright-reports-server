@@ -78,6 +78,21 @@ export default function TestManagementSettings({
     currentTestManagement.flakinessEvaluationWindowDays ??
     DEFAULT_FLAKINESS_EVALUATION_WINDOW_DAYS;
 
+  // Render-time validation. Errors surface inline beneath each input — backend
+  // also validates on save, so it's OK if the user temporarily holds an
+  // invalid value.
+  const validateThreshold = (n: number, label: string): string | null => {
+    if (Number.isNaN(n)) return `${label} must be a number`;
+    if (n < 0 || n > 100) return `${label} must be between 0 and 100`;
+    return null;
+  };
+  const warningError =
+    validateThreshold(warningThreshold, 'Warning threshold') ??
+    (warningThreshold >= quarantineThreshold
+      ? 'Warning must be lower than the quarantine threshold'
+      : null);
+  const quarantineError = validateThreshold(quarantineThreshold, 'Quarantine threshold');
+
   return (
     <Card id="testManagement" className="mb-6 scroll-mt-20 p-4">
       <CardHeader
@@ -119,86 +134,87 @@ export default function TestManagementSettings({
 
           <Separator />
 
-          <div className="space-y-2">
-            <Label htmlFor="warning-threshold">Warning Threshold (%)</Label>
-            <div className="flex items-center gap-4">
-              <Slider
-                id="warning-threshold-slider"
-                className="flex-1"
-                disabled={editingSection !== 'testManagement'}
-                max={100}
-                min={0}
-                step={1}
-                value={[warningThreshold]}
-                onValueChange={([value]) => {
-                  if (editingSection === 'testManagement') {
-                    updateTestManagementConfig({ warningThresholdPercentage: value });
-                  }
-                }}
-              />
-              <Input
-                aria-label="Warning threshold input"
-                className="w-20"
-                disabled={editingSection !== 'testManagement'}
-                max={100}
-                min={0}
-                type="number"
-                value={warningThreshold.toString()}
-                onChange={(e) => {
-                  if (editingSection === 'testManagement') {
-                    const value = Number.parseInt(e.target.value, 10);
-                    if (!Number.isNaN(value) && value >= 0 && value <= 100) {
+          {/* Thresholds laid out side by side. Inputs accept any value while
+              the user is typing — validation runs at render time and shows an
+              inline error so the user can fix it before saving rather than
+              having the keystroke rejected. */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="warning-threshold">Warning Threshold (%)</Label>
+              <div className="flex items-center gap-4">
+                <Slider
+                  id="warning-threshold-slider"
+                  className="flex-1"
+                  disabled={editingSection !== 'testManagement'}
+                  max={100}
+                  min={0}
+                  step={1}
+                  value={[Number.isFinite(warningThreshold) ? warningThreshold : 0]}
+                  onValueChange={([value]) => {
+                    if (editingSection === 'testManagement') {
                       updateTestManagementConfig({ warningThresholdPercentage: value });
                     }
-                  }
-                }}
-              />
+                  }}
+                />
+                <Input
+                  aria-label="Warning threshold input"
+                  className="w-20"
+                  disabled={editingSection !== 'testManagement'}
+                  type="number"
+                  value={Number.isFinite(warningThreshold) ? warningThreshold.toString() : ''}
+                  onChange={(e) => {
+                    if (editingSection !== 'testManagement') return;
+                    const raw = e.target.value;
+                    updateTestManagementConfig({
+                      warningThresholdPercentage: raw === '' ? undefined : Number.parseFloat(raw),
+                    });
+                  }}
+                />
+              </div>
+              {warningError && <p className="text-xs text-destructive">{warningError}</p>}
+              <p className="text-xs text-muted-foreground">
+                Tests at or above this score are marked with a warning indicator.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Tests with a flakiness score at or above this percentage will be marked with a warning
-              indicator.
-            </p>
-          </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="quarantine-threshold">Quarantine Threshold (%)</Label>
-            <div className="flex items-center gap-4">
-              <Slider
-                id="quarantine-threshold-slider"
-                className="flex-1"
-                disabled={editingSection !== 'testManagement'}
-                max={100}
-                min={0}
-                step={1}
-                value={[quarantineThreshold]}
-                onValueChange={([value]) => {
-                  if (editingSection === 'testManagement') {
-                    updateTestManagementConfig({ quarantineThresholdPercentage: value });
-                  }
-                }}
-              />
-              <Input
-                aria-label="Quarantine threshold input"
-                className="w-20"
-                disabled={editingSection !== 'testManagement'}
-                max={100}
-                min={0}
-                type="number"
-                value={quarantineThreshold.toString()}
-                onChange={(e) => {
-                  if (editingSection === 'testManagement') {
-                    const value = Number.parseInt(e.target.value, 10);
-                    if (!Number.isNaN(value) && value >= 0 && value <= 100) {
+            <div className="space-y-2">
+              <Label htmlFor="quarantine-threshold">Quarantine Threshold (%)</Label>
+              <div className="flex items-center gap-4">
+                <Slider
+                  id="quarantine-threshold-slider"
+                  className="flex-1"
+                  disabled={editingSection !== 'testManagement'}
+                  max={100}
+                  min={0}
+                  step={1}
+                  value={[Number.isFinite(quarantineThreshold) ? quarantineThreshold : 0]}
+                  onValueChange={([value]) => {
+                    if (editingSection === 'testManagement') {
                       updateTestManagementConfig({ quarantineThresholdPercentage: value });
                     }
-                  }
-                }}
-              />
+                  }}
+                />
+                <Input
+                  aria-label="Quarantine threshold input"
+                  className="w-20"
+                  disabled={editingSection !== 'testManagement'}
+                  type="number"
+                  value={Number.isFinite(quarantineThreshold) ? quarantineThreshold.toString() : ''}
+                  onChange={(e) => {
+                    if (editingSection !== 'testManagement') return;
+                    const raw = e.target.value;
+                    updateTestManagementConfig({
+                      quarantineThresholdPercentage:
+                        raw === '' ? undefined : Number.parseFloat(raw),
+                    });
+                  }}
+                />
+              </div>
+              {quarantineError && <p className="text-xs text-destructive">{quarantineError}</p>}
+              <p className="text-xs text-muted-foreground">
+                Tests at or above this score are auto-quarantined (when auto-quarantine is enabled).
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Tests with a flakiness score at or above this percentage will be automatically
-              quarantined (if auto-quarantine is enabled).
-            </p>
           </div>
 
           <Separator />
