@@ -23,6 +23,10 @@ import {
 const CACHE_TTL_MS = 60_000;
 const DEFAULT_MIN_TESTS = 2;
 const AVAILABLE_STRATEGIES: ClusterStrategy[] = ['signature', 'stack-frame', 'fixture', 'temporal'];
+// `signature` is opt-in — exact-fingerprint clusters overlap with the broader
+// strategies and bias toward de-duplicated narratives. Callers (UI, CLI, LLM
+// queue) must include it explicitly.
+const DEFAULT_STRATEGIES: ClusterStrategy[] = ['stack-frame', 'fixture', 'temporal'];
 
 interface CacheEntry {
   expires: number;
@@ -50,7 +54,7 @@ export async function getFailureClusters(opts: ClusterOptions): Promise<ClusterR
   }
 
   const minTests = opts.minTests ?? DEFAULT_MIN_TESTS;
-  const requested = opts.strategies?.length ? opts.strategies : AVAILABLE_STRATEGIES;
+  const requested = opts.strategies?.length ? opts.strategies : DEFAULT_STRATEGIES;
   const strategiesRun = requested.filter((s) => AVAILABLE_STRATEGIES.includes(s));
 
   const failedRuns = loadFailedRuns(opts);

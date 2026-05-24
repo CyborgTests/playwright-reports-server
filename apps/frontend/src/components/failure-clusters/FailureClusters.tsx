@@ -47,6 +47,10 @@ const STRATEGY_LABELS: Record<FailureCluster['strategy'], string> = {
 };
 
 const ALL_STRATEGIES: ClusterStrategy[] = ['signature', 'stack-frame', 'fixture', 'temporal'];
+// `signature` is opt-in: it groups by the exact error fingerprint which is
+// usually too narrow to surface new failure shapes. Default to the broader
+// strategies and let users add it explicitly when triaging duplicates.
+const DEFAULT_STRATEGIES: ClusterStrategy[] = ['stack-frame', 'fixture', 'temporal'];
 
 const STRATEGY_SHORT_LABELS: Record<ClusterStrategy, string> = {
   signature: 'Signature',
@@ -67,12 +71,12 @@ const STRATEGY_DESCRIPTIONS: Record<ClusterStrategy, string> = {
 };
 
 function parseStrategies(value: string | null): ClusterStrategy[] {
-  if (!value) return ALL_STRATEGIES;
+  if (!value) return DEFAULT_STRATEGIES;
   const parsed = value
     .split(',')
     .map((s) => s.trim())
     .filter((s): s is ClusterStrategy => (ALL_STRATEGIES as string[]).includes(s));
-  return parsed.length > 0 ? parsed : ALL_STRATEGIES;
+  return parsed.length > 0 ? parsed : DEFAULT_STRATEGIES;
 }
 
 function buildTestLink(reportUrl: string | undefined, testId: string): string | undefined {
@@ -112,8 +116,8 @@ export default function FailureClusters() {
     if (dateRange.to) next.set('to', dateRange.to);
     else next.delete('to');
     const isDefaultStrategies =
-      strategies.length === ALL_STRATEGIES.length &&
-      ALL_STRATEGIES.every((s) => strategies.includes(s));
+      strategies.length === DEFAULT_STRATEGIES.length &&
+      DEFAULT_STRATEGIES.every((s) => strategies.includes(s));
     if (isDefaultStrategies) next.delete('strategies');
     else next.set('strategies', strategies.join(','));
     if (next.toString() !== searchParams.toString()) {
@@ -127,7 +131,9 @@ export default function FailureClusters() {
     if (dateRange.from) params.from = dateRange.from;
     if (dateRange.to) params.to = dateRange.to;
     if (reportId) params.reportId = reportId;
-    if (strategies.length > 0 && strategies.length < ALL_STRATEGIES.length) {
+    // Always forward an explicit list — the backend default omits 'signature'
+    // and would otherwise return a narrower set than the user sees selected.
+    if (strategies.length > 0) {
       params.strategies = strategies.join(',');
     }
     return buildUrl('/api/analytics/failure-clusters', params);
