@@ -394,28 +394,5 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         });
       }
     );
-
-    // GET /api/failure-categories - get distinct failure categories from test_runs
-    fastify.get(
-      '/api/failure-categories',
-      async (_request: FastifyRequest, reply: FastifyReply) => {
-        try {
-          const db = getDatabase();
-          const rows = db
-            .prepare(
-              'SELECT DISTINCT failure_category FROM test_runs WHERE failure_category IS NOT NULL'
-            )
-            .all() as Array<{ failure_category: string }>;
-
-          const categories = rows.map((row) => row.failure_category);
-          return reply.send({ success: true, data: categories });
-        } catch (error) {
-          return reply.status(500).send({
-            success: false,
-            error: 'Failed to fetch failure categories',
-          });
-        }
-      }
-    );
   });
 }

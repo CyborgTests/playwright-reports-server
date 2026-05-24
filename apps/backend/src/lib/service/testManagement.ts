@@ -6,7 +6,12 @@ import type {
   TestFailureGroup,
   TestManagementConfig,
 } from '@playwright-reports/shared';
-import { FLAKINESS_THRESHOLDS, ReportTestOutcomeEnum } from '@playwright-reports/shared';
+import {
+  FAILURE_CATEGORIES,
+  type FailureCategory,
+  FLAKINESS_THRESHOLDS,
+  ReportTestOutcomeEnum,
+} from '@playwright-reports/shared';
 import { defaultConfig } from '../config.js';
 import { llmService } from '../llm/index.js';
 import { extractFailureEvidence } from '../parser/failure-extraction.js';
@@ -215,27 +220,6 @@ function buildCrossProjectOccurrences(
   }
   return occurrences.sort((a, b) => (b.flakinessScore ?? 0) - (a.flakinessScore ?? 0));
 }
-
-/**
- * Canonical failure-category enum. Order is significant for UI display and LLM prompts.
- */
-export const FAILURE_CATEGORIES = [
-  'timeout',
-  'element_not_visible',
-  'element_not_found',
-  'assertion_error',
-  'snapshot_mismatch',
-  'network_error',
-  'api_error',
-  'authentication_error',
-  'navigation_error',
-  'browser_crash',
-  'setup_teardown',
-  'javascript_error',
-  'unknown',
-] as const;
-
-export type FailureCategory = (typeof FAILURE_CATEGORIES)[number];
 
 const KNOWN_CATEGORIES = new Set<string>(FAILURE_CATEGORIES);
 
@@ -875,8 +859,7 @@ export class TestManagementService {
       // Oldest-last-seen first — surfaces tests that haven't run recently and
       // may have been deleted or renamed without a quarantine entry. Tests
       // with no recorded runs sort to the top (Infinity-old).
-      const lastSeen = (t: TestWithQuarantineInfo) =>
-        t.lastRunAt ? Date.parse(t.lastRunAt) : 0;
+      const lastSeen = (t: TestWithQuarantineInfo) => (t.lastRunAt ? Date.parse(t.lastRunAt) : 0);
       tests.sort((a, b) => lastSeen(a) - lastSeen(b));
       const total = tests.length;
       if (options.limit !== undefined) {

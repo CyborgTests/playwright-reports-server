@@ -1,4 +1,5 @@
 import {
+  FAILURE_CATEGORIES,
   FLAKINESS_THRESHOLDS,
   type FlakinessTier,
   type TestFilters as TestFiltersType,
@@ -15,7 +16,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useConfig } from '@/hooks/useConfig';
-import useQuery from '@/hooks/useQuery';
 import { formatCategoryName } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -25,12 +25,10 @@ interface TestFiltersProps {
 }
 
 const TIER_ORDER: FlakinessTier[] = ['stable', 'flaky', 'critical'];
+const CATEGORY_OPTIONS = FAILURE_CATEGORIES;
 
 export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersProps>) {
-  const { data: categoriesResponse } = useQuery<{ success: boolean; data: string[] }>(
-    '/api/failure-categories'
-  );
-  const categories = categoriesResponse?.data ?? [];
+  const categories = CATEGORY_OPTIONS;
 
   const { data: config } = useConfig();
   const warningThreshold =

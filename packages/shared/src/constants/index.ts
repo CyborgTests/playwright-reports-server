@@ -79,6 +79,29 @@ export const FLAKINESS_THRESHOLDS = {
   QUARANTINE_PERCENTAGE: 5,
 } as const;
 
+/**
+ * Canonical failure-category enum used by the LLM classifier, UI filters, and
+ * analytics. Order matters: it's the display order for filters and the order
+ * presented to the LLM in the classification prompt.
+ */
+export const FAILURE_CATEGORIES = [
+  'timeout',
+  'element_not_visible',
+  'element_not_found',
+  'assertion_error',
+  'snapshot_mismatch',
+  'network_error',
+  'api_error',
+  'authentication_error',
+  'navigation_error',
+  'browser_crash',
+  'setup_teardown',
+  'javascript_error',
+  'unknown',
+] as const;
+
+export type FailureCategory = (typeof FAILURE_CATEGORIES)[number];
+
 export interface PromptVariable {
   name: string;
   description: string;

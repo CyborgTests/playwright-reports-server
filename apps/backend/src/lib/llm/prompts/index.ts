@@ -1,28 +1,12 @@
 import type { ClusterEvidence, ClusterStrategy } from '@playwright-reports/shared';
-import { formatDuration } from '@playwright-reports/shared';
+import { FAILURE_CATEGORIES, formatDuration } from '@playwright-reports/shared';
 import type { FailureEvidence } from '../../parser/failure-extraction.js';
 import type { PerFileStep } from '../../parser/report-payload.js';
 import type { PromptSegment, SegmentedPrompt } from '../types/index.js';
 
-const FAILURE_CATEGORY_ENUM = [
-  'timeout',
-  'element_not_visible',
-  'element_not_found',
-  'assertion_error',
-  'snapshot_mismatch',
-  'network_error',
-  'api_error',
-  'authentication_error',
-  'navigation_error',
-  'browser_crash',
-  'setup_teardown',
-  'javascript_error',
-  'unknown',
-] as const;
-
 /** Comma-separated category enum, inlined into the test-analysis instructions
  *  so the model sees the same list the heuristic uses. */
-const FAILURE_CATEGORY_LIST = FAILURE_CATEGORY_ENUM.join(', ');
+const FAILURE_CATEGORY_LIST = FAILURE_CATEGORIES.join(', ');
 
 /** Verdict enum mirrored in shared/types ReportAnalysisVerdict. Keep in sync. */
 export const REPORT_VERDICT_ENUM = ['isolated', 'clustered', 'widespread', 'systemic'] as const;
