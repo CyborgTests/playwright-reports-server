@@ -16,12 +16,12 @@ import { useConfig } from '@/hooks/useConfig';
 import { cn } from '@/lib/utils';
 
 const SECTION_NAV: Array<{ id: string; label: string }> = [
+  { id: 'environment', label: 'Environment' },
   { id: 'server', label: 'General' },
   { id: 'cron', label: 'Schedules' },
   { id: 'github', label: 'GitHub Sync' },
   { id: 'llm', label: 'LLM' },
   { id: 'testManagement', label: 'Test Management' },
-  { id: 'environment', label: 'Environment' },
 ];
 
 export default function SettingsPage() {
@@ -352,6 +352,8 @@ export default function SettingsPage() {
         </aside>
 
         <div className="flex-1 min-w-0 max-w-5xl">
+          <EnvironmentInfo />
+
           <ServerConfiguration
             config={config}
             editingSection={editingSection}
@@ -404,8 +406,6 @@ export default function SettingsPage() {
             onSave={() => handleSave('testManagement')}
             onUpdateTempConfig={updateTempConfig}
           />
-
-          <EnvironmentInfo />
         </div>
       </div>
 
