@@ -1,5 +1,6 @@
 import { access, readFile } from 'node:fs/promises';
 import path, { resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import mime from 'mime';
 import { env } from '../config/env.js';
@@ -10,6 +11,13 @@ import { injectTestAnalysis } from '../lib/utils/html-injector.js';
 import { extractReportIdFromPath } from '../lib/utils/url-parser.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
+
+const BACKEND_PUBLIC_DIR = resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  'public'
+);
 
 export async function registerServeRoutes(fastify: FastifyInstance) {
   fastify.get('/api/serve/*', async (request, reply) => {
@@ -95,7 +103,7 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       }
 
       const dataRoot = resolve(DATA_FOLDER);
-      const publicRoot = resolve(process.cwd(), 'public');
+      const publicRoot = BACKEND_PUBLIC_DIR;
       const safeRelative = path.normalize(targetPath).replace(/^([/\\])+/, '');
       const candidateInData = resolve(dataRoot, safeRelative);
       const candidateInPublic = resolve(publicRoot, safeRelative);
