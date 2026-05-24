@@ -82,70 +82,67 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
   };
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="search-filter">Search</Label>
-          <Input
-            id="search-filter"
-            type="text"
-            placeholder="Search by test title or file path..."
-            value={filters.search ?? ''}
-            onChange={(e) => onFiltersChange({ ...filters, search: e.target.value || undefined })}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="status-filter">Quarantine</Label>
-          <Select value={filters.status ?? 'all'} onValueChange={handleStatusChange}>
-            <SelectTrigger id="status-filter">
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Tests</SelectItem>
-              <SelectItem value="not-quarantined">Not Quarantined</SelectItem>
-              <SelectItem value="quarantined">Quarantined</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {categories.length > 0 && (
-          <div className="space-y-2">
-            <Label htmlFor="category-filter">Failure Category</Label>
-            <Select
-              value={filters.failureCategory ?? 'all'}
-              onValueChange={handleFailureCategoryChange}
-            >
-              <SelectTrigger id="category-filter">
-                <SelectValue placeholder="Filter by category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {categories.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {formatCategoryName(cat)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-        <div className="space-y-2">
-          <Label>Sort</Label>
-          <Select value={sort} onValueChange={handleSortChange}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="default">Default</SelectItem>
-              <SelectItem value="slowest">Slowest first</SelectItem>
-              <SelectItem value="stale">Tests not running</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+    <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+      <div className="space-y-2 md:col-span-2">
+        <Label htmlFor="search-filter">Search</Label>
+        <Input
+          id="search-filter"
+          type="text"
+          placeholder="Search by test title or file path..."
+          value={filters.search ?? ''}
+          onChange={(e) => onFiltersChange({ ...filters, search: e.target.value || undefined })}
+        />
       </div>
-
+      <div className="space-y-2">
+        <Label htmlFor="status-filter">Quarantine</Label>
+        <Select value={filters.status ?? 'all'} onValueChange={handleStatusChange}>
+          <SelectTrigger id="status-filter">
+            <SelectValue placeholder="Filter by status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Tests</SelectItem>
+            <SelectItem value="not-quarantined">Not Quarantined</SelectItem>
+            <SelectItem value="quarantined">Quarantined</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {categories.length > 0 && (
+        <div className="space-y-2">
+          <Label htmlFor="category-filter">Failure Category</Label>
+          <Select
+            value={filters.failureCategory ?? 'all'}
+            onValueChange={handleFailureCategoryChange}
+          >
+            <SelectTrigger id="category-filter">
+              <SelectValue placeholder="Filter by category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat} value={cat}>
+                  {formatCategoryName(cat)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      <div className="space-y-2">
+        <Label>Sort</Label>
+        <Select value={sort} onValueChange={handleSortChange}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="default">Default</SelectItem>
+            <SelectItem value="slowest">Slowest first</SelectItem>
+            <SelectItem value="stale">Tests not running</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
       <div className="space-y-2">
         <Label>Flakiness</Label>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1">
           {TIER_ORDER.map((t) => {
             const active = selectedTiers.includes(t);
             return (
@@ -156,9 +153,10 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
                 variant={active ? 'default' : 'outline'}
                 onClick={() => toggleTier(t)}
                 aria-pressed={active}
-                className={cn('h-8 text-xs', active && 'shadow-sm')}
+                className={cn('h-8 text-xs px-2', active && 'shadow-sm')}
+                title={tierLabel(t)}
               >
-                {tierLabel(t)}
+                {t}
               </Button>
             );
           })}
@@ -168,7 +166,7 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
               size="sm"
               variant="ghost"
               onClick={() => onFiltersChange({ ...filters, tiers: undefined })}
-              className="h-8 text-xs text-muted-foreground"
+              className="h-8 text-xs px-2 text-muted-foreground"
             >
               Clear
             </Button>
