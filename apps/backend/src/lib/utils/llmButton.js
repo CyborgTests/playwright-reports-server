@@ -77,9 +77,33 @@ function injectAskLLMButton() {
   askBtn.style.minWidth = '100px';
   askBtn.style.marginLeft = '8px';
 
-  askBtn.onclick = () => {
+  askBtn.onclick = async () => {
     const currentTestId = extractTestIdFromCurrentUrl();
-    showLLMAnalysis(askBtn, currentTestId, copyPromptButton);
+    // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+    const rid = reportId;
+
+    askBtn.style.display = 'none';
+    setFullCopyBtnVisibility(false);
+
+    try {
+      const response = await fetch('/api/llm/analyze-failed-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ testId: currentTestId, reportId: rid }),
+      });
+      const j = await response.json();
+      if (!response.ok || !j?.success || !j?.data?.taskId) {
+        throw new Error(j?.error || 'Failed to enqueue analysis task');
+      }
+      whenErrorsSectionReady(copyPromptButton, (errorsSection) => {
+        if (document.getElementById('llm-inline-analysis')) return;
+        renderLoadingInto(currentTestId, rid, copyPromptButton, askBtn, errorsSection, j.data.taskId);
+      });
+    } catch (error) {
+      console.error('[Playwright LLM] Analysis error:', error);
+      askBtn.style.display = '';
+      setFullCopyBtnVisibility(true);
+    }
   };
 
   copyPromptButton.parentNode?.insertBefore(askBtn, copyPromptButton.nextSibling);
@@ -192,325 +216,6 @@ function extractTestIdFromCurrentUrl() {
   }
 }
 
-// Phase metadata for the loading modal. Each entry maps a task lifecycle
-// state to a label, a short description, and a spinner color so the user can
-// tell at a glance whether the task is waiting in the queue or actively being
-// processed by the LLM.
-const LLM_MODAL_PHASES = {
-  enqueueing: {
-    label: 'Enqueueing 📤 analysis…',
-    sub: 'Asking reception...',
-    color: '#9ca3af',
-  },
-  queued: {
-    label: 'Queued — ⏳ waiting for worker',
-    sub: 'Made a job posting...',
-    color: '#f59e0b',
-  },
-  processing: {
-    label: 'Processing — 🤖 LLM is working',
-    sub: 'Predicting what went wrong...',
-    color: '#3b82f6',
-  },
-  joining: {
-    label: 'Joining 🔗 in-progress analysis…',
-    sub: 'A task is already running for this test; we will pick up its result.',
-    color: '#3b82f6',
-  },
-};
-
-function renderLoadingModal(content, phaseKey = 'enqueueing') {
-  const phase = LLM_MODAL_PHASES[phaseKey] || LLM_MODAL_PHASES.enqueueing;
-  content.innerHTML = `
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 40px;">
-      <div id="llm-modal-spinner" class="llm-spinner" style="
-        width: 40px;
-        height: 40px;
-        border: 4px solid #f3f3f3;
-        border-top: 4px solid ${phase.color};
-        border-radius: 50%;
-        animation: llm-spin 1s linear infinite;
-        margin-bottom: 20px;
-      "></div>
-      <div id="llm-modal-status" style="color: var(--llm-body-text); font-size: 16px; font-weight: 600;">${phase.label}</div>
-      <div id="llm-modal-substatus" style="color: var(--llm-muted); font-size: 13px; margin-top: 8px; text-align: center; max-width: 360px; line-height: 1.5;">${phase.sub}</div>
-    </div>
-    <style>
-      @keyframes llm-spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
-    </style>
-  `;
-}
-
-function setModalPhase(content, phaseKey) {
-  const phase = LLM_MODAL_PHASES[phaseKey];
-  if (!phase) return;
-  const spinner = content.querySelector('#llm-modal-spinner');
-  const status = content.querySelector('#llm-modal-status');
-  const sub = content.querySelector('#llm-modal-substatus');
-  if (spinner) spinner.style.borderTopColor = phase.color;
-  if (status) status.textContent = phase.label;
-  if (sub) sub.textContent = phase.sub;
-}
-
-function renderModalError(content, message) {
-  content.innerHTML = `
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px;">
-      <div style="
-        width: 48px;
-        height: 48px;
-        border-radius: 50%;
-        background-color: #fee2e2;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 16px;
-        font-size: 24px;
-      ">❌</div>
-      <div style="
-        color: var(--llm-body-text);
-        font-size: 16px;
-        font-weight: 500;
-        text-align: center;
-        margin-bottom: 8px;
-      ">Analysis Failed</div>
-      <div style="
-        color: var(--llm-muted);
-        font-size: 14px;
-        text-align: center;
-        line-height: 1.5;
-        max-width: 400px;
-      ">${message || 'Analysis failed. Please try again.'}</div>
-    </div>
-  `;
-}
-
-// Ask LLM flow:
-//   1. Open the loading modal.
-//   2. POST /api/llm/analyze-failed-test → enqueues a queued task with isRetry=true
-//      (same path Retry uses; bypasses cross-report reuse, replaces any existing
-//      row on success).
-//   3. Subscribe to /api/llm/task-progress/:taskId for status transitions.
-//   4. On completed → fetch /api/test-analysis, render inline, close modal.
-//   5. On failed/cancelled → show error in modal.
-function openTaskProgressModal({
-  testId,
-  rid,
-  copyPromptButton,
-  askBtn,
-  enqueueUrl,
-  enqueueBody,
-  busyButton,
-  busyLabel = 'Analyzing…',
-  idleLabel,
-}) {
-  let modal = document.getElementById('llm-analysis-modal');
-  if (!modal) {
-    modal = createLLMModal();
-    document.body.appendChild(modal);
-  }
-  modal.style.display = 'flex';
-  const content = modal.querySelector('.llm-modal-content');
-  renderLoadingModal(content, 'enqueueing');
-
-  let originalLabel = null;
-  if (busyButton) {
-    busyButton.disabled = true;
-    originalLabel = busyButton.textContent;
-    busyButton.textContent = busyLabel;
-  }
-
-  let eventSource = null;
-  const cleanup = () => {
-    if (eventSource) {
-      try {
-        eventSource.close();
-      } catch (_e) {
-        /* noop */
-      }
-      eventSource = null;
-    }
-    if (busyButton) {
-      busyButton.disabled = false;
-      busyButton.textContent = idleLabel ?? originalLabel ?? busyButton.textContent;
-    }
-  };
-
-  function onCompleted() {
-    fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((payload) => {
-        if (payload?.success && payload.data?.analysis) {
-          if (modal) modal.style.display = 'none';
-          renderInlineAnalysis(payload.data, copyPromptButton, askBtn, testId);
-        } else {
-          renderModalError(content, 'Analysis completed but the result was empty.');
-        }
-      })
-      .catch((err) => {
-        renderModalError(content, err?.message || 'Failed to fetch analysis.');
-      })
-      .finally(cleanup);
-  }
-
-  fetch(enqueueUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(enqueueBody),
-  })
-    .then((response) => response.json().then((j) => ({ ok: response.ok, j })))
-    .then(({ ok, j }) => {
-      if (!ok || !j?.success || !j?.data?.taskId) {
-        throw new Error(j?.error || 'Failed to enqueue analysis task');
-      }
-      const taskId = j.data.taskId;
-      setModalPhase(content, j.data.deduped ? 'joining' : 'queued');
-
-      eventSource = new EventSource(`/api/llm/task-progress/${encodeURIComponent(taskId)}`);
-      eventSource.addEventListener('update', (evt) => {
-        let task;
-        try {
-          task = JSON.parse(evt.data);
-        } catch {
-          return;
-        }
-        if (task.status === 'queued') {
-          setModalPhase(content, 'queued');
-        } else if (task.status === 'processing') {
-          setModalPhase(content, 'processing');
-        } else if (task.status === 'completed') {
-          onCompleted();
-        } else if (task.status === 'failed') {
-          renderModalError(content, task.error || 'Analysis task failed.');
-          cleanup();
-        } else if (task.status === 'cancelled') {
-          renderModalError(content, 'Analysis was cancelled.');
-          cleanup();
-        }
-      });
-      eventSource.onerror = () => {
-        // SSE may drop transiently — fall back to a single fetch in case the
-        // task has already completed by the time we got here. If the row
-        // exists, render it; otherwise leave the modal status as-is.
-        fetch(
-          `/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`
-        )
-          .then((r) => (r.ok ? r.json() : null))
-          .then((payload) => {
-            if (payload?.success && payload.data?.analysis) {
-              if (modal) modal.style.display = 'none';
-              renderInlineAnalysis(payload.data, copyPromptButton, askBtn, testId);
-              cleanup();
-            }
-          })
-          .catch(() => {
-            /* noop */
-          });
-      };
-    })
-    .catch((error) => {
-      console.error('[Playwright LLM] Analysis error:', error);
-      renderModalError(content, error?.message);
-      cleanup();
-    });
-}
-
-function showLLMAnalysis(askBtn, testId = 'unknown', copyPromptButton = null) {
-  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-  const rid = reportId;
-  openTaskProgressModal({
-    testId,
-    rid,
-    copyPromptButton,
-    askBtn,
-    enqueueUrl: '/api/llm/analyze-failed-test',
-    enqueueBody: { testId, reportId: rid },
-    busyButton: askBtn,
-    busyLabel: 'Analyzing…',
-    idleLabel: 'Ask LLM',
-  });
-}
-
-function createLLMModal() {
-  const modal = document.createElement('div');
-  modal.id = 'llm-analysis-modal';
-  modal.style.cssText = `
-          display: none;
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background-color: var(--llm-modal-overlay);
-          z-index: 10000;
-          align-items: center;
-          justify-content: center;
-          font-family: system-ui, -apple-system, sans-serif;
-          backdrop-filter: blur(4px);
-        `;
-
-  const modalContent = document.createElement('div');
-  modalContent.className = 'llm-modal-content';
-  modalContent.style.cssText = `
-          background: var(--llm-modal-bg);
-          color: var(--llm-body-text);
-          border-radius: 12px;
-          padding: 32px;
-          max-width: 800px;
-          max-height: 80vh;
-          overflow-y: auto;
-          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
-          position: relative;
-          margin: 20px;
-        `;
-
-  const closeBtn = document.createElement('button');
-  closeBtn.textContent = '×';
-  closeBtn.style.cssText = `
-          position: absolute;
-          top: 16px;
-          right: 16px;
-          background: var(--llm-btn-bg);
-          border: 1px solid var(--llm-btn-border);
-          width: 32px;
-          height: 32px;
-          border-radius: 6px;
-          font-size: 20px;
-          font-weight: 400;
-          cursor: pointer;
-          color: var(--llm-btn-text);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.2s ease;
-        `;
-
-  closeBtn.onmouseover = () => {
-    closeBtn.style.opacity = '0.8';
-    closeBtn.style.transform = 'scale(1.05)';
-  };
-
-  closeBtn.onmouseout = () => {
-    closeBtn.style.opacity = '1';
-    closeBtn.style.transform = 'scale(1)';
-  };
-  closeBtn.onclick = () => {
-    modal.style.display = 'none';
-  };
-
-  modalContent.appendChild(closeBtn);
-  modal.appendChild(modalContent);
-
-  modal.onclick = (e) => {
-    if (e.target === modal) {
-      modal.style.display = 'none';
-    }
-  };
-
-  return modal;
-}
 
 function markdownToHtml(text) {
   if (!text) return 'No analysis available';
@@ -714,7 +419,7 @@ function renderLoadingAnalysis(testId, rid, copyPromptButton, askBtn) {
   });
 }
 
-function renderLoadingInto(testId, rid, copyPromptButton, askBtn, errorsSection) {
+function renderLoadingInto(testId, rid, copyPromptButton, askBtn, errorsSection, taskId = null) {
   if (askBtn) askBtn.style.display = 'none';
   // The loading widget owns the on-screen affordance for inspecting state
   // while the analysis runs; hide the next-to-Ask-LLM Copy prompt button so
@@ -840,26 +545,31 @@ function renderLoadingInto(testId, rid, copyPromptButton, askBtn, errorsSection)
     setTimeout(tick, 3000);
   };
 
-  // Resolve the current pending task id, then subscribe.
-  fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
-    .then((r) => (r.ok ? r.json() : null))
-    .then((data) => {
-      if (data?.success && data?.data?.analysis) {
-        section.remove();
-        renderInlineAnalysis(data.data, copyPromptButton, askBtn, testId);
-        return;
-      }
-      if (data?.success && data?.pending?.taskId) {
-        subscribe(data.pending.taskId);
-        return;
-      }
-      // No pending task right now — fall back to polling in case one is
-      // about to be enqueued (e.g. cascade after report-summary regenerate).
-      pollFallback();
-    })
-    .catch(() => {
-      pollFallback();
-    });
+  // If taskId is provided, subscribe directly to it (used when we just enqueued a task).
+  // Otherwise, resolve the current pending task id from the server.
+  if (taskId) {
+    subscribe(taskId);
+  } else {
+    fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.success && data?.data?.analysis) {
+          section.remove();
+          renderInlineAnalysis(data.data, copyPromptButton, askBtn, testId);
+          return;
+        }
+        if (data?.success && data?.pending?.taskId) {
+          subscribe(data.pending.taskId);
+          return;
+        }
+        // No pending task right now — fall back to polling in case one is
+        // about to be enqueued (e.g. cascade after report-summary regenerate).
+        pollFallback();
+      })
+      .catch(() => {
+        pollFallback();
+      });
+  }
 }
 
 /**
@@ -1355,24 +1065,39 @@ function renderFeedbackPanel({
     }
   };
 
-  regenBtn.onclick = () => {
+  regenBtn.onclick = async () => {
     setStatus('');
     const cascade = !!cascadeCheckbox?.checked;
-    openTaskProgressModal({
-      testId,
-      rid,
-      copyPromptButton,
-      askBtn: null,
-      enqueueUrl: '/api/llm/regenerate',
-      enqueueBody: {
-        testId,
-        reportId: rid,
-        ...(cascade ? { cascadeReportSummary: true } : {}),
-      },
-      busyButton: regenBtn,
-      busyLabel: 'Regenerating…',
-      idleLabel: 'Regenerate',
-    });
+    const originalLabel = regenBtn.textContent;
+    regenBtn.disabled = true;
+    regenBtn.textContent = 'Regenerating…';
+
+    try {
+      const response = await fetch('/api/llm/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          testId,
+          reportId: rid,
+          ...(cascade ? { cascadeReportSummary: true } : {}),
+        }),
+      });
+      const j = await response.json();
+      if (!response.ok || !j?.success || !j?.data?.taskId) {
+        throw new Error(j?.error || 'Failed to enqueue regenerate task');
+      }
+      // Render loading widget with the taskId so it can subscribe to SSE immediately
+      whenErrorsSectionReady(copyPromptButton, (errorsSection) => {
+        if (document.getElementById('llm-inline-analysis')) return;
+        renderLoadingInto(testId, rid, copyPromptButton, null, errorsSection, j.data.taskId);
+      });
+    } catch (error) {
+      console.error('[Playwright LLM] Regenerate error:', error);
+      setStatus(error?.message || 'Regenerate failed', 'error');
+    } finally {
+      regenBtn.disabled = false;
+      regenBtn.textContent = originalLabel;
+    }
   };
 
   // Resolve stale indicator on initial render.
