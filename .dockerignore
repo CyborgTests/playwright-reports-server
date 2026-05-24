@@ -62,8 +62,28 @@ docker-compose*.yml
 .dockerignore
 
 # Data directories (runtime only)
+data/
 apps/backend/data/
 apps/backend/.tmp/
+
+# E2E tests and reports (built in CI, not needed in image)
+tests/
+playwright-report/
+blob-report/
+playwright/.cache/
+playwright.config.ts
+snapshots/
+**/snapshots/
+
+# Developer-local notes and sync scripts not needed at runtime
+RPDS.txt
+sync-state.json
+sync-reports.js
+_bmad/
+_bmad-output/
+docs/
+.claude/
+.playwright-cli/
 
 # Temporary files
 *.tmp
