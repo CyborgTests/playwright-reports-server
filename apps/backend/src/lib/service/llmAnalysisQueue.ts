@@ -1219,10 +1219,10 @@ class LlmAnalysisQueue {
       structured = pruneInvalidCodeRefs(structured, validTestIds, validReportIds);
 
       // Inject `project` into test-kind code refs so the test detail page's
-      // `?project=…` lookup is scoped correctly (testId+fileId aren't unique
-      // across projects). The 'all' aggregate has no canonical project, so
-      // skip injection in that case — the frontend then renders the ref
-      // without a query, accepting a non-scoped lookup.
+      // `?project=…` lookup is scoped correctly (testId isn't unique across
+      // projects). The 'all' aggregate has no canonical project, so skip
+      // injection in that case — the frontend then renders the ref without
+      // a query, accepting a non-scoped lookup.
       if (project !== 'all') {
         structured = {
           ...structured,

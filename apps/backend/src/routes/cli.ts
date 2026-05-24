@@ -156,51 +156,47 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
   await fastify.register(async (api) => {
     api.addHook('preHandler', (request, reply) => authenticate(request as AuthRequest, reply));
 
-    // GET /api/cli/test/:fileId/:testId/brief?project=...
+    // GET /api/cli/test/:testId/brief?project=...
     // One-shot "everything we know about this test" payload for an agent.
-    // `fileId` and `project` are optional in the path/query and may be resolved
-    // from `test_runs` when the agent only has a testId (e.g. lifted from a CI
-    // log). To resolve, pass `fileId=-` in the path and omit `project`.
-    api.get(
-      '/api/cli/test/:fileId/:testId/brief',
-      async (request: FastifyRequest, reply: FastifyReply) => {
-        const { fileId, testId } = request.params as { fileId: string; testId: string };
-        const { project } = request.query as { project?: string };
-        const resolved = resolveTestIdentity(testId, fileId, project);
-        if (!resolved) {
-          return reply.status(404).send({
-            success: false,
-            error: 'Test not found — pass --file-id and --project, or ensure the testId has a run',
-          });
-        }
-        const { result: brief, error } = await withError(
-          buildTestBrief(resolved.testId, resolved.fileId, resolved.project)
-        );
-        if (error) {
-          fastify.log.error(error);
-          return reply.status(500).send({ success: false, error: 'Failed to build test brief' });
-        }
-        if (!brief) {
-          return reply.status(404).send({ success: false, error: 'Test not found' });
-        }
-        return reply.send({ success: true, data: brief });
+    // `project` is optional — when omitted the server resolves the canonical
+    // (fileId, project) lane from the test's most recent run.
+    api.get('/api/cli/test/:testId/brief', async (request: FastifyRequest, reply: FastifyReply) => {
+      const { testId } = request.params as { testId: string };
+      const { project } = request.query as { project?: string };
+      const resolved = resolveTestIdentity(testId, project);
+      if (!resolved) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Test not found — pass --project, or ensure the testId has a run',
+        });
       }
-    );
+      const { result: brief, error } = await withError(
+        buildTestBrief(resolved.testId, resolved.fileId, resolved.project)
+      );
+      if (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({ success: false, error: 'Failed to build test brief' });
+      }
+      if (!brief) {
+        return reply.status(404).send({ success: false, error: 'Test not found' });
+      }
+      return reply.send({ success: true, data: brief });
+    });
 
-    // GET /api/cli/test/:fileId/:testId/analysis?project=...
+    // GET /api/cli/test/:testId/analysis?project=...
     // Full persisted LLM analysis (the raw markdown). `test brief` returns a
     // heuristic rootCause/fix split — use this when the agent wants the
     // unmodified document or the regex split lost a section.
     api.get(
-      '/api/cli/test/:fileId/:testId/analysis',
+      '/api/cli/test/:testId/analysis',
       async (request: FastifyRequest, reply: FastifyReply) => {
-        const { fileId, testId } = request.params as { fileId: string; testId: string };
+        const { testId } = request.params as { testId: string };
         const { project } = request.query as { project?: string };
-        const resolved = resolveTestIdentity(testId, fileId, project);
+        const resolved = resolveTestIdentity(testId, project);
         if (!resolved) {
           return reply.status(404).send({
             success: false,
-            error: 'Test not found — pass --file-id and --project, or ensure the testId has a run',
+            error: 'Test not found — pass --project, or ensure the testId has a run',
           });
         }
         const { result: analysis, error } = await withError(
@@ -214,24 +210,24 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
       }
     );
 
-    // GET /api/cli/test/:fileId/:testId/failure-context?project=&reportId=
+    // GET /api/cli/test/:testId/failure-context?project=&reportId=
     // Fresh would-be prompt + typed evidence envelope. Same builder the queue
     // uses. Agents wanting a different layout can render from `evidence`.
     api.get(
-      '/api/cli/test/:fileId/:testId/failure-context',
+      '/api/cli/test/:testId/failure-context',
       async (request: FastifyRequest, reply: FastifyReply) => {
-        const { fileId, testId } = request.params as { fileId: string; testId: string };
+        const { testId } = request.params as { testId: string };
         const { project, reportId } = request.query as { project?: string; reportId?: string };
         if (!reportId) {
           return reply
             .status(400)
             .send({ success: false, error: 'reportId query parameter is required' });
         }
-        const resolved = resolveTestIdentity(testId, fileId, project);
+        const resolved = resolveTestIdentity(testId, project);
         if (!resolved) {
           return reply.status(404).send({
             success: false,
-            error: 'Test not found — pass --file-id and --project, or ensure the testId has a run',
+            error: 'Test not found — pass --project, or ensure the testId has a run',
           });
         }
         const { result: built, error } = await withError(
@@ -296,14 +292,14 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
       }
     );
 
-    // GET /api/cli/test/:fileId/:testId/analysis-prompt?reportId=...[&taskId=...]
+    // GET /api/cli/test/:testId/analysis-prompt?reportId=...[&taskId=...]
     // The *historical* prompt: returns the verbatim text we sent on the latest
     // completed `test_analysis` task for this (testId, reportId). Mirrors the
     // in-report widget's "Copy prompt" button. 404 when no task exists.
     api.get(
-      '/api/cli/test/:fileId/:testId/analysis-prompt',
+      '/api/cli/test/:testId/analysis-prompt',
       async (request: FastifyRequest, reply: FastifyReply) => {
-        const { fileId, testId } = request.params as { fileId: string; testId: string };
+        const { testId } = request.params as { testId: string };
         const { project, reportId, taskId } = request.query as {
           project?: string;
           reportId?: string;
@@ -314,7 +310,7 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
             .status(400)
             .send({ success: false, error: 'reportId query parameter is required' });
         }
-        const resolved = resolveTestIdentity(testId, fileId, project);
+        const resolved = resolveTestIdentity(testId, project);
         if (!resolved) {
           return reply.status(404).send({ success: false, error: 'Test not found' });
         }
@@ -348,19 +344,19 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
       }
     );
 
-    // GET /api/cli/test/:fileId/:testId/history?project=...&limit=N
+    // GET /api/cli/test/:testId/history?project=...&limit=N
     // Compact per-run history. Same identifier-resolution rules as `brief`.
     // Default limit 20; max 50 (matches the underlying getTestRuns cap).
     api.get(
-      '/api/cli/test/:fileId/:testId/history',
+      '/api/cli/test/:testId/history',
       async (request: FastifyRequest, reply: FastifyReply) => {
-        const { fileId, testId } = request.params as { fileId: string; testId: string };
+        const { testId } = request.params as { testId: string };
         const { project, limit } = request.query as { project?: string; limit?: string };
-        const resolved = resolveTestIdentity(testId, fileId, project);
+        const resolved = resolveTestIdentity(testId, project);
         if (!resolved) {
           return reply.status(404).send({
             success: false,
-            error: 'Test not found — pass --file-id and --project, or ensure the testId has a run',
+            error: 'Test not found — pass --project, or ensure the testId has a run',
           });
         }
         const requestedLimit = limit ? Number.parseInt(limit, 10) : DEFAULT_HISTORY_LIMIT;
@@ -521,32 +517,29 @@ const DEFAULT_HISTORY_LIMIT = 20;
 const MAX_HISTORY_LIMIT = 50;
 
 /**
- * The CLI exposes a `--file-id` and `--project` flag, but agents lifting a
- * testId out of a CI log often don't have either. Pass `-` for fileId (and
- * omit project) to ask the server to resolve from the most recent test_run.
+ * Resolve a testId (and optional project filter) to the canonical
+ * (testId, fileId, project) lane. The CLI surface only carries testId in the
+ * URL — fileId is derived here from the test's most recent run, so the agent
+ * doesn't have to track a second opaque ID.
  */
 function resolveTestIdentity(
   testId: string,
-  fileId: string,
   project: string | undefined
 ): { testId: string; fileId: string; project: string } | null {
-  if (fileId && fileId !== '-' && project) {
-    return { testId, fileId, project };
-  }
-  // Without fileId+project we can still find the test via its most recent run.
-  // Cheaper than scanning all reports — test_runs has indices on testId.
   const db = getDatabase();
-  const row = db
-    .prepare(
-      'SELECT fileId, project FROM test_runs WHERE testId = ? ORDER BY datetime(createdAt) DESC LIMIT 1'
-    )
-    .get(testId) as { fileId: string; project: string } | undefined;
+  const row = project
+    ? (db
+        .prepare(
+          'SELECT fileId, project FROM test_runs WHERE testId = ? AND project = ? ORDER BY datetime(createdAt) DESC LIMIT 1'
+        )
+        .get(testId, project) as { fileId: string; project: string } | undefined)
+    : (db
+        .prepare(
+          'SELECT fileId, project FROM test_runs WHERE testId = ? ORDER BY datetime(createdAt) DESC LIMIT 1'
+        )
+        .get(testId) as { fileId: string; project: string } | undefined);
   if (!row) return null;
-  return {
-    testId,
-    fileId: fileId && fileId !== '-' ? fileId : row.fileId,
-    project: project ?? row.project,
-  };
+  return { testId, fileId: row.fileId, project: row.project };
 }
 
 async function buildTestBrief(

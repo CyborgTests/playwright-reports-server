@@ -118,17 +118,10 @@ interface SuiteNodeComponentProps {
   suite: SuiteNode;
   history: ReportHistory[];
   reportId?: string;
-  fileId: string;
   project?: string;
 }
 
-const SuiteNodeComponent = ({
-  suite,
-  history,
-  reportId,
-  fileId,
-  project,
-}: SuiteNodeComponentProps) => {
+const SuiteNodeComponent = ({ suite, history, reportId, project }: SuiteNodeComponentProps) => {
   return (
     <Accordion type="multiple" className="pl-4">
       {[
@@ -147,7 +140,6 @@ const SuiteNodeComponent = ({
                   history={history}
                   reportId={reportId}
                   suite={child}
-                  fileId={fileId}
                   project={project}
                 />
               </AccordionContent>
@@ -171,7 +163,7 @@ const SuiteNodeComponent = ({
                 </span>
               </AccordionTrigger>
               <AccordionContent>
-                <TestInfo history={history} test={test} fileId={fileId} project={project} />
+                <TestInfo history={history} test={test} project={project} />
               </AccordionContent>
             </AccordionItem>
           );
@@ -197,7 +189,6 @@ const FileSuitesTree = ({ file, history, reportId, project }: FileSuitesTreeProp
         history={history}
         reportId={reportId}
         suite={suiteTree}
-        fileId={file.fileId}
         project={project}
       />
     </>

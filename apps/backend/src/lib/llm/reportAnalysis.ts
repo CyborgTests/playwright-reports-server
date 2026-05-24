@@ -31,7 +31,7 @@ function isImpact(value: string): value is ReportAnalysisImpact {
  *   <executive summary paragraph>
  *
  *   ## Failure Patterns _(high impact)_
- *   ...with [label](pwrs:test/FID/TID) and [label](pwrs:file/PATH:42) refs.
+ *   ...with [label](pwrs:test/TID) and [label](pwrs:file/PATH:42) refs.
  *
  *   ## Recommendations
  *   ...
@@ -109,11 +109,10 @@ function splitImpactFromHeading(rawHeading: string): {
   return { heading: rawHeading.replace(IMPACT_SUFFIX_RE, '').trim(), impact: candidate };
 }
 
-/** `[label](pwrs:test/FILE_ID/TEST_ID?project=PROJECT)` link matcher. Only
- *  test refs are navigable from a single-report analysis. The `?project=…`
- *  query is read here so the persisted codeRefs carry the project the model
- *  cited; the backend's report-project fallback fills it in if the model
- *  forgot. */
+/** `[label](pwrs:test/TEST_ID?project=PROJECT)` link matcher. Only test refs
+ *  are navigable from a single-report analysis. The `?project=…` query is
+ *  read here so the persisted codeRefs carry the project the model cited;
+ *  the backend's report-project fallback fills it in if the model forgot. */
 const PWRS_TEST_LINK_RE = /\[([^\]\n]+)\]\(pwrs:test\/([^)\n]+)\)/g;
 
 function parseProjectFromQuery(queryStr: string | undefined): string | undefined {
@@ -142,17 +141,13 @@ function extractCodeRefsFromBody(body: string): ReportAnalysisCodeRef[] {
     const qIdx = target.indexOf('?');
     const pathPart = qIdx === -1 ? target : target.slice(0, qIdx);
     const queryStr = qIdx === -1 ? undefined : target.slice(qIdx + 1);
-    // `FILE_ID/TEST_ID` — both IDs are URL-safe (no slashes); the route
-    // shape /test/:fileId/:testId enforces that elsewhere.
-    const slash = pathPart.indexOf('/');
-    if (slash <= 0 || slash === pathPart.length - 1) continue;
-    const fileId = pathPart.slice(0, slash);
-    const testId = pathPart.slice(slash + 1);
+    if (!pathPart || pathPart.includes('/')) continue;
+    const testId = pathPart;
     const project = parseProjectFromQuery(queryStr);
-    const key = `${fileId}:${testId}:${project ?? ''}`;
+    const key = `${testId}:${project ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    refs.push({ kind: 'test', label, fileId, testId, project });
+    refs.push({ kind: 'test', label, testId, project });
   }
   return refs;
 }

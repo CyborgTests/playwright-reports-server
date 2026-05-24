@@ -22,8 +22,8 @@ import { Badge, type BadgeProps } from '@/components/ui/badge';
 interface LlmAnalysisRendererProps {
   analysis: ProjectAnalysisStructured;
   /** Project the verdict was generated for. Used as fallback for codeRefs
-   *  that didn't carry a project (so /test/:fileId/:testId can still scope
-   *  its lookup by `?project=…`). */
+   *  that didn't carry a project (so /test/:testId can still scope its
+   *  lookup by `?project=…`). */
   fallbackProject?: string;
 }
 
@@ -32,10 +32,10 @@ function refHref(
   latestReportId: string | undefined,
   fallbackProject: string | undefined
 ): string | null {
-  if (ref.kind === 'test' && ref.testId && ref.fileId) {
+  if (ref.kind === 'test' && ref.testId) {
     const project = ref.project ?? fallbackProject;
     const query = project ? `?project=${encodeURIComponent(project)}` : '';
-    return `/test/${ref.fileId}/${ref.testId}${query}`;
+    return `/test/${ref.testId}${query}`;
   }
   if (ref.kind === 'file') {
     const target = ref.reportId ?? latestReportId;

@@ -490,22 +490,22 @@ function FailureClusterCard({
 }
 
 export default function TestDetailPage() {
-  const { fileId = '', testId = '' } = useParams<{ fileId: string; testId: string }>();
+  const { testId = '' } = useParams<{ testId: string }>();
   const [searchParams] = useSearchParams();
   const project = searchParams.get('project') ?? defaultProjectName;
 
   // Always land at the top when navigating in to a different test — without
   // this, the browser may restore the previous page's scroll position and
-  // drop the user into the middle of the new test's content. fileId/testId
-  // are unused inside the effect but serve as the trigger.
+  // drop the user into the middle of the new test's content. testId is
+  // unused inside the effect but serves as the trigger.
   // biome-ignore lint/correctness/useExhaustiveDependencies: trigger-only deps
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, [fileId, testId]);
+  }, [testId]);
 
-  const detailUrl = `/api/test/${fileId}/${testId}/detail?project=${encodeURIComponent(project)}`;
+  const detailUrl = `/api/test/${testId}/detail?project=${encodeURIComponent(project)}`;
   const { data, isLoading, error } = useQuery<ApiResponse<TestDetail>>(detailUrl, {
-    dependencies: [fileId, testId, project],
+    dependencies: [testId, project],
   });
 
   error && toast.error(error.message);
@@ -717,9 +717,7 @@ export default function TestDetailPage() {
                       {row.lastRunAt ? new Date(row.lastRunAt).toLocaleDateString() : '—'}
                     </TableCell>
                     <TableCell>
-                      <RouterLink
-                        to={`/test/${row.fileId}/${testId}?project=${encodeURIComponent(row.project)}`}
-                      >
+                      <RouterLink to={`/test/${testId}?project=${encodeURIComponent(row.project)}`}>
                         <Button variant="ghost" size="sm">
                           View
                         </Button>

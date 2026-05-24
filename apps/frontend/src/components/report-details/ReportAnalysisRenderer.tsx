@@ -25,10 +25,10 @@ function refHref(
   reportId: string | undefined,
   fallbackProject: string | undefined
 ): string | null {
-  if (ref.kind === 'test' && ref.testId && ref.fileId) {
+  if (ref.kind === 'test' && ref.testId) {
     const project = ref.project ?? fallbackProject;
     const query = project ? `?project=${encodeURIComponent(project)}` : '';
-    return `/test/${ref.fileId}/${ref.testId}${query}`;
+    return `/test/${ref.testId}${query}`;
   }
   if (ref.kind === 'file' && reportId) return `/report/${reportId}`;
   return null;

@@ -257,6 +257,33 @@ export class TestDatabase {
     return row;
   }
 
+  public findByTestId(testId: string, project?: string): Test | undefined {
+    if (project && project !== 'all') {
+      const row = this.db
+        .prepare(
+          `SELECT t.* FROM tests t
+           LEFT JOIN test_runs r ON r.testId = t.testId AND r.fileId = t.fileId AND r.project = t.project
+           WHERE t.testId = ? AND t.project = ?
+           GROUP BY t.testId, t.fileId, t.project
+           ORDER BY MAX(COALESCE(r.createdAt, t.createdAt)) DESC
+           LIMIT 1`
+        )
+        .get(testId, project) as Test | undefined;
+      if (row) return row;
+    }
+    const row = this.db
+      .prepare(
+        `SELECT t.* FROM tests t
+         LEFT JOIN test_runs r ON r.testId = t.testId AND r.fileId = t.fileId AND r.project = t.project
+         WHERE t.testId = ?
+         GROUP BY t.testId, t.fileId, t.project
+         ORDER BY MAX(COALESCE(r.createdAt, t.createdAt)) DESC
+         LIMIT 1`
+      )
+      .get(testId) as Test | undefined;
+    return row;
+  }
+
   public getAllTests(): Test[] {
     return this.getAllTestsStmt.all() as Test[];
   }

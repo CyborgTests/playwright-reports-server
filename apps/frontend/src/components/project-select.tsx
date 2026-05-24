@@ -45,9 +45,14 @@ export default function ProjectSelect({
   const localStorageKey = `selected-project`;
 
   const effectiveSelectedProject = localStorageProject || selectedProject || defaultProjectName;
-  const candidate = effectiveSelectedProject !== defaultProjectName ? effectiveSelectedProject : null;
+  const candidate =
+    effectiveSelectedProject !== defaultProjectName ? effectiveSelectedProject : null;
   const fetched = Array.isArray(projects) ? projects : [];
-  const items = [defaultProjectName, ...fetched, ...(candidate && !fetched.includes(candidate) ? [candidate] : [])];
+  const items = [
+    defaultProjectName,
+    ...fetched,
+    ...(candidate && !fetched.includes(candidate) ? [candidate] : []),
+  ];
 
   useEffect(() => {
     if (isInitialized) return;

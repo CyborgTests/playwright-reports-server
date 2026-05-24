@@ -32,9 +32,9 @@ export function halveEscapedBackslashes(text: string): string {
  * Tries fenced JSON (```json … ```) first, then the raw text. Each candidate
  * is handed to `parseStructured`; the first successful coercion wins.
  *
- * Some local models emit multi-level-escaped JSON — e.g. `\\\\\\\\` 
- * where standard JSON would use `\\` for a single backslash. We iteratively 
- * halve runs of 2+ consecutive backslashes and retry `JSON.parse` 
+ * Some local models emit multi-level-escaped JSON — e.g. `\\\\\\\\`
+ * where standard JSON would use `\\` for a single backslash. We iteratively
+ * halve runs of 2+ consecutive backslashes and retry `JSON.parse`
  * so those payloads recover instead of landing in the markdown-fallback path
  * with backslashes still visible.
  *

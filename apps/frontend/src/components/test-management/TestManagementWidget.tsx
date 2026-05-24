@@ -335,7 +335,7 @@ export default function TestManagementWidget({
   const handleDeleteSubmit = () => {
     if (!deleteTest) return;
     deleteTestMutation({
-      path: `/api/test/${deleteTest.fileId}/${deleteTest.testId}?project=${deleteTest.project}`,
+      path: `/api/test/${deleteTest.testId}?project=${deleteTest.project}`,
     });
   };
 
@@ -355,7 +355,7 @@ export default function TestManagementWidget({
         isQuarantined,
         reason: quarantineReason,
       },
-      path: `/api/test/${quarantineTest.fileId}/${quarantineTest.testId}?project=${quarantineTest.project}`,
+      path: `/api/test/${quarantineTest.testId}?project=${quarantineTest.project}`,
     });
   };
 
@@ -415,7 +415,7 @@ export default function TestManagementWidget({
                       <TableCell className="break-words">
                         <div>
                           <RouterLink
-                            to={`/test/${item.fileId}/${item.testId}?project=${encodeURIComponent(item.project)}`}
+                            to={`/test/${item.testId}?project=${encodeURIComponent(item.project)}`}
                             className="font-medium break-words hover:underline"
                           >
                             {item.title}

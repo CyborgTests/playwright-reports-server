@@ -24,7 +24,7 @@ function isVerdict(value: string): value is ProjectAnalysisVerdict {
  *   Project is stabilizing. <one-line headline>.
  *
  *   ## Health Assessment
- *   ...with [label](pwrs:test/FID/TID), [label](pwrs:file/PATH:42), and
+ *   ...with [label](pwrs:test/TID), [label](pwrs:file/PATH:42), and
  *   [label](pwrs:report/RID) refs.
  *
  *   ## Recommendations
@@ -118,15 +118,13 @@ function extractCodeRefsFromBody(body: string): ProjectAnalysisCodeRef[] {
       const qIdx = target.indexOf('?');
       const pathPart = qIdx === -1 ? target : target.slice(0, qIdx);
       const queryStr = qIdx === -1 ? undefined : target.slice(qIdx + 1);
-      const slash = pathPart.indexOf('/');
-      if (slash <= 0 || slash === pathPart.length - 1) continue;
-      const fileId = pathPart.slice(0, slash);
-      const testId = pathPart.slice(slash + 1);
+      if (!pathPart || pathPart.includes('/')) continue;
+      const testId = pathPart;
       const project = parseProjectFromQuery(queryStr);
-      const key = `test:${fileId}:${testId}:${project ?? ''}`;
+      const key = `test:${testId}:${project ?? ''}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      refs.push({ kind: 'test', label, fileId, testId, project });
+      refs.push({ kind: 'test', label, testId, project });
       continue;
     }
     // report: encoded as { kind: 'file', label, reportId } because the

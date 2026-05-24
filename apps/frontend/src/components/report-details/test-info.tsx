@@ -26,7 +26,6 @@ import { withBase } from '@/lib/url';
 interface TestInfoProps {
   history: ReportHistory[];
   test: ReportTest;
-  fileId?: string;
   /** The report's project (DB key), NOT the Playwright project name on the test. */
   project?: string;
 }
@@ -64,7 +63,7 @@ const getTestHistory = (testId: string, history: ReportHistory[]) => {
     .filter((item): item is TestHistory => item !== null);
 };
 
-const TestInfo: FC<TestInfoProps> = ({ test, history, fileId, project }: TestInfoProps) => {
+const TestInfo: FC<TestInfoProps> = ({ test, history, project }: TestInfoProps) => {
   if (!test) {
     return <div className="shadow-md rounded-lg p-6">No test data available</div>;
   }
@@ -73,8 +72,8 @@ const TestInfo: FC<TestInfoProps> = ({ test, history, fileId, project }: TestInf
   const safeHistory = Array.isArray(history) ? history : [];
   const testHistory = getTestHistory(test.testId || 'unknown', safeHistory);
   const detailHref =
-    fileId && test.testId && project
-      ? `/test/${fileId}/${test.testId}?project=${encodeURIComponent(project)}`
+    test.testId && project
+      ? `/test/${test.testId}?project=${encodeURIComponent(project)}`
       : undefined;
 
   return (

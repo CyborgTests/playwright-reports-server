@@ -15,8 +15,8 @@ import { Badge } from './ui/badge';
  *  user still sees the citation.
  *
  *  Test links carry the test's project in `?project=…`; the parser reads it
- *  out and re-emits it on the SPA URL so /test/:fileId/:testId can scope its
- *  lookup. `fallbackProject` only applies when the URL omits the query (legacy
+ *  out and re-emits it on the SPA URL so /test/:testId can scope its lookup.
+ *  `fallbackProject` only applies when the URL omits the query (legacy
  *  markdown stored before per-link project encoding). */
 function resolvePwrsHref(href: string, fallbackProject?: string): string | null {
   const m = href.match(/^pwrs:(test|report)\/(.+)$/);
@@ -26,10 +26,8 @@ function resolvePwrsHref(href: string, fallbackProject?: string): string | null 
     const qIdx = target.indexOf('?');
     const pathPart = qIdx === -1 ? target : target.slice(0, qIdx);
     const queryStr = qIdx === -1 ? '' : target.slice(qIdx + 1);
-    // FILE_ID/TEST_ID — both URL-safe (the /test/:fileId/:testId route
-    // enforces single-segment values).
-    const slash = pathPart.indexOf('/');
-    if (slash <= 0 || slash === pathPart.length - 1) return null;
+    // /test/:testId — single URL-safe segment.
+    if (!pathPart || pathPart.includes('/')) return null;
     let project: string | undefined;
     if (queryStr) {
       const params = new URLSearchParams(queryStr);
@@ -38,7 +36,7 @@ function resolvePwrsHref(href: string, fallbackProject?: string): string | null 
     }
     project = project ?? fallbackProject;
     const query = project ? `?project=${encodeURIComponent(project)}` : '';
-    return `/test/${pathPart.slice(0, slash)}/${pathPart.slice(slash + 1)}${query}`;
+    return `/test/${pathPart}${query}`;
   }
   return `/report/${target}`;
 }
@@ -84,9 +82,9 @@ function reactNodeToText(node: ReactNode): string {
 interface MarkdownRendererProps {
   content: string;
   className?: string;
-  /** Scopes inline `pwrs:test/FID/TID` links to a project, so the test detail
-   *  page can find the right (testId, fileId, project) row. Pass the project
-   *  the surrounding analysis was generated for. */
+  /** Scopes inline `pwrs:test/TID` links to a project, so the test detail
+   *  page can find the right (testId, project) row. Pass the project the
+   *  surrounding analysis was generated for. */
   fallbackProject?: string;
 }
 

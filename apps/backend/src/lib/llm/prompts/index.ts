@@ -171,12 +171,12 @@ Return plain Markdown. No JSON. No code fences.
 
 ## Test links
 - Test IDs are authoritative only when shown inline as:
-  [testId: TEST_ID, fileId: FILE_ID]
-- For any linked test, copy 'title', 'TEST_ID', and 'FILE_ID' from the same test line.
+  [testId: TEST_ID]
+- For any linked test, copy 'title' and 'TEST_ID' from the same test line.
 - IDs are opaque strings. Do not infer or rewrite them.
 - Link format:
-  [test title](pwrs:test/FILE_ID/TEST_ID?project={{project}})
-- If no inline 'testId' + 'fileId' pair is present for a test mention, do not link it.
+  [test title](pwrs:test/TEST_ID?project={{project}})
+- If no inline 'testId' is present for a test mention, do not link it.
 
 ## Rules
 - Do NOT repeat section headings in the body.
@@ -265,8 +265,8 @@ When the data says this is a cross-project aggregate:
 Write links as real Markdown links, not backticked text.
 
 Test link format:
-[test title](pwrs:test/FILE_ID/TEST_ID?project=PROJECT_NAME)
-// example: pwrs:test/abcde12345/abcde12345-dcaega54321?project=main
+[test title](pwrs:test/TEST_ID?project=PROJECT_NAME)
+// example: pwrs:test/abcde12345-dcaega54321?project=main
 
 Report link format:
 [run #123](pwrs:report/REPORT_ID)
@@ -274,12 +274,12 @@ Report link format:
 
 Test link rules:
 - Canonical test IDs appear inline in entries such as:
-  - (project=PROJECT_NAME; ...; testId=TEST_ID, fileId=FILE_ID)
-  - [testId: TEST_ID, fileId: FILE_ID]
-- For a linked test, copy the title, PROJECT_NAME, TEST_ID, and FILE_ID from the same entry.
-- Never mix a title from one entry with IDs from another.
-- If the same title appears multiple times, use the IDs from the exact entry you are discussing.
-- If a test mention has no inline testId+fileId pair, do NOT link it; mention it in backticks instead.
+  - (project=PROJECT_NAME; ...; testId=TEST_ID)
+  - [testId: TEST_ID]
+- For a linked test, copy the title, PROJECT_NAME, and TEST_ID from the same entry.
+- Never mix a title from one entry with an ID from another.
+- If the same title appears multiple times, use the ID from the exact entry you are discussing.
+- If a test mention has no inline testId, do NOT link it; mention it in backticks instead.
 - The visible label must be the human-readable test title, not a path or ID.
 - IDs are opaque. Do NOT infer, normalize, shorten, or rewrite them.
 - Use only IDs present in the supplied data.
@@ -1422,7 +1422,7 @@ export const buildReportSummarySegments = (args: {
         const fileSuffix = m.filePath ? ` (${m.filePath})` : '';
         const catLabel = m.category ? ` [${m.category}]` : '';
         const trendLabel = renderTrendLabel(m.trend);
-        dataBlock += `- **${m.title}** [testId: ${m.testId}, fileId: ${m.fileId}]${catLabel}${fileSuffix}${trendLabel}\n`;
+        dataBlock += `- **${m.title}** [testId: ${m.testId}]${catLabel}${fileSuffix}${trendLabel}\n`;
         if (m.message) {
           const indentedMessage = m.message.replace(/\n/g, '\n    ');
           dataBlock += `    Error: ${indentedMessage}\n`;
@@ -1437,7 +1437,7 @@ export const buildReportSummarySegments = (args: {
         dataBlock += `\n#### Historical members (${membersHistorical.length}) — failed in this cluster's window but not in this report\n`;
         for (const m of membersHistorical) {
           const fileSuffix = m.filePath ? ` (${m.filePath})` : '';
-          dataBlock += `- ${m.title} [testId: ${m.testId}, fileId: ${m.fileId}]${fileSuffix} (${m.occurrences} occurrences)\n`;
+          dataBlock += `- ${m.title} [testId: ${m.testId}]${fileSuffix} (${m.occurrences} occurrences)\n`;
         }
       }
       dataBlock += '\n';
@@ -1450,7 +1450,7 @@ export const buildReportSummarySegments = (args: {
     for (const f of args.unclustered) {
       const fileSuffix = f.filePath ? ` (${f.filePath})` : '';
       const trendLabel = renderTrendLabel(f.trend);
-      dataBlock += `### ${f.title} [testId: ${f.testId}, fileId: ${f.fileId}] [${f.category}]${fileSuffix}${trendLabel}\n`;
+      dataBlock += `### ${f.title} [testId: ${f.testId}] [${f.category}]${fileSuffix}${trendLabel}\n`;
       if (f.errorSignature) {
         dataBlock += `- Signature: \`${f.errorSignature}\`\n`;
       }
@@ -1471,7 +1471,7 @@ export const buildReportSummarySegments = (args: {
     dataBlock += `These tests failed at least once but eventually passed on retry. **They are NOT failures.** Do NOT include them in the failure count, do NOT let them drive the verdict. Mention them only as observations (e.g., "X test flaked — worth watching") if they share a signature with a real cluster or look systemic.\n\n`;
     for (const f of args.flaky) {
       const fileSuffix = f.filePath ? ` (${f.filePath})` : '';
-      dataBlock += `### ${f.title} [testId: ${f.testId}, fileId: ${f.fileId}] [${f.category}]${fileSuffix}\n`;
+      dataBlock += `### ${f.title} [testId: ${f.testId}] [${f.category}]${fileSuffix}\n`;
       if (f.errorSignature) {
         dataBlock += `- Signature: \`${f.errorSignature}\`\n`;
       }
@@ -2064,8 +2064,7 @@ export const buildProjectSummarySegments = (args: {
     if (c.nearFlakes.length > 0) {
       const list = c.nearFlakes
         .map(
-          (nf) =>
-            `\`${nf.title}\` (${nf.filePath}; testId=${nf.testId}, fileId=${nf.fileId}) — ${nf.flakyOccurrences}×`
+          (nf) => `\`${nf.title}\` (${nf.filePath}; testId=${nf.testId}) — ${nf.flakyOccurrences}×`
         )
         .join('; ');
       dataBlock += `**Near-flakes (passed on retry):** ${list}\n`;
@@ -2098,10 +2097,7 @@ export const buildProjectSummarySegments = (args: {
       }
       const testsList = c.affectedTests
         .slice(0, 3)
-        .map(
-          (t) =>
-            `\`${t.title}\` (project=${t.project}; ${t.filePath}; testId=${t.testId}, fileId=${t.fileId})`
-        )
+        .map((t) => `\`${t.title}\` (project=${t.project}; ${t.filePath}; testId=${t.testId})`)
         .join(', ');
       const more = c.affectedTests.length > 3 ? ` +${c.affectedTests.length - 3} more` : '';
       dataBlock += `- **Affected tests:** ${testsList}${more}\n`;

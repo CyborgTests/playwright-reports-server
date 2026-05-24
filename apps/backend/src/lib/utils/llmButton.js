@@ -295,13 +295,8 @@ function markdownToHtml(text) {
       const qIdx = target.indexOf('?');
       const pathPart = qIdx === -1 ? target : target.slice(0, qIdx);
       const queryStr = qIdx === -1 ? '' : target.slice(qIdx + 1);
-      const slash = pathPart.indexOf('/');
-      if (slash > 0 && slash < pathPart.length - 1) {
-        const fileId = encodeURIComponent(pathPart.slice(0, slash));
-        const testId = encodeURIComponent(pathPart.slice(slash + 1));
-        // Extract project from the embedded query; fall through to a bare
-        // path if absent (the test detail page will still try its default
-        // lookup).
+      if (pathPart && !pathPart.includes('/')) {
+        const testId = encodeURIComponent(pathPart);
         let project = '';
         if (queryStr) {
           try {
@@ -311,7 +306,7 @@ function markdownToHtml(text) {
             /* malformed query — drop it */
           }
         }
-        return `<a href="/test/${fileId}/${testId}${project}" style="${linkStyle}">${label}</a>`;
+        return `<a href="/test/${testId}${project}" style="${linkStyle}">${label}</a>`;
       }
       return `<span style="color: var(--llm-muted);">${label}</span>`;
     }

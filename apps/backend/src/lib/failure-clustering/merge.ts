@@ -37,8 +37,7 @@ export function mergeClusters(clusters: FailureCluster[]): FailureCluster[] {
 
   const sorted = [...clusters].sort(
     (a, b) =>
-      b.testCount - a.testCount ||
-      STRATEGY_PRECEDENCE[b.strategy] - STRATEGY_PRECEDENCE[a.strategy]
+      b.testCount - a.testCount || STRATEGY_PRECEDENCE[b.strategy] - STRATEGY_PRECEDENCE[a.strategy]
   );
 
   const winners: FailureCluster[] = [];

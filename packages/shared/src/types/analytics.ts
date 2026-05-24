@@ -76,15 +76,14 @@ export interface AnalyticsData {
 export type ProjectAnalysisVerdict = 'healthy' | 'stabilizing' | 'degrading' | 'failing';
 
 export interface ProjectAnalysisCodeRef {
-  /** Discriminator: 'test' links to /test/:fileId/:testId; 'file' opens the report viewer. */
+  /** Discriminator: 'test' links to /test/:testId; 'file' opens the report viewer. */
   kind: 'test' | 'file';
   /** Display label (e.g., test title or file path). */
   label: string;
   /** Required when kind='test'. */
   testId?: string;
-  /** Required when kind='test'; optional when kind='file'. */
   fileId?: string;
-  /** Required when kind='file'; optional when kind='test'. */
+  /** Required when kind='file'. */
   filePath?: string;
   /** Project the test/file belongs to. Injected server-side so the test
    *  detail page can build its `?project=…` query. Not asked of the model. */
@@ -117,15 +116,14 @@ export type ReportAnalysisVerdict = 'isolated' | 'clustered' | 'widespread' | 's
 export type ReportAnalysisImpact = 'high' | 'medium' | 'low';
 
 export interface ReportAnalysisCodeRef {
-  /** Discriminator: 'test' links to /test/:fileId/:testId; 'file' opens the report viewer. */
+  /** Discriminator: 'test' links to /test/:testId; 'file' opens the report viewer. */
   kind: 'test' | 'file';
   /** Display label (e.g., test title or file path). */
   label: string;
   /** Required when kind='test'. */
   testId?: string;
-  /** Required when kind='test'; optional when kind='file'. */
   fileId?: string;
-  /** Required when kind='file'; optional when kind='test'. */
+  /** Required when kind='file'. */
   filePath?: string;
   /** Project the test/file belongs to. Injected server-side from the report's
    *  project so the UI can build the `?project=…` query the test detail page

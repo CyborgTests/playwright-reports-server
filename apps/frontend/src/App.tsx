@@ -34,7 +34,7 @@ function App() {
                 <Route path="/reports/compare" element={<ReportsComparePage />} />
                 <Route path="/report/:id" element={<ReportDetailPage />} />
                 <Route path="/report/:id/:testId" element={<RedirectTestDetails />} />
-                <Route path="/test/:fileId/:testId" element={<TestDetailPage />} />
+                <Route path="/test/:testId" element={<TestDetailPage />} />
                 <Route path="/results" element={<ResultsPage />} />
                 <Route path="/failures/clusters" element={<FailureClustersPage />} />
                 <Route path="/llm-queue" element={<LlmQueuePage />} />
