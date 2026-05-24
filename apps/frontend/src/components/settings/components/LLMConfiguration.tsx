@@ -396,46 +396,49 @@ export default function LLMConfiguration({
                       key: 'projectSummaryTemperature' as const,
                     },
                   ] as const
-                ).map(({ id, label, key }) => (
-                  <div key={id} className="space-y-1">
-                    <Label htmlFor={id} className="text-xs text-muted-foreground">
-                      {label}
-                    </Label>
-                    <Input
-                      id={id}
-                      disabled={editingSection !== 'llm'}
-                      /* Placeholder shows the per-task default that will be used
-                       when the field is blank — so the user sees what's active
-                       at a glance without saving a value. */
-                      placeholder={
-                        llmTemperatureDefaults
-                          ? `default ${llmTemperatureDefaults[key]}`
-                          : 'default'
-                      }
-                      type="number"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      value={
-                        editingSection === 'llm'
-                          ? (tempConfig.llm?.[key]?.toString() ?? '')
-                          : (config.llm?.[key]?.toString() ?? '')
-                      }
-                      onChange={(e) =>
-                        editingSection === 'llm' &&
-                        onUpdateTempConfig({
-                          llm: {
-                            ...tempConfig.llm,
-                            [key]: e.target.value ? Number.parseFloat(e.target.value) : undefined,
-                          },
-                        })
-                      }
-                    />
-                  </div>
-                ))}
+                ).map(({ id, label, key }) => {
+                  // Resolved value = explicit override if set, otherwise the
+                  // server-side default. Showing the resolved number (not the
+                  // word "default") tells the user what's actually in effect.
+                  const explicit =
+                    editingSection === 'llm' ? tempConfig.llm?.[key] : config.llm?.[key];
+                  const fallback = llmTemperatureDefaults?.[key];
+                  const resolved = explicit ?? fallback;
+                  const isUsingDefault = explicit === undefined;
+                  return (
+                    <div key={id} className="space-y-1">
+                      <Label htmlFor={id} className="text-xs text-muted-foreground">
+                        {label}
+                      </Label>
+                      <Input
+                        id={id}
+                        disabled={editingSection !== 'llm'}
+                        type="number"
+                        min="0"
+                        max="2"
+                        step="0.1"
+                        value={resolved?.toString() ?? ''}
+                        onChange={(e) =>
+                          editingSection === 'llm' &&
+                          onUpdateTempConfig({
+                            llm: {
+                              ...tempConfig.llm,
+                              [key]: e.target.value ? Number.parseFloat(e.target.value) : undefined,
+                            },
+                          })
+                        }
+                      />
+                      {isUsingDefault && (
+                        <p className="text-[10px] text-muted-foreground">
+                          Using default — type a value to override.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <p className="text-xs text-muted-foreground">
-                Leave blank to use the default temperature above. Test analysis usually benefits
+                Clear a field to fall back to the server default. Test analysis usually benefits
                 from a cooler value (e.g. 0.2) for category accuracy.
               </p>
             </div>
