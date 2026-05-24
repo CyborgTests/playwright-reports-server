@@ -11,6 +11,7 @@ import {
 import { getDatabase } from '../lib/service/db/db.js';
 import type { LlmTaskRow, LlmTaskStatus, LlmTaskType } from '../lib/service/db/llmTasks.sqlite.js';
 import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
+import { service } from '../lib/service/index.js';
 import { llmTaskEvents } from '../lib/service/llmTaskEvents.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
@@ -87,7 +88,12 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
       const parsed = daysRaw ? Number.parseInt(daysRaw, 10) : 7;
       // Clamp to a sane range so a typo can't trigger a full-table scan.
       const days = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 365) : 7;
-      const fromDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const windowFrom = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      // Honour the manual reset timestamp so the user sees zero immediately
+      // after clicking "Reset counters" on the queue page.
+      const cfg = await service.getConfig();
+      const fromDate =
+        cfg.llmUsageResetAt && cfg.llmUsageResetAt > windowFrom ? cfg.llmUsageResetAt : windowFrom;
 
       const db = getDatabase();
 
@@ -184,7 +190,10 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
       const { days: daysRaw } = request.query as { days?: string };
       const parsed = daysRaw ? Number.parseInt(daysRaw, 10) : 7;
       const days = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 365) : 7;
-      const fromDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const windowFrom = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const cfg = await service.getConfig();
+      const fromDate =
+        cfg.llmUsageResetAt && cfg.llmUsageResetAt > windowFrom ? cfg.llmUsageResetAt : windowFrom;
 
       const db = getDatabase();
       // Group by (baseUrl, model). NULLs collapse to the same bucket via
@@ -223,6 +232,23 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
         success: false,
         error: 'Failed to fetch LLM usage-by-model breakdown',
       });
+    }
+  });
+
+  // POST /api/llm/usage/reset - mark the current moment as the new zero
+  // baseline for the usage card. Subsequent /usage-stats and /usage-by-model
+  // queries clamp their lower bound to this timestamp, so the counters read
+  // as zero until new completed tasks land.
+  fastify.post('/api/llm/usage/reset', async (request: FastifyRequest, reply: FastifyReply) => {
+    const authResult = await authenticate(request as AuthRequest, reply);
+    if (authResult) return;
+
+    try {
+      const next = await service.updateConfig({ llmUsageResetAt: new Date().toISOString() });
+      return { success: true, llmUsageResetAt: next.llmUsageResetAt };
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.status(500).send({ success: false, error: 'Failed to reset usage counters' });
     }
   });
 

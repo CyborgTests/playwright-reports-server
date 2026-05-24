@@ -7,6 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -138,6 +146,9 @@ export default function LlmQueuePage() {
   const [usageDays, setUsageDays] = useState<7 | 30>(7);
   // "Check by model" expandable section — lazy-loads its data on first open.
   const [showByModel, setShowByModel] = useState(false);
+  // Reset-counters confirmation dialog (POST /api/llm/usage/reset).
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   const { data: stats, refetch: refetchStats } = useLlmTaskStats();
   const { data: usageData, refetch: refetchUsage } = useLlmUsageStats(usageDays);
@@ -192,6 +203,18 @@ export default function LlmQueuePage() {
     onSuccess: () => {
       toast.success('Re-running all failed tasks');
       invalidateLlmQueries();
+    },
+  });
+
+  const resetUsageMutation = useMutation('/api/llm/usage/reset', {
+    onSuccess: () => {
+      toast.success('Usage counters reset');
+      refetchUsage();
+      setShowResetDialog(false);
+      setIsResetting(false);
+    },
+    onError: () => {
+      setIsResetting(false);
     },
   });
 
@@ -329,7 +352,7 @@ export default function LlmQueuePage() {
               completed tasks · last {usageDays}d
             </span>
           </div>
-          <div className="flex gap-1">
+          <div className="flex gap-1 items-center">
             {([7, 30] as const).map((d) => (
               <Button
                 key={d}
@@ -340,6 +363,14 @@ export default function LlmQueuePage() {
                 {d}d
               </Button>
             ))}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowResetDialog(true)}
+              title="Reset usage counters to zero"
+            >
+              Reset
+            </Button>
           </div>
         </div>
 
@@ -709,6 +740,33 @@ export default function LlmQueuePage() {
           </div>
         </div>
       )}
+
+      <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset usage counters?</DialogTitle>
+            <DialogDescription>
+              This sets the new baseline for the Usage card to right now. Historical task rows are
+              kept in the database, but the chart will read as zero until new completed tasks land.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResetDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={isResetting}
+              onClick={() => {
+                setIsResetting(true);
+                resetUsageMutation.mutate({});
+              }}
+            >
+              {isResetting ? 'Resetting…' : 'Reset counters'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

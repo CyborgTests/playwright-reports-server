@@ -110,6 +110,11 @@ export interface SiteWhiteLabelConfig {
   };
   llm?: LLMConfig;
   testManagement?: TestManagementConfig;
+  /** ISO timestamp marking the start of the current LLM usage accounting
+   *  window. Set by the "Reset counters" button on the LLM queue page; the
+   *  usage-stats queries clamp their lower bound to this value so the user
+   *  sees zero immediately while historical rows stay in the database. */
+  llmUsageResetAt?: string;
 }
 
 export interface DatabaseStats {
