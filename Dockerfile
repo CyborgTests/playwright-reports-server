@@ -6,9 +6,11 @@ RUN npm install -g pnpm
 # Install build tools for native dependencies (better-sqlite3, sharp, esbuild)
 RUN apk add --no-cache python3 make g++ libc6-compat curl
 
-# Set CI environment variable for pnpm
-# This prevents pnpm from prompting for input when removing node_modules
-ENV CI=true
+# CI=true prevents pnpm from prompting; PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD keeps
+# the optional @playwright/test dependency from pulling chromium/firefox/webkit
+# (~700MB) — we only ever run `playwright merge-reports`, not browsers.
+ENV CI=true \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 # Runner base: minimal runtime image with only Node.js and Litestream
 FROM node:24-alpine AS runner-base
@@ -26,7 +28,8 @@ RUN apk add --no-cache curl && \
     chmod +x /usr/local/bin/litestream && \
     apk del curl
 
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 # Install all dependencies for monorepo from the ROOT
 # This is critical: pnpm install must run from root where pnpm-workspace.yaml
@@ -43,7 +46,7 @@ COPY apps/ ./apps/
 
 # Install dependencies from root with frozen lockfile
 # This reads the overrides from root package.json and onlyBuiltDependencies from pnpm-workspace.yaml
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --prefer-offline
 
 # Build shared package first using pnpm filter from root
 FROM build-base AS shared-builder
@@ -92,7 +95,8 @@ RUN pnpm --filter @playwright-reports/backend build
 # Prune dev dependencies from the entire workspace
 # This removes dev dependencies from all workspace packages
 # --ignore-scripts prevents running prepare scripts which would fail without dev deps
-RUN pnpm install --prod --frozen-lockfile --ignore-scripts
+RUN pnpm install --prod --frozen-lockfile --ignore-scripts --prefer-offline && \
+    pnpm store prune
 
 # Production image
 FROM runner-base AS runner
