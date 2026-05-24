@@ -121,7 +121,7 @@ export default function CronConfiguration({
         </div>
         {!isEditing ? (
           <Button disabled={editingSection !== 'none'} onClick={onEdit}>
-            {editingSection === 'none' ? 'Edit Configuration' : 'Section in Use'}
+            {editingSection === 'none' ? 'Edit Configuration' : 'Editing other section'}
           </Button>
         ) : (
           <div className="flex gap-2">

@@ -117,7 +117,7 @@ export default function TestManagementSettings({
           </div>
         ) : (
           <Button disabled={editingSection !== 'none'} onClick={onEdit}>
-            {editingSection === 'none' ? 'Edit Configuration' : 'Section in Use'}
+            {editingSection === 'none' ? 'Edit Configuration' : 'Editing other section'}
           </Button>
         )}
       </CardHeader>
