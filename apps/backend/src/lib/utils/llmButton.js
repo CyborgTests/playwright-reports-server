@@ -97,7 +97,14 @@ function injectAskLLMButton() {
       }
       whenErrorsSectionReady(copyPromptButton, (errorsSection) => {
         if (document.getElementById('llm-inline-analysis')) return;
-        renderLoadingInto(currentTestId, rid, copyPromptButton, askBtn, errorsSection, j.data.taskId);
+        renderLoadingInto(
+          currentTestId,
+          rid,
+          copyPromptButton,
+          askBtn,
+          errorsSection,
+          j.data.taskId
+        );
       });
     } catch (error) {
       console.error('[Playwright LLM] Analysis error:', error);
@@ -215,7 +222,6 @@ function extractTestIdFromCurrentUrl() {
     return 'unknown';
   }
 }
-
 
 function markdownToHtml(text) {
   if (!text) return 'No analysis available';
@@ -690,7 +696,7 @@ function renderInlineAnalysis(analysisData, copyPromptButton, askBtn, testIdOver
     // header owns that affordance while an analysis is rendered.
     setFullCopyBtnVisibility(false);
     // A fresh analysis just landed — re-evaluate the "feedback not in latest
-    // analysis" chip on the feedback panel. After Regenerate, the new
+    // analysis" chip on the feedback panel. After Retry, the new
     // analysisData.updatedAt is later than feedback.updatedAt, so the chip
     // should hide. We compare against feedback fetched fresh from the server.
     if (resolvedTestId) {
@@ -907,7 +913,7 @@ function renderFeedbackPanel({
   // wasn't generated for this specific test_run but copied from a prior one with the same
   // error signature, surface a "♻ Reused" chip alongside the other status chips.
   const reusedChip = status.reused
-    ? `<span class="llm-feedback-reused-chip" title="The analysis shown for this test was reused from a previous run with the same error signature — it wasn't generated for this specific failure. Click Retry on the analysis (or Regenerate here) to force a fresh one.">♻ Reused</span>`
+    ? `<span class="llm-feedback-reused-chip" title="The analysis shown for this test was reused from a previous run with the same error signature — it wasn't generated for this specific failure. Click Retry on the analysis to force a fresh one.">♻ Reused</span>`
     : '';
   const relatedSection =
     relatedCount > 0
@@ -953,13 +959,8 @@ function renderFeedbackPanel({
       <div class="llm-feedback-actions">
         <button class="llm-feedback-save" type="button">Save</button>
         <button class="llm-feedback-delete" type="button" ${feedback ? '' : 'hidden'}>Delete</button>
-        <button class="llm-feedback-regenerate" type="button">Regenerate</button>
         <span class="llm-feedback-status"></span>
       </div>
-      <label class="llm-feedback-cascade-label">
-        <input type="checkbox" class="llm-feedback-cascade" />
-        <span>Also refresh report summary after this test</span>
-      </label>
     </div>
   `;
 
@@ -986,9 +987,7 @@ function renderFeedbackPanel({
   const body = panel.querySelector('.llm-feedback-body');
   const saveBtn = panel.querySelector('.llm-feedback-save');
   const deleteBtn = panel.querySelector('.llm-feedback-delete');
-  const regenBtn = panel.querySelector('.llm-feedback-regenerate');
   const statusEl = panel.querySelector('.llm-feedback-status');
-  const cascadeCheckbox = panel.querySelector('.llm-feedback-cascade');
 
   textarea.value = draftSnapshot ?? feedback?.comment ?? '';
   panel.dataset.expanded = expanded ? '1' : '0';
@@ -1037,10 +1036,12 @@ function renderFeedbackPanel({
       const j = await r.json();
       if (!r.ok || !j?.success) throw new Error(j?.error || 'Save failed');
       setStatus('Saved', 'ok');
+      // Force view mode before re-render so the user lands on the saved
+      // summary instead of bouncing back to the edit textarea.
+      if (panel) panel.dataset.expanded = '0';
       renderFeedbackPanel({ feedback: j.data, testId, reportId: rid, copyPromptButton });
     } catch (err) {
       setStatus(err.message || 'Save failed', 'error');
-    } finally {
       saveBtn.disabled = false;
     }
   };
@@ -1065,41 +1066,6 @@ function renderFeedbackPanel({
     }
   };
 
-  regenBtn.onclick = async () => {
-    setStatus('');
-    const cascade = !!cascadeCheckbox?.checked;
-    const originalLabel = regenBtn.textContent;
-    regenBtn.disabled = true;
-    regenBtn.textContent = 'Regenerating…';
-
-    try {
-      const response = await fetch('/api/llm/regenerate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          testId,
-          reportId: rid,
-          ...(cascade ? { cascadeReportSummary: true } : {}),
-        }),
-      });
-      const j = await response.json();
-      if (!response.ok || !j?.success || !j?.data?.taskId) {
-        throw new Error(j?.error || 'Failed to enqueue regenerate task');
-      }
-      // Render loading widget with the taskId so it can subscribe to SSE immediately
-      whenErrorsSectionReady(copyPromptButton, (errorsSection) => {
-        if (document.getElementById('llm-inline-analysis')) return;
-        renderLoadingInto(testId, rid, copyPromptButton, null, errorsSection, j.data.taskId);
-      });
-    } catch (error) {
-      console.error('[Playwright LLM] Regenerate error:', error);
-      setStatus(error?.message || 'Regenerate failed', 'error');
-    } finally {
-      regenBtn.disabled = false;
-      regenBtn.textContent = originalLabel;
-    }
-  };
-
   // Resolve stale indicator on initial render.
   refreshFeedbackStaleIndicator(testId, rid);
 }
@@ -1108,8 +1074,8 @@ function renderFeedbackPanel({
  * Refresh the "⚠ Latest feedback not included in analysis" chip on the
  * feedback panel. The chip is sticky from the initial render; this function
  * re-fetches the latest analysis timestamp and toggles the chip, so a fresh
- * Regenerate/Retry cycle clears the warning as soon as the new analysis
- * lands. Safe to call when no panel exists — no-op in that case.
+ * Retry clears the warning as soon as the new analysis lands. Safe to call
+ * when no panel exists — no-op in that case.
  */
 async function refreshFeedbackStaleIndicator(testId, rid) {
   const panel = document.getElementById('llm-feedback-panel');

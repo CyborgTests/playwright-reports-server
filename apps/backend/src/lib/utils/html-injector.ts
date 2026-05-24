@@ -312,20 +312,6 @@ async function injectClientSideScript(
     .llm-feedback-status-ok { color: #059669; }
     .llm-feedback-status-error { color: var(--llm-error-text); }
 
-    .llm-feedback-cascade-label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      color: var(--llm-muted);
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .llm-feedback-cascade {
-      cursor: pointer;
-    }
-
     .llm-feedback-origin {
       font-size: 12px;
       color: var(--llm-muted);
