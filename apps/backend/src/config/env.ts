@@ -2,7 +2,6 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from 'dotenv';
 import { cleanEnv, num, str } from 'envalid';
-import type { LLMProviderType } from '../lib/llm/types';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -72,32 +71,6 @@ export const env = cleanEnv(process.env, {
   REPORT_EXPIRE_CRON_SCHEDULE: str({
     desc: 'Cron schedule for reports cleanup',
     default: '44 4 * * *',
-  }),
-  // LLM
-  LLM_PROVIDER: str<LLMProviderType>({
-    desc: 'LLM provider (openai, anthropic)',
-    default: 'openai',
-    choices: ['openai', 'anthropic'],
-  }),
-  LLM_BASE_URL: str({ desc: 'LLM base URL', default: undefined }),
-  LLM_API_KEY: str({ desc: 'LLM API key', default: undefined }),
-  LLM_MODEL: str({
-    desc: 'LLM model name, by default will take some model from /models endpoint',
-    default: undefined,
-  }),
-  LLM_MAX_TOKENS: num({
-    desc: 'Max output tokens. OpenAI/local omit when unset; Anthropic falls back to a safe default.',
-    default: undefined,
-  }),
-  LLM_CONTEXT_WINDOW: num({
-    desc: 'Override detected model context window (tokens). Useful for local models that do not advertise it via /models.',
-    default: undefined,
-  }),
-  LLM_PARALLEL_REQUESTS: num({ desc: 'Number of parallel LLM requests', default: 1 }),
-  LLM_MULTIMODAL_MODE: str({
-    desc: 'How to attach screenshots for visual failures: auto (try; fall back on unsupported), force (require), disabled (never attach images).',
-    default: 'auto',
-    choices: ['auto', 'force', 'disabled'],
   }),
   // Test management
   TEST_FLAKINESS_QUARANTINE_THRESHOLD: num({

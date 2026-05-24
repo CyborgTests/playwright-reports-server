@@ -154,34 +154,20 @@ Set `DATA_STORAGE=azure` to persist reports and results in an Azure Storage cont
 
 When configured, the LLM integration provides failure analysis across the application. It is enabled ONLY if an LLM provider is configured.
 
-#### Configuration (env)
+#### Configuration
 
-The minimum to enable LLM features is `LLM_BASE_URL` + `LLM_API_KEY`. Everything else has sensible defaults or is configurable at runtime via the Settings page.
-NB! Provider - not the exact company that serves your token casino, it's the API format.  
+LLM is configured through the Settings page.The minimum to enable LLM features is a base URL + API key.
+NB! Provider - not the exact company that serves your token casino, it's the API format.
 
-| Name                         | Description                                                                                                                  | Default         |
-|------------------------------|------------------------------------------------------------------------------------------------------------------------------|-----------------|
-| `LLM_PROVIDER`               | LLM provider (`openai` \| `anthropic`)                                                                                       | `openai`        |
-| `LLM_BASE_URL`               | Base URL for the LLM API                                                                                                     |                 |
-| `LLM_API_KEY`                | API key for the LLM provider                                                                                                 |                 |
-| `LLM_MODEL`                  | Model to use; first model from `/models` endpoint when unset                                                                 | first available |
-| `LLM_PARALLEL_REQUESTS`      | Concurrent LLM requests for the background analysis queue                                                                    | `1`             |
-| `LLM_MAX_TOKENS`             | Cap on output tokens per request. OpenAI/local omit when blank; Anthropic falls back to a safe default (its API requires it) |                 |
-| `LLM_CONTEXT_WINDOW`         | Override detected model context window in tokens (useful for local models that don't advertise it)                           | auto-detect     |
-| `LLM_STRUCTURED_OUTPUT_MODE` | `auto` (try; fall back to text on unsupported), `force`, `disabled`                                                          | `auto`          |
-| `LLM_MULTIMODAL_MODE`        | `auto` (attach images; fall back on unsupported), `force`, `disabled`                                                        | `auto`          |
+Settings page options:
 
-#### Settings UI
-
-The Settings page (`/settings` → LLM Configuration) exposes everything tunable at runtime, restartless on save:
-
-- **Provider / base URL / API key / model** - same as env, but overridable per environment.
+- **Provider / base URL / API key / model** - the required to enable LLM. Blank base URL or API key disables the integration.
 - **Refresh available models** - calls the provider's `/models` endpoint
 - **Test connection** - validates draft config without mutating the active provider.
 - **Max output tokens / context window override** - both optional; blank uses provider default / auto-detect.
-- **Structured output mode** - `auto` / `force` / `disabled`. On `auto`, an unsupported-by-model error is memoized for 1h and the request retries text-only.
-- **Multimodal mode** - same shape, controls whether failure screenshots are attached to test analyses on vision-capable models.
+- **Multimodal mode** - `auto` (attach images; fall back on unsupported), `force` (require image support), `disabled` (never attach). On `auto`, an unsupported-by-model error is memoized for 1h and the request retries text-only.
 - **Per-task temperatures** - three independent fields (test analysis, report summary, project summary).
+- **Parallel requests** - concurrent LLM requests for the background analysis queue. Depends on the specific provider and model. Usually just 1 :c
 - **Custom prompts** - tune the prompts if you are into prompt-engineering
 - **Auto-analyze new reports** - when enabled, every new failed test and report analysis tasks are queued automatically.
 

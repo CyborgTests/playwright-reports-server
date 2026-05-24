@@ -106,15 +106,19 @@ export default function LLMConfiguration({
     setTesting(true);
     setTestResult(null);
     try {
-      // Always test the values currently in the form — tempConfig while editing,
-      // config otherwise — so the result reflects exactly what the user sees.
       const source = isEditing ? tempConfig.llm : config.llm;
       const body: Record<string, unknown> = {};
       if (source?.provider) body.provider = source.provider;
-      if (source?.baseUrl) body.baseUrl = source.baseUrl;
-      // Saved apiKey may be masked (****) — only forward what the user typed.
-      if (source?.apiKey && !/^\*+$/.test(source.apiKey)) body.apiKey = source.apiKey;
-      if (source?.model) body.model = source.model;
+      if (isEditing) {
+        body.baseUrl = source?.baseUrl ?? '';
+        body.model = source?.model ?? '';
+        const apiKey = source?.apiKey ?? '';
+        if (!/^\*+$/.test(apiKey)) body.apiKey = apiKey;
+      } else {
+        if (source?.baseUrl) body.baseUrl = source.baseUrl;
+        if (source?.apiKey && !/^\*+$/.test(source.apiKey)) body.apiKey = source.apiKey;
+        if (source?.model) body.model = source.model;
+      }
 
       const res = await fetch('/api/llm/test-connection', {
         method: 'POST',
@@ -235,12 +239,8 @@ export default function LLMConfiguration({
           {!isConfigured && (
             <Alert>
               <p className="font-medium mb-2">To enable LLM integration:</p>
-              <p className="text-sm text-muted-foreground mb-2">
-                Fill in the LLM configuration fields below and save the configuration.
-              </p>
               <p className="text-sm text-muted-foreground">
-                You can also set environment variables as a fallback: LLM_PROVIDER, LLM_BASE_URL,
-                LLM_API_KEY, LLM_MODEL, LLM_TEMPERATURE
+                Fill in the LLM configuration fields below and save the configuration.
               </p>
             </Alert>
           )}
@@ -384,11 +384,6 @@ export default function LLMConfiguration({
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Temperatures
             </h3>
-            {/* Per-task temperature. Each task type is set independently; no
-              shared default knob. Blank → falls through to the env default
-              (LLM_TEMPERATURE, 0.3 if unset). Cooler values (≤0.3) bias
-              toward classification accuracy; warmer (≥0.5) bias toward
-              varied phrasing. */}
             <div className="space-y-2">
               <Label className="text-sm font-medium">Temperature per task (0–2)</Label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

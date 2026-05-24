@@ -109,34 +109,28 @@ export default function SettingsPage() {
           formData.append(`linkIcon:${linkId}`, file);
         }
       } else if (section === 'cron') {
-        if (tempConfig.cron) {
-          if (tempConfig.cron.resultExpireDays !== undefined) {
-            formData.append('resultExpireDays', tempConfig.cron.resultExpireDays.toString());
-          }
-          if (tempConfig.cron.resultExpireCronSchedule) {
-            formData.append('resultExpireCronSchedule', tempConfig.cron.resultExpireCronSchedule);
-          }
-          if (tempConfig.cron.reportExpireDays !== undefined) {
-            formData.append('reportExpireDays', tempConfig.cron.reportExpireDays.toString());
-          }
-          if (tempConfig.cron.reportExpireCronSchedule) {
-            formData.append('reportExpireCronSchedule', tempConfig.cron.reportExpireCronSchedule);
-          }
-        }
+        const cron = tempConfig.cron ?? {};
+        formData.append(
+          'resultExpireDays',
+          cron.resultExpireDays !== undefined ? cron.resultExpireDays.toString() : ''
+        );
+        formData.append('resultExpireCronSchedule', cron.resultExpireCronSchedule ?? '');
+        formData.append(
+          'reportExpireDays',
+          cron.reportExpireDays !== undefined ? cron.reportExpireDays.toString() : ''
+        );
+        formData.append('reportExpireCronSchedule', cron.reportExpireCronSchedule ?? '');
       } else if (section === 'llm') {
         if (tempConfig.llm) {
           if (tempConfig.llm.provider) {
             formData.append('llmProvider', tempConfig.llm.provider);
           }
-          if (tempConfig.llm.baseUrl) {
-            formData.append('llmBaseUrl', tempConfig.llm.baseUrl);
+          formData.append('llmBaseUrl', tempConfig.llm.baseUrl ?? '');
+          const apiKey = tempConfig.llm.apiKey ?? '';
+          if (!/^\*+$/.test(apiKey)) {
+            formData.append('llmApiKey', apiKey);
           }
-          if (tempConfig.llm.apiKey && !/^\*+$/.test(tempConfig.llm.apiKey)) {
-            formData.append('llmApiKey', tempConfig.llm.apiKey);
-          }
-          if (tempConfig.llm.model) {
-            formData.append('llmModel', tempConfig.llm.model);
-          }
+          formData.append('llmModel', tempConfig.llm.model ?? '');
           // Per-task temperature overrides. Send always to allow clearing.
           formData.append(
             'llmTestAnalysisTemperature',

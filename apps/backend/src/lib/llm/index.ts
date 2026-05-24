@@ -1,4 +1,3 @@
-import { env } from '../../config/env.js';
 import { AnthropicProvider } from './providers/anthropic.js';
 import { OpenAIProvider } from './providers/openai.js';
 import type {
@@ -25,16 +24,11 @@ export class LLMService {
   private multimodalBlocklist = new Map<string, number>();
 
   private constructor() {
-    const provider = env.LLM_PROVIDER ?? 'openai';
-
     this.config = {
-      provider,
-      baseUrl: env.LLM_BASE_URL ?? '',
-      apiKey: env.LLM_API_KEY ?? '',
-      model: env.LLM_MODEL ?? '',
-      maxTokens: env.LLM_MAX_TOKENS,
-      contextWindow: env.LLM_CONTEXT_WINDOW,
-      multimodalMode: env.LLM_MULTIMODAL_MODE as MultimodalMode | undefined,
+      provider: 'openai',
+      baseUrl: '',
+      apiKey: '',
+      model: '',
       requestTimeoutMs: 5 * 60 * 1000,
       maxRetries: 3,
       retryDelayMs: 1 * 1000,
@@ -63,7 +57,9 @@ export class LLMService {
 
   async initialize(): Promise<void> {
     if (!this.isConfigured()) {
-      throw new Error('LLM service is not enabled. Set LLM_BASE_URL and LLM_API_KEY to enable');
+      throw new Error(
+        'LLM service is not enabled. Configure the base URL and API key in Settings → LLM.'
+      );
     }
 
     if (!this.provider) {
@@ -85,10 +81,7 @@ export class LLMService {
     imagesMode: MultimodalMode;
     useImages: boolean;
   } {
-    // runtime config higher priority than env
-    const imagesMode = (this.config?.multimodalMode ??
-      env.LLM_MULTIMODAL_MODE ??
-      'auto') as MultimodalMode;
+    const imagesMode = (this.config?.multimodalMode ?? 'auto') as MultimodalMode;
     const useImages =
       this.promptHasImages(prompt) && imagesMode !== 'disabled' && !this.isMultimodalBlocked();
     return { imagesMode, useImages };
@@ -228,23 +221,20 @@ export class LLMService {
     return safeConfig;
   }
 
-  /** Merge runtime overrides; drops undefined keys so partial payloads can't clobber
-   *  env-supplied values. Resets the cached provider. */
   applyConfig(config?: Partial<LLMProviderConfig>): void {
     if (!config) return;
-    const overrides = Object.fromEntries(
-      Object.entries(config).filter(([, v]) => v !== undefined)
-    ) as Partial<LLMProviderConfig>;
     this.config = {
       ...this.config,
-      ...overrides,
+      ...config,
     } as LLMProviderConfig;
     this.provider = null;
   }
 
   async restart(config?: Partial<LLMProviderConfig>): Promise<void> {
     this.applyConfig(config);
-    await this.initialize();
+    if (this.isConfigured()) {
+      await this.initialize();
+    }
   }
 
   /**

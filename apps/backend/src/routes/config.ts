@@ -171,10 +171,10 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
     };
 
     const llmInfo = {
-      provider: config.llm?.provider || env.LLM_PROVIDER,
-      baseUrl: config.llm?.baseUrl || env.LLM_BASE_URL,
-      apiKey: maskString(config.llm?.apiKey || env.LLM_API_KEY),
-      model: config.llm?.model || env.LLM_MODEL,
+      provider: config.llm?.provider,
+      baseUrl: config.llm?.baseUrl,
+      apiKey: maskString(config.llm?.apiKey),
+      model: config.llm?.model,
       testAnalysisTemperature: config.llm?.testAnalysisTemperature,
       reportSummaryTemperature: config.llm?.reportSummaryTemperature,
       projectSummaryTemperature: config.llm?.projectSummaryTemperature,
@@ -377,16 +377,20 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         config.llm ??= {};
 
         if (formData.llmProvider !== undefined) {
-          const provider = formData.llmProvider;
-          config.llm.provider = provider as any;
+          const provider = formData.llmProvider.trim();
+          config.llm.provider = (provider || undefined) as any;
         }
-        if (formData.llmBaseUrl !== undefined) config.llm.baseUrl = formData.llmBaseUrl;
+        if (formData.llmBaseUrl !== undefined) {
+          config.llm.baseUrl = formData.llmBaseUrl.trim() || undefined;
+        }
         if (formData.llmApiKey !== undefined && !/^\*+$/.test(formData.llmApiKey)) {
-          config.llm.apiKey = formData.llmApiKey;
+          config.llm.apiKey = formData.llmApiKey || undefined;
         }
-        if (formData.llmModel !== undefined) config.llm.model = formData.llmModel;
+        if (formData.llmModel !== undefined) {
+          config.llm.model = formData.llmModel.trim() || undefined;
+        }
         // Per-task temperature overrides. Empty string clears (provider falls
-        // back to env-driven default). Range is 0–2 (same as model APIs accept).
+        // back to the hardcoded default). Range is 0–2 (same as model APIs accept).
         const parseTaskTemp = (
           raw: string | undefined,
           label: string
@@ -503,18 +507,17 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
             formData.llmCustomProjectSummaryInstructions || undefined;
         }
 
-        const llmConfigChanged = !!(
-          formData.llmProvider ||
-          formData.llmBaseUrl ||
-          (formData.llmApiKey && !/^\*+$/.test(formData.llmApiKey)) ||
-          formData.llmModel ||
+        const llmConfigChanged =
+          formData.llmProvider !== undefined ||
+          formData.llmBaseUrl !== undefined ||
+          (formData.llmApiKey !== undefined && !/^\*+$/.test(formData.llmApiKey)) ||
+          formData.llmModel !== undefined ||
           formData.llmTestAnalysisTemperature !== undefined ||
           formData.llmReportSummaryTemperature !== undefined ||
           formData.llmProjectSummaryTemperature !== undefined ||
           formData.llmMaxTokens !== undefined ||
           formData.llmContextWindow !== undefined ||
-          formData.llmMultimodalMode !== undefined
-        );
+          formData.llmMultimodalMode !== undefined;
 
         if (llmConfigChanged) {
           await llmService.restart(config.llm);
@@ -522,41 +525,65 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
         config.cron ??= {};
 
-        if (formData.resultExpireDays !== undefined) {
-          const days = Number.parseInt(formData.resultExpireDays, 10);
+        const parseExpireDays = (
+          raw: string | undefined,
+          field: string
+        ): number | undefined | { error: string } => {
+          if (raw === undefined) return undefined;
+          const trimmed = raw.trim();
+          if (trimmed === '') return undefined;
+          const days = Number.parseInt(trimmed, 10);
           if (Number.isNaN(days) || days < 0) {
-            return reply
-              .status(400)
-              .send({ error: 'resultExpireDays must be a non-negative integer' });
+            return { error: `${field} must be a non-negative integer` };
           }
-          config.cron.resultExpireDays = days;
+          return days;
+        };
+        if (formData.resultExpireDays !== undefined) {
+          const parsed = parseExpireDays(formData.resultExpireDays, 'resultExpireDays');
+          if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+            return reply.status(400).send({ error: parsed.error });
+          }
+          config.cron.resultExpireDays = parsed as number | undefined;
         }
         if (formData.reportExpireDays !== undefined) {
-          const days = Number.parseInt(formData.reportExpireDays, 10);
-          if (Number.isNaN(days) || days < 0) {
-            return reply
-              .status(400)
-              .send({ error: 'reportExpireDays must be a non-negative integer' });
+          const parsed = parseExpireDays(formData.reportExpireDays, 'reportExpireDays');
+          if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+            return reply.status(400).send({ error: parsed.error });
           }
-          config.cron.reportExpireDays = days;
+          config.cron.reportExpireDays = parsed as number | undefined;
         }
-        if (formData.resultExpireCronSchedule !== undefined) {
-          const validation = CronService.validateExpression(formData.resultExpireCronSchedule);
+        const parseCronSchedule = (
+          raw: string | undefined,
+          field: string
+        ): string | undefined | { error: string } => {
+          if (raw === undefined) return undefined;
+          const trimmed = raw.trim();
+          if (trimmed === '') return undefined;
+          const validation = CronService.validateExpression(trimmed);
           if (!validation.valid) {
-            return reply
-              .status(400)
-              .send({ error: `resultExpireCronSchedule is invalid: ${validation.error}` });
+            return { error: `${field} is invalid: ${validation.error}` };
           }
-          config.cron.resultExpireCronSchedule = formData.resultExpireCronSchedule;
+          return trimmed;
+        };
+        if (formData.resultExpireCronSchedule !== undefined) {
+          const parsed = parseCronSchedule(
+            formData.resultExpireCronSchedule,
+            'resultExpireCronSchedule'
+          );
+          if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+            return reply.status(400).send({ error: parsed.error });
+          }
+          config.cron.resultExpireCronSchedule = parsed as string | undefined;
         }
         if (formData.reportExpireCronSchedule !== undefined) {
-          const validation = CronService.validateExpression(formData.reportExpireCronSchedule);
-          if (!validation.valid) {
-            return reply
-              .status(400)
-              .send({ error: `reportExpireCronSchedule is invalid: ${validation.error}` });
+          const parsed = parseCronSchedule(
+            formData.reportExpireCronSchedule,
+            'reportExpireCronSchedule'
+          );
+          if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+            return reply.status(400).send({ error: parsed.error });
           }
-          config.cron.reportExpireCronSchedule = formData.reportExpireCronSchedule;
+          config.cron.reportExpireCronSchedule = parsed as string | undefined;
         }
 
         const cronConfigChanged =

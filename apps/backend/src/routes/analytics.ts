@@ -132,7 +132,8 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
       if (!llmService.isConfigured()) {
         return reply.status(400).send({
           success: false,
-          error: 'LLM service is not enabled. Set LLM_BASE_URL and LLM_API_KEY to enable',
+          error:
+            'LLM service is not enabled. Configure the base URL and API key in Settings → LLM.',
         });
       }
 
