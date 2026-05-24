@@ -18,9 +18,9 @@ import { cn } from '@/lib/utils';
 const SECTION_NAV: Array<{ id: string; label: string }> = [
   { id: 'server', label: 'General' },
   { id: 'cron', label: 'Schedules' },
+  { id: 'github', label: 'GitHub Sync' },
   { id: 'llm', label: 'LLM' },
   { id: 'testManagement', label: 'Test Management' },
-  { id: 'github', label: 'GitHub Sync' },
   { id: 'environment', label: 'Environment' },
 ];
 
@@ -381,6 +381,8 @@ export default function SettingsPage() {
             onUpdateTempConfig={updateTempConfig}
           />
 
+          <GithubSyncConfiguration />
+
           <LLMConfiguration
             config={config}
             editingSection={editingSection}
@@ -402,8 +404,6 @@ export default function SettingsPage() {
             onSave={() => handleSave('testManagement')}
             onUpdateTempConfig={updateTempConfig}
           />
-
-          <GithubSyncConfiguration />
 
           <EnvironmentInfo />
         </div>
