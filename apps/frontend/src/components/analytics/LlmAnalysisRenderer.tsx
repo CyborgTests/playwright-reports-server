@@ -6,13 +6,11 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
-  FileCode,
   ListChecks,
   Stethoscope,
   TrendingUp,
 } from 'lucide-react';
 import { useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 
@@ -48,77 +46,11 @@ export function VerdictBadge({ verdict }: Readonly<{ verdict: ProjectAnalysisVer
   return <Badge variant={meta.variant}>{meta.label}</Badge>;
 }
 
-interface CodeRefsProps {
-  refs: NonNullable<ProjectAnalysisStructured['sections'][number]['codeRefs']>;
-  latestReportId?: string;
-  fallbackProject?: string;
-}
-
-function CodeRefs({ refs, latestReportId, fallbackProject }: Readonly<CodeRefsProps>) {
-  if (refs.length === 0) return null;
-  return (
-    <div className="mt-3 flex flex-wrap gap-2">
-      {refs.map((ref, i) => {
-        const className =
-          'inline-flex items-center gap-1 rounded border bg-muted/30 px-2 py-0.5 text-xs font-mono';
-        const inner = (
-          <>
-            <FileCode className="h-3 w-3" />
-            {ref.label}
-            {ref.line ? `:${ref.line}` : ''}
-          </>
-        );
-
-        // 'test' refs route to /test/:fileId/:testId. The test detail page
-        // scopes its lookup by `?project=…` since (testId, fileId) isn't unique
-        // across projects, so attach it when the server injected one or the
-        // component's fallback is known.
-        if (ref.kind === 'test' && ref.testId && ref.fileId) {
-          const project = ref.project ?? fallbackProject;
-          const query = project ? `?project=${encodeURIComponent(project)}` : '';
-          return (
-            <RouterLink
-              key={`test-${ref.testId}-${i}`}
-              to={`/test/${ref.fileId}/${ref.testId}${query}`}
-              className={`${className} text-primary hover:underline`}
-            >
-              {inner}
-            </RouterLink>
-          );
-        }
-
-        // 'file' refs link to a report viewer — the served Playwright viewer
-        // handles in-report navigation. Prefer the ref's own reportId; fall
-        // back to the latest run in the window.
-        const targetReport = ref.reportId ?? latestReportId;
-        if (ref.kind === 'file' && targetReport) {
-          return (
-            <RouterLink
-              key={`file-${ref.filePath ?? ref.label}-${i}`}
-              to={`/report/${targetReport}`}
-              className={`${className} text-primary hover:underline`}
-              title={ref.filePath}
-            >
-              {inner}
-            </RouterLink>
-          );
-        }
-
-        return (
-          <span key={`ref-${i}`} className={`${className} text-muted-foreground`}>
-            {inner}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
 export function LlmAnalysisRenderer({
   analysis,
   fallbackProject,
 }: Readonly<LlmAnalysisRendererProps>) {
-  const { sections, summary, latestReportId } = analysis;
+  const { sections, summary } = analysis;
   // First section is always open; rest are collapsed by default. Index 0 is
   // never in this Set; the entries here are explicitly toggled-open sections.
   const [openExtras, setOpenExtras] = useState<Set<number>>(new Set());
@@ -165,13 +97,6 @@ export function LlmAnalysisRenderer({
             {isOpen && (
               <div className="mt-2">
                 <MarkdownRenderer content={section.body} fallbackProject={fallbackProject} />
-                {section.codeRefs && (
-                  <CodeRefs
-                    refs={section.codeRefs}
-                    latestReportId={latestReportId}
-                    fallbackProject={fallbackProject}
-                  />
-                )}
               </div>
             )}
           </div>
