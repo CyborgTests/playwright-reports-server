@@ -39,4 +39,3 @@ export class ReportsPage extends BasePage {
     return this.page.getByRole('row', { exact: true }).count();
   }
 }
-

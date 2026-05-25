@@ -48,12 +48,7 @@ async function exportZip(reportId: string, project: string, title: string): Prom
   });
 }
 
-async function exportPdf(
-  reportId: string,
-  project: string,
-  title: string,
-  req: NextRequest,
-): Promise<Response> {
+async function exportPdf(reportId: string, project: string, title: string, req: NextRequest): Promise<Response> {
   let chromium: typeof import('@playwright/test').chromium;
 
   try {

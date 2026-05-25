@@ -390,9 +390,7 @@ export class AzureBlob implements Storage {
           ...Object.entries(report)
             .filter(
               ([key]) =>
-                !['reportID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'reportUrl', 'stats'].includes(
-                  key,
-                ),
+                !['reportID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'reportUrl', 'stats'].includes(key),
             )
             .map(([key, value]) => `${key}: ${value}`),
         ].filter(Boolean);
