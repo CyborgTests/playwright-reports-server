@@ -10,12 +10,10 @@ interface FindOpts {
 
 interface BriefOpts {
   project?: string;
-  fileId?: string;
 }
 
 interface HistoryOpts {
   project?: string;
-  fileId?: string;
   limit?: number;
 }
 
@@ -59,19 +57,17 @@ export async function runTestFind(query: string, opts: FindOpts): Promise<void> 
 }
 
 /**
- * `--file-id` and `--project` are optional now. When omitted, the server
- * resolves the latest `test_runs` row for the testId. Passing `-` as the
- * fileId path segment is the wire-format opt-in for that fallback.
+ * `--project` is optional. When omitted, the server resolves the latest
+ * `test_runs` row for the testId.
  */
 export async function runTestBrief(testId: string, opts: BriefOpts): Promise<void> {
   if (!testId) {
-    throw new Error('Usage: pwrs-cli test brief <testId> [--file-id <fileId>] [--project <p>]');
+    throw new Error('Usage: pwrs-cli test brief <testId> [--project <p>]');
   }
   const config = resolveConfig();
-  const fileIdSegment = opts.fileId ? encodeURIComponent(opts.fileId) : '-';
   const brief = await apiGet<TestBrief>(
     config,
-    `/api/cli/test/${fileIdSegment}/${encodeURIComponent(testId)}/brief`,
+    `/api/cli/test/${encodeURIComponent(testId)}/brief`,
     opts.project ? { project: opts.project } : {}
   );
   emitJson(brief);
@@ -80,18 +76,17 @@ export async function runTestBrief(testId: string, opts: BriefOpts): Promise<voi
 /**
  * Full persisted LLM analysis markdown for a test. `test brief` returns a
  * regex-split `rootCause` / `fix` view that may miss sections — use this when
- * you want the unmodified document. `--file-id` / `--project` optional, same
- * server-side resolution as `test brief`.
+ * you want the unmodified document. `--project` optional, same server-side
+ * resolution as `test brief`.
  */
 export async function runTestAnalysis(testId: string, opts: BriefOpts): Promise<void> {
   if (!testId) {
-    throw new Error('Usage: pwrs-cli test analysis <testId> [--file-id <fileId>] [--project <p>]');
+    throw new Error('Usage: pwrs-cli test analysis <testId> [--project <p>]');
   }
   const config = resolveConfig();
-  const fileIdSegment = opts.fileId ? encodeURIComponent(opts.fileId) : '-';
   const analysis = await apiGet<TestAnalysis>(
     config,
-    `/api/cli/test/${fileIdSegment}/${encodeURIComponent(testId)}/analysis`,
+    `/api/cli/test/${encodeURIComponent(testId)}/analysis`,
     opts.project ? { project: opts.project } : {}
   );
   emitJson(analysis);
@@ -99,7 +94,6 @@ export async function runTestAnalysis(testId: string, opts: BriefOpts): Promise<
 
 interface PromptOpts {
   project?: string;
-  fileId?: string;
   reportId: string;
 }
 
@@ -116,16 +110,15 @@ interface AnalysisPromptOpts extends PromptOpts {
 export async function runTestFailureContext(testId: string, opts: PromptOpts): Promise<void> {
   if (!testId || !opts.reportId) {
     throw new Error(
-      'Usage: pwrs-cli test failure-context <testId> --report-id <id> [--file-id <fileId>] [--project <p>]'
+      'Usage: pwrs-cli test failure-context <testId> --report-id <id> [--project <p>]'
     );
   }
   const config = resolveConfig();
-  const fileIdSegment = opts.fileId ? encodeURIComponent(opts.fileId) : '-';
   const query: Record<string, string | undefined> = { reportId: opts.reportId };
   if (opts.project) query.project = opts.project;
   const data = await apiGet<unknown>(
     config,
-    `/api/cli/test/${fileIdSegment}/${encodeURIComponent(testId)}/failure-context`,
+    `/api/cli/test/${encodeURIComponent(testId)}/failure-context`,
     query
   );
   emitJson(data);
@@ -142,17 +135,16 @@ export async function runTestAnalysisPrompt(
 ): Promise<void> {
   if (!testId || !opts.reportId) {
     throw new Error(
-      'Usage: pwrs-cli test analysis-prompt <testId> --report-id <id> [--file-id <fileId>] [--project <p>] [--task-id <id>]'
+      'Usage: pwrs-cli test analysis-prompt <testId> --report-id <id> [--project <p>] [--task-id <id>]'
     );
   }
   const config = resolveConfig();
-  const fileIdSegment = opts.fileId ? encodeURIComponent(opts.fileId) : '-';
   const query: Record<string, string | undefined> = { reportId: opts.reportId };
   if (opts.project) query.project = opts.project;
   if (opts.taskId) query.taskId = opts.taskId;
   const data = await apiGet<unknown>(
     config,
-    `/api/cli/test/${fileIdSegment}/${encodeURIComponent(testId)}/analysis-prompt`,
+    `/api/cli/test/${encodeURIComponent(testId)}/analysis-prompt`,
     query
   );
   emitJson(data);
@@ -166,17 +158,16 @@ export async function runTestAnalysisPrompt(
 export async function runTestHistory(testId: string, opts: HistoryOpts): Promise<void> {
   if (!testId) {
     throw new Error(
-      'Usage: pwrs-cli test history <testId> [--file-id <fileId>] [--project <p>] [--limit N]'
+      'Usage: pwrs-cli test history <testId> [--project <p>] [--limit N]'
     );
   }
   const config = resolveConfig();
-  const fileIdSegment = opts.fileId ? encodeURIComponent(opts.fileId) : '-';
   const query: Record<string, string | number | undefined> = {};
   if (opts.project) query.project = opts.project;
   if (opts.limit) query.limit = opts.limit;
   const history = await apiGet<TestHistory>(
     config,
-    `/api/cli/test/${fileIdSegment}/${encodeURIComponent(testId)}/history`,
+    `/api/cli/test/${encodeURIComponent(testId)}/history`,
     query
   );
   emitJson(history);
@@ -268,7 +259,7 @@ async function scoreByFailureLine(
     candidates.map((t) =>
       apiGet<TestBrief>(
         config,
-        `/api/cli/test/${encodeURIComponent(t.fileId)}/${encodeURIComponent(t.testId)}/brief`,
+        `/api/cli/test/${encodeURIComponent(t.testId)}/brief`,
         { project: t.project }
       )
     )

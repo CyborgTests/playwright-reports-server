@@ -54,7 +54,7 @@ const HELP = [
   'Drill-down (you already have an ID):',
   '  test find <query>                      Resolve a test name → testId',
   '  test from-file <path>[:line]           Resolve a spec file → testIds (line narrows by proximity)',
-  '  test brief <testId> [--file-id …]      Everything we know about this test',
+  '  test brief <testId>                     Everything we know about this test',
   '  test analysis <testId>                 Full persisted LLM analysis markdown',
   '  test failure-context <testId> --report-id <id>',
   '                                          Current would-be prompt + typed evidence envelope',
@@ -89,8 +89,7 @@ const HELP = [
   '  --failed-only                          stats: scope to runs with failures',
   '  --strategies <signature,stack-frame,fixture,temporal>   cluster list',
   '  --min-tests <N>                        cluster list: minimum cluster size',
-  '  --file-id <fileId>                     Optional for test brief/history (resolved from runs when omitted)',
-  '  --with-failures                        report brief/latest: include full per-failure briefs',
+    '  --with-failures                        report brief/latest: include full per-failure briefs',
   '  --help                                 Show this message',
   '  --version                              Print CLI version and exit',
   '',
@@ -113,20 +112,20 @@ const GROUP_HELP: Record<string, string> = {
     '      Resolve a test name → testId (default --limit 10).',
     '  test from-file <path>[:line] [--project <p>] [--limit N]',
     '      Resolve a spec file → testIds. With :line, sorts by proximity to that line.',
-    '  test brief <testId> [--file-id <fileId>] [--project <p>]',
+    '  test brief <testId> [--project <p>]',
     '      One-shot brief (signals, latest failure, LLM analysis, feedback, cluster).',
-    '      --file-id and --project optional — server resolves from latest test_runs row.',
-    '  test analysis <testId> [--file-id <fileId>] [--project <p>]',
+    '      --project optional — server resolves from latest test_runs row.',
+    '  test analysis <testId> [--project <p>]',
     '      Full persisted LLM analysis markdown (unmodified, no regex split).',
-    '  test failure-context <testId> --report-id <id> [--file-id <fileId>] [--project <p>]',
+    '  test failure-context <testId> --report-id <id> [--project <p>]',
     '      The prompt the analysis queue would feed the LLM for this test right now,',
     '      plus a typed evidence envelope (codeframe, step tree, ARIA snapshot,',
     '      git/CI metadata, console + network events, history). Lets external coding',
     '      agents pull every signal we have without going through the LLM.',
-    '  test analysis-prompt <testId> --report-id <id> [--file-id <fileId>] [--project <p>] [--task-id <id>]',
+    '  test analysis-prompt <testId> --report-id <id> [--project <p>] [--task-id <id>]',
     '      Verbatim prompt from the latest completed test_analysis task (mirrors the',
     '      in-report "Copy prompt" button). Pass --task-id to address a specific run.',
-    '  test history <testId> [--file-id <fileId>] [--project <p>] [--limit N]',
+    '  test history <testId> [--project <p>] [--limit N]',
     '      Per-run history + signatureGroups rollup. Default --limit 20, max 50.',
     '  test search [filters]',
     '      Open-ended search. Supports --tier, --status, --failure-category, --sort slowest,',
@@ -232,7 +231,6 @@ const GROUP_HELP: Record<string, string> = {
 
 interface CommonOpts {
   project?: string;
-  fileId?: string;
   limit?: number;
   offset?: number;
   from?: string;
@@ -259,7 +257,6 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
     strict: false,
     options: {
       project: { type: 'string' },
-      'file-id': { type: 'string' },
       'report-id': { type: 'string' },
       'task-id': { type: 'string' },
       limit: { type: 'string' },
@@ -295,7 +292,6 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
     positionals: parsed.positionals,
     opts: {
       project,
-      fileId: str(v['file-id']),
       limit: parseIntOpt(v.limit),
       offset:
         typeof v.offset === 'string' && Number.isFinite(Number.parseInt(v.offset, 10))
@@ -374,16 +370,15 @@ async function dispatch(argv: string[]): Promise<void> {
         await runTestFind(arg0, { project: opts.project, limit: opts.limit ?? 10 });
         return;
       case 'brief':
-        await runTestBrief(arg0, { project: opts.project, fileId: opts.fileId });
+        await runTestBrief(arg0, { project: opts.project });
         return;
       case 'analysis':
-        await runTestAnalysis(arg0, { project: opts.project, fileId: opts.fileId });
+        await runTestAnalysis(arg0, { project: opts.project });
         return;
       case 'failure-context':
         if (!opts.reportId) throw new Error('--report-id is required for failure-context');
         await runTestFailureContext(arg0, {
           project: opts.project,
-          fileId: opts.fileId,
           reportId: opts.reportId,
         });
         return;
@@ -391,7 +386,6 @@ async function dispatch(argv: string[]): Promise<void> {
         if (!opts.reportId) throw new Error('--report-id is required for analysis-prompt');
         await runTestAnalysisPrompt(arg0, {
           project: opts.project,
-          fileId: opts.fileId,
           reportId: opts.reportId,
           taskId: opts.taskId,
         });
@@ -399,7 +393,6 @@ async function dispatch(argv: string[]): Promise<void> {
       case 'history':
         await runTestHistory(arg0, {
           project: opts.project,
-          fileId: opts.fileId,
           limit: opts.limit,
         });
         return;

@@ -15,8 +15,8 @@ Every data command returns JSON; Error messages, LLM analyses, and cluster membe
 pwrs-cli test brief <testId>          # server resolves fileId+project from the latest run
 pwrs-cli test history <testId>        # per-run history — see "Per-run history" below
 ```
-Pass `--file-id <fileId> --project <project>` only when the server's
-auto-resolution returns the wrong run (e.g. an obsolete project for the same testId).
+Pass `--project <project>` only when the server's auto-resolution returns the
+wrong run (e.g. an obsolete project for the same testId).
 
 **You have a testId AND a reportId, and the brief's `llmAnalysis` isn't enough** →
 ```
@@ -136,7 +136,7 @@ Returns `{ summary, newlyFailed, fixed, stillFailing, flakyToPass, passToFlaky, 
 - **`report brief` is compact by default and uses a discriminated `mode` field.** When `mode === 'summary'`, the payload has `sampleUnclusteredFailures`. When `mode === 'full'` (from `--with-failures`), it has `failedTests` instead. Both modes carry `clusterSummary[].sampleFailedTests`. Full mode on a 50-failure report is ~100 KB — use sparingly.
 - **`--failure-category` values are heuristic-emitted strings.** Run `category list` first to see the exact spellings. The same concept appears as `latestFailure.category` and `cluster.category` in briefs, as the `--failure-category` CLI flag, and as the `failureCategory` query param — all reference the same vocabulary.
 - **`test from-file <path>:<line>` sorts by proximity** to the failing line — pass it when you have a CI stack frame.
-- **`test brief` / `test history` work without `--file-id` and `--project`** — the server resolves them from the latest `test_runs` row.
+- **`test brief` / `test history` — the server resolves it from the latest `test_runs` row.
 - **Pagination signals**: `total` + `hasMore` appear on every list-returning command (`test find/search`, `report list`, `cluster list`). When `hasMore: true`, pass `--offset` (where supported) or raise `--limit`.
 - **Errors are JSON on stderr**: failed CLI calls emit `{"success":false,"error":"…","kind":"http|config|unknown",…}` and exit non-zero. Parse both stdout and stderr.
 - **Sanity check**: `pwrs-cli ping` returns `{ ok, server, tokenConfigured, latencyMs, … }` — use this if a command unexpectedly fails to confirm config without issuing a real query.
