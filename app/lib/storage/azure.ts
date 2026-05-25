@@ -22,6 +22,7 @@ import {
   ReadResultsInput,
   ReadResultsOutput,
   ReportHistory,
+  ReportFile,
   ReportMetadata,
   Storage,
 } from './types';
@@ -706,6 +707,24 @@ export class AzureBlob implements Storage {
     );
 
     if (metadataError) console.error(`[azure] failed to upload report metadata: ${metadataError.message}`);
+  }
+
+  async listReportFiles(reportId: string, project: string): Promise<ReportFile[]> {
+    await this.ensureContainerExists();
+
+    const prefix = posixPath.join(REPORTS_BUCKET, project, reportId);
+    const files: ReportFile[] = [];
+
+    for await (const blob of this.container.listBlobsFlat({ prefix })) {
+      if (!blob.name) continue;
+
+      const storagePath = blob.name.replace(`${REPORTS_BUCKET}/`, '');
+      const relativePath = storagePath.replace(`${project ? project + '/' : ''}${reportId}/`, '');
+
+      files.push({ relativePath, storagePath });
+    }
+
+    return files;
   }
 
   private async parseReportMetadata(
