@@ -47,6 +47,12 @@ async function createDirectoriesIfMissing() {
   await createDirectory(TMP_FOLDER);
 }
 
+function getRecursiveEntryPath(entry: Dirent): string {
+  const parentPath = (entry as Dirent & { path?: string }).path ?? '';
+
+  return path.join(parentPath, entry.name);
+}
+
 const getSizeInMb = async (dir: string) => {
   const sizeBytes = await getFolderSize.loose(dir);
 
@@ -221,18 +227,25 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
   const entries = await fs.readdir(REPORTS_FOLDER, { withFileTypes: true, recursive: true });
 
   const reportEntries = entries
-    .filter((entry) => !entry.isDirectory() && entry.name === 'index.html' && !(entry as any).path.endsWith('trace'))
-    .filter((entry) => (input?.ids ? input.ids.some((id) => (entry as any).path.includes(id)) : entry))
-    .filter((entry) => (input?.project ? (entry as any).path.includes(input.project) : entry));
+    .filter((entry) => {
+      if (entry.isDirectory() || entry.name !== 'index.html') return false;
+
+      const entryPath = getRecursiveEntryPath(entry);
+
+      return !entryPath.includes('/trace/') && !entryPath.endsWith('/trace/index.html');
+    })
+    .filter((entry) => (input?.ids ? input.ids.some((id) => getRecursiveEntryPath(entry).includes(id)) : true))
+    .filter((entry) => (input?.project ? getRecursiveEntryPath(entry).includes(input.project) : true));
 
   const stats = await processBatch<Dirent, Stats & { filePath: string; createdAt: Date }>(
     {},
     reportEntries,
     20,
     async (file) => {
-      const stat = await fs.stat((file as any).path);
+      const filePath = getRecursiveEntryPath(file);
+      const stat = await fs.stat(filePath);
 
-      return Object.assign(stat, { filePath: (file as any).path, createdAt: stat.birthtime });
+      return Object.assign(stat, { filePath, createdAt: stat.birthtime });
     },
   );
 

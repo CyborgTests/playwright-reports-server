@@ -81,7 +81,10 @@ test('/api/result/list filter by future date range returns empty list', async ({
   expect(json.total).toBe(0);
 });
 
-test('/api/result/list filter by dateFrom only returns items from that date onwards', async ({ request, uploadedResult }) => {
+test('/api/result/list filter by dateFrom only returns items from that date onwards', async ({
+  request,
+  uploadedResult,
+}) => {
   const api = new ResultController(request);
   const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 

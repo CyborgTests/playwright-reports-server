@@ -216,11 +216,7 @@ function buildEvidenceHtml(info: ReportInfo, title: string, reportId: string, te
 </html>`;
 }
 
-async function exportEvidence(
-  reportId: string,
-  project: string,
-  title: string,
-): Promise<Response> {
+async function exportEvidence(reportId: string, project: string, title: string): Promise<Response> {
   // Read and parse the report HTML to get full test tree with attachments
   const indexPath = path.join(project, reportId, 'index.html');
   const { result: htmlContent, error: readError } = await withError(storage.readFile(indexPath, 'text/html'));
