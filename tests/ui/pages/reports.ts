@@ -25,14 +25,14 @@ export class ReportsPage extends BasePage {
     return this.page.getByRole('row').filter({ has: this.page.locator('a[href*="/report/"]') });
   }
 
-  async getDownloadButtonsForFirstRow() {
+  getDownloadButtonsForFirstRow() {
     const firstRow = this.page.getByRole('row').nth(1); // Skip header row
     return firstRow.getByLabel(/Download/);
   }
 
   async isDownloadButtonVisible() {
     const buttons = this.getDownloadButtonsForFirstRow();
-    return buttons.count().then((count) => count > 0);
+    return (await buttons.count()) > 0;
   }
 
   async countVisibleReports() {
