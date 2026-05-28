@@ -10,6 +10,9 @@ export const config = {
 };
 
 export async function middleware(request: NextRequest) {
+  // API_TOKEN gates programmatic /api/* clients regardless of which UI auth mode
+  // is active. When AUTH_GOOGLE_ENABLED=true the auth.ts JWT callback transparently
+  // attaches API_TOKEN to the user's session so internal UI fetches keep matching here.
   const isAuthRequired = !!env.API_TOKEN;
 
   if (!isAuthRequired) {

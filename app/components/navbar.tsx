@@ -19,6 +19,7 @@ import { subtitle } from './primitives';
 import { defaultConfig } from '@/app/lib/config';
 import { HeaderLinks } from '@/app/components/header-links';
 import { ThemeSwitch } from '@/app/components/theme-switch';
+import { UserGreeting } from '@/app/components/user-greeting';
 import { SiteWhiteLabelConfig } from '@/app/types';
 import useQuery from '@/app/hooks/useQuery';
 
@@ -64,19 +65,21 @@ export const Navbar: React.FC = () => {
       </NavbarContent>
 
       <NavbarContent className="hidden sm:flex basis-1/5 sm:basis-full" justify="end">
-        <NavbarItem className="hidden sm:flex gap-4">
+        <NavbarItem className="hidden sm:flex gap-4 items-center">
           {config && !isLoading ? (
             <HeaderLinks config={config} />
           ) : (
             <Skeleton className="sm:flex basis-1/5 sm:basis-full" />
           )}
           <ThemeSwitch />
+          <UserGreeting />
         </NavbarItem>
       </NavbarContent>
 
       {/* mobile view fallback */}
       <NavbarContent className="sm:hidden basis-1 !justify-end">
         <ThemeSwitch />
+        <UserGreeting />
         {!!config && <NavbarMenuToggle />}
       </NavbarContent>
 

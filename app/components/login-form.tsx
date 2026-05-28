@@ -7,16 +7,21 @@ import { getProviders, signIn, useSession } from 'next-auth/react';
 
 import { title } from '@/app/components/primitives';
 
+type ProvidersMap = Awaited<ReturnType<typeof getProviders>>;
+
 export default function LoginForm() {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
   const [isAutoSigningIn, setIsAutoSigningIn] = useState(true);
+  const [providers, setProviders] = useState<ProvidersMap | null>(null);
   const router = useRouter();
   const session = useSession();
   const searchParams = useSearchParams();
 
   const target = searchParams?.get('callbackUrl') ?? '/';
   const callbackUrl = decodeURI(target);
+  const errorParam = searchParams?.get('error');
+  const isAccessDenied = errorParam === 'AccessDenied';
 
   useEffect(() => {
     // redirect if already authenticated
@@ -28,9 +33,10 @@ export default function LoginForm() {
 
     // check if we can sign in automatically
     getProviders()
-      .then((providers) => {
+      .then((available) => {
+        setProviders(available);
         // if no api token required we can automatically sign user in
-        if (providers?.credentials.name === 'No Auth') {
+        if (available?.credentials?.name === 'No Auth') {
           return signIn('credentials', {
             redirect: false,
           }).then((response) => {
@@ -63,6 +69,29 @@ export default function LoginForm() {
   // Show spinner while session is loading or while auto-signing in
   if (session.status === 'loading' || isAutoSigningIn) {
     return <Spinner className="w-full" />;
+  }
+
+  if (providers?.google) {
+    return (
+      <div className="grid col-span-6 justify-center">
+        <h1 className={title()}>Login</h1>
+        <Card className="h-screen min-w-[340px] max-h-[250px] p-2 mt-10">
+          <CardHeader className="content-start max-h-14">
+            <p className="text-md">Sign in with your company Google account</p>
+          </CardHeader>
+          <CardBody className="min-w-full h-24">
+            {isAccessDenied && (
+              <p className="text-danger text-sm">Your email domain is not allowed to access this server.</p>
+            )}
+          </CardBody>
+          <CardFooter className="mt-5">
+            <Button className="w-full" color="primary" onPress={() => signIn('google', { callbackUrl })}>
+              Sign in with Google
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
   }
 
   return (

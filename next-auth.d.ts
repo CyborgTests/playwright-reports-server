@@ -6,3 +6,10 @@ declare module 'next-auth' {
     jwtToken?: string;
   }
 }
+
+declare module 'next-auth/jwt' {
+  interface JWT {
+    apiToken?: string;
+    jwtToken?: string;
+  }
+}
