@@ -4,6 +4,9 @@
   "description": "Reporter that uploads your blob reports to playwright reports server",
   "main": "dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "playwright-reporter-cli": "dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -35,8 +38,12 @@
   "peerDependencies": {
     "@playwright/test": "^1.59.1"
   },
+  "dependencies": {
+    "archiver": "^7.0.1"
+  },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
+    "@types/archiver": "^6.0.3",
     "@types/node": "^22.19.17"
   },
   "directories": {

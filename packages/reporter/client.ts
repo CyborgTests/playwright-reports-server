@@ -108,6 +108,74 @@ export class ReportServerClient {
     }
   }
 
+  async uploadReportZip(
+    zipPath: string,
+    metadata: Record<string, unknown> = {},
+    { logProgress = false }: { logProgress?: boolean } = {}
+  ): Promise<{ reportId: string; reportUrl: string; metadata: Record<string, unknown> }> {
+    let stat: Stats;
+    try {
+      stat = await fsp.stat(zipPath);
+    } catch (err) {
+      console.error('[ReportServerClient] failed to stat report zip:', err);
+      throw new Error('[ReportServerClient] Report zip not found or cannot be loaded.');
+    }
+
+    const zipSize = stat.size;
+    const boundary = makeBoundary();
+    const iterable = multipartStream({
+      boundary,
+      fields: { metadata: JSON.stringify(metadata) },
+      filePath: zipPath,
+      fileName: 'report.zip',
+      fileType: 'application/zip',
+      totalBytes: zipSize,
+      logProgress,
+    });
+    const body = Readable.toWeb(Readable.from(iterable));
+
+    const uploadUrl = `${this.baseUrl}/api/report/upload`;
+
+    const headers: Record<string, string> = {
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    };
+    if (this.options.token) {
+      headers.Authorization = this.options.token;
+    }
+
+    const totalTimeout =
+      this.options.blobUploadTimeout ?? this.options.requestTimeout ?? 10 * 60_000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), totalTimeout);
+
+    try {
+      const fetchAny: any = fetch;
+
+      const resp = await fetchAny(uploadUrl, {
+        method: 'POST',
+        headers,
+        body: body as any,
+        signal: controller.signal,
+        duplex: 'half',
+      });
+      clearTimeout(timeoutId);
+
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        throw new Error(`[ReportServerClient] Upload failed ${resp.status}: ${text.slice(0, 500)}`);
+      }
+
+      return (await resp.json()) as {
+        reportId: string;
+        reportUrl: string;
+        metadata: Record<string, unknown>;
+      };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      throw err;
+    }
+  }
+
   async getQuarantinedTests(project?: string): Promise<Array<{ id: string; reason: string }>> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
