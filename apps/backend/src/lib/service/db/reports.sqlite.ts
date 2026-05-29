@@ -4,6 +4,9 @@ import type { ReadReportsInput, ReadReportsOutput, ReportHistory } from '../../s
 import { withError } from '../../withError.js';
 import { testManagementService } from '../testManagement.js';
 import { getDatabase } from './db.js';
+import { failureSummaryDb } from './failureSummary.sqlite.js';
+import { llmTasksDb } from './llmTasks.sqlite.js';
+import { testAnalysisDb } from './testAnalysis.sqlite.js';
 import { testDb } from './tests.sqlite.js';
 
 const initiatedReportsDb = Symbol.for('playwright.reports.db.reports');
@@ -194,17 +197,17 @@ export class ReportDatabase {
   }
 
   public onDeleted(reportIds: string[]) {
-    const deleteMany = this.db.transaction((ids: string[]) => {
+    const cascadeDelete = this.db.transaction((ids: string[]) => {
       for (const id of ids) {
+        llmTasksDb.deleteByReport(id);
+        testAnalysisDb.deleteByReport(id);
+        failureSummaryDb.deleteSummary(id);
+        testDb.deleteTestRunsByReportId(id);
         this.deleteStmt.run(id);
       }
     });
 
-    deleteMany(reportIds);
-
-    for (const reportId of reportIds) {
-      testDb.deleteTestRunsByReportId(reportId);
-    }
+    cascadeDelete(reportIds);
   }
 
   public onCreated(report: ReportHistory) {
