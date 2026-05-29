@@ -19,7 +19,10 @@ import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
 import { service } from '../lib/service/index.js';
-import { PROJECT_SUMMARY_REPORT_LIMIT } from '../lib/service/llmAnalysisQueue.js';
+import {
+  MANUAL_PROJECT_SUMMARY_PRIORITY,
+  PROJECT_SUMMARY_REPORT_LIMIT,
+} from '../lib/service/llmAnalysisQueue.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
 /** Project-summary cache is considered too stale to display when the newest
@@ -586,6 +589,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
             project: projectKey,
             isRetry: true,
             reportIds: resolvedReportIds ?? undefined,
+            priority: MANUAL_PROJECT_SUMMARY_PRIORITY,
           });
           taskId = created.id;
           deduped = false;

@@ -28,6 +28,7 @@ export interface LLMConfig {
   };
   parallelRequests?: number;
   autoAnalyzeNewReports?: boolean;
+  autoProjectSummaryOnReportComplete?: boolean;
   /** When true, "Generate Analysis" runs the LLM even for all-green windows
    *  (no failures across the latest N runs) so duration creep / near-flakes /
    *  quarantine churn still get surfaced. When false (default), all-green

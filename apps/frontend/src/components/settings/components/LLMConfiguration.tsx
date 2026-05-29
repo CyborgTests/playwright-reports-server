@@ -73,7 +73,11 @@ export default function LLMConfiguration({
   const [availableModels, setAvailableModels] = useState<string[] | null>(null);
   const [refreshingModels, setRefreshingModels] = useState(false);
 
-  const { data: defaultPromptsData } = useLlmDefaultPrompts();
+  const [promptsAccordionValue, setPromptsAccordionValue] = useState<string>('');
+  const promptsAccordionOpen = promptsAccordionValue === 'custom-prompts';
+  const { data: defaultPromptsData } = useLlmDefaultPrompts({
+    enabled: isEditing && promptsAccordionOpen,
+  });
   const defaultPrompts = defaultPromptsData?.data;
   // Per-task numeric defaults come back on the saved config response. Used
   // as input placeholders so users see active defaults at a glance.
@@ -514,6 +518,7 @@ export default function LLMConfiguration({
                 <p className="text-xs text-muted-foreground">
                   Cap on output tokens per request. OpenAI/local servers omit this when blank;
                   Anthropic falls back to a safe default (8000) since its API requires the field.
+                  Openrouter providers sometimes get into looped inference and produce 65k tokens.
                 </p>
               </div>
 
@@ -617,6 +622,30 @@ export default function LLMConfiguration({
             </div>
             <div className="flex items-center justify-between">
               <div>
+                <h4 className="text-sm font-medium">Auto-generate project summary</h4>
+                <p className="text-xs text-muted-foreground mt-1">
+                  When enabled, completing a report's failure analysis automatically queues a
+                  project-level summary for that project and for "all" projects.
+                </p>
+              </div>
+              <Switch
+                disabled={editingSection !== 'llm'}
+                checked={
+                  editingSection === 'llm'
+                    ? !!tempConfig.llm?.autoProjectSummaryOnReportComplete
+                    : !!config.llm?.autoProjectSummaryOnReportComplete
+                }
+                onCheckedChange={(checked) => {
+                  if (editingSection === 'llm') {
+                    onUpdateTempConfig({
+                      llm: { ...tempConfig.llm, autoProjectSummaryOnReportComplete: checked },
+                    });
+                  }
+                }}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
                 <h4 className="text-sm font-medium">Analyze all-green windows</h4>
                 <p className="text-xs text-muted-foreground mt-1">
                   When enabled, "Generate Analysis" runs the LLM even when no failures were observed
@@ -646,7 +675,12 @@ export default function LLMConfiguration({
               prompt (saved override OR built-in default) so users can edit
               what's already in effect. Saving text identical to the default
               clears the override so future default updates flow through. */}
-          <Accordion type="single" collapsible>
+          <Accordion
+            type="single"
+            collapsible
+            value={promptsAccordionValue}
+            onValueChange={setPromptsAccordionValue}
+          >
             <AccordionItem value="custom-prompts" className="border rounded-md px-3">
               <AccordionTrigger className="text-sm font-medium">
                 Custom prompts (advanced)

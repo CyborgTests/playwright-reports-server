@@ -51,6 +51,9 @@ import { compareReports, findPreviousReportInProject } from './reportCompare.js'
 
 export const PROJECT_SUMMARY_REPORT_LIMIT = 20;
 
+export const AUTO_PROJECT_SUMMARY_PRIORITY = -10;
+export const MANUAL_PROJECT_SUMMARY_PRIORITY = 5;
+
 /** Per-task output-token reserve used by fitToContextWindow. Each value
  *  reflects the rough cap on how much markdown each task type tends to
  *  produce: test-analysis is one diagnosis (~800–1500 tokens out, 4000 is
@@ -1051,6 +1054,40 @@ class LlmAnalysisQueue {
     const totalFailures = Object.values(categories).reduce((s, c) => s + c, 0);
     failureSummaryDb.upsertSummary(reportId, project || '', totalFailures, categories);
     failureSummaryDb.updateLlmSummary(reportId, summaryText, structured, response.model);
+
+    await this.maybeEnqueueAutoProjectSummary(reportId, project, totalFailures, reportLlmCfg);
+  }
+
+  private async maybeEnqueueAutoProjectSummary(
+    reportId: string,
+    project: string | null,
+    totalFailures: number,
+    reportLlmCfg: any
+  ): Promise<void> {
+    if (!reportLlmCfg?.autoProjectSummaryOnReportComplete) return;
+
+    const hasFailures = totalFailures > 0;
+    const analyzeGreen = reportLlmCfg.analyzeGreenWindows === true;
+    if (!hasFailures && !analyzeGreen) {
+      console.log(
+        `[llmQueue] Auto project_summary skipped for report ${reportId} — all-green and analyzeGreenWindows is off`
+      );
+      return;
+    }
+
+    const targets = new Set<string>();
+    if (project) targets.add(project);
+    targets.add('all');
+
+    for (const projectKey of targets) {
+      llmTasksDb.createTask('project_summary', {
+        project: projectKey,
+        priority: AUTO_PROJECT_SUMMARY_PRIORITY,
+      });
+    }
+    console.log(
+      `[llmQueue] Auto-queued project_summary for ${[...targets].join(', ')} after report ${reportId}`
+    );
   }
 
   private async processProjectSummary(task: LlmTaskRow): Promise<void> {

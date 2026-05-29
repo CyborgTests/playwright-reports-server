@@ -121,7 +121,13 @@ export function LlmAnalysisRenderer({
 
   return (
     <div className="space-y-4">
-      {summary && <p className="text-base leading-relaxed text-foreground">{summary}</p>}
+      {summary && (
+        <MarkdownRenderer
+          content={summary}
+          fallbackProject={fallbackProject}
+          className="text-base text-foreground"
+        />
+      )}
 
       {sections.map((section, index) => {
         const Icon = sectionIcon(section.heading);

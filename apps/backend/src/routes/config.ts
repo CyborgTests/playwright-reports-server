@@ -111,6 +111,7 @@ interface ConfigFormData {
   llmProjectSummaryTemperature?: string;
   llmParallelRequests?: string;
   llmAutoAnalyzeNewReports?: string;
+  llmAutoProjectSummaryOnReportComplete?: string;
   llmAnalyzeGreenWindows?: string;
   llmMaxTokens?: string;
   llmContextWindow?: string;
@@ -180,6 +181,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       projectSummaryTemperature: config.llm?.projectSummaryTemperature,
       parallelRequests: config.llm?.parallelRequests || 1,
       autoAnalyzeNewReports: !!config.llm?.autoAnalyzeNewReports,
+      autoProjectSummaryOnReportComplete: !!config.llm?.autoProjectSummaryOnReportComplete,
       analyzeGreenWindows: !!config.llm?.analyzeGreenWindows,
       maxTokens: config.llm?.maxTokens,
       contextWindow: config.llm?.contextWindow,
@@ -437,6 +439,11 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
         if (formData.llmAutoAnalyzeNewReports !== undefined) {
           config.llm.autoAnalyzeNewReports = formData.llmAutoAnalyzeNewReports === 'true';
+        }
+
+        if (formData.llmAutoProjectSummaryOnReportComplete !== undefined) {
+          config.llm.autoProjectSummaryOnReportComplete =
+            formData.llmAutoProjectSummaryOnReportComplete === 'true';
         }
 
         if (formData.llmAnalyzeGreenWindows !== undefined) {

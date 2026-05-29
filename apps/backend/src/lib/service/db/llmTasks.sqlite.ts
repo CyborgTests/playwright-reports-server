@@ -99,17 +99,48 @@ export class LlmTasksDatabase {
       VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    // Selection rules:
+    //   - test_analysis is always claimable.
+    //   - report_summary for report R becomes claimable once no
+    //     test_analysis for R is still queued or processing — the summary
+    //     needs every per-test analysis written before it can roll up.
+    //   - project_summary for project P becomes claimable once no
+    //     test_analysis or report_summary is pending for any report in P.
+    //     A project_summary keyed 'all' waits on report-bound work across
+    //     every project. This stops the summary from running on a stale
+    //     snapshot while per-test analyses are still landing.
+    //
+    // Ordering by (priority DESC, createdAt ASC) means: when reports A and
+    // B are both queued, A's earlier-arrived tests fill the parallel slots
+    // first; once A has fewer queued tests than free slots, B's tests
+    // backfill rather than letting workers idle. Manual project_summary
+    // sits above test work via its high priority and runs as soon as its
+    // project is idle; auto project_summary sits at the tail.
     this.selectQueuedStmt = this.db.prepare(`
       SELECT * FROM llm_tasks t
       WHERE t.status = 'queued'
         AND (
-          t.type != 'report_summary'
-          OR t.reportId IS NULL
-          OR NOT EXISTS (
-            SELECT 1 FROM llm_tasks sibling
-            WHERE sibling.reportId = t.reportId
-              AND sibling.type = 'test_analysis'
-              AND sibling.status IN ('queued', 'processing')
+          t.type = 'test_analysis'
+          OR (
+            t.type = 'report_summary'
+            AND (
+              t.reportId IS NULL
+              OR NOT EXISTS (
+                SELECT 1 FROM llm_tasks sibling
+                WHERE sibling.reportId = t.reportId
+                  AND sibling.type = 'test_analysis'
+                  AND sibling.status IN ('queued', 'processing')
+              )
+            )
+          )
+          OR (
+            t.type = 'project_summary'
+            AND NOT EXISTS (
+              SELECT 1 FROM llm_tasks sibling
+              WHERE sibling.type IN ('test_analysis', 'report_summary')
+                AND sibling.status IN ('queued', 'processing')
+                AND (t.project = 'all' OR sibling.project = t.project)
+            )
           )
         )
       ORDER BY t.priority DESC, t.createdAt ASC

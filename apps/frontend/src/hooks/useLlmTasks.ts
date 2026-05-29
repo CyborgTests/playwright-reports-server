@@ -55,10 +55,11 @@ export interface LlmDefaultPrompts {
   projectSummaryInstructions: LlmDefaultPrompt;
 }
 
-export function useLlmDefaultPrompts() {
+export function useLlmDefaultPrompts(options: { enabled?: boolean } = {}) {
   return useQuery<{ success: boolean; data: LlmDefaultPrompts }>('/api/llm/default-prompts', {
     // Defaults change only when the codebase changes — long stale time.
     staleTime: 60 * 60 * 1000,
+    enabled: options.enabled,
   });
 }
 

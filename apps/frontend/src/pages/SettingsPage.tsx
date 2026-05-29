@@ -159,6 +159,12 @@ export default function SettingsPage() {
               tempConfig.llm.autoAnalyzeNewReports.toString()
             );
           }
+          if (tempConfig.llm.autoProjectSummaryOnReportComplete !== undefined) {
+            formData.append(
+              'llmAutoProjectSummaryOnReportComplete',
+              tempConfig.llm.autoProjectSummaryOnReportComplete.toString()
+            );
+          }
           if (tempConfig.llm.analyzeGreenWindows !== undefined) {
             formData.append(
               'llmAnalyzeGreenWindows',
