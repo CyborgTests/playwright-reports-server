@@ -31,14 +31,11 @@ const formatReportHeading = (
   return parts.length ? `${parts.join(' ')} (${date})` : date;
 };
 
-const formatAxisTick = (displayNumber: number | undefined, date: string): string =>
-  typeof displayNumber === 'number' ? `#${displayNumber}` : date;
-
 export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
   const chartData = metrics.map((metric) => {
     const date = new Date(metric.timestamp).toLocaleDateString();
     return {
-      name: formatAxisTick(metric.displayNumber, date),
+      name: date,
       heading: formatReportHeading(metric.displayNumber, metric.title, date),
       runId: metric.runId,
       total: metric.totalTests,
