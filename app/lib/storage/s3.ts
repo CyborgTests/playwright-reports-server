@@ -35,6 +35,7 @@ import {
 } from './constants';
 import { handlePagination } from './pagination';
 import { getFileReportID } from './file';
+import { compareReports, compareResults } from './sort';
 
 import { parse } from '@/app/lib/parser';
 import { serveReportRoute } from '@/app/lib/constants';
@@ -374,18 +375,24 @@ export class S3 implements Storage {
       });
     }
 
-    const currentFiles = noFilters ? results : handlePagination(filteredResults, input?.pagination);
+    const resultSortField = input?.sortBy ?? 'createdAt';
+    const resultSortOrder = input?.order ?? 'desc';
+    const enrichedResults: Result[] = (noFilters ? results : filteredResults).map((result) => {
+      const sizeBytes = resultSizes.get(result.resultID) ?? 0;
+
+      return {
+        ...result,
+        sizeBytes,
+        size: result.size ?? bytesToString(sizeBytes),
+      };
+    }) as Result[];
+
+    enrichedResults.sort((a, b) => compareResults(a, b, resultSortField, resultSortOrder));
+
+    const currentFiles = noFilters ? enrichedResults : handlePagination(enrichedResults, input?.pagination);
 
     return {
-      results: currentFiles.map((result) => {
-        const sizeBytes = resultSizes.get(result.resultID) ?? 0;
-
-        return {
-          ...result,
-          sizeBytes,
-          size: result.size ?? bytesToString(sizeBytes),
-        };
-      }) as Result[],
+      results: currentFiles,
       total: noFilters ? jsonFiles.length : filteredResults.length,
     };
   }
@@ -446,20 +453,18 @@ export class S3 implements Storage {
       });
 
       reportsStream.on('end', async () => {
-        const getTimestamp = (date?: Date | string) => {
-          if (!date) return 0;
-          if (typeof date === 'string') return new Date(date).getTime();
+        const reportSortField = input?.sortBy ?? 'createdAt';
+        const reportSortOrder = input?.order ?? 'desc';
 
-          return date.getTime();
-        };
+        reports.sort((a, b) =>
+          compareReports(a as ReportHistory, b as ReportHistory, 'createdAt', reportSortOrder),
+        );
 
-        const reportsDir = (input?.order ?? 'desc') === 'asc' ? 1 : -1;
+        // When sorting by a metadata-only field we must load metadata for ALL reports before sorting & paginating.
+        const canPrePaginate = reportSortField === 'createdAt';
+        const reportsForMetadata = canPrePaginate ? handlePagination<Report>(reports, input?.pagination) : reports;
 
-        reports.sort((a, b) => reportsDir * (getTimestamp(a.createdAt) - getTimestamp(b.createdAt)));
-
-        const currentReports = handlePagination<Report>(reports, input?.pagination);
-
-        const withMetadata = await this.getReportsMetadata(currentReports as ReportHistory[]);
+        const withMetadata = await this.getReportsMetadata(reportsForMetadata as ReportHistory[]);
 
         let filteredReports = withMetadata;
 
@@ -506,18 +511,22 @@ export class S3 implements Storage {
           });
         }
 
+        filteredReports = filteredReports.map((report) => {
+          const sizeBytes = reportSizes.get(report.reportID) ?? 0;
+
+          return {
+            ...report,
+            sizeBytes,
+            size: bytesToString(sizeBytes),
+          };
+        });
+
+        filteredReports.sort((a, b) => compareReports(a, b, reportSortField, reportSortOrder));
+
         const finalReports = handlePagination(filteredReports, input?.pagination);
 
         resolve({
-          reports: finalReports.map((report) => {
-            const sizeBytes = reportSizes.get(report.reportID) ?? 0;
-
-            return {
-              ...report,
-              sizeBytes,
-              size: bytesToString(sizeBytes),
-            };
-          }),
+          reports: finalReports,
           total: filteredReports.length,
         });
       });

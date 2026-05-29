@@ -26,11 +26,11 @@ import { ReadResultsOutput, type Result } from '@/app/lib/storage';
 import DeleteResultsButton from '@/app/components/delete-results-button';
 
 const columns = [
-  { name: 'Result ID', uid: 'title' },
-  { name: 'Project', uid: 'project' },
+  { name: 'Result ID', uid: 'title', sortable: true },
+  { name: 'Project', uid: 'project', sortable: true },
   { name: 'Created at', uid: 'createdAt', sortable: true },
-  { name: 'Tags', uid: 'tags' },
-  { name: 'Size', uid: 'size' },
+  { name: 'Tags', uid: 'tags', sortable: true },
+  { name: 'Size', uid: 'size', sortable: true },
   { name: '', uid: 'actions' },
 ];
 
@@ -65,6 +65,7 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
     offset: ((page - 1) * rowsPerPage).toString(),
     project,
     order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
+    sortBy: String(sortDescriptor.column ?? 'createdAt'),
     ...(selectedTags.length > 0 && { tags: selectedTags.join(',') }),
     ...(search.trim() && { search: search.trim() }),
     ...(dateFrom && { dateFrom }),
@@ -78,7 +79,17 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
     error,
     refetch,
   } = useQuery<ReadResultsOutput>(withQueryParams(resultListEndpoint, getQueryParams()), {
-    dependencies: [project, selectedTags, search, dateFrom, dateTo, rowsPerPage, page, sortDescriptor.direction],
+    dependencies: [
+      project,
+      selectedTags,
+      search,
+      dateFrom,
+      dateTo,
+      rowsPerPage,
+      page,
+      sortDescriptor.direction,
+      sortDescriptor.column,
+    ],
     placeholderData: keepPreviousData,
   });
 

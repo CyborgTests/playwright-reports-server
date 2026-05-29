@@ -21,6 +21,7 @@ import {
 import { processBatch } from './batch';
 import { handlePagination } from './pagination';
 import { createDirectory } from './folders';
+import { compareReports, compareResults } from './sort';
 
 import { defaultConfig, isConfigValid, noConfigErr } from '@/app/lib/config';
 import { parse } from '@/app/lib/parser';
@@ -175,17 +176,10 @@ export async function readResults(input?: ReadResultsInput) {
     });
   }
 
-  const getResultTimestamp = (date?: Date | string) => {
-    if (!date) return 0;
-    if (typeof date === 'string') return new Date(date).getTime();
+  const resultSortField = input?.sortBy ?? 'createdAt';
+  const resultSortOrder = input?.order ?? 'desc';
 
-    return date.getTime();
-  };
-  const resultsDir = (input?.order ?? 'desc') === 'asc' ? 1 : -1;
-
-  filteredResults.sort(
-    (a, b) => resultsDir * (getResultTimestamp(a.createdAt) - getResultTimestamp(b.createdAt)),
-  );
+  filteredResults.sort((a, b) => compareResults(a, b, resultSortField, resultSortOrder));
 
   const paginatedResults = handlePagination(filteredResults, input?.pagination);
 
@@ -337,15 +331,10 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
     });
   }
 
-  const getReportTimestamp = (date?: Date | string) => {
-    if (!date) return 0;
-    if (typeof date === 'string') return new Date(date).getTime();
+  const reportSortField = input?.sortBy ?? 'createdAt';
+  const reportSortOrder = input?.order ?? 'desc';
 
-    return date.getTime();
-  };
-  const reportsDir = (input?.order ?? 'desc') === 'asc' ? 1 : -1;
-
-  filteredReports.sort((a, b) => reportsDir * (getReportTimestamp(a.createdAt) - getReportTimestamp(b.createdAt)));
+  filteredReports.sort((a, b) => compareReports(a, b, reportSortField, reportSortOrder));
 
   const paginatedReports = handlePagination(filteredReports, input?.pagination);
 

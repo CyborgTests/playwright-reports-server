@@ -34,11 +34,11 @@ import { BranchIcon, DownloadIcon, EvidenceIcon, FolderIcon, PdfIcon } from '@/a
 import { ReadReportsHistory, ReportHistory } from '@/app/lib/storage';
 
 const columns = [
-  { name: 'Title', uid: 'title' },
-  { name: 'Project', uid: 'project' },
-  { name: 'Pass Rate', uid: 'passRate' },
+  { name: 'Title', uid: 'title', sortable: true },
+  { name: 'Project', uid: 'project', sortable: true },
+  { name: 'Pass Rate', uid: 'passRate', sortable: true },
   { name: 'Created at', uid: 'createdAt', sortable: true },
-  { name: 'Size', uid: 'size' },
+  { name: 'Size', uid: 'size', sortable: true },
   { name: '', uid: 'actions' },
 ];
 
@@ -136,6 +136,7 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
     offset: ((page - 1) * rowsPerPage).toString(),
     project,
     order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
+    sortBy: String(sortDescriptor.column ?? 'createdAt'),
     ...(search.trim() && { search: search.trim() }),
     ...(dateFrom && { dateFrom }),
     ...(dateTo && { dateTo }),
@@ -148,7 +149,16 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
     error,
     refetch,
   } = useQuery<ReadReportsHistory>(withQueryParams(reportListEndpoint, getQueryParams()), {
-    dependencies: [project, search, dateFrom, dateTo, rowsPerPage, page, sortDescriptor.direction],
+    dependencies: [
+      project,
+      search,
+      dateFrom,
+      dateTo,
+      rowsPerPage,
+      page,
+      sortDescriptor.direction,
+      sortDescriptor.column,
+    ],
     placeholderData: keepPreviousData,
   });
 
