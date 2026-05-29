@@ -6,6 +6,18 @@
  * play.
  */
 
+/** LLMs occasionally wrap a `[label](pwrs:test/…)` link in backticks even
+ *  though the prompt forbids it. Backticks turn the link into an inline
+ *  `<code>` element, so the user sees the raw markdown source instead of a
+ *  clickable link. Unwrap any run of matched backticks that surround a
+ *  complete pwrs link so the body renders correctly downstream. */
+const BACKTICK_WRAPPED_PWRS_LINK_RE =
+  /(`+)(\[[^\]\n]+\]\(pwrs:(?:test|report)\/[^)\n]+\))\1/g;
+
+export function unwrapBacktickedPwrsLinks(text: string): string {
+  return text.replace(BACKTICK_WRAPPED_PWRS_LINK_RE, '$2');
+}
+
 /** First sentence of `text`, or first 280 chars truncated with an ellipsis
  *  when no sentence terminator is found. Used as a synthetic summary fallback
  *  when the LLM didn't emit one. */

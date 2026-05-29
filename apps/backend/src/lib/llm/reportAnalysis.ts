@@ -5,7 +5,11 @@ import type {
   ReportAnalysisStructured,
   ReportAnalysisVerdict,
 } from '@playwright-reports/shared';
-import { firstSentence, parseMarkdownSections } from './structured-analysis-utils.js';
+import {
+  firstSentence,
+  parseMarkdownSections,
+  unwrapBacktickedPwrsLinks,
+} from './structured-analysis-utils.js';
 
 const VERDICTS: readonly ReportAnalysisVerdict[] = [
   'isolated',
@@ -153,7 +157,7 @@ function extractCodeRefsFromBody(body: string): ReportAnalysisCodeRef[] {
 }
 
 function parseReportAnalysisFromMarkdown(text: string): ReportAnalysisStructured | null {
-  const { verdict, remaining } = extractVerdict(text);
+  const { verdict, remaining } = extractVerdict(unwrapBacktickedPwrsLinks(text));
   const { preamble, sections } = parseMarkdownSections(remaining);
 
   if (sections.length === 0) {

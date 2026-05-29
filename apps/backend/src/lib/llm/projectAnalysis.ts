@@ -4,7 +4,11 @@ import type {
   ProjectAnalysisStructured,
   ProjectAnalysisVerdict,
 } from '@playwright-reports/shared';
-import { firstSentence, parseMarkdownSections } from './structured-analysis-utils.js';
+import {
+  firstSentence,
+  parseMarkdownSections,
+  unwrapBacktickedPwrsLinks,
+} from './structured-analysis-utils.js';
 
 const VERDICTS: readonly ProjectAnalysisVerdict[] = [
   'healthy',
@@ -142,7 +146,7 @@ function extractCodeRefsFromBody(body: string): ProjectAnalysisCodeRef[] {
 }
 
 function parseProjectAnalysisFromMarkdown(text: string): ProjectAnalysisStructured | null {
-  const { verdict, remaining } = extractVerdict(text);
+  const { verdict, remaining } = extractVerdict(unwrapBacktickedPwrsLinks(text));
   const { preamble, sections } = parseMarkdownSections(remaining);
 
   if (sections.length === 0) {
