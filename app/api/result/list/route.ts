@@ -14,9 +14,11 @@ export async function GET(request: NextRequest) {
   const search = searchParams.get('search') ?? '';
   const dateFrom = searchParams.get('dateFrom') ?? undefined;
   const dateTo = searchParams.get('dateTo') ?? undefined;
+  const orderParam = searchParams.get('order');
+  const order = orderParam === 'asc' || orderParam === 'desc' ? orderParam : undefined;
 
   const { result, error } = await withError(
-    service.getResults({ pagination, project, tags, search, dateFrom, dateTo }),
+    service.getResults({ pagination, project, tags, search, dateFrom, dateTo, order }),
   );
 
   if (error) {

@@ -254,7 +254,9 @@ export class AzureBlob implements Storage {
       return { results: [], total: 0 };
     }
 
-    jsonFiles.sort((a, b) => getTimestamp(b.lastModified) - getTimestamp(a.lastModified));
+    const resultsDir = (input?.order ?? 'desc') === 'asc' ? 1 : -1;
+
+    jsonFiles.sort((a, b) => resultsDir * (getTimestamp(a.lastModified) - getTimestamp(b.lastModified)));
 
     const noFilters = !input?.project && !input?.pagination;
     const resultFiles = noFilters ? handlePagination(jsonFiles, input?.pagination) : jsonFiles;
@@ -372,7 +374,9 @@ export class AzureBlob implements Storage {
       }
     }
 
-    reports.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
+    const reportsDir = (input?.order ?? 'desc') === 'asc' ? 1 : -1;
+
+    reports.sort((a, b) => reportsDir * (getTimestamp(a.createdAt) - getTimestamp(b.createdAt)));
 
     const currentReports = handlePagination<Report>(reports, input?.pagination);
     const withMetadata = await this.getReportsMetadata(currentReports as ReportHistory[]);

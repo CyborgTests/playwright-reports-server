@@ -48,7 +48,8 @@ async function createDirectoriesIfMissing() {
 }
 
 function getRecursiveEntryPath(entry: Dirent): string {
-  const parentPath = (entry as Dirent & { path?: string }).path ?? '';
+  const e = entry as Dirent & { parentPath?: string; path?: string };
+  const parentPath = e.parentPath ?? e.path ?? '';
 
   return path.join(parentPath, entry.name);
 }
@@ -109,10 +110,8 @@ export async function readResults(input?: ReadResultsInput) {
     },
   );
 
-  const jsonFiles = stats.sort((a, b) => b.birthtimeMs - a.birthtimeMs);
-
   const fileContents: Result[] = await Promise.all(
-    jsonFiles.map(async (entry) => {
+    stats.map(async (entry) => {
       const content = await fs.readFile(entry.filePath, 'utf-8');
 
       return {
@@ -175,6 +174,18 @@ export async function readResults(input?: ReadResultsInput) {
       return resultTimestamp >= fromTimestamp && resultTimestamp <= toTimestamp;
     });
   }
+
+  const getResultTimestamp = (date?: Date | string) => {
+    if (!date) return 0;
+    if (typeof date === 'string') return new Date(date).getTime();
+
+    return date.getTime();
+  };
+  const resultsDir = (input?.order ?? 'desc') === 'asc' ? 1 : -1;
+
+  filteredResults.sort(
+    (a, b) => resultsDir * (getResultTimestamp(a.createdAt) - getResultTimestamp(b.createdAt)),
+  );
 
   const paginatedResults = handlePagination(filteredResults, input?.pagination);
 
@@ -249,9 +260,7 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
     },
   );
 
-  const reportFiles = stats.sort((a, b) => b.birthtimeMs - a.birthtimeMs);
-
-  const reportsWithProject = reportFiles
+  const reportsWithProject = stats
     .map((file) => {
       // The filePath points to the index.html file. The report ID is the directory containing index.html.
       const reportDir = path.dirname(file.filePath);
@@ -327,6 +336,16 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
       return reportTimestamp >= fromTimestamp && reportTimestamp <= toTimestamp;
     });
   }
+
+  const getReportTimestamp = (date?: Date | string) => {
+    if (!date) return 0;
+    if (typeof date === 'string') return new Date(date).getTime();
+
+    return date.getTime();
+  };
+  const reportsDir = (input?.order ?? 'desc') === 'asc' ? 1 : -1;
+
+  filteredReports.sort((a, b) => reportsDir * (getReportTimestamp(a.createdAt) - getReportTimestamp(b.createdAt)));
 
   const paginatedReports = handlePagination(filteredReports, input?.pagination);
 

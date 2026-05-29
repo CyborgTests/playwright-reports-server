@@ -297,7 +297,9 @@ export class S3 implements Storage {
       return date.getTime();
     };
 
-    jsonFiles.sort((a, b) => getTimestamp(b.lastModified) - getTimestamp(a.lastModified));
+    const resultsDir = (input?.order ?? 'desc') === 'asc' ? 1 : -1;
+
+    jsonFiles.sort((a, b) => resultsDir * (getTimestamp(a.lastModified) - getTimestamp(b.lastModified)));
 
     // check if we can apply pagination early
     const noFilters = !input?.project && !input?.pagination;
@@ -451,7 +453,9 @@ export class S3 implements Storage {
           return date.getTime();
         };
 
-        reports.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
+        const reportsDir = (input?.order ?? 'desc') === 'asc' ? 1 : -1;
+
+        reports.sort((a, b) => reportsDir * (getTimestamp(a.createdAt) - getTimestamp(b.createdAt)));
 
         const currentReports = handlePagination<Report>(reports, input?.pagination);
 

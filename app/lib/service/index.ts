@@ -105,7 +105,9 @@ class Service {
         return date.getTime();
       };
 
-      reports.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
+      const dir = (input?.order ?? 'desc') === 'asc' ? 1 : -1;
+
+      reports.sort((a, b) => dir * (getTimestamp(a.createdAt) - getTimestamp(b.createdAt)));
       const currentReports = handlePagination<ReportHistory>(reports, input?.pagination);
 
       return {
@@ -241,7 +243,9 @@ class Service {
       return date.getTime();
     };
 
-    cached.sort((a, b) => getTimestamp(b.createdAt) - getTimestamp(a.createdAt));
+    const dir = (input?.order ?? 'desc') === 'asc' ? 1 : -1;
+
+    cached.sort((a, b) => dir * (getTimestamp(a.createdAt) - getTimestamp(b.createdAt)));
 
     let filtered = input?.project
       ? cached.filter((file) => (input?.project ? file.project === input.project : file))
