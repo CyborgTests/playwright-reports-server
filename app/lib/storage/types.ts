@@ -38,6 +38,7 @@ export interface ReadResultsInput {
   dateFrom?: string;
   dateTo?: string;
   order?: SortOrder;
+  sortBy?: 'createdAt' | 'title' | 'project' | 'tags' | 'size';
 }
 
 export interface ReadResultsOutput {
@@ -53,6 +54,7 @@ export interface ReadReportsInput {
   dateFrom?: string;
   dateTo?: string;
   order?: SortOrder;
+  sortBy?: 'createdAt' | 'title' | 'project' | 'passRate' | 'size';
 }
 
 export interface ReadReportsOutput {

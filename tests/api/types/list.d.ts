@@ -7,4 +7,5 @@ export type ListParams = {
   dateFrom?: string;
   dateTo?: string;
   order?: 'asc' | 'desc' | string;
+  sortBy?: string;
 };

@@ -19,6 +19,7 @@ import {
   storage,
 } from '@/app/lib/storage';
 import { handlePagination } from '@/app/lib/storage/pagination';
+import { compareReports, compareResults } from '@/app/lib/storage/sort';
 import { SiteWhiteLabelConfig } from '@/app/types';
 import { defaultConfig } from '@/app/lib/config';
 import { env } from '@/app/config/env';
@@ -98,16 +99,10 @@ class Service {
         });
       }
 
-      const getTimestamp = (date?: Date | string) => {
-        if (!date) return 0;
-        if (typeof date === 'string') return new Date(date).getTime();
+      const sortField = input?.sortBy ?? 'createdAt';
+      const sortOrder = input?.order ?? 'desc';
 
-        return date.getTime();
-      };
-
-      const dir = (input?.order ?? 'desc') === 'asc' ? 1 : -1;
-
-      reports.sort((a, b) => dir * (getTimestamp(a.createdAt) - getTimestamp(b.createdAt)));
+      reports.sort((a, b) => compareReports(a, b, sortField, sortOrder));
       const currentReports = handlePagination<ReportHistory>(reports, input?.pagination);
 
       return {
@@ -243,10 +238,6 @@ class Service {
       return date.getTime();
     };
 
-    const dir = (input?.order ?? 'desc') === 'asc' ? 1 : -1;
-
-    cached.sort((a, b) => dir * (getTimestamp(a.createdAt) - getTimestamp(b.createdAt)));
-
     let filtered = input?.project
       ? cached.filter((file) => (input?.project ? file.project === input.project : file))
       : cached;
@@ -298,6 +289,11 @@ class Service {
         return searchableFields.some((field) => field?.toLowerCase().includes(searchTerm));
       });
     }
+
+    const sortField = input?.sortBy ?? 'createdAt';
+    const sortOrder = input?.order ?? 'desc';
+
+    filtered.sort((a, b) => compareResults(a, b, sortField, sortOrder));
 
     const results = !input?.pagination ? filtered : handlePagination(filtered, input?.pagination);
 
