@@ -66,7 +66,7 @@ const createClient = () => {
 
   console.log('[s3] creating client');
 
-  const protocol = 'https://';
+  const protocol = env.S3_USE_SSL ? 'https://' : 'http://';
   const endpointUrl = port ? `${protocol}${endPoint}:${port}` : `${protocol}${endPoint}`;
 
   const client = new S3Client({

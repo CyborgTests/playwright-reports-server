@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from 'dotenv';
-import { cleanEnv, num, str } from 'envalid';
+import { bool, cleanEnv, num, str } from 'envalid';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -41,6 +41,10 @@ export const env = cleanEnv(process.env, {
   S3_SECRET_KEY: str({ desc: 'S3 secret key', default: undefined }),
   S3_PORT: num({ desc: 'S3 port', default: undefined }),
   S3_REGION: str({ desc: 'S3 region', default: undefined }),
+  S3_USE_SSL: bool({
+    desc: 'Whether to use HTTPS when talking to the S3 endpoint. Set to false for local MinIO over plain HTTP.',
+    default: true,
+  }),
   S3_BUCKET: str({ desc: 'S3 bucket', default: 'playwright-reports-server' }),
   S3_BATCH_SIZE: num({ desc: 'S3 batch size', default: 10 }),
   S3_MULTIPART_CHUNK_SIZE_MB: num({

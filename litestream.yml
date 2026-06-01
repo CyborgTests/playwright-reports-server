@@ -1,9 +1,15 @@
-# Litestream configuration for SQLite replication to S3
+# Reference Litestream configuration. The running server generates its own
+# config from env vars (see apps/backend/src/lib/service/litestream.ts), so
+# this file is a documentation example, not a live config.
+#
 # See https://litestream.io/reference/config/
+#
+# Pick ONE replica block based on your DATA_STORAGE setting.
 
 dbs:
   - path: ./apps/backend/data/metadata.db
     replicas:
+      # S3 (DATA_STORAGE=s3)
       - url: s3://${S3_BUCKET}/${S3_PATH:-litestream}/metadata.db
         access-key-id: ${S3_ACCESS_KEY_ID}
         secret-access-key: ${S3_SECRET_ACCESS_KEY}
@@ -14,3 +20,11 @@ dbs:
         snapshot-interval: ${LITESTREAM_SNAPSHOT_INTERVAL:-3h}
         retention: ${LITESTREAM_RETENTION:-24h}
         retention-check-interval: ${LITESTREAM_RETENTION_CHECK_INTERVAL:-1h}
+
+      # Azure Blob (DATA_STORAGE=azure)
+      # - url: abs://${AZURE_ACCOUNT_NAME}@${AZURE_CONTAINER}/litestream/metadata.db
+      #   account-key: ${AZURE_ACCOUNT_KEY}
+      #   sync-interval: 1s
+      #   snapshot-interval: 3h
+      #   retention: 24h
+      #   retention-check-interval: 1h

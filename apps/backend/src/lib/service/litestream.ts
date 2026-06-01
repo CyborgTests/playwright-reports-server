@@ -8,6 +8,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
+import { BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-blob';
 import { env } from '../../config/env.js';
 import { withError } from '../withError.js';
 
@@ -19,7 +20,7 @@ const instance = globalThis as typeof globalThis & {
 };
 
 /**
- * Service to manage Litestream process for SQLite replication to S3.
+ * Service to manage Litestream process for SQLite replication to S3 or Azure Blob.
  * @link https://litestream.io/
  */
 export class LitestreamService {
@@ -36,50 +37,83 @@ export class LitestreamService {
     return env.DATA_STORAGE === 's3';
   }
 
-  private generateConfig(): string {
-    const s3Path = 'litestream';
-    const bucket = env.S3_BUCKET;
-    const region = env.S3_REGION || 'us-east-1';
-    const endpoint = env.S3_ENDPOINT;
-    const port = env.S3_PORT;
-    const accessKeyId = env.S3_ACCESS_KEY;
-    const secretAccessKey = env.S3_SECRET_KEY;
+  private get usesAzure() {
+    return env.DATA_STORAGE === 'azure';
+  }
 
-    if (!bucket || !accessKeyId || !secretAccessKey) {
-      throw new Error(
-        'Missing required S3 configuration for Litestream: S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY'
+  private get usesObjectStorage() {
+    return this.usesS3 || this.usesAzure;
+  }
+
+  private generateConfig(): string {
+    const absoluteDbPath = path.resolve(this.dbPath);
+    const y = (v: string) => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+
+    let comment: string;
+    let replicaLines: string[];
+
+    if (this.usesAzure) {
+      const accountName = env.AZURE_ACCOUNT_NAME;
+      const accountKey = env.AZURE_ACCOUNT_KEY;
+      const container = env.AZURE_CONTAINER;
+
+      if (!accountName || !accountKey || !container) {
+        throw new Error(
+          'Missing required Azure configuration for Litestream: AZURE_ACCOUNT_NAME, AZURE_ACCOUNT_KEY, AZURE_CONTAINER'
+        );
+      }
+
+      comment = '# Litestream configuration for SQLite replication to Azure Blob Storage';
+      replicaLines = [
+        `      - url: ${y(`abs://${accountName}@${container}/litestream/metadata.db`)}`,
+        `        account-key: ${y(accountKey)}`,
+        '        sync-interval: 1s',
+        '        snapshot-interval: 3h',
+        '        retention: 24h',
+        '        retention-check-interval: 1h',
+      ];
+    } else {
+      const s3Path = 'litestream';
+      const bucket = env.S3_BUCKET;
+      const region = env.S3_REGION || 'us-east-1';
+      const endpoint = env.S3_ENDPOINT;
+      const port = env.S3_PORT;
+      const accessKeyId = env.S3_ACCESS_KEY;
+      const secretAccessKey = env.S3_SECRET_KEY;
+
+      if (!bucket || !accessKeyId || !secretAccessKey) {
+        throw new Error(
+          'Missing required S3 configuration for Litestream: S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY'
+        );
+      }
+
+      const protocol = endpoint?.startsWith('http') ? '' : env.S3_USE_SSL ? 'https://' : 'http://';
+      const endpointUrl = endpoint
+        ? port
+          ? `${protocol}${endpoint}:${port}`
+          : `${protocol}${endpoint}`
+        : '';
+
+      comment = '# Litestream configuration for SQLite replication to S3';
+      replicaLines = [
+        `      - url: ${y(`s3://${bucket}/${s3Path}/metadata.db`)}`,
+        `        access-key-id: ${y(accessKeyId)}`,
+        `        secret-access-key: ${y(secretAccessKey)}`,
+        `        region: ${y(region)}`,
+      ];
+      if (endpointUrl) {
+        replicaLines.push(`        endpoint: ${y(endpointUrl)}`);
+      }
+      replicaLines.push(
+        '        force-path-style: true',
+        '        sync-interval: 1s',
+        '        snapshot-interval: 3h',
+        '        retention: 24h',
+        '        retention-check-interval: 1h'
       );
     }
 
-    const absoluteDbPath = path.resolve(this.dbPath);
-
-    const y = (v: string) => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-
-    const protocol = endpoint?.startsWith('http') ? '' : 'https://';
-    const endpointUrl = endpoint
-      ? port
-        ? `${protocol}${endpoint}:${port}`
-        : `${protocol}${endpoint}`
-      : '';
-
-    const replicaLines = [
-      `      - url: ${y(`s3://${bucket}/${s3Path}/metadata.db`)}`,
-      `        access-key-id: ${y(accessKeyId)}`,
-      `        secret-access-key: ${y(secretAccessKey)}`,
-      `        region: ${y(region)}`,
-    ];
-    if (endpointUrl) {
-      replicaLines.push(`        endpoint: ${y(endpointUrl)}`);
-    }
-    replicaLines.push(
-      '        force-path-style: true',
-      '        sync-interval: 1s',
-      '        snapshot-interval: 3h',
-      '        retention: 24h',
-      '        retention-check-interval: 1h'
-    );
-
-    return `# Litestream configuration for SQLite replication to S3
+    return `${comment}
 # See: https://litestream.io/reference/config/
 dbs:
   - path: ${y(absoluteDbPath)}
@@ -99,17 +133,26 @@ ${replicaLines.join('\n')}
   }
 
   /**
-   * Verifies S3 credentials and required permissions before Litestream is started.
-   * Performs a Put → Get → Delete roundtrip on a canary key under the litestream/
-   * prefix, asserting body equality to catch endpoint/bucket misroutes.
-   * Required IAM: s3:PutObject, s3:GetObject, s3:DeleteObject on the bucket.
-   * Throws on any failure so the app fails fast at boot.
+   * Verifies object-storage credentials and required permissions before
+   * Litestream is started. Performs a Put → Get → Delete roundtrip on a canary
+   * key under the litestream/ prefix, asserting body equality to catch
+   * endpoint/bucket/container misroutes. Throws on any failure so the app fails
+   * fast at boot.
    */
   public async preflight(): Promise<void> {
-    if (!this.usesS3) {
+    if (this.usesAzure) {
+      await this.preflightAzure();
       return;
     }
+    if (this.usesS3) {
+      await this.preflightS3();
+    }
+  }
 
+  /**
+   * Required IAM: s3:PutObject, s3:GetObject, s3:DeleteObject on the bucket.
+   */
+  private async preflightS3(): Promise<void> {
     const endpoint = env.S3_ENDPOINT;
     const accessKey = env.S3_ACCESS_KEY;
     const secretKey = env.S3_SECRET_KEY;
@@ -121,7 +164,7 @@ ${replicaLines.join('\n')}
       );
     }
 
-    const protocol = 'https://';
+    const protocol = env.S3_USE_SSL ? 'https://' : 'http://';
     const endpointUrl = env.S3_PORT
       ? `${protocol}${endpoint}:${env.S3_PORT}`
       : `${protocol}${endpoint}`;
@@ -163,8 +206,56 @@ ${replicaLines.join('\n')}
     console.log(`[litestream] preflight OK: read/write/delete verified on s3://${bucket}`);
   }
 
+  /**
+   * Required permissions: read/write/delete on the configured container.
+   */
+  private async preflightAzure(): Promise<void> {
+    const accountName = env.AZURE_ACCOUNT_NAME;
+    const accountKey = env.AZURE_ACCOUNT_KEY;
+    const container = env.AZURE_CONTAINER;
+
+    if (!accountName || !accountKey || !container) {
+      throw new Error(
+        '[litestream] preflight failed: AZURE_ACCOUNT_NAME, AZURE_ACCOUNT_KEY, and AZURE_CONTAINER are required when DATA_STORAGE=azure'
+      );
+    }
+
+    const credential = new StorageSharedKeyCredential(accountName, accountKey);
+    const serviceClient = new BlobServiceClient(
+      `https://${accountName}.blob.core.windows.net`,
+      credential
+    );
+    const containerClient = serviceClient.getContainerClient(container);
+    const blobClient = containerClient.getBlockBlobClient(PREFLIGHT_KEY);
+
+    const expected = `${process.pid}:${Date.now()}`;
+    const target = `abs://${accountName}@${container}/${PREFLIGHT_KEY}`;
+    console.log(`[litestream] preflight: roundtrip against ${target}`);
+
+    try {
+      await blobClient.upload(expected, Buffer.byteLength(expected));
+      const buffer = await blobClient.downloadToBuffer();
+      const actual = buffer.toString('utf-8');
+      if (actual !== expected) {
+        throw new Error(`canary roundtrip mismatch: wrote "${expected}", read "${actual}"`);
+      }
+      await blobClient.delete();
+    } catch (error) {
+      const err = error as { name?: string; message?: string };
+      const code = err.name ?? 'UnknownError';
+      throw new Error(
+        `[litestream] preflight failed (${code}) on ${target}: ${err.message ?? String(error)}. ` +
+          'Ensure AZURE_ACCOUNT_NAME/AZURE_ACCOUNT_KEY are valid and have read/write/delete on the container.'
+      );
+    }
+
+    console.log(
+      `[litestream] preflight OK: read/write/delete verified on abs://${accountName}@${container}`
+    );
+  }
+
   public async restoreIfNeeded(): Promise<boolean> {
-    if (!this.usesS3) {
+    if (!this.usesObjectStorage) {
       return false;
     }
 
@@ -172,12 +263,12 @@ ${replicaLines.join('\n')}
     const dbExists = await this.databaseExists();
 
     if (!dbExists) {
-      console.log('[litestream] No local sqlite found, attempting restore from S3...');
-      const restored = await this.restoreFromS3();
+      console.log('[litestream] No local sqlite found, attempting restore from remote...');
+      const restored = await this.restoreFromRemote();
       if (restored) {
-        console.log('[litestream] Successfully restored sqlite from S3');
+        console.log('[litestream] Successfully restored sqlite from remote');
       } else {
-        console.log('[litestream] No sqlite found on S3, will start fresh');
+        console.log('[litestream] No sqlite found on remote, will start fresh');
       }
       return restored;
     }
@@ -258,7 +349,7 @@ ${replicaLines.join('\n')}
     });
   }
 
-  private async restoreFromS3(): Promise<boolean> {
+  private async restoreFromRemote(): Promise<boolean> {
     const litestreamEnv = this.buildLitestreamEnv();
 
     return new Promise((resolve) => {
@@ -281,8 +372,15 @@ ${replicaLines.join('\n')}
     return { ...process.env };
   }
 
+  private describeTarget(): string {
+    if (this.usesAzure) {
+      return `azure container=${env.AZURE_CONTAINER} account=${env.AZURE_ACCOUNT_NAME}`;
+    }
+    return `bucket=${env.S3_BUCKET} endpoint=${env.S3_ENDPOINT || 'default (AWS)'}`;
+  }
+
   public async start(): Promise<void> {
-    if (!this.usesS3) {
+    if (!this.usesObjectStorage) {
       return;
     }
 
@@ -292,9 +390,7 @@ ${replicaLines.join('\n')}
     }
 
     await this.ensureConfigExists();
-    console.log(
-      `[litestream] config=${this.configPath} bucket=${env.S3_BUCKET} endpoint=${env.S3_ENDPOINT || 'default (AWS)'}`
-    );
+    console.log(`[litestream] config=${this.configPath} ${this.describeTarget()}`);
 
     const { error } = await withError(fs.access(this.configPath));
 
@@ -337,7 +433,7 @@ ${replicaLines.join('\n')}
   }
 
   public async stop(): Promise<void> {
-    if (!this.usesS3) {
+    if (!this.usesObjectStorage) {
       return;
     }
 
