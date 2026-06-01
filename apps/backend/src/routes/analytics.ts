@@ -941,6 +941,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
             : undefined,
         strategies: parsedStrategies,
         reportId,
+        includeUnclustered: true,
       });
 
       return reply.send({ success: true, data: report });

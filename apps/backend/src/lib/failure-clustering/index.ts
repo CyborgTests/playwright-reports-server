@@ -4,9 +4,10 @@ import type {
   ClusterStrategy,
   FailureCluster,
 } from '@playwright-reports/shared';
+import { v4 as uuid } from 'uuid';
 import { reportDb } from '../service/db/reports.sqlite.js';
 import { testDb } from '../service/db/tests.sqlite.js';
-import { buildClusterTests } from './format.js';
+import { buildClusterTests, type ReportUrlLookup } from './format.js';
 import { mergeClusters } from './merge.js';
 import { clusterByFixture } from './strategies/fixture.js';
 import { clusterBySignature } from './strategies/signature.js';
@@ -23,9 +24,11 @@ import {
 const CACHE_TTL_MS = 60_000;
 const DEFAULT_MIN_TESTS = 2;
 const AVAILABLE_STRATEGIES: ClusterStrategy[] = ['signature', 'stack-frame', 'fixture', 'temporal'];
-// `signature` is opt-in — exact-fingerprint clusters overlap with the broader
-// strategies and bias toward de-duplicated narratives. Callers (UI, CLI, LLM
-// queue) must include it explicitly.
+// `signature` is opt-in for the primary pass — exact-fingerprint clusters
+// overlap with the broader strategies and bias toward de-duplicated narratives.
+// Callers (UI, CLI, LLM queue) must include it explicitly to surface it
+// alongside the others. It is also used as an automatic fallback below when the
+// requested strategies produce zero clusters.
 const DEFAULT_STRATEGIES: ClusterStrategy[] = ['stack-frame', 'fixture', 'temporal'];
 
 interface CacheEntry {
@@ -43,6 +46,7 @@ function cacheKey(opts: ClusterOptions): string {
     opts.minTests ?? DEFAULT_MIN_TESTS,
     strategies,
     opts.reportId ?? '',
+    opts.includeUnclustered ? 'u' : '',
   ].join('|');
 }
 
@@ -81,6 +85,19 @@ export async function getFailureClusters(opts: ClusterOptions): Promise<ClusterR
     rawClusters.push(...clusterByTemporal(failedRuns, { minTests }));
   }
 
+  // Fallback: when the requested strategies produced nothing, run signature as
+  // a last resort. The defaults exclude it because exact-fingerprint clusters
+  // bias toward de-duplicated narratives next to richer strategies — but when
+  // the richer strategies find nothing, a shared error message is still a
+  // useful grouping signal and beats showing an empty result.
+  if (rawClusters.length === 0 && !strategiesRun.includes('signature')) {
+    const fallback = clusterBySignature(failedRuns, { minTests });
+    if (fallback.length > 0) {
+      rawClusters.push(...fallback);
+      strategiesRun.push('signature');
+    }
+  }
+
   // Strategies emit cluster + member runs together so we don't have to
   // re-derive membership from evidence (which doesn't work for temporal).
   const clusters: FailureCluster[] = rawClusters.map(({ cluster, runs }) => ({
@@ -96,6 +113,11 @@ export async function getFailureClusters(opts: ClusterOptions): Promise<ClusterR
   // right ordering for the merge pass itself but the wrong ordering for the
   // user-facing list.
   merged.sort((a, b) => b.testCount * b.failureCount - a.testCount * a.failureCount);
+
+  if (opts.includeUnclustered) {
+    const unclustered = buildUnclusteredCluster(merged, failedRuns, metaByKey, resolveReportUrl);
+    if (unclustered) merged.push(unclustered);
+  }
 
   // Scope filter: when invoked from a report-detail entry button, only return
   // clusters that include at least one test that failed in that report.
@@ -152,6 +174,38 @@ function loadTestMeta(runs: FailedTestRun[]): Map<string, TestMeta> {
     }
   }
   return meta;
+}
+
+function buildUnclusteredCluster(
+  emitted: FailureCluster[],
+  failedRuns: FailedTestRun[],
+  metaByKey: Map<string, TestMeta>,
+  resolveReportUrl: ReportUrlLookup
+): FailureCluster | null {
+  const coveredKeys = new Set<string>();
+  for (const c of emitted) {
+    for (const t of c.tests) {
+      coveredKeys.add(testKey(t.testId, t.fileId, t.project));
+    }
+  }
+
+  const unclusteredRuns = failedRuns.filter(
+    (r) => !coveredKeys.has(testKey(r.testId, r.fileId, r.project))
+  );
+  if (unclusteredRuns.length === 0) return null;
+
+  const uniqueTests = new Set(unclusteredRuns.map((r) => testKey(r.testId, r.fileId, r.project)));
+
+  return {
+    id: uuid(),
+    strategy: 'unclustered',
+    name: 'Unclustered failures',
+    sampleMessage: '',
+    testCount: uniqueTests.size,
+    failureCount: unclusteredRuns.length,
+    evidence: {},
+    tests: buildClusterTests(unclusteredRuns, metaByKey, resolveReportUrl, 'unclustered'),
+  };
 }
 
 function scopeToReport(clusters: FailureCluster[], reportId: string): FailureCluster[] {

@@ -11,6 +11,7 @@ const STRATEGY_PRECEDENCE: Record<ClusterStrategy, number> = {
   fixture: 3,
   signature: 2,
   temporal: 1,
+  unclustered: 0,
 };
 
 const testKeyOf = (t: { project: string; fileId: string; testId: string }): string =>

@@ -1,4 +1,4 @@
-export type ClusterStrategy = 'signature' | 'stack-frame' | 'fixture' | 'temporal';
+export type ClusterStrategy = 'signature' | 'stack-frame' | 'fixture' | 'temporal' | 'unclustered';
 
 export type FixturePhase = 'beforeAll' | 'beforeEach' | 'afterAll' | 'afterEach';
 
@@ -90,4 +90,5 @@ export interface ClusterOptions {
   minTests?: number;
   strategies?: ClusterStrategy[];
   reportId?: string;
+  includeUnclustered?: boolean;
 }

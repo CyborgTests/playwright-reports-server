@@ -14,6 +14,7 @@ import type {
   ProjectCoverageScope,
   ProjectTrendSignal,
   ProjectTrendWindow,
+  ReportSummaryClusterStrategy,
   ReportSummaryTrendContext,
 } from '../llm/prompts/index.js';
 import {
@@ -2016,7 +2017,14 @@ function shapeClustersForPrompt(args: {
   const trendFor = (title: string, filePath?: string): Trend =>
     trendContext ? (trendByTitleFile.get(`${title}::${filePath ?? ''}`) ?? 'unknown') : 'unknown';
 
-  const clusters = clusterReport.clusters.map((c) => {
+  type RealCluster = Omit<(typeof clusterReport.clusters)[number], 'strategy'> & {
+    strategy: ReportSummaryClusterStrategy;
+  };
+  const realClusters = clusterReport.clusters.filter(
+    (c): c is RealCluster => c.strategy !== 'unclustered'
+  );
+
+  const clusters = realClusters.map((c) => {
     const members = c.tests.map((t) => {
       const key = `${t.testId}::${t.fileId}::${t.project}`;
       const rec = hardFailingByKey.get(key);
@@ -2050,7 +2058,7 @@ function shapeClustersForPrompt(args: {
   });
 
   const clusteredKeys = new Set<string>();
-  for (const c of clusterReport.clusters) {
+  for (const c of realClusters) {
     for (const t of c.tests) {
       clusteredKeys.add(`${t.testId}::${t.fileId}::${t.project}`);
     }

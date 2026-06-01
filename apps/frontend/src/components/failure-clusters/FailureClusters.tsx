@@ -44,6 +44,7 @@ const STRATEGY_LABELS: Record<FailureCluster['strategy'], string> = {
   'stack-frame': 'Shared stack frame',
   fixture: 'Fixture failure',
   temporal: 'Temporal co-failure',
+  unclustered: 'Unclustered failures',
 };
 
 const ALL_STRATEGIES: ClusterStrategy[] = ['signature', 'stack-frame', 'fixture', 'temporal'];
@@ -57,6 +58,7 @@ const STRATEGY_SHORT_LABELS: Record<ClusterStrategy, string> = {
   'stack-frame': 'Stack frame',
   fixture: 'Fixture',
   temporal: 'Temporal',
+  unclustered: 'Unclustered',
 };
 
 const STRATEGY_DESCRIPTIONS: Record<ClusterStrategy, string> = {
@@ -68,6 +70,8 @@ const STRATEGY_DESCRIPTIONS: Record<ClusterStrategy, string> = {
     'Detects beforeAll/beforeEach/afterAll/afterEach failures where every test in a file cascades from the same hook error.',
   temporal:
     'Pairs of tests that consistently fail together in the same reports — catches infra and shared-data issues whose surface errors differ.',
+  unclustered:
+    'Failures that did not match any clustering strategy — likely isolated issues with unique error signatures, stack frames, and no co-failure pattern.',
 };
 
 function parseStrategies(value: string | null): ClusterStrategy[] {
@@ -304,7 +308,17 @@ function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?
             <div className="text-sm text-muted-foreground">
               <span className="font-semibold text-foreground">{cluster.testCount}</span> tests ·{' '}
               <span className="font-semibold text-foreground">{cluster.failureCount}</span> failures
-              · <span className="text-foreground">assuming same root cause</span>
+              {cluster.strategy === 'unclustered' ? (
+                <>
+                  {' '}
+                  · <span className="text-foreground">no shared failure pattern</span>
+                </>
+              ) : (
+                <>
+                  {' '}
+                  · <span className="text-foreground">assuming same root cause</span>
+                </>
+              )}
             </div>
             {variantCount > 0 && (
               <div className="text-xs text-muted-foreground">
