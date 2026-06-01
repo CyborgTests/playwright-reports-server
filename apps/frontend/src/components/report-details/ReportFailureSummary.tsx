@@ -93,7 +93,7 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
     }
   );
 
-  const llmConfigured = !!(config?.llm?.baseUrl && config?.llm?.apiKey);
+  const llmConfigured = !!config?.llm?.baseUrl;
 
   if (isLoading) {
     return null;

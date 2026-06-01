@@ -36,7 +36,7 @@ export function Navbar() {
   const location = useLocation();
   const { data: config, isLoading } = useConfig();
 
-  const isLlmConfigured = !!(config?.llm?.baseUrl && config?.llm?.apiKey);
+  const isLlmConfigured = !!config?.llm?.baseUrl;
   const navItems = isLlmConfigured ? [...baseNavItems, llmQueueNavItem] : baseNavItems;
 
   const isCustomLogo = !!config?.logoPath && config.logoPath !== defaultConfig.logoPath;

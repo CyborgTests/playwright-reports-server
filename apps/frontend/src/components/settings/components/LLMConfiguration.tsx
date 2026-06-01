@@ -59,7 +59,7 @@ export default function LLMConfiguration({
     { key: 'anthropic', label: 'Anthropic' },
   ];
 
-  const isConfigured = config.llm?.baseUrl && config.llm?.apiKey;
+  const isConfigured = !!config.llm?.baseUrl;
   const isEditing = editingSection === 'llm';
 
   const [testing, setTesting] = useState(false);
@@ -152,7 +152,7 @@ export default function LLMConfiguration({
 
   const canTest = (() => {
     const source = isEditing ? tempConfig.llm : config.llm;
-    return !!(source?.baseUrl && source?.apiKey);
+    return !!source?.baseUrl;
   })();
 
   const llmStatus: 'error' | 'connected' | 'not-configured' =
@@ -307,7 +307,7 @@ export default function LLMConfiguration({
               <Input
                 id="llm-api-key"
                 disabled={editingSection !== 'llm'}
-                placeholder="Your API key"
+                placeholder="Leave blank for local servers (LM Studio, Ollama, vLLM…)"
                 type="password"
                 value={
                   editingSection === 'llm' ? tempConfig.llm?.apiKey || '' : config.llm?.apiKey || ''
@@ -319,6 +319,10 @@ export default function LLMConfiguration({
                   })
                 }
               />
+              <p className="text-xs text-muted-foreground">
+                Required for hosted providers (OpenAI, Anthropic, OpenRouter). Local OpenAI-
+                compatible servers usually don't need one unless you set it.
+              </p>
             </div>
           </section>
 

@@ -19,9 +19,7 @@ export class OpenAIProvider extends LLMProvider {
   }
 
   protected getDefaultHeaders(): Record<string, string> {
-    return {
-      Authorization: `Bearer ${this.config.apiKey}`,
-    };
+    return this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {};
   }
 
   /**

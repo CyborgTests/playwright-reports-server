@@ -61,7 +61,7 @@ export function FailureAnalysisSummary({
 }: Readonly<FailureAnalysisSummaryProps>) {
   const queryClient = useQueryClient();
   const { data: config } = useConfig();
-  const llmConfigured = !!(config?.llm?.baseUrl && config?.llm?.apiKey);
+  const llmConfigured = !!config?.llm?.baseUrl;
 
   const cacheParams = new URLSearchParams();
   if (project && project !== defaultProjectName) cacheParams.append('project', project);

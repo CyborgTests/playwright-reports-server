@@ -43,7 +43,7 @@ export class LLMService {
   }
 
   isConfigured(): boolean {
-    return !!(this.config?.baseUrl && this.config?.apiKey);
+    return !!this.config?.baseUrl;
   }
 
   getBaseUrl(): string | null {
@@ -58,7 +58,7 @@ export class LLMService {
   async initialize(): Promise<void> {
     if (!this.isConfigured()) {
       throw new Error(
-        'LLM service is not enabled. Configure the base URL and API key in Settings → LLM.'
+        'LLM service is not enabled. Configure the base URL in Settings → LLM.'
       );
     }
 
@@ -257,8 +257,8 @@ export class LLMService {
       retryDelayMs: 0,
     };
 
-    if (!merged.baseUrl || !merged.apiKey) {
-      return { success: false, error: 'Base URL and API key are required' };
+    if (!merged.baseUrl) {
+      return { success: false, error: 'Base URL is required' };
     }
 
     let provider: OpenAIProvider | AnthropicProvider;
