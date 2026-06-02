@@ -456,9 +456,7 @@ export class S3 implements Storage {
         const reportSortField = input?.sortBy ?? 'createdAt';
         const reportSortOrder = input?.order ?? 'desc';
 
-        reports.sort((a, b) =>
-          compareReports(a as ReportHistory, b as ReportHistory, 'createdAt', reportSortOrder),
-        );
+        reports.sort((a, b) => compareReports(a as ReportHistory, b as ReportHistory, 'createdAt', reportSortOrder));
 
         // When sorting by a metadata-only field we must load metadata for ALL reports before sorting & paginating.
         const canPrePaginate = reportSortField === 'createdAt';
