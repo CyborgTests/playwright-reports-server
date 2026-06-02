@@ -382,7 +382,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
           .prepare(
             `SELECT fileId, project FROM test_runs
              WHERE testId = ? AND reportId = ?
-             ORDER BY datetime(createdAt) DESC LIMIT 1`
+             ORDER BY createdAt DESC LIMIT 1`
           )
           .get(testId, reportId) as { fileId: string; project: string } | undefined;
         if (!row) {

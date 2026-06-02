@@ -544,7 +544,7 @@ export class LlmTasksDatabase {
            AND status = 'completed'
            AND testId = ?
            AND reportId = ?
-         ORDER BY datetime(COALESCE(completedAt, createdAt)) DESC
+         ORDER BY COALESCE(completedAt, createdAt) DESC
          LIMIT 1`
       )
       .get(testId, reportId) as LlmTaskRow | undefined;

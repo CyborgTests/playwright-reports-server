@@ -146,6 +146,7 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_reports_createdAt ON reports(createdAt DESC);
     CREATE INDEX IF NOT EXISTS idx_reports_updatedAt ON reports(updatedAt DESC);
     CREATE INDEX IF NOT EXISTS idx_reports_displayNumber ON reports(displayNumber);
+    CREATE INDEX IF NOT EXISTS idx_reports_project_created ON reports(project, createdAt DESC);
   `);
 
   db.exec('DROP TABLE IF EXISTS cache_metadata');
@@ -174,6 +175,24 @@ function initializeSchema(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_tests_project ON tests(project);
     CREATE INDEX IF NOT EXISTS idx_tests_createdAt ON tests(createdAt DESC);
+  `);
+
+  addColumnIfMissing(db, 'tests', 'latestRunAt', 'TEXT');
+  addColumnIfMissing(db, 'tests', 'latestOutcome', 'TEXT');
+  addColumnIfMissing(db, 'tests', 'latestNonSkippedAt', 'TEXT');
+  addColumnIfMissing(db, 'tests', 'flakinessScore', 'REAL');
+  addColumnIfMissing(db, 'tests', 'quarantined', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'tests', 'quarantineReason', 'TEXT');
+  addColumnIfMissing(db, 'tests', 'totalRuns', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'tests', 'recentPassRate', 'REAL');
+  addColumnIfMissing(db, 'tests', 'avgDuration', 'REAL');
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_tests_proj_flakiness
+      ON tests(project, flakinessScore DESC);
+    CREATE INDEX IF NOT EXISTS idx_tests_proj_lastRunAt
+      ON tests(project, latestRunAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_tests_proj_avgDuration
+      ON tests(project, avgDuration DESC);
   `);
 
   db.exec(`
@@ -208,6 +227,9 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_test_runs_quarantined_created ON test_runs(quarantined, createdAt DESC);
     CREATE INDEX IF NOT EXISTS idx_test_runs_failure_category ON test_runs(failure_category);
     CREATE INDEX IF NOT EXISTS idx_test_runs_error_signature ON test_runs(error_signature);
+    CREATE INDEX IF NOT EXISTS idx_test_runs_project_created ON test_runs(project, createdAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_test_runs_test_lane_created
+      ON test_runs(testId, fileId, project, createdAt DESC);
   `);
   addColumnIfMissing(db, 'test_runs', 'error_signature_global', 'TEXT');
   db.exec(

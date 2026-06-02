@@ -143,18 +143,18 @@ export class FailureSummaryDatabase {
     }
 
     if (opts?.from) {
-      conditions.push('datetime(createdAt) >= datetime(?)');
+      conditions.push('createdAt >= ?');
       params.push(opts.from);
     }
     if (opts?.to) {
-      conditions.push('datetime(createdAt) < datetime(?)');
+      conditions.push('createdAt < ?');
       params.push(opts.to);
     }
 
     if (!opts?.from && !opts?.to) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - (opts?.days ?? 30));
-      conditions.push('datetime(createdAt) >= datetime(?)');
+      conditions.push('createdAt >= ?');
       params.push(cutoff.toISOString());
     }
 
@@ -208,11 +208,11 @@ export class FailureSummaryDatabase {
       params.push(project);
     }
     if (opts?.from) {
-      conditions.push('datetime(createdAt) >= datetime(?)');
+      conditions.push('createdAt >= ?');
       params.push(opts.from);
     }
     if (opts?.to) {
-      conditions.push('datetime(createdAt) < datetime(?)');
+      conditions.push('createdAt < ?');
       params.push(opts.to);
     }
 

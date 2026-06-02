@@ -10,10 +10,23 @@ import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import type { ReportHistory as BackendReportHistory } from '../storage/types.js';
 import { failureSummaryDb } from './db/failureSummary.sqlite.js';
 import { reportDb } from './db/reports.sqlite.js';
+import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
 import { testManagementService } from './testManagement.js';
 
 const HEALTH_GRID_UNBOUNDED_CAP = 200;
+
+type Window = { from?: string; to?: string };
+
+function windowFromReports(reports: BackendReportHistory[]): Window {
+  if (reports.length === 0) return {};
+  const newest = reports[0]?.createdAt;
+  const oldest = reports[reports.length - 1]?.createdAt;
+  return {
+    from: oldest ? new Date(oldest).toISOString() : undefined,
+    to: newest ? new Date(new Date(newest).getTime() + 1).toISOString() : undefined,
+  };
+}
 
 export class AnalyticsService {
   async getAnalyticsData(
@@ -22,20 +35,25 @@ export class AnalyticsService {
     to?: string,
     failedOnly = false
   ): Promise<AnalyticsData> {
-    const allReports = await this.getAllReportsForProject(project);
-    // failedOnly narrows EVERY computation to runs that actually had failures —
-    // applied before partitioning so the trend baseline ("previous period") is
-    // computed against the same filtered population.
-    const scoped = failedOnly
-      ? allReports.filter((r) => (r.stats?.unexpected ?? 0) > 0 || (r.stats?.flaky ?? 0) > 0)
-      : allReports;
+    const fetchScope = await this.fetchReportsForScope(project, from, to);
+    const onlyFailures = (r: BackendReportHistory) =>
+      (r.stats?.unexpected ?? 0) > 0 || (r.stats?.flaky ?? 0) > 0;
+    const scoped = failedOnly ? fetchScope.reports.filter(onlyFailures) : fetchScope.reports;
+    const scopedOlder = failedOnly
+      ? fetchScope.olderReports.filter(onlyFailures)
+      : fetchScope.olderReports;
     const { displayReports, recentForTrend, olderForTrend, olderRange, isBounded } =
-      this.partitionReports(scoped, from, to);
+      this.partitionReports(scoped, from, to, fetchScope.olderRange, scopedOlder);
 
     const config = await service.getConfig();
     const warningThreshold =
       config.testManagement?.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
     const projectKey = project && project !== 'all' ? project : undefined;
+
+    const recentRange = isBounded
+      ? { from: from ?? undefined, to: to ?? undefined }
+      : windowFromReports(recentForTrend);
+    const previousRange = olderRange ?? windowFromReports(olderForTrend);
 
     const [
       overviewStats,
@@ -45,9 +63,16 @@ export class AnalyticsService {
       previousTestsSummary,
       failureCategories,
     ] = await Promise.all([
-      this.calculateOverviewStats(displayReports, recentForTrend, olderForTrend),
+      this.calculateOverviewStats(
+        displayReports,
+        recentForTrend,
+        olderForTrend,
+        projectKey,
+        recentRange,
+        previousRange
+      ),
       this.calculateRunHealthMetrics(displayReports, isBounded),
-      this.calculateTrendMetrics(displayReports, scoped),
+      this.calculateTrendMetrics(displayReports, projectKey, recentRange),
       testManagementService.getTestsSummary(projectKey, warningThreshold, { from, to }),
       olderRange
         ? testManagementService.getTestsSummary(projectKey, warningThreshold, olderRange)
@@ -80,11 +105,31 @@ export class AnalyticsService {
     };
   }
 
-  private async getAllReportsForProject(project?: string): Promise<BackendReportHistory[]> {
-    if (project) {
-      return reportDb.getByProject(project);
+  private async fetchReportsForScope(
+    project: string | undefined,
+    from: string | undefined,
+    to: string | undefined
+  ): Promise<{
+    reports: BackendReportHistory[];
+    olderReports: BackendReportHistory[];
+    olderRange: { from: string; to: string } | null;
+  }> {
+    if (!from && !to) {
+      return { reports: reportDb.getByProject(project), olderReports: [], olderRange: null };
     }
-    return reportDb.getAll();
+
+    const reports = reportDb.getByProject(project, { from, to });
+
+    const fromMs = from ? new Date(from).getTime() : Number.NEGATIVE_INFINITY;
+    const toMs = to ? new Date(to).getTime() : Number.POSITIVE_INFINITY;
+    const duration = Number.isFinite(toMs) && Number.isFinite(fromMs) ? toMs - fromMs : null;
+    if (duration === null || duration <= 0) {
+      return { reports, olderReports: [], olderRange: null };
+    }
+    const compFrom = new Date(fromMs - duration).toISOString();
+    const compTo = new Date(fromMs).toISOString();
+    const olderReports = reportDb.getByProject(project, { from: compFrom, to: compTo });
+    return { reports, olderReports, olderRange: { from: compFrom, to: compTo } };
   }
 
   /**
@@ -103,7 +148,9 @@ export class AnalyticsService {
   private partitionReports(
     allReports: BackendReportHistory[],
     from?: string,
-    to?: string
+    to?: string,
+    preFetchedOlderRange?: { from: string; to: string } | null,
+    preFetchedOlderReports?: BackendReportHistory[]
   ): {
     displayReports: BackendReportHistory[];
     recentForTrend: BackendReportHistory[];
@@ -112,30 +159,11 @@ export class AnalyticsService {
     isBounded: boolean;
   } {
     if (from || to) {
-      const fromMs = from ? new Date(from).getTime() : Number.NEGATIVE_INFINITY;
-      const toMs = to ? new Date(to).getTime() : Number.POSITIVE_INFINITY;
-      const display = allReports.filter((r) => {
-        const t = new Date(r.createdAt).getTime();
-        return t >= fromMs && t < toMs;
-      });
-
-      const duration = Number.isFinite(toMs) && Number.isFinite(fromMs) ? toMs - fromMs : null;
-      let older: BackendReportHistory[] = [];
-      let olderRange: { from: string; to: string } | null = null;
-      if (duration !== null && duration > 0) {
-        const compTo = fromMs;
-        const compFrom = fromMs - duration;
-        older = allReports.filter((r) => {
-          const t = new Date(r.createdAt).getTime();
-          return t >= compFrom && t < compTo;
-        });
-        olderRange = { from: new Date(compFrom).toISOString(), to: new Date(compTo).toISOString() };
-      }
       return {
-        displayReports: display,
-        recentForTrend: display,
-        olderForTrend: older,
-        olderRange,
+        displayReports: allReports,
+        recentForTrend: allReports,
+        olderForTrend: preFetchedOlderReports ?? [],
+        olderRange: preFetchedOlderRange ?? null,
         isBounded: true,
       };
     }
@@ -163,7 +191,10 @@ export class AnalyticsService {
   private async calculateOverviewStats(
     displayReports: BackendReportHistory[],
     recentForTrend: BackendReportHistory[],
-    olderForTrend: BackendReportHistory[]
+    olderForTrend: BackendReportHistory[],
+    project: string | undefined,
+    recentRange: Window,
+    previousRange: Window
   ): Promise<OverviewStats> {
     const totalTests = displayReports.reduce((sum, report) => sum + (report.stats?.total || 0), 0);
 
@@ -182,13 +213,11 @@ export class AnalyticsService {
     );
     const passRate = totalExecuted > 0 ? (totalPassed / totalExecuted) * 100 : 0;
 
-    const testDurations = await this.extractTestDurations(displayReports);
-    const averageTestDuration =
-      testDurations.length > 0
-        ? testDurations.reduce((sum, duration) => sum + duration, 0) / testDurations.length
-        : 0;
-
-    const slowestSteps = await this.findSlowestSteps(displayReports, 10);
+    const recentAgg = testDb.getDurationAggregates(project, recentRange.from, recentRange.to);
+    const olderAgg = testDb.getDurationAggregates(project, previousRange.from, previousRange.to);
+    const slowestSteps = testDb.getSlowestTests(project, recentRange.from, recentRange.to, 10);
+    const averageTestDuration = recentAgg.avgDuration;
+    const olderAverageTestDuration = olderAgg.avgDuration;
 
     const averageTestRunDuration =
       displayReports.length > 0
@@ -217,12 +246,6 @@ export class AnalyticsService {
       olderFlakyOccurrences,
       flakinessThreshold
     );
-
-    const olderTestDurations = await this.extractTestDurations(olderForTrend);
-    const olderAverageTestDuration =
-      olderTestDurations.length > 0
-        ? olderTestDurations.reduce((sum, d) => sum + d, 0) / olderTestDurations.length
-        : 0;
 
     const olderAverageRunDuration =
       olderForTrend.length > 0
@@ -293,83 +316,37 @@ export class AnalyticsService {
 
   private async calculateTrendMetrics(
     displayReports: BackendReportHistory[],
-    allReportsForBaseline: BackendReportHistory[]
+    project: string | undefined,
+    recentRange: Window
   ): Promise<TrendMetrics> {
     const durationTrend = displayReports.map((report) => ({
       date: new Date(report.createdAt).toISOString(),
       duration: report.duration || 0,
     }));
 
-    const flakyCounts = await Promise.all(
-      displayReports.map(async (report) => ({
-        date: new Date(report.createdAt).toISOString(),
-        count: report.stats?.flaky || 0,
-      }))
-    );
+    const flakyCountTrend = displayReports.map((report) => ({
+      date: new Date(report.createdAt).toISOString(),
+      count: report.stats?.flaky || 0,
+    }));
 
-    const slowThreshold = await this.calculateSlowThreshold(allReportsForBaseline);
-    const slowCounts = await Promise.all(
-      displayReports.map(async (report) => {
-        const slowCount = await this.countSlowTests(report, slowThreshold);
-        return {
-          date: new Date(report.createdAt).toISOString(),
-          count: slowCount,
-        };
-      })
+    const { p95Duration } = testDb.getDurationAggregates(project, recentRange.from, recentRange.to);
+    const slowThreshold = p95Duration > 0 ? p95Duration : 1000;
+    const slowCountsByReport = testDb.getSlowCountsByReport(
+      project,
+      recentRange.from,
+      recentRange.to,
+      slowThreshold
     );
+    const slowCountTrend = displayReports.map((report) => ({
+      date: new Date(report.createdAt).toISOString(),
+      count: slowCountsByReport.get(report.reportID) ?? 0,
+    }));
 
     return {
       durationTrend,
-      flakyCountTrend: flakyCounts,
-      slowCountTrend: slowCounts,
+      flakyCountTrend,
+      slowCountTrend,
     };
-  }
-
-  private async extractTestDurations(reports: BackendReportHistory[]): Promise<number[]> {
-    const durations: number[] = [];
-
-    for (const report of reports) {
-      if (!report.files) continue;
-
-      for (const file of report.files) {
-        if (!file.tests) continue;
-
-        for (const test of file.tests) {
-          if (test.duration) {
-            durations.push(test.duration);
-          }
-        }
-      }
-    }
-
-    return durations;
-  }
-
-  private async findSlowestSteps(
-    reports: BackendReportHistory[],
-    limit: number
-  ): Promise<Array<{ step: string; duration: number; testId: string }>> {
-    const steps: Array<{ step: string; duration: number; testId: string }> = [];
-
-    for (const report of reports) {
-      if (!report.files) continue;
-
-      for (const file of report.files) {
-        if (!file.tests) continue;
-
-        for (const test of file.tests) {
-          if (test.duration && test.title) {
-            steps.push({
-              step: test.title,
-              duration: test.duration,
-              testId: test.testId || file.fileName || 'unknown',
-            });
-          }
-        }
-      }
-    }
-
-    return steps.sort((a, b) => b.duration - a.duration).slice(0, limit);
   }
 
   private async calculatePreviousPassRate(reports: BackendReportHistory[]): Promise<number> {
@@ -401,32 +378,6 @@ export class AnalyticsService {
       return 'stable';
     }
     return percentChange > 0 ? 'up' : 'down';
-  }
-
-  private async calculateSlowThreshold(reports: BackendReportHistory[]): Promise<number> {
-    const durations = await this.extractTestDurations(reports);
-    if (durations.length === 0) return 1000; // Default 1 second
-
-    durations.sort((a, b) => a - b);
-    const p95Index = Math.floor(durations.length * 0.95);
-    return durations[p95Index] || 1000;
-  }
-
-  private async countSlowTests(report: BackendReportHistory, threshold: number): Promise<number> {
-    if (!report.files) return 0;
-
-    let count = 0;
-    for (const file of report.files) {
-      if (!file.tests) continue;
-
-      for (const test of file.tests) {
-        if (test.duration && test.duration > threshold) {
-          count++;
-        }
-      }
-    }
-
-    return count;
   }
 
   async getTestTrends(testId: string, projectName?: string): Promise<StepTimingTrend | null> {

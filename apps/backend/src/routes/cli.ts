@@ -530,12 +530,12 @@ function resolveTestIdentity(
   const row = project
     ? (db
         .prepare(
-          'SELECT fileId, project FROM test_runs WHERE testId = ? AND project = ? ORDER BY datetime(createdAt) DESC LIMIT 1'
+          'SELECT fileId, project FROM test_runs WHERE testId = ? AND project = ? ORDER BY createdAt DESC LIMIT 1'
         )
         .get(testId, project) as { fileId: string; project: string } | undefined)
     : (db
         .prepare(
-          'SELECT fileId, project FROM test_runs WHERE testId = ? ORDER BY datetime(createdAt) DESC LIMIT 1'
+          'SELECT fileId, project FROM test_runs WHERE testId = ? ORDER BY createdAt DESC LIMIT 1'
         )
         .get(testId) as { fileId: string; project: string } | undefined);
   if (!row) return null;
@@ -1044,12 +1044,12 @@ async function buildReportResolve(displayNumber: number, project?: string) {
     project
       ? db
           .prepare(
-            'SELECT reportID, project, title, displayNumber, createdAt, reportUrl FROM reports WHERE displayNumber = ? AND project = ? ORDER BY datetime(createdAt) DESC'
+            'SELECT reportID, project, title, displayNumber, createdAt, reportUrl FROM reports WHERE displayNumber = ? AND project = ? ORDER BY createdAt DESC'
           )
           .all(displayNumber, project)
       : db
           .prepare(
-            'SELECT reportID, project, title, displayNumber, createdAt, reportUrl FROM reports WHERE displayNumber = ? ORDER BY datetime(createdAt) DESC'
+            'SELECT reportID, project, title, displayNumber, createdAt, reportUrl FROM reports WHERE displayNumber = ? ORDER BY createdAt DESC'
           )
           .all(displayNumber)
   ) as Array<{

@@ -277,7 +277,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
                AND tla.analysis IS NOT NULL
                AND TRIM(tla.analysis) != ''
                AND tla.reportId != ?
-             ORDER BY datetime(COALESCE(tla.updatedAt, tla.createdAt)) DESC
+             ORDER BY COALESCE(tla.updatedAt, tla.createdAt) DESC
              LIMIT 1`
           )
           .get(testId, fileId, proj, errorSignature, heuristicCategory, currentReportId) as

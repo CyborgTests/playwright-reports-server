@@ -553,7 +553,7 @@ class LlmAnalysisQueue {
              AND tla.analysis IS NOT NULL
              AND TRIM(tla.analysis) != ''
              AND tla.reportId != ?
-           ORDER BY datetime(COALESCE(tla.updatedAt, tla.createdAt)) DESC
+           ORDER BY COALESCE(tla.updatedAt, tla.createdAt) DESC
            LIMIT 1`
         )
         .get(testId, fileId, project, currentErrorSignature, heuristicCategory, reportId) as

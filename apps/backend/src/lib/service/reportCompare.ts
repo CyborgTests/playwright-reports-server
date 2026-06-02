@@ -292,8 +292,8 @@ export const findPreviousReportInProject = (
       `SELECT reportID FROM reports
        WHERE project = ?
          AND reportID != ?
-         AND datetime(createdAt) < datetime(?)
-       ORDER BY datetime(createdAt) DESC
+         AND createdAt < ?
+       ORDER BY createdAt DESC
        LIMIT 1`
     )
     .get(project, excludeReportId, createdAtISO) as { reportID: string } | undefined;

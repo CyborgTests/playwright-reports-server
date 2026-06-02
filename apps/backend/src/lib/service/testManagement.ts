@@ -546,6 +546,7 @@ export class TestManagementService {
           }
 
           testDb.createTestRun(testRun);
+          testDb.refreshTestStatCols(testId, fileId, report.project);
         }
       }
     };
@@ -747,6 +748,8 @@ export class TestManagementService {
     if (!updated) {
       throw new Error('Failed to update test run quarantine status');
     }
+
+    testDb.refreshTestStatCols(testId, fileId, project);
   }
 
   async getTests(
@@ -763,145 +766,64 @@ export class TestManagementService {
       search?: string;
     }
   ): Promise<{ data: TestWithQuarantineInfo[]; total: number }> {
-    let tests = testDb.getAllAndDerivedData(project);
-
-    if (options?.from || options?.to) {
-      const from = options.from ?? '0001-01-01T00:00:00Z';
-      const to = options.to ?? new Date(Date.now() + 60_000).toISOString();
-      const windowedRuns = testDb.getTestRunsInWindow(project, from, to);
-
-      const grouped = new Map<string, TestRun[]>();
-      for (const run of windowedRuns) {
-        const key = `${run.testId}::${run.fileId}::${run.project}`;
-        let bucket = grouped.get(key);
-        if (!bucket) {
-          bucket = [];
-          grouped.set(key, bucket);
+    let tierOpt:
+      | {
+          warningThreshold: number;
+          quarantineThreshold: number;
+          tiers: Array<'stable' | 'flaky' | 'critical'>;
         }
-        bucket.push(run);
-      }
-
-      tests = tests
-        .filter((t) => grouped.has(`${t.testId}::${t.fileId}::${t.project}`))
-        .map((t) => {
-          const runs = grouped.get(`${t.testId}::${t.fileId}::${t.project}`) ?? [];
-          return {
-            ...t,
-            runs,
-            totalRuns: runs.length,
-          };
-        });
-    }
-
-    if (options) {
-      if (options.status && options.status !== 'all') {
-        const shouldBeQuarantined = options.status === 'quarantined';
-        tests = tests.filter((test) => test.isQuarantined === shouldBeQuarantined);
-      }
-
-      if (options.tiers && options.tiers.length > 0) {
-        const cfg = await this.getConfig();
-        const warning = cfg.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
-        const quarantine =
-          cfg.quarantineThresholdPercentage ?? FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE;
-        const matchesTier = (score: number, tier: string) => {
-          switch (tier) {
-            case 'stable':
-              return score < warning;
-            case 'flaky':
-              return score >= warning && score < quarantine;
-            case 'critical':
-              return score >= quarantine;
-            default:
-              return false;
-          }
-        };
-        tests = tests.filter((test) => {
-          const score = test.flakinessScore ?? 0;
-          return options.tiers!.some((tier) => matchesTier(score, tier));
-        });
-      }
-
-      if (options.failureCategory) {
-        const target = options.failureCategory;
-        tests = tests.filter((test) =>
-          (test.runs ?? []).some((run) => run.failureCategory === target)
-        );
-      }
-
-      if (options.search) {
-        const term = options.search.toLowerCase();
-        tests = tests.filter(
-          (test) =>
-            test.title.toLowerCase().includes(term) || test.filePath.toLowerCase().includes(term)
-        );
-      }
-    }
-
-    if (options?.sort === 'slowest') {
-      const avgDuration = (t: TestWithQuarantineInfo) => {
-        const durations = (t.runs ?? [])
-          .map((r) => r.duration)
-          .filter((d): d is number => typeof d === 'number' && d >= 0);
-        if (durations.length === 0) return -1;
-        return durations.reduce((s, d) => s + d, 0) / durations.length;
+      | undefined;
+    if (options?.tiers && options.tiers.length > 0) {
+      const cfg = await this.getConfig();
+      tierOpt = {
+        warningThreshold: cfg.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE,
+        quarantineThreshold:
+          cfg.quarantineThresholdPercentage ?? FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE,
+        tiers: options.tiers,
       };
-      tests.sort((a, b) => avgDuration(b) - avgDuration(a));
-      const total = tests.length;
-      if (options.limit !== undefined) {
-        const offset = options.offset ?? 0;
-        tests = tests.slice(offset, offset + options.limit);
-      }
-      return { data: tests, total };
     }
 
-    if (options?.sort === 'stale') {
-      // Oldest-last-seen first — surfaces tests that haven't run recently and
-      // may have been deleted or renamed without a quarantine entry. Tests
-      // with no recorded runs sort to the top (Infinity-old).
-      const lastSeen = (t: TestWithQuarantineInfo) => (t.lastRunAt ? Date.parse(t.lastRunAt) : 0);
-      tests.sort((a, b) => lastSeen(a) - lastSeen(b));
-      const total = tests.length;
-      if (options.limit !== undefined) {
-        const offset = options.offset ?? 0;
-        tests = tests.slice(offset, offset + options.limit);
-      }
-      return { data: tests, total };
-    }
-
-    // Sort: skipped last, unexpected first, high flakiness, low pass rate
-    tests.sort((a, b) => {
-      const latestOutcome = (t: TestWithQuarantineInfo) => t.runs?.[0]?.outcome ?? '';
-      const aSkipped = latestOutcome(a) === 'skipped';
-      const bSkipped = latestOutcome(b) === 'skipped';
-      if (aSkipped !== bSkipped) return aSkipped ? 1 : -1;
-
-      const aUnexpected = latestOutcome(a) === 'unexpected';
-      const bUnexpected = latestOutcome(b) === 'unexpected';
-      if (aUnexpected !== bUnexpected) return aUnexpected ? -1 : 1;
-
-      const aFlakiness = a.flakinessScore ?? 0;
-      const bFlakiness = b.flakinessScore ?? 0;
-      if (Math.abs(aFlakiness - bFlakiness) > 0.01) return bFlakiness - aFlakiness;
-
-      const getPassRate = (t: TestWithQuarantineInfo) => {
-        if (!t.runs || t.runs.length === 0) return 1;
-        return (
-          t.runs.filter((r) => r.outcome === 'expected' || r.outcome === 'passed').length /
-          t.runs.length
-        );
-      };
-      return getPassRate(a) - getPassRate(b);
+    const { rows, total } = testDb.getDerivedPage(project, {
+      status: options?.status,
+      sort: options?.sort,
+      tier: tierOpt,
+      failureCategory: options?.failureCategory,
+      limit: options?.limit,
+      offset: options?.offset,
+      from: options?.from,
+      to: options?.to,
+      search: options?.search,
     });
 
-    const total = tests.length;
+    if (rows.length === 0) return { data: [], total };
 
-    if (options?.limit !== undefined) {
-      const offset = options.offset ?? 0;
-      tests = tests.slice(offset, offset + options.limit);
-    }
+    const windowed = !!(options?.from || options?.to);
+    const runsByKey = testDb.getRunsForLanes(
+      rows.map((r) => ({ testId: r.testId, fileId: r.fileId, project: r.project })),
+      windowed ? { from: options?.from, to: options?.to } : undefined
+    );
 
-    return { data: tests, total };
+    const data: TestWithQuarantineInfo[] = rows.map((row) => {
+      const key = `${row.testId}::${row.fileId}::${row.project}`;
+      const isQuarantined = Boolean(row.quarantined);
+      return {
+        testId: row.testId,
+        fileId: row.fileId,
+        filePath: row.filePath,
+        project: row.project,
+        title: row.title,
+        createdAt: row.createdAt,
+        totalRuns: row.totalRuns,
+        lastRunAt: row.lastRunAt ?? undefined,
+        flakinessScore: row.flakinessScore ?? undefined,
+        isQuarantined,
+        quarantinedAt: isQuarantined && row.latestNonSkippedAt ? row.latestNonSkippedAt : undefined,
+        quarantineReason: isQuarantined && row.quarantineReason ? row.quarantineReason : undefined,
+        runs: runsByKey.get(key) ?? [],
+      };
+    });
+
+    return { data, total };
   }
 
   async getTestsSummary(
@@ -912,25 +834,7 @@ export class TestManagementService {
     if (opts?.from || opts?.to) {
       const from = opts.from ?? '0001-01-01T00:00:00Z';
       const to = opts.to ?? new Date(Date.now() + 60_000).toISOString();
-      const runs = testDb.getTestRunOutcomesInWindow(project, from, to);
-
-      const lanesInWindow = new Set<string>();
-      const uniqueTestIds = new Set<string>();
-      for (const run of runs) {
-        uniqueTestIds.add(run.testId);
-        lanesInWindow.add(`${run.testId}::${run.fileId}::${run.project}`);
-      }
-
-      const flakyTestIds = new Set<string>();
-      for (const test of testDb.getAllAndDerivedData(project)) {
-        const key = `${test.testId}::${test.fileId}::${test.project}`;
-        if (!lanesInWindow.has(key)) continue;
-        if ((test.flakinessScore ?? 0) >= warningThreshold) {
-          flakyTestIds.add(test.testId);
-        }
-      }
-
-      return { total: uniqueTestIds.size, flakyCount: flakyTestIds.size };
+      return testDb.getFlakySummaryInWindow(project, from, to, warningThreshold);
     }
 
     const { total, flakyTests } = testDb.getTestsSummary(project, warningThreshold);
@@ -1024,6 +928,7 @@ export class TestManagementService {
 
         if (latestRun.flakinessScore !== newScore) {
           testDb.updateFlakinessScore(latestRun.runId, newScore);
+          testDb.refreshTestStatCols(test.testId, test.fileId, test.project);
           updated++;
         }
       }

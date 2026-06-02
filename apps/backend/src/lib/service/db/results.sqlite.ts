@@ -46,8 +46,8 @@ export class ResultDatabase {
 
     this.getExpiredIdsStmt = this.db.prepare(`
       SELECT resultID FROM results
-      WHERE datetime(createdAt) < datetime(?)
-      ORDER BY datetime(createdAt) ASC
+      WHERE createdAt < ?
+      ORDER BY createdAt ASC
       LIMIT ?
     `);
   }
@@ -210,12 +210,12 @@ export class ResultDatabase {
     }
 
     if (input?.from) {
-      conditions.push('datetime(createdAt) >= datetime(?)');
+      conditions.push('createdAt >= ?');
       params.push(input.from);
     }
 
     if (input?.to) {
-      conditions.push('datetime(createdAt) < datetime(?)');
+      conditions.push('createdAt < ?');
       params.push(input.to);
     }
 

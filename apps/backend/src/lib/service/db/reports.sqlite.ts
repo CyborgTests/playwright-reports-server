@@ -76,8 +76,8 @@ export class ReportDatabase {
 
     this.getExpiredIdsStmt = this.db.prepare(`
       SELECT reportID FROM reports
-      WHERE datetime(createdAt) < datetime(?)
-      ORDER BY datetime(createdAt) ASC
+      WHERE createdAt < ?
+      ORDER BY createdAt ASC
       LIMIT ?
     `);
   }
@@ -241,8 +241,8 @@ export class ReportDatabase {
       .prepare(
         `SELECT reportID FROM reports
          WHERE project = (SELECT project FROM reports WHERE reportID = ?)
-           AND datetime(createdAt) < datetime((SELECT createdAt FROM reports WHERE reportID = ?))
-         ORDER BY datetime(createdAt) DESC
+           AND createdAt < (SELECT createdAt FROM reports WHERE reportID = ?)
+         ORDER BY createdAt DESC
          LIMIT 1`
       )
       .get(reportID, reportID) as { reportID: string } | undefined;
@@ -314,11 +314,11 @@ export class ReportDatabase {
       params.push(project ?? '');
     }
     if (hasFrom) {
-      conditions.push('datetime(createdAt) >= datetime(?)');
+      conditions.push('createdAt >= ?');
       params.push(opts?.from ?? '');
     }
     if (hasTo) {
-      conditions.push('datetime(createdAt) < datetime(?)');
+      conditions.push('createdAt < ?');
       params.push(opts?.to ?? '');
     }
 
@@ -446,12 +446,12 @@ export class ReportDatabase {
     }
 
     if (input?.from) {
-      conditions.push('datetime(createdAt) >= datetime(?)');
+      conditions.push('createdAt >= ?');
       params.push(input.from);
     }
 
     if (input?.to) {
-      conditions.push('datetime(createdAt) < datetime(?)');
+      conditions.push('createdAt < ?');
       params.push(input.to);
     }
 

@@ -167,7 +167,7 @@ export class TestAnalysisDatabase {
       .prepare(
         `SELECT * FROM test_llm_analyses
          WHERE testId = ? AND reportId = ?
-         ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC, attempt DESC
+         ORDER BY COALESCE(updatedAt, createdAt) DESC, attempt DESC
          LIMIT 1`
       )
       .get(testId, reportId) as TestAnalysisRow | undefined;
@@ -192,7 +192,7 @@ export class TestAnalysisDatabase {
          WHERE testId = ? AND fileId = ? AND project = ?
            AND reportId != ?
            AND analysis IS NOT NULL AND TRIM(analysis) != ''
-         ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC
+         ORDER BY COALESCE(updatedAt, createdAt) DESC
          LIMIT 1`
       )
       .get(testId, fileId, project, excludeReportId) as TestAnalysisRow | undefined;
