@@ -3,21 +3,9 @@ import { type Report, type Result, type ReportHistory, type SortOrder } from './
 export type ReportSortField = 'createdAt' | 'title' | 'project' | 'passRate' | 'size';
 export type ResultSortField = 'createdAt' | 'title' | 'project' | 'tags' | 'size';
 
-export const REPORT_SORT_FIELDS: readonly ReportSortField[] = [
-  'createdAt',
-  'title',
-  'project',
-  'passRate',
-  'size',
-];
+export const REPORT_SORT_FIELDS: readonly ReportSortField[] = ['createdAt', 'title', 'project', 'passRate', 'size'];
 
-export const RESULT_SORT_FIELDS: readonly ResultSortField[] = [
-  'createdAt',
-  'title',
-  'project',
-  'tags',
-  'size',
-];
+export const RESULT_SORT_FIELDS: readonly ResultSortField[] = ['createdAt', 'title', 'project', 'tags', 'size'];
 
 export const parseReportSortField = (value: string | null | undefined): ReportSortField | undefined =>
   (REPORT_SORT_FIELDS as readonly string[]).includes(value ?? '') ? (value as ReportSortField) : undefined;
@@ -100,12 +88,7 @@ export const compareReports = (
   return dir * compareValues(getReportSortValue(a, field), getReportSortValue(b, field));
 };
 
-export const compareResults = (
-  a: Result,
-  b: Result,
-  field: ResultSortField,
-  order: SortOrder,
-): number => {
+export const compareResults = (a: Result, b: Result, field: ResultSortField, order: SortOrder): number => {
   const dir = order === 'asc' ? 1 : -1;
 
   return dir * compareValues(getResultSortValue(a, field), getResultSortValue(b, field));
@@ -115,9 +98,5 @@ export const compareResults = (
 export const getTimestamp = toTimestamp;
 
 // Loose helper for the type-erased `Report` (used in storage layers where we sort before metadata merge in some backends).
-export const compareReportsLoose = (
-  a: Report,
-  b: Report,
-  field: ReportSortField,
-  order: SortOrder,
-): number => compareReports(a as ReportHistory, b as ReportHistory, field, order);
+export const compareReportsLoose = (a: Report, b: Report, field: ReportSortField, order: SortOrder): number =>
+  compareReports(a as ReportHistory, b as ReportHistory, field, order);
