@@ -12,6 +12,7 @@ import {
   startOfWeek,
   startOfYesterday,
   subDays,
+  subMonths,
 } from 'date-fns';
 import { CalendarIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -28,6 +29,7 @@ type PresetId =
   | 'yesterday'
   | 'this-week'
   | 'this-month'
+  | 'previous-month'
   | 'last-7-days'
   | 'last-2-weeks'
   | 'all';
@@ -39,6 +41,7 @@ const PRESETS: Array<{ id: PresetId; label: string }> = [
   { id: 'last-7-days', label: 'Last 7 days' },
   { id: 'last-2-weeks', label: 'Last 2 weeks' },
   { id: 'this-month', label: 'This month' },
+  { id: 'previous-month', label: 'Previous month' },
   { id: 'all', label: 'All time' },
 ];
 
@@ -72,6 +75,13 @@ function presetToRange(id: PresetId): SharedDateRange {
         from: startOfMonth(now).toISOString(),
         to: endOfMonth(now).toISOString(),
       };
+    case 'previous-month': {
+      const prev = subMonths(now, 1);
+      return {
+        from: startOfMonth(prev).toISOString(),
+        to: endOfMonth(prev).toISOString(),
+      };
+    }
     case 'all':
       return {};
   }
