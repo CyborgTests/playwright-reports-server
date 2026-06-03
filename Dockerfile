@@ -1,102 +1,76 @@
 FROM node:24-alpine AS build-base
 
-# Install pnpm globally
-RUN npm install -g pnpm
+# Pin pnpm to match repo
+RUN npm install -g pnpm@10
 
-# Install build tools for native dependencies (better-sqlite3, sharp, esbuild)
-RUN apk add --no-cache python3 make g++ libc6-compat curl
+# Build tools for native dependencies (better-sqlite3, esbuild)
+RUN apk add --no-cache python3 make g++ libc6-compat
 
 # CI=true prevents pnpm from prompting; PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD keeps
-# the optional @playwright/test dependency from pulling chromium/firefox/webkit
-# (~700MB) — we only ever run `playwright merge-reports`, not browsers.
+# @playwright/test from pulling chromium/firefox/webkit — we only run
+# `playwright merge-reports`, not browsers.
 ENV CI=true \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# Runner base: minimal runtime image with only Node.js and Litestream
+# Runner base: minimal runtime image with Node, Litestream and curl (for healthcheck).
 FROM node:24-alpine AS runner-base
 
-# Install Litestream for SQLite replication
-# Supports: linux/amd64, linux/arm64, linux/armv6, linux/armv7
-# TARGETPLATFORM is automatically set by Docker buildkit when using --platform
 ARG TARGETPLATFORM
 ENV LITESTREAM_VERSION=0.3.13
 RUN apk add --no-cache curl && \
     TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64} && \
     LITESTREAM_ARCH=$(echo "${TARGETPLATFORM##*/}" | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/') && \
-    curl -fsSL "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-v${LITESTREAM_VERSION}-linux-${LITESTREAM_ARCH}.tar.gz" | tar -xz && \
-    mv litestream /usr/local/bin/litestream && \
-    chmod +x /usr/local/bin/litestream && \
-    apk del curl
+    curl -fsSL "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-v${LITESTREAM_VERSION}-linux-${LITESTREAM_ARCH}.tar.gz" \
+      | tar -xz -C /usr/local/bin litestream && \
+    chmod +x /usr/local/bin/litestream
 
 ENV NODE_ENV=production \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# Install all dependencies for monorepo from the ROOT
-# This is critical: pnpm install must run from root where pnpm-workspace.yaml
-# and root package.json with overrides are located
+# Install all workspace deps (including dev) from the monorepo root so the
+# build stages have everything they need.
 FROM build-base AS deps
 WORKDIR /app
 
-# Copy workspace configuration files first
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./.npmrc ./
-
-# Copy all workspace packages so pnpm can resolve local dependencies
 COPY packages/ ./packages/
 COPY apps/ ./apps/
 
-# Install dependencies from root with frozen lockfile
-# This reads the overrides from root package.json and onlyBuiltDependencies from pnpm-workspace.yaml
 RUN pnpm install --frozen-lockfile --prefer-offline
 
-# Build shared package first using pnpm filter from root
+# Build shared package first (backend + frontend depend on its dist output).
 FROM build-base AS shared-builder
 WORKDIR /app
-
-# Copy the entire workspace structure with node_modules from deps
 COPY --from=deps /app/ ./
-
-# Build shared package using pnpm filter from root
-# This ensures workspace context is preserved
 RUN pnpm --filter @playwright-reports/shared build
 
 # Build frontend
 FROM build-base AS frontend-builder
 WORKDIR /app
-
-# Copy the entire workspace structure with node_modules from deps
 COPY --from=deps /app/ ./
-
-# Copy the built shared package
 COPY --from=shared-builder /app/packages/shared/dist ./packages/shared/dist
 
-# Create symlink for shared package in frontend directory
-# The Vite config expects ./packages/shared when DOCKER_BUILD=true
-# but the actual shared package is at /app/packages/shared
+# Vite is configured to look at ./packages/shared inside the frontend dir
+# when DOCKER_BUILD=true; symlink the workspace package into place.
 RUN mkdir -p /app/apps/frontend/packages && \
     ln -sf /app/packages/shared /app/apps/frontend/packages/shared
 
-# Build frontend using pnpm filter from root
 ENV DOCKER_BUILD=true
 RUN pnpm --filter @playwright-reports/frontend build:vite
 
 # Build backend
 FROM build-base AS backend-builder
 WORKDIR /app
-
-# Copy the entire workspace structure with node_modules from deps
 COPY --from=deps /app/ ./
-
-# Copy the built shared package
 COPY --from=shared-builder /app/packages/shared/dist ./packages/shared/dist
-
-# Build backend using pnpm filter from root
 RUN pnpm --filter @playwright-reports/backend build
 
-# Prune dev dependencies from the entire workspace
-# This removes dev dependencies from all workspace packages
-# --ignore-scripts prevents running prepare scripts which would fail without dev deps
-RUN pnpm install --prod --frozen-lockfile --ignore-scripts --prefer-offline && \
-    pnpm store prune
+# Produce a self-contained backend bundle: dist + public + flat prod
+# node_modules with only what backend imports transitively.
+FROM backend-builder AS deployer
+WORKDIR /app
+RUN pnpm --filter @playwright-reports/backend deploy --prod --legacy /deploy && \
+    find /deploy/dist -type f \( -name '*.d.ts' -o -name '*.d.ts.map' -o -name '*.js.map' \) -delete
 
 # Production image
 FROM runner-base AS runner
@@ -105,39 +79,20 @@ WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 --ingroup nodejs appuser
 
-# Copy root node_modules (contains all dependencies)
-COPY --from=backend-builder --chown=appuser:nodejs /app/node_modules ./node_modules
+# Self-contained backend bundle (dist, public, package.json, node_modules).
+COPY --from=deployer --chown=appuser:nodejs /deploy ./apps/backend
 
-# Copy workspace package node_modules (pnpm symlinks for workspace resolution)
-COPY --from=backend-builder --chown=appuser:nodejs /app/apps/backend/node_modules ./apps/backend/node_modules
-
-# Copy shared package (needed as workspace dependency)
-COPY --from=backend-builder --chown=appuser:nodejs /app/packages/shared ./packages/shared
-
-# Copy only the backend dist folder (not full source code)
-COPY --from=backend-builder --chown=appuser:nodejs /app/apps/backend/dist ./apps/backend/dist
-
-# Copy backend public folder (static assets like logo.svg, favicon.ico)
-COPY --from=backend-builder --chown=appuser:nodejs /app/apps/backend/public ./apps/backend/public
-
-# Copy backend package.json for version/metadata access
-COPY --from=backend-builder --chown=appuser:nodejs /app/apps/backend/package.json ./apps/backend/package.json
-
-# Copy frontend dist
+# Frontend static assets served by @fastify/static.
 COPY --from=frontend-builder --chown=appuser:nodejs /app/apps/frontend/dist ./apps/frontend/dist
 
-# Copy environment configuration (for default values)
-COPY --chown=appuser:nodejs .env.example /app/.env.example
+# Root metadata and Litestream config.
 COPY --chown=appuser:nodejs package.json ./package.json
-
-# Copy Litestream configuration (internal, not exposed as env var)
+COPY --chown=appuser:nodejs .env.example /app/.env.example
 COPY --chown=appuser:nodejs litestream.yml /app/litestream.yml
 
-# Create empty .env for runtime overrides
 RUN touch /app/.env && \
     chown appuser:nodejs /app/.env
 
-# Create folders required for storing results and reports
 ARG DATA_DIR=/app/data
 ARG RESULTS_DIR=${DATA_DIR}/results
 ARG REPORTS_DIR=${DATA_DIR}/reports
@@ -151,8 +106,6 @@ EXPOSE 3001
 
 ENV PORT=3001
 ENV FRONTEND_DIST=/app/apps/frontend/dist
-
-WORKDIR /app
 
 CMD ["node", "apps/backend/dist/index.js"]
 
