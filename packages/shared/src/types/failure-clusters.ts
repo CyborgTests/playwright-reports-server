@@ -12,54 +12,58 @@
 
 export type FixturePhase = 'beforeAll' | 'beforeEach' | 'afterAll' | 'afterEach';
 
-export type PlaywrightVerb =
+export const PLAYWRIGHT_VERBS = [
   // Locator assertions
-  | 'toBeVisible'
-  | 'toBeHidden'
-  | 'toBeAttached'
-  | 'toBeEnabled'
-  | 'toBeDisabled'
-  | 'toBeChecked'
-  | 'toBeEmpty'
-  | 'toBeFocused'
-  | 'toHaveText'
-  | 'toHaveValue'
-  | 'toHaveCount'
-  | 'toHaveAttribute'
-  | 'toHaveClass'
-  | 'toContainText'
+  'toBeVisible',
+  'toBeHidden',
+  'toBeAttached',
+  'toBeEnabled',
+  'toBeDisabled',
+  'toBeChecked',
+  'toBeEmpty',
+  'toBeFocused',
+  'toHaveText',
+  'toHaveValue',
+  'toHaveCount',
+  'toHaveAttribute',
+  'toHaveClass',
+  'toContainText',
   // Page assertions
-  | 'toHaveURL'
-  | 'toHaveTitle'
+  'toHaveURL',
+  'toHaveTitle',
   // Value assertions
-  | 'toBe'
-  | 'toEqual'
-  | 'toMatch'
-  | 'toMatchObject'
-  | 'toContain'
-  | 'toBeTruthy'
-  | 'toBeFalsy'
+  'toBe',
+  'toEqual',
+  'toMatch',
+  'toMatchObject',
+  'toContain',
+  'toBeTruthy',
+  'toBeFalsy',
   // Locator actions
-  | 'click'
-  | 'fill'
-  | 'press'
-  | 'type'
-  | 'check'
-  | 'uncheck'
-  | 'hover'
-  | 'focus'
-  | 'blur'
-  | 'selectOption'
-  | 'setInputFiles'
-  | 'dragTo'
-  | 'screenshot'
-  | 'waitFor'
+  'click',
+  'fill',
+  'press',
+  'type',
+  'check',
+  'uncheck',
+  'hover',
+  'focus',
+  'blur',
+  'selectOption',
+  'setInputFiles',
+  'dragTo',
+  'screenshot',
+  'waitFor',
   // Page actions
-  | 'goto'
-  | 'reload'
-  | 'waitForURL'
-  | 'waitForSelector'
-  | 'waitForLoadState'
+  'goto',
+  'reload',
+  'waitForURL',
+  'waitForSelector',
+  'waitForLoadState',
+] as const;
+
+export type PlaywrightVerb =
+  | (typeof PLAYWRIGHT_VERBS)[number]
   // Strict-mode violation isn't a verb but a class of failure; tagged
   // explicitly because the fix is selector-disambiguation.
   | 'strictModeViolation'
@@ -86,6 +90,37 @@ export type ClusterAnchor =
 export type ClusterAnchorKind = ClusterAnchor['kind'];
 
 export type ClusterConfidence = 'high' | 'medium' | 'low';
+
+export const CLUSTER_KIND_LABELS: Record<ClusterAnchorKind, string> = {
+  fixture: 'Fixture',
+  selector: 'Selector',
+  frame: 'Frame',
+  unmatched: 'Unmatched',
+};
+
+export const CLUSTER_KIND_DESCRIPTIONS: Record<ClusterAnchorKind, string> = {
+  fixture:
+    'Failure cascaded from a beforeAll/beforeEach/afterAll/afterEach hook. Fix the hook once and every member test passes.',
+  selector:
+    'Tests share a failing Playwright locator (aria-label, role, css). Typically one UI element drift breaking N tests across files.',
+  frame:
+    'Tests crash at the same line of app code. The frame is the literal fix location (file:line).',
+  unmatched:
+    'No extractable fix mechanism — the failure shape is unique to the test. Anchored to test identity so repeated failures of the same test still group together.',
+};
+
+export const CLUSTER_CONFIDENCE_LABELS: Record<ClusterConfidence, string> = {
+  high: 'High confidence',
+  medium: 'Medium confidence',
+  low: 'Low confidence',
+};
+
+export const CLUSTER_CONFIDENCE_DESCRIPTIONS: Record<ClusterConfidence, string> = {
+  high: 'Strong evidence that one fix resolves every member test (fixture, or ≥ 3 tests share a frame/selector anchor).',
+  medium:
+    'Reasonable evidence (2 tests share an anchor, or one test fails chronically at the same anchor).',
+  low: 'Single-test single-failure, or no extractable mechanism. Treat as a starting point, not a verdict.',
+};
 
 export interface ClusterTest {
   testId: string;

@@ -14,7 +14,7 @@ import type { ClusterAnchor } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { defaultConfig } from '../lib/config.js';
 import { parseFailureDetails } from '../lib/failure-clustering/extractors/failure-details.js';
-import { extractAppCodeFrame } from '../lib/failure-clustering/extractors/stack-trace.js';
+import { extractFrameFromFailure } from '../lib/failure-clustering/extractors/stack-trace.js';
 import { getFailureClusters } from '../lib/failure-clustering/index.js';
 import { analysisFeedbackDb } from '../lib/service/db/analysisFeedback.sqlite.js';
 import { getDatabase } from '../lib/service/db/db.js';
@@ -103,6 +103,11 @@ interface TestBrief {
     sampleError: string;
     otherTests: Array<{ testId: string; fileId: string; project: string; title: string }>;
   } | null;
+  otherClusters: Array<{
+    id: string;
+    kind: ClusterAnchor['kind'];
+    name: string;
+  }>;
 }
 
 interface ReportBriefSummaryEntry {
@@ -573,11 +578,16 @@ async function buildTestBrief(
   const roundedScore = Math.round((detail.flakinessScore ?? 0) * 10) / 10;
 
   // Reuse the cluster report passed by `buildReportBrief` when present —
-  // saves a per-test Map lookup when briefing every failure in a report.
   const clusterReport = preFetchedClusters ?? (await getFailureClusters({ project }));
-  const containing = clusterReport.clusters.find((c) =>
+  const containingAll = clusterReport.clusters.filter((c) =>
     c.tests.some((t) => t.testId === testId && t.fileId === fileId && t.project === project)
   );
+  const containing = containingAll[0];
+  const otherClustersRefs = containingAll.slice(1).map((c) => ({
+    id: c.id,
+    kind: c.anchor.kind,
+    name: c.name,
+  }));
 
   return {
     testId: detail.testId,
@@ -609,7 +619,7 @@ async function buildTestBrief(
                   column: parsed.location.column,
                 }
               : undefined,
-            appFrame: extractAppCodeFrame(parsed?.stackTrace),
+            appFrame: parsed ? extractFrameFromFailure(parsed) : undefined,
             reportId: latestFailedRun.reportId,
             reportUrl: reportRow?.reportUrl,
             createdAt: latestFailedRun.createdAt,
@@ -643,6 +653,7 @@ async function buildTestBrief(
             })),
         }
       : null,
+    otherClusters: otherClustersRefs,
   };
 }
 
@@ -935,9 +946,19 @@ async function buildClusterBrief(
   clusterId: string,
   project: string | undefined
 ): Promise<ClusterBrief | null> {
-  const report = await getFailureClusters({ project });
-  const cluster = report.clusters.find((c) => c.id === clusterId);
-  if (!cluster) return null;
+  const tryProjects: Array<string | undefined> = project ? [project, undefined] : [undefined];
+  let cluster: Awaited<ReturnType<typeof getFailureClusters>>['clusters'][number] | undefined;
+  let report: Awaited<ReturnType<typeof getFailureClusters>> | undefined;
+  for (const p of tryProjects) {
+    const candidate = await getFailureClusters({ project: p });
+    const found = candidate.clusters.find((c) => c.id === clusterId);
+    if (found) {
+      cluster = found;
+      report = candidate;
+      break;
+    }
+  }
+  if (!cluster || !report) return null;
 
   const refsToBrief = cluster.tests.slice(0, FAILED_TESTS_PER_REPORT_MAX);
   const truncated = cluster.tests.length > refsToBrief.length;

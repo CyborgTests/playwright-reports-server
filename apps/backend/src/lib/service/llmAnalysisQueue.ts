@@ -1481,10 +1481,12 @@ interface AggregateRun {
  * lifecycle data (first/last seen in window, retry recovery, latest LLM
  * root-cause for a representative test).
  *
- * `getFailureClusters` runs strategies (signature, stack-frame, fixture,
- * temporal) and merges overlapping clusters — so a fixture failure spanning
- * 5 unrelated tests collapses into one entry tagged `strategy: fixture`,
- * different from 5 separate signature-based root causes.
+ * `getFailureClusters` is a single-pass anchor-based clusterer: each failed
+ * run is classified to exactly one anchor (fixture / selector / frame /
+ * unmatched), and two runs share a cluster iff their anchors are equal.
+ * Cluster IDs are sha1 hashes of the anchor — stable across calls and
+ * across windows, which is what lets the project summary detect
+ * resolved / persisting / new clusters via plain `id` comparison.
  *
  * Reports are passed newest-first.
  */

@@ -1,55 +1,12 @@
-import type { PlaywrightVerb } from '@playwright-reports/shared';
+import { PLAYWRIGHT_VERBS, type PlaywrightVerb } from '@playwright-reports/shared';
 
-const EXPECT_LOCATOR_VERB_RE = /^Error:\s*expect\([^)]+\)\.([A-Za-z]+)\(/m;
-const EXPECT_DOT_VERB_RE = /^Error:\s*expect\.([A-Za-z]+):/m;
-const LOCATOR_ACTION_VERB_RE = /^Error:\s*(?:locator|page|frame)\.([A-Za-z]+):/m;
+const EXPECT_LOCATOR_VERB_RE = /^(?:Error:\s*)?expect\([^)]+\)\.([A-Za-z]+)\(/m;
+const EXPECT_DOT_VERB_RE = /^(?:Error:\s*)?expect\.([A-Za-z]+):/m;
+const LOCATOR_ACTION_VERB_RE = /^(?:Error:\s*)?(?:locator|page|frame)\.([A-Za-z]+):/m;
 const STRICT_MODE_RE = /strict mode violation/i;
-const TEST_TIMEOUT_BARE_RE = /^Test timeout of \d+ms exceeded\.?\s*$/m;
+const TEST_TIMEOUT_BARE_RE = /^(?:Error:\s*)?Test timeout of \d+ms exceeded\.?\s*$/m;
 
-const KNOWN_VERBS = new Set<string>([
-  'toBeVisible',
-  'toBeHidden',
-  'toBeAttached',
-  'toBeEnabled',
-  'toBeDisabled',
-  'toBeChecked',
-  'toBeEmpty',
-  'toBeFocused',
-  'toHaveText',
-  'toHaveValue',
-  'toHaveCount',
-  'toHaveAttribute',
-  'toHaveClass',
-  'toContainText',
-  'toHaveURL',
-  'toHaveTitle',
-  'toBe',
-  'toEqual',
-  'toMatch',
-  'toMatchObject',
-  'toContain',
-  'toBeTruthy',
-  'toBeFalsy',
-  'click',
-  'fill',
-  'press',
-  'type',
-  'check',
-  'uncheck',
-  'hover',
-  'focus',
-  'blur',
-  'selectOption',
-  'setInputFiles',
-  'dragTo',
-  'screenshot',
-  'waitFor',
-  'goto',
-  'reload',
-  'waitForURL',
-  'waitForSelector',
-  'waitForLoadState',
-]);
+const KNOWN_VERBS = new Set<string>(PLAYWRIGHT_VERBS);
 
 export function extractVerb(message: string | undefined): PlaywrightVerb {
   if (!message) return 'unknown';

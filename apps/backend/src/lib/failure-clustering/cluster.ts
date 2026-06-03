@@ -31,28 +31,19 @@ export function buildClusters(
     annotated.push({ run, parsed, anchor: classify(run, parsed) });
   }
 
-  // 2. Bucket by anchor key. Preserve insertion order in `firstAnchor` so
-  //    later steps can reconstruct the canonical anchor instance for the
-  //    cluster.
+  // 2. Bucket by anchor key.
   const buckets = new Map<string, AnnotatedRun[]>();
-  const firstAnchor = new Map<string, ClusterAnchor>();
   for (const a of annotated) {
     const key = anchorKey(a.anchor);
     const list = buckets.get(key);
-    if (list) {
-      list.push(a);
-    } else {
-      buckets.set(key, [a]);
-      firstAnchor.set(key, a.anchor);
-    }
+    if (list) list.push(a);
+    else buckets.set(key, [a]);
   }
 
   // 3. Emit one cluster per bucket.
   const clusters: FailureCluster[] = [];
   for (const [key, members] of buckets) {
-    // biome-ignore lint/style/noNonNullAssertion: keys come from firstAnchor's setter
-    const anchor = firstAnchor.get(key)!;
-    clusters.push(buildOneCluster(anchor, key, members, metaByKey, resolveReportUrl));
+    clusters.push(buildOneCluster(members[0].anchor, key, members, metaByKey, resolveReportUrl));
   }
 
   // 4. Impact-sort: higher failureCount × testCount come first.
@@ -115,7 +106,10 @@ function buildOneCluster(
   }
   tests.sort((a, b) => b.occurrences - a.occurrences);
 
-  const sampleSource = members.reduce((acc, m) => (m.run.createdAt > acc.run.createdAt ? m : acc));
+  const sampleSource = members.reduce(
+    (acc, m) => (m.run.createdAt > acc.run.createdAt ? m : acc),
+    members[0]
+  );
   const sampleMessage = sampleSource.parsed.message;
 
   // Category: most common failureCategory among member runs.

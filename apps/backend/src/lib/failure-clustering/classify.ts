@@ -64,10 +64,6 @@ export function classify(run: FailedTestRun, parsed: ParsedFailureDetails): Clus
  * Stable string identity for an anchor. Two anchors yield the same key iff
  * they are field-by-field equal.
  *
- * Encoded as a JSON array so any string content — file paths with spaces,
- * locators with colons or quotes — is canonically escaped. Two different
- * anchors can never accidentally encode to the same key, and the encoding
- * is round-trip-debuggable (the key is human-readable JSON).
  *
  * The cluster ID is `sha1(anchorKey(anchor)).slice(0, 16)`, so it is
  * deterministic across calls / processes / machines.

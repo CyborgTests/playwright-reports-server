@@ -5,7 +5,7 @@
  * times per run. This helper parses once and tolerates malformed rows.
  */
 
-const MESSAGE_MAX_CHARS = 2000;
+const MESSAGE_MAX_CHARS = 10_000;
 
 const PAGE_CONTEXT_MARKER_RE = /^#\s+(?:Page snapshot|Page Context|Test source|Local context)\b/im;
 

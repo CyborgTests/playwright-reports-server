@@ -1,14 +1,16 @@
 'use client';
 
-import type {
-  ClusterAnchor,
-  ClusterAnchorKind,
-  ClusterConfidence,
-  ClusterReport,
-  ClusterTest,
-  DateRange,
-  FailureCluster,
-  ReportHistory,
+import {
+  CLUSTER_CONFIDENCE_DESCRIPTIONS,
+  CLUSTER_CONFIDENCE_LABELS,
+  CLUSTER_KIND_DESCRIPTIONS,
+  CLUSTER_KIND_LABELS,
+  type ClusterAnchor,
+  type ClusterReport,
+  type ClusterTest,
+  type DateRange,
+  type FailureCluster,
+  type ReportHistory,
 } from '@playwright-reports/shared';
 import { ExternalLink, GitMerge, HelpCircle, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -36,37 +38,6 @@ interface ClusterReportEnvelope {
   data: ClusterReport;
   error?: string;
 }
-
-const KIND_LABELS: Record<ClusterAnchorKind, string> = {
-  fixture: 'Fixture',
-  selector: 'Selector',
-  frame: 'Frame',
-  unmatched: 'Unmatched',
-};
-
-const KIND_DESCRIPTIONS: Record<ClusterAnchorKind, string> = {
-  fixture:
-    'Failure cascaded from a beforeAll/beforeEach/afterAll/afterEach hook. Fix the hook once and every member test passes.',
-  selector:
-    'Tests share a failing Playwright locator (aria-label, role, css). Typically one UI element drift breaking N tests across files.',
-  frame:
-    'Tests crash at the same line of app code. The frame is the literal fix location (file:line).',
-  unmatched:
-    'No extractable fix mechanism — the failure shape is unique to the test. Anchored to test identity so repeated failures of the same test still group together.',
-};
-
-const CONFIDENCE_LABELS: Record<ClusterConfidence, string> = {
-  high: 'High confidence',
-  medium: 'Medium confidence',
-  low: 'Low confidence',
-};
-
-const CONFIDENCE_TOOLTIP: Record<ClusterConfidence, string> = {
-  high: 'Strong evidence that one fix resolves every member test (fixture, or ≥ 3 tests share a frame/selector anchor).',
-  medium:
-    'Reasonable evidence (2 tests share an anchor, or one test fails chronically at the same anchor).',
-  low: 'Single-test single-failure, or no extractable mechanism. Treat as a starting point, not a verdict.',
-};
 
 function buildTestLink(reportUrl: string | undefined, testId: string): string | undefined {
   if (!reportUrl) return undefined;
@@ -197,21 +168,27 @@ function ClusterList({ clusters, reportId }: { clusters: FailureCluster[]; repor
   const actionable = clusters.filter((c) => c.anchor.kind !== 'unmatched');
   const unmatched = clusters.filter((c) => c.anchor.kind === 'unmatched');
   return (
-    <Accordion type="multiple" className="space-y-3">
-      {actionable.map((cluster) => (
-        <ClusterCard key={cluster.id} cluster={cluster} reportId={reportId} />
-      ))}
-      {unmatched.length > 0 && (
-        <div className="pt-2">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2 px-1">
-            Unmatched failures ({unmatched.length}) — no extractable mechanism
-          </div>
-          {unmatched.map((cluster) => (
+    <div className="space-y-3">
+      {actionable.length > 0 && (
+        <Accordion type="multiple" className="space-y-3">
+          {actionable.map((cluster) => (
             <ClusterCard key={cluster.id} cluster={cluster} reportId={reportId} />
           ))}
-        </div>
+        </Accordion>
       )}
-    </Accordion>
+      {unmatched.length > 0 && (
+        <>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground pt-4 mb-2 px-1">
+            Unmatched failures ({unmatched.length}) — no extractable mechanism
+          </div>
+          <Accordion type="multiple" className="space-y-3">
+            {unmatched.map((cluster) => (
+              <ClusterCard key={cluster.id} cluster={cluster} reportId={reportId} />
+            ))}
+          </Accordion>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -228,12 +205,12 @@ function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?
                   <TooltipTrigger asChild>
                     <Badge variant="outline" className="gap-1 cursor-help">
                       <GitMerge className="h-3 w-3" />
-                      {KIND_LABELS[kind]}
+                      {CLUSTER_KIND_LABELS[kind]}
                       <HelpCircle className="h-3 w-3 text-muted-foreground" />
                     </Badge>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-xs">
-                    {KIND_DESCRIPTIONS[kind]}
+                    {CLUSTER_KIND_DESCRIPTIONS[kind]}
                   </TooltipContent>
                 </Tooltip>
                 <Tooltip>
@@ -248,11 +225,11 @@ function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?
                       }
                       className="text-xs cursor-help"
                     >
-                      {CONFIDENCE_LABELS[cluster.confidence]}
+                      {CLUSTER_CONFIDENCE_LABELS[cluster.confidence]}
                     </Badge>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-xs">
-                    {CONFIDENCE_TOOLTIP[cluster.confidence]}
+                    {CLUSTER_CONFIDENCE_DESCRIPTIONS[cluster.confidence]}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

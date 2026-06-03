@@ -4,7 +4,6 @@ import { testDb } from '../service/db/tests.sqlite.js';
 import { buildClusters, type ReportUrlLookup } from './cluster.js';
 import { FAILED_OUTCOMES, type FailedTestRun, type TestMeta, testKey } from './types.js';
 
-
 const CACHE_TTL_MS = 20_000;
 const CACHE_MAX_ENTRIES = 32;
 

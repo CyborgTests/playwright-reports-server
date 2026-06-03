@@ -65,6 +65,11 @@ export interface TestBrief {
     sampleError: string;
     otherTests: Array<{ testId: string; fileId: string; project: string; title: string }>;
   } | null;
+  otherClusters: Array<{
+    id: string;
+    kind: ClusterAnchorKind;
+    name: string;
+  }>;
 }
 
 export interface ReportBriefSummaryEntry {
