@@ -118,7 +118,7 @@ Summarize failures for report \`{{reportId}}\` in project "{{project}}" ({{total
 
 ## Data
 - Failures are grouped into **clusters** by shared evidence:
-  - strategy: 'signature', 'stack-frame', 'fixture', 'temporal'
+  - strategy: 'signature', 'stack-frame', 'fixture', 'selector', 'temporal'
   - evidence: error signature, stack frame, fixture phase, timing
 - Each cluster has tests with per-test root-cause analysis.
 - Ungrouped failures appear as **Unclustered Failures**.
@@ -1197,7 +1197,12 @@ export interface ReportSummaryTrendContext {
   }>;
 }
 
-export type ReportSummaryClusterStrategy = 'signature' | 'stack-frame' | 'fixture' | 'temporal';
+export type ReportSummaryClusterStrategy =
+  | 'signature'
+  | 'stack-frame'
+  | 'fixture'
+  | 'selector'
+  | 'temporal';
 
 /** Trend status of a failing test relative to the immediately previous report
  *  in the same project. `newlyFailed` = didn't fail in the previous report;

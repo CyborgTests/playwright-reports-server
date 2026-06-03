@@ -37,6 +37,13 @@ export function extractAppCodeFrame(stack: string | undefined): string | undefin
   return undefined;
 }
 
+export function extractFrameFromFailure(parsed: {
+  stackTrace?: string;
+  message?: string;
+}): string | undefined {
+  return extractAppCodeFrame(parsed.stackTrace) ?? extractAppCodeFrame(parsed.message);
+}
+
 function normalizePath(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/');
   // Strip leading absolute path noise so /Users/foo/proj/src/x.ts and

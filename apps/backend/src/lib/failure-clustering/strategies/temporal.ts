@@ -1,5 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import { parseFailureDetails } from '../extractors/failure-details.js';
+import { extractFrameFromFailure } from '../extractors/stack-trace.js';
 import {
   type ClusterWithRuns,
   FAILED_OUTCOMES,
@@ -134,42 +135,120 @@ export function clusterByTemporal(
       componentSet.has(testKey(r.testId, r.fileId, r.project))
     );
 
-    // Average pair rate within the component — the headline "how often these
-    // co-fail" number for the cluster card.
-    let pairCount = 0;
-    let rateSum = 0;
-    for (let i = 0; i < component.length; i++) {
-      for (let j = i + 1; j < component.length; j++) {
-        const edge = adjacency.get(component[i])?.get(component[j]);
-        if (edge) {
-          rateSum += edge.rate;
-          pairCount++;
+    const frameByTest = dominantFrameByTest(clusterRuns);
+    const subComponents = splitComponentByFrame(component, frameByTest, opts.minTests);
+
+    for (const sub of subComponents) {
+      const subSet = new Set(sub.tests);
+      const subRuns = clusterRuns.filter((r) => subSet.has(testKey(r.testId, r.fileId, r.project)));
+
+      let pairCount = 0;
+      let rateSum = 0;
+      for (let i = 0; i < sub.tests.length; i++) {
+        for (let j = i + 1; j < sub.tests.length; j++) {
+          const edge = adjacency.get(sub.tests[i])?.get(sub.tests[j]);
+          if (edge) {
+            rateSum += edge.rate;
+            pairCount++;
+          }
         }
       }
+      const avgRate = pairCount > 0 ? rateSum / pairCount : 0;
+
+      const sampleMessage =
+        subRuns
+          .map((r) => parseFailureDetails(r.failureDetails)?.message ?? '')
+          .find((m) => m.length > 0) ?? '';
+
+      result.push({
+        cluster: {
+          id: uuid(),
+          strategy: 'temporal',
+          name: buildTemporalName(sub.tests.length, sub.frame, sampleMessage),
+          sampleMessage,
+          testCount: sub.tests.length,
+          failureCount: subRuns.length,
+          evidence: sub.frame
+            ? { coFailureRate: avgRate, stackFrame: sub.frame }
+            : { coFailureRate: avgRate },
+          tests: [],
+        },
+        runs: subRuns,
+      });
     }
-    const avgRate = pairCount > 0 ? rateSum / pairCount : 0;
-
-    const sampleMessage =
-      clusterRuns
-        .map((r) => parseFailureDetails(r.failureDetails)?.message ?? '')
-        .find((m) => m.length > 0) ?? '';
-
-    result.push({
-      cluster: {
-        id: uuid(),
-        strategy: 'temporal',
-        name: `${component.length} tests fail together`,
-        sampleMessage,
-        testCount: component.length,
-        failureCount: clusterRuns.length,
-        evidence: { coFailureRate: avgRate },
-        tests: [],
-      },
-      runs: clusterRuns,
-    });
   }
 
   return result.sort((a, b) => b.cluster.testCount - a.cluster.testCount);
+}
+
+function dominantFrameByTest(clusterRuns: FailedTestRun[]): Map<TestKey, string | undefined> {
+  const framesByTest = new Map<TestKey, Map<string, number>>();
+  for (const run of clusterRuns) {
+    const parsed = parseFailureDetails(run.failureDetails);
+    const frame = parsed ? extractFrameFromFailure(parsed) : undefined;
+    if (!frame) continue;
+    const key = testKey(run.testId, run.fileId, run.project);
+    const counts = framesByTest.get(key) ?? new Map<string, number>();
+    counts.set(frame, (counts.get(frame) ?? 0) + 1);
+    framesByTest.set(key, counts);
+  }
+  const result = new Map<TestKey, string | undefined>();
+  for (const [key, counts] of framesByTest) {
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+    result.set(key, top?.[0]);
+  }
+  return result;
+}
+
+interface SubComponent {
+  tests: TestKey[];
+  frame: string | undefined;
+}
+
+function splitComponentByFrame(
+  component: TestKey[],
+  frameByTest: Map<TestKey, string | undefined>,
+  minTests: number
+): SubComponent[] {
+  const byFrame = new Map<string, TestKey[]>();
+  const residual: TestKey[] = [];
+  for (const t of component) {
+    const frame = frameByTest.get(t);
+    if (frame) {
+      const list = byFrame.get(frame) ?? [];
+      list.push(t);
+      byFrame.set(frame, list);
+    } else {
+      residual.push(t);
+    }
+  }
+
+  if (byFrame.size <= 1) {
+    const frame = byFrame.size === 1 ? [...byFrame.keys()][0] : undefined;
+    return [{ tests: component, frame }];
+  }
+
+  const subs: SubComponent[] = [];
+  for (const [frame, tests] of byFrame) {
+    if (tests.length < minTests) continue;
+    subs.push({ tests, frame });
+  }
+  if (residual.length >= minTests) subs.push({ tests: residual, frame: undefined });
+  if (subs.length === 0) return [{ tests: component, frame: undefined }];
+  return subs;
+}
+
+function buildTemporalName(testCount: number, frame: string | undefined, message: string): string {
+  const firstLine =
+    message
+      .split('\n')
+      .find((l) => l.trim().length > 0)
+      ?.trim() ?? '';
+  const symptom = firstLine.length > 80 ? `${firstLine.slice(0, 79)}…` : firstLine;
+  if (frame && symptom) return `Co-failure at ${frame} — ${symptom}`;
+  if (frame) return `Co-failure at ${frame} (${testCount} tests)`;
+  if (symptom) return `Co-failure: ${symptom}`;
+  return `${testCount} tests fail together`;
 }
 
 function addEdge(

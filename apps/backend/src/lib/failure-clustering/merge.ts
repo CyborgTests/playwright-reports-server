@@ -1,18 +1,20 @@
 import type { ClusterStrategy, FailureCluster } from '@playwright-reports/shared';
 
-/** Tiebreaker only — used when two overlapping clusters cover the same number
- *  of tests. Subsumption itself is decided by size (testCount); strategy just
- *  picks the most actionable anchor when sizes are equal. Stack-frame and
- *  fixture point at concrete code locations, so they win over signature
- *  (which over-splits when many tests fail with the same generic message) and
- *  temporal (the weakest co-occurrence signal). */
+const ANCHORED_STRATEGIES: ReadonlySet<ClusterStrategy> = new Set(['stack-frame', 'fixture']);
+
 const STRATEGY_PRECEDENCE: Record<ClusterStrategy, number> = {
-  'stack-frame': 4,
-  fixture: 3,
+  'stack-frame': 5,
+  fixture: 4,
+  selector: 3,
   signature: 2,
   temporal: 1,
   unclustered: 0,
 };
+
+const OVERLAP_THRESHOLD_ANCHORED_WINS = 0.3;
+const OVERLAP_THRESHOLD_DEFAULT = 0.5;
+
+const isAnchored = (s: ClusterStrategy): boolean => ANCHORED_STRATEGIES.has(s);
 
 const testKeyOf = (t: { project: string; fileId: string; testId: string }): string =>
   `${t.project}::${t.fileId}::${t.testId}`;
@@ -36,10 +38,14 @@ const testKeyOf = (t: { project: string; fileId: string; testId: string }): stri
 export function mergeClusters(clusters: FailureCluster[]): FailureCluster[] {
   if (clusters.length <= 1) return clusters;
 
-  const sorted = [...clusters].sort(
-    (a, b) =>
+  const sorted = [...clusters].sort((a, b) => {
+    const aAnchored = isAnchored(a.strategy);
+    const bAnchored = isAnchored(b.strategy);
+    if (aAnchored !== bAnchored) return aAnchored ? -1 : 1;
+    return (
       b.testCount - a.testCount || STRATEGY_PRECEDENCE[b.strategy] - STRATEGY_PRECEDENCE[a.strategy]
-  );
+    );
+  });
 
   const winners: FailureCluster[] = [];
   const winnerTestSets: Array<Set<string>> = [];
@@ -47,14 +53,20 @@ export function mergeClusters(clusters: FailureCluster[]): FailureCluster[] {
   for (const candidate of sorted) {
     const candidateKeys = new Set(candidate.tests.map(testKeyOf));
 
-    const overlapIndex = winnerTestSets.findIndex((winnerSet) => {
+    const overlapIndex = winnerTestSets.findIndex((winnerSet, idx) => {
       const smaller = Math.min(winnerSet.size, candidateKeys.size);
       if (smaller === 0) return false;
       let shared = 0;
       for (const k of candidateKeys) {
         if (winnerSet.has(k)) shared++;
       }
-      return shared / smaller >= 0.5;
+      const winnerAnchored = isAnchored(winners[idx].strategy);
+      const candidateAnchored = isAnchored(candidate.strategy);
+      const threshold =
+        winnerAnchored && !candidateAnchored
+          ? OVERLAP_THRESHOLD_ANCHORED_WINS
+          : OVERLAP_THRESHOLD_DEFAULT;
+      return shared / smaller >= threshold;
     });
 
     if (overlapIndex === -1) {

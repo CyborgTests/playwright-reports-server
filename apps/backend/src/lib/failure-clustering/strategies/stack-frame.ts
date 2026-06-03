@@ -1,6 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import { parseFailureDetails } from '../extractors/failure-details.js';
-import { extractAppCodeFrame } from '../extractors/stack-trace.js';
+import { extractFrameFromFailure } from '../extractors/stack-trace.js';
 import { type ClusterWithRuns, FAILED_OUTCOMES, type FailedTestRun, testKey } from '../types.js';
 
 export interface StackFrameStrategyOptions {
@@ -27,7 +27,7 @@ export function clusterByStackFrame(
     if (!FAILED_OUTCOMES.has(run.outcome)) continue;
     const parsed = parseFailureDetails(run.failureDetails);
     if (!parsed) continue;
-    const frame = extractAppCodeFrame(parsed.stackTrace);
+    const frame = extractFrameFromFailure(parsed);
     if (!frame) continue;
 
     const existing = byFrame.get(frame);

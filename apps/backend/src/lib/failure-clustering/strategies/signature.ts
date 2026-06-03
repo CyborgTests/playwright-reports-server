@@ -1,7 +1,7 @@
 import { v4 as uuid } from 'uuid';
 import { parseFailureDetails } from '../extractors/failure-details.js';
 import { isGenericMessage } from '../extractors/generic-message.js';
-import { extractAppCodeFrame } from '../extractors/stack-trace.js';
+import { extractFrameFromFailure } from '../extractors/stack-trace.js';
 import { type ClusterWithRuns, FAILED_OUTCOMES, type FailedTestRun, testKey } from '../types.js';
 
 export interface SignatureStrategyOptions {
@@ -47,7 +47,7 @@ export function clusterBySignature(
     const framelessRuns: FailedTestRun[] = [];
     for (const run of group) {
       const parsed = parseFailureDetails(run.failureDetails);
-      const frame = extractAppCodeFrame(parsed?.stackTrace);
+      const frame = parsed ? extractFrameFromFailure(parsed) : undefined;
       if (frame) {
         const list = byFrame.get(frame) ?? [];
         list.push(run);

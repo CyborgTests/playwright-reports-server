@@ -7,6 +7,8 @@
 
 const MESSAGE_MAX_CHARS = 2000;
 
+const PAGE_CONTEXT_MARKER_RE = /^#\s+(?:Page snapshot|Page Context|Test source|Local context)\b/im;
+
 export interface FailureLocation {
   file: string;
   line: number;
@@ -27,6 +29,12 @@ export interface ParsedFailureDetails {
   attachments?: FailureAttachment[];
 }
 
+export function cleanMessage(raw: string): string {
+  const match = PAGE_CONTEXT_MARKER_RE.exec(raw);
+  const stripped = match ? raw.slice(0, match.index) : raw;
+  return stripped.trimEnd().slice(0, MESSAGE_MAX_CHARS);
+}
+
 export function parseFailureDetails(details: string | undefined): ParsedFailureDetails | undefined {
   if (!details) return undefined;
   try {
@@ -38,7 +46,7 @@ export function parseFailureDetails(details: string | undefined): ParsedFailureD
       attachments?: FailureAttachment[];
     };
     return {
-      message: String(raw.message ?? '').slice(0, MESSAGE_MAX_CHARS),
+      message: cleanMessage(String(raw.message ?? '')),
       stackTrace: typeof raw.stackTrace === 'string' ? raw.stackTrace : undefined,
       filePath: String(raw.filePath ?? ''),
       location: raw.location,

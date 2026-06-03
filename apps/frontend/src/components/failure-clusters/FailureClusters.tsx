@@ -43,20 +43,28 @@ const STRATEGY_LABELS: Record<FailureCluster['strategy'], string> = {
   signature: 'Shared error signature',
   'stack-frame': 'Shared stack frame',
   fixture: 'Fixture failure',
+  selector: 'Shared selector',
   temporal: 'Temporal co-failure',
   unclustered: 'Unclustered failures',
 };
 
-const ALL_STRATEGIES: ClusterStrategy[] = ['signature', 'stack-frame', 'fixture', 'temporal'];
+const ALL_STRATEGIES: ClusterStrategy[] = [
+  'signature',
+  'stack-frame',
+  'fixture',
+  'selector',
+  'temporal',
+];
 // `signature` is opt-in: it groups by the exact error fingerprint which is
 // usually too narrow to surface new failure shapes. Default to the broader
 // strategies and let users add it explicitly when triaging duplicates.
-const DEFAULT_STRATEGIES: ClusterStrategy[] = ['stack-frame', 'fixture', 'temporal'];
+const DEFAULT_STRATEGIES: ClusterStrategy[] = ['stack-frame', 'fixture', 'selector', 'temporal'];
 
 const STRATEGY_SHORT_LABELS: Record<ClusterStrategy, string> = {
   signature: 'Signature',
   'stack-frame': 'Stack frame',
   fixture: 'Fixture',
+  selector: 'Selector',
   temporal: 'Temporal',
   unclustered: 'Unclustered',
 };
@@ -68,6 +76,8 @@ const STRATEGY_DESCRIPTIONS: Record<ClusterStrategy, string> = {
     'Groups tests that crash at the same line of app code (Playwright internals and node_modules frames are ignored).',
   fixture:
     'Detects beforeAll/beforeEach/afterAll/afterEach failures where every test in a file cascades from the same hook error.',
+  selector:
+    'Groups tests whose failing Playwright locator (aria-label, role, selector) is identical — typically one UI element drift breaking N tests across files.',
   temporal:
     'Pairs of tests that consistently fail together in the same reports — catches infra and shared-data issues whose surface errors differ.',
   unclustered:

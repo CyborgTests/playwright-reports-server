@@ -7,9 +7,12 @@ import type {
 import { v4 as uuid } from 'uuid';
 import { reportDb } from '../service/db/reports.sqlite.js';
 import { testDb } from '../service/db/tests.sqlite.js';
+import { parseFailureDetails } from './extractors/failure-details.js';
+import { extractFrameFromFailure } from './extractors/stack-trace.js';
 import { buildClusterTests, type ReportUrlLookup } from './format.js';
 import { mergeClusters } from './merge.js';
 import { clusterByFixture } from './strategies/fixture.js';
+import { clusterBySelector } from './strategies/selector.js';
 import { clusterBySignature } from './strategies/signature.js';
 import { clusterByStackFrame } from './strategies/stack-frame.js';
 import { clusterByTemporal } from './strategies/temporal.js';
@@ -23,13 +26,20 @@ import {
 
 const CACHE_TTL_MS = 60_000;
 const DEFAULT_MIN_TESTS = 2;
-const AVAILABLE_STRATEGIES: ClusterStrategy[] = ['signature', 'stack-frame', 'fixture', 'temporal'];
+const UNCLUSTERED_SOLO_MIN_FAILURES = 2;
+const AVAILABLE_STRATEGIES: ClusterStrategy[] = [
+  'signature',
+  'stack-frame',
+  'fixture',
+  'selector',
+  'temporal',
+];
 // `signature` is opt-in for the primary pass — exact-fingerprint clusters
 // overlap with the broader strategies and bias toward de-duplicated narratives.
 // Callers (UI, CLI, LLM queue) must include it explicitly to surface it
 // alongside the others. It is also used as an automatic fallback below when the
 // requested strategies produce zero clusters.
-const DEFAULT_STRATEGIES: ClusterStrategy[] = ['stack-frame', 'fixture', 'temporal'];
+const DEFAULT_STRATEGIES: ClusterStrategy[] = ['stack-frame', 'fixture', 'selector', 'temporal'];
 
 interface CacheEntry {
   expires: number;
@@ -81,6 +91,9 @@ export async function getFailureClusters(opts: ClusterOptions): Promise<ClusterR
   if (strategiesRun.includes('fixture')) {
     rawClusters.push(...clusterByFixture(failedRuns, { minTests }));
   }
+  if (strategiesRun.includes('selector')) {
+    rawClusters.push(...clusterBySelector(failedRuns, { minTests }));
+  }
   if (strategiesRun.includes('temporal')) {
     rawClusters.push(...clusterByTemporal(failedRuns, { minTests }));
   }
@@ -115,8 +128,8 @@ export async function getFailureClusters(opts: ClusterOptions): Promise<ClusterR
   merged.sort((a, b) => b.testCount * b.failureCount - a.testCount * a.failureCount);
 
   if (opts.includeUnclustered) {
-    const unclustered = buildUnclusteredCluster(merged, failedRuns, metaByKey, resolveReportUrl);
-    if (unclustered) merged.push(unclustered);
+    const unclustered = buildUnclusteredClusters(merged, failedRuns, metaByKey, resolveReportUrl);
+    for (const u of unclustered) merged.push(u);
   }
 
   // Scope filter: when invoked from a report-detail entry button, only return
@@ -176,12 +189,12 @@ function loadTestMeta(runs: FailedTestRun[]): Map<string, TestMeta> {
   return meta;
 }
 
-function buildUnclusteredCluster(
+function buildUnclusteredClusters(
   emitted: FailureCluster[],
   failedRuns: FailedTestRun[],
   metaByKey: Map<string, TestMeta>,
   resolveReportUrl: ReportUrlLookup
-): FailureCluster | null {
+): FailureCluster[] {
   const coveredKeys = new Set<string>();
   for (const c of emitted) {
     for (const t of c.tests) {
@@ -189,23 +202,87 @@ function buildUnclusteredCluster(
     }
   }
 
-  const unclusteredRuns = failedRuns.filter(
+  const residualRuns = failedRuns.filter(
     (r) => !coveredKeys.has(testKey(r.testId, r.fileId, r.project))
   );
-  if (unclusteredRuns.length === 0) return null;
+  if (residualRuns.length === 0) return [];
 
-  const uniqueTests = new Set(unclusteredRuns.map((r) => testKey(r.testId, r.fileId, r.project)));
+  const byFrame = new Map<string, FailedTestRun[]>();
+  const frameless: FailedTestRun[] = [];
+  for (const run of residualRuns) {
+    const parsed = parseFailureDetails(run.failureDetails);
+    const frame = parsed ? extractFrameFromFailure(parsed) : undefined;
+    if (frame) {
+      const list = byFrame.get(frame) ?? [];
+      list.push(run);
+      byFrame.set(frame, list);
+    } else {
+      frameless.push(run);
+    }
+  }
 
-  return {
+  const result: FailureCluster[] = [];
+  const promoted = new Set<string>();
+
+  for (const [frame, frameRuns] of byFrame) {
+    const uniqueTests = new Set(frameRuns.map((r) => testKey(r.testId, r.fileId, r.project)));
+    const qualifies = uniqueTests.size >= 2 || frameRuns.length >= UNCLUSTERED_SOLO_MIN_FAILURES;
+    if (!qualifies) continue;
+
+    for (const k of uniqueTests) promoted.add(k);
+    const sampleMessage =
+      frameRuns
+        .map((r) => parseFailureDetails(r.failureDetails)?.message ?? '')
+        .find((m) => m.length > 0) ?? '';
+    const firstLine =
+      sampleMessage
+        .split('\n')
+        .find((l) => l.trim().length > 0)
+        ?.trim() ?? '';
+    const symptom = firstLine.length > 80 ? `${firstLine.slice(0, 79)}…` : firstLine;
+    const name =
+      uniqueTests.size >= 2
+        ? `Shared frame ${frame}${symptom ? ` — ${symptom}` : ''}`
+        : `Chronic failer at ${frame}${symptom ? ` — ${symptom}` : ''}`;
+
+    result.push({
+      id: uuid(),
+      strategy: 'stack-frame',
+      name,
+      sampleMessage,
+      testCount: uniqueTests.size,
+      failureCount: frameRuns.length,
+      evidence: { stackFrame: frame },
+      tests: buildClusterTests(frameRuns, metaByKey, resolveReportUrl, 'stack-frame'),
+    });
+  }
+
+  const finalResidualRuns = [
+    ...frameless,
+    ...residualRuns.filter((r) => {
+      const key = testKey(r.testId, r.fileId, r.project);
+      if (promoted.has(key)) return false;
+      const parsed = parseFailureDetails(r.failureDetails);
+      const hasFrame = parsed ? extractFrameFromFailure(parsed) !== undefined : false;
+      return hasFrame;
+    }),
+  ];
+  if (finalResidualRuns.length === 0) return result;
+
+  const residualTests = new Set(
+    finalResidualRuns.map((r) => testKey(r.testId, r.fileId, r.project))
+  );
+  result.push({
     id: uuid(),
     strategy: 'unclustered',
     name: 'Unclustered failures',
     sampleMessage: '',
-    testCount: uniqueTests.size,
-    failureCount: unclusteredRuns.length,
+    testCount: residualTests.size,
+    failureCount: finalResidualRuns.length,
     evidence: {},
-    tests: buildClusterTests(unclusteredRuns, metaByKey, resolveReportUrl, 'unclustered'),
-  };
+    tests: buildClusterTests(finalResidualRuns, metaByKey, resolveReportUrl, 'unclustered'),
+  });
+  return result;
 }
 
 function scopeToReport(clusters: FailureCluster[], reportId: string): FailureCluster[] {

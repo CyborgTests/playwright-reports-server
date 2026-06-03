@@ -1,4 +1,10 @@
-export type ClusterStrategy = 'signature' | 'stack-frame' | 'fixture' | 'temporal' | 'unclustered';
+export type ClusterStrategy =
+  | 'signature'
+  | 'stack-frame'
+  | 'fixture'
+  | 'selector'
+  | 'temporal'
+  | 'unclustered';
 
 export type FixturePhase = 'beforeAll' | 'beforeEach' | 'afterAll' | 'afterEach';
 
@@ -43,6 +49,7 @@ export interface ClusterEvidence {
   signature?: string;
   stackFrame?: string;
   fixturePhase?: FixturePhase;
+  selector?: string;
   coFailureRate?: number;
   secondaryEvidence?: SecondaryEvidence[];
 }
