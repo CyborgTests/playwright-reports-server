@@ -4,6 +4,22 @@ export const env = cleanEnv(process.env, {
   API_TOKEN: str({ desc: 'API token for authorization', default: undefined }),
   UI_AUTH_EXPIRE_HOURS: str({ desc: 'How much hours are allowed to keep auth session valid', default: '2' }),
   AUTH_SECRET: str({ desc: 'Secret for JWT', default: undefined }),
+  AUTH_GOOGLE_ENABLED: bool({
+    desc: 'When true, the web UI authenticates users via Google OAuth instead of the API token form. Requires API_TOKEN, AUTH_SECRET, AUTH_GOOGLE_CLIENT_ID, AUTH_GOOGLE_CLIENT_SECRET and AUTH_ALLOWED_DOMAINS to be set.',
+    default: false,
+  }),
+  AUTH_GOOGLE_CLIENT_ID: str({
+    desc: 'Google OAuth client ID (used when AUTH_GOOGLE_ENABLED=true)',
+    default: undefined,
+  }),
+  AUTH_GOOGLE_CLIENT_SECRET: str({
+    desc: 'Google OAuth client secret (used when AUTH_GOOGLE_ENABLED=true)',
+    default: undefined,
+  }),
+  AUTH_ALLOWED_DOMAINS: str({
+    desc: 'Comma-separated list of email domains allowed to sign in via Google, e.g. "acme.com,partner.com". Empty/unset rejects all sign-ins.',
+    default: undefined,
+  }),
   DATA_STORAGE: str({ desc: 'Where to store data', default: 'fs' }),
   USE_SERVER_CACHE: bool({ desc: 'Use server side indexed cache for backend queries', default: false }),
   S3_ENDPOINT: str({ desc: 'S3 endpoint', default: undefined }),

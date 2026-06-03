@@ -14,6 +14,7 @@ import {
   LinkIcon,
   Chip,
   type Selection,
+  type SortDescriptor,
 } from '@heroui/react';
 import Link from 'next/link';
 import { keepPreviousData } from '@tanstack/react-query';
@@ -33,11 +34,11 @@ import { BranchIcon, DownloadIcon, EvidenceIcon, FolderIcon, PdfIcon } from '@/a
 import { ReadReportsHistory, ReportHistory } from '@/app/lib/storage';
 
 const columns = [
-  { name: 'Title', uid: 'title' },
-  { name: 'Project', uid: 'project' },
-  { name: 'Pass Rate', uid: 'passRate' },
-  { name: 'Created at', uid: 'createdAt' },
-  { name: 'Size', uid: 'size' },
+  { name: 'Title', uid: 'title', sortable: true },
+  { name: 'Project', uid: 'project', sortable: true },
+  { name: 'Pass Rate', uid: 'passRate', sortable: true },
+  { name: 'Created at', uid: 'createdAt', sortable: true },
+  { name: 'Size', uid: 'size', sortable: true },
   { name: '', uid: 'actions' },
 ];
 
@@ -125,11 +126,17 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
   const [dateTo, setDateTo] = useState<string>('');
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
+    column: 'createdAt',
+    direction: 'descending',
+  });
 
   const getQueryParams = () => ({
     limit: rowsPerPage.toString(),
     offset: ((page - 1) * rowsPerPage).toString(),
     project,
+    order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
+    sortBy: String(sortDescriptor.column ?? 'createdAt'),
     ...(search.trim() && { search: search.trim() }),
     ...(dateFrom && { dateFrom }),
     ...(dateTo && { dateTo }),
@@ -142,7 +149,16 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
     error,
     refetch,
   } = useQuery<ReadReportsHistory>(withQueryParams(reportListEndpoint, getQueryParams()), {
-    dependencies: [project, search, dateFrom, dateTo, rowsPerPage, page],
+    dependencies: [
+      project,
+      search,
+      dateFrom,
+      dateTo,
+      rowsPerPage,
+      page,
+      sortDescriptor.direction,
+      sortDescriptor.column,
+    ],
     placeholderData: keepPreviousData,
   });
 
@@ -201,6 +217,11 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
     setPage(1);
   }, []);
 
+  const onSortChange = useCallback((descriptor: SortDescriptor) => {
+    setSortDescriptor(descriptor);
+    setPage(1);
+  }, []);
+
   const pages = useMemo(() => {
     return total ? Math.ceil(total / rowsPerPage) : 0;
   }, [project, total, rowsPerPage]);
@@ -248,11 +269,17 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
         radius="none"
         selectedKeys={selected}
         selectionMode="multiple"
+        sortDescriptor={sortDescriptor}
         onSelectionChange={onChangeSelect}
+        onSortChange={onSortChange}
       >
         <TableHeader columns={columns}>
           {(column) => (
-            <TableColumn key={column.uid} className="px-3 py-6 text-md text-black dark:text-white font-medium">
+            <TableColumn
+              key={column.uid}
+              allowsSorting={(column as { sortable?: boolean }).sortable}
+              className="px-3 py-6 text-md text-black dark:text-white font-medium"
+            >
               {column.name}
             </TableColumn>
           )}

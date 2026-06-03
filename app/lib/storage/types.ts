@@ -27,6 +27,8 @@ export interface Storage {
   ) => Promise<{ result: SiteWhiteLabelConfig; error: Error | null }>;
 }
 
+export type SortOrder = 'asc' | 'desc';
+
 export interface ReadResultsInput {
   pagination?: Pagination;
   project?: string;
@@ -35,6 +37,8 @@ export interface ReadResultsInput {
   search?: string;
   dateFrom?: string;
   dateTo?: string;
+  order?: SortOrder;
+  sortBy?: 'createdAt' | 'title' | 'project' | 'tags' | 'size';
 }
 
 export interface ReadResultsOutput {
@@ -49,6 +53,8 @@ export interface ReadReportsInput {
   search?: string;
   dateFrom?: string;
   dateTo?: string;
+  order?: SortOrder;
+  sortBy?: 'createdAt' | 'title' | 'project' | 'passRate' | 'size';
 }
 
 export interface ReadReportsOutput {

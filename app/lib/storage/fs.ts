@@ -21,6 +21,7 @@ import {
 import { processBatch } from './batch';
 import { handlePagination } from './pagination';
 import { createDirectory } from './folders';
+import { compareReports, compareResults } from './sort';
 
 import { defaultConfig, isConfigValid, noConfigErr } from '@/app/lib/config';
 import { parse } from '@/app/lib/parser';
@@ -48,7 +49,8 @@ async function createDirectoriesIfMissing() {
 }
 
 function getRecursiveEntryPath(entry: Dirent): string {
-  const parentPath = (entry as Dirent & { path?: string }).path ?? '';
+  const e = entry as Dirent & { parentPath?: string; path?: string };
+  const parentPath = e.parentPath ?? e.path ?? '';
 
   return path.join(parentPath, entry.name);
 }
@@ -109,10 +111,8 @@ export async function readResults(input?: ReadResultsInput) {
     },
   );
 
-  const jsonFiles = stats.sort((a, b) => b.birthtimeMs - a.birthtimeMs);
-
   const fileContents: Result[] = await Promise.all(
-    jsonFiles.map(async (entry) => {
+    stats.map(async (entry) => {
       const content = await fs.readFile(entry.filePath, 'utf-8');
 
       return {
@@ -175,6 +175,11 @@ export async function readResults(input?: ReadResultsInput) {
       return resultTimestamp >= fromTimestamp && resultTimestamp <= toTimestamp;
     });
   }
+
+  const resultSortField = input?.sortBy ?? 'createdAt';
+  const resultSortOrder = input?.order ?? 'desc';
+
+  filteredResults.sort((a, b) => compareResults(a, b, resultSortField, resultSortOrder));
 
   const paginatedResults = handlePagination(filteredResults, input?.pagination);
 
@@ -249,9 +254,7 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
     },
   );
 
-  const reportFiles = stats.sort((a, b) => b.birthtimeMs - a.birthtimeMs);
-
-  const reportsWithProject = reportFiles
+  const reportsWithProject = stats
     .map((file) => {
       // The filePath points to the index.html file. The report ID is the directory containing index.html.
       const reportDir = path.dirname(file.filePath);
@@ -327,6 +330,11 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
       return reportTimestamp >= fromTimestamp && reportTimestamp <= toTimestamp;
     });
   }
+
+  const reportSortField = input?.sortBy ?? 'createdAt';
+  const reportSortOrder = input?.order ?? 'desc';
+
+  filteredReports.sort((a, b) => compareReports(a, b, reportSortField, reportSortOrder));
 
   const paginatedReports = handlePagination(filteredReports, input?.pagination);
 

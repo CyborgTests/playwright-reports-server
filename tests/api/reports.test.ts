@@ -97,3 +97,42 @@ test('/api/report/list filter by dateTo only returns items up to that date', asy
   expect(json.reports.length).toBeGreaterThan(0);
   expect(json.reports.some((r: any) => r.reportID === generatedReport.body.reportId)).toBeTruthy();
 });
+
+test('/api/report/list order=desc returns items newest first', async ({ request, generatedReport: _ }) => {
+  const api = new ReportController(request);
+  const { response, json } = await api.list({ order: 'desc', limit: 100 });
+  expect(response.status()).toBe(200);
+  expect(json.reports.length).toBeGreaterThan(0);
+  const timestamps = json.reports.map((r: any) => new Date(r.createdAt).getTime());
+  for (let i = 1; i < timestamps.length; i++) {
+    expect(timestamps[i]).toBeLessThanOrEqual(timestamps[i - 1]);
+  }
+});
+
+test('/api/report/list order=asc returns items oldest first', async ({ request, generatedReport: _ }) => {
+  const api = new ReportController(request);
+  const { response, json } = await api.list({ order: 'asc', limit: 100 });
+  expect(response.status()).toBe(200);
+  expect(json.reports.length).toBeGreaterThan(0);
+  const timestamps = json.reports.map((r: any) => new Date(r.createdAt).getTime());
+  for (let i = 1; i < timestamps.length; i++) {
+    expect(timestamps[i]).toBeGreaterThanOrEqual(timestamps[i - 1]);
+  }
+});
+
+test('/api/report/list default order matches order=desc', async ({ request, generatedReport: _ }) => {
+  const api = new ReportController(request);
+  const { json: defaultJson } = await api.list({ limit: 100 });
+  const { json: descJson } = await api.list({ order: 'desc', limit: 100 });
+  expect(defaultJson.reports.length).toBeGreaterThan(0);
+  expect(defaultJson.reports[0]?.reportID).toBe(descJson.reports[0]?.reportID);
+});
+
+test('/api/report/list invalid order falls back to default', async ({ request, generatedReport: _ }) => {
+  const api = new ReportController(request);
+  const { response, json: invalidJson } = await api.list({ order: 'garbage', limit: 100 });
+  const { json: defaultJson } = await api.list({ limit: 100 });
+  expect(response.status()).toBe(200);
+  expect(invalidJson.reports.length).toBeGreaterThan(0);
+  expect(invalidJson.reports[0]?.reportID).toBe(defaultJson.reports[0]?.reportID);
+});

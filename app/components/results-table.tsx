@@ -10,6 +10,7 @@ import {
   TableCell,
   Chip,
   type Selection,
+  type SortDescriptor,
   Spinner,
   Pagination,
 } from '@heroui/react';
@@ -25,11 +26,11 @@ import { ReadResultsOutput, type Result } from '@/app/lib/storage';
 import DeleteResultsButton from '@/app/components/delete-results-button';
 
 const columns = [
-  { name: 'Result ID', uid: 'title' },
-  { name: 'Project', uid: 'project' },
-  { name: 'Created at', uid: 'createdAt' },
-  { name: 'Tags', uid: 'tags' },
-  { name: 'Size', uid: 'size' },
+  { name: 'Result ID', uid: 'title', sortable: true },
+  { name: 'Project', uid: 'project', sortable: true },
+  { name: 'Created at', uid: 'createdAt', sortable: true },
+  { name: 'Tags', uid: 'tags', sortable: true },
+  { name: 'Size', uid: 'size', sortable: true },
   { name: '', uid: 'actions' },
 ];
 
@@ -54,11 +55,17 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
   const [dateTo, setDateTo] = useState<string>('');
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
+    column: 'createdAt',
+    direction: 'descending',
+  });
 
   const getQueryParams = () => ({
     limit: rowsPerPage.toString(),
     offset: ((page - 1) * rowsPerPage).toString(),
     project,
+    order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
+    sortBy: String(sortDescriptor.column ?? 'createdAt'),
     ...(selectedTags.length > 0 && { tags: selectedTags.join(',') }),
     ...(search.trim() && { search: search.trim() }),
     ...(dateFrom && { dateFrom }),
@@ -72,7 +79,17 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
     error,
     refetch,
   } = useQuery<ReadResultsOutput>(withQueryParams(resultListEndpoint, getQueryParams()), {
-    dependencies: [project, selectedTags, search, dateFrom, dateTo, rowsPerPage, page],
+    dependencies: [
+      project,
+      selectedTags,
+      search,
+      dateFrom,
+      dateTo,
+      rowsPerPage,
+      page,
+      sortDescriptor.direction,
+      sortDescriptor.column,
+    ],
     placeholderData: keepPreviousData,
   });
 
@@ -115,6 +132,11 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
 
   const onDateToChange = useCallback((date: string) => {
     setDateTo(date);
+    setPage(1);
+  }, []);
+
+  const onSortChange = useCallback((descriptor: SortDescriptor) => {
+    setSortDescriptor(descriptor);
     setPage(1);
   }, []);
 
@@ -192,13 +214,16 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
         radius="none"
         selectedKeys={selected}
         selectionMode="multiple"
+        sortDescriptor={sortDescriptor}
         onSelectionChange={onChangeSelect}
+        onSortChange={onSortChange}
       >
         <TableHeader columns={columns}>
           {(column) => (
             <TableColumn
               key={column.uid}
               align={column.uid === 'actions' ? 'center' : 'start'}
+              allowsSorting={(column as { sortable?: boolean }).sortable}
               className="px-3 py-6 text-md text-black dark:text-white font-medium"
             >
               {column.name}

@@ -6,4 +6,6 @@ export type ListParams = {
   page?: number;
   dateFrom?: string;
   dateTo?: string;
+  order?: 'asc' | 'desc' | string;
+  sortBy?: string;
 };
