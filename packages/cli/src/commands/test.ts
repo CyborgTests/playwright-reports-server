@@ -157,9 +157,7 @@ export async function runTestAnalysisPrompt(
  */
 export async function runTestHistory(testId: string, opts: HistoryOpts): Promise<void> {
   if (!testId) {
-    throw new Error(
-      'Usage: pwrs-cli test history <testId> [--project <p>] [--limit N]'
-    );
+    throw new Error('Usage: pwrs-cli test history <testId> [--project <p>] [--limit N]');
   }
   const config = resolveConfig();
   const query: Record<string, string | number | undefined> = {};
@@ -257,11 +255,9 @@ async function scoreByFailureLine(
 }> {
   const settled = await Promise.allSettled(
     candidates.map((t) =>
-      apiGet<TestBrief>(
-        config,
-        `/api/cli/test/${encodeURIComponent(t.testId)}/brief`,
-        { project: t.project }
-      )
+      apiGet<TestBrief>(config, `/api/cli/test/${encodeURIComponent(t.testId)}/brief`, {
+        project: t.project,
+      })
     )
   );
 

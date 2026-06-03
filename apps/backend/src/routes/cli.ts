@@ -10,7 +10,7 @@
  * are passed through verbatim; the only hard cap is on the per-report
  * `failedTests` array size so a 500-failure run can't pull the whole report.
  */
-import type { ClusterEvidence } from '@playwright-reports/shared';
+import type { ClusterAnchor } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { defaultConfig } from '../lib/config.js';
 import { parseFailureDetails } from '../lib/failure-clustering/extractors/failure-details.js';
@@ -98,7 +98,7 @@ interface TestBrief {
   } | null;
   cluster: {
     id: string;
-    strategy: string;
+    kind: ClusterAnchor['kind'];
     name: string;
     sampleError: string;
     otherTests: Array<{ testId: string; fileId: string; project: string; title: string }>;
@@ -117,7 +117,7 @@ interface ReportBriefSummaryEntry {
 
 interface ReportBriefCluster {
   id: string;
-  strategy: string;
+  kind: ClusterAnchor['kind'];
   name: string;
   sampleError: string;
   testCount: number;
@@ -630,7 +630,7 @@ async function buildTestBrief(
     cluster: containing
       ? {
           id: containing.id,
-          strategy: containing.strategy,
+          kind: containing.anchor.kind,
           name: containing.name,
           sampleError: containing.sampleMessage,
           otherTests: containing.tests
@@ -731,7 +731,7 @@ async function buildReportBrief(reportId: string, full: boolean): Promise<Report
       if (!cluster) return null;
       return {
         id,
-        strategy: cluster.strategy,
+        kind: cluster.anchor.kind,
         name: cluster.name,
         sampleError: cluster.sampleMessage,
         testCount: members.length,
@@ -918,13 +918,14 @@ async function buildTestHistory(
 interface ClusterBrief {
   cluster: {
     id: string;
-    strategy: string;
+    kind: ClusterAnchor['kind'];
     name: string;
     sampleError: string;
     category?: string;
+    confidence: 'high' | 'medium' | 'low';
     testCount: number;
     failureCount: number;
-    evidence: ClusterEvidence;
+    anchor: ClusterAnchor;
   };
   members: TestBrief[];
   membersTruncated: boolean;
@@ -934,23 +935,9 @@ async function buildClusterBrief(
   clusterId: string,
   project: string | undefined
 ): Promise<ClusterBrief | null> {
-  // getFailureClusters has a 60s in-memory cache. We try the requested project
-  // first (when supplied) and fall back to a cross-project sweep — clusters
-  // are project-scoped at build time, so a wrong --project would otherwise
-  // 404 a valid clusterId.
-  const tryProjects: Array<string | undefined> = project ? [project, undefined] : [undefined];
-  let cluster: Awaited<ReturnType<typeof getFailureClusters>>['clusters'][number] | undefined;
-  let clusterReport: Awaited<ReturnType<typeof getFailureClusters>> | undefined;
-  for (const p of tryProjects) {
-    const report = await getFailureClusters({ project: p });
-    const found = report.clusters.find((c) => c.id === clusterId);
-    if (found) {
-      cluster = found;
-      clusterReport = report;
-      break;
-    }
-  }
-  if (!cluster || !clusterReport) return null;
+  const report = await getFailureClusters({ project });
+  const cluster = report.clusters.find((c) => c.id === clusterId);
+  if (!cluster) return null;
 
   const refsToBrief = cluster.tests.slice(0, FAILED_TESTS_PER_REPORT_MAX);
   const truncated = cluster.tests.length > refsToBrief.length;
@@ -958,20 +945,21 @@ async function buildClusterBrief(
 
   const members: TestBrief[] = [];
   for (const t of refsToBrief) {
-    const brief = await buildTestBrief(t.testId, t.fileId, t.project, clusterReport, thresholds);
+    const brief = await buildTestBrief(t.testId, t.fileId, t.project, report, thresholds);
     if (brief) members.push(brief);
   }
 
   return {
     cluster: {
       id: cluster.id,
-      strategy: cluster.strategy,
+      kind: cluster.anchor.kind,
       name: cluster.name,
       sampleError: cluster.sampleMessage,
       category: cluster.category,
+      confidence: cluster.confidence,
       testCount: cluster.testCount,
       failureCount: cluster.failureCount,
-      evidence: cluster.evidence,
+      anchor: cluster.anchor,
     },
     members,
     membersTruncated: truncated,

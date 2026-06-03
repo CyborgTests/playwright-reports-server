@@ -87,9 +87,7 @@ const HELP = [
   '  --failure-category <c>                 test search (use `category list` to enumerate)',
   '  --sort slowest                         test search ordering',
   '  --failed-only                          stats: scope to runs with failures',
-  '  --strategies <signature,stack-frame,fixture,temporal>   cluster list',
-  '  --min-tests <N>                        cluster list: minimum cluster size',
-    '  --with-failures                        report brief/latest: include full per-failure briefs',
+  '  --with-failures                        report brief/latest: include full per-failure briefs',
   '  --help                                 Show this message',
   '  --version                              Print CLI version and exit',
   '',
@@ -156,11 +154,12 @@ const GROUP_HELP: Record<string, string> = {
     'pwrs-cli cluster — failure-cluster drill-down',
     '',
     'Subcommands:',
-    '  cluster list [--project <p>] [--from/--to] [--strategies signature,stack-frame,fixture,temporal]',
-    '              [--min-tests N] [--limit N]',
-    '      Active failure clusters across reports (default --limit 10).',
+    '  cluster list [--project <p>] [--from/--to] [--limit N]',
+    '      Active failure clusters across reports (default --limit 10). Each cluster',
+    '      is anchored to one fix target: fixture / selector / frame / unmatched.',
     '  cluster brief <clusterId> [--project <p>]',
     '      Drill into one cluster: brief per member test (capped at 50 members).',
+    '      Cluster IDs are deterministic (sha1 of the anchor) and stable across calls.',
     '',
   ].join('\n'),
   project: [
@@ -243,8 +242,6 @@ interface CommonOpts {
   failureCategory?: string;
   sort?: string;
   failedOnly?: boolean;
-  strategies?: string;
-  minTests?: number;
   withFailures?: boolean;
   reportId?: string;
   taskId?: string;
@@ -307,8 +304,6 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
       failureCategory: str(v['failure-category']),
       sort: str(v.sort),
       failedOnly: v['failed-only'] === true,
-      strategies: str(v.strategies),
-      minTests: parseIntOpt(v['min-tests']),
       withFailures: v['with-failures'] === true,
       reportId: str(v['report-id']),
       taskId: str(v['task-id']),
@@ -514,8 +509,6 @@ async function dispatch(argv: string[]): Promise<void> {
           project: opts.project,
           from: opts.from,
           to: opts.to,
-          minTests: opts.minTests,
-          strategies: opts.strategies,
           limit: opts.limit,
         });
         return;

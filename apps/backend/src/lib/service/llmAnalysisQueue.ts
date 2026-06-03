@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { ClusterStrategy } from '@playwright-reports/shared';
 import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import { llmService } from '../llm/index.js';
 import {
@@ -14,7 +13,6 @@ import type {
   ProjectCoverageScope,
   ProjectTrendSignal,
   ProjectTrendWindow,
-  ReportSummaryClusterStrategy,
   ReportSummaryTrendContext,
 } from '../llm/prompts/index.js';
 import {
@@ -1477,27 +1475,6 @@ interface AggregateRun {
   displayNumber?: number;
 }
 
-/** Derive a stable cross-window identity for a cluster from its strategy +
- *  primary evidence. UUIDs aren't stable across `getFailureClusters` calls,
- *  so the project-summary uses this key to detect which clusters are the
- *  "same" cluster between windows. Temporal clusters get a member-test
- *  fingerprint since they lack stable evidence. */
-function buildClusterStableKey(
-  strategy: ClusterStrategy,
-  evidence: { signature?: string; stackFrame?: string; fixturePhase?: string },
-  memberKeys: string[]
-): string {
-  if (evidence.signature) return `signature:${evidence.signature}`;
-  if (strategy === 'stack-frame' && evidence.stackFrame)
-    return `stack-frame:${evidence.stackFrame}`;
-  if (strategy === 'fixture' && evidence.fixturePhase) {
-    return `fixture:${evidence.fixturePhase}:${evidence.stackFrame ?? evidence.signature ?? ''}`;
-  }
-  // Temporal (or any cluster missing primary evidence): identity is the sorted
-  // set of member testIds. Cheap fingerprint, stable for the same membership.
-  return `${strategy}:${[...memberKeys].sort().join(',')}`;
-}
-
 /**
  * Group failing test_runs into project-level clusters via the shared
  * `getFailureClusters` engine, then enrich each cluster with project-level
@@ -1523,14 +1500,12 @@ async function aggregateProjectClusters(
   const projectArg = project === 'all' ? undefined : project;
 
   const { getFailureClusters } = await import('../failure-clustering/index.js');
-  // minTests=1 catches single-test repeat failures (which the old signature
-  // aggregator handled natively); strategies emit single-test clusters at
-  // that threshold and merge with multi-test clusters where appropriate.
+  // The anchor-based clusterer always emits every failure as part of some
+  // cluster (single-test clusters are valid), so no minTests knob is needed.
   const clusterReport = await getFailureClusters({
     project: projectArg,
     from: oldest.createdAt,
     to: latest.createdAt,
-    minTests: 1,
   });
 
   if (clusterReport.clusters.length === 0) return [];
@@ -1607,13 +1582,10 @@ async function aggregateProjectClusters(
       category = sorted[0]?.[0] ?? 'unknown';
     }
 
-    const memberKeys = c.tests.map((t) => `${t.testId}::${t.fileId}::${t.project}`);
-    const stableKey = buildClusterStableKey(c.strategy, c.evidence, memberKeys);
-
     projectClusters.push({
-      stableKey,
-      strategy: c.strategy,
-      evidence: c.evidence,
+      stableKey: c.id,
+      kind: c.anchor.kind,
+      anchor: c.anchor,
       category,
       occurrences: agg.occurrences,
       reportsAffected: agg.reportIndices.size,
@@ -1773,7 +1745,7 @@ async function computeProjectTrendSignal(
       persistingCount: persisting.length,
       newCount,
       topResolved: resolved.slice(0, 3).map((c) => ({
-        strategy: c.strategy,
+        kind: c.kind,
         category: c.category,
         reportsAffected: c.reportsAffected,
         sampleTest: c.affectedTests[0]?.title,
@@ -2017,12 +1989,7 @@ function shapeClustersForPrompt(args: {
   const trendFor = (title: string, filePath?: string): Trend =>
     trendContext ? (trendByTitleFile.get(`${title}::${filePath ?? ''}`) ?? 'unknown') : 'unknown';
 
-  type RealCluster = Omit<(typeof clusterReport.clusters)[number], 'strategy'> & {
-    strategy: ReportSummaryClusterStrategy;
-  };
-  const realClusters = clusterReport.clusters.filter(
-    (c): c is RealCluster => c.strategy !== 'unclustered'
-  );
+  const realClusters = clusterReport.clusters.filter((c) => c.anchor.kind !== 'unmatched');
 
   const clusters = realClusters.map((c) => {
     const members = c.tests.map((t) => {
@@ -2046,13 +2013,13 @@ function shapeClustersForPrompt(args: {
     });
     return {
       id: c.id,
-      strategy: c.strategy,
+      kind: c.anchor.kind,
       name: c.name,
       category: c.category,
       sampleMessage: c.sampleMessage,
       testCount: c.testCount,
       failureCount: c.failureCount,
-      evidence: c.evidence,
+      anchor: c.anchor,
       members,
     };
   });

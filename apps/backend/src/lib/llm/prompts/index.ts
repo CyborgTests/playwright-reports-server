@@ -1,4 +1,4 @@
-import type { ClusterEvidence, ClusterStrategy } from '@playwright-reports/shared';
+import type { ClusterAnchor, ClusterAnchorKind } from '@playwright-reports/shared';
 import { FAILURE_CATEGORIES, formatDuration } from '@playwright-reports/shared';
 import type { FailureEvidence } from '../../parser/failure-extraction.js';
 import type { PerFileStep } from '../../parser/report-payload.js';
@@ -117,11 +117,10 @@ You analyze Playwright test failures.
 Summarize failures for report \`{{reportId}}\` in project "{{project}}" ({{totalFailures}} failures). Focus on root causes via failure clusters.
 
 ## Data
-- Failures are grouped into **clusters** by shared evidence:
-  - strategy: 'signature', 'stack-frame', 'fixture', 'selector', 'temporal'
-  - evidence: error signature, stack frame, fixture phase, timing
+- Failures are grouped into **clusters** by a single fix anchor:
+  - kind: 'fixture' (failing setup/teardown), 'selector' (a Playwright locator broken across N tests), 'frame' (a specific file:line), or 'unmatched' (no extractable mechanism).
+  - Each cluster has a stable id (hash of its anchor) and a Playwright verb (toBeVisible / click / toMatch / ...) attached to the anchor.
 - Each cluster has tests with per-test root-cause analysis.
-- Ungrouped failures appear as **Unclustered Failures**.
 - Optional:
   - Run Context (branch, commit, CI build)
   - Trend (newly failed, still failing, fixed, duration changes)
@@ -293,13 +292,13 @@ For non-clickable mentions (paths, signatures, fixture files), use backticks. Th
 ## Cluster model
 Active Failure Clusters are the primary input when present.
 
-Cluster strategies:
-- signature: same error signature -> likely one root cause.
-- stack-frame: same top failing stack frame -> likely one code path.
+Cluster kinds:
 - fixture: failure in beforeAll/beforeEach/afterAll/afterEach -> systemic; recommendations must be fixture-level, not per-test.
-- temporal: tests co-failed in time -> weakest grouping; investigate shared infra before recommending per-test fixes.
+- selector: tests share a Playwright locator (e.g., aria-label) that became unreachable -> one selector to fix resolves N tests across files.
+- frame: tests crash at the same app-code file:line -> a single code location to edit.
+- unmatched: no extractable mechanism; the test itself is the anchor.
 
-Each cluster has an Evidence line. Name that evidence in prose, e.g. "the cluster sharing stack frame \`X\`" or "the cluster with signature \`Y\`".
+Each cluster has a Fix anchor line naming the precise target (path + line, selector string, or fixture phase + file). Refer to clusters by their anchor in prose, e.g. "the selector cluster on \`button[aria-label="Approve"]\`" or "the frame cluster at \`UsersPage.ts:35\`".
 
 Cluster buckets:
 - Active Failure Clusters: present in the latest run or within the last 2 runs. Only these may appear in Recommendations.
@@ -1197,12 +1196,7 @@ export interface ReportSummaryTrendContext {
   }>;
 }
 
-export type ReportSummaryClusterStrategy =
-  | 'signature'
-  | 'stack-frame'
-  | 'fixture'
-  | 'selector'
-  | 'temporal';
+export type ReportSummaryClusterKind = ClusterAnchorKind;
 
 /** Trend status of a failing test relative to the immediately previous report
  *  in the same project. `newlyFailed` = didn't fail in the previous report;
@@ -1236,19 +1230,14 @@ export interface ReportSummaryClusterMember {
 
 export interface ReportSummaryCluster {
   id: string;
-  strategy: ReportSummaryClusterStrategy;
+  kind: ReportSummaryClusterKind;
   name: string;
   category?: string;
   /** Representative error message for the cluster. NOT truncated. */
   sampleMessage: string;
   testCount: number;
   failureCount: number;
-  evidence: {
-    signature?: string;
-    stackFrame?: string;
-    fixturePhase?: string;
-    coFailureRate?: number;
-  };
+  anchor: ClusterAnchor;
   members: ReportSummaryClusterMember[];
 }
 
@@ -1394,26 +1383,16 @@ export const buildReportSummarySegments = (args: {
 
   if (args.clusters.length > 0) {
     dataBlock += `## Failure Clusters (${args.clusters.length} clusters)\n`;
-    dataBlock += `Clusters group failing tests by shared evidence. \`signature\` clusters share an error signature; \`stack-frame\` clusters share the topmost user-code stack frame; \`fixture\` clusters share a failing setup/teardown hook; \`temporal\` clusters failed together in the same run window. Member tests carry their own per-test root-cause analysis below.\n\n`;
+    dataBlock += `Each cluster is anchored to one fix target: \`fixture\` (failing setup/teardown hook), \`selector\` (a Playwright locator that broke across N tests), \`frame\` (a specific file:line of app code), or \`unmatched\` (no extractable mechanism — test identity becomes the anchor). Same anchor → same cluster ID across calls.\n\n`;
     for (const cluster of args.clusters) {
-      dataBlock += `### Cluster: ${cluster.name} [strategy: ${cluster.strategy}, id: ${cluster.id}]\n`;
+      dataBlock += `### Cluster: ${cluster.name} [kind: ${cluster.kind}, id: ${cluster.id}]\n`;
       const factsParts: string[] = [];
       if (cluster.category) factsParts.push(`category: \`${cluster.category}\``);
       factsParts.push(`${cluster.testCount} tests`);
       factsParts.push(`${cluster.failureCount} failures (window)`);
-      if (typeof cluster.evidence.coFailureRate === 'number') {
-        factsParts.push(`co-failure rate: ${(cluster.evidence.coFailureRate * 100).toFixed(0)}%`);
-      }
       dataBlock += `- ${factsParts.join(' · ')}\n`;
-      const evParts: string[] = [];
-      if (cluster.evidence.signature) evParts.push(`signature \`${cluster.evidence.signature}\``);
-      if (cluster.evidence.stackFrame)
-        evParts.push(`stack frame \`${cluster.evidence.stackFrame}\``);
-      if (cluster.evidence.fixturePhase)
-        evParts.push(`fixture phase \`${cluster.evidence.fixturePhase}\``);
-      if (evParts.length > 0) {
-        dataBlock += `- Evidence: ${evParts.join(' · ')}\n`;
-      }
+      const anchorLine = renderAnchorInline(cluster.anchor);
+      if (anchorLine) dataBlock += `- Fix anchor: ${anchorLine}\n`;
       if (cluster.sampleMessage) {
         dataBlock += `- Sample error:\n\`\`\`\n${cluster.sampleMessage}\n\`\`\`\n`;
       }
@@ -1666,19 +1645,16 @@ const renderReportTrendContext = (
  *  queue worker via the shared `getFailureClusters` engine, then enriched
  *  with project-level lifecycle data (first/last seen, retry recovery).
  *
- *  A cluster groups failing tests by one of four strategies:
- *  - `signature` — same error signature
- *  - `stack-frame` — share a stack frame (likely same code path, different msg)
- *  - `fixture` — fixture / setup-teardown failure (systemic, often spans tests)
- *  - `temporal` — co-failed in time (suspicious correlation)
- *  The strategy plus evidence shape lets the model frame "5 unrelated tests
- *  share a beforeEach failure" differently from "5 separate timeouts." */
+ *  A cluster is anchored to one fix target:
+ *  - `fixture`   — failing setup/teardown hook
+ *  - `selector`  — Playwright locator broken across N tests
+ *  - `frame`     — app-code file:line
+ *  - `unmatched` — no extractable mechanism (test identity is the anchor)
+ */
 export interface ProjectCluster {
-  /** Stable cross-window identity, derived from strategy + primary evidence.
-   *  Used by the trend signal to detect resolved/persisting/new clusters. */
   stableKey: string;
-  strategy: ClusterStrategy;
-  evidence: ClusterEvidence;
+  kind: ClusterAnchorKind;
+  anchor: ClusterAnchor;
   /** Most common per-test failure category for tests in the cluster, or 'unknown'. */
   category: string;
   /** Total failing test_runs across all cluster members within the window. */
@@ -1730,8 +1706,7 @@ export interface ProjectTrendWindow {
 
 /** Cross-window classification of failure clusters: which prior-window
  *  clusters are still present this window, which were resolved, and
- *  which are new this window. Identity is the cluster's `stableKey`
- *  (strategy + primary evidence). */
+ *  which are new this window. Identity is the cluster's `stableKey` */
 export interface ClusterFlow {
   resolvedCount: number;
   persistingCount: number;
@@ -1739,7 +1714,7 @@ export interface ClusterFlow {
   /** Top resolved clusters (by occurrence in the prior window). Names them
    *  so the model can cite "X is no longer firing" in the recovery framing. */
   topResolved: Array<{
-    strategy: ClusterStrategy;
+    kind: ClusterAnchorKind;
     category: string;
     reportsAffected: number;
     sampleTest?: string;
@@ -1845,26 +1820,18 @@ function daysBetweenIso(fromIso: string, toIso: string): number {
   return Math.max(1, Math.round((to - from) / 86_400_000));
 }
 
-/** Compact evidence line per cluster. The clustering engine guarantees at
- *  least one piece of evidence per cluster — we surface them by precedence
- *  (signature > stackFrame > fixturePhase > coFailureRate) so the model can
- *  reason about the cluster's grouping basis. */
-function renderClusterEvidenceInline(
-  strategy: ClusterStrategy,
-  evidence: ClusterEvidence
-): string | null {
-  const parts: string[] = [`strategy=${strategy}`];
-  if (evidence.signature) parts.push(`signature=\`${evidence.signature}\``);
-  if (evidence.stackFrame) parts.push(`stack frame=\`${evidence.stackFrame}\``);
-  if (evidence.fixturePhase) parts.push(`fixture phase=\`${evidence.fixturePhase}\``);
-  if (typeof evidence.coFailureRate === 'number') {
-    parts.push(`co-failure rate=${(evidence.coFailureRate * 100).toFixed(0)}%`);
+/** Compact anchor line per cluster. */
+function renderAnchorInline(anchor: ClusterAnchor): string | null {
+  switch (anchor.kind) {
+    case 'fixture':
+      return `fixture \`${anchor.phase}\` in \`${anchor.filePath}\` (verb=${anchor.verb})`;
+    case 'selector':
+      return `selector \`${anchor.selector}\` (verb=${anchor.verb})`;
+    case 'frame':
+      return `frame \`${anchor.frame}\` (verb=${anchor.verb})`;
+    case 'unmatched':
+      return `no extractable mechanism — anchored to test \`${anchor.testId}\``;
   }
-  if (evidence.secondaryEvidence && evidence.secondaryEvidence.length > 0) {
-    const sec = evidence.secondaryEvidence.map((s) => `${s.strategy}×${s.count}`).join(', ');
-    parts.push(`also matched: ${sec}`);
-  }
-  return parts.join(' · ');
 }
 
 /** Compact one-line context for the per-run dump. Only fields with non-empty
@@ -1938,8 +1905,8 @@ function renderTrendSignal(signal: ProjectTrendSignal): string {
       const resolvedList = clusterFlow.topResolved
         .map((r) =>
           r.sampleTest
-            ? `\`${r.strategy}\`/\`${r.category}\` (was in ${r.reportsAffected} prior runs, e.g. \`${r.sampleTest}\`)`
-            : `\`${r.strategy}\`/\`${r.category}\` (was in ${r.reportsAffected} prior runs)`
+            ? `\`${r.kind}\`/\`${r.category}\` (was in ${r.reportsAffected} prior runs, e.g. \`${r.sampleTest}\`)`
+            : `\`${r.kind}\`/\`${r.category}\` (was in ${r.reportsAffected} prior runs)`
         )
         .join('; ');
       block += `- **Top resolved:** ${resolvedList}\n`;
@@ -2090,10 +2057,10 @@ export const buildProjectSummarySegments = (args: {
     dataBlock += `## Active Failure Clusters (present in latest run or within last 2 runs — drive Recommendations)\n`;
     for (let i = 0; i < activeClusters.length; i++) {
       const c = activeClusters[i];
-      const evidenceLine = renderClusterEvidenceInline(c.strategy, c.evidence);
-      dataBlock += `\n### ${i + 1}. \`${c.strategy}\` cluster — \`${c.category}\` — ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'} (${c.affectedTests.length} test${c.affectedTests.length === 1 ? '' : 's'})\n`;
-      if (evidenceLine) {
-        dataBlock += `- **Evidence:** ${evidenceLine}\n`;
+      const anchorLine = renderAnchorInline(c.anchor);
+      dataBlock += `\n### ${i + 1}. \`${c.kind}\` cluster — \`${c.category}\` — ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'} (${c.affectedTests.length} test${c.affectedTests.length === 1 ? '' : 's'})\n`;
+      if (anchorLine) {
+        dataBlock += `- **Fix anchor:** ${anchorLine}\n`;
       }
       const sample = c.sampleMessage.replace(/\s+/g, ' ').trim();
       const sampleTrunc = sample.length > 300 ? `${sample.substring(0, 300)}…` : sample;
@@ -2136,7 +2103,7 @@ export const buildProjectSummarySegments = (args: {
         .map((t) => `\`${t.title}\``)
         .join(', ');
       const more = c.affectedTests.length > 2 ? ` +${c.affectedTests.length - 2} more` : '';
-      dataBlock += `- \`${c.strategy}\`/\`${c.category}\` — ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'}; last seen ${lastSeenRef} (${c.runsSinceLastSeen} runs ago); tests: ${titles}${more}\n`;
+      dataBlock += `- \`${c.kind}\`/\`${c.category}\` — ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'}; last seen ${lastSeenRef} (${c.runsSinceLastSeen} runs ago); tests: ${titles}${more}\n`;
     }
     dataBlock += '\n';
   }

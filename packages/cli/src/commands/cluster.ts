@@ -7,17 +7,15 @@ interface ClusterListOpts {
   project?: string;
   from?: string;
   to?: string;
-  minTests?: number;
-  strategies?: string;
   limit?: number;
 }
 
 const DEFAULT_LIMIT = 10;
 
 /**
- * Compact projection of /api/analytics/failure-clusters: drops the fellow-
- * travellers roster on each cluster member (noisy when an agent is just
- * trying to enumerate active clusters) and caps the cluster list.
+ * Compact projection of /api/analytics/failure-clusters. Caps the cluster
+ * list and trims per-test detail. Each cluster's `anchor` is the precise
+ * "what to fix" handle the agent should act on.
  */
 export async function runClusterList(opts: ClusterListOpts): Promise<void> {
   const config = resolveConfig();
@@ -26,8 +24,6 @@ export async function runClusterList(opts: ClusterListOpts): Promise<void> {
     project: opts.project,
     from: opts.from,
     to: opts.to,
-    minTests: opts.minTests,
-    strategies: opts.strategies,
   });
 
   const trimmed = report.clusters.slice(0, limit);
@@ -37,16 +33,16 @@ export async function runClusterList(opts: ClusterListOpts): Promise<void> {
     totalClusters: report.clusters.length,
     appliedLimit: limit,
     hasMore: report.clusters.length > trimmed.length,
-    strategiesRun: report.strategiesRun,
     clusters: trimmed.map((c) => ({
       id: c.id,
-      strategy: c.strategy,
+      kind: c.anchor.kind,
       name: c.name,
       sampleMessage: c.sampleMessage,
       category: c.category,
+      confidence: c.confidence,
       testCount: c.testCount,
       failureCount: c.failureCount,
-      evidence: c.evidence,
+      anchor: c.anchor,
       tests: c.tests.map((t) => ({
         testId: t.testId,
         fileId: t.fileId,
@@ -68,8 +64,6 @@ interface ClusterBriefOpts {
 
 /**
  * Drill into a single cluster: agent-shaped brief for every member test.
- * Use after `cluster list` (or after reading a cluster id off a `test brief`
- * or `report brief` summary).
  */
 export async function runClusterBrief(clusterId: string, opts: ClusterBriefOpts): Promise<void> {
   if (!clusterId) {

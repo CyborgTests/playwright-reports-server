@@ -60,7 +60,7 @@ export interface TestBrief {
   } | null;
   cluster: {
     id: string;
-    strategy: string;
+    kind: ClusterAnchorKind;
     name: string;
     sampleError: string;
     otherTests: Array<{ testId: string; fileId: string; project: string; title: string }>;
@@ -79,7 +79,7 @@ export interface ReportBriefSummaryEntry {
 
 export interface ReportBriefCluster {
   id: string;
-  strategy: string;
+  kind: ClusterAnchorKind;
   name: string;
   sampleError: string;
   testCount: number;
@@ -144,24 +144,25 @@ export interface TestHistory {
   runs: TestHistoryRun[];
 }
 
-export interface ClusterEvidence {
-  signature?: string;
-  stackFrame?: string;
-  fixturePhase?: 'beforeAll' | 'beforeEach' | 'afterAll' | 'afterEach';
-  coFailureRate?: number;
-  secondaryEvidence?: string[];
-}
+export type ClusterAnchorKind = 'fixture' | 'selector' | 'frame' | 'unmatched';
+
+export type ClusterAnchor =
+  | { kind: 'fixture'; verb: string; phase: string; filePath: string }
+  | { kind: 'selector'; verb: string; selector: string }
+  | { kind: 'frame'; verb: string; frame: string }
+  | { kind: 'unmatched'; testId: string; fileId: string; project: string };
 
 export interface ClusterBriefResponse {
   cluster: {
     id: string;
-    strategy: string;
+    kind: ClusterAnchorKind;
     name: string;
     sampleError: string;
     category?: string;
+    confidence: 'high' | 'medium' | 'low';
     testCount: number;
     failureCount: number;
-    evidence: ClusterEvidence;
+    anchor: ClusterAnchor;
   };
   members: TestBrief[];
   membersTruncated: boolean;
@@ -306,19 +307,13 @@ export interface ClusterTest {
 
 export interface FailureCluster {
   id: string;
-  strategy: 'signature' | 'stack-frame' | 'fixture' | 'temporal';
+  anchor: ClusterAnchor;
   name: string;
   sampleMessage: string;
   category?: string;
+  confidence: 'high' | 'medium' | 'low';
   testCount: number;
   failureCount: number;
-  evidence: {
-    signature?: string;
-    stackFrame?: string;
-    fixturePhase?: string;
-    coFailureRate?: number;
-    secondaryEvidence?: string[];
-  };
   tests: ClusterTest[];
 }
 
@@ -326,7 +321,6 @@ export interface ClusterReport {
   clusters: FailureCluster[];
   totalFailures: number;
   windowDays?: number;
-  strategiesRun: string[];
 }
 
 export type DiffOutcome = 'passed' | 'failed' | 'flaky' | 'skipped' | 'unknown';

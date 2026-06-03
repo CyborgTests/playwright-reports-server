@@ -1,13 +1,13 @@
 'use client';
 
 import type {
-  ClusterFellowTraveller,
+  ClusterAnchor,
+  ClusterAnchorKind,
+  ClusterConfidence,
   ClusterReport,
-  ClusterStrategy,
   ClusterTest,
   DateRange,
   FailureCluster,
-  FailureClusterVariant,
   ReportHistory,
 } from '@playwright-reports/shared';
 import { ExternalLink, GitMerge, HelpCircle, Users } from 'lucide-react';
@@ -25,8 +25,6 @@ import {
 } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import useQuery from '@/hooks/useQuery';
@@ -39,59 +37,36 @@ interface ClusterReportEnvelope {
   error?: string;
 }
 
-const STRATEGY_LABELS: Record<FailureCluster['strategy'], string> = {
-  signature: 'Shared error signature',
-  'stack-frame': 'Shared stack frame',
-  fixture: 'Fixture failure',
-  selector: 'Shared selector',
-  temporal: 'Temporal co-failure',
-  unclustered: 'Unclustered failures',
-};
-
-const ALL_STRATEGIES: ClusterStrategy[] = [
-  'signature',
-  'stack-frame',
-  'fixture',
-  'selector',
-  'temporal',
-];
-// `signature` is opt-in: it groups by the exact error fingerprint which is
-// usually too narrow to surface new failure shapes. Default to the broader
-// strategies and let users add it explicitly when triaging duplicates.
-const DEFAULT_STRATEGIES: ClusterStrategy[] = ['stack-frame', 'fixture', 'selector', 'temporal'];
-
-const STRATEGY_SHORT_LABELS: Record<ClusterStrategy, string> = {
-  signature: 'Signature',
-  'stack-frame': 'Stack frame',
+const KIND_LABELS: Record<ClusterAnchorKind, string> = {
   fixture: 'Fixture',
   selector: 'Selector',
-  temporal: 'Temporal',
-  unclustered: 'Unclustered',
+  frame: 'Frame',
+  unmatched: 'Unmatched',
 };
 
-const STRATEGY_DESCRIPTIONS: Record<ClusterStrategy, string> = {
-  signature:
-    'Groups tests whose error messages normalize to the same signature — strongest evidence that one fix resolves all.',
-  'stack-frame':
-    'Groups tests that crash at the same line of app code (Playwright internals and node_modules frames are ignored).',
+const KIND_DESCRIPTIONS: Record<ClusterAnchorKind, string> = {
   fixture:
-    'Detects beforeAll/beforeEach/afterAll/afterEach failures where every test in a file cascades from the same hook error.',
+    'Failure cascaded from a beforeAll/beforeEach/afterAll/afterEach hook. Fix the hook once and every member test passes.',
   selector:
-    'Groups tests whose failing Playwright locator (aria-label, role, selector) is identical — typically one UI element drift breaking N tests across files.',
-  temporal:
-    'Pairs of tests that consistently fail together in the same reports — catches infra and shared-data issues whose surface errors differ.',
-  unclustered:
-    'Failures that did not match any clustering strategy — likely isolated issues with unique error signatures, stack frames, and no co-failure pattern.',
+    'Tests share a failing Playwright locator (aria-label, role, css). Typically one UI element drift breaking N tests across files.',
+  frame:
+    'Tests crash at the same line of app code. The frame is the literal fix location (file:line).',
+  unmatched:
+    'No extractable fix mechanism — the failure shape is unique to the test. Anchored to test identity so repeated failures of the same test still group together.',
 };
 
-function parseStrategies(value: string | null): ClusterStrategy[] {
-  if (!value) return DEFAULT_STRATEGIES;
-  const parsed = value
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s): s is ClusterStrategy => (ALL_STRATEGIES as string[]).includes(s));
-  return parsed.length > 0 ? parsed : DEFAULT_STRATEGIES;
-}
+const CONFIDENCE_LABELS: Record<ClusterConfidence, string> = {
+  high: 'High confidence',
+  medium: 'Medium confidence',
+  low: 'Low confidence',
+};
+
+const CONFIDENCE_TOOLTIP: Record<ClusterConfidence, string> = {
+  high: 'Strong evidence that one fix resolves every member test (fixture, or ≥ 3 tests share a frame/selector anchor).',
+  medium:
+    'Reasonable evidence (2 tests share an anchor, or one test fails chronically at the same anchor).',
+  low: 'Single-test single-failure, or no extractable mechanism. Treat as a starting point, not a verdict.',
+};
 
 function buildTestLink(reportUrl: string | undefined, testId: string): string | undefined {
   if (!reportUrl) return undefined;
@@ -107,19 +82,6 @@ export default function FailureClusters() {
     from: searchParams.get('from') ?? undefined,
     to: searchParams.get('to') ?? undefined,
   }));
-  const [strategies, setStrategies] = useState<ClusterStrategy[]>(() =>
-    parseStrategies(searchParams.get('strategies'))
-  );
-
-  const toggleStrategy = (strategy: ClusterStrategy) => {
-    setStrategies((current) => {
-      const has = current.includes(strategy);
-      const next = has ? current.filter((s) => s !== strategy) : [...current, strategy];
-      // Refuse to deselect the last remaining strategy — empty selection
-      // would mean "fetch nothing" which is never the user's intent.
-      return next.length === 0 ? current : next;
-    });
-  };
 
   useEffect(() => {
     const next = new URLSearchParams(searchParams);
@@ -129,15 +91,10 @@ export default function FailureClusters() {
     else next.delete('from');
     if (dateRange.to) next.set('to', dateRange.to);
     else next.delete('to');
-    const isDefaultStrategies =
-      strategies.length === DEFAULT_STRATEGIES.length &&
-      DEFAULT_STRATEGIES.every((s) => strategies.includes(s));
-    if (isDefaultStrategies) next.delete('strategies');
-    else next.set('strategies', strategies.join(','));
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [project, dateRange, strategies, searchParams, setSearchParams]);
+  }, [project, dateRange, searchParams, setSearchParams]);
 
   const queryUrl = useMemo(() => {
     const params: Record<string, string> = {};
@@ -145,23 +102,15 @@ export default function FailureClusters() {
     if (dateRange.from) params.from = dateRange.from;
     if (dateRange.to) params.to = dateRange.to;
     if (reportId) params.reportId = reportId;
-    // Always forward an explicit list — the backend default omits 'signature'
-    // and would otherwise return a narrower set than the user sees selected.
-    if (strategies.length > 0) {
-      params.strategies = strategies.join(',');
-    }
     return buildUrl('/api/analytics/failure-clusters', params);
-  }, [project, dateRange.from, dateRange.to, reportId, strategies]);
+  }, [project, dateRange.from, dateRange.to, reportId]);
 
-  const strategiesKey = strategies.join(',');
   const { data, error, isLoading, isFetching } = useQuery<ClusterReportEnvelope>(queryUrl, {
-    dependencies: [project, dateRange.from, dateRange.to, reportId, strategiesKey],
+    dependencies: [project, dateRange.from, dateRange.to, reportId],
     select: (raw: unknown) => raw as ClusterReportEnvelope,
-    staleTime: 30_000,
+    staleTime: 20_000,
   });
 
-  // Fetch the scoping report's basic info so we can give the user something
-  // concrete (e.g. "Report #42") instead of an unexplained "Scoped to a report" badge.
   const { data: scopingReport } = useQuery<ReportHistory>(`/api/report/${reportId}`, {
     enabled: !!reportId,
     dependencies: [reportId],
@@ -193,7 +142,8 @@ export default function FailureClusters() {
     <div className="w-full">
       <h1 className={`${title()} mb-2`}>Failure clusters</h1>
       <p className={`${subtitle()} mb-2`}>
-        Groups of failing tests likely caused by the same underlying defect.
+        Groups of failing tests likely caused by the same underlying defect. Each cluster has one
+        anchor — fixture, selector, frame, or unmatched — pointing at where to fix.
       </p>
       {reportId && scopeLabel && (
         <p className="text-sm text-muted-foreground mb-6">
@@ -211,42 +161,6 @@ export default function FailureClusters() {
             className="w-56"
           />
           <DateRangeSelect selectedRange={dateRange} onSelect={setDateRange} disablePersistence />
-          <div className="flex flex-col gap-1.5">
-            <Label>Strategies</Label>
-            <TooltipProvider delayDuration={200}>
-              <div className="flex flex-wrap gap-3 pb-2">
-                {ALL_STRATEGIES.map((s) => {
-                  const id = `cluster-strategy-${s}`;
-                  return (
-                    <div key={s} className="flex items-center gap-1.5 text-sm">
-                      <Checkbox
-                        id={id}
-                        checked={strategies.includes(s)}
-                        onCheckedChange={() => toggleStrategy(s)}
-                      />
-                      <Label htmlFor={id} className="cursor-pointer font-normal">
-                        {STRATEGY_SHORT_LABELS[s]}
-                      </Label>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            aria-label={`What is ${STRATEGY_SHORT_LABELS[s]}?`}
-                            className="text-muted-foreground hover:text-foreground"
-                          >
-                            <HelpCircle className="h-3.5 w-3.5" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-xs">
-                          {STRATEGY_DESCRIPTIONS[s]}
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                  );
-                })}
-              </div>
-            </TooltipProvider>
-          </div>
         </CardContent>
       </Card>
 
@@ -268,11 +182,11 @@ function EmptyState({ reportScoped }: { reportScoped: boolean }) {
     <Card>
       <CardContent className="py-12 text-center text-muted-foreground">
         <Users className="h-10 w-10 mx-auto mb-3 opacity-50" />
-        <div className="text-lg">No failure clusters found</div>
+        <div className="text-lg">No failure clusters in this window</div>
         <div className="text-sm mt-2 max-w-md mx-auto">
           {reportScoped
-            ? "None of this report's failed tests share a known failure pattern with other tests."
-            : 'Adjust the project, date range, or strategy selection to broaden the search.'}
+            ? "None of this report's failed tests overlap with any active cluster."
+            : 'Adjust the project or date range to broaden the search.'}
         </div>
       </CardContent>
     </Card>
@@ -280,61 +194,82 @@ function EmptyState({ reportScoped }: { reportScoped: boolean }) {
 }
 
 function ClusterList({ clusters, reportId }: { clusters: FailureCluster[]; reportId?: string }) {
+  const actionable = clusters.filter((c) => c.anchor.kind !== 'unmatched');
+  const unmatched = clusters.filter((c) => c.anchor.kind === 'unmatched');
   return (
     <Accordion type="multiple" className="space-y-3">
-      {clusters.map((cluster) => (
+      {actionable.map((cluster) => (
         <ClusterCard key={cluster.id} cluster={cluster} reportId={reportId} />
       ))}
+      {unmatched.length > 0 && (
+        <div className="pt-2">
+          <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2 px-1">
+            Unmatched failures ({unmatched.length}) — no extractable mechanism
+          </div>
+          {unmatched.map((cluster) => (
+            <ClusterCard key={cluster.id} cluster={cluster} reportId={reportId} />
+          ))}
+        </div>
+      )}
     </Accordion>
   );
 }
 
 function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?: string }) {
-  const variantCount = cluster.variants?.length ?? 0;
-  const variantLabel = describeVariants(cluster.variants);
+  const kind = cluster.anchor.kind;
   return (
     <Card>
       <AccordionItem value={cluster.id} className="border-b-0">
         <AccordionTrigger className="px-6 hover:no-underline">
           <div className="flex flex-1 flex-col items-start gap-1 text-left">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="gap-1">
-                <GitMerge className="h-3 w-3" />
-                {STRATEGY_LABELS[cluster.strategy]}
-              </Badge>
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="outline" className="gap-1 cursor-help">
+                      <GitMerge className="h-3 w-3" />
+                      {KIND_LABELS[kind]}
+                      <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs">
+                    {KIND_DESCRIPTIONS[kind]}
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant={
+                        cluster.confidence === 'high'
+                          ? 'default'
+                          : cluster.confidence === 'medium'
+                            ? 'secondary'
+                            : 'outline'
+                      }
+                      className="text-xs cursor-help"
+                    >
+                      {CONFIDENCE_LABELS[cluster.confidence]}
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs">
+                    {CONFIDENCE_TOOLTIP[cluster.confidence]}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               {cluster.category && (
                 <Badge variant="secondary" className="font-mono text-xs">
                   {cluster.category}
                 </Badge>
               )}
-              {cluster.evidence.secondaryEvidence?.map((evidence) => (
-                <Badge key={evidence.strategy} variant="outline" className="text-xs">
-                  also: {STRATEGY_SHORT_LABELS[evidence.strategy].toLowerCase()}
-                  {evidence.count > 1 ? ` ×${evidence.count}` : ''}
-                </Badge>
-              ))}
             </div>
             <CardTitle className="text-base font-medium leading-snug">{cluster.name}</CardTitle>
             <div className="text-sm text-muted-foreground">
-              <span className="font-semibold text-foreground">{cluster.testCount}</span> tests ·{' '}
-              <span className="font-semibold text-foreground">{cluster.failureCount}</span> failures
-              {cluster.strategy === 'unclustered' ? (
-                <>
-                  {' '}
-                  · <span className="text-foreground">no shared failure pattern</span>
-                </>
-              ) : (
-                <>
-                  {' '}
-                  · <span className="text-foreground">assuming same root cause</span>
-                </>
-              )}
+              <span className="font-semibold text-foreground">{cluster.testCount}</span> test
+              {cluster.testCount === 1 ? '' : 's'} ·{' '}
+              <span className="font-semibold text-foreground">{cluster.failureCount}</span> failure
+              {cluster.failureCount === 1 ? '' : 's'}
             </div>
-            {variantCount > 0 && (
-              <div className="text-xs text-muted-foreground">
-                {variantCount} {variantLabel} grouped — expand for details
-              </div>
-            )}
+            <AnchorDetail anchor={cluster.anchor} />
           </div>
         </AccordionTrigger>
         <AccordionContent className="px-6 pb-6">
@@ -345,34 +280,46 @@ function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?
   );
 }
 
-function describeVariants(variants: FailureClusterVariant[] | undefined): string {
-  if (!variants || variants.length === 0) return 'variants';
-  const strategies = new Set(variants.map((v) => v.strategy));
-  const noun = variants.length === 1 ? 'variant' : 'variants';
-  if (strategies.size === 1) {
-    const only = strategies.values().next().value as ClusterStrategy;
-    return `${STRATEGY_SHORT_LABELS[only].toLowerCase()} ${noun}`;
+function AnchorDetail({ anchor }: { anchor: ClusterAnchor }) {
+  switch (anchor.kind) {
+    case 'fixture':
+      return (
+        <div className="text-xs text-muted-foreground font-mono">
+          {anchor.phase} hook · {anchor.filePath}
+        </div>
+      );
+    case 'selector':
+      return (
+        <div className="text-xs text-muted-foreground font-mono break-all">
+          verb: <span className="text-foreground">{anchor.verb}</span> · selector:{' '}
+          <span className="text-foreground">{anchor.selector}</span>
+        </div>
+      );
+    case 'frame':
+      return (
+        <div className="text-xs text-muted-foreground font-mono">
+          verb: <span className="text-foreground">{anchor.verb}</span> · at{' '}
+          <span className="text-foreground">{anchor.frame}</span>
+        </div>
+      );
+    case 'unmatched':
+      return null;
   }
-  return noun;
 }
 
 function ClusterBody({ cluster, reportId }: { cluster: FailureCluster; reportId?: string }) {
-  const variants = cluster.variants ?? [];
   return (
     <div className="space-y-4">
       {cluster.sampleMessage && (
         <div>
           <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
-            {cluster.strategy === 'temporal'
-              ? 'One example error (errors differ across tests)'
-              : 'Sample error'}
+            Sample error
           </div>
           <pre className="bg-muted rounded p-3 text-xs whitespace-pre-wrap break-words font-mono">
             {cluster.sampleMessage}
           </pre>
         </div>
       )}
-      {variants.length > 0 && <ClusterVariants variants={variants} />}
       <div>
         <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
           Tests in this cluster
@@ -387,34 +334,6 @@ function ClusterBody({ cluster, reportId }: { cluster: FailureCluster; reportId?
           ))}
         </ul>
       </div>
-    </div>
-  );
-}
-
-function ClusterVariants({ variants }: { variants: FailureClusterVariant[] }) {
-  return (
-    <div>
-      <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
-        Variants grouped into this cluster
-      </div>
-      <ul className="space-y-2">
-        {variants.map((variant) => (
-          <li
-            key={variant.id}
-            className="rounded border border-border bg-muted/40 p-3 text-sm space-y-1"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="text-xs">
-                {STRATEGY_SHORT_LABELS[variant.strategy]}
-              </Badge>
-              <span className="text-muted-foreground text-xs">
-                {variant.testCount} tests · {variant.failureCount} failures
-              </span>
-            </div>
-            <div className="font-medium leading-snug break-words">{variant.name}</div>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
@@ -460,43 +379,12 @@ function ClusterTestRow({ test, highlight }: { test: ClusterTest; highlight: boo
         <Badge variant="outline" className="text-xs">
           {test.project}
         </Badge>
-        {test.matchedOn.map((strategy) => (
-          <Badge key={strategy} variant="secondary" className="text-xs">
-            {STRATEGY_SHORT_LABELS[strategy].toLowerCase()}
-          </Badge>
-        ))}
         {highlight && (
           <span className="text-xs text-muted-foreground">{test.occurrences} occurrences</span>
         )}
       </div>
       {test.filePath && (
         <div className="text-xs text-muted-foreground font-mono mt-0.5">{test.filePath}</div>
-      )}
-      {test.fellowTravellers.length > 0 && (
-        <div className="mt-2 text-sm">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
-            Previously failing alongside
-          </div>
-          <ul className="space-y-0.5">
-            {test.fellowTravellers.map((fellow: ClusterFellowTraveller) => (
-              <li
-                key={`${fellow.project}-${fellow.fileId}-${fellow.testId}`}
-                className="text-sm text-muted-foreground"
-              >
-                <TestTitleLink
-                  title={fellow.title}
-                  testId={fellow.testId}
-                  reportUrl={fellow.lastReportUrl}
-                  className="text-sm"
-                />{' '}
-                <span className="text-xs">
-                  ({fellow.jointFailureCount} of {test.occurrences} runs,{' '}
-                  {Math.round(fellow.jointFailureRate * 100)}%)
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
       )}
     </li>
   );

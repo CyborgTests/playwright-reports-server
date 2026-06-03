@@ -1,24 +1,91 @@
-export type ClusterStrategy =
-  | 'signature'
-  | 'stack-frame'
-  | 'fixture'
-  | 'selector'
-  | 'temporal'
-  | 'unclustered';
+/**
+ * Failure-clustering types.
+ *
+ * Each failed Playwright test_run is assigned to exactly one cluster via a
+ * deterministic anchor. Two failures share a cluster iff their anchors are
+ * equal. There is no merging, no precedence resolution, no temporal/signature
+ * grouping — the anchor IS the cluster. This produces:
+ *  - Stable cluster IDs across calls (id = hash(anchor)).
+ *  - "One cluster = one fix" semantics by construction.
+ *  - A small, named set of cluster kinds the LLM/UI can branch on.
+ */
 
 export type FixturePhase = 'beforeAll' | 'beforeEach' | 'afterAll' | 'afterEach';
 
-export interface ClusterFellowTraveller {
-  testId: string;
-  fileId: string;
-  project: string;
-  title: string;
-  filePath?: string;
-  jointFailureCount: number;
-  jointFailureRate: number;
-  lastReportId?: string;
-  lastReportUrl?: string;
-}
+export type PlaywrightVerb =
+  // Locator assertions
+  | 'toBeVisible'
+  | 'toBeHidden'
+  | 'toBeAttached'
+  | 'toBeEnabled'
+  | 'toBeDisabled'
+  | 'toBeChecked'
+  | 'toBeEmpty'
+  | 'toBeFocused'
+  | 'toHaveText'
+  | 'toHaveValue'
+  | 'toHaveCount'
+  | 'toHaveAttribute'
+  | 'toHaveClass'
+  | 'toContainText'
+  // Page assertions
+  | 'toHaveURL'
+  | 'toHaveTitle'
+  // Value assertions
+  | 'toBe'
+  | 'toEqual'
+  | 'toMatch'
+  | 'toMatchObject'
+  | 'toContain'
+  | 'toBeTruthy'
+  | 'toBeFalsy'
+  // Locator actions
+  | 'click'
+  | 'fill'
+  | 'press'
+  | 'type'
+  | 'check'
+  | 'uncheck'
+  | 'hover'
+  | 'focus'
+  | 'blur'
+  | 'selectOption'
+  | 'setInputFiles'
+  | 'dragTo'
+  | 'screenshot'
+  | 'waitFor'
+  // Page actions
+  | 'goto'
+  | 'reload'
+  | 'waitForURL'
+  | 'waitForSelector'
+  | 'waitForLoadState'
+  // Strict-mode violation isn't a verb but a class of failure; tagged
+  // explicitly because the fix is selector-disambiguation.
+  | 'strictModeViolation'
+  // Bare `Test timeout of Nms exceeded.` with no verb context.
+  | 'testTimeout'
+  // Couldn't classify — anchor falls back to test identity.
+  | 'unknown';
+
+/**
+ * The anchor uniquely identifies a cluster. Discriminated union by `kind`.
+ * Priority during classification: fixture > selector > frame > unmatched.
+ */
+export type ClusterAnchor =
+  | { kind: 'fixture'; verb: PlaywrightVerb; phase: FixturePhase; filePath: string }
+  | { kind: 'selector'; verb: PlaywrightVerb; selector: string }
+  | { kind: 'frame'; verb: PlaywrightVerb; frame: string }
+  | {
+      kind: 'unmatched';
+      testId: string;
+      fileId: string;
+      project: string;
+    };
+
+export type ClusterAnchorKind = ClusterAnchor['kind'];
+
+export type ClusterConfidence = 'high' | 'medium' | 'low';
 
 export interface ClusterTest {
   testId: string;
@@ -28,74 +95,31 @@ export interface ClusterTest {
   filePath?: string;
   occurrences: number;
   lastSeen: string;
-  fellowTravellers: ClusterFellowTraveller[];
-  /** Strategies whose evidence placed this test in the cluster. The cluster's
-   *  primary strategy is always present; additional entries are added when a
-   *  test was independently matched by a folded-in cluster during merge. */
-  matchedOn: ClusterStrategy[];
-  /** Most recent reportId where this test failed in the cluster — used to
-   *  link to the served Playwright HTML report. */
   lastReportId?: string;
-  /** Direct URL to the served Playwright HTML report for `lastReportId`. */
   lastReportUrl?: string;
-}
-
-export interface SecondaryEvidence {
-  strategy: ClusterStrategy;
-  count: number;
-}
-
-export interface ClusterEvidence {
-  signature?: string;
-  stackFrame?: string;
-  fixturePhase?: FixturePhase;
-  selector?: string;
-  coFailureRate?: number;
-  secondaryEvidence?: SecondaryEvidence[];
-}
-
-/** A subsumed cluster preserved on the winner — captured during merge so the
- *  UI can show "N variants grouped" inside the parent card. Doesn't carry its
- *  own tests array (those are already represented in the parent's tests). */
-export interface FailureClusterVariant {
-  id: string;
-  strategy: ClusterStrategy;
-  name: string;
-  sampleMessage: string;
-  testCount: number;
-  failureCount: number;
-  evidence: ClusterEvidence;
 }
 
 export interface FailureCluster {
   id: string;
-  strategy: ClusterStrategy;
+  anchor: ClusterAnchor;
   name: string;
   sampleMessage: string;
   category?: string;
+  confidence: ClusterConfidence;
   testCount: number;
   failureCount: number;
-  evidence: ClusterEvidence;
   tests: ClusterTest[];
-  /** Clusters from other strategies that overlapped with this one during merge
-   *  (≥50% of their tests covered by this cluster). Populated when subsumption
-   *  picks the larger cluster as the winner. */
-  variants?: FailureClusterVariant[];
 }
 
 export interface ClusterReport {
   clusters: FailureCluster[];
   totalFailures: number;
   windowDays?: number;
-  strategiesRun: ClusterStrategy[];
 }
 
 export interface ClusterOptions {
   project?: string;
   from?: string;
   to?: string;
-  minTests?: number;
-  strategies?: ClusterStrategy[];
   reportId?: string;
-  includeUnclustered?: boolean;
 }
