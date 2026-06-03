@@ -1,7 +1,7 @@
 ---
 name: playwright-reports
 description: Access Playwright Reports Server data for failing tests, flakiness, and historical run analysis. Use when the user mentions a failing test, flakiness, a `.spec.ts` file under suspicion, asks "what failed in the last run", asks "why is X failing", passes a reportId from CI, or asks any aggregate/digest question about test runs over a time window ("what's flaky this week", "how did staging do yesterday", "compare last two reports").
-allowed-tools: Bash(pwrs-cli test:*), Bash(pwrs-cli report:*), Bash(pwrs-cli cluster:*), Bash(pwrs-cli project:*), Bash(pwrs-cli tag:*), Bash(pwrs-cli category:*), Bash(pwrs-cli stats:*), Bash(pwrs-cli ping:*), Bash(pwrs-cli attachment:*), Bash(pwrs-cli help:*), Bash(pwrs-cli --help), Bash(pwrs-cli --version), Bash(pwrs-cli config get:*)
+allowed-tools: Bash(pwrs-cli test:*), Bash(pwrs-cli report:*), Bash(pwrs-cli cluster:*), Bash(pwrs-cli project:*), Bash(pwrs-cli tag:*), Bash(pwrs-cli category:*), Bash(pwrs-cli stats:*), Bash(pwrs-cli ping:*), Bash(pwrs-cli attachment:*), Bash(pwrs-cli help:*), Bash(pwrs-cli --help), Bash(pwrs-cli --version)
 ---
 
 # Playwright Reports — Test Context
@@ -53,7 +53,9 @@ Compact `report brief` is ~5 KB even for a 50-failure report — every cluster i
 
 `report summary` returns `{ hasFailures, pendingAnalysisCount, summary }` where `summary.llmSummaryStructured` (when present) is typed JSON: `{ verdict: 'isolated' | 'clustered' | 'widespread' | 'systemic', summary: <1–3 sentence executive summary>, sections: [{ heading, body, impact?, codeRefs[] }] }`. Read `verdict` first — `widespread`/`systemic` means the run is broken at a layer above any single test. `sections[].codeRefs` are pre-resolved `{ kind: 'test' | 'file', testId?, fileId?, filePath?, line? }` pointers so you can jump straight to the implicated tests/files.
 
-**When a cluster has N tests, fix the cluster once — don't iterate.** Use
+**When a cluster has N tests, fix the cluster once — don't iterate.** Each
+cluster has an `anchor` (the deterministic fix target — see "What failure
+clusters are active?" below). Fix at the anchor, not per-test. Use
 `pwrs-cli cluster brief <clusterId>` to get every member's brief at once.
 
 **You want the per-run history of one test** →
@@ -98,10 +100,16 @@ pwrs-cli project summary [--project <p>]     # persisted LLM project health summ
 
 **"What failure clusters are active?"** →
 ```
-pwrs-cli cluster list [--project <p>] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--strategies signature,stack-frame,fixture,temporal] [--min-tests N] [--limit N]
+pwrs-cli cluster list [--project <p>] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N]
 pwrs-cli cluster brief <clusterId>      # drill into one cluster
 ```
-`cluster list` returns highest-blast-radius first (testCount × failureCount). Same fix-the-cluster-not-the-test rule applies.
+`cluster list` returns highest-blast-radius first (failureCount × testCount). Each cluster has a typed `anchor` — the precise "what to fix" handle — discriminated by `anchor.kind`:
+- `fixture` → `{verb, phase, filePath}` — a `beforeAll`/`beforeEach`/`afterAll`/`afterEach` hook failed and cascaded to every member test. Fix the hook once.
+- `selector` → `{verb, selector}` — N tests share a failing Playwright locator (`aria-label` / `role` / `css`). Usually one UI drift breaking many tests across files. Fix the selector or the element.
+- `frame` → `{verb, frame}` — N tests crash at the same `file:line` of app code. The frame is the literal fix location.
+- `unmatched` → `{testId, fileId, project}` — no extractable shared mechanism. Treat as a single-test failure; the cluster exists only to group repeated occurrences of the same test.
+
+Each cluster also carries `confidence: 'high' | 'medium' | 'low'`. Use it to pick where to start. Same fix-the-cluster-not-the-test rule applies — fix at the anchor.
 
 **"What changed between these two reports?"** →
 ```
@@ -119,7 +127,8 @@ Returns `{ summary, newlyFailed, fixed, stillFailing, flakyToPass, passToFlaky, 
 - `feedback` present → read it first; it overrides everything else
 - `llmAnalysis.rootCause` present → start from this hypothesis, don't re-derive. For the unmodified full markdown (e.g. when the regex-split lost a section), use `pwrs-cli test analysis <testId>`. To inspect the exact prompt+response we sent, use `test analysis-prompt <testId> --report-id <reportId>`. To bypass the LLM entirely and reason from raw evidence (codeframe, step tree, ARIA snapshot, console/network/action logs, git+CI), use `test failure-context <testId> --report-id <reportId>`.
 - `llmAnalysis: null` *with* a failing run → analysis hasn't been generated. Pull `pwrs-cli test failure-context <testId> --report-id <reportId>` and reason from the `evidence` envelope yourself rather than waiting.
-- `cluster` present → **fix the cluster, not the test** — every member resolves together
+- `cluster` present → **fix at the `cluster.anchor`, not the test** — `cluster.kind` (fixture / selector / frame / unmatched) tells you the fix shape; every member resolves together
+- `otherClusters` non-empty → this test has failed under multiple anchors over time. `cluster` is the primary (latest-failure) cluster; `otherClusters` are historical references — useful for "has this test broken in different ways?" but secondary to the primary
 - **Before assuming it's *your* test, check the report-level verdict.** `pwrs-cli report summary <reportId>` → `summary.llmSummaryStructured.verdict`: `widespread`/`systemic` means fix the run (infra, fixtures, deploy), not the test. For multi-day patterns, escalate one more level: `pwrs-cli project summary [--project <p>]` → `summary.structured.verdict` (`healthy` / `stabilizing` / `degrading` / `failing`).
 - `latestFailure.attachments.screenshotUrl` → fetch the PNG for UI failures
 - `latestFailure.attachments.errorContextUrl` → fetch the markdown (DOM snapshot + recent actions + console — Playwright generates this for AI agents)
@@ -147,13 +156,8 @@ All time-windowed commands take `--from` / `--to` as ISO dates (`YYYY-MM-DD`
 or full ISO timestamp). For relative time periods, compute `--from` and
 `--to` correspondingly. **There is no `--since` flag** — always pass explicit ranges.
 
-## Setup (one-time, by the user)
+## Setup
 
-```
-pwrs-cli config set server https://reports.example.com
-pwrs-cli config set token <api-token>
-```
-Or `PWRS_SERVER_URL` / `PWRS_API_TOKEN` env vars (override the saved config).
-
-For single-project setups, export `PWRS_PROJECT=<name>` to default `--project`
-across every command (explicit `--project` still wins).
+One-time setup (server URL, API token, default project) is performed by the
+user — see `setup.md` next to this file. The model only needs that file
+if the user explicitly asks about configuring `pwrs-cli`.
