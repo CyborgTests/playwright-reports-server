@@ -565,7 +565,6 @@ async function buildTestBrief(
       ? testDb.getFailureHistory(
           testId,
           fileId,
-          project,
           latestFailedRun.errorSignature,
           '' // include the current report — we want the full count
         )

@@ -854,16 +854,16 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   });
 
   // GET /api/llm/test-history - Phase 2: failure-occurrence history for a test by errorSignature.
-  // Same identity rules as /related: (testId+fileId+project+errorSignature) or (testId+reportId).
+  // Matched by (testId + fileId + errorSignature) — project is intentionally not part of the key
+  // so the same test failing under different projects/shards rolls up into one history.
   fastify.get('/api/llm/test-history', async (request, reply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
     if (authResult) return;
 
-    const { testId, reportId, fileId, project, errorSignature } = request.query as {
+    const { testId, reportId, fileId, errorSignature } = request.query as {
       testId?: string;
       reportId?: string;
       fileId?: string;
-      project?: string;
       errorSignature?: string;
     };
     if (!testId) {
@@ -871,10 +871,9 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     }
 
     let resolvedFileId = fileId;
-    let resolvedProject = project;
     let resolvedSignature = errorSignature;
     const excludeReportId = reportId ?? '';
-    if ((!resolvedFileId || !resolvedProject || !resolvedSignature) && reportId) {
+    if ((!resolvedFileId || !resolvedSignature) && reportId) {
       const resolved = resolveTestRun(testId, reportId);
       if (!resolved) {
         return reply.send({
@@ -883,10 +882,9 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         });
       }
       resolvedFileId = resolvedFileId ?? resolved.fileId;
-      resolvedProject = resolvedProject ?? resolved.project;
       resolvedSignature = resolvedSignature ?? resolved.errorSignature;
     }
-    if (!resolvedFileId || !resolvedProject || !resolvedSignature) {
+    if (!resolvedFileId || !resolvedSignature) {
       // No signature → cannot identify recurrence. Return empty history (treated as "new").
       return reply.send({
         success: true,
@@ -897,7 +895,6 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     const history = testDb.getFailureHistory(
       testId,
       resolvedFileId,
-      resolvedProject,
       resolvedSignature,
       excludeReportId
     );

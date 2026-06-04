@@ -1370,7 +1370,6 @@ export class TestDatabase {
   public getFailureHistory(
     testId: string,
     fileId: string,
-    project: string,
     errorSignature: string,
     excludeReportId: string
   ): {
@@ -1388,10 +1387,10 @@ export class TestDatabase {
     const countRow = this.db
       .prepare(
         `SELECT COUNT(*) AS c FROM test_runs
-         WHERE testId = ? AND fileId = ? AND project = ?
+         WHERE testId = ? AND fileId = ?
            AND error_signature = ? AND reportId != ?`
       )
-      .get(testId, fileId, project, errorSignature, excludeReportId) as { c: number };
+      .get(testId, fileId, errorSignature, excludeReportId) as { c: number };
     // Join with reports so the UI can display the user-friendly number + title
     // instead of a sliced UUID. Left-join is unnecessary — every test_run
     // FK-points at an existing report row.
@@ -1400,12 +1399,12 @@ export class TestDatabase {
         `SELECT tr.reportId, tr.createdAt, r.displayNumber, r.title
          FROM test_runs tr
          JOIN reports r ON r.reportID = tr.reportId
-         WHERE tr.testId = ? AND tr.fileId = ? AND tr.project = ?
+         WHERE tr.testId = ? AND tr.fileId = ?
            AND tr.error_signature = ? AND tr.reportId != ?
          ORDER BY tr.createdAt ASC
          LIMIT 1`
       )
-      .get(testId, fileId, project, errorSignature, excludeReportId) as
+      .get(testId, fileId, errorSignature, excludeReportId) as
       | { reportId: string; createdAt: string; displayNumber: number | null; title: string | null }
       | undefined;
     return {
