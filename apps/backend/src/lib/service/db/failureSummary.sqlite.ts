@@ -168,6 +168,14 @@ export class FailureSummaryDatabase {
     this.deleteStmt.run(reportId);
   }
 
+  public deleteSummariesByReportIds(reportIds: string[]): void {
+    if (reportIds.length === 0) return;
+    const placeholders = reportIds.map(() => '?').join(',');
+    this.db
+      .prepare(`DELETE FROM report_failure_summaries WHERE reportId IN (${placeholders})`)
+      .run(...reportIds);
+  }
+
   /**
    * Aggregate failure categories and top error groups directly from `test_runs`.
    * Gives us:
@@ -216,6 +224,11 @@ export class FailureSummaryDatabase {
       params.push(opts.to);
     }
 
+    // Cap the working set so a wide window on a busy project can't materialize
+    // an unbounded result list into memory. The aggregate is still correct for
+    // the most recent failures; categories beyond the cap are dropped — which
+    // matches what the UI shows anyway (it slices to `limit` top groups).
+    const MAX_ROWS_SCANNED = 20_000;
     const sql = `
       SELECT testId, fileId, project, reportId, failure_category as category,
              error_signature as signature, error_signature_global as signatureGlobal,
@@ -223,6 +236,7 @@ export class FailureSummaryDatabase {
       FROM test_runs
       WHERE ${conditions.join(' AND ')}
       ORDER BY createdAt DESC
+      LIMIT ${MAX_ROWS_SCANNED}
     `;
     const rows = this.db.prepare(sql).all(...params) as Array<{
       testId: string;

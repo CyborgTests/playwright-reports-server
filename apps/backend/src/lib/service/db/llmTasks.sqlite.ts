@@ -515,6 +515,12 @@ export class LlmTasksDatabase {
     this.deleteByReportStmt.run(reportId);
   }
 
+  public deleteByReportIds(reportIds: string[]): void {
+    if (reportIds.length === 0) return;
+    const placeholders = reportIds.map(() => '?').join(',');
+    this.db.prepare(`DELETE FROM llm_tasks WHERE reportId IN (${placeholders})`).run(...reportIds);
+  }
+
   public updatePrompt(id: string, prompt: string, estimatedInputTokens: number): void {
     this.db
       .prepare('UPDATE llm_tasks SET prompt = ?, inputTokens = ? WHERE id = ?')

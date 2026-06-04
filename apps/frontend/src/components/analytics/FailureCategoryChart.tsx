@@ -1,5 +1,6 @@
 'use client';
 
+import { memo, useMemo } from 'react';
 import {
   Bar,
   BarChart,
@@ -41,12 +42,15 @@ const categoryColors: Record<string, string> = {
   unknown: 'hsl(220, 10%, 60%)',
 };
 
-export function FailureCategoryChart({
+function FailureCategoryChartImpl({
   categories,
   totalFailures,
   isLoading,
 }: Readonly<FailureCategoryChartProps>) {
-  const chartData = (categories ?? []).filter((c) => c.count > 0).sort((a, b) => b.count - a.count);
+  const chartData = useMemo(
+    () => (categories ?? []).filter((c) => c.count > 0).sort((a, b) => b.count - a.count),
+    [categories]
+  );
 
   const CustomTooltip = ({
     active,
@@ -143,3 +147,5 @@ export function FailureCategoryChart({
     </Card>
   );
 }
+
+export const FailureCategoryChart = memo(FailureCategoryChartImpl);

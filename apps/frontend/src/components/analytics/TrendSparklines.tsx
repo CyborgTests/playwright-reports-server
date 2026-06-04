@@ -1,6 +1,7 @@
 'use client';
 
 import type { TrendMetrics } from '@playwright-reports/shared';
+import { memo } from 'react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -41,7 +42,7 @@ function SparklineCard({
   );
 }
 
-export function TrendSparklines({
+function TrendSparklinesImpl({
   metrics,
   isLoading,
   onSlowClick,
@@ -177,3 +178,5 @@ export function TrendSparklines({
     </div>
   );
 }
+
+export const TrendSparklines = memo(TrendSparklinesImpl);

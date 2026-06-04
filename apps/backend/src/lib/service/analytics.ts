@@ -352,15 +352,13 @@ export class AnalyticsService {
   private async calculatePreviousPassRate(reports: BackendReportHistory[]): Promise<number> {
     if (reports.length === 0) return 0;
 
-    const totalExecuted = reports.reduce(
-      (sum, report) =>
-        sum +
-        (report.stats?.expected || 0) +
-        (report.stats?.unexpected || 0) +
-        (report.stats?.flaky || 0),
-      0
-    );
-    const totalPassed = reports.reduce((sum, report) => sum + (report.stats?.expected || 0), 0);
+    let totalExecuted = 0;
+    let totalPassed = 0;
+    for (const report of reports) {
+      const expected = report.stats?.expected || 0;
+      totalPassed += expected;
+      totalExecuted += expected + (report.stats?.unexpected || 0) + (report.stats?.flaky || 0);
+    }
 
     return totalExecuted > 0 ? (totalPassed / totalExecuted) * 100 : 0;
   }
@@ -381,38 +379,20 @@ export class AnalyticsService {
   }
 
   async getTestTrends(testId: string, projectName?: string): Promise<StepTimingTrend | null> {
-    const testReports = reportDb.getReportHistoryByTestId(testId, projectName);
+    const trendRuns = testDb.getDurationTrend(testId, projectName);
 
-    if (!testReports.length) {
+    if (trendRuns.length === 0) {
       return null;
     }
 
-    const runs: Array<{ runId: string; runDate: Date; duration: number; isOutlier: boolean }> = [];
-    const durations: number[] = [];
+    const runs = trendRuns.map((r) => ({
+      runId: r.reportId,
+      runDate: new Date(r.createdAt),
+      duration: r.duration,
+      isOutlier: false,
+    }));
+    const durations = trendRuns.map((r) => r.duration).sort((a, b) => a - b);
 
-    for (const report of testReports) {
-      for (const file of report.files || []) {
-        for (const test of file.tests || []) {
-          const currentTestId = test.testId || `${file.fileName}:${test.title}`;
-
-          if (currentTestId === testId && test.duration) {
-            durations.push(test.duration);
-            runs.push({
-              runId: report.reportID,
-              runDate: new Date(report.createdAt),
-              duration: test.duration,
-              isOutlier: false,
-            });
-          }
-        }
-      }
-    }
-
-    if (durations.length === 0) {
-      return null;
-    }
-
-    durations.sort((a, b) => a - b);
     const mean = durations.reduce((sum, d) => sum + d, 0) / durations.length;
     const median =
       durations.length % 2 === 0
@@ -429,20 +409,7 @@ export class AnalyticsService {
     const p95Index = Math.floor(durations.length * 0.95);
     const p99Index = Math.floor(durations.length * 0.99);
 
-    let testName = 'Unknown Test';
-    for (const report of testReports) {
-      for (const file of report.files || []) {
-        for (const test of file.tests || []) {
-          const currentTestId = test.testId || `${file.fileName}:${test.title}`;
-          if (currentTestId === testId && test.title) {
-            testName = test.title;
-            break;
-          }
-        }
-        if (testName !== 'Unknown Test') break;
-      }
-      if (testName !== 'Unknown Test') break;
-    }
+    const testName = testDb.getTestTitle(testId, projectName) ?? 'Unknown Test';
 
     return {
       stepId: testId,

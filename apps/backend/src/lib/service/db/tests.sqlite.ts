@@ -123,7 +123,6 @@ export class TestDatabase {
   private readonly deleteTestRunsStmt: Database.Statement<[string, string, string]>;
 
   private readonly getTestStatsStmt: Database.Statement<[string, string, string]>;
-  private readonly deleteTestRunsByReportIdStmt: Database.Statement<[string]>;
   private readonly updateFlakinessScoreStmt: Database.Statement<[number, string]>;
   private readonly refreshTestStatStmt: Database.Statement<{
     testId: string;
@@ -221,47 +220,50 @@ export class TestDatabase {
       WHERE testId = ? AND fileId = ? AND project = ?
     `);
 
-    this.deleteTestRunsByReportIdStmt = this.db.prepare(`
-      DELETE FROM test_runs WHERE reportId = ?
-    `);
-
     this.updateFlakinessScoreStmt = this.db.prepare(`
       UPDATE test_runs SET flakinessScore = ? WHERE runId = ?
     `);
 
     this.refreshTestStatStmt = this.db.prepare(`
+      WITH recent AS (
+        SELECT outcome, duration, createdAt
+        FROM test_runs
+        WHERE testId=:testId AND fileId=:fileId AND project=:project
+        ORDER BY createdAt DESC
+        LIMIT 50
+      ),
+      latest_ns AS (
+        SELECT flakinessScore, quarantined, quarantineReason, createdAt, failure_category
+        FROM test_runs
+        WHERE testId=:testId AND fileId=:fileId AND project=:project
+          AND outcome != 'skipped'
+        ORDER BY createdAt DESC
+        LIMIT 1
+      ),
+      totals AS (
+        SELECT COUNT(*) AS totalRuns, MAX(createdAt) AS latestRunAt
+        FROM test_runs
+        WHERE testId=:testId AND fileId=:fileId AND project=:project
+      ),
+      recent_agg AS (
+        SELECT
+          CAST(SUM(CASE WHEN outcome IN ('expected','passed') THEN 1 ELSE 0 END) AS REAL)
+            / NULLIF(COUNT(*), 0) AS recentPassRate,
+          AVG(CASE WHEN duration >= 0 THEN duration END) AS avgDuration,
+          (SELECT outcome FROM recent ORDER BY createdAt DESC LIMIT 1) AS latestOutcome
+        FROM recent
+      )
       UPDATE tests SET
-        totalRuns = (SELECT COUNT(*) FROM test_runs
-          WHERE testId=:testId AND fileId=:fileId AND project=:project),
-        latestRunAt = (SELECT MAX(createdAt) FROM test_runs
-          WHERE testId=:testId AND fileId=:fileId AND project=:project),
-        latestOutcome = (SELECT outcome FROM test_runs
-          WHERE testId=:testId AND fileId=:fileId AND project=:project
-          ORDER BY createdAt DESC LIMIT 1),
-        latestNonSkippedAt = (SELECT MAX(createdAt) FROM test_runs
-          WHERE testId=:testId AND fileId=:fileId AND project=:project AND outcome != 'skipped'),
-        flakinessScore = (SELECT flakinessScore FROM test_runs
-          WHERE testId=:testId AND fileId=:fileId AND project=:project AND outcome != 'skipped'
-          ORDER BY createdAt DESC LIMIT 1),
-        quarantined = COALESCE((SELECT quarantined FROM test_runs
-          WHERE testId=:testId AND fileId=:fileId AND project=:project AND outcome != 'skipped'
-          ORDER BY createdAt DESC LIMIT 1), 0),
-        quarantineReason = (SELECT quarantineReason FROM test_runs
-          WHERE testId=:testId AND fileId=:fileId AND project=:project AND outcome != 'skipped'
-          ORDER BY createdAt DESC LIMIT 1),
-        recentPassRate = (
-          SELECT CAST(SUM(CASE WHEN outcome IN ('expected','passed') THEN 1 ELSE 0 END) AS REAL)
-                 / NULLIF(COUNT(*), 0)
-          FROM (SELECT outcome FROM test_runs
-                WHERE testId=:testId AND fileId=:fileId AND project=:project
-                ORDER BY createdAt DESC LIMIT 50)
-        ),
-        avgDuration = (
-          SELECT AVG(CASE WHEN duration >= 0 THEN duration END)
-          FROM (SELECT duration FROM test_runs
-                WHERE testId=:testId AND fileId=:fileId AND project=:project
-                ORDER BY createdAt DESC LIMIT 50)
-        )
+        totalRuns = COALESCE((SELECT totalRuns FROM totals), 0),
+        latestRunAt = (SELECT latestRunAt FROM totals),
+        latestOutcome = (SELECT latestOutcome FROM recent_agg),
+        latestNonSkippedAt = (SELECT createdAt FROM latest_ns),
+        flakinessScore = (SELECT flakinessScore FROM latest_ns),
+        quarantined = COALESCE((SELECT quarantined FROM latest_ns), 0),
+        quarantineReason = (SELECT quarantineReason FROM latest_ns),
+        latestFailureCategory = (SELECT failure_category FROM latest_ns),
+        recentPassRate = (SELECT recentPassRate FROM recent_agg),
+        avgDuration = (SELECT avgDuration FROM recent_agg)
       WHERE testId=:testId AND fileId=:fileId AND project=:project
     `);
   }
@@ -279,7 +281,7 @@ export class TestDatabase {
   }
 
   private backfillTestStatsIfNeeded(): void {
-    const mark = 'tests_stats_v1';
+    const mark = 'tests_stats_v2';
     const has = this.db.prepare('SELECT 1 FROM schema_migration_marks WHERE mark = ?').get(mark);
     if (has) return;
 
@@ -293,6 +295,7 @@ export class TestDatabase {
           flakinessScore = s.flakinessScore,
           quarantined = COALESCE(s.quarantined, 0),
           quarantineReason = s.quarantineReason,
+          latestFailureCategory = s.latestFailureCategory,
           recentPassRate = s.recentPassRate,
           avgDuration = s.avgDuration
         FROM (
@@ -316,6 +319,9 @@ export class TestDatabase {
             (SELECT quarantineReason FROM test_runs
               WHERE testId=tt.testId AND fileId=tt.fileId AND project=tt.project AND outcome != 'skipped'
               ORDER BY createdAt DESC LIMIT 1) AS quarantineReason,
+            (SELECT failure_category FROM test_runs
+              WHERE testId=tt.testId AND fileId=tt.fileId AND project=tt.project AND outcome != 'skipped'
+              ORDER BY createdAt DESC LIMIT 1) AS latestFailureCategory,
             (SELECT CAST(SUM(CASE WHEN outcome IN ('expected','passed') THEN 1 ELSE 0 END) AS REAL)
                     / NULLIF(COUNT(*), 0)
              FROM (SELECT outcome FROM test_runs
@@ -381,6 +387,40 @@ export class TestDatabase {
     return row;
   }
 
+  public getDurationTrend(
+    testId: string,
+    project?: string
+  ): Array<{ reportId: string; createdAt: string; duration: number }> {
+    const scoped = project && project !== 'all';
+    const sql = scoped
+      ? `SELECT tr.reportId, tr.createdAt, tr.duration
+         FROM test_runs tr
+         WHERE tr.testId = ? AND tr.project = ? AND tr.duration IS NOT NULL AND tr.duration > 0
+         ORDER BY tr.createdAt DESC`
+      : `SELECT tr.reportId, tr.createdAt, tr.duration
+         FROM test_runs tr
+         WHERE tr.testId = ? AND tr.duration IS NOT NULL AND tr.duration > 0
+         ORDER BY tr.createdAt DESC`;
+    const params = scoped ? [testId, project as string] : [testId];
+    return this.db.prepare(sql).all(...params) as Array<{
+      reportId: string;
+      createdAt: string;
+      duration: number;
+    }>;
+  }
+
+  public getTestTitle(testId: string, project?: string): string | undefined {
+    const scoped = project && project !== 'all';
+    const row = (
+      scoped
+        ? this.db
+            .prepare('SELECT title FROM tests WHERE testId = ? AND project = ? LIMIT 1')
+            .get(testId, project)
+        : this.db.prepare('SELECT title FROM tests WHERE testId = ? LIMIT 1').get(testId)
+    ) as { title: string } | undefined;
+    return row?.title ?? undefined;
+  }
+
   public findByTestId(testId: string, project?: string): Test | undefined {
     if (project && project !== 'all') {
       const row = this.db
@@ -429,29 +469,51 @@ export class TestDatabase {
   }
 
   public deleteTestRunsByReportId(reportId: string): number {
+    return this.deleteTestRunsByReportIds([reportId]);
+  }
+
+  public deleteTestRunsByReportIds(reportIds: string[]): number {
+    if (reportIds.length === 0) return 0;
+    const placeholders = reportIds.map(() => '?').join(',');
+
     const transaction = this.db.transaction(() => {
-      const affectedTestsStmt = this.db.prepare(`
-        SELECT DISTINCT testId, fileId, project FROM test_runs WHERE reportId = ?
-      `);
-      const affectedTests = affectedTestsStmt.all(reportId) as Array<{
-        testId: string;
-        fileId: string;
-        project: string;
-      }>;
+      const affectedTests = this.db
+        .prepare(
+          `SELECT DISTINCT testId, fileId, project
+           FROM test_runs WHERE reportId IN (${placeholders})`
+        )
+        .all(...reportIds) as Array<{ testId: string; fileId: string; project: string }>;
 
-      const result = this.deleteTestRunsByReportIdStmt.run(reportId);
+      const result = this.db
+        .prepare(`DELETE FROM test_runs WHERE reportId IN (${placeholders})`)
+        .run(...reportIds);
 
-      // Drop tests that no longer have any runs after this deletion.
-      const checkRunsStmt = this.db.prepare(`
-        SELECT COUNT(*) as count FROM test_runs WHERE testId = ? AND fileId = ? AND project = ?
-      `);
+      if (affectedTests.length === 0) {
+        return result.changes;
+      }
 
-      for (const test of affectedTests) {
-        const { count } = checkRunsStmt.get(test.testId, test.fileId, test.project) as {
-          count: number;
-        };
-        if (count === 0) {
-          this.deleteTestStmt.run(test.testId, test.fileId, test.project);
+      const CHUNK_SIZE = 300; // 300 * 3 = 900 placeholders
+      for (let i = 0; i < affectedTests.length; i += CHUNK_SIZE) {
+        const chunk = affectedTests.slice(i, i + CHUNK_SIZE);
+        const laneSelect = chunk
+          .map(() => 'SELECT ? AS testId, ? AS fileId, ? AS project')
+          .join(' UNION ALL ');
+        const laneParams = chunk.flatMap((t) => [t.testId, t.fileId, t.project]);
+        const orphanRows = this.db
+          .prepare(
+            `SELECT lanes.testId, lanes.fileId, lanes.project
+             FROM (${laneSelect}) AS lanes
+             WHERE NOT EXISTS (
+               SELECT 1 FROM test_runs tr
+               WHERE tr.testId = lanes.testId
+                 AND tr.fileId = lanes.fileId
+                 AND tr.project = lanes.project
+             )`
+          )
+          .all(...laneParams) as Array<{ testId: string; fileId: string; project: string }>;
+
+        for (const orphan of orphanRows) {
+          this.deleteTestStmt.run(orphan.testId, orphan.fileId, orphan.project);
         }
       }
 
@@ -748,10 +810,8 @@ export class TestDatabase {
         FROM test_runs WHERE ${winConds.join(' AND ')}
         GROUP BY testId, fileId, project
       )`);
-      for (const c of winConds) {
-        if (c.endsWith('?')) {
-        }
-      }
+      // recent_w reuses the same filters as agg_w; duplicate the bind params
+      // in the same order to align with the second occurrence of winConds.
       if (scoped) cteParams.push(project as string);
       if (options.from) cteParams.push(options.from);
       if (options.to) cteParams.push(options.to);
@@ -807,13 +867,7 @@ export class TestDatabase {
       if (tierConds.length > 0) whereConds.push(`(${tierConds.join(' OR ')})`);
     }
     if (options.failureCategory) {
-      whereConds.push(`EXISTS (
-        SELECT 1 FROM (
-          SELECT failure_category FROM test_runs
-          WHERE testId = t.testId AND fileId = t.fileId AND project = t.project
-          ORDER BY createdAt DESC LIMIT 50
-        ) sub WHERE sub.failure_category = ?
-      )`);
+      whereConds.push('t.latestFailureCategory = ?');
       whereParams.push(options.failureCategory);
     }
     if (options.search) {
@@ -1062,9 +1116,9 @@ export class TestDatabase {
          FROM tests
          WHERE flakinessScore IS NOT NULL AND flakinessScore >= ? ${projectClauseAnd}`
       )
-      .all(
-        ...(scoped ? [warningThreshold, project] : [warningThreshold])
-      ) as Array<Test & { flakinessScore: number; quarantined: number }>;
+      .all(...(scoped ? [warningThreshold, project] : [warningThreshold])) as Array<
+      Test & { flakinessScore: number; quarantined: number }
+    >;
 
     const flakyTests: TestWithQuarantineInfo[] = flakyRows.map((row) => ({
       testId: row.testId,

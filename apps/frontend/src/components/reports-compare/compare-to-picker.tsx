@@ -8,8 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/hooks/useAuth';
+import { withQueryParams } from '@/lib/network';
 import { withBase } from '@/lib/url';
-import { withQueryParams } from '../../config/network';
 
 interface Props {
   // ids that should be hidden from the picker's results — typically

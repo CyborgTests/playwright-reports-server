@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReportStats } from '@playwright-reports/shared';
-import type { FC } from 'react';
+import { type FC, memo } from 'react';
 import { passRateVariant } from '@/lib/pass-rate';
 import { cn } from '@/lib/utils';
 
@@ -10,7 +10,7 @@ type PassRateBarProps = {
   className?: string;
 };
 
-const PassRateBar: FC<PassRateBarProps> = ({ stats, className }) => {
+const PassRateBarImpl: FC<PassRateBarProps> = ({ stats, className }) => {
   if (!stats?.total) return null;
 
   const denominator = stats.total - (stats.skipped || 0);
@@ -44,4 +44,5 @@ const PassRateBar: FC<PassRateBarProps> = ({ stats, className }) => {
   );
 };
 
+const PassRateBar = memo(PassRateBarImpl);
 export default PassRateBar;

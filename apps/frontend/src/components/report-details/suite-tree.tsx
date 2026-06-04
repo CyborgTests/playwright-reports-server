@@ -4,6 +4,7 @@ import type {
   ReportStats,
   ReportTest,
 } from '@playwright-reports/shared';
+import { memo, useMemo } from 'react';
 import {
   Accordion,
   AccordionContent,
@@ -122,17 +123,22 @@ interface SuiteNodeComponentProps {
 }
 
 const SuiteNodeComponent = ({ suite, history, reportId, project }: SuiteNodeComponentProps) => {
+  const childStats = useMemo(
+    () => suite.children.map((child) => computeSuiteStats(child)),
+    [suite]
+  );
+
   return (
     <Accordion type="multiple" className="pl-4">
       {[
-        ...suite.children.map((child) => {
-          const childStats = computeSuiteStats(child);
+        ...suite.children.map((child, idx) => {
+          const stats = childStats[idx];
           return (
             <AccordionItem key={child.name} value={child.name}>
               <AccordionTrigger className="hover:no-underline">
                 <span className="flex flex-row gap-3 items-center w-full justify-between pr-4 flex-wrap">
                   <span className="font-medium">{child.name}</span>
-                  <StatsBadges stats={childStats} />
+                  <StatsBadges stats={stats} />
                 </span>
               </AccordionTrigger>
               <AccordionContent>
@@ -180,19 +186,16 @@ interface FileSuitesTreeProps {
   project?: string;
 }
 
-const FileSuitesTree = ({ file, history, reportId, project }: FileSuitesTreeProps) => {
-  const suiteTree = buildTestTree(file.fileName || file.name || 'unknown', file.tests || []);
+const FileSuitesTreeImpl = ({ file, history, reportId, project }: FileSuitesTreeProps) => {
+  const suiteTree = useMemo(
+    () => buildTestTree(file.fileName || file.name || 'unknown', file.tests || []),
+    [file]
+  );
 
   return (
-    <>
-      <SuiteNodeComponent
-        history={history}
-        reportId={reportId}
-        suite={suiteTree}
-        project={project}
-      />
-    </>
+    <SuiteNodeComponent history={history} reportId={reportId} suite={suiteTree} project={project} />
   );
 };
 
+const FileSuitesTree = memo(FileSuitesTreeImpl);
 export default FileSuitesTree;

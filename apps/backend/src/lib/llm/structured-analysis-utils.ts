@@ -11,8 +11,7 @@
  *  `<code>` element, so the user sees the raw markdown source instead of a
  *  clickable link. Unwrap any run of matched backticks that surround a
  *  complete pwrs link so the body renders correctly downstream. */
-const BACKTICK_WRAPPED_PWRS_LINK_RE =
-  /(`+)(\[[^\]\n]+\]\(pwrs:(?:test|report)\/[^)\n]+\))\1/g;
+const BACKTICK_WRAPPED_PWRS_LINK_RE = /(`+)(\[[^\]\n]+\]\(pwrs:(?:test|report)\/[^)\n]+\))\1/g;
 
 export function unwrapBacktickedPwrsLinks(text: string): string {
   return text.replace(BACKTICK_WRAPPED_PWRS_LINK_RE, '$2');

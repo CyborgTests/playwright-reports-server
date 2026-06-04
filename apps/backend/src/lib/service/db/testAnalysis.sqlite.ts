@@ -216,6 +216,14 @@ export class TestAnalysisDatabase {
     this.deleteByReportStmt.run(reportId);
   }
 
+  public deleteByReportIds(reportIds: string[]): void {
+    if (reportIds.length === 0) return;
+    const placeholders = reportIds.map(() => '?').join(',');
+    this.db
+      .prepare(`DELETE FROM test_llm_analyses WHERE reportId IN (${placeholders})`)
+      .run(...reportIds);
+  }
+
   public deleteByTest(testId: string, fileId: string, project: string): void {
     this.deleteByTestStmt.run(testId, fileId, project);
   }

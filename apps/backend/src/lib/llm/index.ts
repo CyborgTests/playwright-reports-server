@@ -57,9 +57,7 @@ export class LLMService {
 
   async initialize(): Promise<void> {
     if (!this.isConfigured()) {
-      throw new Error(
-        'LLM service is not enabled. Configure the base URL in Settings → LLM.'
-      );
+      throw new Error('LLM service is not enabled. Configure the base URL in Settings → LLM.');
     }
 
     if (!this.provider) {

@@ -1,4 +1,5 @@
 import type { ReportStats } from '@playwright-reports/shared';
+import { memo, useMemo } from 'react';
 import { Label, Pie, PieChart } from 'recharts';
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from './ui/chart';
 
@@ -24,25 +25,28 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
-export function StatChart({ stats }: Readonly<{ stats: ReportStats }>) {
-  const chartData = [
-    {
-      count: stats.expected,
-      status: 'Passed',
-      fill: 'hsl(var(--chart-1))',
-    },
-    {
-      count: stats.unexpected,
-      status: 'Failed',
-      fill: 'hsl(var(--chart-2))',
-    },
-    { count: stats.flaky, status: 'Flaky', fill: 'hsl(var(--chart-3))' },
-    {
-      count: stats.skipped,
-      status: 'Skipped',
-      fill: 'hsl(var(--chart-4))',
-    },
-  ];
+function StatChartImpl({ stats }: Readonly<{ stats: ReportStats }>) {
+  const chartData = useMemo(
+    () => [
+      {
+        count: stats.expected,
+        status: 'Passed',
+        fill: 'hsl(var(--chart-1))',
+      },
+      {
+        count: stats.unexpected,
+        status: 'Failed',
+        fill: 'hsl(var(--chart-2))',
+      },
+      { count: stats.flaky, status: 'Flaky', fill: 'hsl(var(--chart-3))' },
+      {
+        count: stats.skipped,
+        status: 'Skipped',
+        fill: 'hsl(var(--chart-4))',
+      },
+    ],
+    [stats.expected, stats.unexpected, stats.flaky, stats.skipped]
+  );
 
   return (
     <ChartContainer className="mx-auto aspect-square max-h-[250px]" config={chartConfig}>
@@ -74,3 +78,5 @@ export function StatChart({ stats }: Readonly<{ stats: ReportStats }>) {
     </ChartContainer>
   );
 }
+
+export const StatChart = memo(StatChartImpl);

@@ -10,12 +10,6 @@ export class ReportResultsDatabase {
   private readonly insertStmt = this.db.prepare(
     'INSERT OR IGNORE INTO report_results (reportId, resultId) VALUES (?, ?)'
   );
-  private readonly deleteByReportStmt = this.db.prepare(
-    'DELETE FROM report_results WHERE reportId = ?'
-  );
-  private readonly deleteByResultStmt = this.db.prepare(
-    'DELETE FROM report_results WHERE resultId = ?'
-  );
   private readonly getReportsForResultStmt = this.db.prepare(
     `SELECT r.reportID, r.displayNumber, r.title, r.createdAt
      FROM report_results rr
@@ -39,18 +33,18 @@ export class ReportResultsDatabase {
 
   public deleteByReportIds(reportIds: string[]): void {
     if (!reportIds?.length) return;
-    const deleteMany = this.db.transaction((ids: string[]) => {
-      for (const id of ids) this.deleteByReportStmt.run(id);
-    });
-    deleteMany(reportIds);
+    const placeholders = reportIds.map(() => '?').join(',');
+    this.db
+      .prepare(`DELETE FROM report_results WHERE reportId IN (${placeholders})`)
+      .run(...reportIds);
   }
 
   public deleteByResultIds(resultIds: string[]): void {
     if (!resultIds?.length) return;
-    const deleteMany = this.db.transaction((ids: string[]) => {
-      for (const id of ids) this.deleteByResultStmt.run(id);
-    });
-    deleteMany(resultIds);
+    const placeholders = resultIds.map(() => '?').join(',');
+    this.db
+      .prepare(`DELETE FROM report_results WHERE resultId IN (${placeholders})`)
+      .run(...resultIds);
   }
 
   public getReportsForResult(resultId: string): Array<{

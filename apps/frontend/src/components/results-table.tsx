@@ -148,6 +148,15 @@ export default function ResultsTable({
 
   const { results, total } = resultsResponse ?? { results: [], total: 0 };
 
+  const rowsWithTags = useMemo(
+    () =>
+      (results ?? []).map((item) => ({
+        item,
+        tags: getTags(item),
+      })),
+    [results]
+  );
+
   const shouldRefetch = () => {
     onDeleted?.();
     refetch();
@@ -323,7 +332,7 @@ export default function ResultsTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {results?.map((item) => (
+            {rowsWithTags.map(({ item, tags }) => (
               <TableRow key={item.resultID}>
                 <TableCell>
                   <Checkbox
@@ -368,7 +377,7 @@ export default function ResultsTable({
                 </TableCell>
                 <TableCell className="w-1/4">
                   <div className="flex flex-wrap gap-1">
-                    {getTags(item).map(([key, value]) => (
+                    {tags.map(([key, value]) => (
                       <Badge
                         key={`${item.resultID}-${key}`}
                         variant="secondary"

@@ -25,7 +25,17 @@ type ReportRow = {
   sizeBytes: number;
   stats: string | null;
   metadata: string;
+  updatedAt?: string | null;
 };
+
+// Cache parsed metadata/stats keyed by (reportID, updatedAt) so list endpoints
+// don't re-run JSON.parse on every row of every request. Writes bump
+// updatedAt via the insert statement, so stale entries fall off the keyspace.
+const PARSE_CACHE_MAX = 5000;
+const parseCache = new Map<string, ReportHistory>();
+function parseCacheKey(row: ReportRow): string {
+  return `${row.reportID}|${row.updatedAt ?? ''}`;
+}
 
 export class ReportDatabase {
   public initialized = false;
@@ -45,7 +55,6 @@ export class ReportDatabase {
       string,
     ]
   >;
-  private readonly deleteStmt: Database.Statement<[string]>;
   private readonly getByIDStmt: Database.Statement<[string]>;
   private readonly getAllStmt: Database.Statement<[]>;
   private readonly getByProjectStmt: Database.Statement<[string]>;
@@ -57,8 +66,6 @@ export class ReportDatabase {
       INSERT OR REPLACE INTO reports (reportID, project, title, displayNumber, createdAt, reportUrl, size, sizeBytes, stats, metadata, updatedAt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `);
-
-    this.deleteStmt = this.db.prepare('DELETE FROM reports WHERE reportID = ?');
 
     this.getByIDStmt = this.db.prepare('SELECT * FROM reports WHERE reportID = ?');
 
@@ -197,17 +204,26 @@ export class ReportDatabase {
   }
 
   public onDeleted(reportIds: string[]) {
+    if (reportIds.length === 0) return;
+
+    const CHUNK_SIZE = 500;
     const cascadeDelete = this.db.transaction((ids: string[]) => {
+      llmTasksDb.deleteByReportIds(ids);
+      testAnalysisDb.deleteByReportIds(ids);
+      failureSummaryDb.deleteSummariesByReportIds(ids);
+      testDb.deleteTestRunsByReportIds(ids);
+      const placeholders = ids.map(() => '?').join(',');
+      this.db.prepare(`DELETE FROM reports WHERE reportID IN (${placeholders})`).run(...ids);
       for (const id of ids) {
-        llmTasksDb.deleteByReport(id);
-        testAnalysisDb.deleteByReport(id);
-        failureSummaryDb.deleteSummary(id);
-        testDb.deleteTestRunsByReportId(id);
-        this.deleteStmt.run(id);
+        for (const key of parseCache.keys()) {
+          if (key.startsWith(`${id}|`)) parseCache.delete(key);
+        }
       }
     });
 
-    cascadeDelete(reportIds);
+    for (let i = 0; i < reportIds.length; i += CHUNK_SIZE) {
+      cascadeDelete(reportIds.slice(i, i + CHUNK_SIZE));
+    }
   }
 
   public onCreated(report: ReportHistory) {
@@ -239,13 +255,15 @@ export class ReportDatabase {
   public getPreviousReportId(reportID: string): string | null {
     const row = this.db
       .prepare(
-        `SELECT reportID FROM reports
-         WHERE project = (SELECT project FROM reports WHERE reportID = ?)
-           AND createdAt < (SELECT createdAt FROM reports WHERE reportID = ?)
-         ORDER BY createdAt DESC
+        `SELECT prev.reportID
+         FROM reports cur, reports prev
+         WHERE cur.reportID = ?
+           AND prev.project = cur.project
+           AND prev.createdAt < cur.createdAt
+         ORDER BY prev.createdAt DESC
          LIMIT 1`
       )
-      .get(reportID, reportID) as { reportID: string } | undefined;
+      .get(reportID) as { reportID: string } | undefined;
 
     return row?.reportID ?? null;
   }
@@ -267,34 +285,6 @@ export class ReportDatabase {
       | undefined;
 
     return row ? this.rowToReport(row) : undefined;
-  }
-
-  public getReportHistoryByTestId(testId: string, projectName?: string): ReportHistory[] {
-    const searchPattern = `%"testId":"${testId}"%`;
-    const projectPattern =
-      projectName && projectName !== defaultProjectName ? `%"project":"${projectName}"%` : '%';
-    const rows = this.db
-      .prepare(
-        `
-        SELECT * FROM reports
-        WHERE metadata LIKE ? AND project LIKE ?
-        ORDER BY createdAt DESC
-      `
-      )
-      .all(searchPattern, projectPattern) as {
-      reportID: string;
-      project: string;
-      title: string | null;
-      displayNumber: number | null;
-      createdAt: string;
-      reportUrl: string;
-      size: string | null;
-      sizeBytes: number;
-      stats: string | null;
-      metadata: string;
-    }[];
-
-    return rows.map(this.rowToReport);
   }
 
   public getByProject(project?: string, opts?: { from?: string; to?: string }): ReportHistory[] {
@@ -531,22 +521,15 @@ export class ReportDatabase {
     return (result.maxNumber || 0) + 1;
   }
 
-  private rowToReport(row: {
-    reportID: string;
-    project: string;
-    title: string | null;
-    displayNumber: number | null;
-    createdAt: string;
-    reportUrl: string;
-    size: string | null;
-    sizeBytes: number;
-    stats: string | null;
-    metadata: string;
-  }): ReportHistory {
+  private rowToReport(row: ReportRow): ReportHistory {
+    const key = parseCacheKey(row);
+    const cached = parseCache.get(key);
+    if (cached) return cached;
+
     const metadata = JSON.parse(row.metadata || '{}');
     const stats = row.stats ? JSON.parse(row.stats) : undefined;
 
-    return {
+    const result: ReportHistory = {
       reportID: row.reportID,
       project: row.project,
       title: row.title || undefined,
@@ -558,6 +541,13 @@ export class ReportDatabase {
       stats,
       ...metadata,
     };
+
+    if (parseCache.size >= PARSE_CACHE_MAX) {
+      const firstKey = parseCache.keys().next().value;
+      if (firstKey !== undefined) parseCache.delete(firstKey);
+    }
+    parseCache.set(key, result);
+    return result;
   }
 }
 

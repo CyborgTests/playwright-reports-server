@@ -1,11 +1,11 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 
 /**
  * Specific method for date formatting on the client
  * as server locale and client locale may not match
  */
-export default function FormattedDate({ date }: Readonly<{ date: Date | string }>) {
+function FormattedDateImpl({ date }: Readonly<{ date: Date | string }>) {
   const [formattedDate, setFormattedDate] = useState('');
 
   useEffect(() => {
@@ -14,3 +14,6 @@ export default function FormattedDate({ date }: Readonly<{ date: Date | string }
 
   return <span>{formattedDate}</span>;
 }
+
+const FormattedDate = memo(FormattedDateImpl);
+export default FormattedDate;

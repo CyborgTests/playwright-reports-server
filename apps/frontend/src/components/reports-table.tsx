@@ -237,6 +237,18 @@ export default function ReportsTable({
   const { reports } = reportResponse ?? {};
   const total = reportResponse?.pagination?.total || reportResponse?.total || 0;
 
+  const sortedRows = useMemo(() => {
+    if (!reports) return [];
+    return [...reports]
+      .sort((a, b) => (b.displayNumber ?? 0) - (a.displayNumber ?? 0))
+      .map((item) => {
+        const metaItems = getMetadataItems(item);
+        const primary = metaItems.filter((m) => m.primary).slice(0, MAX_INLINE_META);
+        const overflow = metaItems.filter((m) => !primary.includes(m));
+        return { item, primary, overflow };
+      });
+  }, [reports]);
+
   const onDeleted = () => {
     onChange?.();
     refetch();
@@ -400,117 +412,109 @@ export default function ReportsTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {reports
-              ?.sort((a, b) => (b.displayNumber ?? 0) - (a.displayNumber ?? 0))
-              .map((item) => {
-                const metaItems = getMetadataItems(item);
-                const primary = metaItems.filter((m) => m.primary).slice(0, MAX_INLINE_META);
-                const overflow = metaItems.filter((m) => !primary.includes(m));
+            {sortedRows.map(({ item, primary, overflow }) => {
+              return (
+                <TableRow key={item.reportID}>
+                  <TableCell className="py-2">
+                    <Checkbox
+                      checked={selectedIds.has(item.reportID)}
+                      onCheckedChange={(checked) =>
+                        handleSelectRow(item.reportID, checked === true)
+                      }
+                      aria-label={`Select report ${item.displayNumber ?? item.reportID}`}
+                    />
+                  </TableCell>
+                  <TableCell className="w-1/3 py-2">
+                    <div className="flex flex-col gap-0.5">
+                      <Link
+                        to={withBase(`/report/${item.reportID}`)}
+                        className="hover:underline w-fit"
+                      >
+                        <div className="flex flex-row items-center gap-1.5 text-sm font-medium">
+                          {item.displayNumber ? `#${item.displayNumber}` : ''}
+                          {item.title && (
+                            <span className="text-muted-foreground font-normal">{item.title}</span>
+                          )}
+                          <LinkIcon width={12} height={12} />
+                        </div>
+                      </Link>
 
-                return (
-                  <TableRow key={item.reportID}>
-                    <TableCell className="py-2">
-                      <Checkbox
-                        checked={selectedIds.has(item.reportID)}
-                        onCheckedChange={(checked) =>
-                          handleSelectRow(item.reportID, checked === true)
-                        }
-                        aria-label={`Select report ${item.displayNumber ?? item.reportID}`}
-                      />
-                    </TableCell>
-                    <TableCell className="w-1/3 py-2">
-                      <div className="flex flex-col gap-0.5">
-                        <Link
-                          to={withBase(`/report/${item.reportID}`)}
-                          className="hover:underline w-fit"
-                        >
-                          <div className="flex flex-row items-center gap-1.5 text-sm font-medium">
-                            {item.displayNumber ? `#${item.displayNumber}` : ''}
-                            {item.title && (
-                              <span className="text-muted-foreground font-normal">
-                                {item.title}
-                              </span>
-                            )}
-                            <LinkIcon width={12} height={12} />
-                          </div>
-                        </Link>
-
-                        {(primary.length > 0 || overflow.length > 0) && (
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                            {primary.map((m, i) => (
-                              <span
-                                key={`${item.reportID}-${m.key}`}
-                                className="flex items-center gap-2"
-                              >
-                                {renderMetaValue(m)}
-                                {i < primary.length - 1 && (
-                                  <span className="text-muted-foreground/40 text-xs">·</span>
-                                )}
-                              </span>
-                            ))}
-                            {overflow.length > 0 && (
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                                    aria-label="Show more metadata"
+                      {(primary.length > 0 || overflow.length > 0) && (
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          {primary.map((m, i) => (
+                            <span
+                              key={`${item.reportID}-${m.key}`}
+                              className="flex items-center gap-2"
+                            >
+                              {renderMetaValue(m)}
+                              {i < primary.length - 1 && (
+                                <span className="text-muted-foreground/40 text-xs">·</span>
+                              )}
+                            </span>
+                          ))}
+                          {overflow.length > 0 && (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                                  aria-label="Show more metadata"
+                                >
+                                  {primary.length > 0 && (
+                                    <span className="text-muted-foreground/40">·</span>
+                                  )}
+                                  <MoreHorizontal className="h-3.5 w-3.5" />
+                                  <span>+{overflow.length}</span>
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent align="start" className="w-auto max-w-sm space-y-1">
+                                {overflow.map((m) => (
+                                  <div
+                                    key={`${item.reportID}-overflow-${m.key}`}
+                                    className="text-xs flex items-center gap-1.5"
                                   >
-                                    {primary.length > 0 && (
-                                      <span className="text-muted-foreground/40">·</span>
-                                    )}
-                                    <MoreHorizontal className="h-3.5 w-3.5" />
-                                    <span>+{overflow.length}</span>
-                                  </button>
-                                </PopoverTrigger>
-                                <PopoverContent align="start" className="w-auto max-w-sm space-y-1">
-                                  {overflow.map((m) => (
-                                    <div
-                                      key={`${item.reportID}-overflow-${m.key}`}
-                                      className="text-xs flex items-center gap-1.5"
-                                    >
-                                      {m.icon}
-                                      <span className="text-muted-foreground">{m.key}:</span>
-                                      <span className="font-medium break-all">{m.value}</span>
-                                    </div>
-                                  ))}
-                                </PopoverContent>
-                              </Popover>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="w-1/6 py-2">{item.project}</TableCell>
-                    <TableCell className="w-1/12 py-2">
-                      <PassRateBar
-                        stats={
-                          item.stats || {
-                            total: 0,
-                            expected: 0,
-                            unexpected: 0,
-                            flaky: 0,
-                            skipped: 0,
-                            ok: false,
-                          }
+                                    {m.icon}
+                                    <span className="text-muted-foreground">{m.key}:</span>
+                                    <span className="font-medium break-all">{m.value}</span>
+                                  </div>
+                                ))}
+                              </PopoverContent>
+                            </Popover>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="w-1/6 py-2">{item.project}</TableCell>
+                  <TableCell className="w-1/12 py-2">
+                    <PassRateBar
+                      stats={
+                        item.stats || {
+                          total: 0,
+                          expected: 0,
+                          unexpected: 0,
+                          flaky: 0,
+                          skipped: 0,
+                          ok: false,
                         }
-                      />
-                    </TableCell>
-                    <TableCell className="w-1/6 py-2">
-                      <FormattedDate date={item.createdAt} />
-                    </TableCell>
-                    <TableCell className="w-1/12 py-2">{item.size}</TableCell>
-                    <TableCell className="w-1/6 py-2">
-                      <div className="flex gap-2 justify-end">
-                        <Link to={withBase(item.reportUrl)} target="_blank">
-                          <Button size="sm">Open report</Button>
-                        </Link>
-                        <DeleteReportButton reportId={item.reportID} onDeleted={onDeleted} />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+                      }
+                    />
+                  </TableCell>
+                  <TableCell className="w-1/6 py-2">
+                    <FormattedDate date={item.createdAt} />
+                  </TableCell>
+                  <TableCell className="w-1/12 py-2">{item.size}</TableCell>
+                  <TableCell className="w-1/6 py-2">
+                    <div className="flex gap-2 justify-end">
+                      <Link to={withBase(item.reportUrl)} target="_blank">
+                        <Button size="sm">Open report</Button>
+                      </Link>
+                      <DeleteReportButton reportId={item.reportID} onDeleted={onDeleted} />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
             {(!reports || reports.length === 0) && (
               <TableRow>
                 <TableCell

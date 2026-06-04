@@ -1,7 +1,7 @@
 'use client';
 
 import type { RunHealthMetric } from '@playwright-reports/shared';
-import { useCallback, useLayoutEffect, useState } from 'react';
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -31,20 +31,26 @@ const formatReportHeading = (
   return parts.length ? `${parts.join(' ')} (${date})` : date;
 };
 
-export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
-  const chartData = metrics.map((metric) => {
-    const date = new Date(metric.timestamp).toLocaleDateString();
-    return {
-      name: date,
-      heading: formatReportHeading(metric.displayNumber, metric.title, date),
-      runId: metric.runId,
-      total: metric.totalTests,
-      passed: metric.passed,
-      failed: metric.failed,
-      flaky: metric.flaky,
-      duration: metric.duration,
-    };
-  });
+function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
+  const chartData = useMemo(
+    () =>
+      metrics
+        .map((metric) => {
+          const date = new Date(metric.timestamp).toLocaleDateString();
+          return {
+            name: date,
+            heading: formatReportHeading(metric.displayNumber, metric.title, date),
+            runId: metric.runId,
+            total: metric.totalTests,
+            passed: metric.passed,
+            failed: metric.failed,
+            flaky: metric.flaky,
+            duration: metric.duration,
+          };
+        })
+        .reverse(),
+    [metrics]
+  );
 
   const CustomTooltip = ({
     active,
@@ -95,6 +101,7 @@ export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
 
   const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const hasAutoScrolledRef = useRef(false);
 
   const scrollContainerRef = useCallback((node: HTMLDivElement | null) => {
     setScrollContainer(node);
@@ -105,7 +112,7 @@ export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
     if (!scrollContainer || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver((entries) => {
       const next = entries[0]?.contentRect.width ?? 0;
-      if (next > 0) setContainerWidth(next);
+      if (next > 0) setContainerWidth((prev) => (prev === next ? prev : next));
     });
     observer.observe(scrollContainer);
     return () => observer.disconnect();
@@ -116,9 +123,11 @@ export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
   const chartWidth = Math.max(containerWidth, chartData.length * BAR_PX);
 
   useLayoutEffect(() => {
-    if (!scrollContainer) return;
+    if (!scrollContainer || hasAutoScrolledRef.current) return;
+    if (isLoading || chartData.length === 0) return;
     scrollContainer.scrollLeft = scrollContainer.scrollWidth;
-  }, [scrollContainer, chartWidth, isLoading]);
+    hasAutoScrolledRef.current = true;
+  }, [scrollContainer, chartData.length, isLoading]);
 
   return (
     <Card>
@@ -141,7 +150,7 @@ export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
             <BarChart
               width={chartWidth}
               height={CHART_HEIGHT}
-              data={chartData.reverse()}
+              data={chartData}
               onClick={(e) => {
                 const reportId = e.activePayload?.[0]?.payload?.runId;
                 if (reportId) window.open(`/report/${reportId}`, '_blank');
@@ -167,3 +176,5 @@ export function HealthGrid({ metrics, isLoading }: Readonly<HealthGridProps>) {
     </Card>
   );
 }
+
+export const HealthGrid = memo(HealthGridImpl);

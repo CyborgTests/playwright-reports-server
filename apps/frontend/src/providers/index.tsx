@@ -11,6 +11,7 @@ export const Providers: FC<ThemeProviderProps> = ({ children, ...themeProps }) =
       defaultOptions: {
         queries: {
           staleTime: 5 * 60 * 1000, // 5 minutes
+          refetchOnWindowFocus: false,
         },
       },
     });

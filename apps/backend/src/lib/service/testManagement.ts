@@ -445,6 +445,13 @@ export class TestManagementService {
       classification: { category: FailureCategory; source: 'heuristic' | 'consensus' };
     };
     const preparedByKey = new Map<string, PreparedFailure>();
+
+    type ExtractJob = {
+      key: string;
+      test: NonNullable<typeof report.files>[number]['tests'] extends Array<infer T> ? T : never;
+      filePath: string;
+    };
+    const jobs: ExtractJob[] = [];
     for (const file of report.files) {
       if (!file.tests) continue;
       for (const test of file.tests) {
@@ -454,18 +461,30 @@ export class TestManagementService {
         const testId = test.testId ?? '';
         const fileId = file.fileId ?? '';
         const filePath = file.fileName ?? 'unknown';
-        const details = await this.extractFailureDetails(test, filePath, 1, report.reportID);
+        jobs.push({ key: `${testId}::${fileId}`, test: test as ExtractJob['test'], filePath });
+      }
+    }
+
+    const CONCURRENCY = 8;
+    for (let i = 0; i < jobs.length; i += CONCURRENCY) {
+      const chunk = jobs.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        chunk.map((job) => this.extractFailureDetails(job.test, job.filePath, 1, report.reportID))
+      );
+      for (let j = 0; j < chunk.length; j++) {
+        const details = results[j];
         if (!details) continue;
+        const job = chunk[j];
         let message = '';
         try {
           message = String(JSON.parse(details).message ?? '');
         } catch {
           /* ignore */
         }
-        const signature = this.computeErrorSignature(message, filePath);
+        const signature = this.computeErrorSignature(message, job.filePath);
         const signatureGlobal = this.computeErrorSignature(message);
         const classification = classifyFailure(message, signature);
-        preparedByKey.set(`${testId}::${fileId}`, {
+        preparedByKey.set(job.key, {
           details,
           message,
           signature,

@@ -1,6 +1,6 @@
 'use client';
 
-import { isValidElement, type ReactNode } from 'react';
+import { isValidElement, memo, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link as RouterLink } from 'react-router-dom';
 import rehypeHighlight from 'rehype-highlight';
@@ -88,7 +88,7 @@ interface MarkdownRendererProps {
   fallbackProject?: string;
 }
 
-export function MarkdownRenderer({
+function MarkdownRendererImpl({
   content,
   className = '',
   fallbackProject,
@@ -249,3 +249,5 @@ export function MarkdownRenderer({
     </div>
   );
 }
+
+export const MarkdownRenderer = memo(MarkdownRendererImpl);

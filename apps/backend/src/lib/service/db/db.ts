@@ -186,6 +186,7 @@ function initializeSchema(db: Database.Database): void {
   addColumnIfMissing(db, 'tests', 'totalRuns', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'tests', 'recentPassRate', 'REAL');
   addColumnIfMissing(db, 'tests', 'avgDuration', 'REAL');
+  addColumnIfMissing(db, 'tests', 'latestFailureCategory', 'TEXT');
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_tests_proj_flakiness
       ON tests(project, flakinessScore DESC);
@@ -193,6 +194,8 @@ function initializeSchema(db: Database.Database): void {
       ON tests(project, latestRunAt DESC);
     CREATE INDEX IF NOT EXISTS idx_tests_proj_avgDuration
       ON tests(project, avgDuration DESC);
+    CREATE INDEX IF NOT EXISTS idx_tests_proj_latestFailureCategory
+      ON tests(project, latestFailureCategory);
   `);
 
   db.exec(`

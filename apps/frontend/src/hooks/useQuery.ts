@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { withQueryParams } from '../config/network';
+import { withQueryParams } from '../lib/network';
 import { withBase } from '../lib/url';
 import { useAuth } from './useAuth';
 
