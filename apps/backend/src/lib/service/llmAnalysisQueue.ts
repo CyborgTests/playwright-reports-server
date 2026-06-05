@@ -507,7 +507,7 @@ class LlmAnalysisQueue {
     // Compute the heuristic category up-front — needed for the strict reuse
     // match below. (It's also used later for the prompt build + LLM/heuristic
     // consensus rule)
-    const { detectFailureCategory, isKnownCategory } = await import('./testManagement.js');
+    const { detectFailureCategory, isRootCauseCategory } = await import('./testManagement.js');
     const heuristicCategory = detectFailureCategory(details.message);
 
     // Reuse a prior analysis only when it is definitely the same failure AND
@@ -752,17 +752,9 @@ class LlmAnalysisQueue {
       return;
     }
 
-    // LLM precedence rule: the LLM may override only when it returns a known category AND
-    // either the heuristic was 'unknown' or the LLM's choice agrees with the heuristic.
-    // Otherwise we trust the heuristic — preventing the "two classifiers disagree → label
-    // flips between runs" problem. (heuristicCategory + isKnownCategory loaded above.)
     let category: string = heuristicCategory;
     let categorySource: 'heuristic' | 'llm' = 'heuristic';
-    if (
-      llmCategory &&
-      isKnownCategory(llmCategory) &&
-      (heuristicCategory === 'unknown' || llmCategory === heuristicCategory)
-    ) {
+    if (llmCategory && isRootCauseCategory(llmCategory) && llmCategory !== 'unknown') {
       category = llmCategory;
       categorySource = 'llm';
     }

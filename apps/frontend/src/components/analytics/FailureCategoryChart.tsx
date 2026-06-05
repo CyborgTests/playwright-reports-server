@@ -28,9 +28,17 @@ interface FailureCategoryChartProps {
 }
 
 const categoryColors: Record<string, string> = {
+  // Semantic root-cause labels (LLM-assigned).
+  app_bug: 'hsl(0, 84%, 60%)',
+  test_bug: 'hsl(38, 92%, 50%)',
+  infrastructure: 'hsl(260, 60%, 55%)',
+  environment: 'hsl(160, 50%, 45%)',
+  slow_path: 'hsl(280, 60%, 55%)',
+  // Technical surface labels (heuristic).
   timeout: 'hsl(38, 92%, 50%)',
   snapshot_mismatch: 'hsl(280, 60%, 55%)',
   element_not_found: 'hsl(200, 80%, 50%)',
+  element_not_visible: 'hsl(210, 80%, 55%)',
   assertion_error: 'hsl(0, 84%, 60%)',
   network_error: 'hsl(20, 90%, 48%)',
   navigation_error: 'hsl(340, 75%, 55%)',

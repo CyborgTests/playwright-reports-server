@@ -121,6 +121,27 @@ export const FAILURE_CATEGORY_DESCRIPTIONS: Record<FailureCategory, string> = {
   unknown: 'Could not be confidently classified by the heuristic or LLM.',
 };
 
+export const ROOT_CAUSE_CATEGORIES = [
+  'app_bug',
+  'test_bug',
+  'infrastructure',
+  'environment',
+  'slow_path',
+  'unknown',
+] as const;
+
+export type RootCauseCategory = (typeof ROOT_CAUSE_CATEGORIES)[number];
+
+export const ROOT_CAUSE_CATEGORY_DESCRIPTIONS: Record<RootCauseCategory, string> = {
+  app_bug: 'The application under test misbehaved — the test likely caught a defect.',
+  test_bug: 'The test code is wrong (bad selector, missing wait, wrong assumption).',
+  infrastructure: 'Runner, browser, or network outage; not related to application or test logic.',
+  environment:
+    'Test environment is in a bad state (missing data, stale fixtures, dependency unavailable).',
+  slow_path: 'The operation finished, but past the timeout — likely a perf issue.',
+  unknown: 'The LLM could not confidently decide from the evidence.',
+};
+
 /** Report-level verdicts emitted by the LLM summary. Mirrors
  *  ReportAnalysisVerdict in shared/types — keep in sync. */
 export const REPORT_VERDICT_DESCRIPTIONS: Record<

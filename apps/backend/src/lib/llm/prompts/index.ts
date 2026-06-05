@@ -1,12 +1,10 @@
 import type { ClusterAnchor, ClusterAnchorKind } from '@playwright-reports/shared';
-import { FAILURE_CATEGORIES, formatDuration } from '@playwright-reports/shared';
+import { formatDuration, ROOT_CAUSE_CATEGORIES } from '@playwright-reports/shared';
 import type { FailureEvidence } from '../../parser/failure-extraction.js';
 import type { PerFileStep } from '../../parser/report-payload.js';
 import type { PromptSegment, SegmentedPrompt } from '../types/index.js';
 
-/** Comma-separated category enum, inlined into the test-analysis instructions
- *  so the model sees the same list the heuristic uses. */
-const FAILURE_CATEGORY_LIST = FAILURE_CATEGORIES.join(', ');
+const ROOT_CAUSE_CATEGORY_LIST = ROOT_CAUSE_CATEGORIES.join(', ');
 
 /** Verdict enum mirrored in shared/types ReportAnalysisVerdict. Keep in sync. */
 export const REPORT_VERDICT_ENUM = ['isolated', 'clustered', 'widespread', 'systemic'] as const;
@@ -83,12 +81,12 @@ export const PROJECT_SUMMARY_SYSTEM_PROMPT =
 
 export const TEST_ANALYSIS_TASK_INSTRUCTIONS = `
 Test: {{testTitle}} (project "{{project}}", {{filePath}})
-Heuristic category: {{errorCategory}}. Treat as a hypothesis; override only if evidence is strong.
+Heuristic surface label (technical hint only, may be misleading): {{errorCategory}}
 
 Reply in plain Markdown. Use the exact section headings below. Sections 1 and 2 are required; section 3 is optional. Do not use JSON or code fences.
 
 ## Root Cause
-Explain what broke. Ground every claim in concrete evidence: line numbers from Test Source / Step Tree / Stack, console errors, failed requests with status codes, attempt-history differences. Do not mention {{errorCategory}} here unless you later change it in the footer.
+Explain what broke. Ground every claim in concrete evidence: line numbers from Test Source / Step Tree / Stack, console errors, failed requests with status codes, attempt-history differences.
 
 ## What to Verify
 List 2-3 specific checks to confirm or disprove the root cause. Each must be directly runnable (e.g., log query, env flag to toggle, code path to inspect, repro step). Avoid generic advice.
@@ -96,11 +94,19 @@ List 2-3 specific checks to confirm or disprove the root cause. Each must be dir
 ## Recommendation
 Optional. Include only if you can name a clear fix (code edit, config change, infra action). Skip this section if the correct next step is “investigate further”. Short concrete code snippets are allowed.
 
-After the sections, add at most one footer line, on its own line, with no heading or extra text:
+After the sections, end with exactly one footer line, on its own line, with no heading or extra text:
 
-Category: <one of: ${FAILURE_CATEGORY_LIST}>
+Category: <one of: ${ROOT_CAUSE_CATEGORY_LIST}>
 
-If you agree with {{errorCategory}}, omit the Category line entirely.
+Pick the label that best matches the root cause you described above:
+- app_bug: the application under test misbehaved — the test caught a real defect.
+- test_bug: the test code is wrong (bad selector, missing wait, wrong assumption, race condition in the test).
+- infrastructure: runner, browser, or network outage; not related to application or test logic.
+- environment: test environment is in a bad state (missing data, stale fixtures, dependency unavailable, auth misconfigured).
+- slow_path: the operation finished, but past the timeout — a real perf issue, not a hang.
+- unknown: the evidence is genuinely insufficient to decide.
+
+Use "unknown" only when you cannot point at any specific category from the evidence. Do not default to it just because the heuristic label was ambiguous — pick the best-supported semantic category. Your Category line WILL override the heuristic label whenever it is not "unknown".
 
 Attempt-history rules:
 - eventually passed -> transient or environmental; focus on retry/wait or instability diagnosis.

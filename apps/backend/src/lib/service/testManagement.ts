@@ -11,6 +11,8 @@ import {
   type FailureCategory,
   FLAKINESS_THRESHOLDS,
   ReportTestOutcomeEnum,
+  ROOT_CAUSE_CATEGORIES,
+  type RootCauseCategory,
 } from '@playwright-reports/shared';
 import { defaultConfig } from '../config.js';
 import { llmService } from '../llm/index.js';
@@ -222,9 +224,14 @@ function buildCrossProjectOccurrences(
 }
 
 const KNOWN_CATEGORIES = new Set<string>(FAILURE_CATEGORIES);
+const KNOWN_ROOT_CAUSE_CATEGORIES = new Set<string>(ROOT_CAUSE_CATEGORIES);
 
 export function isKnownCategory(value: string | undefined | null): value is FailureCategory {
   return !!value && KNOWN_CATEGORIES.has(value);
+}
+
+export function isRootCauseCategory(value: string | undefined | null): value is RootCauseCategory {
+  return !!value && KNOWN_ROOT_CAUSE_CATEGORIES.has(value);
 }
 
 /**

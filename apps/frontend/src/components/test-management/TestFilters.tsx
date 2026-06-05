@@ -2,6 +2,7 @@ import {
   FAILURE_CATEGORIES,
   FLAKINESS_THRESHOLDS,
   type FlakinessTier,
+  ROOT_CAUSE_CATEGORIES,
   type TestFilters as TestFiltersType,
   type TestsSort,
 } from '@playwright-reports/shared';
@@ -25,7 +26,10 @@ interface TestFiltersProps {
 }
 
 const TIER_ORDER: FlakinessTier[] = ['stable', 'flaky', 'critical'];
-const CATEGORY_OPTIONS = FAILURE_CATEGORIES;
+
+const CATEGORY_OPTIONS = Array.from(
+  new Set<string>([...ROOT_CAUSE_CATEGORIES, ...FAILURE_CATEGORIES])
+);
 
 export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersProps>) {
   const categories = CATEGORY_OPTIONS;
