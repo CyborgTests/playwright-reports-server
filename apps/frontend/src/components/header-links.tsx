@@ -62,7 +62,7 @@ export const HeaderLinks: React.FC<HeaderLinksProps> = ({
                 className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
               >
                 {renderIcon(link, size)}
-                {showInlineLabel && <span className="hidden md:inline text-sm">{label}</span>}
+                {showInlineLabel && <span className="text-sm">{label}</span>}
               </Link>
             </TooltipTrigger>
             <TooltipContent>{label}</TooltipContent>

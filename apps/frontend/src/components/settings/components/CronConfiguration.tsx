@@ -107,7 +107,7 @@ export default function CronConfiguration({
     <Card id="cron" className="mb-6 scroll-mt-20 p-4">
       <CardHeader
         className={cn(
-          'flex justify-between items-center flex-row',
+          'flex flex-row flex-wrap justify-between items-center gap-3',
           isEditing && 'bg-primary/5 border-l-4 border-primary -mx-4 px-4'
         )}
       >

@@ -25,7 +25,7 @@ interface FactChipProps {
 
 function FactChip({ icon: Icon, label, value }: FactChipProps) {
   return (
-    <div className="inline-flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm">
+    <div className="inline-flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm whitespace-nowrap">
       <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
       <span className="font-medium text-muted-foreground">{label}</span>
       <span className="font-mono text-foreground">{value}</span>

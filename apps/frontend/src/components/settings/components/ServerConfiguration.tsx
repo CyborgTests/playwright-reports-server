@@ -143,7 +143,7 @@ export default function ServerConfiguration({
   return (
     <Card id="server" className="mb-6 scroll-mt-20 p-4">
       <CardHeader
-        className={`flex justify-between items-center flex-row ${editingSection === 'server' ? 'bg-primary/5 border-l-4 border-primary -mx-4 px-4' : ''}`}
+        className={`flex flex-row flex-wrap justify-between items-center gap-3 ${editingSection === 'server' ? 'bg-primary/5 border-l-4 border-primary -mx-4 px-4' : ''}`}
       >
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold">Server Configuration</h2>

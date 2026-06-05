@@ -336,7 +336,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="container py-6 lg:py-10">
+    <div className="lg:py-4">
       <header className="mb-6 max-w-3xl">
         <h1 className="font-display text-3xl font-bold tracking-tight">Settings</h1>
         <p className="mt-2 text-sm text-muted-foreground">

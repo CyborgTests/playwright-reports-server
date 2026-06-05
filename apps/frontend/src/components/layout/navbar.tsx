@@ -137,8 +137,8 @@ export function Navbar() {
               {config?.headerLinks?.length ? (
                 <>
                   <DropdownMenuSeparator />
-                  <div className="px-2 py-1.5 flex items-center gap-2 flex-wrap">
-                    <HeaderLinks config={config} size={18} />
+                  <div className="px-2 py-1.5 flex flex-col gap-1.5">
+                    <HeaderLinks config={config} size={18} withTitle />
                   </div>
                 </>
               ) : null}

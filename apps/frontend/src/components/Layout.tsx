@@ -37,11 +37,13 @@ export function Layout({ children }: LayoutProps) {
   }, [config?.faviconPath]);
 
   return (
-    <div className="min-h-screen bg-background font-sans">
+    <div className="min-h-screen bg-background font-sans overflow-x-clip">
       <div className="flex min-h-screen flex-col">
         <Navbar />
 
-        <main className={cn('flex-1', 'container', 'py-6 md:py-8')}>{children || <Outlet />}</main>
+        <main className={cn('flex-1', 'container', 'py-6 md:py-8', 'min-w-0')}>
+          {children || <Outlet />}
+        </main>
 
         <footer className="border-t border-border/40 py-4">
           <div className="container flex items-center justify-center gap-2 text-sm text-muted-foreground">
