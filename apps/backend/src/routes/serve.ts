@@ -66,7 +66,7 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
           }
 
           const testUrl = {
-            reportId: reportId ?? 'unknown',
+            reportId,
             // testId is resolved client-side once the user clicks into a test page.
             testId: 'unknown',
             isPlaywrightReport: true,
@@ -82,6 +82,16 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
 
       if ((request as AuthRequest).user?.apiToken) {
         headers['X-API-Token'] = (request as AuthRequest).user?.apiToken ?? '';
+      }
+
+      // Report served assets are effectively immutable per reportId.
+      // Cache on the static assets keeps browsers from refetching CSS/JS/img
+      // on every navigation; a shorter window on the injected index.html so
+      // LLM config flips reach the user within a minute even without a reload.
+      if (isIndexHtml) {
+        headers['Cache-Control'] = 'private, max-age=60, must-revalidate';
+      } else {
+        headers['Cache-Control'] = 'public, max-age=86400, must-revalidate';
       }
 
       return reply.code(200).headers(headers).send(reportHtml);
