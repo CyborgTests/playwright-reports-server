@@ -57,19 +57,36 @@ function buildServedTestUrl(reportId: string, testId?: string): string {
   return testId ? `${base}#?testId=${encodeURIComponent(testId)}` : base;
 }
 
-/** Compact "in / out" formatter for the Tokens column. Returns "-" when no
- *  usage was captured (queued task, or reused analysis with no LLM call).
- *  For in-flight rows (`status === 'processing'`) with an inputTokens value,
- *  renders the input as an estimate prefixed with "~" — the worker writes a
- *  char/4 estimate when the prompt is built, then complete() overwrites it
- *  with the provider's reported usage. So "~3319 / -" means "we've sent N
- *  estimated tokens; waiting on the response." */
-function formatTokens(input?: number | null, output?: number | null, status?: string): string {
-  if (status === 'processing' && (input ?? 0) > 0) {
-    return `~${input} / -`;
+function TaskTokensCell({
+  input,
+  output,
+  status,
+  prompt,
+  result,
+}: Readonly<{
+  input?: number | null;
+  output?: number | null;
+  status?: string;
+  prompt?: string | null;
+  result?: string | null;
+}>) {
+  const inputVal = input ?? 0;
+  const outputVal = output ?? 0;
+  if (status === 'processing' && inputVal > 0) {
+    return (
+      <>
+        <CopyableTokenCount display={`~${inputVal}`} text={prompt} label="Prompt" /> / -
+      </>
+    );
   }
-  if ((input ?? 0) === 0 && (output ?? 0) === 0) return '-';
-  return `${input ?? 0} / ${output ?? 0}`;
+  if (inputVal === 0 && outputVal === 0) return <>-</>;
+  return (
+    <>
+      <CopyableTokenCount display={String(inputVal)} text={prompt} label="Prompt" />
+      {' / '}
+      <CopyableTokenCount display={String(outputVal)} text={result} label="Response" />
+    </>
+  );
 }
 
 /** Human-readable big-number formatter: 1234567 → "1.2M", 4567 → "4.6K". */
@@ -78,6 +95,38 @@ function formatCount(n: number): string {
   if (n < 1_000_000) return `${(n / 1000).toFixed(1)}K`;
   if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   return `${(n / 1_000_000_000).toFixed(1)}B`;
+}
+
+interface CopyableTokenCountProps {
+  display: string;
+  text: string | null | undefined;
+  label: string;
+}
+
+function CopyableTokenCount({ display, text, label }: Readonly<CopyableTokenCountProps>) {
+  if (!text) {
+    return <span title={`${label} not available`}>{display}</span>;
+  }
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied (${text.length.toLocaleString()} chars)`);
+    } catch (error) {
+      toast.error(`Failed to copy: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={`Click to copy ${label.toLowerCase()}`}
+      aria-label={`Copy ${label.toLowerCase()}`}
+      className="cursor-pointer hover:underline focus-visible:underline focus-visible:outline-none"
+    >
+      {display}
+    </button>
+  );
 }
 
 const PAGE_SIZE = 25;
@@ -645,7 +694,13 @@ export default function LlmQueuePage() {
                     {task.model ?? <span className="text-muted-foreground">-</span>}
                   </TableCell>
                   <TableCell className="text-sm font-mono whitespace-nowrap">
-                    {formatTokens(task.inputTokens, task.outputTokens, task.status)}
+                    <TaskTokensCell
+                      input={task.inputTokens}
+                      output={task.outputTokens}
+                      status={task.status}
+                      prompt={task.prompt}
+                      result={task.result}
+                    />
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {formatRelativeTime(task.createdAt)}
