@@ -143,6 +143,8 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
     const isAuthed = await isAuthenticated(request as AuthRequest);
 
+    reply.header('Cache-Control', 'private, max-age=10, must-revalidate');
+
     const publicConfig = {
       title: config.title,
       logoPath: config.logoPath,
