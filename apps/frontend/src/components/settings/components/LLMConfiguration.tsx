@@ -2,7 +2,7 @@
 
 import type { PromptVariable, ServerConfig } from '@playwright-reports/shared';
 import { PROMPT_VARIABLES } from '@playwright-reports/shared';
-import { CheckCircle2, ListTodo, Plug, RefreshCw, XCircle } from 'lucide-react';
+import { CheckCircle2, ListTodo, Plug, RefreshCw, X, XCircle } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -240,6 +240,46 @@ export default function LLMConfiguration({
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
+          {testResult && (
+            <Alert
+              className={
+                testResult.ok ? 'border-success/50 bg-success-50' : 'border-danger/50 bg-danger-50'
+              }
+            >
+              <div className="flex items-start gap-2">
+                {testResult.ok ? (
+                  <CheckCircle2 className="h-4 w-4 text-success mt-0.5" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-danger mt-0.5" />
+                )}
+                <div className="flex-1">
+                  <p className="text-sm font-medium">
+                    {testResult.ok ? 'Connection successful' : 'Connection failed'}
+                  </p>
+                  {testResult.ok && testResult.models && testResult.models.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {testResult.models.length} model{testResult.models.length === 1 ? '' : 's'}{' '}
+                      available
+                      {testResult.models.length <= 5 ? `: ${testResult.models.join(', ')}` : ''}
+                    </p>
+                  )}
+                  {!testResult.ok && (
+                    <p className="text-xs text-muted-foreground mt-1 break-words">
+                      {testResult.error}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTestResult(null)}
+                  aria-label="Dismiss connection test result"
+                  className="text-muted-foreground hover:text-foreground transition-colors -mt-0.5 -mr-1 p-1 rounded"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </Alert>
+          )}
           {!isConfigured && (
             <Alert>
               <p className="font-medium mb-2">To enable LLM integration:</p>
@@ -776,39 +816,6 @@ export default function LLMConfiguration({
               </AccordionContent>
             </AccordionItem>
           </Accordion>
-
-          {testResult && (
-            <Alert
-              className={
-                testResult.ok ? 'border-success/50 bg-success-50' : 'border-danger/50 bg-danger-50'
-              }
-            >
-              <div className="flex items-start gap-2">
-                {testResult.ok ? (
-                  <CheckCircle2 className="h-4 w-4 text-success mt-0.5" />
-                ) : (
-                  <XCircle className="h-4 w-4 text-danger mt-0.5" />
-                )}
-                <div className="flex-1">
-                  <p className="text-sm font-medium">
-                    {testResult.ok ? 'Connection successful' : 'Connection failed'}
-                  </p>
-                  {testResult.ok && testResult.models && testResult.models.length > 0 && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {testResult.models.length} model{testResult.models.length === 1 ? '' : 's'}{' '}
-                      available
-                      {testResult.models.length <= 5 ? `: ${testResult.models.join(', ')}` : ''}
-                    </p>
-                  )}
-                  {!testResult.ok && (
-                    <p className="text-xs text-muted-foreground mt-1 break-words">
-                      {testResult.error}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </Alert>
-          )}
         </div>
       </CardContent>
     </Card>

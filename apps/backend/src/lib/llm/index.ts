@@ -288,6 +288,13 @@ export class LLMService {
         };
       }
       const models = await provider.getAvailableModels();
+      if (merged.provider === 'openai') {
+        const probe = await this.probeOpenAIChatCompletions(merged, models);
+        if (!probe.ok) {
+          return { success: false, error: probe.error };
+        }
+      }
+
       return { success: true, models };
     } catch (err) {
       return {
@@ -295,6 +302,89 @@ export class LLMService {
         error: err instanceof Error ? err.message : 'Connection test failed',
       };
     }
+  }
+
+  private async probeOpenAIChatCompletions(
+    merged: LLMProviderConfig,
+    knownModels: string[]
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    const model = merged.model || knownModels[0];
+    if (!model) {
+      return {
+        ok: false,
+        error: 'No model available to verify the chat completions endpoint.',
+      };
+    }
+
+    const url = `${merged.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (merged.apiKey) headers.Authorization = `Bearer ${merged.apiKey}`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 1,
+          temperature: 0,
+        }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `Could not reach /chat/completions: ${message}` };
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+
+    if (!response.ok) {
+      const errorObj =
+        body && typeof body === 'object' && 'error' in body
+          ? (body as { error: unknown }).error
+          : null;
+      const looksOpenAI =
+        errorObj !== null &&
+        typeof errorObj === 'object' &&
+        ('message' in (errorObj as object) || 'type' in (errorObj as object));
+      if (looksOpenAI) return { ok: true };
+
+      return {
+        ok: false,
+        error: `Server responded ${response.status} at /chat/completions but the body is not in OpenAI format. Check that the base URL points to an OpenAI-compatible endpoint (typically ending in /v1).`,
+      };
+    }
+
+    const choices =
+      body && typeof body === 'object' && 'choices' in body
+        ? (body as { choices: unknown }).choices
+        : null;
+    const firstChoice = Array.isArray(choices) ? (choices[0] as Record<string, unknown>) : null;
+    const looksValid = !!(
+      firstChoice &&
+      typeof firstChoice === 'object' &&
+      'message' in firstChoice
+    );
+    if (!looksValid) {
+      return {
+        ok: false,
+        error:
+          'The /chat/completions response is not in OpenAI format. Confirm the base URL points to an OpenAI-compatible API (typically ending in /v1).',
+      };
+    }
+
+    return { ok: true };
   }
 }
 

@@ -23,21 +23,17 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-const baseNavItems: NavItem[] = [
+const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/', icon: TrendIcon },
   { label: 'Reports', href: '/reports', icon: ReportIcon },
   { label: 'Results', href: '/results', icon: ResultIcon },
   { label: 'Settings', href: '/settings', icon: SettingsIcon },
+  { label: 'LLM Queue', href: '/llm-queue', icon: ListTodo },
 ];
-
-const llmQueueNavItem: NavItem = { label: 'LLM Queue', href: '/llm-queue', icon: ListTodo };
 
 export function Navbar() {
   const location = useLocation();
   const { data: config, isLoading } = useConfig();
-
-  const isLlmConfigured = !!config?.llm?.baseUrl;
-  const navItems = isLlmConfigured ? [...baseNavItems, llmQueueNavItem] : baseNavItems;
 
   const isCustomLogo = !!config?.logoPath && config.logoPath !== defaultConfig.logoPath;
   const isCustomTitle = !!config?.title && config.title !== defaultConfig.title;
