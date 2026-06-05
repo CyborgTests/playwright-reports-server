@@ -3,11 +3,14 @@
 import { isValidElement, memo, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link as RouterLink } from 'react-router-dom';
-import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
+import { rehypeHighlightMini } from '@/lib/rehype-highlight-mini';
 import { CopyButton } from './copy-button';
 import { Badge } from './ui/badge';
+
+const rehypePlugins = [rehypeHighlightMini, rehypeRaw];
+const remarkPlugins = [remarkGfm];
 
 /** Resolve a `pwrs:` URL (emitted by the LLM analyses for inline test/report
  *  refs) into a React Router path. Returns null for refs without an SPA
@@ -96,8 +99,8 @@ function MarkdownRendererImpl({
   return (
     <div className={`markdown-renderer ${className}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight, rehypeRaw]}
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={rehypePlugins}
         urlTransform={urlTransform}
         components={{
           h1: ({ children, ...props }) => (

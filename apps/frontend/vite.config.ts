@@ -41,7 +41,7 @@ export default defineConfig({
         manualChunks: {
           react: ['react', 'react-dom'],
           recharts: ['recharts'],
-          markdown: ['react-markdown', 'rehype-highlight', 'rehype-raw', 'remark-gfm'],
+          markdown: ['react-markdown', 'lowlight', 'rehype-raw', 'remark-gfm'],
         },
       },
     },
