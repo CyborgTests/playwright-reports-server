@@ -117,7 +117,18 @@ export class LlmTasksDatabase {
     // sits above test work via its high priority and runs as soon as its
     // project is idle; auto project_summary sits at the tail.
     this.selectQueuedStmt = this.db.prepare(`
-      SELECT * FROM llm_tasks t
+      WITH active_test_analysis_reports AS (
+        SELECT DISTINCT reportId FROM llm_tasks
+        WHERE type = 'test_analysis'
+          AND status IN ('queued', 'processing')
+          AND reportId IS NOT NULL
+      ),
+      active_report_or_test_projects AS (
+        SELECT DISTINCT project FROM llm_tasks
+        WHERE type IN ('test_analysis', 'report_summary')
+          AND status IN ('queued', 'processing')
+      )
+      SELECT t.* FROM llm_tasks t
       WHERE t.status = 'queued'
         AND (
           t.type = 'test_analysis'
@@ -125,21 +136,14 @@ export class LlmTasksDatabase {
             t.type = 'report_summary'
             AND (
               t.reportId IS NULL
-              OR NOT EXISTS (
-                SELECT 1 FROM llm_tasks sibling
-                WHERE sibling.reportId = t.reportId
-                  AND sibling.type = 'test_analysis'
-                  AND sibling.status IN ('queued', 'processing')
-              )
+              OR t.reportId NOT IN (SELECT reportId FROM active_test_analysis_reports)
             )
           )
           OR (
             t.type = 'project_summary'
             AND NOT EXISTS (
-              SELECT 1 FROM llm_tasks sibling
-              WHERE sibling.type IN ('test_analysis', 'report_summary')
-                AND sibling.status IN ('queued', 'processing')
-                AND (t.project = 'all' OR sibling.project = t.project)
+              SELECT 1 FROM active_report_or_test_projects atp
+              WHERE t.project = 'all' OR atp.project = t.project
             )
           )
         )

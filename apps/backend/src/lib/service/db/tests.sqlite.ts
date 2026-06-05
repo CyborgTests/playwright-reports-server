@@ -2,6 +2,8 @@ import type { FailureCategorySource, ReportTestOutcomeEnum } from '@playwright-r
 import type Database from 'better-sqlite3';
 import { v4 as uuid } from 'uuid';
 import { getDatabase } from './db.js';
+import type { DerivedPageOptions } from './testQueries.sqlite.js';
+import * as testQueries from './testQueries.sqlite.js';
 
 const initiatedTestsDb = Symbol.for('playwright.reports.db.tests');
 const instance = globalThis as typeof globalThis & {
@@ -67,22 +69,22 @@ export interface DerivedPageRow {
   avgDuration: number | null;
 }
 
+export function convertDbRowToTestRun(row: any): TestRun {
+  return {
+    ...row,
+    quarantined: Boolean(row.quarantined),
+    failureDetails: row.failure_details || undefined,
+    failureCategory: row.failure_category || undefined,
+    failureCategorySource: (row.failure_category_source as FailureCategorySource) || undefined,
+    errorSignature: row.error_signature || undefined,
+    errorSignatureGlobal: row.error_signature_global || undefined,
+    reportTitle: row.reportTitle ?? undefined,
+    reportDisplayNumber: row.reportDisplayNumber ?? undefined,
+  };
+}
+
 export class TestDatabase {
   private readonly db = getDatabase();
-
-  private convertDbRowToTestRun(row: any): TestRun {
-    return {
-      ...row,
-      quarantined: Boolean(row.quarantined),
-      failureDetails: row.failure_details || undefined,
-      failureCategory: row.failure_category || undefined,
-      failureCategorySource: (row.failure_category_source as FailureCategorySource) || undefined,
-      errorSignature: row.error_signature || undefined,
-      errorSignatureGlobal: row.error_signature_global || undefined,
-      reportTitle: row.reportTitle ?? undefined,
-      reportDisplayNumber: row.reportDisplayNumber ?? undefined,
-    };
-  }
 
   private readonly insertTestStmt: Database.Statement<
     [string, string, string, string, string, string]
@@ -598,12 +600,12 @@ export class TestDatabase {
 
   public getTestRuns(testId: string, fileId: string, project: string): TestRun[] {
     const rows = this.getTestRunsStmt.all(testId, fileId, project);
-    return rows.map((row) => this.convertDbRowToTestRun(row));
+    return rows.map((row) => convertDbRowToTestRun(row));
   }
 
   public getLatestTestRun(testId: string, fileId: string, project: string): TestRun | undefined {
     const row = this.getLatestTestRunStmt.get(testId, fileId, project);
-    return row ? this.convertDbRowToTestRun(row) : undefined;
+    return row ? convertDbRowToTestRun(row) : undefined;
   }
 
   public getRecentTestRunsForFlakiness(
@@ -651,487 +653,25 @@ export class TestDatabase {
     };
   }
 
-  public getAllAndDerivedData(project?: string): TestWithQuarantineInfo[] {
-    const scoped = project && project !== 'all';
-    const testProjectFilter = scoped ? 'WHERE t.project = ?' : '';
-    const aggProjectFilter = scoped ? 'WHERE project = ?' : '';
-    const latestProjectFilter = scoped
-      ? "WHERE outcome != 'skipped' AND project = ?"
-      : "WHERE outcome != 'skipped'";
-    const runsProjectFilter = scoped ? 'WHERE tr.project = ?' : '';
-    const derivedParams = scoped ? [project, project, project] : [];
-
-    const derivedSql = `
-      SELECT
-        t.testId, t.fileId, t.filePath, t.project, t.title, t.createdAt,
-        COALESCE(agg.totalRuns, 0) AS totalRuns,
-        agg.lastRunAt AS lastRunAt,
-        latest.flakinessScore AS flakinessScore,
-        COALESCE(latest.quarantined, 0) AS quarantined,
-        latest.createdAt AS latestRunAt,
-        latest.quarantineReason AS quarantineReason
-      FROM tests t
-      LEFT JOIN (
-        SELECT testId, fileId, project,
-               COUNT(*) AS totalRuns,
-               MAX(createdAt) AS lastRunAt
-        FROM test_runs
-        ${aggProjectFilter}
-        GROUP BY testId, fileId, project
-      ) agg
-        ON agg.testId = t.testId AND agg.fileId = t.fileId AND agg.project = t.project
-      LEFT JOIN (
-        SELECT testId, fileId, project, flakinessScore, quarantined, createdAt, quarantineReason
-        FROM (
-          SELECT testId, fileId, project, flakinessScore, quarantined, createdAt, quarantineReason,
-                 ROW_NUMBER() OVER (
-                   PARTITION BY testId, fileId, project ORDER BY createdAt DESC
-                 ) AS rn
-          FROM test_runs
-          ${latestProjectFilter}
-        )
-        WHERE rn = 1
-      ) latest
-        ON latest.testId = t.testId AND latest.fileId = t.fileId AND latest.project = t.project
-      ${testProjectFilter}
-      ORDER BY t.createdAt DESC
-    `;
-
-    const derivedRows = this.db.prepare(derivedSql).all(...derivedParams) as Array<{
-      testId: string;
-      fileId: string;
-      filePath: string;
-      project: string;
-      title: string;
-      createdAt: string;
-      totalRuns: number;
-      lastRunAt: string | null;
-      flakinessScore: number | null;
-      quarantined: number | null;
-      latestRunAt: string | null;
-      quarantineReason: string | null;
-    }>;
-
-    const runsSql = `
-      SELECT
-        testId, fileId, project, runId, outcome, duration, createdAt,
-        flakinessScore, quarantineReason, quarantined, fixedAt,
-        failure_details, failure_category, failure_category_source,
-        error_signature, error_signature_global,
-        reportId, reportTitle, reportDisplayNumber
-      FROM (
-        SELECT tr.*, r.title AS reportTitle, r.displayNumber AS reportDisplayNumber,
-               ROW_NUMBER() OVER (
-                 PARTITION BY tr.testId, tr.fileId, tr.project
-                 ORDER BY tr.createdAt DESC
-               ) AS rn
-        FROM test_runs tr
-        LEFT JOIN reports r ON r.reportID = tr.reportId
-        ${runsProjectFilter}
-      )
-      WHERE rn <= 50
-      ORDER BY testId, fileId, project, createdAt DESC
-    `;
-    const runRows = this.db.prepare(runsSql).all(...(scoped ? [project] : [])) as Array<
-      Record<string, unknown>
-    >;
-
-    const runsByKey = new Map<string, TestRun[]>();
-    for (const row of runRows) {
-      const key = `${row.testId}::${row.fileId}::${row.project}`;
-      let bucket = runsByKey.get(key);
-      if (!bucket) {
-        bucket = [];
-        runsByKey.set(key, bucket);
-      }
-      bucket.push(this.convertDbRowToTestRun(row));
-    }
-
-    return derivedRows.map((row) => {
-      const key = `${row.testId}::${row.fileId}::${row.project}`;
-      const isQuarantined = Boolean(row.quarantined);
-      return {
-        testId: row.testId,
-        fileId: row.fileId,
-        filePath: row.filePath,
-        project: row.project,
-        title: row.title,
-        createdAt: row.createdAt,
-        totalRuns: row.totalRuns || 0,
-        lastRunAt: row.lastRunAt || undefined,
-        flakinessScore: row.flakinessScore ?? undefined,
-        isQuarantined,
-        quarantinedAt: isQuarantined && row.latestRunAt ? row.latestRunAt : undefined,
-        quarantineReason: isQuarantined && row.quarantineReason ? row.quarantineReason : undefined,
-        runs: runsByKey.get(key) ?? [],
-      };
-    });
-  }
-
   public getDerivedPage(
     project: string | undefined,
-    options: {
-      status?: 'all' | 'quarantined' | 'not-quarantined';
-      sort?: 'default' | 'slowest' | 'stale';
-      tier?: {
-        warningThreshold: number;
-        quarantineThreshold: number;
-        tiers: Array<'stable' | 'flaky' | 'critical'>;
-      };
-      failureCategory?: string;
-      limit?: number;
-      offset?: number;
-      from?: string;
-      to?: string;
-      search?: string;
-    } = {}
+    options: DerivedPageOptions = {}
   ): { rows: DerivedPageRow[]; total: number } {
-    const scoped = !!project && project !== 'all';
-    const windowed = !!(options.from || options.to);
-
-    const ctes: string[] = [];
-    const cteParams: Array<string | number> = [];
-    if (windowed) {
-      const winConds = ["outcome != 'skipped'"];
-      if (scoped) {
-        winConds.push('project = ?');
-        cteParams.push(project as string);
-      }
-      if (options.from) {
-        winConds.push('createdAt >= ?');
-        cteParams.push(options.from);
-      }
-      if (options.to) {
-        winConds.push('createdAt < ?');
-        cteParams.push(options.to);
-      }
-      ctes.push(`agg_w AS (
-        SELECT testId, fileId, project, COUNT(*) AS totalRuns, MAX(createdAt) AS lastRunAt
-        FROM test_runs WHERE ${winConds.join(' AND ')}
-        GROUP BY testId, fileId, project
-      )`);
-      // recent_w reuses the same filters as agg_w; duplicate the bind params
-      // in the same order to align with the second occurrence of winConds.
-      if (scoped) cteParams.push(project as string);
-      if (options.from) cteParams.push(options.from);
-      if (options.to) cteParams.push(options.to);
-      ctes.push(`recent_w AS (
-        SELECT testId, fileId, project,
-               CAST(SUM(CASE WHEN outcome IN ('expected', 'passed') THEN 1 ELSE 0 END) AS REAL)
-                 / NULLIF(COUNT(*), 0) AS recentPassRate,
-               AVG(CASE WHEN duration >= 0 THEN duration END) AS avgDuration
-        FROM test_runs WHERE ${winConds.join(' AND ')}
-        GROUP BY testId, fileId, project
-      )`);
-    }
-
-    const totalRunsExpr = windowed ? 'COALESCE(agg_w.totalRuns, 0)' : 'COALESCE(t.totalRuns, 0)';
-    const lastRunAtExpr = windowed ? 'agg_w.lastRunAt' : 't.latestRunAt';
-    const passRateExpr = windowed
-      ? 'COALESCE(recent_w.recentPassRate, 1.0)'
-      : 'COALESCE(t.recentPassRate, 1.0)';
-    const avgDurationExpr = windowed ? 'recent_w.avgDuration' : 't.avgDuration';
-
-    const whereConds: string[] = [];
-    const whereParams: Array<string | number> = [];
-
-    if (scoped) {
-      whereConds.push('t.project = ?');
-      whereParams.push(project as string);
-    }
-    if (windowed) {
-      whereConds.push('agg_w.totalRuns IS NOT NULL AND agg_w.totalRuns > 0');
-    }
-    if (options.status === 'quarantined') {
-      whereConds.push('COALESCE(t.quarantined, 0) = 1');
-    } else if (options.status === 'not-quarantined') {
-      whereConds.push('COALESCE(t.quarantined, 0) = 0');
-    }
-    if (options.tier && options.tier.tiers.length > 0) {
-      const { warningThreshold, quarantineThreshold, tiers } = options.tier;
-      const tierConds: string[] = [];
-      for (const tier of tiers) {
-        if (tier === 'stable') {
-          tierConds.push('COALESCE(t.flakinessScore, 0) < ?');
-          whereParams.push(warningThreshold);
-        } else if (tier === 'flaky') {
-          tierConds.push(
-            '(COALESCE(t.flakinessScore, 0) >= ? AND COALESCE(t.flakinessScore, 0) < ?)'
-          );
-          whereParams.push(warningThreshold, quarantineThreshold);
-        } else if (tier === 'critical') {
-          tierConds.push('COALESCE(t.flakinessScore, 0) >= ?');
-          whereParams.push(quarantineThreshold);
-        }
-      }
-      if (tierConds.length > 0) whereConds.push(`(${tierConds.join(' OR ')})`);
-    }
-    if (options.failureCategory) {
-      whereConds.push('t.latestFailureCategory = ?');
-      whereParams.push(options.failureCategory);
-    }
-    if (options.search) {
-      const term = `%${options.search.toLowerCase()}%`;
-      whereConds.push('(LOWER(t.title) LIKE ? OR LOWER(t.filePath) LIKE ?)');
-      whereParams.push(term, term);
-    }
-
-    const tieBreaker = 't.createdAt DESC, t.rowid';
-    let orderBy: string;
-    if (options.sort === 'slowest') {
-      orderBy = `ORDER BY COALESCE(${avgDurationExpr}, -1) DESC, ${tieBreaker}`;
-    } else if (options.sort === 'stale') {
-      orderBy = `ORDER BY COALESCE(${lastRunAtExpr}, '') ASC, ${tieBreaker}`;
-    } else {
-      orderBy = `ORDER BY
-        CASE WHEN t.latestOutcome = 'skipped' THEN 1 ELSE 0 END ASC,
-        CASE WHEN t.latestOutcome = 'unexpected' THEN 0 ELSE 1 END ASC,
-        COALESCE(t.flakinessScore, 0) DESC,
-        ${passRateExpr} ASC,
-        ${tieBreaker}`;
-    }
-
-    const whereSql = whereConds.length ? `WHERE ${whereConds.join(' AND ')}` : '';
-    const windowJoins = windowed
-      ? `
-        LEFT JOIN agg_w
-          ON agg_w.testId = t.testId AND agg_w.fileId = t.fileId AND agg_w.project = t.project
-        LEFT JOIN recent_w
-          ON recent_w.testId = t.testId AND recent_w.fileId = t.fileId
-            AND recent_w.project = t.project`
-      : '';
-    const baseFrom = `FROM tests t ${windowJoins} ${whereSql}`;
-
-    const pageParams: Array<string | number> = [];
-    let limitSql = '';
-    if (options.limit !== undefined) {
-      limitSql = 'LIMIT ? OFFSET ?';
-      pageParams.push(options.limit, options.offset ?? 0);
-    }
-
-    const cteHead = ctes.length > 0 ? `WITH ${ctes.join(', ')}` : '';
-
-    const rowsSql = `${cteHead}
-      SELECT
-        t.testId, t.fileId, t.filePath, t.project, t.title, t.createdAt,
-        ${totalRunsExpr} AS totalRuns,
-        ${lastRunAtExpr} AS lastRunAt,
-        t.latestOutcome AS latestOutcome,
-        t.flakinessScore AS flakinessScore,
-        COALESCE(t.quarantined, 0) AS quarantined,
-        t.latestNonSkippedAt AS latestNonSkippedAt,
-        t.quarantineReason AS quarantineReason,
-        ${passRateExpr} AS recentPassRate,
-        ${avgDurationExpr} AS avgDuration,
-        COUNT(*) OVER () AS __total
-      ${baseFrom}
-      ${orderBy}
-      ${limitSql}
-    `;
-    const rawRows = this.db
-      .prepare(rowsSql)
-      .all(...cteParams, ...whereParams, ...pageParams) as Array<
-      DerivedPageRow & { __total: number }
-    >;
-    let total = rawRows.length > 0 ? rawRows[0].__total : 0;
-    const rows = rawRows.map(({ __total, ...row }) => row);
-
-    if (rawRows.length === 0 && (options.offset ?? 0) > 0) {
-      const countSql = `${cteHead} SELECT COUNT(*) AS total ${baseFrom}`;
-      const countRow = this.db.prepare(countSql).get(...cteParams, ...whereParams) as
-        | { total: number }
-        | undefined;
-      total = countRow?.total ?? 0;
-    }
-
-    return { rows, total };
+    return testQueries.getDerivedPage(this.db, project, options);
   }
 
   public getRunsForLanes(
     lanes: Array<{ testId: string; fileId: string; project: string }>,
     opts?: { from?: string; to?: string }
   ): Map<string, TestRun[]> {
-    if (lanes.length === 0) return new Map();
-    const windowed = !!(opts?.from || opts?.to);
-
-    const LANE_FILTER_THRESHOLD = 200;
-    const useLaneFilter = lanes.length <= LANE_FILTER_THRESHOLD;
-
-    const uniformProject = (() => {
-      const p = lanes[0].project;
-      return lanes.every((l) => l.project === p) ? p : null;
-    })();
-
-    const laneRows = useLaneFilter
-      ? lanes.map(() => 'SELECT ? AS testId, ? AS fileId, ? AS project').join(' UNION ALL ')
-      : '';
-    const laneParams: string[] = useLaneFilter
-      ? lanes.flatMap((l) => [l.testId, l.fileId, l.project])
-      : [];
-
-    let sql: string;
-    const params: Array<string | number> = [...laneParams];
-
-    if (!useLaneFilter) {
-      const projectFilter = uniformProject ? 'WHERE tr.project = ?' : '';
-      if (uniformProject) params.push(uniformProject);
-
-      if (windowed) {
-        const winConds: string[] = ["tr.outcome != 'skipped'"];
-        if (uniformProject) winConds.push('tr.project = ?'); // duplicated for clarity; same param already pushed
-        if (opts?.from) {
-          winConds.push('tr.createdAt >= ?');
-          params.push(opts.from);
-        }
-        if (opts?.to) {
-          winConds.push('tr.createdAt < ?');
-          params.push(opts.to);
-        }
-        const winWhere = `WHERE ${winConds.filter((c) => c !== 'tr.project = ?' || !projectFilter).join(' AND ')}`;
-        sql = `
-          SELECT tr.*, r.title AS reportTitle, r.displayNumber AS reportDisplayNumber
-          FROM test_runs tr
-          LEFT JOIN reports r ON r.reportID = tr.reportId
-          ${winWhere}
-          ORDER BY tr.testId, tr.fileId, tr.project, tr.createdAt DESC
-        `;
-      } else {
-        sql = `
-          SELECT testId, fileId, project, runId, outcome, duration, createdAt,
-                 flakinessScore, quarantineReason, quarantined, fixedAt,
-                 failure_details, failure_category, failure_category_source,
-                 error_signature, error_signature_global,
-                 reportId, reportTitle, reportDisplayNumber
-          FROM (
-            SELECT tr.*, r.title AS reportTitle, r.displayNumber AS reportDisplayNumber,
-                   ROW_NUMBER() OVER (
-                     PARTITION BY tr.testId, tr.fileId, tr.project
-                     ORDER BY tr.createdAt DESC
-                   ) AS rn
-            FROM test_runs tr
-            LEFT JOIN reports r ON r.reportID = tr.reportId
-            ${projectFilter}
-          )
-          WHERE rn <= 50
-          ORDER BY testId, fileId, project, createdAt DESC
-        `;
-      }
-
-      const runRows = this.db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
-      const laneKeys = new Set(lanes.map((l) => `${l.testId}::${l.fileId}::${l.project}`));
-      const map = new Map<string, TestRun[]>();
-      for (const row of runRows) {
-        const key = `${row.testId}::${row.fileId}::${row.project}`;
-        if (!laneKeys.has(key)) continue;
-        let bucket = map.get(key);
-        if (!bucket) {
-          bucket = [];
-          map.set(key, bucket);
-        }
-        bucket.push(this.convertDbRowToTestRun(row));
-      }
-      return map;
-    }
-
-    if (windowed) {
-      const winConds = ["tr.outcome != 'skipped'"];
-      if (opts?.from) {
-        winConds.push('tr.createdAt >= ?');
-        params.push(opts.from);
-      }
-      if (opts?.to) {
-        winConds.push('tr.createdAt < ?');
-        params.push(opts.to);
-      }
-      sql = `
-        WITH lanes(testId, fileId, project) AS (${laneRows})
-        SELECT tr.*, r.title AS reportTitle, r.displayNumber AS reportDisplayNumber
-        FROM test_runs tr
-        JOIN lanes l
-          ON l.testId = tr.testId AND l.fileId = tr.fileId AND l.project = tr.project
-        LEFT JOIN reports r ON r.reportID = tr.reportId
-        WHERE ${winConds.join(' AND ')}
-        ORDER BY tr.testId, tr.fileId, tr.project, tr.createdAt DESC
-      `;
-    } else {
-      sql = `
-        WITH lanes(testId, fileId, project) AS (${laneRows})
-        SELECT testId, fileId, project, runId, outcome, duration, createdAt,
-               flakinessScore, quarantineReason, quarantined, fixedAt,
-               failure_details, failure_category, failure_category_source,
-               error_signature, error_signature_global,
-               reportId, reportTitle, reportDisplayNumber
-        FROM (
-          SELECT tr.*, r.title AS reportTitle, r.displayNumber AS reportDisplayNumber,
-                 ROW_NUMBER() OVER (
-                   PARTITION BY tr.testId, tr.fileId, tr.project
-                   ORDER BY tr.createdAt DESC
-                 ) AS rn
-          FROM test_runs tr
-          JOIN lanes l
-            ON l.testId = tr.testId AND l.fileId = tr.fileId AND l.project = tr.project
-          LEFT JOIN reports r ON r.reportID = tr.reportId
-        )
-        WHERE rn <= 50
-        ORDER BY testId, fileId, project, createdAt DESC
-      `;
-    }
-
-    const runRows = this.db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
-    const map = new Map<string, TestRun[]>();
-    for (const row of runRows) {
-      const key = `${row.testId}::${row.fileId}::${row.project}`;
-      let bucket = map.get(key);
-      if (!bucket) {
-        bucket = [];
-        map.set(key, bucket);
-      }
-      bucket.push(this.convertDbRowToTestRun(row));
-    }
-    return map;
+    return testQueries.getRunsForLanes(this.db, lanes, opts);
   }
 
-  /**
-   * A test is considered flaky when its latest non-skipped run's
-   * `flakinessScore` is at or above the provided warning threshold. `total`
-   * counts unique testIds (so the same test running across multiple Playwright
-   * projects/browsers is counted once).
-   */
   public getTestsSummary(
     project: string | undefined,
     warningThreshold: number
   ): { total: number; flakyTests: TestWithQuarantineInfo[] } {
-    const scoped = !!project && project !== 'all';
-    const projectClause = scoped ? 'WHERE project = ?' : '';
-    const projectClauseAnd = scoped ? 'AND project = ?' : '';
-
-    const totalRow = this.db
-      .prepare(`SELECT COUNT(DISTINCT testId) AS total FROM tests ${projectClause}`)
-      .get(...(scoped ? [project] : [])) as { total: number };
-
-    const flakyRows = this.db
-      .prepare(
-        `SELECT testId, fileId, filePath, project, title, createdAt,
-                flakinessScore, quarantined
-         FROM tests
-         WHERE flakinessScore IS NOT NULL AND flakinessScore >= ? ${projectClauseAnd}`
-      )
-      .all(...(scoped ? [warningThreshold, project] : [warningThreshold])) as Array<
-      Test & { flakinessScore: number; quarantined: number }
-    >;
-
-    const flakyTests: TestWithQuarantineInfo[] = flakyRows.map((row) => ({
-      testId: row.testId,
-      fileId: row.fileId,
-      filePath: row.filePath,
-      project: row.project,
-      title: row.title,
-      createdAt: row.createdAt,
-      flakinessScore: row.flakinessScore,
-      isQuarantined: Boolean(row.quarantined),
-    }));
-
-    return { total: totalRow?.total ?? 0, flakyTests };
+    return testQueries.getTestsSummary(this.db, project, warningThreshold);
   }
 
   public getTestRunOutcomesInWindow(
@@ -1139,52 +679,7 @@ export class TestDatabase {
     from: string,
     to: string
   ): Array<{ testId: string; fileId: string; project: string; outcome: ReportTestOutcomeEnum }> {
-    const conditions: string[] = ["outcome != 'skipped'"];
-    const params: string[] = [];
-
-    conditions.push('createdAt >= ?');
-    params.push(from);
-    conditions.push('createdAt < ?');
-    params.push(to);
-
-    if (project && project !== 'all') {
-      conditions.push('project = ?');
-      params.push(project);
-    }
-
-    const sql = `SELECT testId, fileId, project, outcome FROM test_runs WHERE ${conditions.join(' AND ')} ORDER BY createdAt ASC`;
-    return this.db.prepare(sql).all(...params) as Array<{
-      testId: string;
-      fileId: string;
-      project: string;
-      outcome: ReportTestOutcomeEnum;
-    }>;
-  }
-
-  private scopedRunFilter(
-    project: string | undefined,
-    from?: string,
-    to?: string,
-    opts: { excludeSkipped?: boolean; requireDuration?: boolean; alias?: string } = {}
-  ): { where: string; params: Array<string | number> } {
-    const a = opts.alias ? `${opts.alias}.` : '';
-    const conditions: string[] = [];
-    const params: Array<string | number> = [];
-    if (opts.excludeSkipped !== false) conditions.push(`${a}outcome != 'skipped'`);
-    if (opts.requireDuration !== false) conditions.push(`${a}duration IS NOT NULL`);
-    if (project && project !== 'all') {
-      conditions.push(`${a}project = ?`);
-      params.push(project);
-    }
-    if (from) {
-      conditions.push(`${a}createdAt >= ?`);
-      params.push(from);
-    }
-    if (to) {
-      conditions.push(`${a}createdAt < ?`);
-      params.push(to);
-    }
-    return { where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '', params };
+    return testQueries.getTestRunOutcomesInWindow(this.db, project, from, to);
   }
 
   public getDurationAggregates(
@@ -1192,23 +687,7 @@ export class TestDatabase {
     from?: string,
     to?: string
   ): { avgDuration: number; p95Duration: number; count: number } {
-    const { where, params } = this.scopedRunFilter(project, from, to);
-    const agg = this.db
-      .prepare(`SELECT AVG(duration) AS avg, COUNT(*) AS count FROM test_runs ${where}`)
-      .get(...params) as { avg: number | null; count: number };
-    const count = agg?.count ?? 0;
-    if (count === 0) {
-      return { avgDuration: 0, p95Duration: 0, count: 0 };
-    }
-    const offset = Math.min(count - 1, Math.floor(count * 0.95));
-    const p95Row = this.db
-      .prepare(`SELECT duration FROM test_runs ${where} ORDER BY duration ASC LIMIT 1 OFFSET ?`)
-      .get(...params, offset) as { duration: number | null } | undefined;
-    return {
-      avgDuration: agg.avg ?? 0,
-      p95Duration: p95Row?.duration ?? 0,
-      count,
-    };
+    return testQueries.getDurationAggregates(this.db, project, from, to);
   }
 
   public getSlowestTests(
@@ -1217,25 +696,7 @@ export class TestDatabase {
     to: string | undefined,
     limit: number
   ): Array<{ step: string; duration: number; testId: string }> {
-    const { where, params } = this.scopedRunFilter(project, from, to, { alias: 'tr' });
-    const sql = `
-      SELECT t.title AS step, tr.duration AS duration, tr.testId AS testId
-      FROM test_runs tr
-      JOIN tests t ON t.testId = tr.testId AND t.fileId = tr.fileId AND t.project = tr.project
-      ${where}
-      ORDER BY tr.duration DESC
-      LIMIT ?
-    `;
-    const rows = this.db.prepare(sql).all(...params, limit) as Array<{
-      step: string | null;
-      duration: number;
-      testId: string;
-    }>;
-    return rows.map((r) => ({
-      step: r.step ?? 'Unknown Test',
-      duration: r.duration,
-      testId: r.testId,
-    }));
+    return testQueries.getSlowestTests(this.db, project, from, to, limit);
   }
 
   public getSlowCountsByReport(
@@ -1244,14 +705,7 @@ export class TestDatabase {
     to: string | undefined,
     threshold: number
   ): Map<string, number> {
-    const { where, params } = this.scopedRunFilter(project, from, to);
-    const extra = where ? `${where} AND duration > ?` : 'WHERE duration > ?';
-    const rows = this.db
-      .prepare(`SELECT reportId, COUNT(*) AS count FROM test_runs ${extra} GROUP BY reportId`)
-      .all(...params, threshold) as Array<{ reportId: string; count: number }>;
-    const map = new Map<string, number>();
-    for (const row of rows) map.set(row.reportId, row.count);
-    return map;
+    return testQueries.getSlowCountsByReport(this.db, project, from, to, threshold);
   }
 
   public getFlakySummaryInWindow(
@@ -1260,56 +714,11 @@ export class TestDatabase {
     to: string,
     warningThreshold: number
   ): { total: number; flakyCount: number } {
-    const scoped = project && project !== 'all';
-    const projectClauseInWindow = scoped ? 'AND project = ?' : '';
-
-    const totalRow = this.db
-      .prepare(
-        `SELECT COUNT(DISTINCT testId) AS total FROM test_runs
-         WHERE outcome != 'skipped' AND createdAt >= ? AND createdAt < ? ${projectClauseInWindow}`
-      )
-      .get(...(scoped ? [from, to, project] : [from, to])) as { total: number };
-
-    const flakyRow = this.db
-      .prepare(
-        `SELECT COUNT(DISTINCT iw.testId) AS flakyCount
-         FROM (
-           SELECT DISTINCT testId, fileId, project FROM test_runs
-           WHERE outcome != 'skipped' AND createdAt >= ? AND createdAt < ? ${projectClauseInWindow}
-         ) iw
-         JOIN tests t USING (testId, fileId, project)
-         WHERE COALESCE(t.flakinessScore, 0) >= ?`
-      )
-      .get(...(scoped ? [from, to, project, warningThreshold] : [from, to, warningThreshold])) as {
-      flakyCount: number;
-    };
-
-    return { total: totalRow?.total ?? 0, flakyCount: flakyRow?.flakyCount ?? 0 };
+    return testQueries.getFlakySummaryInWindow(this.db, project, from, to, warningThreshold);
   }
 
   public getTestRunsInWindow(project: string | undefined, from: string, to: string): TestRun[] {
-    const conditions: string[] = ["tr.outcome != 'skipped'"];
-    const params: string[] = [];
-
-    conditions.push('tr.createdAt >= ?');
-    params.push(from);
-    conditions.push('tr.createdAt < ?');
-    params.push(to);
-
-    if (project && project !== 'all') {
-      conditions.push('tr.project = ?');
-      params.push(project);
-    }
-
-    const sql = `
-      SELECT tr.*, r.title AS reportTitle, r.displayNumber AS reportDisplayNumber
-      FROM test_runs tr
-      LEFT JOIN reports r ON r.reportID = tr.reportId
-      WHERE ${conditions.join(' AND ')}
-      ORDER BY tr.createdAt DESC
-    `;
-    const rows = this.db.prepare(sql).all(...params);
-    return rows.map((row) => this.convertDbRowToTestRun(row));
+    return testQueries.getTestRunsInWindow(this.db, project, from, to);
   }
 
   public updateFlakinessScore(runId: string, score: number): void {
@@ -1320,7 +729,7 @@ export class TestDatabase {
     const rows = this.db
       .prepare('SELECT * FROM test_runs WHERE reportId = ? ORDER BY createdAt DESC')
       .all(reportId);
-    return rows.map((row) => this.convertDbRowToTestRun(row));
+    return rows.map((row) => convertDbRowToTestRun(row));
   }
 
   public updateFailureCategory(
@@ -1421,22 +830,39 @@ export class TestDatabase {
     if (rows.length === 0) return 0;
 
     let updated = 0;
+    let skippedNull = 0;
+    let skippedParseError = 0;
+    let skippedEmptyMessage = 0;
     const tx = this.db.transaction(() => {
       for (const row of rows) {
-        if (!row.failure_details) continue;
+        if (!row.failure_details) {
+          skippedNull++;
+          continue;
+        }
         let message = '';
         try {
           message = String((JSON.parse(row.failure_details) as { message?: string }).message ?? '');
         } catch {
+          skippedParseError++;
           continue;
         }
-        if (!message) continue;
+        if (!message) {
+          skippedEmptyMessage++;
+          continue;
+        }
         const signature = computeSignature(message);
         this.backfillGlobalSignatureStmt.run(signature, row.runId);
         updated++;
       }
     });
     tx();
+    const totalSkipped = skippedNull + skippedParseError + skippedEmptyMessage;
+    if (totalSkipped > 0) {
+      console.warn(
+        `[tests db] backfillGlobalSignatures: updated=${updated}, skipped=${totalSkipped} ` +
+          `(null=${skippedNull}, parseError=${skippedParseError}, emptyMessage=${skippedEmptyMessage})`
+      );
+    }
     return updated;
   }
 

@@ -1,4 +1,4 @@
-import { getDatabase } from './db.js';
+import { getDatabase, hasMigrationMark, setMigrationMark } from './db.js';
 
 const initiatedKey = Symbol.for('playwright.reports.db.report_results');
 const instance = globalThis as typeof globalThis & {
@@ -106,9 +106,16 @@ export class ReportResultsDatabase {
   /**
    * Backfill missing links for reports created before this table existed.
    * Joins report.metadata.testRun ↔ result.metadata.testRun.
-   * Idempotent (INSERT OR IGNORE).
    */
-  public backfillFromTestRun(): { reports: number; links: number } {
+  public backfillFromTestRun(options: { runUnconditionally?: boolean } = {}): {
+    reports: number;
+    links: number;
+  } {
+    const MARK = 'report_results_backfill_v1';
+    if (!options.runUnconditionally && hasMigrationMark(this.db, MARK)) {
+      return { reports: 0, links: 0 };
+    }
+
     const reports = this.db
       .prepare(
         `SELECT reportID, metadata FROM reports
@@ -116,7 +123,10 @@ export class ReportResultsDatabase {
       )
       .all() as Array<{ reportID: string; metadata: string | null }>;
 
-    if (!reports.length) return { reports: 0, links: 0 };
+    if (!reports.length) {
+      setMigrationMark(this.db, MARK);
+      return { reports: 0, links: 0 };
+    }
 
     let linkedCount = 0;
     const link = this.db.transaction((rows: typeof reports) => {
@@ -141,6 +151,7 @@ export class ReportResultsDatabase {
       }
     });
     link(reports);
+    setMigrationMark(this.db, MARK);
     return { reports: reports.length, links: linkedCount };
   }
 }

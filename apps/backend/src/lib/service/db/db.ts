@@ -92,14 +92,14 @@ function ensureMigrationMarks(db: Database.Database): void {
   `);
 }
 
-function hasMigrationMark(db: Database.Database, mark: string): boolean {
+export function hasMigrationMark(db: Database.Database, mark: string): boolean {
   const row = db.prepare('SELECT 1 FROM schema_migration_marks WHERE mark = ?').get(mark) as
     | { 1: number }
     | undefined;
   return !!row;
 }
 
-function setMigrationMark(db: Database.Database, mark: string): void {
+export function setMigrationMark(db: Database.Database, mark: string): void {
   db.prepare('INSERT OR IGNORE INTO schema_migration_marks (mark, appliedAt) VALUES (?, ?)').run(
     mark,
     new Date().toISOString()
@@ -197,6 +197,48 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tests_proj_latestFailureCategory
       ON tests(project, latestFailureCategory);
   `);
+
+  // FTS5 search index for the test-management page. The LIKE
+  // '%term%' filter force a full scan of `tests` because B-tree indexes
+  // can't accelerate leading-wildcard contains-anywhere queries. The
+  // trigram tokenizer supports the same substring semantics with an
+  // actual index, so a 100k-row dashboard search drops from ~hundreds of
+  // ms to single-digit ms. We store testId/fileId/project as UNINDEXED
+  // pass-through columns so query results can be joined back to `tests`
+  // by the lookup keys without needing a separate ROWID mapping.
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS tests_fts USING fts5(
+      testId UNINDEXED,
+      fileId UNINDEXED,
+      project UNINDEXED,
+      title,
+      filePath,
+      tokenize = 'trigram'
+    );
+
+    CREATE TRIGGER IF NOT EXISTS tests_fts_insert AFTER INSERT ON tests BEGIN
+      INSERT INTO tests_fts(testId, fileId, project, title, filePath)
+      VALUES (new.testId, new.fileId, new.project, new.title, new.filePath);
+    END;
+    CREATE TRIGGER IF NOT EXISTS tests_fts_delete AFTER DELETE ON tests BEGIN
+      DELETE FROM tests_fts
+      WHERE testId = old.testId AND fileId = old.fileId AND project = old.project;
+    END;
+    CREATE TRIGGER IF NOT EXISTS tests_fts_update AFTER UPDATE OF title, filePath ON tests BEGIN
+      DELETE FROM tests_fts
+      WHERE testId = old.testId AND fileId = old.fileId AND project = old.project;
+      INSERT INTO tests_fts(testId, fileId, project, title, filePath)
+      VALUES (new.testId, new.fileId, new.project, new.title, new.filePath);
+    END;
+  `);
+
+  if (!hasMigrationMark(db, 'tests_fts_backfill_v1')) {
+    db.exec(`
+      INSERT INTO tests_fts(testId, fileId, project, title, filePath)
+      SELECT testId, fileId, project, title, filePath FROM tests;
+    `);
+    setMigrationMark(db, 'tests_fts_backfill_v1');
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS test_runs (

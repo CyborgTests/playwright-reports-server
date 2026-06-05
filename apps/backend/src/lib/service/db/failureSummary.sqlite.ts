@@ -358,22 +358,33 @@ export class FailureSummaryDatabase {
     }
     const titleMap = new Map<TestKey, { title: string; filePath?: string }>();
     if (testKeys.size > 0) {
-      const stmt = this.db.prepare(
-        'SELECT testId, fileId, project, title, filePath FROM tests WHERE testId = ? AND fileId = ? AND project = ?'
-      );
-      for (const key of testKeys) {
-        const [testId, fileId, project] = key.split('::');
-        const row = stmt.get(testId, fileId, project) as
-          | {
-              testId: string;
-              fileId: string;
-              project: string;
-              title: string;
-              filePath: string | null;
-            }
-          | undefined;
-        if (row) {
-          titleMap.set(key, { title: row.title, filePath: row.filePath ?? undefined });
+      const keys = Array.from(testKeys).map((k) => {
+        const [testId, fileId, project] = k.split('::');
+        return { testId, fileId, project };
+      });
+      const CHUNK = 300;
+      for (let i = 0; i < keys.length; i += CHUNK) {
+        const chunk = keys.slice(i, i + CHUNK);
+        const valuesSql = chunk.map(() => '(?, ?, ?)').join(', ');
+        const params = chunk.flatMap((k) => [k.testId, k.fileId, k.project]);
+        const rows = this.db
+          .prepare(
+            `SELECT testId, fileId, project, title, filePath
+             FROM tests
+             WHERE (testId, fileId, project) IN (VALUES ${valuesSql})`
+          )
+          .all(...params) as Array<{
+          testId: string;
+          fileId: string;
+          project: string;
+          title: string;
+          filePath: string | null;
+        }>;
+        for (const row of rows) {
+          titleMap.set(makeTestKey(row.testId, row.fileId, row.project), {
+            title: row.title,
+            filePath: row.filePath ?? undefined,
+          });
         }
       }
     }
