@@ -56,8 +56,11 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
         offset?: string;
       };
 
-      const parsedLimit = limit ? Number.parseInt(limit, 10) : 25;
-      const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
+      const rawLimit = limit ? Number.parseInt(limit, 10) : 50;
+      const parsedLimit =
+        Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 25;
+      const rawOffset = offset ? Number.parseInt(offset, 10) : 0;
+      const parsedOffset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
 
       const { data, total } = llmTasksDb.getTasksPaginated({
         status,
