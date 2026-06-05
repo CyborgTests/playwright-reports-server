@@ -249,26 +249,6 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.get('/api/auth/csrf', async (_request, _reply) => {
-    const csrfToken = Buffer.from(Date.now().toString()).toString('base64');
-
-    return {
-      csrfToken,
-    };
-  });
-
-  fastify.get('/api/auth/providers', async (_request, _reply) => {
-    return {
-      credentials: {
-        id: 'credentials',
-        name: 'API Token',
-        type: 'credentials',
-        signinUrl: '/api/auth/signin/credentials',
-        callbackUrl: '/api/auth/callback/credentials',
-      },
-    };
-  });
-
   fastify.all('/api/auth/*', async (request, reply) => {
     // Handle various next-auth endpoints for compatibility
     const path = (request.params as { '*': string })['*'] || '';

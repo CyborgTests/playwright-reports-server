@@ -3,7 +3,6 @@ export const API_ENDPOINTS = {
   AUTH_SIGNIN: '/api/auth/signin',
   AUTH_SIGNOUT: '/api/auth/signout',
   AUTH_SESSION: '/api/auth/session',
-  AUTH_CSRF: '/api/auth/csrf',
 
   // Reports
   REPORTS_LIST: '/api/report/list',
@@ -11,7 +10,6 @@ export const API_ENDPOINTS = {
   REPORTS_PROJECTS: '/api/report/projects',
   REPORTS_GENERATE: '/api/report/generate',
   REPORTS_DELETE: '/api/report/delete',
-  REPORTS_TREND: '/api/report/trend',
   REPORTS_COMPARE: '/api/report/compare',
 
   // Results
