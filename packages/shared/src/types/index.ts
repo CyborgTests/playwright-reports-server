@@ -95,6 +95,7 @@ export interface SiteWhiteLabelConfig {
   logoPath: string;
   logoInvertOnDark?: boolean;
   faviconPath: string;
+  serverBaseUrl?: string;
   reporterPaths?: string[];
   authRequired?: boolean;
   database?: DatabaseStats;
@@ -111,6 +112,7 @@ export interface SiteWhiteLabelConfig {
   };
   llm?: LLMConfig;
   testManagement?: TestManagementConfig;
+  notifications?: NotificationsConfig;
   /** ISO timestamp marking the start of the current LLM usage accounting
    *  window. Set by the "Reset counters" button on the LLM queue page; the
    *  usage-stats queries clamp their lower bound to this value so the user
@@ -366,6 +368,7 @@ export interface ServerConfig {
   logoInvertOnDark?: boolean;
   faviconPath?: string;
   reporterPaths?: string[];
+  serverBaseUrl?: string;
   cron?: {
     resultExpireDays?: number;
     resultExpireCronSchedule?: string;
@@ -374,10 +377,16 @@ export interface ServerConfig {
   };
   llm?: LLMConfig;
   testManagement?: TestManagementConfig;
+  notifications?: NotificationsConfig;
 }
 
 export * from './analytics.js';
 export * from './feedback.js';
 export * from './github-sync.js';
+export * from './notification-defaults.js';
+export * from './notification-variables.js';
+export * from './notifications.js';
 export * from './report-compare.js';
 export * from './test-management.js';
+
+import type { NotificationsConfig } from './notifications.js';

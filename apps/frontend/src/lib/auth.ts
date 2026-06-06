@@ -1,5 +1,10 @@
 import { withBase } from './url';
 
+export function authHeaders(): HeadersInit {
+  const jwt = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;
+  return jwt ? { Authorization: `Bearer ${jwt}` } : {};
+}
+
 export interface AuthUser {
   apiToken: string;
   jwtToken: string;

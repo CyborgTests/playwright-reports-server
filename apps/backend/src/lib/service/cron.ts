@@ -4,6 +4,7 @@ import { Cron } from 'croner';
 import { env } from '../../config/env.js';
 import { withError } from '../../lib/withError.js';
 import { TMP_FOLDER } from '../storage/constants.js';
+import { notificationLogDb } from './db/notificationLog.sqlite.js';
 import { service } from './index.js';
 
 const runningCron = Symbol.for('playwright.reports.cron.service');
@@ -24,6 +25,7 @@ export class CronService {
   private clearReportsJob: Cron | undefined;
   private clearResultsJob: Cron | undefined;
   private clearResultCacheJob: Cron | undefined;
+  private clearNotificationLogJob: Cron | undefined;
 
   public static getInstance() {
     instance[runningCron] ??= new CronService();
@@ -71,9 +73,11 @@ export class CronService {
     this.clearReportsJob?.stop();
     this.clearResultsJob?.stop();
     this.clearResultCacheJob?.stop();
+    this.clearNotificationLogJob?.stop();
     this.clearReportsJob = undefined;
     this.clearResultsJob = undefined;
     this.clearResultCacheJob = undefined;
+    this.clearNotificationLogJob = undefined;
   }
 
   private async scheduleJobs() {
@@ -99,6 +103,34 @@ export class CronService {
     if (env.DATA_STORAGE === 's3') {
       this.clearResultCacheJob = this.scheduleResultCacheJob();
     }
+    this.clearNotificationLogJob = this.scheduleNotificationLogJob();
+  }
+
+  private scheduleNotificationLogJob(): Cron | undefined {
+    const expression = CronService.NOTIFICATION_LOG_SCHEDULE;
+    const validation = CronService.validateExpression(expression);
+    if (!validation.valid) {
+      console.error(
+        `[cron-job] notification-log cleanup has invalid cron expression "${expression}": ${validation.error}, skipping`
+      );
+      return undefined;
+    }
+
+    const job = new Cron(
+      expression,
+      {
+        unref: true,
+        protect: true,
+        catch: (err) => console.error('[cron-job] notification-log task error:', err),
+      },
+      () => this.clearStaleNotificationLog()
+    );
+
+    const nextRun = job.nextRun();
+    console.log(
+      `[cron-job] scheduled notification-log cleanup (older than ${CronService.NOTIFICATION_LOG_RETENTION_DAYS}d) at "${expression}", next run: ${nextRun?.toISOString() ?? 'unknown'}`
+    );
+    return job;
   }
 
   private scheduleResultCacheJob(): Cron | undefined {
@@ -269,9 +301,19 @@ export class CronService {
     }
   }
 
+  private clearStaleNotificationLog() {
+    const cutoff = Date.now() - CronService.NOTIFICATION_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const deleted = notificationLogDb.pruneOlderThan(cutoff);
+    if (deleted > 0) {
+      console.log(`[cron-job] notification-log cleanup deleted ${deleted} stale row(s)`);
+    }
+  }
+
   private static readonly CLEANUP_BATCH_SIZE = 200;
   private static readonly RESULT_CACHE_SCHEDULE = '*/15 * * * *';
   private static readonly RESULT_CACHE_TTL_MS = 60 * 60 * 1000;
+  private static readonly NOTIFICATION_LOG_SCHEDULE = '30 3 * * *';
+  private static readonly NOTIFICATION_LOG_RETENTION_DAYS = 7;
 }
 
 export const cronService = CronService.getInstance();

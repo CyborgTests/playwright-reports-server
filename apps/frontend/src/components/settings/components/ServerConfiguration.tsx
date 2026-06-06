@@ -184,6 +184,27 @@ export default function ServerConfiguration({
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="server-base-url">Server Base URL</Label>
+            <Input
+              id="server-base-url"
+              disabled={editingSection !== 'server'}
+              placeholder="https://reports.example.com"
+              value={
+                editingSection === 'server'
+                  ? tempConfig.serverBaseUrl || ''
+                  : config.serverBaseUrl || ''
+              }
+              onChange={(e) =>
+                editingSection === 'server' && onUpdateTempConfig({ serverBaseUrl: e.target.value })
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Externally-visible origin (no trailing slash). Used to build absolute report links in
+              notifications. Leave blank to disable links.
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="logo-upload">Logo</Label>
             <div className="space-y-3">
               {/* Current logo display */}

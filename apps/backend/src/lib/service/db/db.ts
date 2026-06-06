@@ -505,6 +505,42 @@ function initializeSchema(db: Database.Database): void {
       WHERE errorSignature IS NOT NULL;
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS notification_log (
+      id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL,
+      channel_type TEXT NOT NULL,
+      rule_id TEXT NOT NULL,
+      rule_kind TEXT NOT NULL,
+      event TEXT NOT NULL,
+      condition TEXT NOT NULL,
+      status TEXT NOT NULL,
+      skip_reason TEXT,
+      http_status INTEGER,
+      error TEXT,
+      attempt INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_notification_log_created
+      ON notification_log(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_notification_log_channel
+      ON notification_log(channel_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_notification_log_status
+      ON notification_log(status, created_at DESC);
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS notification_state (
+      channel_id TEXT NOT NULL,
+      rule_id TEXT NOT NULL,
+      project TEXT NOT NULL DEFAULT '',
+      last_fired_at INTEGER NOT NULL,
+      PRIMARY KEY (channel_id, rule_id, project)
+    );
+  `);
+
   // Drift cleanup: an older non-versioned schema in some deployed DBs left a
   // `targetType` column with a NOT NULL constraint and no default. The current
   // code never writes it, so every INSERT 500s with SQLITE_CONSTRAINT_NOTNULL.

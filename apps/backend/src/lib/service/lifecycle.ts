@@ -14,6 +14,7 @@ import { reportDb, reportResultsDb, resultDb } from './db/index.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import { siteConfigDb } from './db/siteConfig.sqlite.js';
 import { litestreamService } from './litestream.js';
+import { notificationScheduler } from './notifications/scheduler.js';
 import { testManagementService } from './testManagement.js';
 
 const createdLifecycle = Symbol.for('playwright.reports.lifecycle');
@@ -121,6 +122,16 @@ export class Lifecycle {
       githubSyncCron.init();
       console.log('[lifecycle] GitHub sync cron initialized');
 
+      try {
+        notificationScheduler.reload(configCache.config?.notifications);
+      } catch (err) {
+        console.warn(
+          `[lifecycle] notification scheduler reload failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      }
+
       this.initialized = true;
       console.log('[lifecycle] Application initialization complete');
     } catch (error) {
@@ -145,6 +156,16 @@ export class Lifecycle {
       }
 
       githubSyncCron.stop();
+
+      try {
+        notificationScheduler.stopAll();
+      } catch (err) {
+        console.warn(
+          `[lifecycle] notification scheduler stop failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      }
 
       await litestreamService.stop();
 

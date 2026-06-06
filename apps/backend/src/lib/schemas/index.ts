@@ -1,4 +1,9 @@
+import { isOpaqueMaskSentinel, isUrlMaskSentinel, SECRET_MASK } from '@playwright-reports/shared';
 import { z } from 'zod';
+
+function notMaskGarbage(s: string): boolean {
+  return !s.includes(SECRET_MASK) || isOpaqueMaskSentinel(s);
+}
 
 export const UUIDSchema = z.uuid();
 
@@ -313,3 +318,205 @@ export type ReportMetadata = z.infer<typeof ReportMetadataSchema>;
 export type ReportHistory = z.infer<typeof ReportHistorySchema>;
 export type ResultDetails = z.infer<typeof ResultDetailsSchema>;
 export type Pagination = z.infer<typeof PaginationSchema>;
+
+const ProjectFilterSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('all') }),
+  z.object({ mode: z.literal('project'), name: z.string().min(1).max(200) }),
+  z.object({
+    mode: z.literal('regex'),
+    pattern: z
+      .string()
+      .min(1)
+      .max(500)
+      .refine(
+        (p) => {
+          try {
+            new RegExp(p);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { message: 'Invalid regular expression' }
+      ),
+  }),
+]);
+
+const SlackButtonSchema = z.object({
+  label: z.string().min(1).max(75),
+  url: z.string().min(1).max(3000),
+});
+
+const SlackBlockSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('header'), text: z.string().min(1).max(150) }),
+  z.object({ type: z.literal('section'), text: z.string().min(1).max(3000) }),
+  z.object({ type: z.literal('divider') }),
+  z.object({ type: z.literal('context'), text: z.string().min(1).max(3000) }),
+  z.object({
+    type: z.literal('actions'),
+    buttons: z.array(SlackButtonSchema).min(0).max(5),
+  }),
+  z.object({
+    type: z.literal('image'),
+    url: z.string().min(1).max(3000),
+    altText: z.string().max(2000).optional(),
+  }),
+]);
+
+const ChannelTemplateSchema = z.discriminatedUnion('provider', [
+  z.object({
+    provider: z.literal('slack'),
+    blocks: z.array(SlackBlockSchema).min(1).max(50),
+  }),
+  z.object({
+    provider: z.literal('webhook'),
+    bodyJson: z
+      .string()
+      .max(20_000)
+      .refine(
+        (s) => {
+          const stripped = s.replace(/\{\{\s*[#^/!][^}]*\}\}/g, '').replace(/\{\{[^}]+\}\}/g, '0');
+          try {
+            JSON.parse(stripped);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { message: 'Body must be valid JSON (Mustache placeholders allowed)' }
+      ),
+  }),
+]);
+
+const EventRuleSchema = z.object({
+  id: UUIDSchema,
+  kind: z.literal('event'),
+  enabled: z.boolean().optional(),
+  event: z.literal('report_uploaded'),
+  condition: z.enum([
+    'always',
+    'has_failures',
+    'pass_rate_below_100',
+    'recovered_to_clean',
+    'recovered_no_hard_failures',
+  ]),
+  projectFilter: ProjectFilterSchema,
+  template: ChannelTemplateSchema.optional(),
+});
+
+const ScheduleCadenceSchema = z.union([
+  z.literal('daily'),
+  z.literal('weekly'),
+  z.object({
+    cron: z
+      .string()
+      .min(1)
+      .max(100)
+      .refine((s) => /^[\d*/,\- ]+$/.test(s) && s.trim().split(/\s+/).length === 5, {
+        message: 'Cron must be 5 space-separated fields',
+      }),
+  }),
+]);
+
+const ScheduleRuleSchema = z.object({
+  id: UUIDSchema,
+  kind: z.literal('schedule'),
+  enabled: z.boolean().optional(),
+  cadence: ScheduleCadenceSchema,
+  sendAt: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'sendAt must be HH:mm')
+    .default('09:00'),
+  window: z.enum(['last_24h', 'last_7d', 'last_14d', 'since_last_send']),
+  condition: z.enum(['always', 'all_clean', 'no_hard_failures']),
+  projectFilter: ProjectFilterSchema,
+  template: ChannelTemplateSchema.optional(),
+});
+
+const NotificationRuleSchema = z.discriminatedUnion('kind', [EventRuleSchema, ScheduleRuleSchema]);
+
+const SlackChannelConfigSchema = z.object({
+  webhookUrl: z
+    .string()
+    .min(1)
+    .max(2000)
+    .refine((s) => isUrlMaskSentinel(s) || isValidHttpsUrl(s), 'Invalid Slack webhook URL'),
+});
+
+const WebhookChannelConfigSchema = z.object({
+  url: z
+    .string()
+    .min(1)
+    .max(2000)
+    .refine((s) => isUrlMaskSentinel(s) || isValidHttpsUrl(s), 'Invalid URL'),
+  headers: z
+    .record(
+      z.string(),
+      z.string().max(1000).refine(notMaskGarbage, 'Header value cannot contain the mask sentinel')
+    )
+    .optional(),
+  secretHmacKey: z
+    .string()
+    .min(8)
+    .max(512)
+    .refine(notMaskGarbage, 'HMAC key cannot contain the mask sentinel')
+    .optional(),
+});
+
+function isValidHttpsUrl(s: string): boolean {
+  try {
+    const u = new URL(s);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export const NotificationChannelSchema = z.discriminatedUnion('type', [
+  z.object({
+    id: UUIDSchema,
+    name: z.string().min(1).max(100),
+    type: z.literal('slack'),
+    enabled: z.boolean(),
+    config: SlackChannelConfigSchema,
+    rules: z.array(NotificationRuleSchema),
+  }),
+  z.object({
+    id: UUIDSchema,
+    name: z.string().min(1).max(100),
+    type: z.literal('webhook'),
+    enabled: z.boolean(),
+    config: WebhookChannelConfigSchema,
+    rules: z.array(NotificationRuleSchema),
+  }),
+]);
+
+export const NotificationsConfigSchema = z.object({
+  enabled: z.boolean(),
+  channels: z.array(NotificationChannelSchema).max(100),
+});
+
+export const NotificationTestRequestSchema = z.object({
+  channelId: UUIDSchema,
+  reportId: UUIDSchema.optional(),
+  ruleIds: z.array(UUIDSchema).optional(),
+  rule: NotificationRuleSchema.optional(),
+});
+
+export const NotificationLogDeleteSchema = z.object({
+  ids: z.array(UUIDSchema).min(1).max(500),
+});
+
+export const NotificationLogQuerySchema = z.object({
+  channelId: UUIDSchema.optional(),
+  status: z.enum(['success', 'failed', 'skipped']).optional(),
+  source: z.enum(['live', 'test']).optional(),
+  limit: z.coerce.number().min(1).max(200).default(50),
+  offset: z.coerce.number().min(0).default(0),
+});
+
+export type NotificationsConfigInput = z.infer<typeof NotificationsConfigSchema>;
+export type NotificationChannelInput = z.infer<typeof NotificationChannelSchema>;
+export type NotificationTestRequest = z.infer<typeof NotificationTestRequestSchema>;
+export type NotificationLogQuery = z.infer<typeof NotificationLogQuerySchema>;
+export type NotificationLogDelete = z.infer<typeof NotificationLogDeleteSchema>;

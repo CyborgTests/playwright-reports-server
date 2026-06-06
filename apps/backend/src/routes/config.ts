@@ -93,6 +93,7 @@ async function persistBrandingFile(
 
 interface ConfigFormData {
   title?: string;
+  serverBaseUrl?: string;
   logoPath?: string;
   logoInvertOnDark?: string;
   faviconPath?: string;
@@ -305,6 +306,19 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
         if (formData.title !== undefined) {
           config.title = formData.title.trim() === '' ? defaultConfig.title : formData.title;
+        }
+
+        if (formData.serverBaseUrl !== undefined) {
+          const next = formData.serverBaseUrl.trim().replace(/\/+$/, '');
+          if (next === '') {
+            config.serverBaseUrl = '';
+          } else if (!/^https?:\/\//i.test(next)) {
+            return reply
+              .status(400)
+              .send({ error: 'serverBaseUrl must start with http:// or https://' });
+          } else {
+            config.serverBaseUrl = next;
+          }
         }
 
         if (formData.reporterPaths !== undefined) {

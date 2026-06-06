@@ -7,6 +7,7 @@ import CronConfiguration from '@/components/settings/components/CronConfiguratio
 import EnvironmentInfo from '@/components/settings/components/EnvironmentInfo';
 import GithubSyncConfiguration from '@/components/settings/components/GithubSyncConfiguration';
 import LLMConfiguration from '@/components/settings/components/LLMConfiguration';
+import NotificationsConfiguration from '@/components/settings/components/NotificationsConfiguration';
 import ServerConfiguration from '@/components/settings/components/ServerConfiguration';
 import TestManagementSettings from '@/components/settings/components/TestManagementSettings';
 import { Spinner } from '@/components/ui/spinner';
@@ -20,8 +21,9 @@ const SECTION_NAV: Array<{ id: string; label: string }> = [
   { id: 'server', label: 'General' },
   { id: 'cron', label: 'Schedules' },
   { id: 'github', label: 'GitHub Sync' },
-  { id: 'llm', label: 'LLM' },
   { id: 'testManagement', label: 'Test Management' },
+  { id: 'llm', label: 'LLM' },
+  { id: 'notifications', label: 'Notifications' },
 ];
 
 export default function SettingsPage() {
@@ -64,6 +66,10 @@ export default function SettingsPage() {
         // a customization without re-uploading the original asset.
         if ((tempConfig.title ?? '') !== (config.title ?? '')) {
           formData.append('title', tempConfig.title ?? '');
+        }
+
+        if ((tempConfig.serverBaseUrl ?? '') !== (config.serverBaseUrl ?? '')) {
+          formData.append('serverBaseUrl', tempConfig.serverBaseUrl ?? '');
         }
 
         if (logoFile) {
@@ -406,6 +412,8 @@ export default function SettingsPage() {
             onSave={() => handleSave('testManagement')}
             onUpdateTempConfig={updateTempConfig}
           />
+
+          <NotificationsConfiguration />
         </div>
       </div>
 

@@ -57,8 +57,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
       };
 
       const rawLimit = limit ? Number.parseInt(limit, 10) : 50;
-      const parsedLimit =
-        Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 25;
+      const parsedLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 25;
       const rawOffset = offset ? Number.parseInt(offset, 10) : 0;
       const parsedOffset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
 

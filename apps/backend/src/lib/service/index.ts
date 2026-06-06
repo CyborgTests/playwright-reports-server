@@ -22,10 +22,12 @@ import {
 } from '../storage/index.js';
 import type { S3 } from '../storage/s3.js';
 import { withError } from '../withError.js';
+import type { Report } from '../storage/types.js';
 import { configCache } from './cache/config.js';
 import { reportDb, reportResultsDb, resultDb } from './db/index.js';
 import { siteConfigDb } from './db/siteConfig.sqlite.js';
 import { lifecycle } from './lifecycle.js';
+import { dispatchReportUploaded } from './notifications/dispatcher.js';
 import { testManagementService } from './testManagement.js';
 
 class Service {
@@ -137,6 +139,8 @@ class Service {
         `[service] generateReport - failed to process report tests: ${testsErr instanceof Error ? testsErr?.message : String(testsErr)}`
       );
     }
+
+    void this.dispatchNotificationsForReport(report);
 
     // Failure clusters are derived from test_runs across the window — a new
     // report can add tests, change occurrence counts, and form new clusters,
@@ -421,6 +425,19 @@ class Service {
     const result = siteConfigDb.set(config);
     configCache.onChanged(result);
     return result;
+  }
+
+  private async dispatchNotificationsForReport(report: Report): Promise<void> {
+    try {
+      const cfg = await this.getConfig();
+      await dispatchReportUploaded(report, cfg.notifications);
+    } catch (err) {
+      console.error(
+        `[service] notification dispatch failed for report ${report.reportID}: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    }
   }
 }
 

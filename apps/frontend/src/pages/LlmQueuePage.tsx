@@ -39,6 +39,7 @@ import {
 import useMutation from '@/hooks/useMutation';
 import { formatCategoryName } from '@/lib/format';
 import { invalidateCache } from '@/lib/query-cache';
+import { formatRelativeTime } from '@/lib/time';
 import { withBase } from '@/lib/url';
 
 /** Short, single-word labels for the task-type filter and column. The DB
@@ -169,20 +170,6 @@ function formatDuration(startedAt?: string, completedAt?: string): string {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60000).toFixed(1)}m`;
-}
-
-function formatRelativeTime(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diffMs = now - then;
-  const diffSec = Math.floor(diffMs / 1000);
-  if (diffSec < 60) return `${diffSec}s ago`;
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  return `${diffDay}d ago`;
 }
 
 export default function LlmQueuePage() {
