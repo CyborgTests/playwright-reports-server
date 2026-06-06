@@ -148,9 +148,6 @@ function PreviewLine({ content, error }: Readonly<{ content: React.ReactNode; er
   return <div>{content}</div>;
 }
 
-// Preview-only mrkdwn renderer — list/token positions are stable per render
-// (no reorder, no insert), so index keys are safe here.
-
 function MrkdwnText({ text, className }: Readonly<{ text: string; className?: string }>) {
   const lines = text.split('\n');
   return (

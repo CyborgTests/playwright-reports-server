@@ -11,6 +11,7 @@ What you get:
 - **Test flakiness & quarantine**: score test stability, optionally skip the noisiest.
 - **LLM failure analysis**: pick any OpenAI-compatible or Anthropic-format provider; analyses surface inline on each report and on the dashboard. Bring your own token casino.
 - **Code-agent integration**: the [`pwrs-cli`](https://www.npmjs.com/package/@shelex/pwrs-cli) plus Claude Code skill exposes failure context to Claude Code, Codex, Cursor, and the LLM-driven code assistant that drops next week.
+- **Notifications**: send report details and summaries to Slack or any webhook. Event rules on upload, schedule rules on cron, delivery log. See [notifications docs](https://github.com/Shelex/playwright-reports-server/wiki/Notifications).
 - **Pluggable storage**: local filesystem, S3-compatible, or Azure Blob, see [storage docs](https://github.com/Shelex/playwright-reports-server/wiki/Storage).
 - **Optional API token auth** for both the UI and the API. Off by default.
 - **Persistent state** with SQLite and [Litestream](https://litestream.io) replication for S3 and Azure Blob storages. See [storage](https://github.com/Shelex/playwright-reports-server/wiki/Storage).
@@ -76,3 +77,4 @@ The detailed docs live in the **[wiki](https://github.com/Shelex/playwright-repo
 | Flakiness scoring, quarantine, reporter-side skip | [Test Management](https://github.com/Shelex/playwright-reports-server/wiki/Test-Management) |
 | LLM analysis | [LLM Analysis](https://github.com/Shelex/playwright-reports-server/wiki/LLM-Analysis) |
 | Claude Code / Codex / Cursor integration via `pwrs-cli` | [Code Assistant Integration](https://github.com/Shelex/playwright-reports-server/wiki/Code-Assistant-Integration) |
+| Slack & webhook notifications, event + schedule rules, templates, delivery log | [Notifications](https://github.com/Shelex/playwright-reports-server/wiki/Notifications) |
