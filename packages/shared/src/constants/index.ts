@@ -10,6 +10,7 @@ export const API_ENDPOINTS = {
   REPORTS_PROJECTS: '/api/report/projects',
   REPORTS_GENERATE: '/api/report/generate',
   REPORTS_DELETE: '/api/report/delete',
+  REPORTS_EDIT: '/api/report/edit',
   REPORTS_COMPARE: '/api/report/compare',
 
   // Results
@@ -76,6 +77,27 @@ export const FLAKINESS_THRESHOLDS = {
   WARNING_PERCENTAGE: 2,
   QUARANTINE_PERCENTAGE: 5,
 } as const;
+
+// top-level keys that come from playwright report
+export const RESERVED_REPORT_FIELDS: ReadonlySet<string> = new Set([
+  'reportID',
+  'title',
+  'displayNumber',
+  'project',
+  'createdAt',
+  'size',
+  'sizeBytes',
+  'reportUrl',
+  'metadata',
+  'stats',
+  'files',
+  'duration',
+  'startTime',
+  'errors',
+  'projectNames',
+  'options',
+  'playwrightVersion',
+]);
 
 /**
  * Canonical failure-category enum used by the LLM classifier, UI filters, and

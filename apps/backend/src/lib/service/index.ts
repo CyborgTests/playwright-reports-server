@@ -2,7 +2,7 @@ import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
-import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
+import { RESERVED_REPORT_FIELDS, type SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import { env } from '../../config/env.js';
 import { serveReportRoute } from '../constants.js';
 import { invalidateFailureClustersCache } from '../failure-clustering/index.js';
@@ -21,8 +21,8 @@ import {
   storage,
 } from '../storage/index.js';
 import type { S3 } from '../storage/s3.js';
-import { withError } from '../withError.js';
 import type { Report } from '../storage/types.js';
+import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
 import { reportDb, reportResultsDb, resultDb } from './db/index.js';
 import { siteConfigDb } from './db/siteConfig.sqlite.js';
@@ -159,6 +159,13 @@ class Service {
     return { reportId, reportUrl, metadata: metadataWithVersion };
   }
 
+  public async updateReports(
+    reportIDs: string[],
+    patch: { project?: string; tags?: Record<string, string>; removeTags?: string[] }
+  ): Promise<{ updated: number; missing: string[] }> {
+    return reportDb.updateMetadata(reportIDs, patch);
+  }
+
   public async deleteReports(reportIDs: string[]) {
     const entries: ReportPath[] = [];
 
@@ -189,29 +196,11 @@ class Service {
   public async getReportsTags(project?: string): Promise<string[]> {
     const { reports } = await this.getReports(project ? { project } : undefined);
 
-    const coreKeys = new Set([
-      'reportID',
-      'title',
-      'displayNumber',
-      'project',
-      'createdAt',
-      'size',
-      'sizeBytes',
-      'reportUrl',
-      'metadata',
-      'stats',
-      'files',
-      'duration',
-      'startTime',
-      'errors',
-      'projectNames',
-      'options',
-    ]);
     const allTags = new Set<string>();
 
     reports.forEach((report) => {
       Object.entries(report as unknown as Record<string, unknown>).forEach(([key, value]) => {
-        if (coreKeys.has(key)) return;
+        if (RESERVED_REPORT_FIELDS.has(key)) return;
         if (value === undefined || value === null) return;
         if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
           return;

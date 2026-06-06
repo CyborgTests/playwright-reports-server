@@ -9,6 +9,7 @@ import { serveReportRoute } from '../lib/constants.js';
 import {
   CompareReportsQuerySchema,
   DeleteReportsRequestSchema,
+  EditReportsRequestSchema,
   GenerateReportRequestSchema,
   GetReportParamsSchema,
   ListReportsQuerySchema,
@@ -236,6 +237,44 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         return result;
       } catch (error) {
         console.error('[routes] generate report validation error:', error);
+        return reply.status(400).send({ error: 'Invalid request format' });
+      }
+    });
+
+    fastify.patch('/api/report/edit', async (request, reply) => {
+      try {
+        const validatedBody = validateSchema(EditReportsRequestSchema, request.body ?? {});
+
+        const { result, error } = await withError(
+          service.updateReports(validatedBody.reportsIds, {
+            project: validatedBody.project,
+            tags: validatedBody.tags,
+            removeTags: validatedBody.removeTags,
+          })
+        );
+
+        if (error) {
+          console.error('[routes] edit reports error:', error);
+          return reply.status(500).send({ error: error.message });
+        }
+
+        if (result && result.missing.length > 0) {
+          return reply.status(404).send({
+            error: `Reports not found: ${result.missing.join(', ')}`,
+            missing: result.missing,
+          });
+        }
+
+        return reply.status(200).send({
+          message: 'Reports updated successfully',
+          reportsIds: validatedBody.reportsIds,
+          updated: result?.updated ?? 0,
+        });
+      } catch (error) {
+        if (error instanceof ValidationError) {
+          return reply.status(400).send({ error: error.message, details: error.details });
+        }
+        console.error('[routes] edit reports validation error:', error);
         return reply.status(400).send({ error: 'Invalid request format' });
       }
     });

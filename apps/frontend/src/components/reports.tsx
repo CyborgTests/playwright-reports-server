@@ -1,6 +1,7 @@
 import type { ReportHistory } from '@playwright-reports/shared';
 import { useState } from 'react';
 import DeleteReportButton from './delete-report-button';
+import EditReportButton from './edit-report-button';
 import { title } from './primitives';
 import ReportsTable from './reports-table';
 import UploadReportButton from './upload-report-button';
@@ -32,6 +33,9 @@ export default function Reports({ onChange }: Readonly<ReportsProps>) {
             </div>
           )}
           <UploadReportButton onUploadedReport={onListUpdate} />
+          {selectedReports.length > 0 && (
+            <EditReportButton label="Edit" reports={selectedReports} onUpdated={onListUpdate} />
+          )}
           {selectedReports.length > 0 && (
             <DeleteReportButton
               label="Delete"

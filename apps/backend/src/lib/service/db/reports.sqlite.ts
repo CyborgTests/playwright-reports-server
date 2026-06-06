@@ -203,6 +203,68 @@ export class ReportDatabase {
     );
   }
 
+  public updateMetadata(
+    reportIds: string[],
+    patch: { project?: string; tags?: Record<string, string>; removeTags?: string[] }
+  ): { updated: number; missing: string[] } {
+    if (reportIds.length === 0) return { updated: 0, missing: [] };
+
+    const setProject = typeof patch.project === 'string';
+    const setTags = patch.tags && Object.keys(patch.tags).length > 0;
+    const removeTags = patch.removeTags && patch.removeTags.length > 0;
+    if (!setProject && !setTags && !removeTags) {
+      return { updated: 0, missing: [] };
+    }
+
+    const rows = new Map<string, ReportRow>();
+    for (const id of reportIds) {
+      const row = this.getByIDStmt.get(id) as ReportRow | undefined;
+      if (row) rows.set(id, row);
+    }
+    const missing = reportIds.filter((id) => !rows.has(id));
+    if (missing.length > 0) {
+      return { updated: 0, missing };
+    }
+
+    const updateStmt = this.db.prepare(
+      'UPDATE reports SET project = ?, metadata = ?, updatedAt = CURRENT_TIMESTAMP WHERE reportID = ?'
+    );
+
+    const applyAll = this.db.transaction(() => {
+      for (const [id, row] of rows) {
+        let metadata: Record<string, unknown>;
+        try {
+          metadata = JSON.parse(row.metadata || '{}') as Record<string, unknown>;
+        } catch {
+          metadata = {};
+        }
+
+        if (patch.tags) {
+          for (const [k, v] of Object.entries(patch.tags)) {
+            metadata[k] = v;
+          }
+        }
+        if (patch.removeTags) {
+          for (const k of patch.removeTags) {
+            delete metadata[k];
+          }
+        }
+
+        const nextProject = setProject ? (patch.project as string) : row.project;
+        updateStmt.run(nextProject, JSON.stringify(metadata), id);
+      }
+    });
+    applyAll();
+
+    for (const id of rows.keys()) {
+      for (const key of parseCache.keys()) {
+        if (key.startsWith(`${id}|`)) parseCache.delete(key);
+      }
+    }
+
+    return { updated: rows.size, missing: [] };
+  }
+
   public onDeleted(reportIds: string[]) {
     if (reportIds.length === 0) return;
 

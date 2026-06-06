@@ -32,6 +32,7 @@ import { withQueryParams } from '@/lib/network';
 import { withBase } from '@/lib/url';
 import FormattedDate from './date-format';
 import DeleteReportButton from './delete-report-button';
+import EditReportButton from './edit-report-button';
 import { BranchIcon, FolderIcon, LinkIcon } from './icons';
 import PassRateBar from './pass-rate-bar';
 import TablePaginationOptions, { type PassRateFilter } from './table-pagination-options';
@@ -509,6 +510,7 @@ export default function ReportsTable({
                       <Link to={withBase(item.reportUrl)} target="_blank">
                         <Button size="sm">Open report</Button>
                       </Link>
+                      <EditReportButton report={item} onUpdated={onDeleted} />
                       <DeleteReportButton reportId={item.reportID} onDeleted={onDeleted} />
                     </div>
                   </TableCell>

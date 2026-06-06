@@ -1,4 +1,9 @@
-import { isOpaqueMaskSentinel, isUrlMaskSentinel, SECRET_MASK } from '@playwright-reports/shared';
+import {
+  isOpaqueMaskSentinel,
+  isUrlMaskSentinel,
+  RESERVED_REPORT_FIELDS,
+  SECRET_MASK,
+} from '@playwright-reports/shared';
 import { z } from 'zod';
 
 function notMaskGarbage(s: string): boolean {
@@ -166,6 +171,38 @@ export const DeleteReportsResponseSchema = z.object({
   reportsIds: z.array(z.string()),
 });
 
+export const EditReportsRequestSchema = z
+  .object({
+    reportsIds: z.array(z.string()).min(1).max(500),
+    project: z.string().trim().min(1).max(256).optional(),
+    tags: z
+      .record(
+        z
+          .string()
+          .min(1)
+          .max(128)
+          .refine((k) => !RESERVED_REPORT_FIELDS.has(k), {
+            message: 'Tag key cannot shadow a core report field',
+          }),
+        z.string().max(2000)
+      )
+      .optional(),
+    removeTags: z.array(z.string().min(1).max(128)).max(50).optional(),
+  })
+  .refine(
+    (v) =>
+      v.project !== undefined ||
+      (v.tags && Object.keys(v.tags).length > 0) ||
+      (v.removeTags && v.removeTags.length > 0),
+    { message: 'At least one of project, tags, or removeTags must be provided' }
+  );
+
+export const EditReportsResponseSchema = z.object({
+  message: z.string(),
+  reportsIds: z.array(z.string()),
+  updated: z.number(),
+});
+
 export const ListResultsQuerySchema = z.object({
   project: z.string().default(''),
   search: z.string().default(''),
@@ -302,6 +339,8 @@ export type ListReportsQuery = z.infer<typeof ListReportsQuerySchema>;
 export type ListReportsResponse = z.infer<typeof ListReportsResponseSchema>;
 export type DeleteReportsRequest = z.infer<typeof DeleteReportsRequestSchema>;
 export type DeleteReportsResponse = z.infer<typeof DeleteReportsResponseSchema>;
+export type EditReportsRequest = z.infer<typeof EditReportsRequestSchema>;
+export type EditReportsResponse = z.infer<typeof EditReportsResponseSchema>;
 export type ListResultsQuery = z.infer<typeof ListResultsQuerySchema>;
 export type ListResultsResponse = z.infer<typeof ListResultsResponseSchema>;
 export type DeleteResultsRequest = z.infer<typeof DeleteResultsRequestSchema>;
