@@ -1,6 +1,7 @@
-import { apiGet } from '../client.js';
+import { apiGet, apiPost } from '../client.js';
 import { resolveConfig } from '../config.js';
 import { clampToRange, emitJson } from '../format.js';
+import { readTextInput } from '../input.js';
 import type { TestAnalysis, TestBrief, TestHistory, TestSummary } from '../types.js';
 
 interface FindOpts {
@@ -374,4 +375,37 @@ export async function runTestSearch(opts: SearchOpts): Promise<void> {
       lastRunAt: t.lastRunAt,
     })),
   });
+}
+
+interface AnalysisSubmitOpts {
+  reportId: string;
+  analysisFile?: string;
+  category?: string;
+  model: string;
+  force?: boolean;
+}
+
+export async function runTestAnalysisSubmit(
+  testId: string,
+  opts: AnalysisSubmitOpts
+): Promise<void> {
+  if (!testId) {
+    throw new Error(
+      'Usage: pwrs-cli test analysis-submit <testId> --report-id <id> --analysis-file <path|-> --model <name> [--category <c>] [--force]'
+    );
+  }
+  const analysis = await readTextInput(opts.analysisFile, { label: 'analysis' });
+  const config = resolveConfig();
+  const data = await apiPost<unknown>(
+    config,
+    `/api/cli/test/${encodeURIComponent(testId)}/analysis`,
+    {
+      reportId: opts.reportId,
+      analysis,
+      category: opts.category,
+      model: opts.model,
+      force: opts.force ? true : undefined,
+    }
+  );
+  emitJson(data);
 }

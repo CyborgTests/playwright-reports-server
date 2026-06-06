@@ -333,6 +333,84 @@ export const FeedbackRegenerateRequestSchema = z
     message: 'cascadeReportSummary=true requires reportId',
   });
 
+const ReportAnalysisCodeRefSchema = z.object({
+  kind: z.enum(['test', 'file']),
+  label: z.string(),
+  testId: z.string().optional(),
+  fileId: z.string().optional(),
+  filePath: z.string().optional(),
+  project: z.string().optional(),
+  line: z.number().int().positive().optional(),
+});
+
+const ReportAnalysisSectionSchema = z.object({
+  heading: z.string(),
+  body: z.string(),
+  impact: z.enum(['high', 'medium', 'low']).optional(),
+  codeRefs: z.array(ReportAnalysisCodeRefSchema).optional(),
+});
+
+const ReportAnalysisStructuredSchema = z.object({
+  verdict: z.enum(['isolated', 'clustered', 'widespread', 'systemic']),
+  summary: z.string(),
+  sections: z.array(ReportAnalysisSectionSchema),
+  reportId: z.string().optional(),
+});
+
+const ProjectAnalysisCodeRefSchema = z.object({
+  kind: z.enum(['test', 'file']),
+  label: z.string(),
+  testId: z.string().optional(),
+  fileId: z.string().optional(),
+  filePath: z.string().optional(),
+  project: z.string().optional(),
+  reportId: z.string().optional(),
+  line: z.number().int().positive().optional(),
+});
+
+const ProjectAnalysisSectionSchema = z.object({
+  heading: z.string(),
+  body: z.string(),
+  codeRefs: z.array(ProjectAnalysisCodeRefSchema).optional(),
+});
+
+const ProjectAnalysisStructuredSchema = z.object({
+  verdict: z.enum(['healthy', 'stabilizing', 'degrading', 'failing']),
+  summary: z.string(),
+  sections: z.array(ProjectAnalysisSectionSchema),
+  latestReportId: z.string().optional(),
+});
+
+export const SubmitTestAnalysisRequestSchema = z.object({
+  reportId: z.string().min(1),
+  analysis: z.string().trim().min(1, 'analysis must be non-empty'),
+  category: z.string().optional(),
+  model: z.string().trim().min(1, 'model must be non-empty'),
+  force: z.boolean().optional(),
+});
+
+export const SubmitReportSummaryRequestSchema = z.object({
+  llmSummary: z.string().trim().min(1, 'llmSummary must be non-empty'),
+  llmSummaryStructured: ReportAnalysisStructuredSchema.optional(),
+  model: z.string().trim().min(1, 'model must be non-empty'),
+  force: z.boolean().optional(),
+});
+
+export const SubmitProjectSummaryRequestSchema = z.object({
+  summary: z.string().trim().min(1, 'summary must be non-empty'),
+  structured: ProjectAnalysisStructuredSchema.optional(),
+  model: z.string().trim().min(1, 'model must be non-empty'),
+  lastReportId: z.string().optional(),
+  reportCount: z.number().int().nonnegative().optional(),
+  firstReportAt: z.string().optional(),
+  lastReportAt: z.string().optional(),
+  force: z.boolean().optional(),
+});
+
+export type SubmitTestAnalysisRequest = z.infer<typeof SubmitTestAnalysisRequestSchema>;
+export type SubmitReportSummaryRequest = z.infer<typeof SubmitReportSummaryRequestSchema>;
+export type SubmitProjectSummaryRequest = z.infer<typeof SubmitProjectSummaryRequestSchema>;
+
 export type GenerateReportRequest = z.infer<typeof GenerateReportRequestSchema>;
 export type GenerateReportResponse = z.infer<typeof GenerateReportResponseSchema>;
 export type ListReportsQuery = z.infer<typeof ListReportsQuerySchema>;

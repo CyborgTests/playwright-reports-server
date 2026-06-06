@@ -161,3 +161,7 @@ or full ISO timestamp). For relative time periods, compute `--from` and
 One-time setup (server URL, API token, default project) is performed by the
 user — see `setup.md` next to this file. The model only needs that file
 if the user explicitly asks about configuring `pwrs-cli`.
+
+## Authoring & dissent (only when the user explicitly asks)
+
+If — and only if — the user explicitly asks you to **author** an analysis, **submit** a summary, or **dissent** on an existing one (verbs: "write the analysis yourself", "submit feedback that it's wrong", "fill in the missing summary", etc.), read `authoring.md` next to this file for the full workflow. Do not load it preemptively, and never overwrite a persisted analysis without that explicit ask.

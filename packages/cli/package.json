@@ -1,7 +1,7 @@
 {
   "name": "pwrs-cli",
   "version": "0.0.1",
-  "description": "Read-only CLI exposing Playwright Reports Server data to coding agents (Claude Code, Codex, Copilot).",
+  "description": "CLI exposing Playwright Reports Server data to coding agents (Claude Code, Codex, Copilot).",
   "type": "module",
   "bin": {
     "pwrs-cli": "./dist/bin.js"

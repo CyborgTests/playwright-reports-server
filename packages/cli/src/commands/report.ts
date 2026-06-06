@@ -1,6 +1,7 @@
-import { apiGet } from '../client.js';
+import { apiGet, apiPost } from '../client.js';
 import { resolveConfig } from '../config.js';
 import { clampToRange, emitJson } from '../format.js';
+import { readJsonInput, readTextInput } from '../input.js';
 import type {
   DiffTestEntry,
   DurationDeltaEntry,
@@ -217,6 +218,40 @@ export async function runReportResolve(
     displayNumber,
     project: opts.project,
   });
+  emitJson(data);
+}
+
+interface SummarySubmitOpts {
+  summaryFile?: string;
+  structuredFile?: string;
+  model: string;
+  force?: boolean;
+}
+
+export async function runReportSummarySubmit(
+  reportId: string,
+  opts: SummarySubmitOpts
+): Promise<void> {
+  if (!reportId) {
+    throw new Error(
+      'Usage: pwrs-cli report summary-submit <reportId> --summary-file <path|-> --model <name> [--structured-file <path|->] [--force]'
+    );
+  }
+  const llmSummary = await readTextInput(opts.summaryFile, { label: 'summary' });
+  const llmSummaryStructured = await readJsonInput<unknown>(opts.structuredFile, {
+    label: 'structured',
+  });
+  const config = resolveConfig();
+  const data = await apiPost<unknown>(
+    config,
+    `/api/cli/report/${encodeURIComponent(reportId)}/summary`,
+    {
+      llmSummary,
+      llmSummaryStructured,
+      model: opts.model,
+      force: opts.force ? true : undefined,
+    }
+  );
   emitJson(data);
 }
 

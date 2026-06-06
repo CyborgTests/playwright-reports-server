@@ -1,6 +1,6 @@
 # pwrs-cli
 
-Read-only CLI exposing Playwright Reports Server data to coding agents (Claude Code, Codex, GitHub Copilot, etc.). Outputs compact JSON tuned for agent context budgets.
+CLI exposing Playwright Reports Server data to coding agents (Claude Code, Codex, GitHub Copilot, etc.). Outputs compact JSON tuned for agent context budgets.
 
 Published on npm as [`@shelex/pwrs-cli`](https://www.npmjs.com/package/@shelex/pwrs-cli). The installed binary is `pwrs-cli`.
 
@@ -82,6 +82,24 @@ pwrs-cli report compare <a|latest|prev> <b|latest|prev> [--limit N]
 pwrs-cli test search [filters]                Search tests by tier / status / category / sort / window
 pwrs-cli stats [filters]                      Aggregate health + trend deltas for a window
 pwrs-cli cluster list [filters]               Active failure clusters across recent reports
+```
+
+Authoring & feedback (only when the user explicitly asks an agent to write
+or correct an analysis; the server refuses with `409 Conflict` when an
+analysis/summary already exists unless `--force` is passed):
+
+```
+pwrs-cli test analysis-submit <testId> --report-id <id> --analysis-file <path|-> --model <name>
+                                              POST a fresh test analysis (--analysis-file `-` reads from stdin)
+pwrs-cli test feedback <testId> --comment "..." [--report-id <id>]
+                                              Persist a dissent/correction note on an existing analysis
+pwrs-cli test feedback-clear <testId> [--report-id <id>]
+                                              Remove the feedback note
+pwrs-cli report summary-submit <reportId> --summary-file <path|-> --model <name>
+                                              POST a report-level failure summary
+                                              (optional --structured-file <path|-> for verdict JSON)
+pwrs-cli project summary-submit --summary-file <path|-> --model <name> [--project <p>]
+                                              POST a project-level health digest (defaults to project=all)
 ```
 
 Config and introspection:

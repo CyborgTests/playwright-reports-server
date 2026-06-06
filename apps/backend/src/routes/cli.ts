@@ -16,6 +16,11 @@ import { defaultConfig } from '../lib/config.js';
 import { parseFailureDetails } from '../lib/failure-clustering/extractors/failure-details.js';
 import { extractFrameFromFailure } from '../lib/failure-clustering/extractors/stack-trace.js';
 import { getFailureClusters } from '../lib/failure-clustering/index.js';
+import {
+  SubmitProjectSummaryRequestSchema,
+  SubmitReportSummaryRequestSchema,
+  SubmitTestAnalysisRequestSchema,
+} from '../lib/schemas/index.js';
 import { analysisFeedbackDb } from '../lib/service/db/analysisFeedback.sqlite.js';
 import { getDatabase } from '../lib/service/db/db.js';
 import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
@@ -515,7 +520,174 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
       }
       return reply.send({ success: true, data: { project: project ?? null, categories } });
     });
+
+    api.post(
+      '/api/cli/test/:testId/analysis',
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { testId } = request.params as { testId: string };
+        const parsed = SubmitTestAnalysisRequestSchema.safeParse(request.body);
+        if (!parsed.success) {
+          return reply.status(400).send({ success: false, error: parsed.error.message });
+        }
+        const body = parsed.data;
+        const tr = resolveTestRun(testId, body.reportId);
+        if (!tr) {
+          return reply.status(404).send({
+            success: false,
+            error: `No test_run for testId=${testId} in report=${body.reportId}`,
+          });
+        }
+        const existing = testAnalysisDb.getByTestAndReport(testId, body.reportId);
+        if (existing && !body.force) {
+          return reply.status(409).send({
+            success: false,
+            error:
+              'Analysis already exists for this (testId, reportId). Use feedback to dissent, or pass force=true to overwrite.',
+            data: {
+              existingModel: existing.model,
+              existingUpdatedAt: existing.updatedAt ?? existing.createdAt,
+            },
+          });
+        }
+        const row = testAnalysisDb.upsert(
+          testId,
+          tr.fileId,
+          tr.project,
+          body.reportId,
+          body.analysis,
+          body.category,
+          body.model,
+          existing?.attempt ?? 1
+        );
+        return reply.send({
+          success: true,
+          data: {
+            testId: row.testId,
+            fileId: row.fileId,
+            project: row.project,
+            reportId: row.reportId,
+            model: row.model,
+            category: row.category,
+            updatedAt: row.updatedAt,
+            overwrote: !!existing,
+          },
+        });
+      }
+    );
+
+    api.post(
+      '/api/cli/report/:id/summary',
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id: reportId } = request.params as { id: string };
+        const parsed = SubmitReportSummaryRequestSchema.safeParse(request.body);
+        if (!parsed.success) {
+          return reply.status(400).send({ success: false, error: parsed.error.message });
+        }
+        const body = parsed.data;
+        const report = reportDb.getByID(reportId);
+        if (!report) {
+          return reply.status(404).send({ success: false, error: `Report ${reportId} not found` });
+        }
+        const existing = failureSummaryDb.getSummary(reportId);
+        if (existing?.llmSummary && !body.force) {
+          return reply.status(409).send({
+            success: false,
+            error:
+              'Summary already exists for this report. Pass force=true to overwrite (do so only after user confirmation).',
+            data: {
+              existingModel: existing.llmModel,
+              existingUpdatedAt: existing.updatedAt ?? existing.createdAt,
+            },
+          });
+        }
+        if (!existing) {
+          const runs = testDb.getTestRunsByReport(reportId);
+          const categories: Record<string, number> = {};
+          let totalFailures = 0;
+          for (const r of runs) {
+            if (!FAILED_OUTCOMES.has(r.outcome)) continue;
+            totalFailures++;
+            if (r.failureCategory) {
+              categories[r.failureCategory] = (categories[r.failureCategory] ?? 0) + 1;
+            }
+          }
+          failureSummaryDb.upsertSummary(reportId, report.project, totalFailures, categories);
+        }
+        failureSummaryDb.updateLlmSummary(
+          reportId,
+          body.llmSummary,
+          body.llmSummaryStructured ?? null,
+          body.model
+        );
+        const after = failureSummaryDb.getSummary(reportId);
+        return reply.send({
+          success: true,
+          data: {
+            reportId,
+            project: report.project,
+            model: after?.llmModel ?? body.model,
+            updatedAt: after?.updatedAt,
+            overwrote: !!existing?.llmSummary,
+          },
+        });
+      }
+    );
+
+    api.post(
+      '/api/cli/project/:project/summary',
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { project } = request.params as { project: string };
+        const parsed = SubmitProjectSummaryRequestSchema.safeParse(request.body);
+        if (!parsed.success) {
+          return reply.status(400).send({ success: false, error: parsed.error.message });
+        }
+        const body = parsed.data;
+        const existing = projectSummaryDb.get(project);
+        if (existing && !body.force) {
+          return reply.status(409).send({
+            success: false,
+            error:
+              'Project summary already exists. Pass force=true to overwrite (do so only after user confirmation).',
+            data: {
+              existingModel: existing.model,
+              existingUpdatedAt: existing.updatedAt,
+              existingLastReportId: existing.lastReportId,
+            },
+          });
+        }
+        projectSummaryDb.upsert({
+          project,
+          summary: body.summary,
+          structured: body.structured ? JSON.stringify(body.structured) : null,
+          model: body.model,
+          lastReportId: body.lastReportId ?? existing?.lastReportId ?? undefined,
+          reportCount: body.reportCount ?? existing?.reportCount ?? undefined,
+          firstReportAt: body.firstReportAt ?? existing?.firstReportAt ?? undefined,
+          lastReportAt: body.lastReportAt ?? existing?.lastReportAt ?? undefined,
+        });
+        const after = projectSummaryDb.get(project);
+        return reply.send({
+          success: true,
+          data: {
+            project,
+            model: after?.model ?? body.model,
+            updatedAt: after?.updatedAt,
+            overwrote: !!existing,
+          },
+        });
+      }
+    );
   });
+}
+
+function resolveTestRun(
+  testId: string,
+  reportId: string
+): { fileId: string; project: string } | null {
+  const runs = testDb.getTestRunsByReport(reportId);
+  const run = runs.find((r) => r.testId === testId);
+  if (!run) return null;
+  return { fileId: run.fileId, project: run.project };
 }
 
 const DEFAULT_HISTORY_LIMIT = 20;

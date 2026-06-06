@@ -6,14 +6,16 @@ import { runAttachment } from './commands/attachment.js';
 import { runCategoryList } from './commands/category.js';
 import { runClusterBrief, runClusterList } from './commands/cluster.js';
 import { runConfigCommand } from './commands/config.js';
+import { runTestFeedbackClear, runTestFeedbackUpsert } from './commands/feedback.js';
 import { runPing } from './commands/ping.js';
-import { runProjectList } from './commands/project.js';
+import { runProjectList, runProjectSummarySubmit } from './commands/project.js';
 import {
   runReportBrief,
   runReportCompare,
   runReportLatest,
   runReportList,
   runReportResolve,
+  runReportSummarySubmit,
 } from './commands/report.js';
 import { runStats } from './commands/stats.js';
 import { runProjectSummary, runReportSummary } from './commands/summary.js';
@@ -21,6 +23,7 @@ import { runTagList } from './commands/tag.js';
 import {
   runTestAnalysis,
   runTestAnalysisPrompt,
+  runTestAnalysisSubmit,
   runTestBrief,
   runTestFailureContext,
   runTestFind,
@@ -34,7 +37,7 @@ const requireFromHere = createRequire(import.meta.url);
 const pkg = requireFromHere('../package.json') as { version: string };
 
 const HELP = [
-  'pwrs-cli — read-only access to Playwright Reports Server data',
+  'pwrs-cli — Playwright Reports Server access for coding agents',
   '',
   'Usage:',
   '  pwrs-cli <command> [args] [options]',
@@ -68,6 +71,17 @@ const HELP = [
   '  report resolve <displayNumber>         Resolve a `#479` to its UUID reportId',
   '  cluster brief <clusterId>              Drill into one cluster: brief per member test',
   '  attachment <url>                       Fetch screenshot/error-context with Bearer auth',
+  '',
+  'Authoring & feedback (write — only when the user explicitly asks):',
+  '  test analysis-submit <testId> --report-id <id> --analysis-file <path|-> --model <name>',
+  '                                          POST a fresh analysis (refused with 409 when one exists)',
+  '  test feedback <testId> --comment "..." [--report-id <id>]',
+  '                                          Persist a dissent/correction note on an existing analysis',
+  '  test feedback-clear <testId>            Clear the feedback note',
+  '  report summary-submit <reportId> --summary-file <path|-> --model <name>',
+  '                                          POST a report-level failure summary (409 on existing)',
+  '  project summary-submit --summary-file <path|-> --model <name> [--project <p>]',
+  '                                          POST a project-level health digest (409 on existing)',
   '',
   'Config:',
   '  config set <server|token> <value>     Persist config to ~/.config/pwrs-cli/config.json',
@@ -128,6 +142,15 @@ const GROUP_HELP: Record<string, string> = {
     '  test search [filters]',
     '      Open-ended search. Supports --tier, --status, --failure-category, --sort slowest,',
     '      --search, --from/--to, --limit (default 20, max 100), --offset.',
+    '  test analysis-submit <testId> --report-id <id> --analysis-file <path|-> --model <name> [--category <c>] [--force]',
+    '      POST a fresh analysis (use `-` to read from stdin). Refused with 409 when an',
+    '      analysis already exists for (testId, reportId) — route to `test feedback` instead.',
+    '      --force overwrites; only use after explicit user confirmation.',
+    '  test feedback <testId> --comment "..." [--report-id <id> | --file-id <id> --project <p>]',
+    '      Upsert a dissent/correction note on an existing analysis. The server requires either',
+    '      reportId, or fileId+project, to resolve the test_runs row.',
+    '  test feedback-clear <testId> [--report-id <id> | --file-id <id> --project <p>]',
+    '      Remove the feedback note for a test.',
     '',
   ].join('\n'),
   report: [
@@ -148,6 +171,10 @@ const GROUP_HELP: Record<string, string> = {
     '  report compare <reportIdA|latest|prev> <reportIdB|latest|prev> [--project <p>] [--limit N]',
     '      Diff two reports — buckets: newlyFailed, fixed, stillFailing, flakyToPass, etc.',
     '      Accepts UUID reportIds and the keywords `latest` / `prev`.',
+    '  report summary-submit <reportId> --summary-file <path|-> --model <name> [--structured-file <path|->] [--force]',
+    '      POST a report-level failure summary authored by an external agent.',
+    '      Refused with 409 when one exists; --force overwrites (require user confirmation).',
+    '      --structured-file accepts the typed `ReportAnalysisStructured` JSON for verdict rendering.',
     '',
   ].join('\n'),
   cluster: [
@@ -170,6 +197,11 @@ const GROUP_HELP: Record<string, string> = {
     '      List projects known to the server.',
     '  project summary [--project <p>]',
     '      Persisted LLM project health summary. Omit --project (or pass `all`) for cross-project.',
+    '  project summary-submit [--project <p>] --summary-file <path|-> --model <name>',
+    '      [--structured-file <path|->] [--last-report-id <id>] [--report-count N]',
+    '      [--first-report-at <ISO>] [--last-report-at <ISO>] [--force]',
+    '      POST a project health digest authored by an external agent. Defaults to project=all.',
+    '      Refused with 409 when one exists; --force overwrites (require user confirmation).',
     '',
   ].join('\n'),
   tag: [
@@ -245,6 +277,19 @@ interface CommonOpts {
   withFailures?: boolean;
   reportId?: string;
   taskId?: string;
+  // Authoring/feedback write flags.
+  analysisFile?: string;
+  summaryFile?: string;
+  structuredFile?: string;
+  model?: string;
+  category?: string;
+  comment?: string;
+  fileId?: string;
+  lastReportId?: string;
+  reportCount?: number;
+  firstReportAt?: string;
+  lastReportAt?: string;
+  force?: boolean;
 }
 
 function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonOpts } {
@@ -271,6 +316,18 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
       strategies: { type: 'string' },
       'min-tests': { type: 'string' },
       'with-failures': { type: 'boolean' },
+      'analysis-file': { type: 'string' },
+      'summary-file': { type: 'string' },
+      'structured-file': { type: 'string' },
+      model: { type: 'string' },
+      category: { type: 'string' },
+      comment: { type: 'string' },
+      'file-id': { type: 'string' },
+      'last-report-id': { type: 'string' },
+      'report-count': { type: 'string' },
+      'first-report-at': { type: 'string' },
+      'last-report-at': { type: 'string' },
+      force: { type: 'boolean' },
       help: { type: 'boolean' },
     },
   };
@@ -307,6 +364,18 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
       withFailures: v['with-failures'] === true,
       reportId: str(v['report-id']),
       taskId: str(v['task-id']),
+      analysisFile: str(v['analysis-file']),
+      summaryFile: str(v['summary-file']),
+      structuredFile: str(v['structured-file']),
+      model: str(v.model),
+      category: str(v.category),
+      comment: str(v.comment),
+      fileId: str(v['file-id']),
+      lastReportId: str(v['last-report-id']),
+      reportCount: parseIntOpt(v['report-count']),
+      firstReportAt: str(v['first-report-at']),
+      lastReportAt: str(v['last-report-at']),
+      force: v.force === true,
     },
   };
 }
@@ -408,6 +477,33 @@ async function dispatch(argv: string[]): Promise<void> {
           offset: opts.offset,
         });
         return;
+      case 'analysis-submit':
+        if (!opts.reportId) throw new Error('--report-id is required for analysis-submit');
+        if (!opts.model) throw new Error('--model is required for analysis-submit');
+        await runTestAnalysisSubmit(arg0, {
+          reportId: opts.reportId,
+          analysisFile: opts.analysisFile,
+          category: opts.category,
+          model: opts.model,
+          force: opts.force,
+        });
+        return;
+      case 'feedback':
+        if (!opts.comment) throw new Error('--comment is required for feedback');
+        await runTestFeedbackUpsert(arg0, {
+          comment: opts.comment,
+          reportId: opts.reportId,
+          fileId: opts.fileId,
+          project: opts.project,
+        });
+        return;
+      case 'feedback-clear':
+        await runTestFeedbackClear(arg0, {
+          reportId: opts.reportId,
+          fileId: opts.fileId,
+          project: opts.project,
+        });
+        return;
       default:
         throw new Error(
           `Unknown subcommand: test ${subcommand ?? ''}. Run 'pwrs-cli --help' for the list.`
@@ -447,6 +543,15 @@ async function dispatch(argv: string[]): Promise<void> {
       case 'resolve':
         await runReportResolve(arg0, { project: opts.project });
         return;
+      case 'summary-submit':
+        if (!opts.model) throw new Error('--model is required for summary-submit');
+        await runReportSummarySubmit(arg0, {
+          summaryFile: opts.summaryFile,
+          structuredFile: opts.structuredFile,
+          model: opts.model,
+          force: opts.force,
+        });
+        return;
       default:
         throw new Error(
           `Unknown subcommand: report ${subcommand ?? ''}. Run 'pwrs-cli --help' for the list.`
@@ -463,6 +568,20 @@ async function dispatch(argv: string[]): Promise<void> {
         return;
       case 'summary':
         await runProjectSummary({ project: opts.project });
+        return;
+      case 'summary-submit':
+        if (!opts.model) throw new Error('--model is required for summary-submit');
+        await runProjectSummarySubmit({
+          project: opts.project,
+          summaryFile: opts.summaryFile,
+          structuredFile: opts.structuredFile,
+          model: opts.model,
+          lastReportId: opts.lastReportId,
+          reportCount: opts.reportCount,
+          firstReportAt: opts.firstReportAt,
+          lastReportAt: opts.lastReportAt,
+          force: opts.force,
+        });
         return;
       default:
         throw new Error(
