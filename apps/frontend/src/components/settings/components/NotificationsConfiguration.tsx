@@ -150,15 +150,15 @@ export default function NotificationsConfiguration() {
             {config.enabled ? 'Enabled' : 'Disabled'}
           </Badge>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Enable</span>
             <Switch
               id="notifications-enabled"
               checked={config.enabled}
               onCheckedChange={toggleEnabled}
               disabled={update.isPending}
             />
-            <span className="text-sm text-muted-foreground">Master switch</span>
           </div>
           <Button onClick={openAdd} disabled={update.isPending}>
             Add channel
