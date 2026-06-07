@@ -4,6 +4,8 @@ import { Cron } from 'croner';
 import { env } from '../../config/env.js';
 import { withError } from '../../lib/withError.js';
 import { TMP_FOLDER } from '../storage/constants.js';
+import { getDatabase, hasMigrationMark, optimizeDB, setMigrationMark } from './db/db.js';
+import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import { notificationLogDb } from './db/notificationLog.sqlite.js';
 import { service } from './index.js';
 
@@ -26,6 +28,7 @@ export class CronService {
   private clearResultsJob: Cron | undefined;
   private clearResultCacheJob: Cron | undefined;
   private clearNotificationLogJob: Cron | undefined;
+  private dbMaintenanceJob: Cron | undefined;
 
   public static getInstance() {
     instance[runningCron] ??= new CronService();
@@ -74,10 +77,12 @@ export class CronService {
     this.clearResultsJob?.stop();
     this.clearResultCacheJob?.stop();
     this.clearNotificationLogJob?.stop();
+    this.dbMaintenanceJob?.stop();
     this.clearReportsJob = undefined;
     this.clearResultsJob = undefined;
     this.clearResultCacheJob = undefined;
     this.clearNotificationLogJob = undefined;
+    this.dbMaintenanceJob = undefined;
   }
 
   private async scheduleJobs() {
@@ -104,6 +109,34 @@ export class CronService {
       this.clearResultCacheJob = this.scheduleResultCacheJob();
     }
     this.clearNotificationLogJob = this.scheduleNotificationLogJob();
+    this.dbMaintenanceJob = this.scheduleDbMaintenanceJob();
+  }
+
+  private scheduleDbMaintenanceJob(): Cron | undefined {
+    const expression = CronService.DB_MAINTENANCE_SCHEDULE;
+    const validation = CronService.validateExpression(expression);
+    if (!validation.valid) {
+      console.error(
+        `[cron-job] db-maintenance has invalid cron expression "${expression}": ${validation.error}, skipping`
+      );
+      return undefined;
+    }
+
+    const job = new Cron(
+      expression,
+      {
+        unref: true,
+        protect: true,
+        catch: (err) => console.error('[cron-job] db-maintenance task error:', err),
+      },
+      () => this.runDbMaintenance()
+    );
+
+    const nextRun = job.nextRun();
+    console.log(
+      `[cron-job] scheduled db-maintenance at "${expression}", next run: ${nextRun?.toISOString() ?? 'unknown'}`
+    );
+    return job;
   }
 
   private scheduleNotificationLogJob(): Cron | undefined {
@@ -309,11 +342,51 @@ export class CronService {
     }
   }
 
+  /** Daily SQLite cleanup. Prunes completed LLM tasks past their retention
+   *  window, then runs ANALYZE + incremental_vacuum to reclaim freelist pages and
+   *  wal_checkpoint(TRUNCATE) to cap WAL growth between process restarts. */
+  private runDbMaintenance() {
+    const cutoff = this.cutoffISO(CronService.LLM_TASKS_RETENTION_DAYS);
+    const prunedTasks = llmTasksDb.pruneCompletedOlderThan(cutoff);
+    if (prunedTasks > 0) {
+      console.log(`[cron-job] db-maintenance pruned ${prunedTasks} completed llm_tasks row(s)`);
+    }
+
+    // switching the pragma only takes effect after a full VACUUM
+    // so do that once (off-peak) and mark it so it never repeats.
+    const db = getDatabase();
+    if (!hasMigrationMark(db, 'auto_vacuum_incremental_v1')) {
+      const mode = db.pragma('auto_vacuum', { simple: true }) as number;
+      if (mode !== 2) {
+        db.pragma('auto_vacuum = INCREMENTAL');
+        db.exec('VACUUM;');
+        console.log('[cron-job] db-maintenance converted database to auto_vacuum=INCREMENTAL');
+      }
+      setMigrationMark(db, 'auto_vacuum_incremental_v1');
+    }
+
+    optimizeDB();
+
+    const checkpoint = getDatabase().pragma('wal_checkpoint(TRUNCATE)') as Array<{
+      busy: number;
+      log: number;
+      checkpointed: number;
+    }>;
+    const cp = checkpoint[0];
+    if (cp) {
+      console.log(
+        `[cron-job] db-maintenance wal_checkpoint busy=${cp.busy} log=${cp.log} checkpointed=${cp.checkpointed}`
+      );
+    }
+  }
+
   private static readonly CLEANUP_BATCH_SIZE = 200;
   private static readonly RESULT_CACHE_SCHEDULE = '*/15 * * * *';
   private static readonly RESULT_CACHE_TTL_MS = 60 * 60 * 1000;
   private static readonly NOTIFICATION_LOG_SCHEDULE = '30 3 * * *';
   private static readonly NOTIFICATION_LOG_RETENTION_DAYS = 7;
+  private static readonly DB_MAINTENANCE_SCHEDULE = '45 3 * * *';
+  private static readonly LLM_TASKS_RETENTION_DAYS = 30;
 }
 
 export const cronService = CronService.getInstance();

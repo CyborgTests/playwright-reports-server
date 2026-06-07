@@ -120,10 +120,10 @@ function initializeSchema(db: Database.Database): void {
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE INDEX IF NOT EXISTS idx_results_ids ON results(resultID);
     CREATE INDEX IF NOT EXISTS idx_results_project ON results(project);
     CREATE INDEX IF NOT EXISTS idx_results_createdAt ON results(createdAt DESC);
     CREATE INDEX IF NOT EXISTS idx_results_updatedAt ON results(updatedAt DESC);
+    DROP INDEX IF EXISTS idx_results_ids;
   `);
 
   db.exec(`
@@ -141,12 +141,12 @@ function initializeSchema(db: Database.Database): void {
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE INDEX IF NOT EXISTS idx_reports_ids ON reports(reportID);
     CREATE INDEX IF NOT EXISTS idx_reports_project ON reports(project);
     CREATE INDEX IF NOT EXISTS idx_reports_createdAt ON reports(createdAt DESC);
     CREATE INDEX IF NOT EXISTS idx_reports_updatedAt ON reports(updatedAt DESC);
     CREATE INDEX IF NOT EXISTS idx_reports_displayNumber ON reports(displayNumber);
     CREATE INDEX IF NOT EXISTS idx_reports_project_created ON reports(project, createdAt DESC);
+    DROP INDEX IF EXISTS idx_reports_ids;
   `);
 
   db.exec('DROP TABLE IF EXISTS cache_metadata');
@@ -262,14 +262,14 @@ function initializeSchema(db: Database.Database): void {
         REFERENCES tests(testId, fileId, project)
     );
 
-    CREATE INDEX IF NOT EXISTS idx_test_runs_testId ON test_runs(testId, project);
     CREATE INDEX IF NOT EXISTS idx_test_runs_reportId ON test_runs(reportId);
     CREATE INDEX IF NOT EXISTS idx_test_runs_createdAt ON test_runs(createdAt DESC);
     CREATE INDEX IF NOT EXISTS idx_test_runs_outcome ON test_runs(outcome);
     CREATE INDEX IF NOT EXISTS idx_test_runs_test_created ON test_runs(testId, project, createdAt DESC);
     CREATE INDEX IF NOT EXISTS idx_test_runs_outcome_created ON test_runs(outcome, createdAt DESC);
-    CREATE INDEX IF NOT EXISTS idx_test_runs_quarantined ON test_runs(quarantined);
     CREATE INDEX IF NOT EXISTS idx_test_runs_quarantined_created ON test_runs(quarantined, createdAt DESC);
+    DROP INDEX IF EXISTS idx_test_runs_testId;
+    DROP INDEX IF EXISTS idx_test_runs_quarantined;
     CREATE INDEX IF NOT EXISTS idx_test_runs_failure_category ON test_runs(failure_category);
     CREATE INDEX IF NOT EXISTS idx_test_runs_error_signature ON test_runs(error_signature);
     CREATE INDEX IF NOT EXISTS idx_test_runs_project_created ON test_runs(project, createdAt DESC);
