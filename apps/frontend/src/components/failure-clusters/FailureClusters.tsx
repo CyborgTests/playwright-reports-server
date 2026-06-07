@@ -113,8 +113,7 @@ export default function FailureClusters() {
     <div className="w-full">
       <h1 className={`${title()} mb-2`}>Failure clusters</h1>
       <p className={`${subtitle()} mb-2`}>
-        Groups of failing tests likely caused by the same underlying defect. Each cluster has one
-        anchor — fixture, selector, frame, or unmatched — pointing at where to fix.
+        Groups of failing tests likely caused by the same underlying defect.
       </p>
       {reportId && scopeLabel && (
         <p className="text-sm text-muted-foreground mb-6">
