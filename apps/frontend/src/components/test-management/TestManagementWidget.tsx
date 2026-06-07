@@ -474,7 +474,7 @@ export default function TestManagementWidget({
                       </TableCell>
 
                       <TableCell className="whitespace-nowrap w-px">
-                        <DropdownMenu>
+                        <DropdownMenu modal={false}>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="sm">
                               Actions
@@ -537,7 +537,7 @@ export default function TestManagementWidget({
       </Card>
 
       <Dialog open={isQuarantineModalOpen} onOpenChange={setIsQuarantineModalOpen}>
-        <DialogContent>
+        <DialogContent onCloseAutoFocus={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>
               {quarantineTest?.isQuarantined ? 'Remove from Quarantine' : 'Quarantine Test'}
@@ -596,7 +596,7 @@ export default function TestManagementWidget({
       </Dialog>
 
       <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
-        <DialogContent>
+        <DialogContent onCloseAutoFocus={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Delete Test</DialogTitle>
             <DialogDescription>

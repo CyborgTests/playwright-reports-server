@@ -5,6 +5,11 @@ import { ThemeProvider as NextThemesProvider } from 'next-themes';
 import { type FC, useState } from 'react';
 import { CONFIG_QUERY_KEY, fetchConfig } from '../hooks/useConfig';
 
+const THEME_VALUE_MAP = {
+  'light-mode': 'light',
+  'dark-mode': 'dark',
+};
+
 export const Providers: FC<ThemeProviderProps> = ({ children, ...themeProps }) => {
   const [queryClient] = useState(() => {
     const client = new QueryClient({
@@ -23,15 +28,7 @@ export const Providers: FC<ThemeProviderProps> = ({ children, ...themeProps }) =
   });
 
   return (
-    <NextThemesProvider
-      {...themeProps}
-      attribute="class"
-      // additional mapping to handle theme names from playwright trace view
-      value={{
-        'light-mode': 'light',
-        'dark-mode': 'dark',
-      }}
-    >
+    <NextThemesProvider {...themeProps} attribute="class" value={THEME_VALUE_MAP}>
       <QueryClientProvider client={queryClient}>
         {children}
         <ReactQueryDevtools initialIsOpen={false} />
