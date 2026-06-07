@@ -112,7 +112,7 @@ function isStoredPreset(value: unknown): value is { preset: PresetId } {
   );
 }
 
-function readFromStorage(): SharedDateRange | null {
+export function readStoredDateRange(): SharedDateRange | null {
   try {
     if (typeof globalThis === 'undefined' || !globalThis.localStorage) return null;
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -168,7 +168,7 @@ export default function DateRangeSelect({
       return;
     }
     if (!disablePersistence) {
-      const stored = readFromStorage();
+      const stored = readStoredDateRange();
       if (stored) {
         setInternalRange(stored);
         onSelect(stored);

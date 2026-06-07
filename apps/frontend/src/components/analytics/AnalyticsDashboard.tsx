@@ -8,9 +8,9 @@ import { useActiveSection } from '../../hooks/useActiveSection';
 import { useAnalyticsData } from '../../hooks/useAnalyticsData';
 import { defaultProjectName } from '../../lib/constants';
 import { cn } from '../../lib/utils';
-import DateRangeSelect from '../date-range-select';
+import DateRangeSelect, { readStoredDateRange } from '../date-range-select';
 import LazyVisible from '../lazy-visible';
-import ProjectSelect from '../project-select';
+import ProjectSelect, { readStoredProject } from '../project-select';
 import TestManagementWidget from '../test-management/TestManagementWidget';
 import { Switch } from '../ui/switch';
 import { FailureAnalysisSummary } from './FailureAnalysisSummary';
@@ -38,11 +38,15 @@ interface DashboardSectionNavProps {
 
 export default function AnalyticsDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [project, setProject] = useState(searchParams.get('project') ?? defaultProjectName);
-  const [dateRange, setDateRangeState] = useState<DateRange>(() => ({
-    from: searchParams.get('from') ?? undefined,
-    to: searchParams.get('to') ?? undefined,
-  }));
+  const [project, setProject] = useState(
+    () => searchParams.get('project') ?? readStoredProject() ?? defaultProjectName
+  );
+  const [dateRange, setDateRangeState] = useState<DateRange>(() => {
+    const fromUrl = searchParams.get('from') ?? undefined;
+    const toUrl = searchParams.get('to') ?? undefined;
+    if (fromUrl || toUrl) return { from: fromUrl, to: toUrl };
+    return readStoredDateRange() ?? {};
+  });
   const [failedOnly, setFailedOnly] = useState(
     () => searchParams.get('failedOnly') === '1' || searchParams.get('failedOnly') === 'true'
   );

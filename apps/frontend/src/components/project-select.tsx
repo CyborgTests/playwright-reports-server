@@ -8,6 +8,17 @@ import { buildUrl } from '../lib/url';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
+const STORAGE_KEY = 'selected-project';
+
+export function readStoredProject(): string | null {
+  try {
+    if (typeof globalThis === 'undefined' || !globalThis.localStorage) return null;
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 interface ProjectSelectProps {
   onSelect: (project: string) => void;
   refreshId?: string;
@@ -42,7 +53,7 @@ export default function ProjectSelect({
 
   const [localStorageProject, setLocalStorageProject] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
-  const localStorageKey = `selected-project`;
+  const localStorageKey = STORAGE_KEY;
 
   const effectiveSelectedProject = localStorageProject || selectedProject || defaultProjectName;
   const candidate =
@@ -71,7 +82,7 @@ export default function ProjectSelect({
       console.warn('Failed to read from localStorage:', error);
     }
     setIsInitialized(true);
-  }, [isInitialized]);
+  }, [isInitialized, localStorageKey]);
 
   useEffect(() => {
     if (!isInitialized || !localStorageProject || !hasOpened) return;
@@ -88,7 +99,7 @@ export default function ProjectSelect({
     } catch (error) {
       console.warn('Failed to validate localStorage project:', error);
     }
-  }, [localStorageProject, isInitialized, items.includes, isLoading, hasOpened]);
+  }, [localStorageProject, isInitialized, items.includes, isLoading, hasOpened, localStorageKey]);
 
   useEffect(() => {
     onSelect?.(effectiveSelectedProject);
