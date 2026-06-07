@@ -58,8 +58,7 @@
     "remark-gfm": "^4.0.1",
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.6.1",
-    "tailwindcss-animate": "^1.0.7",
-    "uuid": "^14.0.0"
+    "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
     "@types/hast": "^3.0.4",

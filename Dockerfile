@@ -58,19 +58,32 @@ RUN mkdir -p /app/apps/frontend/packages && \
 ENV DOCKER_BUILD=true
 RUN pnpm --filter @playwright-reports/frontend build:vite
 
-# Build backend
-FROM build-base AS backend-builder
+# Bundle backend with esbuild — produces dist/index.js + dist/llmButton.js.
+# All prod deps except externals get folded and tree-shaken.
+FROM build-base AS backend-bundler
 WORKDIR /app
 COPY --from=deps /app/ ./
 COPY --from=shared-builder /app/packages/shared/dist ./packages/shared/dist
-RUN pnpm --filter @playwright-reports/backend build
+RUN pnpm --filter @playwright-reports/backend bundle
 
-# Produce a self-contained backend bundle: dist + public + flat prod
-# node_modules with only what backend imports transitively.
-FROM backend-builder AS deployer
-WORKDIR /app
-RUN pnpm --filter @playwright-reports/backend deploy --prod --legacy /deploy && \
-    find /deploy/dist -type f \( -name '*.d.ts' -o -name '*.d.ts.map' -o -name '*.js.map' \) -delete
+# Runtime deps stage — fresh install of ONLY the externals into a flat node_modules tree.
+FROM build-base AS runtime-deps
+WORKDIR /runtime
+COPY apps/backend/package.json ./backend-package.json
+RUN node -e "const fs=require('fs');const src=JSON.parse(fs.readFileSync('backend-package.json'));const pkg={name:'playwright-reports-runtime',version:'0.0.0',private:true,dependencies:{'better-sqlite3':src.dependencies['better-sqlite3'],'@playwright/test':src.dependencies['@playwright/test']}};fs.writeFileSync('package.json',JSON.stringify(pkg,null,2));" && \
+    rm backend-package.json
+RUN npm install --omit=dev --no-audit --no-fund
+# Strip docs/tests/typings/sourcemaps
+RUN find node_modules \
+      -not -path '*/@playwright/test*' \
+      \( \
+        -name '*.md' -o -name '*.markdown' \
+        -o -name 'LICENSE*' -o -name 'license*' -o -name 'CHANGELOG*' \
+        -o -name '*.d.ts' -o -name '*.d.ts.map' -o -name '*.js.map' \
+        -o -name 'tests' -o -name '__tests__' \
+        -o -name 'example' -o -name 'examples' -o -name 'docs' \
+        -o -name '.github' \
+      \) -prune -exec rm -rf {} + 2>/dev/null || true
 
 # Production image
 FROM runner-base AS runner
@@ -79,8 +92,16 @@ WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 --ingroup nodejs appuser
 
-# Self-contained backend bundle (dist, public, package.json, node_modules).
-COPY --from=deployer --chown=appuser:nodejs /deploy ./apps/backend
+# Bundled backend and its package.json so node treats the bundle as ESM
+COPY --from=backend-bundler --chown=appuser:nodejs /app/apps/backend/dist ./apps/backend/dist
+COPY --from=backend-bundler --chown=appuser:nodejs /app/apps/backend/package.json ./apps/backend/package.json
+
+# Backend-served static assets (favicon.ico, logo.svg) reached via /api/static.
+# The bundle layout resolves these at apps/backend/public (dist/../public).
+COPY --from=backend-bundler --chown=appuser:nodejs /app/apps/backend/public ./apps/backend/public
+
+# Runtime externals — better-sqlite3 native binding + playwright CLI.
+COPY --from=runtime-deps --chown=appuser:nodejs /runtime/node_modules ./apps/backend/node_modules
 
 # Frontend static assets served by @fastify/static.
 COPY --from=frontend-builder --chown=appuser:nodejs /app/apps/frontend/dist ./apps/frontend/dist
