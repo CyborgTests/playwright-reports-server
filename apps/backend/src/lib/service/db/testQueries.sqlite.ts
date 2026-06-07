@@ -1,7 +1,7 @@
 import type { ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import type { DerivedPageRow, Test, TestRun, TestWithQuarantineInfo } from './tests.sqlite.js';
-import { convertDbRowToTestRun } from './tests.sqlite.js';
+import { convertDbRowToTestRun, type TestRunDbRow } from './tests.sqlite.js';
 
 export interface DerivedPageOptions {
   status?: 'all' | 'quarantined' | 'not-quarantined';
@@ -300,7 +300,7 @@ function runsForLaneChunk(
     `;
   }
 
-  const runRows = db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
+  const runRows = db.prepare(sql).all(...params) as TestRunDbRow[];
   for (const row of runRows) {
     const key = `${row.testId}::${row.fileId}::${row.project}`;
     let bucket = out.get(key);
@@ -508,6 +508,6 @@ export function getTestRunsInWindow(
     WHERE ${conditions.join(' AND ')}
     ORDER BY tr.createdAt DESC
   `;
-  const rows = db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
+  const rows = db.prepare(sql).all(...params) as TestRunDbRow[];
   return rows.map((row) => convertDbRowToTestRun(row));
 }

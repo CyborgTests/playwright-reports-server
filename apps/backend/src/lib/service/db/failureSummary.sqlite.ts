@@ -1,6 +1,7 @@
 import type { ReportAnalysisStructured } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import { getDatabase } from './db.js';
+import { decodeFailureDetails } from './failureDetailsCodec.js';
 
 const initiatedFailureSummaryDb = Symbol.for('playwright.reports.db.failureSummary');
 const instance = globalThis as typeof globalThis & {
@@ -246,7 +247,7 @@ export class FailureSummaryDatabase {
       category: string;
       signature: string | null;
       signatureGlobal: string | null;
-      failure_details: string | null;
+      failure_details: Buffer | string | null;
       createdAt: string;
     }>;
 
@@ -421,14 +422,16 @@ export const failureSummaryDb = FailureSummaryDatabase.getInstance();
 const PAGE_CONTEXT_HEADER = '\n\n# Page Context';
 
 /**
- * Pull the human-readable error text out of a stored `failure_details` JSON blob.
- * Strips the appended Page Context (DOM snapshot) — that's useful for LLM analysis
- * but noise for the dashboard widget.
+ * Pull the human-readable error text out of a stored `failure_details` value.
+ * Accepts the raw column (gzip BLOB or plaintext) and strips the
+ * appended Page Context (DOM snapshot) — useful for LLM analysis but noise
+ * for the dashboard widget.
  */
-function extractDisplayMessage(failureDetailsJson: string | null): string {
-  if (!failureDetailsJson) return '';
+function extractDisplayMessage(failureDetailsRaw: Buffer | string | null): string {
+  const json = decodeFailureDetails(failureDetailsRaw);
+  if (!json) return '';
   try {
-    const parsed = JSON.parse(failureDetailsJson) as { message?: string };
+    const parsed = JSON.parse(json) as { message?: string };
     let msg = String(parsed.message ?? '');
     const headerIdx = msg.indexOf(PAGE_CONTEXT_HEADER);
     if (headerIdx > 0) msg = msg.substring(0, headerIdx);

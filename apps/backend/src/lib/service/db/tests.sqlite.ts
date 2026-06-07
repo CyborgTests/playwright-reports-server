@@ -1,7 +1,8 @@
+import { randomUUID as uuid } from 'node:crypto';
 import type { FailureCategorySource, ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
-import { v4 as uuid } from 'uuid';
 import { getDatabase } from './db.js';
+import { decodeFailureDetails, encodeFailureDetails } from './failureDetailsCodec.js';
 import type { DerivedPageOptions } from './testQueries.sqlite.js';
 import * as testQueries from './testQueries.sqlite.js';
 
@@ -69,11 +70,43 @@ export interface DerivedPageRow {
   avgDuration: number | null;
 }
 
-export function convertDbRowToTestRun(row: any): TestRun {
+export interface TestRunDbRow {
+  runId: string;
+  testId: string;
+  fileId: string;
+  project: string;
+  reportId: string;
+  outcome: string;
+  duration: number | null;
+  createdAt: string;
+  flakinessScore: number | null;
+  quarantineReason: string | null;
+  quarantined: number;
+  fixedAt?: string | null;
+  failure_details: Buffer | string | null;
+  failure_category: string | null;
+  failure_category_source: string | null;
+  error_signature: string | null;
+  error_signature_global: string | null;
+  reportTitle?: string | null;
+  reportDisplayNumber?: number | null;
+}
+
+export function convertDbRowToTestRun(row: TestRunDbRow): TestRun {
   return {
-    ...row,
+    runId: row.runId,
+    testId: row.testId,
+    fileId: row.fileId,
+    project: row.project,
+    reportId: row.reportId,
+    outcome: row.outcome,
+    duration: row.duration ?? undefined,
+    createdAt: row.createdAt,
+    flakinessScore: row.flakinessScore ?? undefined,
+    quarantineReason: row.quarantineReason ?? undefined,
     quarantined: Boolean(row.quarantined),
-    failureDetails: row.failure_details || undefined,
+    fixedAt: row.fixedAt ?? undefined,
+    failureDetails: decodeFailureDetails(row.failure_details) || undefined,
     failureCategory: row.failure_category || undefined,
     failureCategorySource: (row.failure_category_source as FailureCategorySource) || undefined,
     errorSignature: row.error_signature || undefined,
@@ -107,7 +140,7 @@ export class TestDatabase {
       number,
       string | null,
       number,
-      string | null,
+      Buffer | null,
       string | null,
       string | null,
       string | null,
@@ -547,7 +580,7 @@ export class TestDatabase {
       flakinessScore: testRunWithId.flakinessScore ?? 0,
       quarantineReason: testRunWithId.quarantineReason || null,
       quarantined: testRunWithId.quarantined ? 1 : 0,
-      failureDetails: testRunWithId.failureDetails || null,
+      failureDetails: encodeFailureDetails(testRunWithId.failureDetails),
       failureCategory: testRunWithId.failureCategory || null,
       failureCategorySource: testRunWithId.failureCategorySource || null,
       errorSignature: testRunWithId.errorSignature || null,
@@ -599,12 +632,12 @@ export class TestDatabase {
   }
 
   public getTestRuns(testId: string, fileId: string, project: string): TestRun[] {
-    const rows = this.getTestRunsStmt.all(testId, fileId, project);
+    const rows = this.getTestRunsStmt.all(testId, fileId, project) as TestRunDbRow[];
     return rows.map((row) => convertDbRowToTestRun(row));
   }
 
   public getLatestTestRun(testId: string, fileId: string, project: string): TestRun | undefined {
-    const row = this.getLatestTestRunStmt.get(testId, fileId, project);
+    const row = this.getLatestTestRunStmt.get(testId, fileId, project) as TestRunDbRow | undefined;
     return row ? convertDbRowToTestRun(row) : undefined;
   }
 
@@ -637,7 +670,7 @@ export class TestDatabase {
     const stats = this.getTestStatsStmt.get(testId, fileId, project) as {
       totalRuns: number;
       lastRunAt: string | null;
-      failureCount: number;
+      flakyCount: number;
     };
 
     const latestRun = this.getLatestTestRun(testId, fileId, project);
@@ -728,7 +761,7 @@ export class TestDatabase {
   public getTestRunsByReport(reportId: string): TestRun[] {
     const rows = this.db
       .prepare('SELECT * FROM test_runs WHERE reportId = ? ORDER BY createdAt DESC')
-      .all(reportId);
+      .all(reportId) as TestRunDbRow[];
     return rows.map((row) => convertDbRowToTestRun(row));
   }
 
@@ -825,7 +858,7 @@ export class TestDatabase {
   public backfillGlobalSignatures(computeSignature: (message: string) => string): number {
     const rows = this.getRunsMissingGlobalSignatureStmt.all() as Array<{
       runId: string;
-      failure_details: string | null;
+      failure_details: Buffer | string | null;
     }>;
     if (rows.length === 0) return 0;
 
@@ -835,13 +868,14 @@ export class TestDatabase {
     let skippedEmptyMessage = 0;
     const tx = this.db.transaction(() => {
       for (const row of rows) {
-        if (!row.failure_details) {
+        const decoded = decodeFailureDetails(row.failure_details);
+        if (!decoded) {
           skippedNull++;
           continue;
         }
         let message = '';
         try {
-          message = String((JSON.parse(row.failure_details) as { message?: string }).message ?? '');
+          message = String((JSON.parse(decoded) as { message?: string }).message ?? '');
         } catch {
           skippedParseError++;
           continue;
@@ -869,6 +903,38 @@ export class TestDatabase {
   public clear(): void {
     this.db.prepare('DELETE FROM test_runs').run();
     this.db.prepare('DELETE FROM tests').run();
+  }
+
+  /** One-shot migration: gzip every existing plaintext `failure_details`. */
+  public compressLegacyFailureDetails(): number {
+    const ids = this.db
+      .prepare(`SELECT runId FROM test_runs WHERE failure_details IS NOT NULL`)
+      .all() as Array<{ runId: string }>;
+    if (ids.length === 0) return 0;
+
+    const getOne = this.db.prepare(`SELECT failure_details FROM test_runs WHERE runId = ?`);
+    const update = this.db.prepare(`UPDATE test_runs SET failure_details = ? WHERE runId = ?`);
+
+    let rewritten = 0;
+    const tx = this.db.transaction(() => {
+      for (const { runId } of ids) {
+        const row = getOne.get(runId) as { failure_details: Buffer | string | null } | undefined;
+        const raw = row?.failure_details;
+        if (raw === null || raw === undefined) continue;
+        // Already gzip-compressed → skip.
+        if (Buffer.isBuffer(raw) && raw.length >= 2 && raw[0] === 0x1f && raw[1] === 0x8b) {
+          continue;
+        }
+        const plaintext = typeof raw === 'string' ? raw : Buffer.from(raw).toString('utf8');
+        if (!plaintext) continue;
+        const encoded = encodeFailureDetails(plaintext);
+        if (!encoded) continue;
+        update.run(encoded, runId);
+        rewritten++;
+      }
+    });
+    tx();
+    return rewritten;
   }
 
   public runTransaction<T>(fn: () => T): T {
