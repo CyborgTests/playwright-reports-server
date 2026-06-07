@@ -1,5 +1,6 @@
 import type { ReportHistory } from '@playwright-reports/shared';
 import { GitCompare, Users } from 'lucide-react';
+import { useEffect } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import FormattedDate from '@/components/date-format';
@@ -10,15 +11,12 @@ import ReportStatistics from '@/components/report-details/report-stats';
 import { CompareToPicker } from '@/components/reports-compare/compare-to-picker';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { useAuth } from '@/hooks/useAuth';
 import useQuery from '@/hooks/useQuery';
 import { withBase } from '@/lib/url';
 
 function ReportDetailPage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
-  const auth = useAuth();
-  const isAuthLoading = auth.status === 'loading';
 
   const highlightTestId = location.state?.highlightTestId;
 
@@ -26,17 +24,11 @@ function ReportDetailPage() {
     data: report,
     isLoading: isReportLoading,
     error: reportError,
-  } = useQuery<ReportHistory>(`/api/report/${id}`, {
-    callback: `/report/${id}`,
-  });
+  } = useQuery<ReportHistory>(`/api/report/${id}`);
 
-  if (isAuthLoading) {
-    return (
-      <div className="flex items-center justify-center w-full">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (reportError) toast.error(reportError.message);
+  }, [reportError]);
 
   if (!report && isReportLoading) {
     return (
@@ -45,8 +37,6 @@ function ReportDetailPage() {
       </div>
     );
   }
-
-  reportError && toast.error(reportError.message);
 
   return (
     <>

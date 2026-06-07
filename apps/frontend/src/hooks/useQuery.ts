@@ -1,9 +1,6 @@
 import { type UseQueryOptions, useQuery as useTanStackQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { withQueryParams } from '../lib/network';
 import { withBase } from '../lib/url';
 import { useAuth } from './useAuth';
 
@@ -11,29 +8,11 @@ const useQuery = <ReturnType>(
   path: string,
   options?: Omit<UseQueryOptions<ReturnType, Error>, 'queryKey' | 'queryFn'> & {
     dependencies?: unknown[];
-    callback?: string;
     method?: string;
     body?: BodyInit | null;
   }
 ) => {
   const session = useAuth();
-  const navigate = useNavigate();
-
-  const callback = options?.callback;
-
-  useEffect(() => {
-    if (session.status === 'unauthenticated' && window.location.pathname !== '/login') {
-      toast.warning('Unauthorized');
-      navigate(
-        withQueryParams(
-          withBase('/login'),
-          callback
-            ? { callbackUrl: encodeURI(callback) }
-            : { callbackUrl: encodeURI(withBase(window.location.pathname)) }
-        )
-      );
-    }
-  }, [session.status, navigate, callback]);
 
   const isAuthDisabled = session.status === 'authenticated' && session.data === null;
   const enabled =

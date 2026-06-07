@@ -29,7 +29,6 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
     isLoading: isHistoryLoading,
     error: historyError,
   } = useQuery<ReportHistory[]>(`/api/report/list?limit=10&project=${report?.project ?? ''}`, {
-    callback: `/report/${report?.reportID}`,
     dependencies: [report?.reportID],
   });
 

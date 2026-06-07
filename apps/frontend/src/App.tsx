@@ -1,8 +1,13 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { Layout } from '@/components/Layout';
+import { NavigationProgress } from '@/components/ui/navigation-progress';
 import { Spinner } from '@/components/ui/spinner';
+import { useAuth } from '@/hooks/useAuth';
+import { useConfig } from '@/hooks/useConfig';
+import { withQueryParams } from '@/lib/network';
+import { withBase } from '@/lib/url';
 import { Providers } from '@/providers';
 
 const HomePage = lazy(() => import('@/pages/HomePage'));
@@ -24,6 +29,27 @@ function RouteFallback() {
   );
 }
 
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { data: config, isLoading: isConfigLoading } = useConfig();
+  const session = useAuth();
+  const location = useLocation();
+
+  if (isConfigLoading || session.status === 'loading') {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (config?.authRequired && session.status === 'unauthenticated') {
+    const callbackUrl = encodeURI(withBase(location.pathname + location.search));
+    return <Navigate to={withQueryParams(withBase('/login'), { callbackUrl })} replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function App() {
   return (
     <Providers
@@ -32,28 +58,31 @@ function App() {
       defaultTheme="dark-mode"
       enableSystem={false}
     >
+      <NavigationProgress />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route
             path="/*"
             element={
-              <Layout>
-                <Suspense fallback={<RouteFallback />}>
-                  <Routes>
-                    <Route path="/" element={<HomePage />} />
-                    <Route path="/reports" element={<ReportsPage />} />
-                    <Route path="/reports/compare" element={<ReportsComparePage />} />
-                    <Route path="/report/:id" element={<ReportDetailPage />} />
-                    <Route path="/report/:id/:testId" element={<RedirectTestDetails />} />
-                    <Route path="/test/:testId" element={<TestDetailPage />} />
-                    <Route path="/results" element={<ResultsPage />} />
-                    <Route path="/failures/clusters" element={<FailureClustersPage />} />
-                    <Route path="/llm-queue" element={<LlmQueuePage />} />
-                    <Route path="/settings" element={<SettingsPage />} />
-                  </Routes>
-                </Suspense>
-              </Layout>
+              <RequireAuth>
+                <Layout>
+                  <Suspense fallback={<RouteFallback />}>
+                    <Routes>
+                      <Route path="/" element={<HomePage />} />
+                      <Route path="/reports" element={<ReportsPage />} />
+                      <Route path="/reports/compare" element={<ReportsComparePage />} />
+                      <Route path="/report/:id" element={<ReportDetailPage />} />
+                      <Route path="/report/:id/:testId" element={<RedirectTestDetails />} />
+                      <Route path="/test/:testId" element={<TestDetailPage />} />
+                      <Route path="/results" element={<ResultsPage />} />
+                      <Route path="/failures/clusters" element={<FailureClustersPage />} />
+                      <Route path="/llm-queue" element={<LlmQueuePage />} />
+                      <Route path="/settings" element={<SettingsPage />} />
+                    </Routes>
+                  </Suspense>
+                </Layout>
+              </RequireAuth>
             }
           />
         </Routes>
