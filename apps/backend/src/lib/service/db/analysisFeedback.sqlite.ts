@@ -1,5 +1,5 @@
+import { randomUUID as uuid } from 'node:crypto';
 import type Database from 'better-sqlite3';
-import { v4 as uuid } from 'uuid';
 import { getDatabase } from './db.js';
 
 const initiatedAnalysisFeedbackDb = Symbol.for('playwright.reports.db.analysisFeedback');

@@ -1,6 +1,6 @@
+import { randomUUID as uuid } from 'node:crypto';
 import type { LlmTaskStatus, LlmTaskType } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
-import { v4 as uuid } from 'uuid';
 import { llmTaskEvents } from '../llmTaskEvents.js';
 import { getDatabase } from './db.js';
 
@@ -523,6 +523,14 @@ export class LlmTasksDatabase {
     if (reportIds.length === 0) return;
     const placeholders = reportIds.map(() => '?').join(',');
     this.db.prepare(`DELETE FROM llm_tasks WHERE reportId IN (${placeholders})`).run(...reportIds);
+  }
+
+  public pruneCompletedOlderThan(cutoffISO: string): number {
+    return this.db
+      .prepare(
+        `DELETE FROM llm_tasks WHERE status = 'completed' AND completedAt IS NOT NULL AND completedAt < ?`
+      )
+      .run(cutoffISO).changes;
   }
 
   public updatePrompt(id: string, prompt: string, estimatedInputTokens: number): void {

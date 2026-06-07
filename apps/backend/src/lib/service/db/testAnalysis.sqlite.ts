@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { v4 as uuid } from 'uuid';
+import { randomUUID as uuid } from 'node:crypto';
 import { getDatabase } from './db.js';
 
 const initiatedTestAnalysisDb = Symbol.for('playwright.reports.db.testAnalysis');
