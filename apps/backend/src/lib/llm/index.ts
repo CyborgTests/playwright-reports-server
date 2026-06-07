@@ -16,12 +16,87 @@ export interface SegmentedSendOptions {
 /** Caches the "model rejected images" verdict for the active provider+model. */
 const MULTIMODAL_BLOCKLIST_TTL_MS = 60 * 60 * 1000;
 
+const CIRCUIT_FAILURE_THRESHOLD = 5;
+const CIRCUIT_OPEN_COOLDOWN_MS = 60 * 1000;
+
+type CircuitState = 'closed' | 'open' | 'half-open';
+
+class LLMCircuitBreaker {
+  private state: CircuitState = 'closed';
+  private consecutiveFailures = 0;
+  private openedAt = 0;
+
+  shouldAttempt(): boolean {
+    if (this.state === 'closed') return true;
+    if (this.state === 'half-open') return false;
+    // open: transition to half-open once the cooldown has elapsed.
+    if (Date.now() - this.openedAt >= CIRCUIT_OPEN_COOLDOWN_MS) {
+      this.state = 'half-open';
+      return true;
+    }
+    return false;
+  }
+
+  msUntilRetry(): number {
+    if (this.state !== 'open') return 0;
+    return Math.max(0, CIRCUIT_OPEN_COOLDOWN_MS - (Date.now() - this.openedAt));
+  }
+
+  isBlocking(): boolean {
+    if (this.state === 'half-open') return true;
+    if (this.state === 'open') return Date.now() - this.openedAt < CIRCUIT_OPEN_COOLDOWN_MS;
+    return false;
+  }
+
+  onSuccess(): void {
+    this.consecutiveFailures = 0;
+    if (this.state !== 'closed') {
+      console.log('[llm] circuit breaker closed after successful call');
+    }
+    this.state = 'closed';
+  }
+
+  onFailure(err: unknown): void {
+    if (!isTransportFailure(err)) return;
+    this.consecutiveFailures += 1;
+    if (this.state === 'half-open') {
+      this.trip();
+      return;
+    }
+    if (this.consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
+      this.trip();
+    }
+  }
+
+  reset(): void {
+    this.state = 'closed';
+    this.consecutiveFailures = 0;
+    this.openedAt = 0;
+  }
+
+  private trip(): void {
+    if (this.state !== 'open') {
+      console.warn(
+        `[llm] circuit breaker opened after ${this.consecutiveFailures} consecutive failures; cooling down for ${CIRCUIT_OPEN_COOLDOWN_MS}ms`
+      );
+    }
+    this.state = 'open';
+    this.openedAt = Date.now();
+  }
+}
+
+function isTransportFailure(err: unknown): boolean {
+  if (!(err instanceof LLMProviderError)) return false;
+  return err.code === 'network' || err.code === 'timeout' || err.code === 'server_error';
+}
+
 export class LLMService {
   private static instance: LLMService;
   private provider: OpenAIProvider | AnthropicProvider | null = null;
   private config: LLMProviderConfig | null = null;
   /** Per-(provider+baseUrl+model) blocklist for multimodal image input. */
   private multimodalBlocklist = new Map<string, number>();
+  private circuit = new LLMCircuitBreaker();
 
   private constructor() {
     this.config = {
@@ -97,6 +172,15 @@ export class LLMService {
       throw new Error('LLM provider not initialized');
     }
 
+    if (!this.circuit.shouldAttempt()) {
+      throw new LLMProviderError(
+        `LLM provider circuit open — provider has been failing; retrying in ${Math.ceil(
+          this.circuit.msUntilRetry() / 1000
+        )}s`,
+        'circuit_open'
+      );
+    }
+
     // Determine whether images get attached before sending — the multimodal
     // blocklist auto-disables them after a prior unsupported-by-provider error.
     const initial = this.resolveCallShape(prompt);
@@ -108,7 +192,9 @@ export class LLMService {
     let lastErr: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        return await this.provider.sendSegmentedMessage(buildPrompt(), options);
+        const response = await this.provider.sendSegmentedMessage(buildPrompt(), options);
+        this.circuit.onSuccess();
+        return response;
       } catch (err) {
         lastErr = err;
         if (useImages && imagesMode !== 'force' && this.isMultimodalUnsupportedError(err)) {
@@ -119,9 +205,11 @@ export class LLMService {
           useImages = false;
           continue;
         }
+        this.circuit.onFailure(err);
         throw err;
       }
     }
+    if (lastErr) this.circuit.onFailure(lastErr);
     throw lastErr ?? new Error('sendSegmentedMessage exhausted retries');
   }
 
@@ -140,6 +228,10 @@ export class LLMService {
   public getProviderKey(): string {
     const c = this.config;
     return `${c?.provider}:${c?.baseUrl}:${c?.model || '<auto>'}`;
+  }
+
+  public isCircuitOpen(): boolean {
+    return this.circuit.isBlocking();
   }
 
   private isMultimodalBlocked(): boolean {
@@ -226,6 +318,7 @@ export class LLMService {
       ...config,
     } as LLMProviderConfig;
     this.provider = null;
+    this.circuit.reset();
   }
 
   async restart(config?: Partial<LLMProviderConfig>): Promise<void> {

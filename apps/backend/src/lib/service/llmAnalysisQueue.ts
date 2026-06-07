@@ -30,6 +30,10 @@ import {
 } from '../llm/reportAnalysis.js';
 import { extractTestAnalysisFromMarkdown } from '../llm/testAnalysis.js';
 import type { SegmentedPrompt } from '../llm/types/index.js';
+import { LLMProviderError } from '../llm/types/index.js';
+
+const CIRCUIT_OPEN_MAX_REQUEUES = 20;
+
 import {
   extractFailureEvidence,
   type FailureEvidence,
@@ -348,7 +352,7 @@ class LlmAnalysisQueue {
   private async getParallelRequests(): Promise<number> {
     try {
       const config = await service.getConfig();
-      return (config as any)?.llm?.parallelRequests ?? 1;
+      return config.llm?.parallelRequests ?? 1;
     } catch {
       return 1;
     }
@@ -374,7 +378,7 @@ class LlmAnalysisQueue {
     if (!this.running) return;
 
     try {
-      if (llmService.isConfigured()) {
+      if (llmService.isConfigured() && !llmService.isCircuitOpen()) {
         this.maxParallel = await this.getParallelRequests();
         while (this.running && this.activeTasks < this.maxParallel) {
           if (!this.fillSlot()) break;
@@ -430,6 +434,17 @@ class LlmAnalysisQueue {
           llmTasksDb.fail(task.id, `Unknown task type: ${task.type}`);
       }
     } catch (error) {
+      if (
+        error instanceof LLMProviderError &&
+        error.code === 'circuit_open' &&
+        task.retryCount < CIRCUIT_OPEN_MAX_REQUEUES
+      ) {
+        llmTasksDb.requeueWithRetryIncrement(task.id);
+        console.warn(
+          `[llmQueue] Task ${task.id} requeued — LLM circuit open (${task.retryCount + 1}/${CIRCUIT_OPEN_MAX_REQUEUES})`
+        );
+        return;
+      }
       const msg = error instanceof Error ? error.message : String(error);
       console.error(`[llmQueue] Task ${task.id} failed:`, msg);
       llmTasksDb.fail(task.id, msg);
@@ -646,21 +661,20 @@ class LlmAnalysisQueue {
 
     const config = await service.getConfig();
     const warningThreshold =
-      (config as any)?.testManagement?.warningThresholdPercentage ??
-      FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
+      config.testManagement?.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
     const flakinessScore = failedRun?.flakinessScore ?? 0;
 
     // Runtime prompt overrides from settings. Each override replaces the
     // corresponding baseline; mustache vars are substituted from a per-template
     // allowlist (see prompts/index.ts).
-    const llmCfg = (config as any)?.llm ?? {};
+    const llmCfg = config.llm ?? {};
     const promptOverrides = {
-      systemPrompt: llmCfg.customSystemPrompt as string | undefined,
-      testAnalysisSystemPrompt: llmCfg.customTestAnalysisSystemPrompt as string | undefined,
-      projectSummarySystemPrompt: llmCfg.customProjectSummarySystemPrompt as string | undefined,
-      testAnalysisInstructions: llmCfg.customTestAnalysisInstructions as string | undefined,
-      reportSummaryPrompt: llmCfg.customReportSummaryPrompt as string | undefined,
-      projectSummaryInstructions: llmCfg.customProjectSummaryInstructions as string | undefined,
+      systemPrompt: llmCfg.customSystemPrompt,
+      testAnalysisSystemPrompt: llmCfg.customTestAnalysisSystemPrompt,
+      projectSummarySystemPrompt: llmCfg.customProjectSummarySystemPrompt,
+      testAnalysisInstructions: llmCfg.customTestAnalysisInstructions,
+      reportSummaryPrompt: llmCfg.customReportSummaryPrompt,
+      projectSummaryInstructions: llmCfg.customProjectSummaryInstructions,
       project,
       errorCategory: heuristicCategory,
     };
@@ -975,7 +989,7 @@ class LlmAnalysisQueue {
     const runContext = currentReport ? buildRunContextFromReport(currentReport) : undefined;
 
     const reportConfig = await service.getConfig();
-    const reportLlmCfg = (reportConfig as any)?.llm ?? {};
+    const reportLlmCfg = reportConfig.llm ?? {};
     const builtPrompt = buildReportSummarySegments({
       reportId,
       categories,
@@ -1179,7 +1193,7 @@ class LlmAnalysisQueue {
     );
 
     const projectConfig = await service.getConfig();
-    const projectLlmCfg = (projectConfig as any)?.llm ?? {};
+    const projectLlmCfg = projectConfig.llm ?? {};
     const builtPrompt = buildProjectSummarySegments({
       project,
       runs: latestReports.map((r) => {
@@ -1385,20 +1399,19 @@ export async function buildTestAnalysisRequest(opts: {
 
   const config = await service.getConfig();
   const warningThreshold =
-    (config as any)?.testManagement?.warningThresholdPercentage ??
-    FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
+    config.testManagement?.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
   const flakinessScore = failedRun?.flakinessScore ?? 0;
-  const llmCfg = (config as any)?.llm ?? {};
+  const llmCfg = config.llm ?? {};
   const { detectFailureCategory } = await import('./testManagement.js');
   const heuristicCategory = detectFailureCategory(details.message);
 
   const promptOverrides = {
-    systemPrompt: llmCfg.customSystemPrompt as string | undefined,
-    testAnalysisSystemPrompt: llmCfg.customTestAnalysisSystemPrompt as string | undefined,
-    projectSummarySystemPrompt: llmCfg.customProjectSummarySystemPrompt as string | undefined,
-    testAnalysisInstructions: llmCfg.customTestAnalysisInstructions as string | undefined,
-    reportSummaryPrompt: llmCfg.customReportSummaryPrompt as string | undefined,
-    projectSummaryInstructions: llmCfg.customProjectSummaryInstructions as string | undefined,
+    systemPrompt: llmCfg.customSystemPrompt,
+    testAnalysisSystemPrompt: llmCfg.customTestAnalysisSystemPrompt,
+    projectSummarySystemPrompt: llmCfg.customProjectSummarySystemPrompt,
+    testAnalysisInstructions: llmCfg.customTestAnalysisInstructions,
+    reportSummaryPrompt: llmCfg.customReportSummaryPrompt,
+    projectSummaryInstructions: llmCfg.customProjectSummaryInstructions,
     project,
     errorCategory: heuristicCategory,
   };
