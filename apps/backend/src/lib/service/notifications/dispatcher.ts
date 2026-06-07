@@ -45,11 +45,21 @@ export async function dispatchReportUploaded(
 
   const out: DispatchedRule[] = [];
   for (const [i, s] of settled.entries()) {
+    const channel = enabledChannels[i];
     if (s.status === 'fulfilled') {
       out.push(...s.value);
+      for (const dispatched of s.value) {
+        if (!dispatched.result.ok && !dispatched.result.skipReason) {
+          console.warn(
+            `[notifications] channel "${channel.name}" rule ${dispatched.ruleId} for report ${report.reportID} failed: ${
+              dispatched.result.error ?? 'unknown error'
+            }${dispatched.result.httpStatus ? ` (HTTP ${dispatched.result.httpStatus})` : ''}`
+          );
+        }
+      }
     } else {
       console.error(
-        `[notifications] channel "${enabledChannels[i].name}" worker rejected: ${
+        `[notifications] channel "${channel.name}" worker rejected: ${
           s.reason instanceof Error ? s.reason.message : String(s.reason)
         }`
       );
