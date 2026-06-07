@@ -429,29 +429,54 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
         'X-Accel-Buffering': 'no',
       });
 
-      const send = (event: string, data: unknown) => {
-        reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-      };
-
-      // Emit initial state immediately so a late-subscribed client doesn't
-      // miss a status that already settled before the SSE handshake completed.
-      send('update', initialRow);
-      if (TERMINAL_STATUSES.has(initialRow.status)) {
-        reply.raw.end();
-        return;
-      }
-
       const eventName = `task:${taskId}`;
+      let closed = false;
+      let keepalive: NodeJS.Timeout | undefined;
+
       const onUpdate = (row: LlmTaskRow) => {
-        send('update', row);
-        if (TERMINAL_STATUSES.has(row.status)) {
+        const ok = send('update', row);
+        if (ok && TERMINAL_STATUSES.has(row.status)) {
           cleanup();
           reply.raw.end();
         }
       };
 
+      const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        if (keepalive) clearInterval(keepalive);
+        llmTaskEvents.off(eventName, onUpdate);
+      };
+
+      const send = (event: string, data: unknown): boolean => {
+        if (closed) return false;
+        try {
+          reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+          return true;
+        } catch (err) {
+          fastify.log.warn({ err, taskId }, 'SSE write failed; closing stream');
+          cleanup();
+          try {
+            reply.raw.end();
+          } catch {
+            // socket already destroyed
+          }
+          return false;
+        }
+      };
+
+      // Emit initial state immediately so a late-subscribed client doesn't
+      // miss a status that already settled before the SSE handshake completed.
+      const initialOk = send('update', initialRow);
+      if (!initialOk) return;
+      if (TERMINAL_STATUSES.has(initialRow.status)) {
+        reply.raw.end();
+        return;
+      }
+
       // Keep the connection alive across NAT/proxy idle timeouts.
-      const keepalive = setInterval(() => {
+      keepalive = setInterval(() => {
+        if (closed) return;
         try {
           reply.raw.write(': keepalive\n\n');
         } catch {
@@ -459,13 +484,9 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
         }
       }, 30_000);
 
-      const cleanup = () => {
-        clearInterval(keepalive);
-        llmTaskEvents.off(eventName, onUpdate);
-      };
-
       llmTaskEvents.on(eventName, onUpdate);
       request.raw.on('close', cleanup);
+      request.raw.on('error', cleanup);
     }
   );
 
