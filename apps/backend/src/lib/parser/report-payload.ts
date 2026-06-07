@@ -7,7 +7,7 @@
  */
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import JSZip from 'jszip';
+import { Open } from 'unzipper';
 import { REPORTS_FOLDER } from '../storage/constants.js';
 import { stripAnsi } from './failure-extraction.js';
 
@@ -161,28 +161,28 @@ async function loadReportPayloadUncached(reportId: string): Promise<ReportPayloa
   const base64 = match?.[1]?.trim();
   if (!base64) return null;
 
-  let zip: JSZip;
+  let directory: Awaited<ReturnType<typeof Open.buffer>>;
   try {
-    zip = await JSZip.loadAsync(Buffer.from(base64, 'base64'));
+    directory = await Open.buffer(Buffer.from(base64, 'base64'));
   } catch {
     return null;
   }
 
-  const reportFile = zip.file('report.json');
+  const reportFile = directory.files.find((f) => f.path === 'report.json');
   if (!reportFile) return null;
 
   let reportJson: ReportJson;
   try {
-    reportJson = JSON.parse(await reportFile.async('string')) as ReportJson;
+    reportJson = JSON.parse((await reportFile.buffer()).toString('utf-8')) as ReportJson;
   } catch {
     return null;
   }
 
   const perFile = new Map<string, PerFileJson>();
-  for (const file of zip.file(/\.json$/)) {
-    if (file.name === 'report.json') continue;
+  for (const file of directory.files) {
+    if (file.type !== 'File' || !/\.json$/.test(file.path) || file.path === 'report.json') continue;
     try {
-      const raw = await file.async('string');
+      const raw = (await file.buffer()).toString('utf-8');
       const parsed = JSON.parse(raw) as PerFileJson;
       if (parsed && typeof parsed.fileId === 'string') {
         perFile.set(parsed.fileId, parsed);

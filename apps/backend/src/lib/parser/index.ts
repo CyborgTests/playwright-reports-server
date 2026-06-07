@@ -1,5 +1,5 @@
 import type { ReportInfo } from '@playwright-reports/shared';
-import JSZip from 'jszip';
+import { Open } from 'unzipper';
 import { withError } from '../../lib/withError.js';
 
 /**
@@ -25,23 +25,23 @@ export const parse = async (html: string): Promise<ReportInfo> => {
 
   const zipData = Buffer.from(base64String, 'base64');
 
-  const { result: zip, error } = await withError(JSZip.loadAsync(zipData));
+  const { result: directory, error } = await withError(Open.buffer(zipData));
 
   if (error) {
     throw Error(`[report parser] failed to load zip file: ${error.message}`);
   }
 
-  if (!zip) {
+  if (!directory) {
     throw Error('[report parser] parsed report data is empty');
   }
 
-  const reportFile = zip.file('report.json');
+  const reportFile = directory.files.find((f) => f.path === 'report.json');
 
   if (!reportFile) {
     throw new Error('[report parser] no report.json file found in the zip');
   }
 
-  const reportJson = await reportFile.async('string');
+  const reportJson = (await reportFile.buffer()).toString('utf-8');
 
   return JSON.parse(reportJson);
 };

@@ -7,7 +7,7 @@
 import * as fsSync from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import JSZip from 'jszip';
+import { Open } from 'unzipper';
 import { REPORTS_FOLDER } from '../storage/constants.js';
 import {
   extractFromReportPayload,
@@ -431,13 +431,17 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
  * versions split events across files differently across Playwright releases,
  * so we walk all of them and dispatch by entry type.
  */
-async function collectFromTraceZip(zip: JSZip): Promise<RawCollectors> {
+async function collectFromTraceZip(
+  directory: Awaited<ReturnType<typeof Open.buffer>>
+): Promise<RawCollectors> {
   const collectors: RawCollectors = { console: [], network: new Map(), actions: [] };
-  const files = zip.file(/\.(trace|network)$/);
+  const files = directory.files.filter(
+    (f) => f.type === 'File' && /\.(trace|network)$/.test(f.path)
+  );
   for (const file of files) {
     let content: string;
     try {
-      content = await file.async('string');
+      content = (await file.buffer()).toString('utf-8');
     } catch {
       continue;
     }
@@ -555,8 +559,8 @@ async function extractEvidenceFromTrace(
   try {
     const reportDir = path.join(REPORTS_FOLDER, reportId);
     const zipBuffer = await fs.readFile(path.join(reportDir, tracePath));
-    const zip = await JSZip.loadAsync(zipBuffer);
-    const collectors = await collectFromTraceZip(zip);
+    const directory = await Open.buffer(zipBuffer);
+    const collectors = await collectFromTraceZip(directory);
     return {
       consoleEvents: prioritizeConsole(collectors.console),
       networkEvents: prioritizeNetwork(
