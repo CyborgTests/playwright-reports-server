@@ -1,5 +1,4 @@
 import fs from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
 import type { ParsedTestUrl } from './url-parser.js';
 
 export async function injectTestAnalysis(
@@ -13,10 +12,7 @@ export async function injectTestAnalysis(
 
   try {
     const html = await injectCopyPromptToWindow(source);
-    const dom = new JSDOM(html);
-    const document = dom.window.document;
-    await injectClientSideScript(document, testUrl, isLlmEnabled);
-    return dom.serialize();
+    return await injectClientSideScript(html, testUrl, isLlmEnabled);
   } catch (error) {
     console.error('[html-injector] Error injecting HTML:', error);
     return source;
@@ -24,12 +20,11 @@ export async function injectTestAnalysis(
 }
 
 async function injectClientSideScript(
-  document: any,
+  html: string,
   testUrl: ParsedTestUrl,
   isLlmEnabled: boolean
-): Promise<void> {
-  const style = document.createElement('style');
-  style.textContent = `
+): Promise<string> {
+  const styleContent = `
     :root {
       --llm-border: #10b981;
       --llm-header-bg: #f0fdf4;
@@ -433,14 +428,26 @@ async function injectClientSideScript(
       text-decoration: none;
     }
     `;
-  document.head.appendChild(style);
 
-  const script = document.createElement('script');
-  script.textContent = `
-    const reportId = '${testUrl.reportId}';
+  const scriptBody = await fs.readFile(new URL('./llmButton.js', import.meta.url), 'utf-8');
+  const scriptContent = `
+    const reportId = ${JSON.stringify(testUrl.reportId)};
     const isLlmEnabled = ${isLlmEnabled ? 'true' : 'false'};
-    ${await fs.readFile(new URL('./llmButton.js', import.meta.url), 'utf-8')}`;
-  document.body.appendChild(script);
+    ${scriptBody}`;
+
+  const styleTag = `<style>${styleContent}</style>`;
+  const scriptTag = `<script>${scriptContent}</script>`;
+
+  // Use the function form of `.replace` so `$&`, `$1`, etc. inside the
+  // injected style/script bodies aren't interpreted as substitution patterns.
+  let result = html;
+  result = result.includes('</head>')
+    ? result.replace('</head>', () => `${styleTag}</head>`)
+    : `${styleTag}${result}`;
+  result = result.includes('</body>')
+    ? result.replace('</body>', () => `${scriptTag}</body>`)
+    : `${result}${scriptTag}`;
+  return result;
 }
 
 async function injectCopyPromptToWindow(html: string): Promise<string> {
