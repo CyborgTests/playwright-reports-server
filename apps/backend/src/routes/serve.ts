@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { access, readFile } from 'node:fs/promises';
 import path, { resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -5,25 +6,38 @@ import type { FastifyInstance } from 'fastify';
 import mime from 'mime';
 import { env } from '../config/env.js';
 import { llmService } from '../lib/llm/index.js';
-import { DATA_FOLDER } from '../lib/storage/constants.js';
+import { DATA_FOLDER, REPORTS_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';
 import { injectTestAnalysis } from '../lib/utils/html-injector.js';
 import { extractReportIdFromPath } from '../lib/utils/url-parser.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
-const BACKEND_PUBLIC_DIR = resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '..',
-  'public'
-);
+// locate the backend `public/` dir relative to this module.
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const BACKEND_PUBLIC_DIR =
+  [resolve(moduleDir, '..', 'public'), resolve(moduleDir, '..', '..', 'public')].find((p) =>
+    existsSync(p)
+  ) ?? resolve(moduleDir, '..', '..', 'public');
 
 export async function registerServeRoutes(fastify: FastifyInstance) {
   fastify.get('/api/serve/*', async (request, reply) => {
     try {
       const filePath = (request.params as { '*': string })['*'] || '';
-      const targetPath = decodeURI(filePath);
+      const rawPath = decodeURI(filePath);
+
+      // Normalize and strip leading separators so the path is interpreted as a
+      // descendant of the reports namespace.
+      const safeRelative = path.normalize(rawPath).replace(/^([/\\])+/, '');
+      if (safeRelative === '..' || safeRelative.startsWith(`..${sep}`)) {
+        return reply.code(400).send({ error: 'Invalid path' });
+      }
+      const reportsRoot = resolve(REPORTS_FOLDER);
+      const resolved = resolve(reportsRoot, safeRelative);
+      if (resolved !== reportsRoot && !resolved.startsWith(reportsRoot + sep)) {
+        return reply.code(400).send({ error: 'Invalid path' });
+      }
+      const targetPath = safeRelative;
 
       const authRequired = !!env.API_TOKEN;
 
