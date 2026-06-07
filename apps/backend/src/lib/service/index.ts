@@ -64,25 +64,17 @@ class Service {
   }
 
   private async findLatestPlaywrightVersionFromResults(resultIds: string[]) {
+    if (resultIds.length === 0) return undefined;
+
+    const { result: rows, error } = await withError(Promise.resolve(resultDb.getByIDs(resultIds)));
+    if (error || !rows) return undefined;
+
+    const byId = new Map<string, (typeof rows)[number]>(rows.map((r) => [r.resultID, r]));
     for (const resultId of resultIds) {
-      const { result: results, error } = await withError(this.getResults({ search: resultId }));
-
-      if (error || !results) {
-        continue;
-      }
-
-      const [latestResult] = results.results;
-
-      if (!latestResult) {
-        continue;
-      }
-
-      const latestVersion = latestResult?.playwrightVersion;
-
-      if (latestVersion) {
-        return latestVersion;
-      }
+      const version = byId.get(resultId)?.playwrightVersion;
+      if (version) return version;
     }
+    return undefined;
   }
 
   private async findLatestPlaywrightVersion(resultIds: string[]) {
@@ -140,7 +132,13 @@ class Service {
       );
     }
 
-    void this.dispatchNotificationsForReport(report);
+    this.dispatchNotificationsForReport(report).catch((err) => {
+      console.error(
+        `[service] notification dispatch crashed for report ${report.reportID}: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    });
 
     // Failure clusters are derived from test_runs across the window — a new
     // report can add tests, change occurrence counts, and form new clusters,

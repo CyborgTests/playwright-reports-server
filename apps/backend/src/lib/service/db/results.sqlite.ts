@@ -130,6 +130,24 @@ export class ResultDatabase {
     return row ? this.rowToResult(row) : undefined;
   }
 
+  public getByIDs(resultIDs: string[]): Result[] {
+    if (resultIDs.length === 0) return [];
+    const placeholders = resultIDs.map(() => '?').join(',');
+    const rows = this.db
+      .prepare(`SELECT * FROM results WHERE resultID IN (${placeholders})`)
+      .all(...resultIDs) as Array<{
+      resultID: string;
+      project: string;
+      title: string | null;
+      createdAt: string;
+      size: string | null;
+      sizeBytes: number;
+      metadata: string;
+    }>;
+
+    return rows.map((row) => this.rowToResult(row));
+  }
+
   public getByProject(project: string): Result[] {
     const rows = this.getByProjectStmt.all(project) as Array<{
       resultID: string;
