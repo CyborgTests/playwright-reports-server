@@ -1,41 +1,38 @@
 import { getDatabase } from './db.js';
-
+import { getKysely } from './kysely.js';
 import { singletonOf } from './singleton.js';
+
 export class ReportResultsDatabase {
+  private readonly k = getKysely();
   private readonly db = getDatabase();
-  private readonly insertStmt = this.db.prepare(
-    'INSERT OR IGNORE INTO report_results (reportId, resultId) VALUES (?, ?)'
-  );
-  private readonly getReportsForResultStmt = this.db.prepare(
-    `SELECT r.reportID, r.displayNumber, r.title, r.createdAt
-     FROM report_results rr
-     JOIN reports r ON r.reportID = rr.reportId
-     WHERE rr.resultId = ?
-     ORDER BY r.createdAt DESC`
-  );
 
   public linkReportToResults(reportId: string, resultIds: string[]): void {
     if (!resultIds?.length) return;
-    const insertMany = this.db.transaction((ids: string[]) => {
-      for (const id of ids) this.insertStmt.run(reportId, id);
-    });
-    insertMany(resultIds);
+    const now = new Date().toISOString();
+    const compiled = this.k
+      .insertInto('report_results')
+      .values(resultIds.map((resultId) => ({ reportId, resultId, createdAt: now })))
+      .onConflict((oc) => oc.doNothing())
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public deleteByReportIds(reportIds: string[]): void {
     if (!reportIds?.length) return;
-    const placeholders = reportIds.map(() => '?').join(',');
-    this.db
-      .prepare(`DELETE FROM report_results WHERE reportId IN (${placeholders})`)
-      .run(...reportIds);
+    const compiled = this.k
+      .deleteFrom('report_results')
+      .where('reportId', 'in', reportIds)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public deleteByResultIds(resultIds: string[]): void {
     if (!resultIds?.length) return;
-    const placeholders = resultIds.map(() => '?').join(',');
-    this.db
-      .prepare(`DELETE FROM report_results WHERE resultId IN (${placeholders})`)
-      .run(...resultIds);
+    const compiled = this.k
+      .deleteFrom('report_results')
+      .where('resultId', 'in', resultIds)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public getReportsForResult(resultId: string): Array<{
@@ -44,7 +41,14 @@ export class ReportResultsDatabase {
     title: string | null;
     createdAt: string;
   }> {
-    return this.getReportsForResultStmt.all(resultId) as Array<{
+    const compiled = this.k
+      .selectFrom('report_results as rr')
+      .innerJoin('reports as r', 'r.reportID', 'rr.reportId')
+      .select(['r.reportID', 'r.displayNumber', 'r.title', 'r.createdAt'])
+      .where('rr.resultId', '=', resultId)
+      .orderBy('r.createdAt', 'desc')
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
       reportID: string;
       displayNumber: number | null;
       title: string | null;
@@ -57,16 +61,14 @@ export class ReportResultsDatabase {
   ): Map<string, Array<{ reportID: string; displayNumber: number | null }>> {
     const out = new Map<string, Array<{ reportID: string; displayNumber: number | null }>>();
     if (!resultIds.length) return out;
-    const placeholders = resultIds.map(() => '?').join(', ');
-    const rows = this.db
-      .prepare(
-        `SELECT rr.resultId, r.reportID, r.displayNumber, r.createdAt
-         FROM report_results rr
-         JOIN reports r ON r.reportID = rr.reportId
-         WHERE rr.resultId IN (${placeholders})
-         ORDER BY r.createdAt DESC`
-      )
-      .all(...resultIds) as Array<{
+    const compiled = this.k
+      .selectFrom('report_results as rr')
+      .innerJoin('reports as r', 'r.reportID', 'rr.reportId')
+      .select(['rr.resultId', 'r.reportID', 'r.displayNumber', 'r.createdAt'])
+      .where('rr.resultId', 'in', resultIds)
+      .orderBy('r.createdAt', 'desc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
       resultId: string;
       reportID: string;
       displayNumber: number | null;
@@ -81,16 +83,19 @@ export class ReportResultsDatabase {
   }
 
   public getUsedResultIds(): string[] {
-    const rows = this.db.prepare('SELECT DISTINCT resultId FROM report_results').all() as Array<{
+    const compiled = this.k.selectFrom('report_results').select('resultId').distinct().compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
       resultId: string;
     }>;
     return rows.map((r) => r.resultId);
   }
 
   public getCount(): number {
-    const row = this.db.prepare('SELECT COUNT(*) as count FROM report_results').get() as {
-      count: number;
-    };
+    const compiled = this.k
+      .selectFrom('report_results')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as { count: number };
     return row.count;
   }
 }

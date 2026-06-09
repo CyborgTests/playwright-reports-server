@@ -1,41 +1,21 @@
 import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
-import type Database from 'better-sqlite3';
 import { defaultConfig, isConfigValid, normalizeHeaderLinks } from '../../config.js';
 import { getDatabase } from './db.js';
-
+import { getKysely, type SiteConfigRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
 
-interface SiteConfigRow {
-  id: number;
-  config: string;
-  updatedAt: string;
-}
-
 export class SiteConfigDatabase {
+  private readonly k = getKysely();
   private readonly db = getDatabase();
-
-  private readonly getStmt: Database.Statement<[]>;
-  private readonly upsertStmt: Database.Statement<[string, string]>;
-
-  constructor() {
-    this.getStmt = this.db.prepare('SELECT * FROM site_config WHERE id = 1');
-    this.upsertStmt = this.db.prepare(`
-      INSERT INTO site_config (id, config, updatedAt)
-      VALUES (1, ?, ?)
-      ON CONFLICT (id) DO UPDATE SET
-        config = excluded.config,
-        updatedAt = excluded.updatedAt
-    `);
-  }
 
   /** Seed the row with `defaultConfig` if missing. Idempotent. */
   public ensureSeeded(): void {
-    if (this.getStmt.get()) return;
-    this.upsertStmt.run(JSON.stringify(defaultConfig), new Date().toISOString());
+    if (this.getRow()) return;
+    this.write(JSON.stringify(defaultConfig));
   }
 
   public get(): SiteWhiteLabelConfig {
-    const row = this.getStmt.get() as SiteConfigRow | undefined;
+    const row = this.getRow();
     if (!row) return { ...defaultConfig };
 
     try {
@@ -59,8 +39,28 @@ export class SiteConfigDatabase {
   public set(partial: Partial<SiteWhiteLabelConfig>): SiteWhiteLabelConfig {
     const current = this.get();
     const merged = { ...current, ...partial } as SiteWhiteLabelConfig;
-    this.upsertStmt.run(JSON.stringify(merged), new Date().toISOString());
+    this.write(JSON.stringify(merged));
     return merged;
+  }
+
+  private getRow(): SiteConfigRow | undefined {
+    const compiled = this.k.selectFrom('site_config').selectAll().where('id', '=', 1).compile();
+    return this.db.prepare(compiled.sql).get(...compiled.parameters) as SiteConfigRow | undefined;
+  }
+
+  private write(configJson: string): void {
+    const now = new Date().toISOString();
+    const compiled = this.k
+      .insertInto('site_config')
+      .values({ id: 1, config: configJson, updatedAt: now })
+      .onConflict((oc) =>
+        oc.column('id').doUpdateSet((eb) => ({
+          config: eb.ref('excluded.config'),
+          updatedAt: eb.ref('excluded.updatedAt'),
+        }))
+      )
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 }
 

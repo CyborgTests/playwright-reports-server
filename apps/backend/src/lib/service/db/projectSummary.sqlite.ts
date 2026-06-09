@@ -1,20 +1,9 @@
-import type Database from 'better-sqlite3';
 import { getDatabase } from './db.js';
+import { getKysely, type ProjectLlmSummariesRow } from './kysely.js';
 
 import { singletonOf } from './singleton.js';
-export interface ProjectSummaryRow {
-  project: string;
-  summary: string;
-  /** JSON-serialized structured analysis. Parsed by the route handler before sending to the UI. */
-  structured: string | null;
-  model: string | null;
-  lastReportId: string | null;
-  reportCount: number | null;
-  firstReportAt: string | null;
-  lastReportAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+
+export type ProjectSummaryRow = ProjectLlmSummariesRow;
 
 /**
  * Persists per-project LLM failure summaries so they survive page refreshes.
@@ -29,52 +18,18 @@ export interface ProjectSummaryRow {
  * looks at an older window than what's currently selected.
  */
 export class ProjectSummaryDatabase {
+  private readonly k = getKysely();
   private readonly db = getDatabase();
 
-  private readonly upsertStmt: Database.Statement<
-    [
-      string,
-      string,
-      string | null,
-      string | null,
-      string | null,
-      number | null,
-      string | null,
-      string | null,
-      string,
-      string,
-    ]
-  >;
-  private readonly getStmt: Database.Statement<[string]>;
-  private readonly deleteByProjectStmt: Database.Statement<[string]>;
-
-  constructor() {
-    this.upsertStmt = this.db.prepare(`
-      INSERT INTO project_llm_summaries
-        (project, summary, structured, model, lastReportId, reportCount, firstReportAt, lastReportAt, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT (project) DO UPDATE SET
-        summary = excluded.summary,
-        structured = excluded.structured,
-        model = excluded.model,
-        lastReportId = excluded.lastReportId,
-        reportCount = excluded.reportCount,
-        firstReportAt = excluded.firstReportAt,
-        lastReportAt = excluded.lastReportAt,
-        updatedAt = excluded.updatedAt
-    `);
-
-    this.getStmt = this.db.prepare(`
-      SELECT * FROM project_llm_summaries WHERE project = ?
-    `);
-
-    this.deleteByProjectStmt = this.db.prepare(`
-      DELETE FROM project_llm_summaries WHERE project = ?
-    `);
-  }
-
   public get(project: string): ProjectSummaryRow | null {
-    const row = this.getStmt.get(project) as ProjectSummaryRow | undefined;
+    const compiled = this.k
+      .selectFrom('project_llm_summaries')
+      .selectAll()
+      .where('project', '=', project)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | ProjectSummaryRow
+      | undefined;
     return row ?? null;
   }
 
@@ -89,22 +44,42 @@ export class ProjectSummaryDatabase {
     lastReportAt?: string;
   }): void {
     const now = new Date().toISOString();
-    this.upsertStmt.run(
-      opts.project,
-      opts.summary,
-      opts.structured ?? null,
-      opts.model ?? null,
-      opts.lastReportId ?? null,
-      opts.reportCount ?? null,
-      opts.firstReportAt ?? null,
-      opts.lastReportAt ?? null,
-      now,
-      now
-    );
+    const compiled = this.k
+      .insertInto('project_llm_summaries')
+      .values({
+        project: opts.project,
+        summary: opts.summary,
+        structured: opts.structured ?? null,
+        model: opts.model ?? null,
+        lastReportId: opts.lastReportId ?? null,
+        reportCount: opts.reportCount ?? null,
+        firstReportAt: opts.firstReportAt ?? null,
+        lastReportAt: opts.lastReportAt ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflict((oc) =>
+        oc.column('project').doUpdateSet((eb) => ({
+          summary: eb.ref('excluded.summary'),
+          structured: eb.ref('excluded.structured'),
+          model: eb.ref('excluded.model'),
+          lastReportId: eb.ref('excluded.lastReportId'),
+          reportCount: eb.ref('excluded.reportCount'),
+          firstReportAt: eb.ref('excluded.firstReportAt'),
+          lastReportAt: eb.ref('excluded.lastReportAt'),
+          updatedAt: eb.ref('excluded.updatedAt'),
+        }))
+      )
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public deleteByProject(project: string): void {
-    this.deleteByProjectStmt.run(project);
+    const compiled = this.k
+      .deleteFrom('project_llm_summaries')
+      .where('project', '=', project)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 }
 

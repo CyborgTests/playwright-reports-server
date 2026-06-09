@@ -1,3 +1,9 @@
+// Intentionally NOT migrated to the Kysely.compile().
+// Uses complex analytics queries with:
+//   - dynamic CTEs (agg_w / recent_w) whose WHERE conditions vary by call site
+//   - window functions (ROW_NUMBER OVER PARTITION BY) inside subqueries
+//   - dynamic ORDER BY clauses with several CASE/COALESCE switches
+//   - UNION ALL VALUES tuple lists for lane lookup
 import type { ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import type { DerivedPageRow, Test, TestRun, TestWithQuarantineInfo } from './tests.sqlite.js';

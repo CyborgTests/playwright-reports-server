@@ -1,33 +1,38 @@
-import type Database from 'better-sqlite3';
 import { getDatabase } from './db.js';
-
+import { getKysely } from './kysely.js';
 import { singletonOf } from './singleton.js';
+
 export class NotificationStateDatabase {
+  private readonly k = getKysely();
   private readonly db = getDatabase();
 
-  private readonly upsertStmt: Database.Statement<[string, string, string, number]>;
-  private readonly getStmt: Database.Statement<[string, string, string]>;
-
-  constructor() {
-    this.upsertStmt = this.db.prepare(`
-      INSERT INTO notification_state (channel_id, rule_id, project, last_fired_at)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(channel_id, rule_id, project)
-      DO UPDATE SET last_fired_at = excluded.last_fired_at
-    `);
-
-    this.getStmt = this.db.prepare(`
-      SELECT last_fired_at FROM notification_state
-      WHERE channel_id = ? AND rule_id = ? AND project = ?
-    `);
-  }
-
   public recordFire(channelId: string, ruleId: string, project: string, firedAtMs: number): void {
-    this.upsertStmt.run(channelId, ruleId, project, firedAtMs);
+    const compiled = this.k
+      .insertInto('notification_state')
+      .values({
+        channel_id: channelId,
+        rule_id: ruleId,
+        project,
+        last_fired_at: firedAtMs,
+      })
+      .onConflict((oc) =>
+        oc
+          .columns(['channel_id', 'rule_id', 'project'])
+          .doUpdateSet((eb) => ({ last_fired_at: eb.ref('excluded.last_fired_at') }))
+      )
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public getLastFired(channelId: string, ruleId: string, project: string): number | undefined {
-    const row = this.getStmt.get(channelId, ruleId, project) as
+    const compiled = this.k
+      .selectFrom('notification_state')
+      .select('last_fired_at')
+      .where('channel_id', '=', channelId)
+      .where('rule_id', '=', ruleId)
+      .where('project', '=', project)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
       | { last_fired_at: number }
       | undefined;
     return row?.last_fired_at;

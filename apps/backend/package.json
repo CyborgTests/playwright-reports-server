@@ -3,7 +3,11 @@
 	"version": "6.0.0",
 	"description": "Playwright Reports Server Backend",
 	"type": "module",
-	"files": ["dist", "public", "package.json"],
+	"files": [
+		"dist",
+		"public",
+		"package.json"
+	],
 	"scripts": {
 		"dev": "NODE_ENV=development tsx watch --clear-screen=false src/index.ts",
 		"build": "tsc && cp src/lib/utils/llmButton.js dist/lib/utils/llmButton.js",
@@ -36,6 +40,7 @@
 		"fastify": "^5.8.5",
 		"get-folder-size": "5.0.0",
 		"jsonwebtoken": "^9.0.3",
+		"kysely": "^0.29.2",
 		"mime": "^4.1.0",
 		"unzipper": "^0.12.3",
 		"zod": "^4.1.13"

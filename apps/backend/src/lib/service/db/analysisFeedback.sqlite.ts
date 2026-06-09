@@ -1,66 +1,27 @@
 import { randomUUID as uuid } from 'node:crypto';
-import type Database from 'better-sqlite3';
+import { sql } from 'kysely';
 import { getDatabase } from './db.js';
-
+import { type AnalysisFeedbackTableRow, getKysely } from './kysely.js';
 import { singletonOf } from './singleton.js';
-export interface AnalysisFeedbackRow {
-  id: string;
-  testId: string | null;
-  fileId: string | null;
-  project: string;
-  reportId: string | null;
-  errorSignature: string | null;
-  comment: string;
-  createdAt: string;
-  updatedAt: string;
-}
+
+export type AnalysisFeedbackRow = AnalysisFeedbackTableRow;
 
 export class AnalysisFeedbackDatabase {
+  private readonly k = getKysely();
   private readonly db = getDatabase();
 
-  private readonly getByTestStmt: Database.Statement<[string, string, string]>;
-  private readonly insertStmt: Database.Statement<
-    [string, string, string, string, string | null, string | null, string, string, string]
-  >;
-  private readonly updateCommentStmt: Database.Statement<[string, string, string]>;
-  private readonly deleteByTestStmt: Database.Statement<[string, string, string]>;
-  private readonly perTestForReportStmt: Database.Statement<[string, number]>;
-
-  constructor() {
-    this.getByTestStmt = this.db.prepare(`
-      SELECT * FROM analysis_feedback
-      WHERE testId = ? AND fileId = ? AND project = ?
-    `);
-
-    this.insertStmt = this.db.prepare(`
-      INSERT INTO analysis_feedback
-        (id, testId, fileId, project, reportId, errorSignature, comment, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.updateCommentStmt = this.db.prepare(`
-      UPDATE analysis_feedback SET comment = ?, updatedAt = ? WHERE id = ?
-    `);
-
-    this.deleteByTestStmt = this.db.prepare(`
-      DELETE FROM analysis_feedback
-      WHERE testId = ? AND fileId = ? AND project = ?
-    `);
-
-    this.perTestForReportStmt = this.db.prepare(`
-      SELECT af.* FROM analysis_feedback af
-      INNER JOIN (
-        SELECT DISTINCT testId, fileId, project FROM test_runs WHERE reportId = ?
-      ) tr ON af.testId = tr.testId AND af.fileId = tr.fileId AND af.project = tr.project
-      ORDER BY af.updatedAt DESC
-      LIMIT ?
-    `);
-  }
-
   public getByTest(testId: string, fileId: string, project: string): AnalysisFeedbackRow | null {
-    return (
-      (this.getByTestStmt.get(testId, fileId, project) as AnalysisFeedbackRow | undefined) ?? null
-    );
+    const compiled = this.k
+      .selectFrom('analysis_feedback')
+      .selectAll()
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | AnalysisFeedbackRow
+      | undefined;
+    return row ?? null;
   }
 
   public upsertTest(params: {
@@ -77,21 +38,30 @@ export class AnalysisFeedbackDatabase {
     const upsert = this.db.transaction((): AnalysisFeedbackRow => {
       const existing = this.getByTest(testId, fileId, project);
       if (existing) {
-        this.updateCommentStmt.run(comment, now, existing.id);
+        const updateCompiled = this.k
+          .updateTable('analysis_feedback')
+          .set({ comment, updatedAt: now })
+          .where('id', '=', existing.id)
+          .compile();
+        this.db.prepare(updateCompiled.sql).run(...updateCompiled.parameters);
         return { ...existing, comment, updatedAt: now };
       }
       const id = uuid();
-      this.insertStmt.run(
-        id,
-        testId,
-        fileId,
-        project,
-        originReportId ?? null,
-        errorSignature ?? null,
-        comment,
-        now,
-        now
-      );
+      const insertCompiled = this.k
+        .insertInto('analysis_feedback')
+        .values({
+          id,
+          testId,
+          fileId,
+          project,
+          reportId: originReportId ?? null,
+          errorSignature: errorSignature ?? null,
+          comment,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .compile();
+      this.db.prepare(insertCompiled.sql).run(...insertCompiled.parameters);
       return {
         id,
         testId,
@@ -109,11 +79,36 @@ export class AnalysisFeedbackDatabase {
   }
 
   public deleteByTest(testId: string, fileId: string, project: string): void {
-    this.deleteByTestStmt.run(testId, fileId, project);
+    const compiled = this.k
+      .deleteFrom('analysis_feedback')
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public getPerTestForReport(reportId: string, limit = 10): AnalysisFeedbackRow[] {
-    return this.perTestForReportStmt.all(reportId, limit) as AnalysisFeedbackRow[];
+    const compiled = this.k
+      .selectFrom('analysis_feedback as af')
+      .innerJoin(
+        this.k
+          .selectFrom('test_runs')
+          .select(['testId', 'fileId', 'project'])
+          .distinct()
+          .where('reportId', '=', reportId)
+          .as('tr'),
+        (join) =>
+          join
+            .onRef('af.testId', '=', 'tr.testId')
+            .onRef('af.fileId', '=', 'tr.fileId')
+            .onRef('af.project', '=', 'tr.project')
+      )
+      .selectAll('af')
+      .orderBy('af.updatedAt', 'desc')
+      .limit(limit)
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as AnalysisFeedbackRow[];
   }
 
   /**
@@ -127,34 +122,55 @@ export class AnalysisFeedbackDatabase {
     excludeProject: string,
     limit = 5
   ): RelatedFeedbackRow[] {
-    return this.db
-      .prepare(
-        `SELECT
-           af.*,
-           tla.analysis        AS latestAnalysis,
-           tla.lastAnalysisAt  AS latestAnalysisUpdatedAt,
-           tla.model           AS latestAnalysisModel
-         FROM analysis_feedback af
-         LEFT JOIN (
-           SELECT testId, fileId, project, analysis, model,
-                  COALESCE(updatedAt, createdAt) AS lastAnalysisAt,
-                  ROW_NUMBER() OVER (
-                    PARTITION BY testId, fileId, project
-                    ORDER BY COALESCE(updatedAt, createdAt) DESC, attempt DESC
-                  ) AS rn
-           FROM test_llm_analyses
-           WHERE analysis IS NOT NULL
-         ) tla ON tla.testId = af.testId
-              AND tla.fileId = af.fileId
-              AND tla.project = af.project
-              AND tla.rn = 1
-         WHERE af.testId = ?
-           AND af.fileId = ?
-           AND af.project != ?
-         ORDER BY af.updatedAt DESC
-         LIMIT ?`
+    const compiled = this.k
+      .selectFrom('analysis_feedback as af')
+      .leftJoin(
+        sql<{
+          testId: string;
+          fileId: string;
+          project: string;
+          analysis: string | null;
+          model: string | null;
+          lastAnalysisAt: string;
+          rn: number;
+        }>`(
+          SELECT testId, fileId, project, analysis, model,
+                 COALESCE(updatedAt, createdAt) AS lastAnalysisAt,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY testId, fileId, project
+                   ORDER BY COALESCE(updatedAt, createdAt) DESC, attempt DESC
+                 ) AS rn
+          FROM test_llm_analyses
+          WHERE analysis IS NOT NULL
+        )`.as('tla'),
+        (join) =>
+          join
+            .onRef('tla.testId', '=', 'af.testId')
+            .onRef('tla.fileId', '=', 'af.fileId')
+            .onRef('tla.project', '=', 'af.project')
+            .on('tla.rn', '=', 1)
       )
-      .all(testId, fileId, excludeProject, limit) as RelatedFeedbackRow[];
+      .select([
+        sql<string>`af.id`.as('id'),
+        sql<string>`af.testId`.as('testId'),
+        sql<string>`af.fileId`.as('fileId'),
+        sql<string>`af.project`.as('project'),
+        sql<string | null>`af.reportId`.as('reportId'),
+        sql<string | null>`af.errorSignature`.as('errorSignature'),
+        sql<string>`af.comment`.as('comment'),
+        sql<string>`af.createdAt`.as('createdAt'),
+        sql<string>`af.updatedAt`.as('updatedAt'),
+        sql<string | null>`tla.analysis`.as('latestAnalysis'),
+        sql<string | null>`tla.lastAnalysisAt`.as('latestAnalysisUpdatedAt'),
+        sql<string | null>`tla.model`.as('latestAnalysisModel'),
+      ])
+      .where('af.testId', '=', testId)
+      .where('af.fileId', '=', fileId)
+      .where('af.project', '!=', excludeProject)
+      .orderBy('af.updatedAt', 'desc')
+      .limit(limit)
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as RelatedFeedbackRow[];
   }
 }
 

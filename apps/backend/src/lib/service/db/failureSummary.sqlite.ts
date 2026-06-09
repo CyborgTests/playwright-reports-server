@@ -1,9 +1,9 @@
 import type { ReportAnalysisStructured } from '@playwright-reports/shared';
-import type Database from 'better-sqlite3';
 import { getDatabase } from './db.js';
 import { decodeFailureDetails } from './failureDetailsCodec.js';
+import { getKysely } from './kysely.js';
 import { singletonOf } from './singleton.js';
-import { buildWhere, chunk, parseJsonColumn } from './utils.js';
+import { chunk, parseJsonColumn } from './utils.js';
 
 export interface FailureSummaryRow {
   reportId: string;
@@ -36,39 +36,12 @@ const AGGREGATED_CATEGORIES_TTL_MS = 60_000;
 type AggregatedCategoriesResult = ReturnType<FailureSummaryDatabase['getAggregatedCategories']>;
 
 export class FailureSummaryDatabase {
+  private readonly k = getKysely();
   private readonly db = getDatabase();
   private readonly aggregatedCategoriesCache = new Map<
     string,
     { value: AggregatedCategoriesResult; expiresAt: number }
   >();
-
-  private readonly upsertStmt: Database.Statement<[string, string, number, string, string]>;
-  private readonly getStmt: Database.Statement<[string]>;
-  private readonly updateLlmSummaryStmt: Database.Statement<
-    [string, string | null, string | null, string, string]
-  >;
-  private readonly deleteStmt: Database.Statement<[string]>;
-
-  constructor() {
-    this.upsertStmt = this.db.prepare(`
-      INSERT OR REPLACE INTO report_failure_summaries (reportId, project, totalFailures, categories, createdAt)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-
-    this.getStmt = this.db.prepare(`
-      SELECT * FROM report_failure_summaries WHERE reportId = ?
-    `);
-
-    this.updateLlmSummaryStmt = this.db.prepare(`
-      UPDATE report_failure_summaries
-      SET llmSummary = ?, llmSummaryStructured = ?, llmModel = ?, updatedAt = ?
-      WHERE reportId = ?
-    `);
-
-    this.deleteStmt = this.db.prepare(`
-      DELETE FROM report_failure_summaries WHERE reportId = ?
-    `);
-  }
 
   private parseRow(row: FailureSummaryDbRow): FailureSummaryRow {
     return {
@@ -94,13 +67,41 @@ export class FailureSummaryDatabase {
     categories: Record<string, number>
   ): void {
     const now = new Date().toISOString();
-    this.upsertStmt.run(reportId, project, totalFailures, JSON.stringify(categories), now);
+    const compiled = this.k
+      .insertInto('report_failure_summaries')
+      .values({
+        reportId,
+        project,
+        totalFailures,
+        categories: JSON.stringify(categories),
+        llmSummary: null,
+        llmModel: null,
+        llmSummaryStructured: null,
+        createdAt: now,
+        updatedAt: null,
+      })
+      .onConflict((oc) =>
+        oc.column('reportId').doUpdateSet((eb) => ({
+          project: eb.ref('excluded.project'),
+          totalFailures: eb.ref('excluded.totalFailures'),
+          categories: eb.ref('excluded.categories'),
+          createdAt: eb.ref('excluded.createdAt'),
+        }))
+      )
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public getSummary(reportId: string): FailureSummaryRow | null {
-    const row = this.getStmt.get(reportId) as FailureSummaryDbRow | undefined;
-    if (!row) return null;
-    return this.parseRow(row);
+    const compiled = this.k
+      .selectFrom('report_failure_summaries')
+      .selectAll()
+      .where('reportId', '=', reportId)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | FailureSummaryDbRow
+      | undefined;
+    return row ? this.parseRow(row) : null;
   }
 
   public updateLlmSummary(
@@ -109,21 +110,19 @@ export class FailureSummaryDatabase {
     structured: ReportAnalysisStructured | null,
     llmModel?: string | null
   ): void {
-    const now = new Date().toISOString();
-    this.updateLlmSummaryStmt.run(
-      llmSummary,
-      structured ? JSON.stringify(structured) : null,
-      llmModel ?? null,
-      now,
-      reportId
-    );
+    const compiled = this.k
+      .updateTable('report_failure_summaries')
+      .set({
+        llmSummary,
+        llmSummaryStructured: structured ? JSON.stringify(structured) : null,
+        llmModel: llmModel ?? null,
+        updatedAt: new Date().toISOString(),
+      })
+      .where('reportId', '=', reportId)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
-  /**
-   * Get the latest N reports that had failures.
-   * If `opts.from`/`opts.to` are provided, the window is bounded by those ISO timestamps.
-   * Otherwise falls back to the last `days` days (default 30).
-   */
   public getSummariesByProject(
     project?: string,
     limit = 10,
@@ -139,38 +138,41 @@ export class FailureSummaryDatabase {
           })()
         : null;
 
-    const { sql: whereSql, params } = buildWhere([
-      { sql: 'totalFailures > 0', params: [] },
-      hasProject ? { sql: 'project = ?', params: [project] } : null,
-      opts?.from ? { sql: 'createdAt >= ?', params: [opts.from] } : null,
-      opts?.to ? { sql: 'createdAt < ?', params: [opts.to] } : null,
-      defaultCutoff ? { sql: 'createdAt >= ?', params: [defaultCutoff] } : null,
-    ]);
+    let q = this.k
+      .selectFrom('report_failure_summaries')
+      .selectAll()
+      .where('totalFailures', '>', 0)
+      .orderBy('createdAt', 'desc')
+      .limit(limit);
+    if (hasProject) q = q.where('project', '=', project);
+    if (opts?.from) q = q.where('createdAt', '>=', opts.from);
+    if (opts?.to) q = q.where('createdAt', '<', opts.to);
+    if (defaultCutoff) q = q.where('createdAt', '>=', defaultCutoff);
 
-    const sql = `SELECT * FROM report_failure_summaries ${whereSql} ORDER BY createdAt DESC LIMIT ?`;
-    const rows = this.db.prepare(sql).all(...params, limit) as FailureSummaryDbRow[];
+    const compiled = q.compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as FailureSummaryDbRow[];
     return rows.map((row) => this.parseRow(row));
   }
 
   public deleteSummary(reportId: string): void {
-    this.deleteStmt.run(reportId);
+    const compiled = this.k
+      .deleteFrom('report_failure_summaries')
+      .where('reportId', '=', reportId)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public deleteSummariesByReportIds(reportIds: string[]): void {
     if (reportIds.length === 0) return;
-    const placeholders = reportIds.map(() => '?').join(',');
-    this.db
-      .prepare(`DELETE FROM report_failure_summaries WHERE reportId IN (${placeholders})`)
-      .run(...reportIds);
+    const compiled = this.k
+      .deleteFrom('report_failure_summaries')
+      .where('reportId', 'in', reportIds)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   /**
    * Aggregate failure categories and top error groups directly from `test_runs`.
-   * Gives us:
-   *   - fresh categories (reflects post-recategorize labels)
-   *   - real sample error messages
-   *   - reportId + testId per top group, so the UI can deep-link to the
-   *     specific failed test inside the served Playwright report.
    */
   public getAggregatedCategories(
     project?: string,
@@ -203,28 +205,29 @@ export class FailureSummaryDatabase {
       return cached.value;
     }
 
-    const { sql: whereSql, params } = buildWhere([
-      { sql: 'failure_category IS NOT NULL', params: [] },
-      project && project !== 'all' ? { sql: 'project = ?', params: [project] } : null,
-      opts?.from ? { sql: 'createdAt >= ?', params: [opts.from] } : null,
-      opts?.to ? { sql: 'createdAt < ?', params: [opts.to] } : null,
-    ]);
-
-    // Cap the working set so a wide window on a busy project can't materialize
-    // an unbounded result list into memory. The aggregate is still correct for
-    // the most recent failures; categories beyond the cap are dropped — which
-    // matches what the UI shows anyway (it slices to `limit` top groups).
+    // Cap the working set so a wide window can't materialize unbounded results.
     const MAX_ROWS_SCANNED = 20_000;
-    const sql = `
-      SELECT testId, fileId, project, reportId, failure_category as category,
-             error_signature as signature, error_signature_global as signatureGlobal,
-             failure_details, createdAt
-      FROM test_runs
-      ${whereSql}
-      ORDER BY createdAt DESC
-      LIMIT ${MAX_ROWS_SCANNED}
-    `;
-    const rows = this.db.prepare(sql).all(...params) as Array<{
+    let q = this.k
+      .selectFrom('test_runs')
+      .select([
+        'testId',
+        'fileId',
+        'project',
+        'reportId',
+        'failure_category as category',
+        'error_signature as signature',
+        'error_signature_global as signatureGlobal',
+        'failure_details',
+        'createdAt',
+      ])
+      .where('failure_category', 'is not', null)
+      .orderBy('createdAt', 'desc')
+      .limit(MAX_ROWS_SCANNED);
+    if (project && project !== 'all') q = q.where('project', '=', project);
+    if (opts?.from) q = q.where('createdAt', '>=', opts.from);
+    if (opts?.to) q = q.where('createdAt', '<', opts.to);
+    const compiled = q.compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
       testId: string;
       fileId: string;
       project: string;
@@ -246,8 +249,6 @@ export class FailureSummaryDatabase {
         signature: string;
         sampleReportId?: string;
         sampleTestId?: string;
-        // Up to 10 distinct (testId, fileId, project, reportId) examples for this error
-        // signature — populated in iteration order (newest first by createdAt DESC sort).
         examples: Array<{ testId: string; fileId: string; project: string; reportId: string }>;
         seenExamples: Set<string>;
       }
@@ -273,7 +274,6 @@ export class FailureSummaryDatabase {
           });
           existing.seenExamples.add(exampleKey);
         }
-        // Prefer the most-recent sample with a non-empty message.
         if (existing.message === existing.category && row.failure_details) {
           const msg = extractDisplayMessage(row.failure_details);
           if (msg) {
@@ -318,7 +318,6 @@ export class FailureSummaryDatabase {
       .sort((a, b) => b.count - a.count)
       .slice(0, limit);
 
-    // Resolve reportUrl for every reportId referenced (sample + examples) in one batched query.
     const reportIds = new Set<string>();
     for (const e of topErrors) {
       if (e.sampleReportId) reportIds.add(e.sampleReportId);
@@ -326,15 +325,18 @@ export class FailureSummaryDatabase {
     }
     let urlMap = new Map<string, string>();
     if (reportIds.size > 0) {
-      const ids = Array.from(reportIds);
-      const placeholders = ids.map(() => '?').join(',');
-      const reportRows = this.db
-        .prepare(`SELECT reportID, reportUrl FROM reports WHERE reportID IN (${placeholders})`)
-        .all(...ids) as Array<{ reportID: string; reportUrl: string }>;
+      const urlCompiled = this.k
+        .selectFrom('reports')
+        .select(['reportID', 'reportUrl'])
+        .where('reportID', 'in', Array.from(reportIds))
+        .compile();
+      const reportRows = this.db.prepare(urlCompiled.sql).all(...urlCompiled.parameters) as Array<{
+        reportID: string;
+        reportUrl: string;
+      }>;
       urlMap = new Map(reportRows.map((r) => [r.reportID, r.reportUrl]));
     }
 
-    // Resolve test titles + filePaths for every distinct (testId, fileId, project) referenced.
     type TestKey = string;
     const makeTestKey = (testId: string, fileId: string, project: string): TestKey =>
       `${testId}::${fileId}::${project}`;
@@ -348,7 +350,7 @@ export class FailureSummaryDatabase {
         const [testId, fileId, project] = k.split('::');
         return { testId, fileId, project };
       });
-      // 300 keys × 3 params = 900 placeholders, safely under SQLite's 999 cap.
+      // VALUES tuple matching doesn't fit Kysely's typed builder; raw SQL fragment.
       for (const batch of chunk(keys, 300)) {
         const valuesSql = batch.map(() => '(?, ?, ?)').join(', ');
         const params = batch.flatMap((k) => [k.testId, k.fileId, k.project]);
@@ -406,7 +408,8 @@ export class FailureSummaryDatabase {
   }
 
   public deleteAll(): void {
-    this.db.prepare('DELETE FROM report_failure_summaries').run();
+    const compiled = this.k.deleteFrom('report_failure_summaries').compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 }
 

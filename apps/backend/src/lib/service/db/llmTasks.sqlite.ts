@@ -1,40 +1,17 @@
 import { randomUUID as uuid } from 'node:crypto';
 import type { LlmTaskStatus, LlmTaskType } from '@playwright-reports/shared';
-import type Database from 'better-sqlite3';
+import { sql } from 'kysely';
 import { llmTaskEvents } from '../llmTaskEvents.js';
 import { getDatabase } from './db.js';
-
+import { getKysely, type LlmTasksRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
-import { buildWhere, paginationClause } from './utils.js';
 
 export type { LlmTaskStatus, LlmTaskType } from '@playwright-reports/shared';
 
-export interface LlmTaskRow {
-  id: string;
+export type LlmTaskRow = LlmTasksRow & {
   type: LlmTaskType;
   status: LlmTaskStatus;
-  priority: number;
-  reportId: string | null;
-  testId: string | null;
-  fileId: string | null;
-  project: string | null;
-  prompt: string | null;
-  result: string | null;
-  category: string | null;
-  model: string | null;
-  error: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  retryCount: number;
-  maxRetries: number;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  totalTokens: number | null;
-  isRetry: number;
-  reportIds: string | null;
-  baseUrl: string | null;
-}
+};
 
 export interface LlmTaskRowEnriched extends LlmTaskRow {
   reportDisplayNumber: number | null;
@@ -48,173 +25,44 @@ export interface LlmTaskUsage {
   totalTokens?: number;
 }
 
-export class LlmTasksDatabase {
-  private readonly db = getDatabase();
-
-  private readonly insertTaskStmt: Database.Statement<
-    [
-      string,
-      string,
-      number,
-      string | null,
-      string | null,
-      string | null,
-      string | null,
-      string,
-      number,
-      string | null,
-    ]
-  >;
-  private readonly selectQueuedStmt: Database.Statement<[number]>;
-  private readonly claimTaskStmt: Database.Statement<[string, string]>;
-  private readonly completeTaskStmt: Database.Statement<
-    [
-      string,
-      string,
-      string | null,
-      string | null,
-      string | null,
-      number | null,
-      number | null,
-      number | null,
-      string,
-    ]
-  >;
-  private readonly failTaskStmt: Database.Statement<[string, string | null, string]>;
-  private readonly requeueTaskStmt: Database.Statement<[string | null, string]>;
-  private readonly cancelTaskStmt: Database.Statement<[string]>;
-  private readonly retryTaskStmt: Database.Statement<[string]>;
-  private readonly clearQueueStmt: Database.Statement<[]>;
-  private readonly getStatsStmt: Database.Statement<[]>;
-  private readonly getByReportStmt: Database.Statement<[string]>;
-  private readonly getTestAnalysisTasksForReportStmt: Database.Statement<[string]>;
-  private readonly areAllTestTasksCompleteStmt: Database.Statement<[string]>;
-  private readonly deleteByReportStmt: Database.Statement<[string]>;
-
-  constructor() {
-    this.insertTaskStmt = this.db.prepare(`
-      INSERT INTO llm_tasks (id, type, status, priority, reportId, testId, fileId, project, createdAt, isRetry, reportIds)
-      VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    // Selection rules:
-    //   - test_analysis is always claimable.
-    //   - report_summary for report R becomes claimable once no
-    //     test_analysis for R is still queued or processing — the summary
-    //     needs every per-test analysis written before it can roll up.
-    //   - project_summary for project P becomes claimable once no
-    //     test_analysis or report_summary is pending for any report in P.
-    //     A project_summary keyed 'all' waits on report-bound work across
-    //     every project. This stops the summary from running on a stale
-    //     snapshot while per-test analyses are still landing.
-    //
-    // Ordering by (priority DESC, createdAt ASC) means: when reports A and
-    // B are both queued, A's earlier-arrived tests fill the parallel slots
-    // first; once A has fewer queued tests than free slots, B's tests
-    // backfill rather than letting workers idle. Manual project_summary
-    // sits above test work via its high priority and runs as soon as its
-    // project is idle; auto project_summary sits at the tail.
-    this.selectQueuedStmt = this.db.prepare(`
-      WITH active_test_analysis_reports AS (
-        SELECT DISTINCT reportId FROM llm_tasks
-        WHERE type = 'test_analysis'
-          AND status IN ('queued', 'processing')
-          AND reportId IS NOT NULL
-      ),
-      active_report_or_test_projects AS (
-        SELECT DISTINCT project FROM llm_tasks
-        WHERE type IN ('test_analysis', 'report_summary')
-          AND status IN ('queued', 'processing')
-      )
-      SELECT t.* FROM llm_tasks t
-      WHERE t.status = 'queued'
+const SELECT_QUEUED_SQL = `
+  WITH active_test_analysis_reports AS (
+    SELECT DISTINCT reportId FROM llm_tasks
+    WHERE type = 'test_analysis'
+      AND status IN ('queued', 'processing')
+      AND reportId IS NOT NULL
+  ),
+  active_report_or_test_projects AS (
+    SELECT DISTINCT project FROM llm_tasks
+    WHERE type IN ('test_analysis', 'report_summary')
+      AND status IN ('queued', 'processing')
+  )
+  SELECT t.* FROM llm_tasks t
+  WHERE t.status = 'queued'
+    AND (
+      t.type = 'test_analysis'
+      OR (
+        t.type = 'report_summary'
         AND (
-          t.type = 'test_analysis'
-          OR (
-            t.type = 'report_summary'
-            AND (
-              t.reportId IS NULL
-              OR t.reportId NOT IN (SELECT reportId FROM active_test_analysis_reports)
-            )
-          )
-          OR (
-            t.type = 'project_summary'
-            AND NOT EXISTS (
-              SELECT 1 FROM active_report_or_test_projects atp
-              WHERE t.project = 'all' OR atp.project = t.project
-            )
-          )
+          t.reportId IS NULL
+          OR t.reportId NOT IN (SELECT reportId FROM active_test_analysis_reports)
         )
-      ORDER BY t.priority DESC, t.createdAt ASC
-      LIMIT ?
-    `);
+      )
+      OR (
+        t.type = 'project_summary'
+        AND NOT EXISTS (
+          SELECT 1 FROM active_report_or_test_projects atp
+          WHERE t.project = 'all' OR atp.project = t.project
+        )
+      )
+    )
+  ORDER BY t.priority DESC, t.createdAt ASC
+  LIMIT ?
+`;
 
-    this.claimTaskStmt = this.db.prepare(`
-      UPDATE llm_tasks
-      SET status = 'processing', startedAt = ?
-      WHERE id = ?
-    `);
-
-    this.completeTaskStmt = this.db.prepare(`
-      UPDATE llm_tasks
-      SET status = 'completed', completedAt = ?, result = ?, category = ?, model = ?, baseUrl = ?,
-          inputTokens = ?, outputTokens = ?, totalTokens = ?
-      WHERE id = ?
-    `);
-
-    // completedAt is written as a JS ISO-8601 string (UTC, with 'T'/'Z'). Using
-    // CURRENT_TIMESTAMP would emit SQLite's 'YYYY-MM-DD HH:MM:SS' format which V8
-    // parses as local time, producing negative durations for users east of UTC.
-    this.failTaskStmt = this.db.prepare(`
-      UPDATE llm_tasks
-      SET status = 'failed', completedAt = ?, error = ?
-      WHERE id = ?
-    `);
-
-    this.requeueTaskStmt = this.db.prepare(`
-      UPDATE llm_tasks
-      SET status = 'queued', retryCount = retryCount + 1, error = ?
-      WHERE id = ?
-    `);
-
-    this.cancelTaskStmt = this.db.prepare(`
-      UPDATE llm_tasks
-      SET status = 'cancelled'
-      WHERE id = ? AND status = 'queued'
-    `);
-
-    this.retryTaskStmt = this.db.prepare(`
-      UPDATE llm_tasks
-      SET status = 'queued', retryCount = 0, error = NULL, startedAt = NULL, completedAt = NULL,
-          isRetry = 1
-      WHERE id = ? AND status = 'failed'
-    `);
-
-    this.clearQueueStmt = this.db.prepare(`
-      DELETE FROM llm_tasks WHERE status IN ('queued', 'cancelled')
-    `);
-
-    this.getStatsStmt = this.db.prepare(`
-      SELECT status, COUNT(*) as count FROM llm_tasks GROUP BY status
-    `);
-
-    this.getByReportStmt = this.db.prepare(`
-      SELECT * FROM llm_tasks WHERE reportId = ?
-    `);
-
-    this.getTestAnalysisTasksForReportStmt = this.db.prepare(`
-      SELECT * FROM llm_tasks WHERE reportId = ? AND type = 'test_analysis'
-    `);
-
-    this.areAllTestTasksCompleteStmt = this.db.prepare(`
-      SELECT COUNT(*) as count FROM llm_tasks
-      WHERE reportId = ? AND type = 'test_analysis' AND status NOT IN ('completed', 'cancelled', 'failed')
-    `);
-
-    this.deleteByReportStmt = this.db.prepare(`
-      DELETE FROM llm_tasks WHERE reportId = ?
-    `);
-  }
+export class LlmTasksDatabase {
+  private readonly k = getKysely();
+  private readonly db = getDatabase();
 
   public createTask(
     type: LlmTaskType,
@@ -235,18 +83,36 @@ export class LlmTasksDatabase {
     const reportIdsJson =
       opts.reportIds && opts.reportIds.length > 0 ? JSON.stringify(opts.reportIds) : null;
 
-    this.insertTaskStmt.run(
-      id,
-      type,
-      priority,
-      opts.reportId ?? null,
-      opts.testId ?? null,
-      opts.fileId ?? null,
-      opts.project ?? null,
-      now,
-      isRetry,
-      reportIdsJson
-    );
+    const compiled = this.k
+      .insertInto('llm_tasks')
+      .values({
+        id,
+        type,
+        status: 'queued',
+        priority,
+        reportId: opts.reportId ?? null,
+        testId: opts.testId ?? null,
+        fileId: opts.fileId ?? null,
+        project: opts.project ?? null,
+        prompt: null,
+        result: null,
+        category: null,
+        model: null,
+        error: null,
+        createdAt: now,
+        startedAt: null,
+        completedAt: null,
+        retryCount: 0,
+        maxRetries: 2,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        isRetry,
+        reportIds: reportIdsJson,
+        baseUrl: null,
+      })
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
 
     return {
       id,
@@ -277,30 +143,47 @@ export class LlmTasksDatabase {
   }
 
   public markAsRetry(id: string): void {
-    this.db.prepare(`UPDATE llm_tasks SET isRetry = 1 WHERE id = ? AND status = 'queued'`).run(id);
+    const compiled = this.k
+      .updateTable('llm_tasks')
+      .set({ isRetry: 1 })
+      .where('id', '=', id)
+      .where('status', '=', 'queued')
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public updateReportIds(id: string, reportIds: string[] | null): void {
     const json = reportIds && reportIds.length > 0 ? JSON.stringify(reportIds) : null;
-    this.db
-      .prepare(
-        `UPDATE llm_tasks SET reportIds = ? WHERE id = ? AND status IN ('queued','processing')`
-      )
-      .run(json, id);
+    const compiled = this.k
+      .updateTable('llm_tasks')
+      .set({ reportIds: json })
+      .where('id', '=', id)
+      .where('status', 'in', ['queued', 'processing'])
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public claimNext(count: number): LlmTaskRow[] {
-    const hasQueued = this.db
-      .prepare("SELECT 1 FROM llm_tasks WHERE status = 'queued' LIMIT 1")
-      .get() as { 1: number } | undefined;
+    const hasQueuedCompiled = this.k
+      .selectFrom('llm_tasks')
+      .select('id')
+      .where('status', '=', 'queued')
+      .limit(1)
+      .compile();
+    const hasQueued = this.db.prepare(hasQueuedCompiled.sql).get(...hasQueuedCompiled.parameters);
     if (!hasQueued) return [];
 
     const transaction = this.db.transaction(() => {
-      const rows = this.selectQueuedStmt.all(count) as LlmTaskRow[];
+      const rows = this.db.prepare(SELECT_QUEUED_SQL).all(count) as LlmTaskRow[];
       const now = new Date().toISOString();
 
       for (const row of rows) {
-        this.claimTaskStmt.run(now, row.id);
+        const claimCompiled = this.k
+          .updateTable('llm_tasks')
+          .set({ status: 'processing', startedAt: now })
+          .where('id', '=', row.id)
+          .compile();
+        this.db.prepare(claimCompiled.sql).run(...claimCompiled.parameters);
         row.status = 'processing';
         row.startedAt = now;
       }
@@ -324,81 +207,120 @@ export class LlmTasksDatabase {
   ): void {
     const now = new Date().toISOString();
     const usage = extras?.usage;
-    this.completeTaskStmt.run(
-      now,
-      result,
-      category ?? null,
-      model ?? null,
-      extras?.baseUrl ?? null,
-      usage?.inputTokens ?? null,
-      usage?.outputTokens ?? null,
-      usage?.totalTokens ?? null,
-      id
-    );
+    const compiled = this.k
+      .updateTable('llm_tasks')
+      .set({
+        status: 'completed',
+        completedAt: now,
+        result,
+        category: category ?? null,
+        model: model ?? null,
+        baseUrl: extras?.baseUrl ?? null,
+        inputTokens: usage?.inputTokens ?? null,
+        outputTokens: usage?.outputTokens ?? null,
+        totalTokens: usage?.totalTokens ?? null,
+      })
+      .where('id', '=', id)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
     this.fireUpdateEvent(id);
   }
 
   public fail(id: string, error: string): void {
-    const task = this.db
-      .prepare('SELECT retryCount, maxRetries FROM llm_tasks WHERE id = ?')
-      .get(id) as { retryCount: number; maxRetries: number } | undefined;
-
+    const taskCompiled = this.k
+      .selectFrom('llm_tasks')
+      .select(['retryCount', 'maxRetries'])
+      .where('id', '=', id)
+      .compile();
+    const task = this.db.prepare(taskCompiled.sql).get(...taskCompiled.parameters) as
+      | { retryCount: number; maxRetries: number }
+      | undefined;
     if (!task) return;
 
     if (task.retryCount < task.maxRetries) {
-      this.requeueTaskStmt.run(error, id);
+      const compiled = this.k
+        .updateTable('llm_tasks')
+        .set((eb) => ({
+          status: 'queued',
+          retryCount: eb('retryCount', '+', 1),
+          error,
+        }))
+        .where('id', '=', id)
+        .compile();
+      this.db.prepare(compiled.sql).run(...compiled.parameters);
     } else {
-      const now = new Date().toISOString();
-      this.failTaskStmt.run(now, error, id);
+      const compiled = this.k
+        .updateTable('llm_tasks')
+        .set({ status: 'failed', completedAt: new Date().toISOString(), error })
+        .where('id', '=', id)
+        .compile();
+      this.db.prepare(compiled.sql).run(...compiled.parameters);
     }
     this.fireUpdateEvent(id);
   }
 
   /** Look up the post-update row and broadcast it to event subscribers. */
   private fireUpdateEvent(id: string): void {
-    const row = this.db.prepare('SELECT * FROM llm_tasks WHERE id = ?').get(id) as
-      | LlmTaskRow
-      | undefined;
+    const compiled = this.k.selectFrom('llm_tasks').selectAll().where('id', '=', id).compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as LlmTaskRow | undefined;
     if (row) llmTaskEvents.emitTaskUpdate(row);
   }
 
   public cancel(id: string): void {
-    this.cancelTaskStmt.run(id);
+    const compiled = this.k
+      .updateTable('llm_tasks')
+      .set({ status: 'cancelled' })
+      .where('id', '=', id)
+      .where('status', '=', 'queued')
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
     this.fireUpdateEvent(id);
   }
 
-  /** Fail every task left in `processing` — called once at boot. A task in
-   *  `processing` after a process restart is necessarily orphaned: the worker
-   *  that claimed it (queue or SSE route) is gone and won't return. We don't
-   *  know if the LLM call actually completed before the crash, so failing is
-   *  safer than requeuing (which could double-bill and produce duplicate
-   *  analyses). The user can manually retry from the queue page. */
   public failStaleProcessing(): number {
     const now = new Date().toISOString();
-    const result = this.db
-      .prepare(
-        `UPDATE llm_tasks
-         SET status = 'failed', completedAt = ?, error = ?
-         WHERE status = 'processing'`
-      )
-      .run(now, 'Server restarted while task was processing');
-    return result.changes;
+    const compiled = this.k
+      .updateTable('llm_tasks')
+      .set({
+        status: 'failed',
+        completedAt: now,
+        error: 'Server restarted while task was processing',
+      })
+      .where('status', '=', 'processing')
+      .compile();
+    return Number(this.db.prepare(compiled.sql).run(...compiled.parameters).changes ?? 0);
   }
 
   public retry(id: string): void {
-    this.retryTaskStmt.run(id);
+    const compiled = this.k
+      .updateTable('llm_tasks')
+      .set({
+        status: 'queued',
+        retryCount: 0,
+        error: null,
+        startedAt: null,
+        completedAt: null,
+        isRetry: 1,
+      })
+      .where('id', '=', id)
+      .where('status', '=', 'failed')
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
     this.fireUpdateEvent(id);
   }
 
   public bulkDelete(ids: string[]): void {
     if (ids.length === 0) return;
-
-    const placeholders = ids.map(() => '?').join(',');
-    this.db.prepare(`DELETE FROM llm_tasks WHERE id IN (${placeholders})`).run(...ids);
+    const compiled = this.k.deleteFrom('llm_tasks').where('id', 'in', ids).compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public clearQueue(): void {
-    this.clearQueueStmt.run();
+    const compiled = this.k
+      .deleteFrom('llm_tasks')
+      .where('status', 'in', ['queued', 'cancelled'])
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public getStats(): {
@@ -408,46 +330,48 @@ export class LlmTasksDatabase {
     failed: number;
     cancelled: number;
   } {
-    const rows = this.getStatsStmt.all() as Array<{ status: string; count: number }>;
+    const compiled = this.k
+      .selectFrom('llm_tasks')
+      .select((eb) => ['status', eb.fn.countAll<number>().as('count')])
+      .groupBy('status')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      status: string;
+      count: number;
+    }>;
     const stats = { queued: 0, processing: 0, completed: 0, failed: 0, cancelled: 0 };
-
     for (const row of rows) {
       if (row.status in stats) {
         stats[row.status as keyof typeof stats] = row.count;
       }
     }
-
     return stats;
   }
 
-  /**
-   * Count in-flight tasks (queued or processing) for a single report — any task type.
-   * Used by the report detail page to disable the "Summarize Failures" button while
-   * an analysis is already running.
-   */
   public getInflightCountForReport(reportId: string): number {
-    const row = this.db
-      .prepare(
-        `SELECT COUNT(*) as count FROM llm_tasks
-         WHERE reportId = ? AND status IN ('queued','processing')`
-      )
-      .get(reportId) as { count: number } | undefined;
+    const compiled = this.k
+      .selectFrom('llm_tasks')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('reportId', '=', reportId)
+      .where('status', 'in', ['queued', 'processing'])
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | { count: number }
+      | undefined;
     return row?.count ?? 0;
   }
 
-  /**
-   * Count in-flight project_summary tasks for a project. Drives the dashboard's
-   * "Analysis ongoing" state and refetch polling on the cached summary endpoint.
-   */
   public getInflightCountForProject(project: string): number {
-    const row = this.db
-      .prepare(
-        `SELECT COUNT(*) as count FROM llm_tasks
-         WHERE type = 'project_summary'
-           AND project = ?
-           AND status IN ('queued','processing')`
-      )
-      .get(project) as { count: number } | undefined;
+    const compiled = this.k
+      .selectFrom('llm_tasks')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('type', '=', 'project_summary')
+      .where('project', '=', project)
+      .where('status', 'in', ['queued', 'processing'])
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | { count: number }
+      | undefined;
     return row?.count ?? 0;
   }
 
@@ -458,114 +382,140 @@ export class LlmTasksDatabase {
     limit: number;
     offset: number;
   }): { data: LlmTaskRowEnriched[]; total: number } {
-    const { sql: whereSql, params: whereParams } = buildWhere([
-      opts.status ? { sql: 't.status = ?', params: [opts.status] } : null,
-      opts.type ? { sql: 't.type = ?', params: [opts.type] } : null,
-      opts.reportId ? { sql: 't.reportId = ?', params: [opts.reportId] } : null,
-    ]);
+    let countQuery = this.k
+      .selectFrom('llm_tasks as t')
+      .select((eb) => eb.fn.countAll<number>().as('total'));
+    if (opts.status) countQuery = countQuery.where('t.status', '=', opts.status);
+    if (opts.type) countQuery = countQuery.where('t.type', '=', opts.type);
+    if (opts.reportId) countQuery = countQuery.where('t.reportId', '=', opts.reportId);
+    const countCompiled = countQuery.compile();
+    const total = (
+      this.db.prepare(countCompiled.sql).get(...countCompiled.parameters) as { total: number }
+    ).total;
 
-    const countResult = this.db
-      .prepare(`SELECT COUNT(*) as total FROM llm_tasks t ${whereSql}`.trim())
-      .get(...whereParams) as { total: number };
-
-    const { sql: pageSql, params: pageParams } = paginationClause({
-      limit: opts.limit,
-      offset: opts.offset,
-    });
-
-    const data = this.db
-      .prepare(
-        `SELECT t.*,
-                r.displayNumber AS reportDisplayNumber,
-                r.title AS reportTitle,
-                te.title AS testTitle
-         FROM llm_tasks t
-         LEFT JOIN reports r ON r.reportID = t.reportId
-         LEFT JOIN tests te ON te.testId = t.testId
-                            AND te.fileId = t.fileId
-                            AND te.project = t.project
-         ${whereSql}
-         ORDER BY t.createdAt DESC
-         ${pageSql}`
+    let dataQuery = this.k
+      .selectFrom('llm_tasks as t')
+      .leftJoin('reports as r', 'r.reportID', 't.reportId')
+      .leftJoin('tests as te', (join) =>
+        join
+          .onRef('te.testId', '=', 't.testId')
+          .onRef('te.fileId', '=', 't.fileId')
+          .onRef('te.project', '=', 't.project')
       )
-      .all(...whereParams, ...pageParams) as LlmTaskRowEnriched[];
+      .selectAll('t')
+      .select([
+        'r.displayNumber as reportDisplayNumber',
+        'r.title as reportTitle',
+        'te.title as testTitle',
+      ])
+      .orderBy('t.createdAt', 'desc')
+      .limit(opts.limit)
+      .offset(opts.offset);
+    if (opts.status) dataQuery = dataQuery.where('t.status', '=', opts.status);
+    if (opts.type) dataQuery = dataQuery.where('t.type', '=', opts.type);
+    if (opts.reportId) dataQuery = dataQuery.where('t.reportId', '=', opts.reportId);
+    const dataCompiled = dataQuery.compile();
+    const data = this.db
+      .prepare(dataCompiled.sql)
+      .all(...dataCompiled.parameters) as Array<LlmTaskRowEnriched>;
 
-    return { data, total: countResult.total };
+    return { data, total };
   }
 
   public getByReport(reportId: string): LlmTaskRow[] {
-    return this.getByReportStmt.all(reportId) as LlmTaskRow[];
+    const compiled = this.k
+      .selectFrom('llm_tasks')
+      .selectAll()
+      .where('reportId', '=', reportId)
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as LlmTaskRow[];
   }
 
   public getTestAnalysisTasksForReport(reportId: string): LlmTaskRow[] {
-    return this.getTestAnalysisTasksForReportStmt.all(reportId) as LlmTaskRow[];
+    const compiled = this.k
+      .selectFrom('llm_tasks')
+      .selectAll()
+      .where('reportId', '=', reportId)
+      .where('type', '=', 'test_analysis')
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as LlmTaskRow[];
   }
 
   public areAllTestTasksComplete(reportId: string): boolean {
-    const result = this.areAllTestTasksCompleteStmt.get(reportId) as { count: number };
+    const compiled = this.k
+      .selectFrom('llm_tasks')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('reportId', '=', reportId)
+      .where('type', '=', 'test_analysis')
+      .where('status', 'not in', ['completed', 'cancelled', 'failed'])
+      .compile();
+    const result = this.db.prepare(compiled.sql).get(...compiled.parameters) as { count: number };
     return result.count === 0;
   }
 
   public deleteByReport(reportId: string): void {
-    this.deleteByReportStmt.run(reportId);
+    const compiled = this.k.deleteFrom('llm_tasks').where('reportId', '=', reportId).compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public deleteByReportIds(reportIds: string[]): void {
     if (reportIds.length === 0) return;
-    const placeholders = reportIds.map(() => '?').join(',');
-    this.db.prepare(`DELETE FROM llm_tasks WHERE reportId IN (${placeholders})`).run(...reportIds);
+    const compiled = this.k.deleteFrom('llm_tasks').where('reportId', 'in', reportIds).compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public pruneCompletedOlderThan(cutoffISO: string): number {
-    return this.db
-      .prepare(
-        `DELETE FROM llm_tasks WHERE status = 'completed' AND completedAt IS NOT NULL AND completedAt < ?`
-      )
-      .run(cutoffISO).changes;
+    const compiled = this.k
+      .deleteFrom('llm_tasks')
+      .where('status', '=', 'completed')
+      .where('completedAt', 'is not', null)
+      .where('completedAt', '<', cutoffISO)
+      .compile();
+    return Number(this.db.prepare(compiled.sql).run(...compiled.parameters).changes ?? 0);
   }
 
   public updatePrompt(id: string, prompt: string, estimatedInputTokens: number): void {
-    this.db
-      .prepare('UPDATE llm_tasks SET prompt = ?, inputTokens = ? WHERE id = ?')
-      .run(prompt, estimatedInputTokens, id);
+    const compiled = this.k
+      .updateTable('llm_tasks')
+      .set({ prompt, inputTokens: estimatedInputTokens })
+      .where('id', '=', id)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
     this.fireUpdateEvent(id);
   }
 
-  /** Direct lookup by id. Returns null when the id doesn't exist. */
   public getById(id: string): LlmTaskRow | null {
-    const row = this.db.prepare('SELECT * FROM llm_tasks WHERE id = ?').get(id) as
-      | LlmTaskRow
-      | undefined;
+    const compiled = this.k.selectFrom('llm_tasks').selectAll().where('id', '=', id).compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as LlmTaskRow | undefined;
     return row ?? null;
   }
 
-  /**
-   * Latest completed `test_analysis` task for (testId, reportId). Backing the
-   * "Copy prompt" button in the in-report widget and the `pwrs-cli test
-   * analysis-prompt` command — both render the exact text we sent on the most
-   * recent run. Returns null when no completed task exists.
-   */
   public getLatestCompletedTestAnalysisTask(testId: string, reportId: string): LlmTaskRow | null {
-    const row = this.db
-      .prepare(
-        `SELECT * FROM llm_tasks
-         WHERE type = 'test_analysis'
-           AND status = 'completed'
-           AND testId = ?
-           AND reportId = ?
-         ORDER BY COALESCE(completedAt, createdAt) DESC
-         LIMIT 1`
-      )
-      .get(testId, reportId) as LlmTaskRow | undefined;
+    const compiled = this.k
+      .selectFrom('llm_tasks')
+      .selectAll()
+      .where('type', '=', 'test_analysis')
+      .where('status', '=', 'completed')
+      .where('testId', '=', testId)
+      .where('reportId', '=', reportId)
+      .orderBy(sql`COALESCE(completedAt, createdAt)`, 'desc')
+      .limit(1)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as LlmTaskRow | undefined;
     return row ?? null;
   }
 
   public requeueWithRetryIncrement(id: string): void {
-    this.db
-      .prepare(
-        "UPDATE llm_tasks SET status = 'queued', startedAt = NULL, retryCount = retryCount + 1 WHERE id = ?"
-      )
-      .run(id);
+    const compiled = this.k
+      .updateTable('llm_tasks')
+      .set((eb) => ({
+        status: 'queued',
+        startedAt: null,
+        retryCount: eb('retryCount', '+', 1),
+      }))
+      .where('id', '=', id)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public findInflightTestAnalysis(
@@ -573,30 +523,20 @@ export class LlmTasksDatabase {
     reportId: string | null | undefined,
     options: { retryOnly?: boolean } = {}
   ): { id: string; status: string } | null {
-    const retrySql = options.retryOnly ? ' AND isRetry = 1' : '';
-    if (reportId) {
-      const row = this.db
-        .prepare(
-          `SELECT id, status FROM llm_tasks
-           WHERE type = 'test_analysis'
-             AND testId = ? AND reportId = ?
-             AND status IN ('queued','processing')${retrySql}
-           ORDER BY createdAt DESC
-           LIMIT 1`
-        )
-        .get(testId, reportId) as { id: string; status: string } | undefined;
-      return row ?? null;
-    }
-    const row = this.db
-      .prepare(
-        `SELECT id, status FROM llm_tasks
-         WHERE type = 'test_analysis'
-           AND testId = ?
-           AND status IN ('queued','processing')${retrySql}
-         ORDER BY createdAt DESC
-         LIMIT 1`
-      )
-      .get(testId) as { id: string; status: string } | undefined;
+    let q = this.k
+      .selectFrom('llm_tasks')
+      .select(['id', 'status'])
+      .where('type', '=', 'test_analysis')
+      .where('testId', '=', testId)
+      .where('status', 'in', ['queued', 'processing'])
+      .orderBy('createdAt', 'desc')
+      .limit(1);
+    if (reportId) q = q.where('reportId', '=', reportId);
+    if (options.retryOnly) q = q.where('isRetry', '=', 1);
+    const compiled = q.compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | { id: string; status: string }
+      | undefined;
     return row ?? null;
   }
 
@@ -604,53 +544,50 @@ export class LlmTasksDatabase {
     testId: string,
     reportId: string | null | undefined
   ): { analysis: string; model: string | null; category: string | null } | null {
-    if (reportId) {
-      const row = this.db
-        .prepare(
-          `SELECT result AS analysis, model, category FROM llm_tasks
-           WHERE testId = ? AND reportId = ? AND status = 'completed' AND result IS NOT NULL
-           ORDER BY completedAt DESC LIMIT 1`
-        )
-        .get(testId, reportId) as
-        | { analysis: string; model: string | null; category: string | null }
-        | undefined;
-      return row ?? null;
-    }
-    const row = this.db
-      .prepare(
-        `SELECT result AS analysis, model, category FROM llm_tasks
-         WHERE testId = ? AND status = 'completed' AND result IS NOT NULL
-         ORDER BY completedAt DESC LIMIT 1`
-      )
-      .get(testId) as
+    let q = this.k
+      .selectFrom('llm_tasks')
+      .select(['result as analysis', 'model', 'category'])
+      .where('testId', '=', testId)
+      .where('status', '=', 'completed')
+      .where('result', 'is not', null)
+      .orderBy('completedAt', 'desc')
+      .limit(1);
+    if (reportId) q = q.where('reportId', '=', reportId);
+    const compiled = q.compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
       | { analysis: string; model: string | null; category: string | null }
       | undefined;
     return row ?? null;
   }
 
   public findInflightReportSummary(reportId: string): { id: string } | null {
-    const row = this.db
-      .prepare(
-        `SELECT id FROM llm_tasks
-         WHERE type = 'report_summary' AND reportId = ?
-           AND status IN ('queued','processing')
-         LIMIT 1`
-      )
-      .get(reportId) as { id: string } | undefined;
+    const compiled = this.k
+      .selectFrom('llm_tasks')
+      .select('id')
+      .where('type', '=', 'report_summary')
+      .where('reportId', '=', reportId)
+      .where('status', 'in', ['queued', 'processing'])
+      .limit(1)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | { id: string }
+      | undefined;
     return row ?? null;
   }
 
   public findInflightProjectSummary(project: string): { id: string } | null {
-    const row = this.db
-      .prepare(
-        `SELECT id FROM llm_tasks
-         WHERE type = 'project_summary'
-           AND project = ?
-           AND status IN ('queued','processing')
-         ORDER BY createdAt DESC
-         LIMIT 1`
-      )
-      .get(project) as { id: string } | undefined;
+    const compiled = this.k
+      .selectFrom('llm_tasks')
+      .select('id')
+      .where('type', '=', 'project_summary')
+      .where('project', '=', project)
+      .where('status', 'in', ['queued', 'processing'])
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | { id: string }
+      | undefined;
     return row ?? null;
   }
 }

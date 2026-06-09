@@ -1,8 +1,9 @@
 import { randomUUID as uuid } from 'node:crypto';
 import type { FailureCategorySource, ReportTestOutcomeEnum } from '@playwright-reports/shared';
-import type Database from 'better-sqlite3';
+import { sql } from 'kysely';
 import { getDatabase } from './db.js';
 import { decodeFailureDetails, encodeFailureDetails } from './failureDetailsCodec.js';
+import { getKysely } from './kysely.js';
 import { singletonOf } from './singleton.js';
 import type { DerivedPageOptions } from './testQueries.sqlite.js';
 import * as testQueries from './testQueries.sqlite.js';
@@ -113,181 +114,53 @@ export function convertDbRowToTestRun(row: TestRunDbRow): TestRun {
   };
 }
 
+const REFRESH_TEST_STAT_SQL = `
+  WITH recent AS (
+    SELECT outcome, duration, createdAt
+    FROM test_runs
+    WHERE testId=:testId AND fileId=:fileId AND project=:project
+    ORDER BY createdAt DESC
+    LIMIT 50
+  ),
+  latest_ns AS (
+    SELECT flakinessScore, quarantined, quarantineReason, createdAt, failure_category
+    FROM test_runs
+    WHERE testId=:testId AND fileId=:fileId AND project=:project
+      AND outcome != 'skipped'
+    ORDER BY createdAt DESC
+    LIMIT 1
+  ),
+  totals AS (
+    SELECT COUNT(*) AS totalRuns, MAX(createdAt) AS latestRunAt
+    FROM test_runs
+    WHERE testId=:testId AND fileId=:fileId AND project=:project
+  ),
+  recent_agg AS (
+    SELECT
+      CAST(SUM(CASE WHEN outcome IN ('expected','passed') THEN 1 ELSE 0 END) AS REAL)
+        / NULLIF(COUNT(*), 0) AS recentPassRate,
+      AVG(CASE WHEN duration >= 0 THEN duration END) AS avgDuration,
+      (SELECT outcome FROM recent ORDER BY createdAt DESC LIMIT 1) AS latestOutcome
+    FROM recent
+  )
+  UPDATE tests SET
+    totalRuns = COALESCE((SELECT totalRuns FROM totals), 0),
+    latestRunAt = (SELECT latestRunAt FROM totals),
+    latestOutcome = (SELECT latestOutcome FROM recent_agg),
+    latestNonSkippedAt = (SELECT createdAt FROM latest_ns),
+    flakinessScore = (SELECT flakinessScore FROM latest_ns),
+    quarantined = COALESCE((SELECT quarantined FROM latest_ns), 0),
+    quarantineReason = (SELECT quarantineReason FROM latest_ns),
+    latestFailureCategory = (SELECT failure_category FROM latest_ns),
+    recentPassRate = (SELECT recentPassRate FROM recent_agg),
+    avgDuration = (SELECT avgDuration FROM recent_agg)
+  WHERE testId=:testId AND fileId=:fileId AND project=:project
+`;
+
 export class TestDatabase {
+  private readonly k = getKysely();
   private readonly db = getDatabase();
-
-  private readonly insertTestStmt: Database.Statement<
-    [string, string, string, string, string, string]
-  >;
-  private readonly getTestStmt: Database.Statement<[string, string, string]>;
-  private readonly getAllTestsStmt: Database.Statement<[]>;
-  private readonly getTestsByProjectStmt: Database.Statement<[string]>;
-  private readonly deleteTestStmt: Database.Statement<[string, string, string]>;
-
-  private readonly insertTestRunStmt: Database.Statement<
-    [
-      string,
-      string,
-      string,
-      string,
-      string,
-      string,
-      number | null,
-      string,
-      number,
-      string | null,
-      number,
-      Buffer | null,
-      string | null,
-      string | null,
-      string | null,
-      string | null,
-    ]
-  >;
-  private readonly quarantineTestRunStmt: Database.Statement<[number, string | null, string]>;
-  private readonly fixTestRunStmt: Database.Statement<[number, string]>;
-  private readonly getTestRunsStmt: Database.Statement<[string, string, string]>;
-  private readonly getLatestTestRunStmt: Database.Statement<[string, string, string]>;
-  private readonly getRecentTestRunsStmt: Database.Statement<[string, string, string, string]>;
-  private readonly getTestRunCountStmt: Database.Statement<[string, string, string]>;
-  private readonly deleteTestRunsStmt: Database.Statement<[string, string, string]>;
-
-  private readonly getTestStatsStmt: Database.Statement<[string, string, string]>;
-  private readonly updateFlakinessScoreStmt: Database.Statement<[number, string]>;
-  private readonly refreshTestStatStmt: Database.Statement<{
-    testId: string;
-    fileId: string;
-    project: string;
-  }>;
-
-  constructor() {
-    this.insertTestStmt = this.db.prepare(`
-      INSERT OR IGNORE INTO tests (testId, fileId, filePath, project, title, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-    this.getTestStmt = this.db.prepare(`
-      SELECT * FROM tests
-      WHERE testId = ? AND fileId = ? AND project = ?
-    `);
-
-    this.getAllTestsStmt = this.db.prepare(`
-      SELECT * FROM tests ORDER BY createdAt DESC
-    `);
-
-    this.getTestsByProjectStmt = this.db.prepare(`
-      SELECT * FROM tests WHERE project = ? ORDER BY createdAt DESC
-    `);
-
-    this.deleteTestStmt = this.db.prepare(`
-      DELETE FROM tests WHERE testId = ? AND fileId = ? AND project = ?
-    `);
-
-    this.insertTestRunStmt = this.db.prepare(`
-      INSERT INTO test_runs (runId, testId, fileId, project, reportId, outcome, duration, createdAt, flakinessScore, quarantineReason, quarantined, failure_details, failure_category, failure_category_source, error_signature, error_signature_global)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.quarantineTestRunStmt = this.db.prepare(`
-      UPDATE test_runs
-      SET quarantined = ?, quarantineReason = ?, fixedAt = NULL
-      WHERE runId = ?
-    `);
-
-    this.fixTestRunStmt = this.db.prepare(`
-      UPDATE test_runs
-      SET quarantined = ?, fixedAt = CURRENT_TIMESTAMP
-      WHERE runId = ?
-    `);
-
-    this.getTestRunsStmt = this.db.prepare(`
-      SELECT tr.*, r.title AS reportTitle, r.displayNumber AS reportDisplayNumber
-      FROM test_runs tr
-      LEFT JOIN reports r ON r.reportID = tr.reportId
-      WHERE tr.testId = ? AND tr.fileId = ? AND tr.project = ?
-      ORDER BY tr.createdAt DESC
-      LIMIT 50
-    `);
-
-    this.getLatestTestRunStmt = this.db.prepare(`
-      SELECT * FROM test_runs
-      WHERE testId = ? AND fileId = ? AND project = ? AND outcome != 'skipped'
-      ORDER BY createdAt DESC
-      LIMIT 1
-    `);
-
-    this.getRecentTestRunsStmt = this.db.prepare(`
-      SELECT outcome FROM test_runs
-      WHERE testId = ? AND fileId = ? AND project = ? AND outcome != 'skipped'
-        AND createdAt >= ?
-        ORDER BY createdAt DESC
-    `);
-
-    this.getTestRunCountStmt = this.db.prepare(`
-      SELECT COUNT(*) as count FROM test_runs
-      WHERE testId = ? AND fileId = ? AND project = ?
-    `);
-
-    this.deleteTestRunsStmt = this.db.prepare(`
-      DELETE FROM test_runs WHERE testId = ? AND fileId = ? AND project = ?
-    `);
-
-    this.getTestStatsStmt = this.db.prepare(`
-      SELECT
-        COUNT(*) as totalRuns,
-        MAX(createdAt) as lastRunAt,
-        SUM(CASE WHEN outcome = 'flaky' THEN 1 ELSE 0 END) as flakyCount
-      FROM test_runs
-      WHERE testId = ? AND fileId = ? AND project = ?
-    `);
-
-    this.updateFlakinessScoreStmt = this.db.prepare(`
-      UPDATE test_runs SET flakinessScore = ? WHERE runId = ?
-    `);
-
-    this.refreshTestStatStmt = this.db.prepare(`
-      WITH recent AS (
-        SELECT outcome, duration, createdAt
-        FROM test_runs
-        WHERE testId=:testId AND fileId=:fileId AND project=:project
-        ORDER BY createdAt DESC
-        LIMIT 50
-      ),
-      latest_ns AS (
-        SELECT flakinessScore, quarantined, quarantineReason, createdAt, failure_category
-        FROM test_runs
-        WHERE testId=:testId AND fileId=:fileId AND project=:project
-          AND outcome != 'skipped'
-        ORDER BY createdAt DESC
-        LIMIT 1
-      ),
-      totals AS (
-        SELECT COUNT(*) AS totalRuns, MAX(createdAt) AS latestRunAt
-        FROM test_runs
-        WHERE testId=:testId AND fileId=:fileId AND project=:project
-      ),
-      recent_agg AS (
-        SELECT
-          CAST(SUM(CASE WHEN outcome IN ('expected','passed') THEN 1 ELSE 0 END) AS REAL)
-            / NULLIF(COUNT(*), 0) AS recentPassRate,
-          AVG(CASE WHEN duration >= 0 THEN duration END) AS avgDuration,
-          (SELECT outcome FROM recent ORDER BY createdAt DESC LIMIT 1) AS latestOutcome
-        FROM recent
-      )
-      UPDATE tests SET
-        totalRuns = COALESCE((SELECT totalRuns FROM totals), 0),
-        latestRunAt = (SELECT latestRunAt FROM totals),
-        latestOutcome = (SELECT latestOutcome FROM recent_agg),
-        latestNonSkippedAt = (SELECT createdAt FROM latest_ns),
-        flakinessScore = (SELECT flakinessScore FROM latest_ns),
-        quarantined = COALESCE((SELECT quarantined FROM latest_ns), 0),
-        quarantineReason = (SELECT quarantineReason FROM latest_ns),
-        latestFailureCategory = (SELECT failure_category FROM latest_ns),
-        recentPassRate = (SELECT recentPassRate FROM recent_agg),
-        avgDuration = (SELECT avgDuration FROM recent_agg)
-      WHERE testId=:testId AND fileId=:fileId AND project=:project
-    `);
-  }
+  private readonly refreshTestStatStmt = this.db.prepare(REFRESH_TEST_STAT_SQL);
 
   public refreshTestStatCols(testId: string, fileId: string, project: string): void {
     this.refreshTestStatStmt.run({ testId, fileId, project });
@@ -298,62 +171,76 @@ export class TestDatabase {
       ...test,
       createdAt: new Date().toISOString(),
     };
-
-    const validatedParams = {
-      testId: String(testWithCreatedAt.testId),
-      fileId: String(testWithCreatedAt.fileId),
-      filePath: String(testWithCreatedAt.filePath),
-      project: String(testWithCreatedAt.project),
-      title: String(testWithCreatedAt.title),
-      createdAt: String(testWithCreatedAt.createdAt),
-    };
-
-    this.insertTestStmt.run(
-      validatedParams.testId,
-      validatedParams.fileId,
-      validatedParams.filePath,
-      validatedParams.project,
-      validatedParams.title,
-      validatedParams.createdAt
-    );
-
+    const compiled = this.k
+      .insertInto('tests')
+      .values({
+        testId: String(testWithCreatedAt.testId),
+        fileId: String(testWithCreatedAt.fileId),
+        filePath: String(testWithCreatedAt.filePath),
+        project: String(testWithCreatedAt.project),
+        title: String(testWithCreatedAt.title),
+        createdAt: String(testWithCreatedAt.createdAt),
+        latestRunAt: null,
+        latestOutcome: null,
+        latestNonSkippedAt: null,
+        flakinessScore: null,
+        quarantined: 0,
+        quarantineReason: null,
+        totalRuns: 0,
+        recentPassRate: null,
+        avgDuration: null,
+        latestFailureCategory: null,
+      })
+      .onConflict((oc) => oc.doNothing())
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
     return testWithCreatedAt;
   }
 
   public getTest(testId: string, fileId: string, project: string): Test | undefined {
-    return this.getTestStmt.get(testId, fileId, project) as Test | undefined;
+    const compiled = this.k
+      .selectFrom('tests')
+      .selectAll()
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .compile();
+    return this.db.prepare(compiled.sql).get(...compiled.parameters) as Test | undefined;
   }
 
   public findTestByIds(testId: string, fileId: string): Test | undefined {
-    const row = this.db
-      .prepare(
-        `SELECT t.* FROM tests t
-         LEFT JOIN test_runs r ON r.testId = t.testId AND r.fileId = t.fileId AND r.project = t.project
-         WHERE t.testId = ? AND t.fileId = ?
-         GROUP BY t.testId, t.fileId, t.project
-         ORDER BY MAX(COALESCE(r.createdAt, t.createdAt)) DESC
-         LIMIT 1`
+    const compiled = this.k
+      .selectFrom('tests as t')
+      .leftJoin('test_runs as r', (join) =>
+        join
+          .onRef('r.testId', '=', 't.testId')
+          .onRef('r.fileId', '=', 't.fileId')
+          .onRef('r.project', '=', 't.project')
       )
-      .get(testId, fileId) as Test | undefined;
-    return row;
+      .select(['t.testId', 't.fileId', 't.filePath', 't.project', 't.title', 't.createdAt'])
+      .where('t.testId', '=', testId)
+      .where('t.fileId', '=', fileId)
+      .groupBy(['t.testId', 't.fileId', 't.project'])
+      .orderBy(sql`MAX(COALESCE(r.createdAt, t.createdAt))`, 'desc')
+      .limit(1)
+      .compile();
+    return this.db.prepare(compiled.sql).get(...compiled.parameters) as Test | undefined;
   }
 
   public getDurationTrend(
     testId: string,
     project?: string
   ): Array<{ reportId: string; createdAt: string; duration: number }> {
-    const scoped = project && project !== 'all';
-    const sql = scoped
-      ? `SELECT tr.reportId, tr.createdAt, tr.duration
-         FROM test_runs tr
-         WHERE tr.testId = ? AND tr.project = ? AND tr.duration IS NOT NULL AND tr.duration > 0
-         ORDER BY tr.createdAt DESC`
-      : `SELECT tr.reportId, tr.createdAt, tr.duration
-         FROM test_runs tr
-         WHERE tr.testId = ? AND tr.duration IS NOT NULL AND tr.duration > 0
-         ORDER BY tr.createdAt DESC`;
-    const params = scoped ? [testId, project as string] : [testId];
-    return this.db.prepare(sql).all(...params) as Array<{
+    let q = this.k
+      .selectFrom('test_runs')
+      .select(['reportId', 'createdAt', 'duration'])
+      .where('testId', '=', testId)
+      .where('duration', 'is not', null)
+      .where('duration', '>', 0)
+      .orderBy('createdAt', 'desc');
+    if (project && project !== 'all') q = q.where('project', '=', project);
+    const compiled = q.compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
       reportId: string;
       createdAt: string;
       duration: number;
@@ -361,62 +248,86 @@ export class TestDatabase {
   }
 
   public getTestTitle(testId: string, project?: string): string | undefined {
-    const scoped = project && project !== 'all';
-    const row = (
-      scoped
-        ? this.db
-            .prepare('SELECT title FROM tests WHERE testId = ? AND project = ? LIMIT 1')
-            .get(testId, project)
-        : this.db.prepare('SELECT title FROM tests WHERE testId = ? LIMIT 1').get(testId)
-    ) as { title: string } | undefined;
+    let q = this.k.selectFrom('tests').select('title').where('testId', '=', testId).limit(1);
+    if (project && project !== 'all') q = q.where('project', '=', project);
+    const compiled = q.compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | { title: string }
+      | undefined;
     return row?.title ?? undefined;
   }
 
   public findByTestId(testId: string, project?: string): Test | undefined {
-    if (project && project !== 'all') {
-      const row = this.db
-        .prepare(
-          `SELECT t.* FROM tests t
-           LEFT JOIN test_runs r ON r.testId = t.testId AND r.fileId = t.fileId AND r.project = t.project
-           WHERE t.testId = ? AND t.project = ?
-           GROUP BY t.testId, t.fileId, t.project
-           ORDER BY MAX(COALESCE(r.createdAt, t.createdAt)) DESC
-           LIMIT 1`
+    const queryFor = (proj?: string) => {
+      let q = this.k
+        .selectFrom('tests as t')
+        .leftJoin('test_runs as r', (join) =>
+          join
+            .onRef('r.testId', '=', 't.testId')
+            .onRef('r.fileId', '=', 't.fileId')
+            .onRef('r.project', '=', 't.project')
         )
-        .get(testId, project) as Test | undefined;
+        .select(['t.testId', 't.fileId', 't.filePath', 't.project', 't.title', 't.createdAt'])
+        .where('t.testId', '=', testId)
+        .groupBy(['t.testId', 't.fileId', 't.project'])
+        .orderBy(sql`MAX(COALESCE(r.createdAt, t.createdAt))`, 'desc')
+        .limit(1);
+      if (proj) q = q.where('t.project', '=', proj);
+      return q.compile();
+    };
+
+    if (project && project !== 'all') {
+      const compiled = queryFor(project);
+      const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as Test | undefined;
       if (row) return row;
     }
-    const row = this.db
-      .prepare(
-        `SELECT t.* FROM tests t
-         LEFT JOIN test_runs r ON r.testId = t.testId AND r.fileId = t.fileId AND r.project = t.project
-         WHERE t.testId = ?
-         GROUP BY t.testId, t.fileId, t.project
-         ORDER BY MAX(COALESCE(r.createdAt, t.createdAt)) DESC
-         LIMIT 1`
-      )
-      .get(testId) as Test | undefined;
-    return row;
+    const compiled = queryFor();
+    return this.db.prepare(compiled.sql).get(...compiled.parameters) as Test | undefined;
   }
 
   public getAllTests(): Test[] {
-    return this.getAllTestsStmt.all() as Test[];
+    const compiled = this.k.selectFrom('tests').selectAll().orderBy('createdAt', 'desc').compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Test[];
   }
 
   public getTestsByProject(project: string): Test[] {
-    return this.getTestsByProjectStmt.all(project) as Test[];
+    const compiled = this.k
+      .selectFrom('tests')
+      .selectAll()
+      .where('project', '=', project)
+      .orderBy('createdAt', 'desc')
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Test[];
   }
 
   public deleteTest(testId: string, fileId: string, project: string): void {
     const transaction = this.db.transaction(() => {
-      this.deleteTestRunsStmt.run(testId, fileId, project);
-      this.deleteTestStmt.run(testId, fileId, project);
+      const delRuns = this.k
+        .deleteFrom('test_runs')
+        .where('testId', '=', testId)
+        .where('fileId', '=', fileId)
+        .where('project', '=', project)
+        .compile();
+      this.db.prepare(delRuns.sql).run(...delRuns.parameters);
+      const delTest = this.k
+        .deleteFrom('tests')
+        .where('testId', '=', testId)
+        .where('fileId', '=', fileId)
+        .where('project', '=', project)
+        .compile();
+      this.db.prepare(delTest.sql).run(...delTest.parameters);
     });
     transaction();
   }
 
   public deleteTestRuns(testId: string, fileId: string, project: string): void {
-    this.deleteTestRunsStmt.run(testId, fileId, project);
+    const compiled = this.k
+      .deleteFrom('test_runs')
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public deleteTestRunsByReportId(reportId: string): number {
@@ -425,25 +336,35 @@ export class TestDatabase {
 
   public deleteTestRunsByReportIds(reportIds: string[]): number {
     if (reportIds.length === 0) return 0;
-    const placeholders = reportIds.map(() => '?').join(',');
 
     const transaction = this.db.transaction(() => {
+      const affectedCompiled = this.k
+        .selectFrom('test_runs')
+        .select(['testId', 'fileId', 'project'])
+        .distinct()
+        .where('reportId', 'in', reportIds)
+        .compile();
       const affectedTests = this.db
-        .prepare(
-          `SELECT DISTINCT testId, fileId, project
-           FROM test_runs WHERE reportId IN (${placeholders})`
-        )
-        .all(...reportIds) as Array<{ testId: string; fileId: string; project: string }>;
+        .prepare(affectedCompiled.sql)
+        .all(...affectedCompiled.parameters) as Array<{
+        testId: string;
+        fileId: string;
+        project: string;
+      }>;
 
-      const result = this.db
-        .prepare(`DELETE FROM test_runs WHERE reportId IN (${placeholders})`)
-        .run(...reportIds);
+      const delRunsCompiled = this.k
+        .deleteFrom('test_runs')
+        .where('reportId', 'in', reportIds)
+        .compile();
+      const result = this.db.prepare(delRunsCompiled.sql).run(...delRunsCompiled.parameters);
 
       if (affectedTests.length === 0) {
         return result.changes;
       }
 
-      // 300 lanes × 3 params = 900 placeholders, safely under SQLite's 999 cap.
+      // Orphan-test cleanup: the UNION ALL VALUES tuple lookup stays as raw SQL
+      // since SQLite syntax (tuple IN VALUES (...)) doesn't compose into the
+      // typed builder.
       for (const batch of chunk(affectedTests, 300)) {
         const laneSelect = batch
           .map(() => 'SELECT ? AS testId, ? AS fileId, ? AS project')
@@ -463,14 +384,20 @@ export class TestDatabase {
           .all(...laneParams) as Array<{ testId: string; fileId: string; project: string }>;
 
         for (const orphan of orphanRows) {
-          this.deleteTestStmt.run(orphan.testId, orphan.fileId, orphan.project);
+          const compiled = this.k
+            .deleteFrom('tests')
+            .where('testId', '=', orphan.testId)
+            .where('fileId', '=', orphan.fileId)
+            .where('project', '=', orphan.project)
+            .compile();
+          this.db.prepare(compiled.sql).run(...compiled.parameters);
         }
       }
 
-      return result.changes;
+      return Number(result.changes ?? 0);
     });
 
-    return transaction();
+    return Number(transaction() ?? 0);
   }
 
   public createTestRun(testRun: Omit<TestRun, 'runId'> & { runId?: string }): TestRun {
@@ -480,46 +407,32 @@ export class TestDatabase {
       quarantined: testRun.quarantined || false,
     };
 
-    const validatedParams = {
-      runId: String(testRunWithId.runId),
-      testId: String(testRunWithId.testId),
-      fileId: String(testRunWithId.fileId),
-      project: String(testRunWithId.project),
-      reportId: String(testRunWithId.reportId),
-      outcome: String(testRunWithId.outcome),
-      duration:
-        testRunWithId.duration !== undefined && testRunWithId.duration !== null
-          ? Number(testRunWithId.duration)
-          : null,
-      createdAt: String(testRunWithId.createdAt),
-      flakinessScore: testRunWithId.flakinessScore ?? 0,
-      quarantineReason: testRunWithId.quarantineReason || null,
-      quarantined: testRunWithId.quarantined ? 1 : 0,
-      failureDetails: encodeFailureDetails(testRunWithId.failureDetails),
-      failureCategory: testRunWithId.failureCategory || null,
-      failureCategorySource: testRunWithId.failureCategorySource || null,
-      errorSignature: testRunWithId.errorSignature || null,
-      errorSignatureGlobal: testRunWithId.errorSignatureGlobal || null,
-    };
-
-    this.insertTestRunStmt.run(
-      validatedParams.runId,
-      validatedParams.testId,
-      validatedParams.fileId,
-      validatedParams.project,
-      validatedParams.reportId,
-      validatedParams.outcome,
-      validatedParams.duration,
-      validatedParams.createdAt,
-      validatedParams.flakinessScore,
-      validatedParams.quarantineReason,
-      validatedParams.quarantined,
-      validatedParams.failureDetails,
-      validatedParams.failureCategory,
-      validatedParams.failureCategorySource,
-      validatedParams.errorSignature,
-      validatedParams.errorSignatureGlobal
-    );
+    const compiled = this.k
+      .insertInto('test_runs')
+      .values({
+        runId: String(testRunWithId.runId),
+        testId: String(testRunWithId.testId),
+        fileId: String(testRunWithId.fileId),
+        project: String(testRunWithId.project),
+        reportId: String(testRunWithId.reportId),
+        outcome: String(testRunWithId.outcome),
+        duration:
+          testRunWithId.duration !== undefined && testRunWithId.duration !== null
+            ? Number(testRunWithId.duration)
+            : null,
+        createdAt: String(testRunWithId.createdAt),
+        flakinessScore: testRunWithId.flakinessScore ?? 0,
+        quarantineReason: testRunWithId.quarantineReason || null,
+        quarantined: testRunWithId.quarantined ? 1 : 0,
+        fixedAt: null,
+        failure_details: encodeFailureDetails(testRunWithId.failureDetails),
+        failure_category: testRunWithId.failureCategory || null,
+        failure_category_source: testRunWithId.failureCategorySource || null,
+        error_signature: testRunWithId.errorSignature || null,
+        error_signature_global: testRunWithId.errorSignatureGlobal || null,
+      })
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
 
     return testRunWithId;
   }
@@ -532,27 +445,60 @@ export class TestDatabase {
     quarantineReason?: string
   ): boolean {
     const quarantinedInt = isQuarantined ? 1 : 0;
-
     const latestRun = this.getLatestTestRun(testId, fileId, project);
-
     if (!latestRun) {
       throw new Error('No test run found for the specified test');
     }
 
-    const result = isQuarantined
-      ? this.quarantineTestRunStmt.run(quarantinedInt, quarantineReason || null, latestRun.runId)
-      : this.fixTestRunStmt.run(quarantinedInt, latestRun.runId);
-
+    const compiled = isQuarantined
+      ? this.k
+          .updateTable('test_runs')
+          .set({
+            quarantined: quarantinedInt,
+            quarantineReason: quarantineReason || null,
+            fixedAt: null,
+          })
+          .where('runId', '=', latestRun.runId)
+          .compile()
+      : this.k
+          .updateTable('test_runs')
+          .set({ quarantined: quarantinedInt, fixedAt: sql`CURRENT_TIMESTAMP` as never })
+          .where('runId', '=', latestRun.runId)
+          .compile();
+    const result = this.db.prepare(compiled.sql).run(...compiled.parameters);
     return result.changes > 0;
   }
 
   public getTestRuns(testId: string, fileId: string, project: string): TestRun[] {
-    const rows = this.getTestRunsStmt.all(testId, fileId, project) as TestRunDbRow[];
+    const compiled = this.k
+      .selectFrom('test_runs as tr')
+      .leftJoin('reports as r', 'r.reportID', 'tr.reportId')
+      .selectAll('tr')
+      .select(['r.title as reportTitle', 'r.displayNumber as reportDisplayNumber'])
+      .where('tr.testId', '=', testId)
+      .where('tr.fileId', '=', fileId)
+      .where('tr.project', '=', project)
+      .orderBy('tr.createdAt', 'desc')
+      .limit(50)
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as TestRunDbRow[];
     return rows.map((row) => convertDbRowToTestRun(row));
   }
 
   public getLatestTestRun(testId: string, fileId: string, project: string): TestRun | undefined {
-    const row = this.getLatestTestRunStmt.get(testId, fileId, project) as TestRunDbRow | undefined;
+    const compiled = this.k
+      .selectFrom('test_runs')
+      .selectAll()
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .where('outcome', '!=', 'skipped')
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | TestRunDbRow
+      | undefined;
     return row ? convertDbRowToTestRun(row) : undefined;
   }
 
@@ -561,16 +507,31 @@ export class TestDatabase {
     fileId: string,
     project: string,
     cutoffDate: string
-  ): Array<{
-    outcome: ReportTestOutcomeEnum;
-  }> {
-    return this.getRecentTestRunsStmt.all(testId, fileId, project, cutoffDate) as Array<{
+  ): Array<{ outcome: ReportTestOutcomeEnum }> {
+    const compiled = this.k
+      .selectFrom('test_runs')
+      .select('outcome')
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .where('outcome', '!=', 'skipped')
+      .where('createdAt', '>=', cutoffDate)
+      .orderBy('createdAt', 'desc')
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
       outcome: ReportTestOutcomeEnum;
     }>;
   }
 
   public getTestRunCount(testId: string, fileId: string, project: string): number {
-    const result = this.getTestRunCountStmt.get(testId, fileId, project) as { count: number };
+    const compiled = this.k
+      .selectFrom('test_runs')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .compile();
+    const result = this.db.prepare(compiled.sql).get(...compiled.parameters) as { count: number };
     return result.count;
   }
 
@@ -582,7 +543,18 @@ export class TestDatabase {
     const test = this.getTest(testId, fileId, project);
     if (!test) return undefined;
 
-    const stats = this.getTestStatsStmt.get(testId, fileId, project) as {
+    const statsCompiled = this.k
+      .selectFrom('test_runs')
+      .select((eb) => [
+        eb.fn.countAll<number>().as('totalRuns'),
+        eb.fn.max<string | null>('createdAt').as('lastRunAt'),
+        sql<number>`SUM(CASE WHEN outcome = 'flaky' THEN 1 ELSE 0 END)`.as('flakyCount'),
+      ])
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .compile();
+    const stats = this.db.prepare(statsCompiled.sql).get(...statsCompiled.parameters) as {
       totalRuns: number;
       lastRunAt: string | null;
       flakyCount: number;
@@ -601,27 +573,25 @@ export class TestDatabase {
     };
   }
 
+  // Delegate to testQueries (kept as raw SQL by design — see file header).
   public getDerivedPage(
     project: string | undefined,
     options: DerivedPageOptions = {}
   ): { rows: DerivedPageRow[]; total: number } {
     return testQueries.getDerivedPage(this.db, project, options);
   }
-
   public getRunsForLanes(
     lanes: Array<{ testId: string; fileId: string; project: string }>,
     opts?: { from?: string; to?: string }
   ): Map<string, TestRun[]> {
     return testQueries.getRunsForLanes(this.db, lanes, opts);
   }
-
   public getTestsSummary(
     project: string | undefined,
     warningThreshold: number
   ): { total: number; flakyTests: TestWithQuarantineInfo[] } {
     return testQueries.getTestsSummary(this.db, project, warningThreshold);
   }
-
   public getTestRunOutcomesInWindow(
     project: string | undefined,
     from: string,
@@ -629,7 +599,6 @@ export class TestDatabase {
   ): Array<{ testId: string; fileId: string; project: string; outcome: ReportTestOutcomeEnum }> {
     return testQueries.getTestRunOutcomesInWindow(this.db, project, from, to);
   }
-
   public getDurationAggregates(
     project: string | undefined,
     from?: string,
@@ -637,7 +606,6 @@ export class TestDatabase {
   ): { avgDuration: number; p95Duration: number; count: number } {
     return testQueries.getDurationAggregates(this.db, project, from, to);
   }
-
   public getSlowestTests(
     project: string | undefined,
     from: string | undefined,
@@ -646,7 +614,6 @@ export class TestDatabase {
   ): Array<{ step: string; duration: number; testId: string }> {
     return testQueries.getSlowestTests(this.db, project, from, to, limit);
   }
-
   public getSlowCountsByReport(
     project: string | undefined,
     from: string | undefined,
@@ -655,7 +622,6 @@ export class TestDatabase {
   ): Map<string, number> {
     return testQueries.getSlowCountsByReport(this.db, project, from, to, threshold);
   }
-
   public getFlakySummaryInWindow(
     project: string | undefined,
     from: string,
@@ -664,11 +630,9 @@ export class TestDatabase {
   ): { total: number; flakyCount: number } {
     return testQueries.getFlakySummaryInWindow(this.db, project, from, to, warningThreshold);
   }
-
   public getTestRunsInWindow(project: string | undefined, from: string, to: string): TestRun[] {
     return testQueries.getTestRunsInWindow(this.db, project, from, to);
   }
-
   public getTopFailingTestsInWindow(
     project: string | undefined,
     from: string,
@@ -683,7 +647,6 @@ export class TestDatabase {
   }> {
     return testQueries.getTopFailingTestsInWindow(this.db, project, from, to, limit);
   }
-
   public getFlakiestTestsInWindow(
     project: string | undefined,
     from: string,
@@ -701,13 +664,22 @@ export class TestDatabase {
   }
 
   public updateFlakinessScore(runId: string, score: number): void {
-    this.updateFlakinessScoreStmt.run(score, runId);
+    const compiled = this.k
+      .updateTable('test_runs')
+      .set({ flakinessScore: score })
+      .where('runId', '=', runId)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public getTestRunsByReport(reportId: string): TestRun[] {
-    const rows = this.db
-      .prepare('SELECT * FROM test_runs WHERE reportId = ? ORDER BY createdAt DESC')
-      .all(reportId) as TestRunDbRow[];
+    const compiled = this.k
+      .selectFrom('test_runs')
+      .selectAll()
+      .where('reportId', '=', reportId)
+      .orderBy('createdAt', 'desc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as TestRunDbRow[];
     return rows.map((row) => convertDbRowToTestRun(row));
   }
 
@@ -716,45 +688,38 @@ export class TestDatabase {
     category: string,
     source: FailureCategorySource = 'heuristic'
   ): void {
-    this.db
-      .prepare(
-        'UPDATE test_runs SET failure_category = ?, failure_category_source = ? WHERE runId = ?'
-      )
-      .run(category, source, runId);
+    const compiled = this.k
+      .updateTable('test_runs')
+      .set({ failure_category: category, failure_category_source: source })
+      .where('runId', '=', runId)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
-  /**
-   * Find the most common failure category previously assigned to runs sharing this signature.
-   * Used to "lock" labels when there's a strong historical consensus, so categorization
-   * stays stable across runs of the same root-cause failure.
-   */
   public getCategoryConsensus(
     signature: string
   ): { category: string; share: number; total: number } | null {
     if (!signature) return null;
-    const rows = this.db
-      .prepare(
-        `SELECT failure_category as category, COUNT(*) as count
-         FROM test_runs
-         WHERE error_signature = ?
-           AND failure_category IS NOT NULL
-           AND failure_category != 'unknown'
-         GROUP BY failure_category
-         ORDER BY count DESC
-         LIMIT 5`
-      )
-      .all(signature) as Array<{ category: string; count: number }>;
+    const compiled = this.k
+      .selectFrom('test_runs')
+      .select((eb) => ['failure_category as category', eb.fn.countAll<number>().as('count')])
+      .where('error_signature', '=', signature)
+      .where('failure_category', 'is not', null)
+      .where('failure_category', '!=', 'unknown')
+      .groupBy('failure_category')
+      .orderBy('count', 'desc')
+      .limit(5)
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      category: string;
+      count: number;
+    }>;
     if (rows.length === 0) return null;
     const total = rows.reduce((sum, r) => sum + r.count, 0);
     const top = rows[0];
     return { category: top.category, share: top.count / total, total };
   }
 
-  /**
-   * Phase 2: failure history for a (test, error_signature) — used by the injected panel
-   * to surface "🆕 New error" vs "🔁 N prior occurrences". Excludes the current report
-   * so the count reflects PRIOR occurrences only.
-   */
   public getFailureHistory(
     testId: string,
     fileId: string,
@@ -772,27 +737,29 @@ export class TestDatabase {
     if (!errorSignature) {
       return { priorOccurrenceCount: 0, firstOccurrence: null };
     }
-    const countRow = this.db
-      .prepare(
-        `SELECT COUNT(*) AS c FROM test_runs
-         WHERE testId = ? AND fileId = ?
-           AND error_signature = ? AND reportId != ?`
-      )
-      .get(testId, fileId, errorSignature, excludeReportId) as { c: number };
-    // Join with reports so the UI can display the user-friendly number + title
-    // instead of a sliced UUID. Left-join is unnecessary — every test_run
-    // FK-points at an existing report row.
-    const firstRow = this.db
-      .prepare(
-        `SELECT tr.reportId, tr.createdAt, r.displayNumber, r.title
-         FROM test_runs tr
-         JOIN reports r ON r.reportID = tr.reportId
-         WHERE tr.testId = ? AND tr.fileId = ?
-           AND tr.error_signature = ? AND tr.reportId != ?
-         ORDER BY tr.createdAt ASC
-         LIMIT 1`
-      )
-      .get(testId, fileId, errorSignature, excludeReportId) as
+    const countCompiled = this.k
+      .selectFrom('test_runs')
+      .select((eb) => eb.fn.countAll<number>().as('c'))
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('error_signature', '=', errorSignature)
+      .where('reportId', '!=', excludeReportId)
+      .compile();
+    const countRow = this.db.prepare(countCompiled.sql).get(...countCompiled.parameters) as {
+      c: number;
+    };
+    const firstCompiled = this.k
+      .selectFrom('test_runs as tr')
+      .innerJoin('reports as r', 'r.reportID', 'tr.reportId')
+      .select(['tr.reportId', 'tr.createdAt', 'r.displayNumber', 'r.title'])
+      .where('tr.testId', '=', testId)
+      .where('tr.fileId', '=', fileId)
+      .where('tr.error_signature', '=', errorSignature)
+      .where('tr.reportId', '!=', excludeReportId)
+      .orderBy('tr.createdAt', 'asc')
+      .limit(1)
+      .compile();
+    const firstRow = this.db.prepare(firstCompiled.sql).get(...firstCompiled.parameters) as
       | { reportId: string; createdAt: string; displayNumber: number | null; title: string | null }
       | undefined;
     return {
@@ -802,8 +769,10 @@ export class TestDatabase {
   }
 
   public clear(): void {
-    this.db.prepare('DELETE FROM test_runs').run();
-    this.db.prepare('DELETE FROM tests').run();
+    const delRuns = this.k.deleteFrom('test_runs').compile();
+    this.db.prepare(delRuns.sql).run(...delRuns.parameters);
+    const delTests = this.k.deleteFrom('tests').compile();
+    this.db.prepare(delTests.sql).run(...delTests.parameters);
   }
 
   public runTransaction<T>(fn: () => T): T {
@@ -811,17 +780,17 @@ export class TestDatabase {
   }
 
   public findRunLane(testId: string, project?: string): { fileId: string; project: string } | null {
-    const row = project
-      ? (this.db
-          .prepare(
-            'SELECT fileId, project FROM test_runs WHERE testId = ? AND project = ? ORDER BY createdAt DESC LIMIT 1'
-          )
-          .get(testId, project) as { fileId: string; project: string } | undefined)
-      : (this.db
-          .prepare(
-            'SELECT fileId, project FROM test_runs WHERE testId = ? ORDER BY createdAt DESC LIMIT 1'
-          )
-          .get(testId) as { fileId: string; project: string } | undefined);
+    let q = this.k
+      .selectFrom('test_runs')
+      .select(['fileId', 'project'])
+      .where('testId', '=', testId)
+      .orderBy('createdAt', 'desc')
+      .limit(1);
+    if (project) q = q.where('project', '=', project);
+    const compiled = q.compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | { fileId: string; project: string }
+      | undefined;
     return row ?? null;
   }
 
@@ -829,52 +798,52 @@ export class TestDatabase {
     testId: string,
     reportId: string
   ): { fileId: string; project: string } | null {
-    const row = this.db
-      .prepare(
-        `SELECT fileId, project FROM test_runs
-         WHERE testId = ? AND reportId = ?
-         ORDER BY createdAt DESC LIMIT 1`
-      )
-      .get(testId, reportId) as { fileId: string; project: string } | undefined;
+    const compiled = this.k
+      .selectFrom('test_runs')
+      .select(['fileId', 'project'])
+      .where('testId', '=', testId)
+      .where('reportId', '=', reportId)
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | { fileId: string; project: string }
+      | undefined;
     return row ?? null;
   }
 
   public getFailureCategoryCounts(
     project?: string
   ): Array<{ category: string; occurrences: number }> {
-    if (project) {
-      return this.db
-        .prepare(
-          `SELECT failure_category AS category, COUNT(*) AS occurrences
-           FROM test_runs
-           WHERE failure_category IS NOT NULL AND project = ?
-           GROUP BY failure_category
-           ORDER BY occurrences DESC`
-        )
-        .all(project) as Array<{ category: string; occurrences: number }>;
-    }
-    return this.db
-      .prepare(
-        `SELECT failure_category AS category, COUNT(*) AS occurrences
-         FROM test_runs
-         WHERE failure_category IS NOT NULL
-         GROUP BY failure_category
-         ORDER BY occurrences DESC`
-      )
-      .all() as Array<{ category: string; occurrences: number }>;
+    let q = this.k
+      .selectFrom('test_runs')
+      .select((eb) => ['failure_category as category', eb.fn.countAll<number>().as('occurrences')])
+      .where('failure_category', 'is not', null)
+      .groupBy('failure_category')
+      .orderBy('occurrences', 'desc');
+    if (project) q = q.where('project', '=', project);
+    const compiled = q.compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      category: string;
+      occurrences: number;
+    }>;
   }
 
   public findTestSiblings(
     testId: string,
     excludeProject: string
   ): Array<{ project: string; fileId: string }> {
-    return this.db
-      .prepare(
-        `SELECT project, fileId FROM tests
-         WHERE testId = ? AND project != ?
-         GROUP BY project, fileId`
-      )
-      .all(testId, excludeProject) as Array<{ project: string; fileId: string }>;
+    const compiled = this.k
+      .selectFrom('tests')
+      .select(['project', 'fileId'])
+      .where('testId', '=', testId)
+      .where('project', '!=', excludeProject)
+      .groupBy(['project', 'fileId'])
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      project: string;
+      fileId: string;
+    }>;
   }
 
   public countRunsWithSignatureSince(
@@ -884,13 +853,16 @@ export class TestDatabase {
     errorSignature: string,
     sinceIso: string
   ): number {
-    const row = this.db
-      .prepare(
-        `SELECT COUNT(*) as count FROM test_runs
-         WHERE testId = ? AND fileId = ? AND project = ?
-           AND error_signature = ? AND createdAt > ?`
-      )
-      .get(testId, fileId, project, errorSignature, sinceIso) as { count: number };
+    const compiled = this.k
+      .selectFrom('test_runs')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .where('error_signature', '=', errorSignature)
+      .where('createdAt', '>', sinceIso)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as { count: number };
     return row.count;
   }
 
@@ -900,6 +872,8 @@ export class TestDatabase {
     project: string;
     reportId: string;
   }> {
+    // NOT EXISTS subquery doesn't compose cleanly into Kysely's builder.
+    // Raw SQL fragment is clearer here.
     return this.db
       .prepare(
         `SELECT DISTINCT t.testId, t.fileId, t.project, tr.reportId

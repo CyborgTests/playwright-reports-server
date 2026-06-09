@@ -1,90 +1,70 @@
-import type Database from 'better-sqlite3';
+import type { ExpressionBuilder, SelectQueryBuilder } from 'kysely';
 import { defaultProjectName } from '../../constants.js';
 import type { ReadResultsInput, ReadResultsOutput, Result } from '../../storage/types.js';
 import { getDatabase } from './db.js';
-
+import { type Database, getKysely, type ResultsRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
-import { buildWhere, paginationClause, type WhereFragment } from './utils.js';
+
+type ResultRow = ResultsRow;
+
 export class ResultDatabase {
   public initialized = false;
+  private readonly k = getKysely();
   private readonly db = getDatabase();
 
-  private readonly insertStmt: Database.Statement<
-    [string, string, string | null, string, string | null, number, string]
-  >;
-  private readonly deleteStmt: Database.Statement<[string]>;
-  private readonly getByIDStmt: Database.Statement<[string]>;
-  private readonly getAllStmt: Database.Statement<[]>;
-  private readonly getByProjectStmt: Database.Statement<[string]>;
-  private readonly searchStmt: Database.Statement<[string, string, string, string]>;
-  private readonly getExpiredIdsStmt: Database.Statement<[string, number]>;
-
-  constructor() {
-    this.insertStmt = this.db.prepare(`
-      INSERT OR REPLACE INTO results (resultID, project, title, createdAt, size, sizeBytes, metadata, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `);
-
-    this.deleteStmt = this.db.prepare('DELETE FROM results WHERE resultID = ?');
-
-    this.getByIDStmt = this.db.prepare('SELECT * FROM results WHERE resultID = ?');
-
-    this.getAllStmt = this.db.prepare('SELECT * FROM results ORDER BY createdAt DESC');
-
-    this.getByProjectStmt = this.db.prepare(
-      'SELECT * FROM results WHERE project = ? ORDER BY createdAt DESC'
-    );
-
-    this.searchStmt = this.db.prepare(`
-      SELECT * FROM results
-      WHERE title LIKE ? OR resultID LIKE ? OR project LIKE ? OR metadata LIKE ?
-      ORDER BY createdAt DESC
-    `);
-
-    this.getExpiredIdsStmt = this.db.prepare(`
-      SELECT resultID FROM results
-      WHERE createdAt < ?
-      ORDER BY createdAt ASC
-      LIMIT ?
-    `);
-  }
-
   public getExpiredIds(cutoffISO: string, limit: number): string[] {
-    const rows = this.getExpiredIdsStmt.all(cutoffISO, limit) as Array<{ resultID: string }>;
+    const compiled = this.k
+      .selectFrom('results')
+      .select('resultID')
+      .where('createdAt', '<', cutoffISO)
+      .orderBy('createdAt', 'asc')
+      .limit(limit)
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      resultID: string;
+    }>;
     return rows.map((row) => row.resultID);
   }
 
   public async init() {
-    if (this.initialized) {
-      return;
-    }
-
+    if (this.initialized) return;
     this.initialized = true;
     console.log(`[result db] initialized (${this.getCount()} results)`);
   }
 
   private insertResult(result: Result): void {
     const { resultID, project, title, createdAt, size, sizeBytes, ...metadata } = result;
-
-    this.insertStmt.run(
-      resultID,
-      project || '',
-      title || null,
-      createdAt,
-      size || null,
-      sizeBytes || 0,
-      JSON.stringify(metadata)
-    );
+    const compiled = this.k
+      .insertInto('results')
+      .values({
+        resultID,
+        project: project || '',
+        title: title || null,
+        createdAt,
+        size: size || null,
+        sizeBytes: sizeBytes || 0,
+        metadata: JSON.stringify(metadata),
+        updatedAt: new Date().toISOString(),
+      })
+      .onConflict((oc) =>
+        oc.column('resultID').doUpdateSet((eb) => ({
+          project: eb.ref('excluded.project'),
+          title: eb.ref('excluded.title'),
+          createdAt: eb.ref('excluded.createdAt'),
+          size: eb.ref('excluded.size'),
+          sizeBytes: eb.ref('excluded.sizeBytes'),
+          metadata: eb.ref('excluded.metadata'),
+          updatedAt: eb.ref('excluded.updatedAt'),
+        }))
+      )
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public onDeleted(resultIds: string[]) {
-    const deleteMany = this.db.transaction((ids: string[]) => {
-      for (const id of ids) {
-        this.deleteStmt.run(id);
-      }
-    });
-
-    deleteMany(resultIds);
+    if (resultIds.length === 0) return;
+    const compiled = this.k.deleteFrom('results').where('resultID', 'in', resultIds).compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public onCreated(result: Result) {
@@ -92,169 +72,145 @@ export class ResultDatabase {
   }
 
   public getAll(): Result[] {
-    const rows = this.getAllStmt.all() as Array<{
-      resultID: string;
-      project: string;
-      title: string | null;
-      createdAt: string;
-      size: string | null;
-      sizeBytes: number;
-      metadata: string;
-    }>;
-
+    const compiled = this.k
+      .selectFrom('results')
+      .selectAll()
+      .orderBy('createdAt', 'desc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ResultRow[];
     return rows.map(this.rowToResult);
   }
 
   public getByID(resultID: string): Result | undefined {
-    const row = this.getByIDStmt.get(resultID) as
-      | {
-          resultID: string;
-          project: string;
-          title: string | null;
-          createdAt: string;
-          size: string | null;
-          sizeBytes: number;
-          metadata: string;
-        }
-      | undefined;
-
+    const compiled = this.k
+      .selectFrom('results')
+      .selectAll()
+      .where('resultID', '=', resultID)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as ResultRow | undefined;
     return row ? this.rowToResult(row) : undefined;
   }
 
   public getByIDs(resultIDs: string[]): Result[] {
     if (resultIDs.length === 0) return [];
-    const placeholders = resultIDs.map(() => '?').join(',');
-    const rows = this.db
-      .prepare(`SELECT * FROM results WHERE resultID IN (${placeholders})`)
-      .all(...resultIDs) as Array<{
-      resultID: string;
-      project: string;
-      title: string | null;
-      createdAt: string;
-      size: string | null;
-      sizeBytes: number;
-      metadata: string;
-    }>;
-
+    const compiled = this.k
+      .selectFrom('results')
+      .selectAll()
+      .where('resultID', 'in', resultIDs)
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ResultRow[];
     return rows.map((row) => this.rowToResult(row));
   }
 
   public getByProject(project: string): Result[] {
-    const rows = this.getByProjectStmt.all(project) as Array<{
-      resultID: string;
-      project: string;
-      title: string | null;
-      createdAt: string;
-      size: string | null;
-      sizeBytes: number;
-      metadata: string;
-    }>;
-
+    const compiled = this.k
+      .selectFrom('results')
+      .selectAll()
+      .where('project', '=', project)
+      .orderBy('createdAt', 'desc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ResultRow[];
     return rows.map(this.rowToResult);
   }
 
   public search(query: string): Result[] {
-    const searchPattern = `%${query}%`;
-    const rows = this.searchStmt.all(
-      searchPattern,
-      searchPattern,
-      searchPattern,
-      searchPattern
-    ) as Array<{
-      resultID: string;
-      project: string;
-      title: string | null;
-      createdAt: string;
-      size: string | null;
-      sizeBytes: number;
-      metadata: string;
-    }>;
-
+    const pattern = `%${query}%`;
+    const compiled = this.k
+      .selectFrom('results')
+      .selectAll()
+      .where((eb) =>
+        eb.or([
+          eb('title', 'like', pattern),
+          eb('resultID', 'like', pattern),
+          eb('project', 'like', pattern),
+          eb('metadata', 'like', pattern),
+        ])
+      )
+      .orderBy('createdAt', 'desc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ResultRow[];
     return rows.map(this.rowToResult);
   }
 
   public getCount(): number {
-    const result = this.db.prepare('SELECT COUNT(*) as count FROM results').get() as {
-      count: number;
-    };
-
-    return result.count;
+    const compiled = this.k
+      .selectFrom('results')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as { count: number };
+    return row.count;
   }
 
   public clear(): void {
-    this.db.prepare('DELETE FROM results').run();
+    const compiled = this.k.deleteFrom('results').compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public query(input?: ReadResultsInput): ReadResultsOutput {
-    const tagFragments =
-      input?.tags?.map((tag): WhereFragment => {
-        const [key, value] = tag.split(':').map((part) => part.trim());
-        return { sql: 'metadata LIKE ?', params: [`%"${key}":"${value}"%`] };
-      }) ?? [];
-
-    const search = input?.search?.trim();
-    const searchTerm = search ? `%${search.toLowerCase()}%` : null;
-
-    const { sql: whereSql, params: whereParams } = buildWhere([
-      input?.project && input.project !== defaultProjectName
-        ? { sql: 'project = ?', params: [input.project] }
-        : null,
-      input?.testRun
-        ? { sql: 'metadata LIKE ?', params: [`%"testRun":"${input.testRun}"%`] }
-        : null,
-      ...tagFragments,
-      searchTerm
-        ? {
-            sql: '(LOWER(title) LIKE ? OR LOWER(resultID) LIKE ? OR LOWER(project) LIKE ? OR LOWER(metadata) LIKE ?)',
-            params: [searchTerm, searchTerm, searchTerm, searchTerm],
-          }
-        : null,
-      input?.from ? { sql: 'createdAt >= ?', params: [input.from] } : null,
-      input?.to ? { sql: 'createdAt < ?', params: [input.to] } : null,
-      input?.usage === 'used'
-        ? { sql: 'resultID IN (SELECT DISTINCT resultId FROM report_results)', params: [] }
-        : input?.usage === 'unused'
-          ? { sql: 'resultID NOT IN (SELECT DISTINCT resultId FROM report_results)', params: [] }
-          : null,
-    ]);
-
-    const baseQuery = `SELECT * FROM results ${whereSql} ORDER BY createdAt DESC`.trim();
-    const countQuery = `SELECT COUNT(*) as count FROM results ${whereSql}`.trim();
-
-    const countResult = this.db.prepare(countQuery).get(...whereParams) as { count: number };
-    const total = countResult.count;
-
-    const { sql: pageSql, params: pageParams } = paginationClause(input?.pagination);
-    const finalQuery = pageSql ? `${baseQuery} ${pageSql}` : baseQuery;
-    const finalParams = [...whereParams, ...pageParams];
-
-    const rows = this.db.prepare(finalQuery).all(...finalParams) as Array<{
-      resultID: string;
-      project: string;
-      title: string | null;
-      createdAt: string;
-      size: string | null;
-      sizeBytes: number;
-      metadata: string;
-    }>;
-
-    return {
-      results: rows.map((row) => this.rowToResult(row)),
-      total,
+    const applyWhere = <O>(
+      qb: SelectQueryBuilder<Database, 'results', O>
+    ): SelectQueryBuilder<Database, 'results', O> => {
+      let q = qb;
+      if (input?.project && input.project !== defaultProjectName) {
+        q = q.where('project', '=', input.project);
+      }
+      if (input?.testRun) {
+        q = q.where('metadata', 'like', `%"testRun":"${input.testRun}"%`);
+      }
+      if (input?.tags?.length) {
+        for (const tag of input.tags) {
+          const [key, value] = tag.split(':').map((part) => part.trim());
+          q = q.where('metadata', 'like', `%"${key}":"${value}"%`);
+        }
+      }
+      const search = input?.search?.trim();
+      if (search) {
+        const pattern = `%${search.toLowerCase()}%`;
+        q = q.where((eb) =>
+          eb.or([
+            eb(eb.fn('LOWER', ['title']), 'like', pattern),
+            eb(eb.fn('LOWER', ['resultID']), 'like', pattern),
+            eb(eb.fn('LOWER', ['project']), 'like', pattern),
+            eb(eb.fn('LOWER', ['metadata']), 'like', pattern),
+          ])
+        );
+      }
+      if (input?.from) q = q.where('createdAt', '>=', input.from);
+      if (input?.to) q = q.where('createdAt', '<', input.to);
+      if (input?.usage === 'used') {
+        q = q.where('resultID', 'in', (eb: ExpressionBuilder<Database, 'results'>) =>
+          eb.selectFrom('report_results').select('resultId').distinct()
+        );
+      } else if (input?.usage === 'unused') {
+        q = q.where('resultID', 'not in', (eb: ExpressionBuilder<Database, 'results'>) =>
+          eb.selectFrom('report_results').select('resultId').distinct()
+        );
+      }
+      return q;
     };
+
+    const countCompiled = applyWhere(
+      this.k.selectFrom('results').select((eb) => eb.fn.countAll<number>().as('count'))
+    ).compile();
+    const total = (
+      this.db.prepare(countCompiled.sql).get(...countCompiled.parameters) as { count: number }
+    ).count;
+
+    let listQuery = applyWhere(
+      this.k.selectFrom('results').selectAll().orderBy('createdAt', 'desc')
+    );
+    if (input?.pagination?.limit !== undefined) {
+      listQuery = listQuery.limit(Math.max(0, Math.floor(input.pagination.limit)));
+      listQuery = listQuery.offset(Math.max(0, Math.floor(input.pagination.offset ?? 0)));
+    }
+    const listCompiled = listQuery.compile();
+    const rows = this.db.prepare(listCompiled.sql).all(...listCompiled.parameters) as ResultRow[];
+
+    return { results: rows.map((row) => this.rowToResult(row)), total };
   }
 
-  private rowToResult(row: {
-    resultID: string;
-    project: string;
-    title: string | null;
-    createdAt: string;
-    size: string | null;
-    sizeBytes: number;
-    metadata: string;
-  }): Result {
+  private rowToResult(row: ResultRow): Result {
     const metadata = JSON.parse(row.metadata || '{}');
-
     return {
       resultID: row.resultID,
       project: row.project,

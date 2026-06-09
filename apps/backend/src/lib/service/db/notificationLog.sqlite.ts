@@ -1,26 +1,8 @@
 import type { NotificationLogEntry } from '@playwright-reports/shared';
-import type Database from 'better-sqlite3';
 import { getDatabase } from './db.js';
+import { getKysely, type NotificationLogRow } from './kysely.js';
 
 import { singletonOf } from './singleton.js';
-import { buildWhere, paginationClause } from './utils.js';
-
-interface DbRow {
-  id: string;
-  channel_id: string;
-  channel_type: string;
-  rule_id: string;
-  rule_kind: string;
-  event: string;
-  condition: string;
-  status: string;
-  skip_reason: string | null;
-  http_status: number | null;
-  error: string | null;
-  attempt: number;
-  source: string;
-  created_at: number;
-}
 
 export interface NotificationLogQueryFilters {
   channelId?: string;
@@ -31,133 +13,109 @@ export interface NotificationLogQueryFilters {
 }
 
 export class NotificationLogDatabase {
+  private readonly k = getKysely();
   private readonly db = getDatabase();
-  private readonly insertStmt: Database.Statement<
-    [
-      string,
-      string,
-      string,
-      string,
-      string,
-      string,
-      string,
-      string,
-      string | null,
-      number | null,
-      string | null,
-      number,
-      string,
-      number,
-    ]
-  >;
-  private readonly countLast24hStmt: Database.Statement<[number]>;
-  private readonly deleteOlderThanStmt: Database.Statement<[number]>;
-  private readonly deleteByIdStmt: Database.Statement<[string]>;
-
-  constructor() {
-    this.insertStmt = this.db.prepare(`
-      INSERT INTO notification_log
-        (id, channel_id, channel_type, rule_id, rule_kind, event, condition,
-         status, skip_reason, http_status, error, attempt, source, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    this.countLast24hStmt = this.db.prepare(`
-      SELECT status, COUNT(*) AS count
-        FROM notification_log
-        WHERE created_at >= ? AND source = 'live'
-        GROUP BY status
-    `);
-    this.deleteOlderThanStmt = this.db.prepare(`
-      DELETE FROM notification_log WHERE created_at < ?
-    `);
-    this.deleteByIdStmt = this.db.prepare(`DELETE FROM notification_log WHERE id = ?`);
-  }
 
   public insert(entry: NotificationLogEntry): void {
-    this.insertStmt.run(
-      entry.id,
-      entry.channelId,
-      entry.channelType,
-      entry.ruleId,
-      entry.ruleKind,
-      entry.event,
-      entry.condition,
-      entry.status,
-      entry.skipReason ?? null,
-      entry.httpStatus ?? null,
-      entry.error ?? null,
-      entry.attempt,
-      entry.source,
-      entry.createdAt
-    );
+    const compiled = this.k
+      .insertInto('notification_log')
+      .values({
+        id: entry.id,
+        channel_id: entry.channelId,
+        channel_type: entry.channelType,
+        rule_id: entry.ruleId,
+        rule_kind: entry.ruleKind,
+        event: entry.event,
+        condition: entry.condition,
+        status: entry.status,
+        skip_reason: entry.skipReason ?? null,
+        http_status: entry.httpStatus ?? null,
+        error: entry.error ?? null,
+        attempt: entry.attempt,
+        source: entry.source,
+        created_at: entry.createdAt,
+      })
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public list(filters: NotificationLogQueryFilters): {
     rows: NotificationLogEntry[];
     total: number;
   } {
-    const { sql: whereSql, params: whereParams } = buildWhere([
-      filters.channelId ? { sql: 'channel_id = ?', params: [filters.channelId] } : null,
-      filters.status ? { sql: 'status = ?', params: [filters.status] } : null,
-      filters.source ? { sql: 'source = ?', params: [filters.source] } : null,
-    ]);
+    let countQuery = this.k
+      .selectFrom('notification_log')
+      .select((eb) => eb.fn.countAll<number>().as('total'));
+    if (filters.channelId) countQuery = countQuery.where('channel_id', '=', filters.channelId);
+    if (filters.status) countQuery = countQuery.where('status', '=', filters.status);
+    if (filters.source) countQuery = countQuery.where('source', '=', filters.source);
+    const countCompiled = countQuery.compile();
+    const totalRow = this.db.prepare(countCompiled.sql).get(...countCompiled.parameters) as {
+      total: number;
+    };
 
-    const totalRow = this.db
-      .prepare(`SELECT COUNT(*) AS total FROM notification_log ${whereSql}`.trim())
-      .get(...whereParams) as { total: number };
-
-    const { sql: pageSql, params: pageParams } = paginationClause({
-      limit: filters.limit,
-      offset: filters.offset,
-    });
-
+    let listQuery = this.k
+      .selectFrom('notification_log')
+      .selectAll()
+      .orderBy('created_at', 'desc')
+      .limit(filters.limit)
+      .offset(filters.offset);
+    if (filters.channelId) listQuery = listQuery.where('channel_id', '=', filters.channelId);
+    if (filters.status) listQuery = listQuery.where('status', '=', filters.status);
+    if (filters.source) listQuery = listQuery.where('source', '=', filters.source);
+    const listCompiled = listQuery.compile();
     const rows = this.db
-      .prepare(
-        `SELECT * FROM notification_log ${whereSql}
-         ORDER BY created_at DESC
-         ${pageSql}`
-      )
-      .all(...whereParams, ...pageParams) as DbRow[];
+      .prepare(listCompiled.sql)
+      .all(...listCompiled.parameters) as NotificationLogRow[];
 
     return { rows: rows.map(rowToEntry), total: totalRow.total };
   }
 
   public last24h(): { success: number; failed: number; skipped: number } {
     const since = Date.now() - 24 * 60 * 60 * 1000;
-    const out = { success: 0, failed: 0, skipped: 0 };
-    const rows = this.countLast24hStmt.all(since) as Array<{
+    const compiled = this.k
+      .selectFrom('notification_log')
+      .select((eb) => ['status', eb.fn.countAll<number>().as('count')])
+      .where('created_at', '>=', since)
+      .where('source', '=', 'live')
+      .groupBy('status')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
       status: 'success' | 'failed' | 'skipped';
       count: number;
     }>;
+
+    const out = { success: 0, failed: 0, skipped: 0 };
     for (const row of rows) {
-      out[row.status] = row.count;
+      if (row.status in out) out[row.status] = row.count;
     }
     return out;
   }
 
   public pruneOlderThan(cutoffMs: number): number {
-    const result = this.deleteOlderThanStmt.run(cutoffMs);
-    return result.changes;
+    const compiled = this.k
+      .deleteFrom('notification_log')
+      .where('created_at', '<', cutoffMs)
+      .compile();
+    return this.db.prepare(compiled.sql).run(...compiled.parameters).changes;
   }
 
   public deleteById(id: string): number {
-    return this.deleteByIdStmt.run(id).changes;
+    const compiled = this.k.deleteFrom('notification_log').where('id', '=', id).compile();
+    return this.db.prepare(compiled.sql).run(...compiled.parameters).changes;
   }
 
   public deleteByIds(ids: readonly string[]): number {
     if (ids.length === 0) return 0;
-    let total = 0;
-    const tx = this.db.transaction((batch: readonly string[]) => {
-      for (const id of batch) {
-        total += this.deleteByIdStmt.run(id).changes;
-      }
-    });
-    tx(ids);
-    return total;
+    const compiled = this.k
+      .deleteFrom('notification_log')
+      .where('id', 'in', ids as string[])
+      .compile();
+    return this.db.prepare(compiled.sql).run(...compiled.parameters).changes;
   }
 }
 
-function rowToEntry(row: DbRow): NotificationLogEntry {
+function rowToEntry(row: NotificationLogRow): NotificationLogEntry {
   return {
     id: row.id,
     channelId: row.channel_id,

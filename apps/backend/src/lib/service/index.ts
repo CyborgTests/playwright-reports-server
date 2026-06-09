@@ -180,7 +180,6 @@ class Service {
     }
 
     reportDb.onDeleted(reportIDs);
-    reportResultsDb.deleteByReportIds(reportIDs);
     invalidateFailureClustersCache();
   }
 
@@ -223,7 +222,6 @@ class Service {
     }
 
     resultDb.onDeleted(resultIDs);
-    reportResultsDb.deleteByResultIds(resultIDs);
   }
 
   public async getPresignedUrl(fileName: string): Promise<string | undefined> {

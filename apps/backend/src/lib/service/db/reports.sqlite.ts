@@ -1,22 +1,13 @@
 import type { ReportStats } from '@playwright-reports/shared';
-import type Database from 'better-sqlite3';
+import { type ExpressionBuilder, type SelectQueryBuilder, sql } from 'kysely';
 import { defaultProjectName } from '../../constants.js';
 import type { ReadReportsInput, ReadReportsOutput, ReportHistory } from '../../storage/types.js';
 import { withError } from '../../withError.js';
 import { testManagementService } from '../testManagement.js';
 import { getDatabase } from './db.js';
-import { failureSummaryDb } from './failureSummary.sqlite.js';
-import { llmTasksDb } from './llmTasks.sqlite.js';
+import { type Database, getKysely, type ReportsRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
-import { testAnalysisDb } from './testAnalysis.sqlite.js';
-import { testDb } from './tests.sqlite.js';
-import {
-  buildWhere,
-  chunk,
-  paginationClause,
-  parseJsonColumn,
-  type WhereFragment,
-} from './utils.js';
+import { chunk, parseJsonColumn } from './utils.js';
 
 function computePassRateFromStats(stats: ReportStats | undefined): number | null {
   if (!stats) return null;
@@ -42,92 +33,42 @@ export interface ReportHistoryLite {
   stats?: ReportStats;
 }
 
-type ReportRow = {
-  reportID: string;
-  project: string;
-  title: string | null;
-  displayNumber: number | null;
-  createdAt: string;
-  reportUrl: string;
-  size: string | null;
-  sizeBytes: number;
-  stats: string | null;
-  metadata: string;
-  updatedAt?: string | null;
-};
+type ReportRow = ReportsRow;
+
+type ReportSummaryRow = Pick<
+  ReportRow,
+  'reportID' | 'project' | 'title' | 'displayNumber' | 'createdAt' | 'reportUrl'
+>;
 
 // Cache parsed metadata/stats keyed by (reportID, updatedAt) so list endpoints
-// don't re-run JSON.parse on every row of every request. Writes bump
-// updatedAt via the insert statement, so stale entries fall off the keyspace.
+// don't re-run JSON.parse on every row of every request.
 const PARSE_CACHE_MAX = 5000;
 const parseCache = new Map<string, ReportHistory>();
-function parseCacheKey(row: ReportRow): string {
+function parseCacheKey(row: Pick<ReportRow, 'reportID' | 'updatedAt'>): string {
   return `${row.reportID}|${row.updatedAt ?? ''}`;
 }
 
 export class ReportDatabase {
   public initialized = false;
+  private readonly k = getKysely();
   private readonly db = getDatabase();
 
-  private readonly insertStmt: Database.Statement<
-    [
-      string,
-      string,
-      string | null,
-      number | null,
-      string,
-      string,
-      string | null,
-      number,
-      string | null,
-      string,
-      number | null,
-    ]
-  >;
-  private readonly getByIDStmt: Database.Statement<[string]>;
-  private readonly getAllStmt: Database.Statement<[]>;
-  private readonly getByProjectStmt: Database.Statement<[string]>;
-  private readonly searchStmt: Database.Statement<[string, string, string, string]>;
-  private readonly getExpiredIdsStmt: Database.Statement<[string, number]>;
-
-  constructor() {
-    this.insertStmt = this.db.prepare(`
-      INSERT OR REPLACE INTO reports (reportID, project, title, displayNumber, createdAt, reportUrl, size, sizeBytes, stats, metadata, passRate, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `);
-
-    this.getByIDStmt = this.db.prepare('SELECT * FROM reports WHERE reportID = ?');
-
-    this.getAllStmt = this.db.prepare('SELECT * FROM reports ORDER BY createdAt DESC');
-
-    this.getByProjectStmt = this.db.prepare(
-      'SELECT * FROM reports WHERE project = ? ORDER BY createdAt DESC'
-    );
-
-    this.searchStmt = this.db.prepare(`
-      SELECT * FROM reports
-      WHERE title LIKE ? OR reportID LIKE ? OR project LIKE ? OR metadata LIKE ?
-      ORDER BY createdAt DESC
-    `);
-
-    this.getExpiredIdsStmt = this.db.prepare(`
-      SELECT reportID FROM reports
-      WHERE createdAt < ?
-      ORDER BY createdAt ASC
-      LIMIT ?
-    `);
-  }
-
   public getExpiredIds(cutoffISO: string, limit: number): string[] {
-    const rows = this.getExpiredIdsStmt.all(cutoffISO, limit) as Array<{ reportID: string }>;
+    const compiled = this.k
+      .selectFrom('reports')
+      .select('reportID')
+      .where('createdAt', '<', cutoffISO)
+      .orderBy('createdAt', 'asc')
+      .limit(limit)
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      reportID: string;
+    }>;
     return rows.map((row) => row.reportID);
   }
 
   public async init() {
-    if (this.initialized) {
-      return;
-    }
-
+    if (this.initialized) return;
     this.initialized = true;
     console.log(`[report db] initialized (${this.getCount()} reports)`);
   }
@@ -150,10 +91,14 @@ export class ReportDatabase {
 
       console.log(`[report db] Found ${reports.length} reports to parse`);
 
+      const distinctCompiled = this.k
+        .selectFrom('test_runs')
+        .select('reportId')
+        .distinct()
+        .compile();
       const existingReportIds = this.db
-        .prepare('SELECT DISTINCT reportId FROM test_runs')
-        .all() as Array<{ reportId: string }>;
-
+        .prepare(distinctCompiled.sql)
+        .all(...distinctCompiled.parameters) as Array<{ reportId: string }>;
       const existingReportIdSet = new Set(existingReportIds.map((row) => row.reportId));
 
       const unprocessedReports = reports.filter(
@@ -213,19 +158,40 @@ export class ReportDatabase {
       createdAtStr = String(createdAt);
     }
 
-    this.insertStmt.run(
-      reportID,
-      project || '',
-      title || null,
-      displayNumber || null,
-      createdAtStr,
-      reportUrl,
-      size || null,
-      sizeBytes || 0,
-      stats ? JSON.stringify(stats) : null,
-      JSON.stringify(metadata),
-      computePassRateFromStats(stats)
-    );
+    // kysely doesn't model INSERT OR REPLACE well; use ON CONFLICT REPLACE shape.
+    const compiled = this.k
+      .insertInto('reports')
+      .values({
+        reportID,
+        project: project || '',
+        title: title || null,
+        displayNumber: displayNumber || null,
+        createdAt: createdAtStr,
+        reportUrl,
+        size: size || null,
+        sizeBytes: sizeBytes || 0,
+        stats: stats ? JSON.stringify(stats) : null,
+        metadata: JSON.stringify(metadata),
+        passRate: computePassRateFromStats(stats),
+        updatedAt: undefined,
+      })
+      .onConflict((oc) =>
+        oc.column('reportID').doUpdateSet((eb) => ({
+          project: eb.ref('excluded.project'),
+          title: eb.ref('excluded.title'),
+          displayNumber: eb.ref('excluded.displayNumber'),
+          createdAt: eb.ref('excluded.createdAt'),
+          reportUrl: eb.ref('excluded.reportUrl'),
+          size: eb.ref('excluded.size'),
+          sizeBytes: eb.ref('excluded.sizeBytes'),
+          stats: eb.ref('excluded.stats'),
+          metadata: eb.ref('excluded.metadata'),
+          passRate: eb.ref('excluded.passRate'),
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        }))
+      )
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public updateMetadata(
@@ -243,17 +209,20 @@ export class ReportDatabase {
 
     const rows = new Map<string, ReportRow>();
     for (const id of reportIds) {
-      const row = this.getByIDStmt.get(id) as ReportRow | undefined;
+      const compiled = this.k
+        .selectFrom('reports')
+        .selectAll()
+        .where('reportID', '=', id)
+        .compile();
+      const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+        | ReportRow
+        | undefined;
       if (row) rows.set(id, row);
     }
     const missing = reportIds.filter((id) => !rows.has(id));
     if (missing.length > 0) {
       return { updated: 0, missing };
     }
-
-    const updateStmt = this.db.prepare(
-      'UPDATE reports SET project = ?, metadata = ?, updatedAt = CURRENT_TIMESTAMP WHERE reportID = ?'
-    );
 
     const applyAll = this.db.transaction(() => {
       for (const [id, row] of rows) {
@@ -271,7 +240,16 @@ export class ReportDatabase {
         }
 
         const nextProject = setProject ? (patch.project as string) : row.project;
-        updateStmt.run(nextProject, JSON.stringify(metadata), id);
+        const compiled = this.k
+          .updateTable('reports')
+          .set({
+            project: nextProject,
+            metadata: JSON.stringify(metadata),
+            updatedAt: sql`CURRENT_TIMESTAMP` as never,
+          })
+          .where('reportID', '=', id)
+          .compile();
+        this.db.prepare(compiled.sql).run(...compiled.parameters);
       }
     });
     applyAll();
@@ -289,13 +267,9 @@ export class ReportDatabase {
     if (reportIds.length === 0) return;
 
     const CHUNK_SIZE = 500;
-    const cascadeDelete = this.db.transaction((ids: string[]) => {
-      llmTasksDb.deleteByReportIds(ids);
-      testAnalysisDb.deleteByReportIds(ids);
-      failureSummaryDb.deleteSummariesByReportIds(ids);
-      testDb.deleteTestRunsByReportIds(ids);
-      const placeholders = ids.map(() => '?').join(',');
-      this.db.prepare(`DELETE FROM reports WHERE reportID IN (${placeholders})`).run(...ids);
+    const deleteBatch = this.db.transaction((ids: string[]) => {
+      const compiled = this.k.deleteFrom('reports').where('reportID', 'in', ids).compile();
+      this.db.prepare(compiled.sql).run(...compiled.parameters);
       for (const id of ids) {
         for (const key of parseCache.keys()) {
           if (key.startsWith(`${id}|`)) parseCache.delete(key);
@@ -304,7 +278,7 @@ export class ReportDatabase {
     });
 
     for (const batch of chunk(reportIds, CHUNK_SIZE)) {
-      cascadeDelete(batch);
+      deleteBatch(batch);
     }
   }
 
@@ -313,181 +287,121 @@ export class ReportDatabase {
       ...report,
       displayNumber: report.displayNumber ?? this.getNextDisplayNumber(),
     };
-
     this.insertReport(reportWithDisplayNumber);
   }
 
   public getAll(): ReportHistory[] {
-    const rows = this.getAllStmt.all() as Array<{
-      reportID: string;
-      project: string;
-      title: string | null;
-      displayNumber: number | null;
-      createdAt: string;
-      reportUrl: string;
-      size: string | null;
-      sizeBytes: number;
-      stats: string | null;
-      metadata: string;
-    }>;
-
-    return rows.map(this.rowToReport);
+    const compiled = this.k
+      .selectFrom('reports')
+      .selectAll()
+      .orderBy('createdAt', 'desc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportRow[];
+    return rows.map((row) => this.rowToReport(row));
   }
 
   public getNewestReportBefore(project: string, beforeISO: string): ReportHistory | undefined {
-    const row = this.db
-      .prepare(
-        `SELECT * FROM reports
-         WHERE project = ? AND createdAt < ?
-         ORDER BY createdAt DESC
-         LIMIT 1`
-      )
-      .get(project, beforeISO) as ReportRow | undefined;
+    const compiled = this.k
+      .selectFrom('reports')
+      .selectAll()
+      .where('project', '=', project)
+      .where('createdAt', '<', beforeISO)
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as ReportRow | undefined;
     return row ? this.rowToReport(row) : undefined;
   }
 
   public getPreviousReportId(reportID: string): string | null {
-    const row = this.db
-      .prepare(
-        `SELECT prev.reportID
-         FROM reports cur, reports prev
-         WHERE cur.reportID = ?
-           AND prev.project = cur.project
-           AND prev.createdAt < cur.createdAt
-         ORDER BY prev.createdAt DESC
-         LIMIT 1`
-      )
-      .get(reportID) as { reportID: string } | undefined;
-
+    // self-join to find the prior report in the same project
+    const compiled = this.k
+      .selectFrom('reports as cur')
+      .innerJoin('reports as prev', 'prev.project', 'cur.project')
+      .select('prev.reportID')
+      .where('cur.reportID', '=', reportID)
+      .whereRef('prev.createdAt', '<', 'cur.createdAt')
+      .orderBy('prev.createdAt', 'desc')
+      .limit(1)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | { reportID: string }
+      | undefined;
     return row?.reportID ?? null;
   }
 
   public getByID(reportID: string): ReportHistory | undefined {
-    const row = this.getByIDStmt.get(reportID) as
-      | {
-          reportID: string;
-          project: string;
-          title: string | null;
-          displayNumber: number | null;
-          createdAt: string;
-          reportUrl: string;
-          size: string | null;
-          sizeBytes: number;
-          stats: string | null;
-          metadata: string;
-        }
-      | undefined;
-
+    const compiled = this.k
+      .selectFrom('reports')
+      .selectAll()
+      .where('reportID', '=', reportID)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as ReportRow | undefined;
     return row ? this.rowToReport(row) : undefined;
   }
 
   public getByProject(project?: string, opts?: { from?: string; to?: string }): ReportHistory[] {
     const hasProject = project && project !== defaultProjectName;
-    const hasFrom = !!opts?.from;
-    const hasTo = !!opts?.to;
-
-    if (!hasFrom && !hasTo) {
-      const stmt = hasProject ? this.getByProjectStmt.all(project ?? '') : this.getAllStmt.all();
-      return (stmt as ReportRow[]).map(this.rowToReport);
-    }
-
-    const { sql: whereSql, params } = buildWhere([
-      hasProject ? { sql: 'project = ?', params: [project ?? ''] } : null,
-      hasFrom ? { sql: 'createdAt >= ?', params: [opts?.from ?? ''] } : null,
-      hasTo ? { sql: 'createdAt < ?', params: [opts?.to ?? ''] } : null,
-    ]);
-
-    const sql = `SELECT * FROM reports ${whereSql} ORDER BY createdAt DESC`;
-    const rows = this.db.prepare(sql).all(...params) as ReportRow[];
-    return rows.map(this.rowToReport);
+    let q = this.k.selectFrom('reports').selectAll().orderBy('createdAt', 'desc');
+    if (hasProject) q = q.where('project', '=', project ?? '');
+    if (opts?.from) q = q.where('createdAt', '>=', opts.from);
+    if (opts?.to) q = q.where('createdAt', '<', opts.to);
+    const compiled = q.compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportRow[];
+    return rows.map((row) => this.rowToReport(row));
   }
 
   public search(query: string): ReportHistory[] {
-    const searchPattern = `%${query}%`;
-    const rows = this.searchStmt.all(
-      searchPattern,
-      searchPattern,
-      searchPattern,
-      searchPattern
-    ) as Array<{
-      reportID: string;
-      project: string;
-      title: string | null;
-      displayNumber: number | null;
-      createdAt: string;
-      reportUrl: string;
-      size: string | null;
-      sizeBytes: number;
-      stats: string | null;
-      metadata: string;
-    }>;
-
-    return rows.map(this.rowToReport);
+    const pattern = `%${query}%`;
+    const compiled = this.k
+      .selectFrom('reports')
+      .selectAll()
+      .where((eb) =>
+        eb.or([
+          eb('title', 'like', pattern),
+          eb('reportID', 'like', pattern),
+          eb('project', 'like', pattern),
+          eb('metadata', 'like', pattern),
+        ])
+      )
+      .orderBy('createdAt', 'desc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportRow[];
+    return rows.map((row) => this.rowToReport(row));
   }
 
   public getLatestByProject(project?: string, limit = 10): ReportHistory[] {
-    let rows: Array<{
-      reportID: string;
-      project: string;
-      title: string | null;
-      displayNumber: number | null;
-      createdAt: string;
-      reportUrl: string;
-      size: string | null;
-      sizeBytes: number;
-      stats: string | null;
-      metadata: string;
-    }>;
-
-    if (project && project !== 'all') {
-      rows = this.db
-        .prepare('SELECT * FROM reports WHERE project = ? ORDER BY createdAt DESC LIMIT ?')
-        .all(project, limit) as typeof rows;
-    } else {
-      rows = this.db
-        .prepare('SELECT * FROM reports ORDER BY createdAt DESC LIMIT ?')
-        .all(limit) as typeof rows;
-    }
-
-    return rows.map(this.rowToReport);
+    let q = this.k.selectFrom('reports').selectAll().orderBy('createdAt', 'desc').limit(limit);
+    if (project && project !== 'all') q = q.where('project', '=', project);
+    const compiled = q.compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportRow[];
+    return rows.map((row) => this.rowToReport(row));
   }
 
-  /** Latest reports strictly before `beforeCreatedAt` (ISO). Used by the
-   *  project-summary trend signal to fetch the prior window. */
   public getLatestByProjectBefore(
     project: string | undefined,
     beforeCreatedAt: string,
     limit: number
   ): ReportHistory[] {
-    type Row = {
-      reportID: string;
-      project: string;
-      title: string | null;
-      displayNumber: number | null;
-      createdAt: string;
-      reportUrl: string;
-      size: string | null;
-      sizeBytes: number;
-      stats: string | null;
-      metadata: string;
-    };
-    const rows =
-      project && project !== 'all'
-        ? (this.db
-            .prepare(
-              'SELECT * FROM reports WHERE project = ? AND createdAt < ? ORDER BY createdAt DESC LIMIT ?'
-            )
-            .all(project, beforeCreatedAt, limit) as Row[])
-        : (this.db
-            .prepare('SELECT * FROM reports WHERE createdAt < ? ORDER BY createdAt DESC LIMIT ?')
-            .all(beforeCreatedAt, limit) as Row[]);
-    return rows.map(this.rowToReport);
+    let q = this.k
+      .selectFrom('reports')
+      .selectAll()
+      .where('createdAt', '<', beforeCreatedAt)
+      .orderBy('createdAt', 'desc')
+      .limit(limit);
+    if (project && project !== 'all') q = q.where('project', '=', project);
+    const compiled = q.compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportRow[];
+    return rows.map((row) => this.rowToReport(row));
   }
 
   public getLatestByProjects(projects: string[], limit: number): Map<string, ReportHistoryLite[]> {
     const out = new Map<string, ReportHistoryLite[]>();
     if (projects.length === 0 || limit <= 0) return out;
 
+    // ROW_NUMBER() OVER PARTITION BY in a subquery — Kysely can express this
+    // via .with()/window functions, but the typed builder gets verbose. Raw sql``
+    // here keeps the query readable while still going through Kysely.
     const placeholders = projects.map(() => '?').join(',');
     const rows = this.db
       .prepare(
@@ -522,16 +436,15 @@ export class ReportDatabase {
   }
 
   public getCount(): number {
-    const result = this.db.prepare('SELECT COUNT(*) as count FROM reports').get() as {
-      count: number;
-    };
-
-    return result.count;
+    const compiled = this.k
+      .selectFrom('reports')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as { count: number };
+    return row.count;
   }
 
-  /** SQL-side aggregator for analytics windows. Returns only the numbers we
-   *  need for trend computation and avoids hydrating every report row,
-   *  JSON-parsing its metadata. */
+  // SQL-side aggregator for analytics. SUM-of-json-extract for the stats columns
   public aggregateForAnalytics(
     project?: string,
     from?: string,
@@ -546,30 +459,46 @@ export class ReportDatabase {
     totalExecuted: number;
     sumDuration: number;
   } {
-    const { sql: whereSql, params } = buildWhere([
-      project && project !== defaultProjectName ? { sql: 'project = ?', params: [project] } : null,
-      from ? { sql: 'createdAt >= ?', params: [from] } : null,
-      to ? { sql: 'createdAt < ?', params: [to] } : null,
-      options.failedOnly
-        ? {
-            sql: "(CAST(json_extract(stats, '$.unexpected') AS REAL) > 0 OR CAST(json_extract(stats, '$.flaky') AS REAL) > 0)",
-            params: [],
-          }
-        : null,
-    ]);
+    const applyWhere = <O>(
+      qb: SelectQueryBuilder<Database, 'reports', O>
+    ): SelectQueryBuilder<Database, 'reports', O> => {
+      let q = qb;
+      if (project && project !== defaultProjectName) q = q.where('project', '=', project);
+      if (from) q = q.where('createdAt', '>=', from);
+      if (to) q = q.where('createdAt', '<', to);
+      if (options.failedOnly) {
+        q = q.where(
+          sql<boolean>`(CAST(json_extract(stats, '$.unexpected') AS REAL) > 0
+            OR CAST(json_extract(stats, '$.flaky') AS REAL) > 0)`
+        );
+      }
+      return q;
+    };
 
-    const row = this.db
-      .prepare(
-        `SELECT
-           COUNT(*) AS count,
-           COALESCE(SUM(CAST(json_extract(stats, '$.total') AS REAL)), 0) AS totalTests,
-           COALESCE(SUM(CAST(json_extract(stats, '$.expected') AS REAL)), 0) AS totalPassed,
-           COALESCE(SUM(CAST(json_extract(stats, '$.unexpected') AS REAL)), 0) AS totalFailed,
-           COALESCE(SUM(CAST(json_extract(stats, '$.flaky') AS REAL)), 0) AS totalFlaky,
-           COALESCE(SUM(CAST(json_extract(metadata, '$.duration') AS REAL)), 0) AS sumDuration
-         FROM reports ${whereSql}`.trim()
-      )
-      .get(...params) as {
+    const compiled = applyWhere(
+      this.k
+        .selectFrom('reports')
+        .select((eb) => [
+          eb.fn.countAll<number>().as('count'),
+          sql<number>`COALESCE(SUM(CAST(json_extract(stats, '$.total') AS REAL)), 0)`.as(
+            'totalTests'
+          ),
+          sql<number>`COALESCE(SUM(CAST(json_extract(stats, '$.expected') AS REAL)), 0)`.as(
+            'totalPassed'
+          ),
+          sql<number>`COALESCE(SUM(CAST(json_extract(stats, '$.unexpected') AS REAL)), 0)`.as(
+            'totalFailed'
+          ),
+          sql<number>`COALESCE(SUM(CAST(json_extract(stats, '$.flaky') AS REAL)), 0)`.as(
+            'totalFlaky'
+          ),
+          sql<number>`COALESCE(SUM(CAST(json_extract(metadata, '$.duration') AS REAL)), 0)`.as(
+            'sumDuration'
+          ),
+        ])
+    ).compile();
+
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as {
       count: number;
       totalTests: number;
       totalPassed: number;
@@ -584,25 +513,31 @@ export class ReportDatabase {
   }
 
   public clear(): void {
-    this.db.prepare('DELETE FROM reports').run();
+    const compiled = this.k.deleteFrom('reports').compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public backfillPassRate(): number {
-    const rows = this.db
-      .prepare<[], { reportID: string; stats: string | null }>(
-        'SELECT reportID, stats FROM reports WHERE passRate IS NULL'
-      )
-      .all();
+    const selectCompiled = this.k
+      .selectFrom('reports')
+      .select(['reportID', 'stats'])
+      .where('passRate', 'is', null)
+      .compile();
+    const rows = this.db.prepare(selectCompiled.sql).all(...selectCompiled.parameters) as Array<{
+      reportID: string;
+      stats: string | null;
+    }>;
     if (rows.length === 0) return 0;
-
-    const update = this.db.prepare<[number | null, string]>(
-      'UPDATE reports SET passRate = ? WHERE reportID = ?'
-    );
 
     const apply = this.db.transaction((batch: typeof rows) => {
       for (const row of batch) {
         const stats = parseJsonColumn<ReportStats | undefined>(row.stats, undefined);
-        update.run(computePassRateFromStats(stats), row.reportID);
+        const updateCompiled = this.k
+          .updateTable('reports')
+          .set({ passRate: computePassRateFromStats(stats) })
+          .where('reportID', '=', row.reportID)
+          .compile();
+        this.db.prepare(updateCompiled.sql).run(...updateCompiled.parameters);
       }
     });
     apply(rows);
@@ -611,85 +546,87 @@ export class ReportDatabase {
   }
 
   public query(input?: ReadReportsInput): ReadReportsOutput {
-    const tagFragments =
-      input?.tags?.map((tag): WhereFragment => {
-        const colonIndex = tag.indexOf(':');
-        if (colonIndex === -1) {
-          return { sql: 'LOWER(metadata) LIKE ?', params: [`%${tag.toLowerCase()}%`] };
+    const applyWhere = <O>(
+      qb: SelectQueryBuilder<Database, 'reports', O>
+    ): SelectQueryBuilder<Database, 'reports', O> => {
+      let q = qb;
+      if (input?.ids && input.ids.length > 0) q = q.where('reportID', 'in', input.ids);
+      if (input?.project && input.project !== defaultProjectName) {
+        q = q.where('project', '=', input.project);
+      }
+      const search = input?.search?.trim();
+      if (search) {
+        const pattern = `%${search.toLowerCase()}%`;
+        q = q.where((eb) =>
+          eb.or([
+            eb(eb.fn('LOWER', ['title']), 'like', pattern),
+            eb(eb.fn('LOWER', ['reportID']), 'like', pattern),
+            eb(eb.fn('LOWER', ['project']), 'like', pattern),
+            eb(eb.fn('LOWER', ['metadata']), 'like', pattern),
+          ])
+        );
+      }
+      if (input?.from) q = q.where('createdAt', '>=', input.from);
+      if (input?.to) q = q.where('createdAt', '<', input.to);
+      if (input?.tags?.length) {
+        for (const tag of input.tags) {
+          const colonIndex = tag.indexOf(':');
+          if (colonIndex === -1) {
+            q = q.where((eb: ExpressionBuilder<Database, 'reports'>) =>
+              eb(eb.fn('LOWER', ['metadata']), 'like', `%${tag.toLowerCase()}%`)
+            );
+          } else {
+            const key = tag.slice(0, colonIndex).trim();
+            const value = tag.slice(colonIndex + 1).trim();
+            q = q.where((eb: ExpressionBuilder<Database, 'reports'>) =>
+              eb(
+                eb.fn('LOWER', ['metadata']),
+                'like',
+                `%"${key.toLowerCase()}":"${value.toLowerCase()}"%`
+              )
+            );
+          }
         }
-        const key = tag.slice(0, colonIndex).trim();
-        const value = tag.slice(colonIndex + 1).trim();
-        return {
-          sql: 'LOWER(metadata) LIKE ?',
-          params: [`%"${key.toLowerCase()}":"${value.toLowerCase()}"%`],
-        };
-      }) ?? [];
-
-    const search = input?.search?.trim();
-    const searchTerm = search ? `%${search.toLowerCase()}%` : null;
-
-    const { sql: whereSql, params: whereParams } = buildWhere([
-      input?.ids && input.ids.length > 0
-        ? {
-            sql: `reportID IN (${input.ids.map(() => '?').join(', ')})`,
-            params: input.ids,
-          }
-        : null,
-      input?.project && input.project !== defaultProjectName
-        ? { sql: 'project = ?', params: [input.project] }
-        : null,
-      searchTerm
-        ? {
-            sql: '(LOWER(title) LIKE ? OR LOWER(reportID) LIKE ? OR LOWER(project) LIKE ? OR LOWER(metadata) LIKE ?)',
-            params: [searchTerm, searchTerm, searchTerm, searchTerm],
-          }
-        : null,
-      input?.from ? { sql: 'createdAt >= ?', params: [input.from] } : null,
-      input?.to ? { sql: 'createdAt < ?', params: [input.to] } : null,
-      ...tagFragments,
-      input?.passRate === 'passing'
-        ? { sql: 'passRate >= 100', params: [] }
-        : input?.passRate === 'failing'
-          ? { sql: 'passRate < 100 AND passRate IS NOT NULL', params: [] }
-          : input?.passRate === 'below-threshold'
-            ? { sql: 'passRate < 70 AND passRate IS NOT NULL', params: [] }
-            : null,
-    ]);
-
-    const baseQuery = `SELECT * FROM reports ${whereSql} ORDER BY createdAt DESC`.trim();
-    const countQuery = `SELECT COUNT(*) as count FROM reports ${whereSql}`.trim();
-
-    const countResult = this.db.prepare(countQuery).get(...whereParams) as { count: number };
-    const total = countResult.count;
-
-    const { sql: pageSql, params: pageParams } = paginationClause(input?.pagination);
-    const query = pageSql ? `${baseQuery} ${pageSql}` : baseQuery;
-    const params = [...whereParams, ...pageParams];
-
-    const rows = this.db.prepare(query).all(...params) as Array<{
-      reportID: string;
-      project: string;
-      title: string | null;
-      displayNumber: number | null;
-      createdAt: string;
-      reportUrl: string;
-      size: string | null;
-      sizeBytes: number;
-      stats: string | null;
-      metadata: string;
-    }>;
-
-    return {
-      reports: rows.map((row) => this.rowToReport(row)),
-      total,
+      }
+      if (input?.passRate === 'passing') {
+        q = q.where('passRate', '>=', 100);
+      } else if (input?.passRate === 'failing') {
+        q = q.where('passRate', '<', 100).where('passRate', 'is not', null);
+      } else if (input?.passRate === 'below-threshold') {
+        q = q.where('passRate', '<', 70).where('passRate', 'is not', null);
+      }
+      return q;
     };
+
+    const countCompiled = applyWhere(
+      this.k.selectFrom('reports').select((eb) => eb.fn.countAll<number>().as('count'))
+    ).compile();
+    const total = (
+      this.db.prepare(countCompiled.sql).get(...countCompiled.parameters) as { count: number }
+    ).count;
+
+    let listQuery = applyWhere(
+      this.k.selectFrom('reports').selectAll().orderBy('createdAt', 'desc')
+    );
+    if (input?.pagination?.limit !== undefined) {
+      listQuery = listQuery
+        .limit(Math.max(0, Math.floor(input.pagination.limit)))
+        .offset(Math.max(0, Math.floor(input.pagination.offset ?? 0)));
+    }
+    const listCompiled = listQuery.compile();
+    const rows = this.db.prepare(listCompiled.sql).all(...listCompiled.parameters) as ReportRow[];
+
+    return { reports: rows.map((row) => this.rowToReport(row)), total };
   }
 
   public getNextDisplayNumber(): number {
-    const result = this.db.prepare('SELECT MAX(displayNumber) as maxNumber FROM reports').get() as {
+    const compiled = this.k
+      .selectFrom('reports')
+      .select((eb) => eb.fn.max<number | null>('displayNumber').as('maxNumber'))
+      .compile();
+    const result = this.db.prepare(compiled.sql).get(...compiled.parameters) as {
       maxNumber: number | null;
     };
-
     return (result.maxNumber || 0) + 1;
   }
 
@@ -722,17 +659,9 @@ export class ReportDatabase {
     return result;
   }
 
-  private rowToReportLite(row: {
-    reportID: string;
-    project: string;
-    title: string | null;
-    displayNumber: number | null;
-    createdAt: string;
-    reportUrl: string;
-    size: string | null;
-    sizeBytes: number;
-    stats: string | null;
-  }): ReportHistoryLite {
+  private rowToReportLite(
+    row: Omit<ReportRow, 'metadata' | 'updatedAt' | 'passRate'>
+  ): ReportHistoryLite {
     return {
       reportID: row.reportID,
       project: row.project,
@@ -746,40 +675,15 @@ export class ReportDatabase {
     };
   }
 
-  public findByDisplayNumber(
-    displayNumber: number,
-    project?: string
-  ): Array<{
-    reportID: string;
-    project: string;
-    title: string | null;
-    displayNumber: number | null;
-    createdAt: string;
-    reportUrl: string;
-  }> {
-    const rows = project
-      ? this.db
-          .prepare(
-            `SELECT reportID, project, title, displayNumber, createdAt, reportUrl
-             FROM reports WHERE displayNumber = ? AND project = ?
-             ORDER BY createdAt DESC`
-          )
-          .all(displayNumber, project)
-      : this.db
-          .prepare(
-            `SELECT reportID, project, title, displayNumber, createdAt, reportUrl
-             FROM reports WHERE displayNumber = ?
-             ORDER BY createdAt DESC`
-          )
-          .all(displayNumber);
-    return rows as Array<{
-      reportID: string;
-      project: string;
-      title: string | null;
-      displayNumber: number | null;
-      createdAt: string;
-      reportUrl: string;
-    }>;
+  public findByDisplayNumber(displayNumber: number, project?: string): Array<ReportSummaryRow> {
+    let q = this.k
+      .selectFrom('reports')
+      .select(['reportID', 'project', 'title', 'displayNumber', 'createdAt', 'reportUrl'])
+      .where('displayNumber', '=', displayNumber)
+      .orderBy('createdAt', 'desc');
+    if (project) q = q.where('project', '=', project);
+    const compiled = q.compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportSummaryRow[];
   }
 
   public findPreviousInProject(
@@ -787,16 +691,18 @@ export class ReportDatabase {
     excludeReportId: string,
     createdAtISO: string
   ): { reportID: string } | null {
-    const row = this.db
-      .prepare(
-        `SELECT reportID FROM reports
-         WHERE project = ?
-           AND reportID != ?
-           AND createdAt < ?
-         ORDER BY createdAt DESC
-         LIMIT 1`
-      )
-      .get(project, excludeReportId, createdAtISO) as { reportID: string } | undefined;
+    const compiled = this.k
+      .selectFrom('reports')
+      .select('reportID')
+      .where('project', '=', project)
+      .where('reportID', '!=', excludeReportId)
+      .where('createdAt', '<', createdAtISO)
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | { reportID: string }
+      | undefined;
     return row ?? null;
   }
 }

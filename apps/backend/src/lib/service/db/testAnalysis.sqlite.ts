@@ -1,90 +1,18 @@
 import { randomUUID as uuid } from 'node:crypto';
-import type Database from 'better-sqlite3';
+import { sql } from 'kysely';
 import { getDatabase } from './db.js';
-
+import { getKysely, type TestLlmAnalysesRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
-export interface TestAnalysisRow {
-  id: string;
-  testId: string;
-  fileId: string;
-  project: string;
-  reportId: string;
-  attempt: number;
-  analysis: string | null;
-  category: string | null;
-  model: string | null;
-  createdAt: string;
-  updatedAt: string | null;
-  /** Set to the source analysis id when this row was copied from a prior analysis
-   *  (same error_signature). NULL for fresh LLM-generated analyses. */
-  reusedFromAnalysisId: string | null;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  totalTokens: number | null;
-}
+
+export type TestAnalysisRow = TestLlmAnalysesRow;
 
 export interface TestAnalysisExtras {
   usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
 }
 
 export class TestAnalysisDatabase {
+  private readonly k = getKysely();
   private readonly db = getDatabase();
-
-  private readonly upsertStmt: Database.Statement<
-    [
-      string,
-      string,
-      string,
-      string,
-      string,
-      number,
-      string | null,
-      string | null,
-      string | null,
-      string,
-      string,
-      string | null,
-      number | null,
-      number | null,
-      number | null,
-    ]
-  >;
-  private readonly getByTestStmt: Database.Statement<[string, string, string]>;
-  private readonly getByReportStmt: Database.Statement<[string]>;
-  private readonly deleteByReportStmt: Database.Statement<[string]>;
-  private readonly deleteByTestStmt: Database.Statement<[string, string, string]>;
-
-  constructor() {
-    this.upsertStmt = this.db.prepare(`
-      INSERT INTO test_llm_analyses (id, testId, fileId, project, reportId, attempt, analysis, category, model, createdAt, updatedAt, reusedFromAnalysisId, inputTokens, outputTokens, totalTokens)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(testId, fileId, project, reportId, attempt) DO UPDATE SET
-        analysis = excluded.analysis,
-        category = excluded.category,
-        model = excluded.model,
-        updatedAt = excluded.updatedAt,
-        reusedFromAnalysisId = excluded.reusedFromAnalysisId,
-        inputTokens = excluded.inputTokens,
-        outputTokens = excluded.outputTokens,
-        totalTokens = excluded.totalTokens
-    `);
-
-    this.getByTestStmt = this.db.prepare(`
-      SELECT * FROM test_llm_analyses WHERE testId = ? AND fileId = ? AND project = ?
-    `);
-
-    this.getByReportStmt = this.db.prepare(`
-      SELECT * FROM test_llm_analyses WHERE reportId = ?
-    `);
-
-    this.deleteByReportStmt = this.db.prepare(`
-      DELETE FROM test_llm_analyses WHERE reportId = ?
-    `);
-
-    this.deleteByTestStmt = this.db.prepare(`
-      DELETE FROM test_llm_analyses WHERE testId = ? AND fileId = ? AND project = ?
-    `);
-  }
 
   public upsert(
     testId: string,
@@ -102,23 +30,39 @@ export class TestAnalysisDatabase {
     const now = new Date().toISOString();
     const usage = extras?.usage;
 
-    this.upsertStmt.run(
-      id,
-      testId,
-      fileId,
-      project,
-      reportId,
-      attempt,
-      analysis ?? null,
-      category ?? null,
-      model ?? null,
-      now,
-      now,
-      reusedFromAnalysisId ?? null,
-      usage?.inputTokens ?? null,
-      usage?.outputTokens ?? null,
-      usage?.totalTokens ?? null
-    );
+    const compiled = this.k
+      .insertInto('test_llm_analyses')
+      .values({
+        id,
+        testId,
+        fileId,
+        project,
+        reportId,
+        attempt,
+        analysis: analysis ?? null,
+        category: category ?? null,
+        model: model ?? null,
+        createdAt: now,
+        updatedAt: now,
+        reusedFromAnalysisId: reusedFromAnalysisId ?? null,
+        inputTokens: usage?.inputTokens ?? null,
+        outputTokens: usage?.outputTokens ?? null,
+        totalTokens: usage?.totalTokens ?? null,
+      })
+      .onConflict((oc) =>
+        oc.columns(['testId', 'fileId', 'project', 'reportId', 'attempt']).doUpdateSet((eb) => ({
+          analysis: eb.ref('excluded.analysis'),
+          category: eb.ref('excluded.category'),
+          model: eb.ref('excluded.model'),
+          updatedAt: eb.ref('excluded.updatedAt'),
+          reusedFromAnalysisId: eb.ref('excluded.reusedFromAnalysisId'),
+          inputTokens: eb.ref('excluded.inputTokens'),
+          outputTokens: eb.ref('excluded.outputTokens'),
+          totalTokens: eb.ref('excluded.totalTokens'),
+        }))
+      )
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
 
     return {
       id,
@@ -140,36 +84,42 @@ export class TestAnalysisDatabase {
   }
 
   public getByTest(testId: string, fileId: string, project: string): TestAnalysisRow | null {
-    const row = this.getByTestStmt.get(testId, fileId, project) as TestAnalysisRow | undefined;
+    const compiled = this.k
+      .selectFrom('test_llm_analyses')
+      .selectAll()
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | TestAnalysisRow
+      | undefined;
     return row ?? null;
   }
 
   /**
    * Find analysis by testId + reportId — precise lookup for a specific test run.
-   * Returns the most recently updated row (latest attempt wins on ties) — when
-   * a retry replaces an existing row via ON CONFLICT, the updatedAt advances,
-   * so this always surfaces the fresh result. No cross-report fallback: an
-   * analysis from a different report is not authoritative for the current
-   * one — the served viewer should render an empty state and let the user
-   * trigger a fresh analysis instead of seeing "some other analysis".
+   * Returns the most recently updated row (latest attempt wins on ties).
    */
   public getByTestAndReport(testId: string, reportId: string): TestAnalysisRow | null {
-    const row = this.db
-      .prepare(
-        `SELECT * FROM test_llm_analyses
-         WHERE testId = ? AND reportId = ?
-         ORDER BY COALESCE(updatedAt, createdAt) DESC, attempt DESC
-         LIMIT 1`
-      )
-      .get(testId, reportId) as TestAnalysisRow | undefined;
+    const compiled = this.k
+      .selectFrom('test_llm_analyses')
+      .selectAll()
+      .where('testId', '=', testId)
+      .where('reportId', '=', reportId)
+      .orderBy(sql`COALESCE(updatedAt, createdAt)`, 'desc')
+      .orderBy('attempt', 'desc')
+      .limit(1)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | TestAnalysisRow
+      | undefined;
     return row ?? null;
   }
 
   /**
    * Latest completed analysis for this (testId, fileId, project) from any
-   * report OTHER than `excludeReportId`. Used to surface the prior-run
-   * diagnosis into the next analysis prompt without echoing the model its own
-   * conclusion. Only rows with non-empty `analysis` text are returned.
+   * report OTHER than `excludeReportId`.
    */
   public getLatestPriorByTest(
     testId: string,
@@ -177,46 +127,69 @@ export class TestAnalysisDatabase {
     project: string,
     excludeReportId: string
   ): TestAnalysisRow | null {
-    const row = this.db
-      .prepare(
-        `SELECT * FROM test_llm_analyses
-         WHERE testId = ? AND fileId = ? AND project = ?
-           AND reportId != ?
-           AND analysis IS NOT NULL AND TRIM(analysis) != ''
-         ORDER BY COALESCE(updatedAt, createdAt) DESC
-         LIMIT 1`
-      )
-      .get(testId, fileId, project, excludeReportId) as TestAnalysisRow | undefined;
+    const compiled = this.k
+      .selectFrom('test_llm_analyses')
+      .selectAll()
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .where('reportId', '!=', excludeReportId)
+      .where('analysis', 'is not', null)
+      .where(sql`TRIM(analysis)`, '!=', '')
+      .orderBy(sql`COALESCE(updatedAt, createdAt)`, 'desc')
+      .limit(1)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | TestAnalysisRow
+      | undefined;
     return row ?? null;
   }
 
-  /**
-   * Get all analyses for a test in a specific report (one per attempt).
-   */
   public getAllByTestAndReport(testId: string, reportId: string): TestAnalysisRow[] {
-    return this.db
-      .prepare('SELECT * FROM test_llm_analyses WHERE testId = ? AND reportId = ? ORDER BY attempt')
-      .all(testId, reportId) as TestAnalysisRow[];
+    const compiled = this.k
+      .selectFrom('test_llm_analyses')
+      .selectAll()
+      .where('testId', '=', testId)
+      .where('reportId', '=', reportId)
+      .orderBy('attempt')
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as TestAnalysisRow[];
   }
 
   public getByReport(reportId: string): TestAnalysisRow[] {
-    return this.getByReportStmt.all(reportId) as TestAnalysisRow[];
+    const compiled = this.k
+      .selectFrom('test_llm_analyses')
+      .selectAll()
+      .where('reportId', '=', reportId)
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as TestAnalysisRow[];
   }
 
   public deleteByReport(reportId: string): void {
-    this.deleteByReportStmt.run(reportId);
+    const compiled = this.k
+      .deleteFrom('test_llm_analyses')
+      .where('reportId', '=', reportId)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public deleteByReportIds(reportIds: string[]): void {
     if (reportIds.length === 0) return;
-    const placeholders = reportIds.map(() => '?').join(',');
-    this.db
-      .prepare(`DELETE FROM test_llm_analyses WHERE reportId IN (${placeholders})`)
-      .run(...reportIds);
+    const compiled = this.k
+      .deleteFrom('test_llm_analyses')
+      .where('reportId', 'in', reportIds)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public deleteByTest(testId: string, fileId: string, project: string): void {
-    this.deleteByTestStmt.run(testId, fileId, project);
+    const compiled = this.k
+      .deleteFrom('test_llm_analyses')
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public findReuseSource(
@@ -235,25 +208,36 @@ export class TestAnalysisDatabase {
     createdAt: string;
     updatedAt: string | null;
   } | null {
-    const row = this.db
-      .prepare(
-        `SELECT tla.id, tla.reportId, tla.analysis, tla.category, tla.model,
-                tla.createdAt, tla.updatedAt
-         FROM test_llm_analyses tla
-         JOIN test_runs tr ON tr.testId = tla.testId
-                          AND tr.fileId = tla.fileId
-                          AND tr.project = tla.project
-                          AND tr.reportId = tla.reportId
-         WHERE tla.testId = ? AND tla.fileId = ? AND tla.project = ?
-           AND tr.error_signature = ?
-           AND tr.failure_category = ?
-           AND tla.analysis IS NOT NULL
-           AND TRIM(tla.analysis) != ''
-           AND tla.reportId != ?
-         ORDER BY COALESCE(tla.updatedAt, tla.createdAt) DESC
-         LIMIT 1`
+    const compiled = this.k
+      .selectFrom('test_llm_analyses as tla')
+      .innerJoin('test_runs as tr', (join) =>
+        join
+          .onRef('tr.testId', '=', 'tla.testId')
+          .onRef('tr.fileId', '=', 'tla.fileId')
+          .onRef('tr.project', '=', 'tla.project')
+          .onRef('tr.reportId', '=', 'tla.reportId')
       )
-      .get(testId, fileId, project, errorSignature, failureCategory, excludeReportId) as
+      .select([
+        'tla.id',
+        'tla.reportId',
+        'tla.analysis',
+        'tla.category',
+        'tla.model',
+        'tla.createdAt',
+        'tla.updatedAt',
+      ])
+      .where('tla.testId', '=', testId)
+      .where('tla.fileId', '=', fileId)
+      .where('tla.project', '=', project)
+      .where('tr.error_signature', '=', errorSignature)
+      .where('tr.failure_category', '=', failureCategory)
+      .where('tla.analysis', 'is not', null)
+      .where(sql`TRIM(tla.analysis)`, '!=', '')
+      .where('tla.reportId', '!=', excludeReportId)
+      .orderBy(sql`COALESCE(tla.updatedAt, tla.createdAt)`, 'desc')
+      .limit(1)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
       | {
           id: string;
           reportId: string;
@@ -268,7 +252,8 @@ export class TestAnalysisDatabase {
   }
 
   public deleteAll(): void {
-    this.db.prepare('DELETE FROM test_llm_analyses').run();
+    const compiled = this.k.deleteFrom('test_llm_analyses').compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 }
 

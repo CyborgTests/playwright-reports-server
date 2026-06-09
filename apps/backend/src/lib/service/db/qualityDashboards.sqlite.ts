@@ -10,42 +10,14 @@ import type {
   QualityNodeInput,
 } from '@playwright-reports/shared';
 import { DEFAULT_GRADE_BANDS } from '@playwright-reports/shared';
-import type Database from 'better-sqlite3';
-
+import { sql } from 'kysely';
 import { getDatabase, hasMigrationMark, setMigrationMark } from './db.js';
-
+import { getKysely, type QualityDashboardNodesRow, type QualityDashboardsRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
 import { parseJsonColumn } from './utils.js';
 
-interface DashboardRow {
-  id: string;
-  name: string;
-  slug: string;
-  isDefault: number;
-  homeOrder: number;
-  stalenessDays: number;
-  defaultGradeBands: string;
-  defaultFormula: string;
-  defaultMinOkGrade: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface NodeRow {
-  id: string;
-  dashboardId: string;
-  parentNodeId: string | null;
-  kind: 'group' | 'project';
-  name: string;
-  projectName: string | null;
-  weight: number;
-  sortOrder: number;
-  gradeBands: string | null;
-  formula: string | null;
-  minOkGrade: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+type DashboardRow = QualityDashboardsRow;
+type NodeRow = QualityDashboardNodesRow;
 
 function rowToDashboard(row: DashboardRow): QualityDashboard {
   return {
@@ -102,7 +74,7 @@ export class DashboardNameConflictError extends Error {
 export function slugify(input: string): string {
   return input
     .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
@@ -121,85 +93,18 @@ export interface DashboardUpdateInput {
 }
 
 export class QualityDashboardsDatabase {
+  private readonly k = getKysely();
   private readonly db = getDatabase();
 
-  private readonly listStmt: Database.Statement<[]>;
-  private readonly listPinnedStmt: Database.Statement<[]>;
-  private readonly getByIdStmt: Database.Statement<[string]>;
-  private readonly getBySlugStmt: Database.Statement<[string]>;
-  private readonly insertDashboardStmt: Database.Statement<
-    [string, string, string, number, number, number, string, string, string, string, string]
-  >;
-  private readonly maxHomeOrderStmt: Database.Statement<[]>;
-  private readonly deleteDashboardStmt: Database.Statement<[string]>;
-  private readonly getNodesStmt: Database.Statement<[string]>;
-  private readonly deleteNodesStmt: Database.Statement<[string]>;
-  private readonly insertNodeStmt: Database.Statement<
-    [
-      string, // id
-      string, // dashboardId
-      string | null, // parentNodeId
-      'group' | 'project', // kind
-      string, // name
-      string | null, // projectName
-      number, // weight
-      number, // sortOrder
-      string | null, // gradeBands
-      string | null, // formula
-      string | null, // minOkGrade
-      string, // createdAt
-      string, // updatedAt
-    ]
-  >;
-
-  constructor() {
-    this.listStmt = this.db.prepare(
-      `SELECT id, name, slug, isDefault, homeOrder FROM quality_dashboards
-       ORDER BY isDefault DESC, homeOrder ASC, name ASC`
-    );
-
-    this.listPinnedStmt = this.db.prepare(
-      `SELECT * FROM quality_dashboards
-       WHERE isDefault = 1
-       ORDER BY homeOrder ASC, name ASC`
-    );
-
-    this.getByIdStmt = this.db.prepare('SELECT * FROM quality_dashboards WHERE id = ?');
-    this.getBySlugStmt = this.db.prepare('SELECT * FROM quality_dashboards WHERE slug = ?');
-
-    this.insertDashboardStmt = this.db.prepare(`
-      INSERT INTO quality_dashboards (
-        id, name, slug, isDefault, homeOrder, stalenessDays,
-        defaultGradeBands, defaultFormula, defaultMinOkGrade,
-        createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.maxHomeOrderStmt = this.db.prepare(
-      'SELECT COALESCE(MAX(homeOrder), -1) as maxOrder FROM quality_dashboards WHERE isDefault = 1'
-    );
-
-    this.deleteDashboardStmt = this.db.prepare('DELETE FROM quality_dashboards WHERE id = ?');
-
-    this.getNodesStmt = this.db.prepare(
-      'SELECT * FROM quality_dashboard_nodes WHERE dashboardId = ? ORDER BY sortOrder ASC, createdAt ASC'
-    );
-
-    this.deleteNodesStmt = this.db.prepare(
-      'DELETE FROM quality_dashboard_nodes WHERE dashboardId = ?'
-    );
-
-    this.insertNodeStmt = this.db.prepare(`
-      INSERT INTO quality_dashboard_nodes (
-        id, dashboardId, parentNodeId, kind, name, projectName,
-        weight, sortOrder, gradeBands, formula, minOkGrade,
-        createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-  }
-
   public listDashboards(): QualityDashboardSummary[] {
-    const rows = this.listStmt.all() as Array<{
+    const compiled = this.k
+      .selectFrom('quality_dashboards')
+      .select(['id', 'name', 'slug', 'isDefault', 'homeOrder'])
+      .orderBy('isDefault', 'desc')
+      .orderBy('homeOrder', 'asc')
+      .orderBy('name', 'asc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
       id: string;
       name: string;
       slug: string;
@@ -216,25 +121,53 @@ export class QualityDashboardsDatabase {
   }
 
   public listPinned(): QualityDashboard[] {
-    const rows = this.listPinnedStmt.all() as DashboardRow[];
+    const compiled = this.k
+      .selectFrom('quality_dashboards')
+      .selectAll()
+      .where('isDefault', '=', 1)
+      .orderBy('homeOrder', 'asc')
+      .orderBy('name', 'asc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as DashboardRow[];
     return rows.map(rowToDashboard);
   }
 
   public getById(id: string): QualityDashboard | null {
-    const row = this.getByIdStmt.get(id) as DashboardRow | undefined;
+    const compiled = this.k
+      .selectFrom('quality_dashboards')
+      .selectAll()
+      .where('id', '=', id)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | DashboardRow
+      | undefined;
     return row ? rowToDashboard(row) : null;
   }
 
   public getBySlug(slug: string): QualityDashboard | null {
-    const row = this.getBySlugStmt.get(slug) as DashboardRow | undefined;
+    const compiled = this.k
+      .selectFrom('quality_dashboards')
+      .selectAll()
+      .where('slug', '=', slug)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | DashboardRow
+      | undefined;
     return row ? rowToDashboard(row) : null;
   }
 
   public getConfig(id: string): QualityDashboardConfig | null {
     const dashboard = this.getById(id);
     if (!dashboard) return null;
-    const nodes = (this.getNodesStmt.all(id) as NodeRow[]).map(rowToNode);
-    return { dashboard, nodes };
+    const compiled = this.k
+      .selectFrom('quality_dashboard_nodes')
+      .selectAll()
+      .where('dashboardId', '=', id)
+      .orderBy('sortOrder', 'asc')
+      .orderBy('createdAt', 'asc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as NodeRow[];
+    return { dashboard, nodes: rows.map(rowToNode) };
   }
 
   public createDashboard(input: DashboardCreateInput): QualityDashboard {
@@ -253,19 +186,23 @@ export class QualityDashboardsDatabase {
     const order = input.homeOrder ?? (pinned ? this.nextHomeOrder() : 0);
     const slug = input.slug ?? this.uniqueSlugForName(name);
 
-    this.insertDashboardStmt.run(
-      id,
-      name,
-      slug,
-      pinned ? 1 : 0,
-      order,
-      input.stalenessDays ?? 7,
-      bands,
-      formula,
-      minOk,
-      now,
-      now
-    );
+    const compiled = this.k
+      .insertInto('quality_dashboards')
+      .values({
+        id,
+        name,
+        slug,
+        isDefault: pinned ? 1 : 0,
+        homeOrder: order,
+        stalenessDays: input.stalenessDays ?? 7,
+        defaultGradeBands: bands,
+        defaultFormula: formula,
+        defaultMinOkGrade: minOk,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
 
     const created = this.getById(id);
     if (!created) throw new Error('Failed to create dashboard');
@@ -273,25 +210,31 @@ export class QualityDashboardsDatabase {
   }
 
   private findIdByName(name: string, excludeId?: string): string | null {
-    const row = this.db
-      .prepare(
-        `SELECT id FROM quality_dashboards
-         WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
-           AND (? IS NULL OR id <> ?)
-         LIMIT 1`
-      )
-      .get(name, excludeId ?? null, excludeId ?? null) as { id: string } | undefined;
+    // kysely doesn't model LOWER(TRIM(...)) comparisons inline well
+    // using sql for the case-insensitive comparison.
+    let q = this.k
+      .selectFrom('quality_dashboards')
+      .select('id')
+      .where(sql`LOWER(TRIM(name))`, '=', sql`LOWER(TRIM(${name}))`);
+    if (excludeId) q = q.where('id', '!=', excludeId);
+    const compiled = q.limit(1).compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | { id: string }
+      | undefined;
     return row?.id ?? null;
   }
 
   private uniqueSlugForName(name: string): string {
     const base = slugify(name) || 'dashboard';
+    const compiled = this.k
+      .selectFrom('quality_dashboards')
+      .select('slug')
+      .where((eb) => eb.or([eb('slug', 'like', `${base}-%`), eb('slug', '=', base)]))
+      .compile();
     const taken = new Set(
-      (
-        this.db
-          .prepare('SELECT slug FROM quality_dashboards WHERE slug LIKE ? OR slug = ?')
-          .all(`${base}-%`, base) as Array<{ slug: string }>
-      ).map((r) => r.slug)
+      (this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{ slug: string }>).map(
+        (r) => r.slug
+      )
     );
     if (!taken.has(base)) return base;
     let n = 2;
@@ -300,7 +243,14 @@ export class QualityDashboardsDatabase {
   }
 
   private nextHomeOrder(): number {
-    const row = this.maxHomeOrderStmt.get() as { maxOrder: number } | undefined;
+    const compiled = this.k
+      .selectFrom('quality_dashboards')
+      .select(sql<number>`COALESCE(MAX(homeOrder), -1)`.as('maxOrder'))
+      .where('isDefault', '=', 1)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | { maxOrder: number }
+      | undefined;
     return (row?.maxOrder ?? -1) + 1;
   }
 
@@ -333,38 +283,37 @@ export class QualityDashboardsDatabase {
     };
     const now = new Date().toISOString();
 
-    this.db
-      .prepare(
-        `UPDATE quality_dashboards SET
-           name = ?, slug = ?, isDefault = ?, homeOrder = ?, stalenessDays = ?,
-           defaultGradeBands = ?, defaultFormula = ?, defaultMinOkGrade = ?,
-           updatedAt = ?
-         WHERE id = ?`
-      )
-      .run(
-        merged.name,
-        merged.slug,
-        merged.isDefault ? 1 : 0,
-        merged.homeOrder,
-        merged.stalenessDays,
-        JSON.stringify(merged.defaultGradeBands),
-        merged.defaultFormula,
-        merged.defaultMinOkGrade,
-        now,
-        id
-      );
+    const compiled = this.k
+      .updateTable('quality_dashboards')
+      .set({
+        name: merged.name,
+        slug: merged.slug,
+        isDefault: merged.isDefault ? 1 : 0,
+        homeOrder: merged.homeOrder,
+        stalenessDays: merged.stalenessDays,
+        defaultGradeBands: JSON.stringify(merged.defaultGradeBands),
+        defaultFormula: merged.defaultFormula,
+        defaultMinOkGrade: merged.defaultMinOkGrade,
+        updatedAt: now,
+      })
+      .where('id', '=', id)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
 
     return this.getById(id);
   }
 
   public reorderPinned(orderedIds: string[]): QualityDashboard[] {
     const now = new Date().toISOString();
-    const updateStmt = this.db.prepare(
-      'UPDATE quality_dashboards SET homeOrder = ?, updatedAt = ? WHERE id = ? AND isDefault = 1'
-    );
     const trx = this.db.transaction(() => {
       for (let idx = 0; idx < orderedIds.length; idx++) {
-        updateStmt.run(idx, now, orderedIds[idx]);
+        const compiled = this.k
+          .updateTable('quality_dashboards')
+          .set({ homeOrder: idx, updatedAt: now })
+          .where('id', '=', orderedIds[idx])
+          .where('isDefault', '=', 1)
+          .compile();
+        this.db.prepare(compiled.sql).run(...compiled.parameters);
       }
     });
     trx();
@@ -372,7 +321,8 @@ export class QualityDashboardsDatabase {
   }
 
   public deleteDashboard(id: string): boolean {
-    const result = this.deleteDashboardStmt.run(id);
+    const compiled = this.k.deleteFrom('quality_dashboards').where('id', '=', id).compile();
+    const result = this.db.prepare(compiled.sql).run(...compiled.parameters);
     return result.changes > 0;
   }
 
@@ -429,27 +379,21 @@ export class QualityDashboardsDatabase {
     remapped.forEach(visit);
 
     const trx = this.db.transaction(() => {
-      this.deleteNodesStmt.run(dashboardId);
+      const delCompiled = this.k
+        .deleteFrom('quality_dashboard_nodes')
+        .where('dashboardId', '=', dashboardId)
+        .compile();
+      this.db.prepare(delCompiled.sql).run(...delCompiled.parameters);
       for (const n of sorted) {
-        this.insertNodeStmt.run(
-          n.id,
-          n.dashboardId,
-          n.parentNodeId,
-          n.kind,
-          n.name,
-          n.projectName,
-          n.weight,
-          n.sortOrder,
-          n.gradeBands,
-          n.formula,
-          n.minOkGrade,
-          n.createdAt,
-          n.updatedAt
-        );
+        const insCompiled = this.k.insertInto('quality_dashboard_nodes').values(n).compile();
+        this.db.prepare(insCompiled.sql).run(...insCompiled.parameters);
       }
-      this.db
-        .prepare('UPDATE quality_dashboards SET updatedAt = ? WHERE id = ?')
-        .run(new Date().toISOString(), dashboardId);
+      const upCompiled = this.k
+        .updateTable('quality_dashboards')
+        .set({ updatedAt: new Date().toISOString() })
+        .where('id', '=', dashboardId)
+        .compile();
+      this.db.prepare(upCompiled.sql).run(...upCompiled.parameters);
     });
     trx();
 
@@ -457,9 +401,16 @@ export class QualityDashboardsDatabase {
   }
 
   public listAvailableProjects(): string[] {
-    const rows = this.db
-      .prepare('SELECT DISTINCT project FROM reports WHERE project IS NOT NULL ORDER BY project')
-      .all() as Array<{ project: string }>;
+    const compiled = this.k
+      .selectFrom('reports')
+      .select('project')
+      .distinct()
+      .where('project', 'is not', null)
+      .orderBy('project')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      project: string;
+    }>;
     return rows.map((r) => r.project).filter(Boolean);
   }
 
@@ -467,9 +418,11 @@ export class QualityDashboardsDatabase {
     const mark = 'quality_dashboards_seed_v1';
     if (hasMigrationMark(this.db, mark)) return;
 
-    const existing = this.db.prepare('SELECT COUNT(*) as count FROM quality_dashboards').get() as {
-      count: number;
-    };
+    const compiled = this.k
+      .selectFrom('quality_dashboards')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .compile();
+    const existing = this.db.prepare(compiled.sql).get(...compiled.parameters) as { count: number };
     if (existing.count > 0) {
       setMigrationMark(this.db, mark);
       return;
