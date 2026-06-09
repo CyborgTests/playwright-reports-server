@@ -680,6 +680,37 @@ export class TestDatabase {
     return testQueries.getTestRunsInWindow(this.db, project, from, to);
   }
 
+  public getTopFailingTestsInWindow(
+    project: string | undefined,
+    from: string,
+    to: string,
+    limit: number
+  ): Array<{
+    testId: string;
+    fileId: string;
+    project: string;
+    title: string;
+    failureCount: number;
+  }> {
+    return testQueries.getTopFailingTestsInWindow(this.db, project, from, to, limit);
+  }
+
+  public getFlakiestTestsInWindow(
+    project: string | undefined,
+    from: string,
+    to: string,
+    limit: number,
+    minScore: number
+  ): Array<{
+    testId: string;
+    fileId: string;
+    project: string;
+    title: string;
+    flakinessScore: number;
+  }> {
+    return testQueries.getFlakiestTestsInWindow(this.db, project, from, to, limit, minScore);
+  }
+
   public updateFlakinessScore(runId: string, score: number): void {
     this.updateFlakinessScoreStmt.run(score, runId);
   }

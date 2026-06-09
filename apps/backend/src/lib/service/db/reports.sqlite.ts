@@ -314,6 +314,18 @@ export class ReportDatabase {
     return rows.map(this.rowToReport);
   }
 
+  public getNewestReportBefore(project: string, beforeISO: string): ReportHistory | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM reports
+         WHERE project = ? AND createdAt < ?
+         ORDER BY createdAt DESC
+         LIMIT 1`
+      )
+      .get(project, beforeISO) as ReportRow | undefined;
+    return row ? this.rowToReport(row) : undefined;
+  }
+
   public getPreviousReportId(reportID: string): string | null {
     const row = this.db
       .prepare(

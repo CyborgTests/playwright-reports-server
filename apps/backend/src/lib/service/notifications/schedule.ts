@@ -1,9 +1,21 @@
-import type { ProjectFilter, ScheduleCadence, ScheduleRule } from '@playwright-reports/shared';
+import {
+  FLAKINESS_THRESHOLDS,
+  type ProjectFilter,
+  type ScheduleCadence,
+  type ScheduleRule,
+} from '@playwright-reports/shared';
 import type { ReportHistory } from '../../storage/types.js';
+import { configCache } from '../cache/config.js';
+import { failureSummaryDb } from '../db/failureSummary.sqlite.js';
 import { notificationStateDb } from '../db/notificationState.sqlite.js';
 import { reportDb } from '../db/reports.sqlite.js';
+import { testDb } from '../db/tests.sqlite.js';
 import { projectFilterMatches } from './filters.js';
 import type { ScheduleSummary } from './variables.js';
+
+const TOP_FAILING_TESTS_LIMIT = 5;
+const FLAKIEST_TESTS_LIMIT = 5;
+const TOP_FAILURE_CATEGORIES_LIMIT = 5;
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -83,6 +95,9 @@ export function buildSummaryForProject(args: {
   window: WindowRange;
 }): ScheduleSummary {
   const { rule, project, window } = args;
+  const fromISO = new Date(window.start).toISOString();
+  const toISO = new Date(window.end).toISOString();
+
   const all = reportsInWindow(window);
   const inScope = all.filter((r) => r.project === project);
 
@@ -99,29 +114,76 @@ export function buildSummaryForProject(args: {
   const prevPassRate = prevReports.length === 0 ? null : aggregateStats(prevReports).passRate;
   const passRateDelta = prevPassRate === null ? null : passRate - prevPassRate;
 
-  const projectsInWindow = new Set(inScope.map((r) => r.project)).size;
+  const projectCount = new Set(
+    all.filter((r) => projectFilterMatches(rule.projectFilter, r.project)).map((r) => r.project)
+  ).size;
+
+  const seed = reportDb.getNewestReportBefore(project, fromISO);
+  const { regressions, recoveries } = countReportTransitions(inScope, seed);
+
+  const warningThreshold =
+    configCache.config?.testManagement?.warningThresholdPercentage ??
+    FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
+  const scopedProject = project === 'all' ? undefined : project;
+
+  const failureAgg = failureSummaryDb.getAggregatedCategories(
+    scopedProject,
+    TOP_FAILURE_CATEGORIES_LIMIT,
+    { from: fromISO, to: toISO }
+  );
+  const topFailureCategories = failureAgg.categories
+    .slice(0, TOP_FAILURE_CATEGORIES_LIMIT)
+    .map((c) => ({ name: c.category, count: c.count, percentage: c.percentage }));
+
+  const topFailingTests = testDb
+    .getTopFailingTestsInWindow(scopedProject, fromISO, toISO, TOP_FAILING_TESTS_LIMIT)
+    .map((t) => ({ title: t.title, failureCount: t.failureCount, project: t.project }));
+
+  const flakiestTests = testDb
+    .getFlakiestTestsInWindow(scopedProject, fromISO, toISO, FLAKIEST_TESTS_LIMIT, warningThreshold)
+    .map((t) => ({ title: t.title, flakinessScore: t.flakinessScore, project: t.project }));
 
   return {
-    windowStart: new Date(window.start).toISOString(),
-    windowEnd: new Date(window.end).toISOString(),
+    windowStart: fromISO,
+    windowEnd: toISO,
     windowLabel: window.label,
     cadence: describeCadence(rule.cadence),
     reportCount: inScope.length,
-    projectCount: projectsInWindow,
+    projectCount,
     totalPassed: totals.expected,
     totalFailed: totals.unexpected,
     totalFlaky: totals.flaky,
     totalSkipped: totals.skipped,
     passRate,
     passRateDelta,
-    regressionsCount: 0,
-    recoveriesCount: 0,
-    topFailureCategories: [],
-    topFailingTests: [],
-    flakiestTests: [],
+    regressionsCount: regressions,
+    recoveriesCount: recoveries,
+    topFailureCategories,
+    topFailingTests,
+    flakiestTests,
     worstProjects: worstProjectsForReports(inScope),
     project,
   };
+}
+
+function countReportTransitions(
+  inScopeDesc: ReportHistory[],
+  seed: ReportHistory | undefined
+): { regressions: number; recoveries: number } {
+  let regressions = 0;
+  let recoveries = 0;
+  let prevHadFailures: boolean | null = seed ? (seed.stats?.unexpected ?? 0) > 0 : null;
+  for (let i = inScopeDesc.length - 1; i >= 0; i--) {
+    const cur = (inScopeDesc[i].stats?.unexpected ?? 0) > 0;
+    if (prevHadFailures === null) {
+      prevHadFailures = cur;
+      continue;
+    }
+    if (!prevHadFailures && cur) regressions++;
+    else if (prevHadFailures && !cur) recoveries++;
+    prevHadFailures = cur;
+  }
+  return { regressions, recoveries };
 }
 
 function reportsInWindow(window: WindowRange): ReportHistory[] {

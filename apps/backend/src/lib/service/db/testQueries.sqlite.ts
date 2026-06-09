@@ -482,6 +482,95 @@ export function getFlakySummaryInWindow(
   return { total: totalRow?.total ?? 0, flakyCount: flakyRow?.flakyCount ?? 0 };
 }
 
+export function getTopFailingTestsInWindow(
+  db: Database.Database,
+  project: string | undefined,
+  from: string,
+  to: string,
+  limit: number
+): Array<{
+  testId: string;
+  fileId: string;
+  project: string;
+  title: string;
+  failureCount: number;
+}> {
+  const scoped = !!project && project !== 'all';
+  const projectClause = scoped ? 'AND tr.project = ?' : '';
+  const params: Array<string | number> = [from, to];
+  if (scoped) params.push(project);
+  params.push(limit);
+
+  const sql = `
+    SELECT tr.testId, tr.fileId, tr.project,
+           COALESCE(t.title, tr.testId) AS title,
+           COUNT(*) AS failureCount
+    FROM test_runs tr
+    LEFT JOIN tests t ON t.testId = tr.testId AND t.fileId = tr.fileId AND t.project = tr.project
+    WHERE tr.outcome IN ('failed', 'unexpected')
+      AND tr.createdAt >= ? AND tr.createdAt < ?
+      ${projectClause}
+    GROUP BY tr.testId, tr.fileId, tr.project
+    ORDER BY failureCount DESC, title ASC
+    LIMIT ?
+  `;
+  return db.prepare(sql).all(...params) as Array<{
+    testId: string;
+    fileId: string;
+    project: string;
+    title: string;
+    failureCount: number;
+  }>;
+}
+
+export function getFlakiestTestsInWindow(
+  db: Database.Database,
+  project: string | undefined,
+  from: string,
+  to: string,
+  limit: number,
+  minScore: number
+): Array<{
+  testId: string;
+  fileId: string;
+  project: string;
+  title: string;
+  flakinessScore: number;
+}> {
+  const scoped = !!project && project !== 'all';
+  const outerProjectClause = scoped ? 'AND t.project = ?' : '';
+  const innerProjectClause = scoped ? 'AND tr.project = ?' : '';
+
+  const params: Array<string | number> = [minScore];
+  if (scoped) params.push(project);
+  params.push(from, to);
+  if (scoped) params.push(project);
+  params.push(limit);
+
+  const sql = `
+    SELECT t.testId, t.fileId, t.project, t.title, t.flakinessScore AS flakinessScore
+    FROM tests t
+    WHERE t.flakinessScore IS NOT NULL
+      AND t.flakinessScore >= ?
+      ${outerProjectClause}
+      AND EXISTS (
+        SELECT 1 FROM test_runs tr
+        WHERE tr.testId = t.testId AND tr.fileId = t.fileId AND tr.project = t.project
+          AND tr.createdAt >= ? AND tr.createdAt < ?
+          ${innerProjectClause}
+      )
+    ORDER BY t.flakinessScore DESC, t.title ASC
+    LIMIT ?
+  `;
+  return db.prepare(sql).all(...params) as Array<{
+    testId: string;
+    fileId: string;
+    project: string;
+    title: string;
+    flakinessScore: number;
+  }>;
+}
+
 export function getTestRunsInWindow(
   db: Database.Database,
   project: string | undefined,
