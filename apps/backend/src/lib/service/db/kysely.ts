@@ -74,6 +74,7 @@ export interface ReportsRow {
   sizeBytes: number;
   stats: string | null;
   metadata: string;
+  files: string | null;
   passRate: number | null;
   updatedAt: WithDefault<string | null>;
 }

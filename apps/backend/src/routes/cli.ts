@@ -854,14 +854,10 @@ async function buildReportBrief(reportId: string, full: boolean): Promise<Report
   const report = reportDb.getByID(reportId);
   if (!report) return null;
 
-  const failedTestRefs: Array<{ testId: string; fileId: string; project: string }> = [];
-  for (const file of report.files ?? []) {
-    for (const test of file.tests ?? []) {
-      if (FAILED_OUTCOMES.has(test.outcome)) {
-        failedTestRefs.push({ testId: test.testId, fileId: file.fileId, project: report.project });
-      }
-    }
-  }
+  const failedTestRefs = testDb
+    .getTestRunsByReport(reportId)
+    .filter((run) => FAILED_OUTCOMES.has(run.outcome))
+    .map((run) => ({ testId: run.testId, fileId: run.fileId, project: run.project }));
 
   const truncated = failedTestRefs.length > FAILED_TESTS_PER_REPORT_MAX;
   const refsToBrief = failedTestRefs.slice(0, FAILED_TESTS_PER_REPORT_MAX);

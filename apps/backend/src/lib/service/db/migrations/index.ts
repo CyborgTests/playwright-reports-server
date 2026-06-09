@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { migration001FkCascade } from './001_fk_cascade_dependent_tables.js';
+import { migration002ExtractFilesColumn } from './002_extract_files_column.js';
 
 export interface Migration {
   id: string;
@@ -11,7 +12,7 @@ export interface Migration {
 // filenames are advisory — only this list controls execution order. Anything
 // already deployed in `main` and applied to existing DBs by boot-time logic
 // does NOT need a migration; this framework is for uncommitted forward changes.
-const MIGRATIONS: Migration[] = [migration001FkCascade];
+const MIGRATIONS: Migration[] = [migration001FkCascade, migration002ExtractFilesColumn];
 
 export function runMigrations(db: Database.Database): void {
   db.exec(`

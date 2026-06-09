@@ -146,6 +146,7 @@ export class ReportDatabase {
       size,
       sizeBytes,
       stats,
+      files,
       ...metadata
     } = report;
 
@@ -172,6 +173,7 @@ export class ReportDatabase {
         sizeBytes: sizeBytes || 0,
         stats: stats ? JSON.stringify(stats) : null,
         metadata: JSON.stringify(metadata),
+        files: files ? JSON.stringify(files) : null,
         passRate: computePassRateFromStats(stats),
         updatedAt: undefined,
       })
@@ -186,6 +188,7 @@ export class ReportDatabase {
           sizeBytes: eb.ref('excluded.sizeBytes'),
           stats: eb.ref('excluded.stats'),
           metadata: eb.ref('excluded.metadata'),
+          files: eb.ref('excluded.files'),
           passRate: eb.ref('excluded.passRate'),
           updatedAt: sql`CURRENT_TIMESTAMP`,
         }))
@@ -605,8 +608,25 @@ export class ReportDatabase {
       this.db.prepare(countCompiled.sql).get(...countCompiled.parameters) as { count: number }
     ).count;
 
+    // skip the `files` column, only the detail by id query needs it.
     let listQuery = applyWhere(
-      this.k.selectFrom('reports').selectAll().orderBy('createdAt', 'desc')
+      this.k
+        .selectFrom('reports')
+        .select([
+          'reportID',
+          'project',
+          'title',
+          'displayNumber',
+          'createdAt',
+          'reportUrl',
+          'size',
+          'sizeBytes',
+          'stats',
+          'metadata',
+          'passRate',
+          'updatedAt',
+        ])
+        .orderBy('createdAt', 'desc')
     );
     if (input?.pagination?.limit !== undefined) {
       listQuery = listQuery
@@ -633,34 +653,39 @@ export class ReportDatabase {
   private rowToReport(row: ReportRow): ReportHistory {
     const key = parseCacheKey(row);
     const cached = parseCache.get(key);
-    if (cached) return cached;
-
-    const metadata = JSON.parse(row.metadata || '{}');
-    const stats = row.stats ? JSON.parse(row.stats) : undefined;
-
-    const result: ReportHistory = {
-      reportID: row.reportID,
-      project: row.project,
-      title: row.title || undefined,
-      displayNumber: row.displayNumber || undefined,
-      createdAt: row.createdAt,
-      reportUrl: row.reportUrl,
-      size: row.size || undefined,
-      sizeBytes: row.sizeBytes,
-      stats,
-      ...metadata,
-    };
-
-    if (parseCache.size >= PARSE_CACHE_MAX) {
-      const firstKey = parseCache.keys().next().value;
-      if (firstKey !== undefined) parseCache.delete(firstKey);
+    let baseDecoded: ReportHistory;
+    if (cached) {
+      baseDecoded = cached;
+    } else {
+      const metadata = JSON.parse(row.metadata || '{}');
+      const stats = row.stats ? JSON.parse(row.stats) : undefined;
+      baseDecoded = {
+        reportID: row.reportID,
+        project: row.project,
+        title: row.title || undefined,
+        displayNumber: row.displayNumber || undefined,
+        createdAt: row.createdAt,
+        reportUrl: row.reportUrl,
+        size: row.size || undefined,
+        sizeBytes: row.sizeBytes,
+        stats,
+        ...metadata,
+      } as ReportHistory;
+      if (parseCache.size >= PARSE_CACHE_MAX) {
+        const firstKey = parseCache.keys().next().value;
+        if (firstKey !== undefined) parseCache.delete(firstKey);
+      }
+      parseCache.set(key, baseDecoded);
     }
-    parseCache.set(key, result);
-    return result;
+
+    if (row.files != null) {
+      return { ...baseDecoded, files: JSON.parse(row.files) };
+    }
+    return baseDecoded;
   }
 
   private rowToReportLite(
-    row: Omit<ReportRow, 'metadata' | 'updatedAt' | 'passRate'>
+    row: Omit<ReportRow, 'metadata' | 'updatedAt' | 'passRate' | 'files'>
   ): ReportHistoryLite {
     return {
       reportID: row.reportID,

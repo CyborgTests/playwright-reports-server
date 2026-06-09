@@ -98,6 +98,7 @@ export const REPORTS_SCHEMA_SQL = `
     sizeBytes INTEGER,
     stats TEXT,
     metadata TEXT,
+    files TEXT,
     passRate REAL,
     updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
   );
