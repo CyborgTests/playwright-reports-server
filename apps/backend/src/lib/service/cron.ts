@@ -18,6 +18,7 @@ interface JobSpec {
   name: 'reports' | 'results';
   expireDays: number | undefined;
   expression: string | undefined;
+  timeoutMs: number;
   task: () => Promise<void>;
 }
 
@@ -29,6 +30,7 @@ export class CronService {
   private clearResultCacheJob: Cron | undefined;
   private clearNotificationLogJob: Cron | undefined;
   private dbMaintenanceJob: Cron | undefined;
+  private readonly inFlight = new Map<string, Promise<void>>();
 
   public static getInstance() {
     instance[runningCron] ??= new CronService();
@@ -62,13 +64,15 @@ export class CronService {
   public async restart() {
     console.log('[cron-job] restarting cron tasks...');
     this.stopJobs();
+    await this.awaitInFlight(CronService.STOP_DEADLINE_MS);
     this.initialized = false;
     await this.init();
   }
 
-  public stop() {
+  public async stop() {
     console.log('[cron-job] stopping cron tasks...');
     this.stopJobs();
+    await this.awaitInFlight(CronService.STOP_DEADLINE_MS);
     this.initialized = false;
   }
 
@@ -85,6 +89,50 @@ export class CronService {
     this.dbMaintenanceJob = undefined;
   }
 
+  private wrapJob(name: string, timeoutMs: number, task: () => Promise<void>): () => Promise<void> {
+    return async () => {
+      const promise = (async () => {
+        let timer: NodeJS.Timeout | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error(`task timed out after ${timeoutMs}ms`));
+          }, timeoutMs);
+          timer.unref?.();
+        });
+        try {
+          await Promise.race([task(), timeout]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      })();
+      this.inFlight.set(name, promise);
+      try {
+        await promise;
+      } finally {
+        this.inFlight.delete(name);
+      }
+    };
+  }
+
+  private async awaitInFlight(deadlineMs: number): Promise<void> {
+    if (this.inFlight.size === 0) return;
+    const snapshot = Array.from(this.inFlight.entries());
+    const names = snapshot.map(([n]) => n).join(', ');
+    console.log(`[cron-job] waiting up to ${deadlineMs}ms for in-flight tasks: ${names}`);
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<'deadline'>((resolve) => {
+      timer = setTimeout(() => resolve('deadline'), deadlineMs);
+      timer.unref?.();
+    });
+    const completion = Promise.allSettled(snapshot.map(([, p]) => p)).then(() => 'done' as const);
+    const result = await Promise.race([deadline, completion]);
+    if (timer) clearTimeout(timer);
+    if (result === 'deadline') {
+      const remaining = Array.from(this.inFlight.keys()).join(', ');
+      console.warn(`[cron-job] stop deadline reached, still running: ${remaining || '(none)'}`);
+    }
+  }
+
   private async scheduleJobs() {
     const cfg = await service.getConfig();
     const reportDays = cfg.cron?.reportExpireDays ?? env.REPORT_EXPIRE_DAYS;
@@ -97,12 +145,14 @@ export class CronService {
       name: 'reports',
       expireDays: reportDays,
       expression: reportSchedule,
+      timeoutMs: CronService.CLEANUP_TIMEOUT_MS,
       task: () => this.clearOutdatedReports(),
     });
     this.clearResultsJob = this.scheduleJob({
       name: 'results',
       expireDays: resultDays,
       expression: resultSchedule,
+      timeoutMs: CronService.CLEANUP_TIMEOUT_MS,
       task: () => this.clearOutdatedResults(),
     });
     if (env.DATA_STORAGE === 's3') {
@@ -129,7 +179,9 @@ export class CronService {
         protect: true,
         catch: (err) => console.error('[cron-job] db-maintenance task error:', err),
       },
-      () => this.runDbMaintenance()
+      this.wrapJob('db-maintenance', CronService.DB_MAINTENANCE_TIMEOUT_MS, () =>
+        Promise.resolve(this.runDbMaintenance())
+      )
     );
 
     const nextRun = job.nextRun();
@@ -156,7 +208,9 @@ export class CronService {
         protect: true,
         catch: (err) => console.error('[cron-job] notification-log task error:', err),
       },
-      () => this.clearStaleNotificationLog()
+      this.wrapJob('notification-log', CronService.NOTIFICATION_LOG_TIMEOUT_MS, () =>
+        Promise.resolve(this.clearStaleNotificationLog())
+      )
     );
 
     const nextRun = job.nextRun();
@@ -183,7 +237,9 @@ export class CronService {
         protect: true,
         catch: (err) => console.error('[cron-job] result-cache task error:', err),
       },
-      () => this.clearStaleResultCache()
+      this.wrapJob('result-cache', CronService.RESULT_CACHE_TIMEOUT_MS, () =>
+        this.clearStaleResultCache()
+      )
     );
 
     const nextRun = job.nextRun();
@@ -220,7 +276,7 @@ export class CronService {
         protect: true,
         catch: (err) => console.error(`[cron-job] ${spec.name} task error:`, err),
       },
-      spec.task
+      this.wrapJob(spec.name, spec.timeoutMs, spec.task)
     );
 
     const nextRun = job.nextRun();
@@ -374,6 +430,11 @@ export class CronService {
   private static readonly NOTIFICATION_LOG_RETENTION_DAYS = 7;
   private static readonly DB_MAINTENANCE_SCHEDULE = '45 3 * * *';
   private static readonly LLM_TASKS_RETENTION_DAYS = 30;
+  private static readonly CLEANUP_TIMEOUT_MS = 60 * 60 * 1000; // 1h, batched DB+storage deletes
+  private static readonly RESULT_CACHE_TIMEOUT_MS = 10 * 60 * 1000; // 10m, dir scan
+  private static readonly NOTIFICATION_LOG_TIMEOUT_MS = 5 * 60 * 1000; // 5m, single DB delete
+  private static readonly DB_MAINTENANCE_TIMEOUT_MS = 10 * 60 * 1000; // 10m, vacuum + checkpoint
+  private static readonly STOP_DEADLINE_MS = 30 * 1000;
 }
 
 export const cronService = CronService.getInstance();

@@ -146,7 +146,7 @@ export class Lifecycle {
 
     try {
       if (cronService.initialized) {
-        cronService.stop();
+        await cronService.stop();
         console.log('[lifecycle] Cron service stopped');
       }
 

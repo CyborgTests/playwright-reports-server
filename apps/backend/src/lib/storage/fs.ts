@@ -99,8 +99,11 @@ export async function deleteResult(resultId: string) {
 export async function deleteReports(reports: ReportPath[]) {
   const paths = reports.map((report) => report.reportID);
 
-  await processWithConcurrency(paths, 10, async (path) => {
-    await deleteReport(path);
+  await processWithConcurrency(paths, 10, async (id) => {
+    const { error } = await withError(deleteReport(id));
+    if (error) {
+      console.warn(`[fs] failed to delete report ${id}:`, error);
+    }
   });
 }
 
