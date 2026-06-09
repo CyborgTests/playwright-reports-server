@@ -1,10 +1,6 @@
 'use client';
 
-import type {
-  ReportAnalysisCodeRef,
-  ReportAnalysisStructured,
-  ReportAnalysisVerdict,
-} from '@playwright-reports/shared';
+import type { ReportAnalysisStructured, ReportAnalysisVerdict } from '@playwright-reports/shared';
 import { REPORT_VERDICT_DESCRIPTIONS } from '@playwright-reports/shared';
 import {
   Activity,
@@ -14,58 +10,10 @@ import {
   FlaskConical,
   ListChecks,
 } from 'lucide-react';
-import { Fragment, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { useState } from 'react';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-
-function refHref(
-  ref: ReportAnalysisCodeRef,
-  reportId: string | undefined,
-  fallbackProject: string | undefined
-): string | null {
-  if (ref.kind === 'test' && ref.testId) {
-    const project = ref.project ?? fallbackProject;
-    const query = project ? `?project=${encodeURIComponent(project)}` : '';
-    return `/test/${ref.testId}${query}`;
-  }
-  if (ref.kind === 'file' && reportId) return `/report/${reportId}`;
-  return null;
-}
-
-function InlineRefs({
-  refs,
-  reportId,
-  fallbackProject,
-}: {
-  refs: ReportAnalysisCodeRef[];
-  reportId: string | undefined;
-  fallbackProject: string | undefined;
-}) {
-  if (refs.length === 0) return null;
-  return (
-    <p className="mt-2 text-sm text-muted-foreground">
-      Related:{' '}
-      {refs.map((ref, i) => {
-        const href = refHref(ref, reportId, fallbackProject);
-        const key = `${ref.kind}-${ref.label}-${i}`;
-        return (
-          <Fragment key={key}>
-            {i > 0 && ', '}
-            {href ? (
-              <RouterLink to={href} className="text-primary hover:underline">
-                {ref.label}
-              </RouterLink>
-            ) : (
-              <span>{ref.label}</span>
-            )}
-          </Fragment>
-        );
-      })}
-    </p>
-  );
-}
 
 interface ReportAnalysisRendererProps {
   analysis: ReportAnalysisStructured;
@@ -123,7 +71,7 @@ export function ReportAnalysisRenderer({
   analysis,
   fallbackProject,
 }: Readonly<ReportAnalysisRendererProps>) {
-  const { sections, summary, reportId } = analysis;
+  const { sections, summary } = analysis;
   // First section is always open; rest are collapsed by default.
   const [openExtras, setOpenExtras] = useState<Set<number>>(new Set());
 
@@ -175,13 +123,6 @@ export function ReportAnalysisRenderer({
             {isOpen && (
               <div className="mt-2">
                 <MarkdownRenderer content={section.body} fallbackProject={fallbackProject} />
-                {section.codeRefs && section.codeRefs.length > 0 && (
-                  <InlineRefs
-                    refs={section.codeRefs}
-                    reportId={reportId}
-                    fallbackProject={fallbackProject}
-                  />
-                )}
               </div>
             )}
           </div>
