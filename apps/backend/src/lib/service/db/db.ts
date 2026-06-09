@@ -53,8 +53,8 @@ export function createDatabase(): Database.Database {
   db.pragma('foreign_keys = ON');
   db.pragma('auto_vacuum = INCREMENTAL');
 
-  initializeSchema(db);
   runMigrations(db);
+  initializeSchema(db);
   instance[initiatedDb] = db;
 
   return db;
