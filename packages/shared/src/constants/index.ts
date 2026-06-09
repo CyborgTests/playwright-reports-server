@@ -37,6 +37,16 @@ export const API_ENDPOINTS = {
   LLM_FEEDBACK_RELATED: '/api/llm/feedback/related',
   LLM_REGENERATE: '/api/llm/regenerate',
   LLM_TEST_HISTORY: '/api/llm/test-history',
+
+  // Quality Overview
+  QUALITY_DASHBOARDS: '/api/quality/dashboards',
+  QUALITY_DASHBOARD: '/api/quality/dashboards/:slug',
+  QUALITY_SNAPSHOT: '/api/quality/dashboards/:slug/snapshot',
+  QUALITY_DASHBOARD_TREE: '/api/quality/dashboards/:id/tree',
+  QUALITY_DASHBOARD_BY_ID: '/api/quality/dashboards/:id',
+  QUALITY_PROJECTS: '/api/quality/projects',
+  QUALITY_HOME: '/api/quality/home',
+  QUALITY_HOME_ORDER: '/api/quality/home/order',
 } as const;
 
 export const TEST_OUTCOMES = {

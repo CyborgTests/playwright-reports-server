@@ -7,7 +7,7 @@ What you get:
 - **Reports & results storage**: keep HTML reports in one place, view them without downloading.
 - **Sharded run merging**: server-side equivalent of [`playwright merge-reports`](https://playwright.dev/docs/test-sharding), without scripting the post-step.
 - **GitHub Sync**: pull Playwright artifacts from GitHub Actions on a cron without touching workflow files.
-- **Analytics dashboard**: pass-rate trends, slow tests, failure categories, failure clusters.
+- **Overview and Analytics dashboards**: statuses, pass-rate trends, slow tests, failure categories, failure clusters.
 - **Test flakiness & quarantine**: score test stability, optionally skip the noisiest.
 - **LLM failure analysis**: pick any OpenAI-compatible or Anthropic-format provider; analyses surface inline on each report and on the dashboard. Bring your own token casino.
 - **Code-agent integration**: the [`pwrs-cli`](https://www.npmjs.com/package/@shelex/pwrs-cli) plus Claude Code skill exposes failure context to Claude Code, Codex, Cursor, and the LLM-driven code assistant that drops next week.
@@ -73,7 +73,7 @@ The detailed docs live in the **[wiki](https://github.com/Shelex/playwright-repo
 | Title, logo, favicon, header links | [White‐label](https://github.com/Shelex/playwright-reports-server/wiki/White%E2%80%90label) |
 | Deployment | [Deployment](https://github.com/Shelex/playwright-reports-server/wiki/Deployment) |
 | How to upload reports | [Uploading Reports](https://github.com/Shelex/playwright-reports-server/wiki/Uploading-Reports) |
-| Dashboard stats, trends, failure clustering strategies | [Analytics Dashboard](https://github.com/Shelex/playwright-reports-server/wiki/Analytics-Dashboard) |
+| Analytics stats, trends, failure clustering strategies | [Analytics](https://github.com/Shelex/playwright-reports-server/wiki/Analytics-Dashboard) |
 | Flakiness scoring, quarantine, reporter-side skip | [Test Management](https://github.com/Shelex/playwright-reports-server/wiki/Test-Management) |
 | LLM analysis | [LLM Analysis](https://github.com/Shelex/playwright-reports-server/wiki/LLM-Analysis) |
 | Claude Code / Codex / Cursor integration via `pwrs-cli` | [Code Assistant Integration](https://github.com/Shelex/playwright-reports-server/wiki/Code-Assistant-Integration) |

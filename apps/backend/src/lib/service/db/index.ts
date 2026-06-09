@@ -2,6 +2,7 @@ export * from './db.js';
 export * from './failureSummary.sqlite.js';
 export * from './githubSync.sqlite.js';
 export * from './llmTasks.sqlite.js';
+export * from './qualityDashboards.sqlite.js';
 export * from './reportResults.sqlite.js';
 export * from './reports.sqlite.js';
 export * from './results.sqlite.js';

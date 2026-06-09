@@ -2015,7 +2015,7 @@ export const buildProjectSummarySegments = (args: {
     const latestDay = latestRun.createdAt.slice(0, 10);
     dataBlock += `**Window:** ${oldestDay} -> ${latestDay} (${days} day${days === 1 ? '' : 's'}, ${totalRuns} run${totalRuns === 1 ? '' : 's'})\n`;
   }
-  dataBlock += `**Overview:** ${passingRuns} of ${totalRuns} runs passed cleanly (no failures). ${runsWithFailures.length} runs had failures.\n`;
+  dataBlock += `**Statistics:** ${passingRuns} of ${totalRuns} runs passed cleanly (no failures). ${runsWithFailures.length} runs had failures.\n`;
   // Coverage scope: lets the model interpret "N failures" relative to suite
   // size, and surface quarantine churn that wouldn't otherwise reach the
   // verdict (quarantined-but-still-failing tests don't appear in the per-run

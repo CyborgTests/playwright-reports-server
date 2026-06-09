@@ -31,6 +31,14 @@ export const siteConfig: SiteConfig = {
   logoPath: '/logo.svg',
   navItems: [
     {
+      label: 'Overview',
+      href: '/',
+    },
+    {
+      label: 'Dashboard',
+      href: '/analytics',
+    },
+    {
       label: 'Reports',
       href: '/reports',
     },

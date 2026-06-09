@@ -541,6 +541,43 @@ function initializeSchema(db: Database.Database): void {
     );
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS quality_dashboards (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      isDefault INTEGER NOT NULL DEFAULT 0,
+      homeOrder INTEGER NOT NULL DEFAULT 0,
+      stalenessDays INTEGER NOT NULL DEFAULT 7,
+      defaultGradeBands TEXT NOT NULL,
+      defaultFormula TEXT NOT NULL DEFAULT 'lenient',
+      defaultMinOkGrade TEXT NOT NULL DEFAULT 'B',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS quality_dashboard_nodes (
+      id TEXT PRIMARY KEY,
+      dashboardId TEXT NOT NULL REFERENCES quality_dashboards(id) ON DELETE CASCADE,
+      parentNodeId TEXT REFERENCES quality_dashboard_nodes(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('group','project')),
+      name TEXT NOT NULL,
+      projectName TEXT,
+      weight REAL NOT NULL DEFAULT 1,
+      sortOrder INTEGER NOT NULL DEFAULT 0,
+      gradeBands TEXT,
+      formula TEXT,
+      minOkGrade TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_quality_nodes_dash
+      ON quality_dashboard_nodes(dashboardId, parentNodeId, sortOrder);
+    CREATE INDEX IF NOT EXISTS idx_quality_nodes_project
+      ON quality_dashboard_nodes(dashboardId, projectName);
+  `);
+
   // Drift cleanup: an older non-versioned schema in some deployed DBs left a
   // `targetType` column with a NOT NULL constraint and no default. The current
   // code never writes it, so every INSERT 500s with SQLITE_CONSTRAINT_NOTNULL.

@@ -1,4 +1,4 @@
-import { ListTodo, Menu } from 'lucide-react';
+import { Gauge, ListTodo, Menu } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { HeaderLinks } from '@/components/header-links';
 import { ReportIcon, ResultIcon, SettingsIcon, TrendIcon } from '@/components/icons';
@@ -24,7 +24,8 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard', href: '/', icon: TrendIcon },
+  { label: 'Overview', href: '/', icon: Gauge },
+  { label: 'Analytics', href: '/analytics', icon: TrendIcon },
   { label: 'Reports', href: '/reports', icon: ReportIcon },
   { label: 'Results', href: '/results', icon: ResultIcon },
   { label: 'Settings', href: '/settings', icon: SettingsIcon },

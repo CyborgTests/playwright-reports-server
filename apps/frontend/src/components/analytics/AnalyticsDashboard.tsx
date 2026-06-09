@@ -21,8 +21,7 @@ import { TopFailuresWidget } from './TopFailuresWidget';
 import { TrendSparklines } from './TrendSparklines';
 
 const DASHBOARD_SECTIONS: Array<{ id: string; label: string }> = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'trends', label: 'Trends' },
+  { id: 'stats', label: 'Stats' },
   { id: 'failures', label: 'Failures' },
   { id: 'tests', label: 'Tests' },
 ];
@@ -138,13 +137,6 @@ export default function AnalyticsDashboard() {
 
   return (
     <div className="w-[min(100%, 1200px)] mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Analytics Dashboard</h1>
-        <p className="text-muted-foreground mt-1">
-          Comprehensive insights into test performance and health
-        </p>
-      </div>
-
       <DashboardSectionNav
         failedOnly={failedOnly}
         onFailedOnlyChange={setFailedOnly}
@@ -154,7 +146,7 @@ export default function AnalyticsDashboard() {
         onProjectChange={onProjectChange}
       />
 
-      <section id="overview" className="scroll-mt-32">
+      <section id="stats" className="scroll-mt-40">
         <OverviewStatsCard
           stats={overviewStats!}
           totalTests={testsSummary?.total}
@@ -162,9 +154,6 @@ export default function AnalyticsDashboard() {
           totalRuns={runHealthMetrics.length}
           onFlakyClick={handleFlakyTileClick}
         />
-      </section>
-
-      <section id="trends" className="scroll-mt-32 space-y-6">
         <TrendSparklines
           metrics={trendMetrics!}
           isLoading={isLoading}

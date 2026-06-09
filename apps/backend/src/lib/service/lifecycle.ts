@@ -13,6 +13,7 @@ import { getDatabase, hasMigrationMark, setMigrationMark } from './db/db.js';
 import { githubSyncDb } from './db/githubSync.sqlite.js';
 import { reportDb, reportResultsDb, resultDb } from './db/index.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
+import { qualityDashboardsDb } from './db/qualityDashboards.sqlite.js';
 import { siteConfigDb } from './db/siteConfig.sqlite.js';
 import { testDb } from './db/tests.sqlite.js';
 import { litestreamService } from './litestream.js';
@@ -66,6 +67,7 @@ export class Lifecycle {
       }
 
       siteConfigDb.ensureSeeded();
+      qualityDashboardsDb.seedDefaultIfEmpty();
       const cfg = siteConfigDb.get();
       const brandingCandidates: string[] = [];
       if (cfg.logoPath) brandingCandidates.push(cfg.logoPath);

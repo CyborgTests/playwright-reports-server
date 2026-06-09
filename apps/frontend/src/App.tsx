@@ -10,7 +10,8 @@ import { withQueryParams } from '@/lib/network';
 import { withBase } from '@/lib/url';
 import { Providers } from '@/providers';
 
-const HomePage = lazy(() => import('@/pages/HomePage'));
+const QualityOverviewPage = lazy(() => import('@/pages/QualityOverviewPage'));
+const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'));
 const ReportsPage = lazy(() => import('@/pages/ReportsPage'));
 const ReportsComparePage = lazy(() => import('@/pages/ReportsComparePage'));
 const ReportDetailPage = lazy(() => import('@/pages/ReportDetailPage'));
@@ -69,7 +70,8 @@ function App() {
                 <Layout>
                   <Suspense fallback={<RouteFallback />}>
                     <Routes>
-                      <Route path="/" element={<HomePage />} />
+                      <Route path="/" element={<QualityOverviewPage />} />
+                      <Route path="/analytics" element={<AnalyticsPage />} />
                       <Route path="/reports" element={<ReportsPage />} />
                       <Route path="/reports/compare" element={<ReportsComparePage />} />
                       <Route path="/report/:id" element={<ReportDetailPage />} />
