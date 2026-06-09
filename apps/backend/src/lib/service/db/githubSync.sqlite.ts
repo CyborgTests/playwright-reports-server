@@ -200,6 +200,48 @@ export class GithubSyncDatabase {
       .compile();
     return Number(this.db.prepare(compiled.sql).run(...compiled.parameters).changes ?? 0);
   }
+
+  public getLatestRunsBatch(syncConfigIds: string[]): Map<string, GithubSyncRunRow> {
+    const out = new Map<string, GithubSyncRunRow>();
+    if (syncConfigIds.length === 0) return out;
+    const placeholders = syncConfigIds.map(() => '?').join(', ');
+    const sqlText = `
+      SELECT * FROM (
+        SELECT *, ROW_NUMBER() OVER (
+          PARTITION BY syncConfigId ORDER BY startedAt DESC, id DESC
+        ) AS rn
+        FROM github_sync_runs
+        WHERE syncConfigId IN (${placeholders})
+      ) WHERE rn = 1
+    `;
+    const rows = this.db.prepare(sqlText).all(...syncConfigIds) as Array<
+      GithubSyncRunRow & { rn: number }
+    >;
+    for (const row of rows) {
+      const { rn: _rn, ...rest } = row;
+      out.set(row.syncConfigId, rest as GithubSyncRunRow);
+    }
+    return out;
+  }
+
+  public countSyncedArtifactsBatch(syncConfigIds: string[]): Map<string, number> {
+    const out = new Map<string, number>();
+    if (syncConfigIds.length === 0) return out;
+    const placeholders = syncConfigIds.map(() => '?').join(', ');
+    const sqlText = `
+      SELECT syncConfigId, COUNT(*) AS count FROM github_sync_state
+      WHERE syncConfigId IN (${placeholders})
+      GROUP BY syncConfigId
+    `;
+    const rows = this.db.prepare(sqlText).all(...syncConfigIds) as Array<{
+      syncConfigId: string;
+      count: number;
+    }>;
+    for (const row of rows) {
+      out.set(row.syncConfigId, row.count);
+    }
+    return out;
+  }
 }
 
 export const githubSyncDb = singletonOf('githubSync', () => new GithubSyncDatabase());

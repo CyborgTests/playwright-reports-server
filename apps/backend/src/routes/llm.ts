@@ -8,6 +8,7 @@ import {
   TEST_ANALYSIS_SYSTEM_PROMPT,
   TEST_ANALYSIS_TASK_INSTRUCTIONS,
 } from '../lib/llm/prompts/index.js';
+import { getDatabase } from '../lib/service/db/db.js';
 import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
 import type { LlmTaskRow, LlmTaskStatus, LlmTaskType } from '../lib/service/db/llmTasks.sqlite.js';
 import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
@@ -19,6 +20,12 @@ import { llmTaskEvents } from '../lib/service/llmTaskEvents.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
 const TERMINAL_STATUSES: ReadonlySet<LlmTaskStatus> = new Set(['completed', 'failed', 'cancelled']);
+
+// Hard ceiling for bulk re-queue endpoints. Even a "queue everything missing"
+// admin action shouldn't be allowed to insert tens of thousands of rows in a
+// single request and starve concurrent traffic; the user can re-invoke after
+// the first batch processes.
+const BULK_REQUEUE_LIMIT = 5000;
 
 /** In-memory cache for /api/llm/available-models. Avoids hammering the
  *  provider's /models endpoint when the user spam-clicks "Refresh". TTL is
@@ -287,19 +294,11 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
 
       try {
         const rows = getFailedTestsWithoutAnalysis();
+        const batch = rows.slice(0, BULK_REQUEUE_LIMIT);
+        const queued = llmTasksDb.bulkCreateTestAnalysis(batch);
+        const remaining = Math.max(0, rows.length - queued);
 
-        let queued = 0;
-        for (const row of rows) {
-          llmTasksDb.createTask('test_analysis', {
-            reportId: row.reportId,
-            testId: row.testId,
-            fileId: row.fileId,
-            project: row.project,
-          });
-          queued++;
-        }
-
-        return { success: true, queued };
+        return { success: true, queued, remaining };
       } catch (error) {
         fastify.log.error(error);
         return reply.status(500).send({
@@ -517,25 +516,18 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     if (authResult) return;
 
     try {
-      // Clear existing analyses and summaries
-      testAnalysisDb.deleteAll();
-      failureSummaryDb.deleteAll();
+      const tx = getDatabase().transaction(() => {
+        testAnalysisDb.deleteAll();
+        failureSummaryDb.deleteAll();
+      });
+      tx();
 
-      // Re-queue all failed tests
       const rows = getFailedTestsWithoutAnalysis();
+      const batch = rows.slice(0, BULK_REQUEUE_LIMIT);
+      const queued = llmTasksDb.bulkCreateTestAnalysis(batch);
+      const remaining = Math.max(0, rows.length - queued);
 
-      let queued = 0;
-      for (const row of rows) {
-        llmTasksDb.createTask('test_analysis', {
-          reportId: row.reportId,
-          testId: row.testId,
-          fileId: row.fileId,
-          project: row.project,
-        });
-        queued++;
-      }
-
-      return { success: true, queued };
+      return { success: true, queued, remaining };
     } catch (error) {
       fastify.log.error(error);
       return reply.status(500).send({

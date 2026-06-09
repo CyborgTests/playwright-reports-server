@@ -131,6 +131,48 @@ interface ConfigFormData {
   testManagementFlakinessEvaluationWindowDays?: string;
 }
 
+// Explicit allow-list of accepted multipart field names. Anything not in this
+// set is dropped, so we cannot smuggle __proto__/constructor/etc.
+// into the formData object.
+const ALLOWED_CONFIG_FIELDS: ReadonlySet<keyof ConfigFormData> = new Set<keyof ConfigFormData>([
+  'title',
+  'serverBaseUrl',
+  'logoPath',
+  'logoInvertOnDark',
+  'faviconPath',
+  'reporterPaths',
+  'headerLinks',
+  'resultExpireDays',
+  'resultExpireCronSchedule',
+  'reportExpireDays',
+  'reportExpireCronSchedule',
+  'llmProvider',
+  'llmBaseUrl',
+  'llmApiKey',
+  'llmModel',
+  'llmTestAnalysisTemperature',
+  'llmReportSummaryTemperature',
+  'llmProjectSummaryTemperature',
+  'llmParallelRequests',
+  'llmAutoAnalyzeNewReports',
+  'llmAutoProjectSummaryOnReportComplete',
+  'llmAnalyzeGreenWindows',
+  'llmMaxTokens',
+  'llmContextWindow',
+  'llmMultimodalMode',
+  'llmCustomSystemPrompt',
+  'llmCustomTestAnalysisSystemPrompt',
+  'llmCustomProjectSummarySystemPrompt',
+  'llmCustomTestAnalysisInstructions',
+  'llmCustomReportSummaryPrompt',
+  'llmCustomProjectSummaryInstructions',
+  'testManagementQuarantineThresholdPercentage',
+  'testManagementWarningThresholdPercentage',
+  'testManagementAutoQuarantineEnabled',
+  'testManagementFlakinessMinRuns',
+  'testManagementFlakinessEvaluationWindowDays',
+]);
+
 export async function registerConfigRoutes(fastify: FastifyInstance) {
   fastify.get('/api/config', async (request, reply) => {
     const { result: config, error } = await withError(service.getConfig());
@@ -265,6 +307,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
             }
           } else if (part.type === 'field') {
             const fieldName = part.fieldname as keyof ConfigFormData;
+            if (!ALLOWED_CONFIG_FIELDS.has(fieldName)) continue;
             formData[fieldName] = part.value as string;
           }
         }

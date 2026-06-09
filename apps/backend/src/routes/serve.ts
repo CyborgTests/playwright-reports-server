@@ -24,7 +24,12 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
   fastify.get('/api/serve/*', async (request, reply) => {
     try {
       const filePath = (request.params as { '*': string })['*'] || '';
-      const rawPath = decodeURI(filePath);
+      let rawPath: string;
+      try {
+        rawPath = decodeURIComponent(filePath);
+      } catch {
+        return reply.code(400).send({ error: 'Invalid path' });
+      }
 
       // Normalize and strip leading separators so the path is interpreted as a
       // descendant of the reports namespace.
@@ -42,8 +47,8 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       const authRequired = !!env.API_TOKEN;
 
       if (authRequired) {
-        const authResult = await authenticate(request as AuthRequest, reply);
-        if (authResult) return;
+        await authenticate(request as AuthRequest, reply);
+        if (reply.sent) return;
       }
 
       const contentType = mime.getType(targetPath.split('/').pop() || '');
@@ -94,10 +99,6 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
         }
       }
 
-      if ((request as AuthRequest).user?.apiToken) {
-        headers['X-API-Token'] = (request as AuthRequest).user?.apiToken ?? '';
-      }
-
       // Report served assets are effectively immutable per reportId.
       // Cache on the static assets keeps browsers from refetching CSS/JS/img
       // on every navigation; a shorter window on the injected index.html so
@@ -118,7 +119,12 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
   fastify.get('/api/static/*', async (request, reply) => {
     try {
       const filePath = (request.params as { '*': string })['*'] || '';
-      const targetPath = decodeURI(filePath);
+      let targetPath: string;
+      try {
+        targetPath = decodeURIComponent(filePath);
+      } catch {
+        return reply.code(400).send({ error: 'Invalid path' });
+      }
 
       const contentType = mime.getType(targetPath.split('/').pop() || '');
 

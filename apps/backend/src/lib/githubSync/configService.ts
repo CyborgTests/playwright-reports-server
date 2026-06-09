@@ -64,6 +64,26 @@ export const githubSyncConfigService = {
     return githubSyncDb.listConfigs().map(rowToPublic);
   },
 
+  listWithStatus(
+    nextRunOf: (id: string) => string | undefined
+  ): Array<GithubSyncConfig & { status: GithubSyncStatus }> {
+    const configs = githubSyncDb.listConfigs();
+    const ids = configs.map((c) => c.id);
+    const latestRuns = githubSyncDb.getLatestRunsBatch(ids);
+    const counts = githubSyncDb.countSyncedArtifactsBatch(ids);
+    return configs.map((row) => {
+      const latest = latestRuns.get(row.id);
+      const status: GithubSyncStatus = {
+        configId: row.id,
+        isRunning: latest?.status === 'running',
+        lastRun: latest ? runRowToPublic(latest) : undefined,
+        nextRun: nextRunOf(row.id),
+        syncedArtifacts: counts.get(row.id) ?? 0,
+      };
+      return { ...rowToPublic(row), status };
+    });
+  },
+
   get(id: string): GithubSyncConfig | undefined {
     const row = githubSyncDb.getConfig(id);
     return row ? rowToPublic(row) : undefined;

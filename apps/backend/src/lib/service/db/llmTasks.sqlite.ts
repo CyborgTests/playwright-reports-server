@@ -142,6 +142,29 @@ export class LlmTasksDatabase {
     };
   }
 
+  public bulkCreateTestAnalysis(
+    items: ReadonlyArray<{
+      reportId?: string;
+      testId?: string;
+      fileId?: string;
+      project?: string;
+    }>
+  ): number {
+    if (items.length === 0) return 0;
+    const tx = this.db.transaction((rows: typeof items) => {
+      for (const row of rows) {
+        this.createTask('test_analysis', {
+          reportId: row.reportId,
+          testId: row.testId,
+          fileId: row.fileId,
+          project: row.project,
+        });
+      }
+    });
+    tx(items);
+    return items.length;
+  }
+
   public markAsRetry(id: string): void {
     const compiled = this.k
       .updateTable('llm_tasks')

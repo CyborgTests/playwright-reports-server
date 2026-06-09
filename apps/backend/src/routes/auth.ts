@@ -1,6 +1,23 @@
+import { Buffer } from 'node:buffer';
+import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
+
+const apiTokenMatches = (candidate: string | undefined): boolean => {
+  const expected = env.API_TOKEN;
+  if (!expected || !candidate) return false;
+  const a = Buffer.from(candidate);
+  const b = Buffer.from(expected);
+  // timingSafeEqual requires same length; pad the shorter side and flag.
+  const len = Math.max(a.length, b.length);
+  const ap = Buffer.alloc(len);
+  const bp = Buffer.alloc(len);
+  a.copy(ap);
+  b.copy(bp);
+  const equalBytes = timingSafeEqual(ap, bp);
+  return equalBytes && a.length === b.length;
+};
 
 const useAuth = !!env.API_TOKEN;
 
@@ -78,7 +95,7 @@ export const authenticateUpload = async (request: AuthRequest, reply: FastifyRep
   // with the raw API_TOKEN - either plain or with a Bearer prefix.
   if (authHeader) {
     const candidate = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
-    if (candidate === env.API_TOKEN) {
+    if (apiTokenMatches(candidate)) {
       request.user = createAuthTokens(env.API_TOKEN as string);
       return;
     }
@@ -190,7 +207,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
         };
       }
 
-      if (!apiToken || apiToken !== env.API_TOKEN) {
+      if (!apiToken || !apiTokenMatches(apiToken)) {
         return reply.status(401).send({
           error: 'Invalid API token',
           success: false,

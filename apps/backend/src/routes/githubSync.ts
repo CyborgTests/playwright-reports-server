@@ -47,10 +47,7 @@ export async function registerGithubSyncRoutes(fastify: FastifyInstance) {
     fastify.addHook('preHandler', (request, reply) => authenticate(request as AuthRequest, reply));
 
     fastify.get('/api/config/github-sync', async () => {
-      return githubSyncConfigService.list().map((cfg) => ({
-        ...cfg,
-        status: githubSyncConfigService.status(cfg.id, githubSyncCron.nextRun(cfg.id)),
-      }));
+      return githubSyncConfigService.listWithStatus((id) => githubSyncCron.nextRun(id));
     });
 
     fastify.post('/api/config/github-sync', async (request, reply) => {

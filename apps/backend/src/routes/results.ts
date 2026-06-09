@@ -134,6 +134,16 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
       const resultID = randomUUID();
       const fileName = `${resultID}.zip`;
 
+      const rollback = async (cause: string) => {
+        const { error: rollbackError } = await withError(service.deleteResults([resultID]));
+        if (rollbackError) {
+          fastify.log.error(
+            { resultID, cause, rollbackError: rollbackError.message },
+            '[upload] rollback after failure left orphan data'
+          );
+        }
+      };
+
       const query = request.query as Record<string, string>;
       const contentLength = query['fileContentLength'] || '';
 
@@ -152,14 +162,14 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
       );
 
       if (uploadError) {
-        await withError(service.deleteResults([resultID]));
+        await rollback(`upload failed: ${uploadError.message}`);
         return reply.status(400).send({
           error: uploadError.message,
         });
       }
 
       if (!result) {
-        await withError(service.deleteResults([resultID]));
+        await rollback('upload returned no result data');
         return reply.status(400).send({ error: 'upload result failed: No result data' });
       }
 
@@ -168,7 +178,7 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
       );
 
       if (uploadResultDetailsError) {
-        await withError(service.deleteResults([resultID]));
+        await rollback(`saveResultDetails failed: ${uploadResultDetailsError.message}`);
         return reply.status(400).send({
           error: `upload result details failed: ${uploadResultDetailsError.message}`,
         });
@@ -201,13 +211,16 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
   });
 }
 
+const RESERVED_FIELD_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
+
 async function processMultipartAndUpload(
   request: FastifyRequest,
   fileName: string,
   passThrough: PassThrough,
   opts: { presignedUrl?: string; contentLength?: string }
 ): Promise<{ details: Record<string, string>; fileSize: number }> {
-  const details: Record<string, string> = {};
+  // null-prototype object so unknown keys can't reach Object.prototype.
+  const details = Object.create(null) as Record<string, string>;
   const parts = request.parts();
   let fileFound = false;
   let fileSize = 0;
@@ -221,6 +234,7 @@ async function processMultipartAndUpload(
   try {
     for await (const part of parts) {
       if (part.type === 'field') {
+        if (RESERVED_FIELD_KEYS.has(part.fieldname)) continue;
         details[part.fieldname] = part.value as string;
         continue;
       }
