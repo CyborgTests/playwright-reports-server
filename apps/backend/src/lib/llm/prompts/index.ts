@@ -150,17 +150,17 @@ Summarize failures for report \`{{reportId}}\` in project "{{project}}" ({{total
 - 'fixture' clusters or converging clusters ⇒ systemic issue.
 - Unclustered failures ⇒ likely isolated issues.
 
-## Verdict (pick one)
-- isolated: ≤2 failures, all unclustered
-- clustered: 1-2 dominant clusters explain most failures
-- widespread: many clusters, no dominant cause
-- systemic: fixture-related OR several clusters share one root cause (prefer over 'clustered')
+## Verdict (pick one — use the lowercase)
+- isolated: ≤2 failures, all unclustered.
+- clustered: 1-2 dominant clusters explain most failures.
+- widespread: many clusters, no dominant cause.
+- systemic: a single root cause (typically a fixture or shared helper) accounts for failures across multiple clusters.
 
 ## Output (strict)
 Return plain Markdown. No JSON. No code fences.
 
 1. Line 1:
-   **Verdict:** isolated|clustered|widespread|systemic
+   **Verdict:** <one of: isolated, clustered, widespread, systemic> (lowercase, exact token).
 
 2. Blank line
 
@@ -182,19 +182,14 @@ Return plain Markdown. No JSON. No code fences.
 - When trend data exists, prioritize newly failed tests.
 - Be concrete (files, fixtures, locators, infra).
 
-## Risks (optional)
-- Cross-cluster correlations.
-- Suspicious unclustered failures.
-- Flaky overlap or infra instability.
+## Risks (include ONLY if at least one of the following holds)
+- A correlation links two or more clusters that the cluster grouping itself misses.
+- An unclustered failure is suspicious (e.g., shares a signature with another cluster).
+- A flaky pattern suggests infrastructure instability.
+Do NOT include duration trends, general observations, or restate Failure Patterns content. Skip this section entirely when no risk meets the above criteria.
 
 ## Test links
-- Test IDs are authoritative only when shown inline as:
-  [testId: TEST_ID]
-- For any linked test, copy 'title' and 'TEST_ID' from the same test line.
-- IDs are opaque strings. Do not infer or rewrite them.
-- Link format:
-  [test title](pwrs:test/TEST_ID?project={{project}})
-- If no inline 'testId' is present for a test mention, do not link it.
+Each test line in the data block already shows \`[testId: TEST_ID]\` inline. When you mention a test by title, render it as a link using that ID. If no \`[testId: …]\` appears for a test, do not link it. Do not invent or rewrite IDs. Link format: \`[test title](pwrs:test/TEST_ID?project={{project}})\`.
 
 ## Rules
 - Do NOT repeat section headings in the body.
@@ -1408,13 +1403,7 @@ export const buildReportSummarySegments = (args: {
   }
 
   let dataBlock = `## Report: ${args.reportId}\n\n`;
-  dataBlock += `## Failure Categories (${totalFailures} hard failures — excludes flaky tests, which are listed separately below)\n`;
-  for (const [cat, count] of Object.entries(args.categories).sort((a, b) =>
-    b[1] !== a[1] ? b[1] - a[1] : a[0].localeCompare(b[0])
-  )) {
-    dataBlock += `- **${cat}**: ${count} failures\n`;
-  }
-  dataBlock += '\n';
+  dataBlock += `## Failure Count\n${totalFailures} hard failures (flaky tests are listed separately below and do NOT count toward this total).\n\n`;
 
   if (args.clusters.length > 0) {
     dataBlock += `## Failure Clusters (${args.clusters.length} clusters)\n`;
