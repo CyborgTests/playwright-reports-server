@@ -1,167 +1,187 @@
 ---
 name: playwright-reports
-description: Access Playwright Reports Server data for failing tests, flakiness, and historical run analysis. Use when the user mentions a failing test, flakiness, a `.spec.ts` file under suspicion, asks "what failed in the last run", asks "why is X failing", passes a reportId from CI, or asks any aggregate/digest question about test runs over a time window ("what's flaky this week", "how did staging do yesterday", "compare last two reports").
+description: Pull Playwright Reports Server context — failing tests, flakiness, run history, failure clusters, and LLM-written analyses. Trigger on mentions of a failing test, flaky run, `.spec.ts` file under suspicion, a CI reportId, "what failed in the last run", "why is X failing", or aggregate questions like "what's flaky this week" / "compare last two reports".
 allowed-tools: Bash(pwrs-cli test:*), Bash(pwrs-cli report:*), Bash(pwrs-cli cluster:*), Bash(pwrs-cli project:*), Bash(pwrs-cli tag:*), Bash(pwrs-cli category:*), Bash(pwrs-cli stats:*), Bash(pwrs-cli ping:*), Bash(pwrs-cli attachment:*), Bash(pwrs-cli help:*), Bash(pwrs-cli --help), Bash(pwrs-cli --version)
 ---
 
-# Playwright Reports — Test Context
+<!-- cspell:words pwrs unclustered quarantineable -->
 
-Every data command returns JSON; Error messages, LLM analyses, and cluster members pass through verbatim. The CLI is read-only — the only mutation it can do is `config set` (server URL / token) that works with local file.
+# Playwright Reports
 
-## Drill-down workflows (you have an ID)
+Read-only access to the Playwright Reports Server. Every command returns JSON; error messages, LLM analyses, and cluster members pass through verbatim.
 
-**You have a testId** (the common case — lifted from a CI URL, stack trace, or a previous `test find`) →
+**Use this skill when** the user asks why a test is failing, what's flaky, what changed between runs, or any aggregate question over a time window.
+
+**Skip this skill for** writing new tests, modifying `playwright.config.ts`, running tests locally, or any task that doesn't touch historical run data.
+
+The CLI is read-only. Write commands (`analysis-submit`, `summary-submit`, `feedback`) live in `authoring.md` and are loaded only when the user explicitly asks to author or dissent.
+
+## Quick reference
+
+| Goal | Command | Returns |
+|---|---|---|
+| Triage a known test | `pwrs-cli test brief <testId>` | signals + latest failure + LLM analysis + cluster |
+| Triage a whole report | `pwrs-cli report brief <reportId>` | stats + cluster summary + sample failures |
+| Latest report (sugar) | `pwrs-cli report latest [--project p]` | same as `report brief` on the most recent |
+| Find by test name | `pwrs-cli test find "fragment"` | `matches[].testId` |
+| Find by file path | `pwrs-cli test from-file <path>[:line]` | `matches[].testId`, line-ranked |
+| What's flaky now | `pwrs-cli test search --tier flaky` | filtered test roster |
+| What ran in a window | `pwrs-cli report list --from --to` | paginated reports |
+| Active failure clusters | `pwrs-cli cluster list` | top clusters by impact |
+| Drill into a cluster | `pwrs-cli cluster brief <id>` | full member roster |
+| Diff two reports | `pwrs-cli report compare A B` | newlyFailed / fixed / stillFailing / … |
+| Per-run history of a test | `pwrs-cli test history <testId>` | runs + signatureGroups |
+| Verdict on a report | `pwrs-cli report summary <id>` | persisted LLM summary + verdict |
+| Project health digest | `pwrs-cli project summary` | persisted LLM project summary + verdict |
+| Numeric stats | `pwrs-cli stats --from --to` | pass rate, trends, slowest |
+| Raw failure evidence | `pwrs-cli test failure-context <id> --report-id <r>` | typed evidence envelope |
+| Inspect the prompt we sent | `pwrs-cli test analysis-prompt <id> --report-id <r>` | verbatim prompt + response |
+| Full LLM markdown | `pwrs-cli test analysis <testId>` | unmodified analysis |
+| `#479` → UUID | `pwrs-cli report resolve 479` | matching reportIds |
+| Discover projects/tags/categories | `pwrs-cli project list` / `tag list` / `category list` | string arrays |
+| Attachment metadata | `pwrs-cli attachment <url>` | URL + content-type + bytes (HEAD) |
+| Sanity check | `pwrs-cli ping` | server + token + latency |
+
+All list-returning commands carry `total` + `hasMore`. Defaults: `report list`/`test search`/`report compare` = 20, `cluster list` = 10, `test history` = 20 (max 50). For exact flags run `pwrs-cli help <group>` or `pwrs-cli <command> --help`.
+
+## Worked examples
+
+**User: "Why is the checkout test failing?"**
+```bash
+pwrs-cli test find "checkout"           # → matches[0].testId
+pwrs-cli test brief <testId>            # → signals + latestFailure + llmAnalysis + cluster
 ```
-pwrs-cli test brief <testId>          # server resolves fileId+project from the latest run
-pwrs-cli test history <testId>        # per-run history — see "Per-run history" below
-```
-Pass `--project <project>` only when the server's auto-resolution returns the
-wrong run (e.g. an obsolete project for the same testId).
+If `cluster` is non-null, fix at `cluster.anchor`, not the test. If `llmAnalysis: null`, fall back to `pwrs-cli test failure-context <testId> --report-id <reportId>` and reason from the `evidence` envelope yourself.
 
-**You have a testId AND a reportId, and the brief's `llmAnalysis` isn't enough** →
+**User: "How did staging do yesterday?"**
+```bash
+pwrs-cli report list --project staging --from 2026-06-08 --to 2026-06-08
+# → reports[0].reportId
+pwrs-cli report brief <reportId>        # compact: 5 KB even on a 50-failure report
+pwrs-cli report summary <reportId>      # → verdict ('isolated' | 'clustered' | 'widespread' | 'systemic')
 ```
-pwrs-cli test analysis <testId>                                # full LLM markdown (unmodified)
-pwrs-cli test analysis-prompt <testId> --report-id <reportId>  # the prompt+response we sent last time
-pwrs-cli test failure-context <testId> --report-id <reportId>  # fresh would-be prompt + raw evidence
-```
-Three escape hatches with different shapes:
-- `test analysis` → the LLM's persisted markdown output. Use when the regex split in `brief.llmAnalysis` lost a section.
-- `test analysis-prompt` → `{ markdown, taskId, model, completedAt, analysisText, … }`. The verbatim prompt the queue *previously* sent to the LLM for this `(testId, reportId)`, alongside the response. Mirrors the in-report "Copy prompt" button. Pass `--task-id <id>` to address a specific historical run. 404 if no completed task exists for this pair.
-- `test failure-context` → `{ markdown, segments, evidence, attachments, heuristicCategory, meta }`. The prompt the queue would build **right now** (no LLM call) plus a typed `evidence` envelope: `errorMessage`, `stackTrace`, `testSourceFrame` (codeframe), `stepTree`, `pageSnapshot` (ARIA), `stdout`, `stderr`, `testMeta`, `gitCommit`, `ciBuild`, `gitDiff`, `environment`, `consoleEvents`, `networkEvents`, `actionLog`. Use this when you want to reason from raw signals yourself instead of trusting the persisted analysis, or when no analysis exists yet.
+Read `summary.llmSummaryStructured.verdict` first — `widespread`/`systemic` means the run is broken at a layer above any single test (infra, fixtures, deploy); don't drill into individual tests in that case.
 
-**You have a test name** (from a CI log, error, or the user) →
-```
-pwrs-cli test find "fragment of the title" [--project <p>]
-# → matches[0].testId — then `test brief <testId>` as above
-```
+## Workflows
 
-**You have a spec file path** (and optionally a failing line) →
-```
-pwrs-cli test from-file tests/checkout.spec.ts          # all tests in that file
-pwrs-cli test from-file tests/checkout.spec.ts:200      # sorted by proximity to line 200
-# → matches[0].testId — then `test brief <testId>` as above
-```
+### Discovery (no ID yet)
 
-**You have a reportId, or want to triage the latest run** →
-```
-pwrs-cli report brief <reportId>             # compact: stats + cluster summary + samples
-pwrs-cli report brief <reportId> --with-failures   # full briefs for every failed test
-pwrs-cli report latest [--project <p>]       # sugar for "list --limit 1 | brief"
-pwrs-cli report summary <reportId>           # persisted LLM failure summary, if any
-```
-Compact `report brief` is ~5 KB even for a 50-failure report — every cluster includes `sampleFailedTests` (top 3 per cluster), plus a few unclustered samples. Only escalate to `--with-failures` when you genuinely need every test's full error / location / LLM analysis.
+```bash
+pwrs-cli project list                                       # what projects are tracked
+pwrs-cli tag list [--project p]                             # what tags exist (pairs with report list --tags)
+pwrs-cli category list                                      # valid --failure-category values
 
-`report summary` returns `{ hasFailures, pendingAnalysisCount, summary }` where `summary.llmSummaryStructured` (when present) is typed JSON: `{ verdict: 'isolated' | 'clustered' | 'widespread' | 'systemic', summary: <1–3 sentence executive summary>, sections: [{ heading, body, impact?, codeRefs[] }] }`. Read `verdict` first — `widespread`/`systemic` means the run is broken at a layer above any single test. `sections[].codeRefs` are pre-resolved `{ kind: 'test' | 'file', testId?, fileId?, filePath?, line? }` pointers so you can jump straight to the implicated tests/files.
-
-**When a cluster has N tests, fix the cluster once — don't iterate.** Each
-cluster has an `anchor` (the deterministic fix target — see "What failure
-clusters are active?" below). Fix at the anchor, not per-test. Use
-`pwrs-cli cluster brief <clusterId>` to get every member's brief at once.
-
-**You want the per-run history of one test** →
-```
-pwrs-cli test history <testId> [--limit N]   # default 20, max 50 most-recent runs
-```
-Returns `{ stats, signatureGroups, runs }`. `signatureGroups` rolls up runs by `errorSignature` so you can see "failed the same way 6 times, then a new signature appeared yesterday" without scanning every entry.
-
-## Discovery workflows (no ID yet)
-
-**"What projects are tracked?"** → `pwrs-cli project list`
-
-**"What tags exist?"** → `pwrs-cli tag list [--project <p>]` (pairs with `report list --tags <a,b>`).
-
-**"What failure categories are emitted?"** → `pwrs-cli category list` — required for valid `--failure-category` values.
-
-**"What reports ran [in a window / with failures / matching X]?"** →
-```
-pwrs-cli report list \
-    [--project <p>] [--from YYYY-MM-DD] [--to YYYY-MM-DD] \
+pwrs-cli report list [--project p] [--from --to] \
     [--pass-rate failing|below-threshold|passing|all] \
-    [--search <text>] [--tags <a,b>] [--limit N]
-```
-Returns compact rows (`{ reportId, project, displayNumber, createdAt, stats }`) plus `total` and `hasMore`. Drill into any row with `report brief <reportId>`.
+    [--search text] [--tags a,b]                            # reports in a window
 
-**"What's flaky / quarantined / failing-with-category-X right now?"** →
-```
-pwrs-cli test search \
-    [--project <p>] [--tier flaky|critical|stable] \
+pwrs-cli test search [--project p] [--tier flaky|critical|stable] \
     [--status quarantined|not-quarantined] \
-    [--failure-category <c>] [--sort slowest] \
-    [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--search <text>] [--limit N]
-```
-Returns `{ total, hasMore, matches }`. Drill into any test with `test brief`.
+    [--failure-category c] [--sort slowest] \
+    [--from --to] [--search text]                           # tests matching open-ended filters
 
-**"How is the project doing this week?"** →
-```
-pwrs-cli stats [--project <p>] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--failed-only]
-pwrs-cli project summary [--project <p>]     # persisted LLM project health summary
-```
-`stats` is the numeric digest (pass rate, trend deltas, flaky count, slowest steps). `project summary` is the LLM-written digest (when one exists) — returns `{ pendingAnalysisCount, summary: { summary, structured, model, lastReportId, reportCount, firstReportAt, lastReportAt, … } }`. `summary.structured` (when present) is typed JSON: `{ verdict: 'healthy' | 'stabilizing' | 'degrading' | 'failing', summary: <1–3 sentence executive summary>, sections: [{ heading, body, codeRefs[] }] }`. Use `verdict` for a one-token project-health read; drop into `sections` only when the user wants the narrative.
+pwrs-cli stats [--project p] [--from --to] [--failed-only]  # numeric digest
+pwrs-cli project summary [--project p]                      # LLM-written digest + verdict
 
-**"What failure clusters are active?"** →
+pwrs-cli cluster list [--project p] [--from --to]           # active failure clusters
 ```
-pwrs-cli cluster list [--project <p>] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N]
-pwrs-cli cluster brief <clusterId>      # drill into one cluster
+
+### Drill-down (you have an ID)
+
+```bash
+# Test:
+pwrs-cli test brief <testId>                                # everything we know about this test
+pwrs-cli test history <testId> [--limit N]                  # per-run history + signatureGroups
+pwrs-cli test analysis <testId>                             # full LLM markdown (use when brief.llmAnalysis lost a section)
+
+# Test + report:
+pwrs-cli test failure-context <testId> --report-id <r>      # fresh prompt + typed evidence envelope (no LLM call)
+pwrs-cli test analysis-prompt <testId> --report-id <r>      # verbatim prompt + response from the last completed task
+
+# Report:
+pwrs-cli report brief <reportId>                            # compact: stats + clusterSummary + sample failures
+pwrs-cli report brief <reportId> --with-failures            # full brief per failed test (~100 KB on a 50-failure report)
+pwrs-cli report summary <reportId>                          # persisted LLM summary + verdict
+pwrs-cli report compare <reportIdA> <reportIdB>             # diff buckets (accepts `latest` / `prev` keywords)
+
+# Cluster:
+pwrs-cli cluster brief <clusterId>                          # full member roster + per-member brief
 ```
-`cluster list` returns highest-blast-radius first (failureCount × testCount). Each cluster has a typed `anchor` — the precise "what to fix" handle — discriminated by `anchor.kind`:
-- `fixture` → `{verb, phase, filePath}` — a `beforeAll`/`beforeEach`/`afterAll`/`afterEach` hook failed and cascaded to every member test. Fix the hook once.
-- `selector` → `{verb, selector}` — N tests share a failing Playwright locator (`aria-label` / `role` / `css`). Usually one UI drift breaking many tests across files. Fix the selector or the element.
+
+`--project` is optional for `test brief` / `test history` / `test analysis*` — the server resolves the canonical `(fileId, project)` lane from the test's most recent run. Pass it only when auto-resolution picks the wrong lane (e.g. an obsolete project sharing a testId).
+
+### From a file path or stack frame
+
+```bash
+pwrs-cli test from-file tests/checkout.spec.ts              # all tests in that file
+pwrs-cli test from-file tests/checkout.spec.ts:200          # sorted by proximity to line 200
+```
+
+### `failure-context` evidence envelope
+
+`test failure-context` returns `{ markdown, segments, evidence, attachments, heuristicCategory, meta }`. The `evidence` envelope is the typed shape the LLM queue uses:
+
+`errorMessage`, `stackTrace`, `testSourceFrame` (codeframe), `stepTree`, `pageSnapshot` (ARIA), `stdout`, `stderr`, `testMeta`, `gitCommit`, `ciBuild`, `gitDiff`, `environment`, `consoleEvents`, `networkEvents`, `actionLog`.
+
+Use this when you want to reason from raw signals (faster + cheaper than the LLM-mediated path) or when no analysis exists yet.
+
+## Interpreting signals
+
+Decision rules — apply top-to-bottom. Field shapes live in the workflow section above.
+
+1. **`feedback` present** → trust the team's note, override everything else.
+2. **`signals.quarantined: true`** → skip; the team already marked it broken.
+3. **Report-level verdict first.** Before assuming it's *your* test, read `report summary <reportId>` → `summary.llmSummaryStructured.verdict`. `widespread`/`systemic` means fix the run (infra, fixtures, deploy), not the test. For multi-day patterns, escalate to `project summary` → `summary.structured.verdict`.
+4. **`cluster` present** → fix at `cluster.anchor`, not the test. Every member resolves together.
+5. **`signals.flakyTier`** → `critical` urgent, `flaky` investigate, `stable` ignore. (The server classifies using the active site config; don't hardcode a percent.)
+6. **`signals.signatureOccurrenceCount > 1` with a stable `signature`** → real regression. Counts prior runs of the same `latestFailure.signature`, not total test runs.
+7. **`signals.signatureFirstSeen`** → correlate with deploys / PRs.
+8. **`llmAnalysis.rootCause` present** → start from this hypothesis. Use `test analysis` for the unmodified markdown if the regex-split lost a section, `test analysis-prompt` to inspect what the model saw.
+9. **`llmAnalysis: null` with a failing run** → analysis hasn't been generated. Pull `test failure-context` and reason from `evidence` yourself rather than waiting.
+
+### Cluster anchors
+
+`cluster.anchor` is the deterministic fix target, discriminated by `anchor.kind`:
+
+- `fixture` → `{verb, phase, filePath}` — a `beforeAll`/`beforeEach`/`afterAll`/`afterEach` hook failed and cascaded. Fix the hook once.
+- `selector` → `{verb, selector}` — N tests share a failing Playwright locator. Usually one UI drift breaking many tests; fix the selector or the element.
 - `frame` → `{verb, frame}` — N tests crash at the same `file:line` of app code. The frame is the literal fix location.
-- `unmatched` → `{testId, fileId, project}` — no extractable shared mechanism. Treat as a single-test failure; the cluster exists only to group repeated occurrences of the same test.
+- `unmatched` → `{testId, fileId, project}` — no extractable shared mechanism. Treat as a single-test failure; the cluster only groups repeated occurrences of the same test.
 
-Each cluster also carries `confidence: 'high' | 'medium' | 'low'`. Use it to pick where to start. Same fix-the-cluster-not-the-test rule applies — fix at the anchor.
+Each cluster carries `confidence: 'high' | 'medium' | 'low'`. `cluster list` returns anchor + counts only — drill into `cluster brief <id>` for the full membership. In `test brief`, `cluster.otherTests` is capped at 5; when `cluster.otherTestsTruncated: true`, use `cluster brief` for the full roster (`cluster.otherTestsTotal` is the true size).
 
-**"What changed between these two reports?"** →
-```
-pwrs-cli report compare <reportIdA> <reportIdB> [--limit N]
-```
-Returns `{ summary, newlyFailed, fixed, stillFailing, flakyToPass, passToFlaky, newTests, removedTests, durationDeltas }`. Each diff bucket is capped at `--limit` (default 20) — `bucketsTruncated: true` warns when there's more. **Pass UUID `reportId`s, not displayNumbers.**
+### Verdict vocabularies
 
-## How to use the signals
+| Source | Field | Values |
+|---|---|---|
+| `report summary` | `summary.llmSummaryStructured.verdict` | `isolated` / `clustered` / `widespread` / `systemic` |
+| `project summary` | `summary.structured.verdict` | `healthy` / `stabilizing` / `degrading` / `failing` |
 
-- `signals.quarantined: true` → don't bother, the team already marked it broken
-- `signals.flakyTier === 'flaky'` → likely flaky, worth investigating. `'critical'` → likely auto-quarantineable, fix urgently. `'stable'` → ignore. The server derives this from `flakinessScore` and the active site-config thresholds — don't hardcode a percent in your prompt.
-- `signals.flakinessScore` → the underlying percent (0–100), if you want the raw number alongside the tier
-- `signals.signatureOccurrenceCount` > 1 with stable `signature` → real regression, fix it. **This counts prior runs of the same `latestFailure.signature`, not total runs of the test.**
-- `signals.signatureFirstSeen` → when this `signature` first appeared (not the test's first run) → correlate with deploys / PRs
-- `feedback` present → read it first; it overrides everything else
-- `llmAnalysis.rootCause` present → start from this hypothesis, don't re-derive. For the unmodified full markdown (e.g. when the regex-split lost a section), use `pwrs-cli test analysis <testId>`. To inspect the exact prompt+response we sent, use `test analysis-prompt <testId> --report-id <reportId>`. To bypass the LLM entirely and reason from raw evidence (codeframe, step tree, ARIA snapshot, console/network/action logs, git+CI), use `test failure-context <testId> --report-id <reportId>`.
-- `llmAnalysis: null` *with* a failing run → analysis hasn't been generated. Pull `pwrs-cli test failure-context <testId> --report-id <reportId>` and reason from the `evidence` envelope yourself rather than waiting.
-- `cluster` present → **fix at the `cluster.anchor`, not the test** — `cluster.kind` (fixture / selector / frame / unmatched) tells you the fix shape; every member resolves together
-- `otherClusters` non-empty → this test has failed under multiple anchors over time. `cluster` is the primary (latest-failure) cluster; `otherClusters` are historical references — useful for "has this test broken in different ways?" but secondary to the primary
-- **Before assuming it's *your* test, check the report-level verdict.** `pwrs-cli report summary <reportId>` → `summary.llmSummaryStructured.verdict`: `widespread`/`systemic` means fix the run (infra, fixtures, deploy), not the test. For multi-day patterns, escalate one more level: `pwrs-cli project summary [--project <p>]` → `summary.structured.verdict` (`healthy` / `stabilizing` / `degrading` / `failing`).
-- `latestFailure.attachments.screenshotUrl` → fetch the PNG for UI failures
-- `latestFailure.attachments.errorContextUrl` → fetch the markdown (DOM snapshot + recent actions + console — Playwright generates this for AI agents)
-- `latestFailure.reportUrl` → the full Playwright HTML report
-
-**Fetching attachments / `reportUrl`:** these are server-relative paths. The convenient form is `pwrs-cli attachment <url>` — it handles the URL resolution and Bearer auth and emits `{ content, encoding: "utf8" | "base64", contentType, bytes }`. Use `WebFetch` directly only when you specifically need a streaming/HTML render; in that case prepend `$PWRS_SERVER_URL` and send `Authorization: Bearer $PWRS_API_TOKEN`.
-
-**`outcome` vocabulary:** `test history` runs and `report brief.stats` both use the normalized values `passed | failed | flaky | skipped`. (The raw Playwright terms `expected` / `unexpected` are mapped to `passed` / `failed` server-side.)
+`structured.sections[].codeRefs[]` carry pre-resolved `{ kind, testId?, fileId?, filePath?, line? }` pointers — jump straight to the implicated tests/files.
 
 ## Common gotchas
 
-- **`flakinessScore` is 0–100 (a percent), not 0–1.** The flagging threshold is configurable (defaults: warning ≥ 2%, quarantine ≥ 5%). **Prefer reading `signals.flakyTier`** — the server already classifies the test using the active config.
-- **`report compare` takes UUID reportIds, not displayNumbers.** If you only see `#479` in CI, use `pwrs-cli report resolve 479` to get the UUID. The compare command also accepts the keywords `latest` and `prev` (e.g. `report compare prev latest`).
-- **`report brief` is compact by default and uses a discriminated `mode` field.** When `mode === 'summary'`, the payload has `sampleUnclusteredFailures`. When `mode === 'full'` (from `--with-failures`), it has `failedTests` instead. Both modes carry `clusterSummary[].sampleFailedTests`. Full mode on a 50-failure report is ~100 KB — use sparingly.
-- **`--failure-category` values are heuristic-emitted strings.** Run `category list` first to see the exact spellings. The same concept appears as `latestFailure.category` and `cluster.category` in briefs, as the `--failure-category` CLI flag, and as the `failureCategory` query param — all reference the same vocabulary.
-- **`test from-file <path>:<line>` sorts by proximity** to the failing line — pass it when you have a CI stack frame.
-- **`test brief` / `test history` — the server resolves it from the latest `test_runs` row.
-- **Pagination signals**: `total` + `hasMore` appear on every list-returning command (`test find/search`, `report list`, `cluster list`). When `hasMore: true`, pass `--offset` (where supported) or raise `--limit`.
-- **Errors are JSON on stderr**: failed CLI calls emit `{"success":false,"error":"…","kind":"http|config|unknown",…}` and exit non-zero. Parse both stdout and stderr.
-- **Sanity check**: `pwrs-cli ping` returns `{ ok, server, tokenConfigured, latencyMs, … }` — use this if a command unexpectedly fails to confirm config without issuing a real query.
+- **`flakinessScore` is a percent (0–100), not a fraction.** Defaults flag at ≥ 2% (warning) / ≥ 5% (quarantine). Prefer `signals.flakyTier` — the server already classifies using the active config.
+- **`report compare` and `report brief` take UUID `reportId`s, not `#479`-style displayNumbers.** Use `report resolve 479` to convert. `compare` also accepts the keywords `latest` / `prev`.
+- **`report brief` is discriminated by `mode`.** `mode: 'summary'` carries `sampleUnclusteredFailures`; `mode: 'full'` (from `--with-failures`) carries `failedTests` instead. Full mode on a 50-failure report is ~100 KB — use sparingly.
+- **`--failure-category` values are heuristic-emitted strings.** Run `category list` first for exact spellings. The same vocabulary appears as `latestFailure.category`, `cluster.category`, and the `failureCategory` query param.
+- **`pwrs-cli attachment <url>` is HEAD-by-default.** It returns `{ url, status, contentType, bytes }` only. The URL is the answer in ~95% of cases — don't fetch the body unless the agent must read it. Pass `--inline` to add `encoding: "utf8" | "base64"` and `content`.
+- **`outcome` vocabulary**: `test history` runs and `report brief.stats` use the normalized values `passed | failed | flaky | skipped`. (Raw `expected` / `unexpected` are mapped server-side.)
+- **Pagination**: every list-returning command carries `total` + `hasMore`. When `hasMore: true`, pass `--offset` (where supported) or raise `--limit`.
+- **Errors are JSON on stderr**: failed calls emit `{"success": false, "error": "…", "kind": "http|config|unknown", …}` and exit non-zero. Parse both stdout and stderr.
 
 ## Date filters
 
-All time-windowed commands take `--from` / `--to` as ISO dates (`YYYY-MM-DD`
-or full ISO timestamp). For relative time periods, compute `--from` and
-`--to` correspondingly. **There is no `--since` flag** — always pass explicit ranges.
+All time-windowed commands take `--from` / `--to` as ISO dates (`YYYY-MM-DD` or full ISO timestamp). For relative ranges, compute the dates yourself — **there is no `--since` flag**.
 
-## Setup
+## Sanity check
 
-One-time setup (server URL, API token, default project) is performed by the
-user — see `setup.md` next to this file. The model only needs that file
-if the user explicitly asks about configuring `pwrs-cli`.
+```bash
+pwrs-cli ping
+```
+Returns `{ ok, server, tokenConfigured, latencyMs, … }`. Use this when a command unexpectedly fails to distinguish config issues from real query failures.
 
-## Authoring & dissent (only when the user explicitly asks)
+## Loading the other docs
 
-If — and only if — the user explicitly asks you to **author** an analysis, **submit** a summary, or **dissent** on an existing one (verbs: "write the analysis yourself", "submit feedback that it's wrong", "fill in the missing summary", etc.), read `authoring.md` next to this file for the full workflow. Do not load it preemptively, and never overwrite a persisted analysis without that explicit ask.
+- **`setup.md`** — one-time setup (server URL, API token, default project). Load only if the user asks about configuring `pwrs-cli`.
+- **`authoring.md`** — write commands (`analysis-submit`, `summary-submit`, `feedback`). Load only when the user explicitly asks you to author an analysis, submit a summary, or dissent on an existing one. Never overwrite a persisted analysis without that explicit ask.
