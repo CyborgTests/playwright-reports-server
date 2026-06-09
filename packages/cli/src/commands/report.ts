@@ -160,24 +160,42 @@ export async function runReportCompare(
     project: opts.project,
   });
 
-  const trim = <T extends DiffTestEntry | DurationDeltaEntry>(entries: T[]) =>
-    entries.slice(0, limit).map(normalizeEntry) as T[];
+  const trimDiff = (entries: DiffTestEntry[]) =>
+    entries.slice(0, limit).map(normalizeEntry) as DiffTestEntry[];
+
+  const trimDurationDeltas = (entries: DurationDeltaEntry[]) =>
+    entries.slice(0, limit).map((d) => ({
+      testId: d.testId,
+      title: d.title,
+      filePath: d.filePath,
+      project: d.project,
+      deltaMs: d.deltaMs,
+      deltaPct: d.deltaPct,
+    }));
+
+  const slimReport = (r: typeof comparison.reportA) => ({
+    reportId: r.reportID,
+    title: r.title,
+    project: r.project,
+    createdAt: r.createdAt,
+    reportUrl: r.reportUrl,
+  });
 
   emitJson({
     // Server resolved `latest` / `prev` via reportA.reportID / reportB.reportID.
-    reportA: comparison.reportA,
-    reportB: comparison.reportB,
+    reportA: slimReport(comparison.reportA),
+    reportB: slimReport(comparison.reportB),
     summary: comparison.summary,
     bucketsTruncated: anyBucketOver(comparison, limit),
     perBucketLimit: limit,
-    newlyFailed: trim(comparison.newlyFailed),
-    fixed: trim(comparison.fixed),
-    stillFailing: trim(comparison.stillFailing),
-    flakyToPass: trim(comparison.flakyToPass),
-    passToFlaky: trim(comparison.passToFlaky),
-    newTests: trim(comparison.newTests),
-    removedTests: trim(comparison.removedTests),
-    durationDeltas: trim(comparison.durationDeltas),
+    newlyFailed: trimDiff(comparison.newlyFailed),
+    fixed: trimDiff(comparison.fixed),
+    stillFailing: trimDiff(comparison.stillFailing),
+    flakyToPass: trimDiff(comparison.flakyToPass),
+    passToFlaky: trimDiff(comparison.passToFlaky),
+    newTests: trimDiff(comparison.newTests),
+    removedTests: trimDiff(comparison.removedTests),
+    durationDeltas: trimDurationDeltas(comparison.durationDeltas),
   });
 }
 

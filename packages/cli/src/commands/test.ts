@@ -213,7 +213,12 @@ export async function runTestFromFile(spec: string, opts: FromFileOpts): Promise
     | undefined;
   if (hasTargetLine && candidates.length > 1) {
     const evaluated = candidates.slice(0, opts.limit * 4);
-    const { scored, fetchErrors } = await scoreByFailureLine(config, evaluated, targetLine);
+    const { scored, fetchErrors } = await scoreByFailureLine(
+      config,
+      evaluated,
+      targetLine,
+      opts.project
+    );
     scoring = { evaluated: evaluated.length, ranked: scored.length, fetchErrors };
     if (scored.length > 0) {
       const distanceById = new Map(scored.map((h) => [h.testId, h.distance]));
@@ -241,39 +246,40 @@ export async function runTestFromFile(spec: string, opts: FromFileOpts): Promise
 
 /**
  * Best-effort proximity score for matches when `from-file <path>:<line>` is
- * used. Briefs are fetched in parallel (server-side getFailureClusters has a
- * 60s cache, so the heavy lifting is shared). Tests whose brief fetch fails
- * are returned in `fetchErrors` so the caller can surface a "ranking is
- * partial" hint to the agent.
+ * used. Single bulk-call to `/api/cli/test/proximity` resolves the latest
+ * failure line for every candidate in one round-trip.
  */
 async function scoreByFailureLine(
   config: import('../config.js').ResolvedConfig,
   candidates: TestSummary[],
-  targetLine: number
+  targetLine: number,
+  project: string | undefined
 ): Promise<{
   scored: Array<{ testId: string; distance: number }>;
   fetchErrors: string[];
 }> {
-  const settled = await Promise.allSettled(
-    candidates.map((t) =>
-      apiGet<TestBrief>(config, `/api/cli/test/${encodeURIComponent(t.testId)}/brief`, {
-        project: t.project,
-      })
-    )
-  );
-
-  const scored: Array<{ testId: string; distance: number }> = [];
+  if (candidates.length === 0) return { scored: [], fetchErrors: [] };
+  const testIds = candidates.map((c) => c.testId).join(',');
+  let rows: Array<{ testId: string; line?: number }> = [];
   const fetchErrors: string[] = [];
-  for (let i = 0; i < candidates.length; i++) {
-    const t = candidates[i];
-    const result = settled[i];
-    if (result.status === 'rejected') {
-      fetchErrors.push(t.testId);
-      continue;
-    }
-    const line = result.value.latestFailure?.location?.line;
+  try {
+    const resp = await apiGet<{ rows: Array<{ testId: string; line?: number }> }>(
+      config,
+      '/api/cli/test/proximity',
+      project ? { testIds, project } : { testIds }
+    );
+    rows = resp.rows ?? [];
+  } catch {
+    return { scored: [], fetchErrors: candidates.map((c) => c.testId) };
+  }
+  const lineByTestId = new Map(rows.map((r) => [r.testId, r.line]));
+  const scored: Array<{ testId: string; distance: number }> = [];
+  for (const t of candidates) {
+    const line = lineByTestId.get(t.testId);
     if (typeof line === 'number') {
       scored.push({ testId: t.testId, distance: Math.abs(line - targetLine) });
+    } else if (!lineByTestId.has(t.testId)) {
+      fetchErrors.push(t.testId);
     }
   }
   return { scored, fetchErrors };
@@ -371,8 +377,6 @@ export async function runTestSearch(opts: SearchOpts): Promise<void> {
       filePath: t.filePath,
       isQuarantined: t.isQuarantined ?? false,
       flakinessScore: Math.round((t.flakinessScore ?? 0) * 10) / 10,
-      totalRuns: t.totalRuns,
-      lastRunAt: t.lastRunAt,
     })),
   });
 }

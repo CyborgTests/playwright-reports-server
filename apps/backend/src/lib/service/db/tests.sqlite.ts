@@ -502,6 +502,49 @@ export class TestDatabase {
     return row ? convertDbRowToTestRun(row) : undefined;
   }
 
+  public getLatestFailedRunsByTestIds(
+    testIds: string[],
+    project?: string
+  ): Map<string, { testId: string; fileId: string; project: string; failureDetails?: string }> {
+    const out = new Map<
+      string,
+      { testId: string; fileId: string; project: string; failureDetails?: string }
+    >();
+    if (testIds.length === 0) return out;
+    const placeholders = testIds.map(() => '?').join(', ');
+    const projectClause = project ? 'AND project = ?' : '';
+    const params: (string | number)[] = [...testIds];
+    if (project) params.push(project);
+    const sqlText = `
+      SELECT testId, fileId, project, failureDetails FROM (
+        SELECT testId, fileId, project, failureDetails, createdAt,
+          ROW_NUMBER() OVER (
+            PARTITION BY testId
+            ORDER BY createdAt DESC
+          ) AS rn
+        FROM test_runs
+        WHERE testId IN (${placeholders})
+          AND outcome IN ('unexpected', 'failed', 'flaky')
+          ${projectClause}
+      ) WHERE rn = 1
+    `;
+    const rows = this.db.prepare(sqlText).all(...params) as Array<{
+      testId: string;
+      fileId: string;
+      project: string;
+      failureDetails?: string;
+    }>;
+    for (const row of rows) {
+      out.set(row.testId, {
+        testId: row.testId,
+        fileId: row.fileId,
+        project: row.project,
+        failureDetails: row.failureDetails,
+      });
+    }
+    return out;
+  }
+
   public getRecentTestRunsForFlakiness(
     testId: string,
     fileId: string,

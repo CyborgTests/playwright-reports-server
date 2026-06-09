@@ -251,11 +251,10 @@ const GROUP_HELP: Record<string, string> = {
     'pwrs-cli attachment — fetch a server resource with Bearer auth',
     '',
     'Usage:',
-    '  pwrs-cli attachment <url|/api/serve/...>',
-    '      Fetch a `screenshotUrl` / `errorContextUrl` / `reportUrl` listed in a `test brief`.',
-    '      Accepts absolute URLs or server-relative paths (resolved against PWRS_SERVER_URL).',
-    '      Emits { url, status, contentType, bytes, encoding, content }. Text content (markdown,',
-    '      JSON, etc.) is utf8; binary content (PNG, etc.) is base64.',
+    '  pwrs-cli attachment <url|/api/serve/...>            Metadata only (default).',
+    '  pwrs-cli attachment <url> --inline                  Include content inline.',
+    '',
+    'Default emits { url, status, contentType, bytes }',
     '',
   ].join('\n'),
 };
@@ -290,6 +289,7 @@ interface CommonOpts {
   firstReportAt?: string;
   lastReportAt?: string;
   force?: boolean;
+  inline?: boolean;
 }
 
 function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonOpts } {
@@ -328,6 +328,7 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
       'first-report-at': { type: 'string' },
       'last-report-at': { type: 'string' },
       force: { type: 'boolean' },
+      inline: { type: 'boolean' },
       help: { type: 'boolean' },
     },
   };
@@ -376,6 +377,7 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
       firstReportAt: str(v['first-report-at']),
       lastReportAt: str(v['last-report-at']),
       force: v.force === true,
+      inline: v.inline === true,
     },
   };
 }
@@ -415,8 +417,9 @@ async function dispatch(argv: string[]): Promise<void> {
   }
 
   if (group === 'attachment') {
-    const [target] = rest;
-    await runAttachment(target);
+    const { positionals, opts } = parseCommonOpts(rest);
+    const [target] = positionals;
+    await runAttachment(target, { inline: opts.inline === true });
     return;
   }
 

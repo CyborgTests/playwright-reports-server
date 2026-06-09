@@ -54,6 +54,8 @@ function normalizeOutcome(raw: string): NormalizedOutcome {
 
 type FlakyTier = 'stable' | 'flaky' | 'critical';
 
+const CLUSTER_OTHER_TESTS_MAX = 5;
+
 interface TestBrief {
   testId: string;
   fileId: string;
@@ -106,12 +108,11 @@ interface TestBrief {
     name: string;
     sampleError: string;
     otherTests: Array<{ testId: string; fileId: string; project: string; title: string }>;
+    /** Total member count including the current test. Use `cluster brief <id>`
+     *  when the cluster has more members than `otherTests` (capped). */
+    otherTestsTotal: number;
+    otherTestsTruncated: boolean;
   } | null;
-  otherClusters: Array<{
-    id: string;
-    kind: ClusterAnchor['kind'];
-    name: string;
-  }>;
 }
 
 interface ReportBriefSummaryEntry {
@@ -504,6 +505,47 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
       });
     });
 
+    api.get('/api/cli/test/proximity', async (request: FastifyRequest, reply: FastifyReply) => {
+      const { testIds: testIdsRaw, project } = request.query as {
+        testIds?: string;
+        project?: string;
+      };
+      if (!testIdsRaw) {
+        return reply
+          .status(400)
+          .send({ success: false, error: 'testIds query parameter is required (comma-separated)' });
+      }
+      const ids = testIdsRaw
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      // Cap to a sane upper bound — the from-file scorer evaluates ~limit*4
+      // candidates (default limit 10 → 40 testIds).
+      const PROXIMITY_MAX_IDS = 200;
+      if (ids.length === 0) {
+        return reply.send({ success: true, data: { rows: [] } });
+      }
+      if (ids.length > PROXIMITY_MAX_IDS) {
+        return reply.status(400).send({
+          success: false,
+          error: `Too many testIds (got ${ids.length}, max ${PROXIMITY_MAX_IDS})`,
+        });
+      }
+      const rows = testDb.getLatestFailedRunsByTestIds(ids, project);
+      const out: Array<{ testId: string; filePath?: string; line?: number; column?: number }> = [];
+      for (const row of rows.values()) {
+        const parsed = parseFailureDetails(row.failureDetails);
+        const location = parsed?.location;
+        out.push({
+          testId: row.testId,
+          filePath: location?.file ?? parsed?.filePath,
+          line: location?.line,
+          column: location?.column,
+        });
+      }
+      return reply.send({ success: true, data: { rows: out } });
+    });
+
     // GET /api/cli/categories?project=...
     // Enumerate the failure categories the heuristic has emitted, so agents
     // can pick a valid value for `test search --failure-category`. Pass
@@ -738,15 +780,9 @@ async function buildTestBrief(
 
   // Reuse the cluster report passed by `buildReportBrief` when present —
   const clusterReport = preFetchedClusters ?? (await getFailureClusters({ project }));
-  const containingAll = clusterReport.clusters.filter((c) =>
+  const containing = clusterReport.clusters.find((c) =>
     c.tests.some((t) => t.testId === testId && t.fileId === fileId && t.project === project)
   );
-  const containing = containingAll[0];
-  const otherClustersRefs = containingAll.slice(1).map((c) => ({
-    id: c.id,
-    kind: c.anchor.kind,
-    name: c.name,
-  }));
 
   return {
     testId: detail.testId,
@@ -797,22 +833,24 @@ async function buildTestBrief(
       ? { comment: feedbackRow.comment, updatedAt: feedbackRow.updatedAt }
       : null,
     cluster: containing
-      ? {
-          id: containing.id,
-          kind: containing.anchor.kind,
-          name: containing.name,
-          sampleError: containing.sampleMessage,
-          otherTests: containing.tests
-            .filter((t) => t.testId !== testId || t.fileId !== fileId)
-            .map((t) => ({
+      ? (() => {
+          const others = containing.tests.filter((t) => t.testId !== testId || t.fileId !== fileId);
+          return {
+            id: containing.id,
+            kind: containing.anchor.kind,
+            name: containing.name,
+            sampleError: containing.sampleMessage,
+            otherTests: others.slice(0, CLUSTER_OTHER_TESTS_MAX).map((t) => ({
               testId: t.testId,
               fileId: t.fileId,
               project: t.project,
               title: t.title,
             })),
-        }
+            otherTestsTotal: others.length,
+            otherTestsTruncated: others.length > CLUSTER_OTHER_TESTS_MAX,
+          };
+        })()
       : null,
-    otherClusters: otherClustersRefs,
   };
 }
 
@@ -1148,20 +1186,17 @@ async function buildReportSummary(reportId: string) {
   const summary = failureSummaryDb.getSummary(reportId);
   const runs = testDb.getTestRunsByReport(reportId);
   const hasFailures = runs.some((r) => FAILED_OUTCOMES.has(r.outcome));
-  const pendingAnalysisCount = llmTasksDb.getInflightCountForReport(reportId);
   return {
     reportId,
     project: report.project,
     displayNumber: report.displayNumber,
     hasFailures,
-    pendingAnalysisCount,
     summary: summary ?? null,
   };
 }
 
 async function buildProjectSummary(projectKey: string) {
   const row = projectSummaryDb.get(projectKey);
-  const pendingAnalysisCount = llmTasksDb.getInflightCountForProject(projectKey);
   let structured: unknown = null;
   if (row?.structured) {
     try {
@@ -1172,7 +1207,6 @@ async function buildProjectSummary(projectKey: string) {
   }
   return {
     project: projectKey,
-    pendingAnalysisCount,
     summary: row
       ? {
           summary: row.summary,

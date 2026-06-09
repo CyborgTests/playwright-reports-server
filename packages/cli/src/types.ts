@@ -64,12 +64,9 @@ export interface TestBrief {
     name: string;
     sampleError: string;
     otherTests: Array<{ testId: string; fileId: string; project: string; title: string }>;
+    otherTestsTotal: number;
+    otherTestsTruncated: boolean;
   } | null;
-  otherClusters: Array<{
-    id: string;
-    kind: ClusterAnchorKind;
-    name: string;
-  }>;
 }
 
 export interface ReportBriefSummaryEntry {
@@ -190,14 +187,12 @@ export interface ReportSummary {
   project: string;
   displayNumber?: number;
   hasFailures: boolean;
-  pendingAnalysisCount: number;
   /** Null when no failure summary has been generated for this report yet. */
   summary: FailureSummaryRow | null;
 }
 
 export interface ProjectSummary {
   project: string;
-  pendingAnalysisCount: number;
   summary: {
     summary: string;
     structured: unknown;

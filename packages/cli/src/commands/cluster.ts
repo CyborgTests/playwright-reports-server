@@ -43,16 +43,6 @@ export async function runClusterList(opts: ClusterListOpts): Promise<void> {
       testCount: c.testCount,
       failureCount: c.failureCount,
       anchor: c.anchor,
-      tests: c.tests.map((t) => ({
-        testId: t.testId,
-        fileId: t.fileId,
-        project: t.project,
-        title: t.title,
-        filePath: t.filePath,
-        occurrences: t.occurrences,
-        lastSeen: t.lastSeen,
-        lastReportId: t.lastReportId,
-      })),
     })),
     clustersTruncated: report.clusters.length > limit,
   });

@@ -4,18 +4,20 @@ import { emitJson } from '../format.js';
 
 const TEXT_CONTENT_TYPES = /^(text\/|application\/(json|xml|.*\+(json|xml))|.+\+text)/i;
 
+interface AttachmentOpts {
+  inline?: boolean;
+}
+
 /**
  * Fetch an attachment (or any server-relative URL) with Bearer auth.
- * Emits `{ url, status, contentType, bytes, encoding, content }` so the agent
- * doesn't have to assemble the URL + auth header itself when grabbing a
- * screenshot or error-context markdown listed in a `test brief`.
  *
+ * Default emits `{ url, status, contentType, bytes }` 
  * Server-relative paths (`/api/serve/...`) are resolved against the configured
  * server. Absolute URLs are used as-is.
  */
-export async function runAttachment(input: string): Promise<void> {
+export async function runAttachment(input: string, opts: AttachmentOpts = {}): Promise<void> {
   if (!input) {
-    throw new Error('Usage: pwrs-cli attachment <url|/api/serve/...>');
+    throw new Error('Usage: pwrs-cli attachment <url|/api/serve/...> [--inline]');
   }
   const config = resolveConfig();
   const url =
@@ -25,12 +27,29 @@ export async function runAttachment(input: string): Promise<void> {
 
   const headers: Record<string, string> = {};
   if (config.token) headers.Authorization = `Bearer ${config.token}`;
-  const response = await fetch(url, { headers });
+  const method = opts.inline ? 'GET' : 'HEAD';
+  const response = await fetch(url, { headers, method });
   const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new CliHttpError(response.status, text, url);
+    const errText = opts.inline
+      ? await response.text()
+      : await fetch(url, { headers })
+          .then((r) => r.text())
+          .catch(() => '');
+    throw new CliHttpError(response.status, errText, url);
+  }
+
+  if (!opts.inline) {
+    const contentLength = response.headers.get('content-length');
+    const bytes = contentLength ? Number.parseInt(contentLength, 10) : undefined;
+    emitJson({
+      url,
+      status: response.status,
+      contentType,
+      bytes: Number.isFinite(bytes) ? bytes : undefined,
+    });
+    return;
   }
 
   const isText = TEXT_CONTENT_TYPES.test(contentType);
