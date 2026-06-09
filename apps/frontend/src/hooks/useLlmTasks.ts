@@ -1,4 +1,5 @@
 import type { LlmTask, LlmTaskStats } from '@playwright-reports/shared';
+import { keepPreviousData } from '@tanstack/react-query';
 
 import useQuery from './useQuery';
 
@@ -115,6 +116,7 @@ export function useLlmTasks(filters: {
     {
       dependencies: [filters.status, filters.type, filters.reportId, filters.limit, filters.offset],
       staleTime: 5000,
+      placeholderData: keepPreviousData,
     }
   );
 }
