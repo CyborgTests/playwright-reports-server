@@ -9,6 +9,7 @@ import { storage } from '../storage/index.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
 import { cronService } from './cron.js';
+import { getDatabase, hasMigrationMark, setMigrationMark } from './db/db.js';
 import { githubSyncDb } from './db/githubSync.sqlite.js';
 import { reportDb, resultDb } from './db/index.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
@@ -21,6 +22,16 @@ const createdLifecycle = Symbol.for('playwright.reports.lifecycle');
 const instance = globalThis as typeof globalThis & {
   [createdLifecycle]?: Lifecycle;
 };
+
+function backfillReportPassRateOnce(): void {
+  const db = getDatabase();
+  if (hasMigrationMark(db, 'reports_passrate_backfill_v1')) return;
+  const updated = reportDb.backfillPassRate();
+  if (updated > 0) {
+    console.log(`[lifecycle] Backfilled passRate for ${updated} report(s)`);
+  }
+  setMigrationMark(db, 'reports_passrate_backfill_v1');
+}
 
 export class Lifecycle {
   private initialized = false;
@@ -50,6 +61,7 @@ export class Lifecycle {
       if (!restored) {
         await Promise.all([configCache.init(), reportDb.init(), resultDb.init()]);
         await reportDb.populateTestRuns();
+        backfillReportPassRateOnce();
         console.log('[lifecycle] Databases initialized successfully');
       }
 

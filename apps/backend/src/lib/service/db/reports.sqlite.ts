@@ -1,3 +1,4 @@
+import type { ReportStats } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import { defaultProjectName } from '../../constants.js';
 import type { ReadReportsInput, ReadReportsOutput, ReportHistory } from '../../storage/types.js';
@@ -16,6 +17,30 @@ import {
   parseJsonColumn,
   type WhereFragment,
 } from './utils.js';
+
+function computePassRateFromStats(stats: ReportStats | undefined): number | null {
+  if (!stats) return null;
+  const passed = stats.expected ?? 0;
+  const failed = stats.unexpected ?? 0;
+  const flaky = stats.flaky ?? 0;
+  const denom = passed + failed + flaky;
+  if (denom === 0) return null;
+  return (passed / denom) * 100;
+}
+
+/** Subset of `ReportHistory` for hot read paths that need stats but never
+ *  inspect metadata. */
+export interface ReportHistoryLite {
+  reportID: string;
+  project: string;
+  title?: string;
+  displayNumber?: number;
+  createdAt: string;
+  reportUrl: string;
+  size?: string;
+  sizeBytes: number;
+  stats?: ReportStats;
+}
 
 type ReportRow = {
   reportID: string;
@@ -56,6 +81,7 @@ export class ReportDatabase {
       number,
       string | null,
       string,
+      number | null,
     ]
   >;
   private readonly getByIDStmt: Database.Statement<[string]>;
@@ -66,8 +92,8 @@ export class ReportDatabase {
 
   constructor() {
     this.insertStmt = this.db.prepare(`
-      INSERT OR REPLACE INTO reports (reportID, project, title, displayNumber, createdAt, reportUrl, size, sizeBytes, stats, metadata, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT OR REPLACE INTO reports (reportID, project, title, displayNumber, createdAt, reportUrl, size, sizeBytes, stats, metadata, passRate, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `);
 
     this.getByIDStmt = this.db.prepare('SELECT * FROM reports WHERE reportID = ?');
@@ -197,7 +223,8 @@ export class ReportDatabase {
       size || null,
       sizeBytes || 0,
       stats ? JSON.stringify(stats) : null,
-      JSON.stringify(metadata)
+      JSON.stringify(metadata),
+      computePassRateFromStats(stats)
     );
   }
 
@@ -457,6 +484,43 @@ export class ReportDatabase {
     return rows.map(this.rowToReport);
   }
 
+  public getLatestByProjects(projects: string[], limit: number): Map<string, ReportHistoryLite[]> {
+    const out = new Map<string, ReportHistoryLite[]>();
+    if (projects.length === 0 || limit <= 0) return out;
+
+    const placeholders = projects.map(() => '?').join(',');
+    const rows = this.db
+      .prepare(
+        `SELECT reportID, project, title, displayNumber, createdAt, reportUrl,
+                size, sizeBytes, stats
+         FROM (
+           SELECT *,
+                  ROW_NUMBER() OVER (PARTITION BY project ORDER BY createdAt DESC) AS rn
+           FROM reports
+           WHERE project IN (${placeholders})
+         )
+         WHERE rn <= ?`
+      )
+      .all(...projects, limit) as Array<{
+      reportID: string;
+      project: string;
+      title: string | null;
+      displayNumber: number | null;
+      createdAt: string;
+      reportUrl: string;
+      size: string | null;
+      sizeBytes: number;
+      stats: string | null;
+    }>;
+
+    for (const project of projects) out.set(project, []);
+    for (const row of rows) {
+      const bucket = out.get(row.project);
+      if (bucket) bucket.push(this.rowToReportLite(row));
+    }
+    return out;
+  }
+
   public getCount(): number {
     const result = this.db.prepare('SELECT COUNT(*) as count FROM reports').get() as {
       count: number;
@@ -465,8 +529,85 @@ export class ReportDatabase {
     return result.count;
   }
 
+  /** SQL-side aggregator for analytics windows. Returns only the numbers we
+   *  need for trend computation and avoids hydrating every report row,
+   *  JSON-parsing its metadata. */
+  public aggregateForAnalytics(
+    project?: string,
+    from?: string,
+    to?: string,
+    options: { failedOnly?: boolean } = {}
+  ): {
+    count: number;
+    totalTests: number;
+    totalPassed: number;
+    totalFailed: number;
+    totalFlaky: number;
+    totalExecuted: number;
+    sumDuration: number;
+  } {
+    const { sql: whereSql, params } = buildWhere([
+      project && project !== defaultProjectName ? { sql: 'project = ?', params: [project] } : null,
+      from ? { sql: 'createdAt >= ?', params: [from] } : null,
+      to ? { sql: 'createdAt < ?', params: [to] } : null,
+      options.failedOnly
+        ? {
+            sql: "(CAST(json_extract(stats, '$.unexpected') AS REAL) > 0 OR CAST(json_extract(stats, '$.flaky') AS REAL) > 0)",
+            params: [],
+          }
+        : null,
+    ]);
+
+    const row = this.db
+      .prepare(
+        `SELECT
+           COUNT(*) AS count,
+           COALESCE(SUM(CAST(json_extract(stats, '$.total') AS REAL)), 0) AS totalTests,
+           COALESCE(SUM(CAST(json_extract(stats, '$.expected') AS REAL)), 0) AS totalPassed,
+           COALESCE(SUM(CAST(json_extract(stats, '$.unexpected') AS REAL)), 0) AS totalFailed,
+           COALESCE(SUM(CAST(json_extract(stats, '$.flaky') AS REAL)), 0) AS totalFlaky,
+           COALESCE(SUM(CAST(json_extract(metadata, '$.duration') AS REAL)), 0) AS sumDuration
+         FROM reports ${whereSql}`.trim()
+      )
+      .get(...params) as {
+      count: number;
+      totalTests: number;
+      totalPassed: number;
+      totalFailed: number;
+      totalFlaky: number;
+      sumDuration: number;
+    };
+    return {
+      ...row,
+      totalExecuted: row.totalPassed + row.totalFailed + row.totalFlaky,
+    };
+  }
+
   public clear(): void {
     this.db.prepare('DELETE FROM reports').run();
+  }
+
+  public backfillPassRate(): number {
+    const rows = this.db
+      .prepare<[], { reportID: string; stats: string | null }>(
+        'SELECT reportID, stats FROM reports WHERE passRate IS NULL'
+      )
+      .all();
+    if (rows.length === 0) return 0;
+
+    const update = this.db.prepare<[number | null, string]>(
+      'UPDATE reports SET passRate = ? WHERE reportID = ?'
+    );
+
+    const apply = this.db.transaction((batch: typeof rows) => {
+      for (const row of batch) {
+        const stats = parseJsonColumn<ReportStats | undefined>(row.stats, undefined);
+        update.run(computePassRateFromStats(stats), row.reportID);
+      }
+    });
+    apply(rows);
+
+    return rows.length;
   }
 
   public query(input?: ReadReportsInput): ReadReportsOutput {
@@ -486,10 +627,6 @@ export class ReportDatabase {
 
     const search = input?.search?.trim();
     const searchTerm = search ? `%${search.toLowerCase()}%` : null;
-
-    // pass% = expected / (total - skipped). Reports without stats are excluded.
-    const passExpr =
-      "(CAST(json_extract(stats, '$.expected') AS REAL) * 100.0 / NULLIF((CAST(json_extract(stats, '$.total') AS REAL) - COALESCE(CAST(json_extract(stats, '$.skipped') AS REAL), 0)), 0))";
 
     const { sql: whereSql, params: whereParams } = buildWhere([
       input?.ids && input.ids.length > 0
@@ -511,11 +648,11 @@ export class ReportDatabase {
       input?.to ? { sql: 'createdAt < ?', params: [input.to] } : null,
       ...tagFragments,
       input?.passRate === 'passing'
-        ? { sql: `${passExpr} >= 100`, params: [] }
+        ? { sql: 'passRate >= 100', params: [] }
         : input?.passRate === 'failing'
-          ? { sql: `${passExpr} < 100`, params: [] }
+          ? { sql: 'passRate < 100 AND passRate IS NOT NULL', params: [] }
           : input?.passRate === 'below-threshold'
-            ? { sql: `${passExpr} < 70`, params: [] }
+            ? { sql: 'passRate < 70 AND passRate IS NOT NULL', params: [] }
             : null,
     ]);
 
@@ -583,6 +720,30 @@ export class ReportDatabase {
     }
     parseCache.set(key, result);
     return result;
+  }
+
+  private rowToReportLite(row: {
+    reportID: string;
+    project: string;
+    title: string | null;
+    displayNumber: number | null;
+    createdAt: string;
+    reportUrl: string;
+    size: string | null;
+    sizeBytes: number;
+    stats: string | null;
+  }): ReportHistoryLite {
+    return {
+      reportID: row.reportID,
+      project: row.project,
+      title: row.title ?? undefined,
+      displayNumber: row.displayNumber ?? undefined,
+      createdAt: row.createdAt,
+      reportUrl: row.reportUrl,
+      size: row.size ?? undefined,
+      sizeBytes: row.sizeBytes,
+      stats: row.stats ? (JSON.parse(row.stats) as ReportStats) : undefined,
+    };
   }
 
   public findByDisplayNumber(

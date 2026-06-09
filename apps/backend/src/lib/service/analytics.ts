@@ -18,6 +18,51 @@ const HEALTH_GRID_UNBOUNDED_CAP = 200;
 
 type Window = { from?: string; to?: string };
 
+/** minimal aggregate used by trend-delta calculations */
+interface TrendAggregate {
+  count: number;
+  totalPassed: number;
+  totalExecuted: number;
+  totalFlaky: number;
+  sumDuration: number;
+}
+
+const EMPTY_TREND_AGGREGATE: TrendAggregate = {
+  count: 0,
+  totalPassed: 0,
+  totalExecuted: 0,
+  totalFlaky: 0,
+  sumDuration: 0,
+};
+
+function aggregateFromRows(reports: BackendReportHistory[]): TrendAggregate {
+  let totalPassed = 0;
+  let totalFailed = 0;
+  let totalFlaky = 0;
+  let sumDuration = 0;
+  for (const r of reports) {
+    totalPassed += r.stats?.expected ?? 0;
+    totalFailed += r.stats?.unexpected ?? 0;
+    totalFlaky += r.stats?.flaky ?? 0;
+    sumDuration += r.duration ?? 0;
+  }
+  return {
+    count: reports.length,
+    totalPassed,
+    totalExecuted: totalPassed + totalFailed + totalFlaky,
+    totalFlaky,
+    sumDuration,
+  };
+}
+
+function passRateOf(agg: TrendAggregate): number {
+  return agg.totalExecuted > 0 ? (agg.totalPassed / agg.totalExecuted) * 100 : 0;
+}
+
+function avgDurationOf(agg: TrendAggregate): number {
+  return agg.count > 0 ? agg.sumDuration / agg.count : 0;
+}
+
 function windowFromReports(reports: BackendReportHistory[]): Window {
   if (reports.length === 0) return {};
   const newest = reports[0]?.createdAt;
@@ -35,15 +80,12 @@ export class AnalyticsService {
     to?: string,
     failedOnly = false
   ): Promise<AnalyticsData> {
-    const fetchScope = await this.fetchReportsForScope(project, from, to);
+    const fetchScope = await this.fetchReportsForScope(project, from, to, failedOnly);
     const onlyFailures = (r: BackendReportHistory) =>
       (r.stats?.unexpected ?? 0) > 0 || (r.stats?.flaky ?? 0) > 0;
     const scoped = failedOnly ? fetchScope.reports.filter(onlyFailures) : fetchScope.reports;
-    const scopedOlder = failedOnly
-      ? fetchScope.olderReports.filter(onlyFailures)
-      : fetchScope.olderReports;
-    const { displayReports, recentForTrend, olderForTrend, olderRange, isBounded } =
-      this.partitionReports(scoped, from, to, fetchScope.olderRange, scopedOlder);
+    const { displayReports, recentForTrend, olderTrendAggregate, olderRange, isBounded } =
+      this.partitionReports(scoped, from, to, fetchScope.olderRange, fetchScope.olderAggregate);
 
     const config = await service.getConfig();
     const warningThreshold =
@@ -53,7 +95,7 @@ export class AnalyticsService {
     const recentRange = isBounded
       ? { from: from ?? undefined, to: to ?? undefined }
       : windowFromReports(recentForTrend);
-    const previousRange = olderRange ?? windowFromReports(olderForTrend);
+    const previousRange = olderRange ?? {};
 
     const [
       overviewStats,
@@ -66,7 +108,7 @@ export class AnalyticsService {
       this.calculateOverviewStats(
         displayReports,
         recentForTrend,
-        olderForTrend,
+        olderTrendAggregate,
         projectKey,
         recentRange,
         previousRange
@@ -108,14 +150,19 @@ export class AnalyticsService {
   private async fetchReportsForScope(
     project: string | undefined,
     from: string | undefined,
-    to: string | undefined
+    to: string | undefined,
+    failedOnly: boolean
   ): Promise<{
     reports: BackendReportHistory[];
-    olderReports: BackendReportHistory[];
+    olderAggregate: TrendAggregate | null;
     olderRange: { from: string; to: string } | null;
   }> {
     if (!from && !to) {
-      return { reports: reportDb.getByProject(project), olderReports: [], olderRange: null };
+      return {
+        reports: reportDb.getByProject(project),
+        olderAggregate: null,
+        olderRange: null,
+      };
     }
 
     const reports = reportDb.getByProject(project, { from, to });
@@ -124,12 +171,18 @@ export class AnalyticsService {
     const toMs = to ? new Date(to).getTime() : Number.POSITIVE_INFINITY;
     const duration = Number.isFinite(toMs) && Number.isFinite(fromMs) ? toMs - fromMs : null;
     if (duration === null || duration <= 0) {
-      return { reports, olderReports: [], olderRange: null };
+      return { reports, olderAggregate: EMPTY_TREND_AGGREGATE, olderRange: null };
     }
     const compFrom = new Date(fromMs - duration).toISOString();
     const compTo = new Date(fromMs).toISOString();
-    const olderReports = reportDb.getByProject(project, { from: compFrom, to: compTo });
-    return { reports, olderReports, olderRange: { from: compFrom, to: compTo } };
+    const olderAggregate = reportDb.aggregateForAnalytics(project, compFrom, compTo, {
+      failedOnly,
+    });
+    return {
+      reports,
+      olderAggregate,
+      olderRange: { from: compFrom, to: compTo },
+    };
   }
 
   /**
@@ -150,11 +203,11 @@ export class AnalyticsService {
     from?: string,
     to?: string,
     preFetchedOlderRange?: { from: string; to: string } | null,
-    preFetchedOlderReports?: BackendReportHistory[]
+    preFetchedOlderAggregate?: TrendAggregate | null
   ): {
     displayReports: BackendReportHistory[];
     recentForTrend: BackendReportHistory[];
-    olderForTrend: BackendReportHistory[];
+    olderTrendAggregate: TrendAggregate;
     olderRange: { from: string; to: string } | null;
     isBounded: boolean;
   } {
@@ -162,7 +215,7 @@ export class AnalyticsService {
       return {
         displayReports: allReports,
         recentForTrend: allReports,
-        olderForTrend: preFetchedOlderReports ?? [],
+        olderTrendAggregate: preFetchedOlderAggregate ?? EMPTY_TREND_AGGREGATE,
         olderRange: preFetchedOlderRange ?? null,
         isBounded: true,
       };
@@ -172,18 +225,20 @@ export class AnalyticsService {
       return {
         displayReports: allReports,
         recentForTrend: allReports,
-        olderForTrend: [],
+        olderTrendAggregate: EMPTY_TREND_AGGREGATE,
         olderRange: null,
         isBounded: false,
       };
     }
-    // allReports is sorted DESC; split by midpoint index = newer / older halves
     const mid = Math.floor(allReports.length / 2);
+    const olderRows = allReports.slice(mid);
+    const olderRange = windowFromReports(olderRows);
     return {
       displayReports: allReports,
       recentForTrend: allReports.slice(0, mid),
-      olderForTrend: allReports.slice(mid),
-      olderRange: null,
+      olderTrendAggregate: aggregateFromRows(olderRows),
+      olderRange:
+        olderRange.from && olderRange.to ? { from: olderRange.from, to: olderRange.to } : null,
       isBounded: false,
     };
   }
@@ -191,7 +246,7 @@ export class AnalyticsService {
   private async calculateOverviewStats(
     displayReports: BackendReportHistory[],
     recentForTrend: BackendReportHistory[],
-    olderForTrend: BackendReportHistory[],
+    olderTrendAggregate: TrendAggregate,
     project: string | undefined,
     recentRange: Window,
     previousRange: Window
@@ -226,7 +281,7 @@ export class AnalyticsService {
         : 0;
 
     const recentPassRate = await this.calculatePreviousPassRate(recentForTrend);
-    const olderPassRate = await this.calculatePreviousPassRate(olderForTrend);
+    const olderPassRate = passRateOf(olderTrendAggregate);
     const passRateTrend = this.calculateTrend(recentPassRate, olderPassRate, 2);
 
     const config = await service.getConfig();
@@ -237,21 +292,14 @@ export class AnalyticsService {
       (sum, report) => sum + (report.stats?.flaky || 0),
       0
     );
-    const olderFlakyOccurrences = olderForTrend.reduce(
-      (sum, report) => sum + (report.stats?.flaky || 0),
-      0
-    );
+    const olderFlakyOccurrences = olderTrendAggregate.totalFlaky;
     const flakyTestsTrend = this.calculateTrend(
       recentFlakyOccurrences,
       olderFlakyOccurrences,
       flakinessThreshold
     );
 
-    const olderAverageRunDuration =
-      olderForTrend.length > 0
-        ? olderForTrend.reduce((sum, report) => sum + (report.duration || 0), 0) /
-          olderForTrend.length
-        : 0;
+    const olderAverageRunDuration = avgDurationOf(olderTrendAggregate);
 
     const deltas = {
       passRate: this.computeDelta(recentPassRate, olderPassRate, 2),

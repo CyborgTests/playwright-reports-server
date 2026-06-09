@@ -290,6 +290,11 @@ export class LlmTasksDatabase {
   }
 
   public claimNext(count: number): LlmTaskRow[] {
+    const hasQueued = this.db
+      .prepare("SELECT 1 FROM llm_tasks WHERE status = 'queued' LIMIT 1")
+      .get() as { 1: number } | undefined;
+    if (!hasQueued) return [];
+
     const transaction = this.db.transaction(() => {
       const rows = this.selectQueuedStmt.all(count) as LlmTaskRow[];
       const now = new Date().toISOString();

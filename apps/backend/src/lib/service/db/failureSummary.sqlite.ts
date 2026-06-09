@@ -31,8 +31,16 @@ interface FailureSummaryDbRow {
   updatedAt: string | null;
 }
 
+const AGGREGATED_CATEGORIES_TTL_MS = 60_000;
+
+type AggregatedCategoriesResult = ReturnType<FailureSummaryDatabase['getAggregatedCategories']>;
+
 export class FailureSummaryDatabase {
   private readonly db = getDatabase();
+  private readonly aggregatedCategoriesCache = new Map<
+    string,
+    { value: AggregatedCategoriesResult; expiresAt: number }
+  >();
 
   private readonly upsertStmt: Database.Statement<[string, string, number, string, string]>;
   private readonly getStmt: Database.Statement<[string]>;
@@ -189,6 +197,12 @@ export class FailureSummaryDatabase {
       }>;
     }>;
   } {
+    const cacheKey = `${project ?? ''}|${limit}|${opts?.from ?? ''}|${opts?.to ?? ''}`;
+    const cached = this.aggregatedCategoriesCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+
     const { sql: whereSql, params } = buildWhere([
       { sql: 'failure_category IS NOT NULL', params: [] },
       project && project !== 'all' ? { sql: 'project = ?', params: [project] } : null,
@@ -360,7 +374,7 @@ export class FailureSummaryDatabase {
       }
     }
 
-    return {
+    const result = {
       categories,
       totalFailures,
       topErrors: topErrors.map((e) => ({
@@ -384,6 +398,11 @@ export class FailureSummaryDatabase {
         }),
       })),
     };
+    this.aggregatedCategoriesCache.set(cacheKey, {
+      value: result,
+      expiresAt: Date.now() + AGGREGATED_CATEGORIES_TTL_MS,
+    });
+    return result;
   }
 
   public deleteAll(): void {

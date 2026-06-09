@@ -22,7 +22,7 @@ import {
 
 import type { ReportHistory } from '../storage/types.js';
 import { qualityDashboardsDb } from './db/qualityDashboards.sqlite.js';
-import { reportDb } from './db/reports.sqlite.js';
+import { type ReportHistoryLite, reportDb } from './db/reports.sqlite.js';
 
 function buildTree(nodes: QualityNode[]): QualityTreeNode[] {
   const byId = new Map<string, QualityTreeNode>();
@@ -60,7 +60,9 @@ function inherit(parent: Inheritance, node: QualityTreeNode): Inheritance {
   };
 }
 
-function reportToStats(report: ReportHistory | undefined): QualityNodeStats | undefined {
+function reportToStats(
+  report: ReportHistory | ReportHistoryLite | undefined
+): QualityNodeStats | undefined {
   const raw = report?.stats as ReportStats | undefined;
   if (!raw) return undefined;
   return normalizeStats({
@@ -82,15 +84,31 @@ function trendFor(current: number, previous: number | undefined): Trend | undefi
   return 'flat';
 }
 
+type LatestReportsByProject = Map<string, ReportHistoryLite[]>;
+
+function collectProjectNames(nodes: QualityTreeNode[]): string[] {
+  const out = new Set<string>();
+  const visit = (n: QualityTreeNode): void => {
+    if (n.kind === 'project') {
+      out.add(n.projectName ?? n.name);
+    } else {
+      for (const child of n.children) visit(child);
+    }
+  };
+  for (const root of nodes) visit(root);
+  return Array.from(out);
+}
+
 function snapshotProject(
   node: QualityTreeNode,
   parent: Inheritance,
   stalenessMs: number,
-  now: number
+  now: number,
+  latestByProject: LatestReportsByProject
 ): QualityNodeSnapshot {
   const resolved = inherit(parent, node);
   const projectName = node.projectName ?? node.name;
-  const reports = reportDb.getLatestByProject(projectName, 2);
+  const reports = latestByProject.get(projectName) ?? [];
   const latest = reports[0];
   const previous = reports[1];
   const stats = reportToStats(latest);
@@ -118,13 +136,9 @@ function snapshotProject(
 
   const passRate = computePassRate(stats, resolved.formula);
   const grade = gradeFor(passRate, resolved.bands);
-  const reportTime =
-    latest.createdAt instanceof Date
-      ? latest.createdAt.getTime()
-      : Date.parse(String(latest.createdAt));
+  const reportTime = Date.parse(latest.createdAt);
   const stale = Number.isFinite(reportTime) && now - reportTime > stalenessMs;
-  const latestReportAt =
-    latest.createdAt instanceof Date ? latest.createdAt.toISOString() : String(latest.createdAt);
+  const latestReportAt = latest.createdAt;
 
   const prevStats = reportToStats(previous);
   const previousPassRate = prevStats ? computePassRate(prevStats, resolved.formula) : undefined;
@@ -156,13 +170,14 @@ function snapshotGroup(
   node: QualityTreeNode,
   parent: Inheritance,
   stalenessMs: number,
-  now: number
+  now: number,
+  latestByProject: LatestReportsByProject
 ): QualityNodeSnapshot {
   const resolved = inherit(parent, node);
   const children = node.children.map((child) =>
     child.kind === 'group'
-      ? snapshotGroup(child, resolved, stalenessMs, now)
-      : snapshotProject(child, resolved, stalenessMs, now)
+      ? snapshotGroup(child, resolved, stalenessMs, now, latestByProject)
+      : snapshotProject(child, resolved, stalenessMs, now, latestByProject)
   );
 
   const contributing = children.filter((c) => c.weight > 0);
@@ -230,10 +245,13 @@ export class QualityDashboardsService {
       minOk: dashboard.defaultMinOkGrade,
     };
 
+    const projectNames = collectProjectNames(tree);
+    const latestByProject = reportDb.getLatestByProjects(projectNames, 2);
+
     const rootChildren = tree.map((child) =>
       child.kind === 'group'
-        ? snapshotGroup(child, rootInheritance, stalenessMs, now)
-        : snapshotProject(child, rootInheritance, stalenessMs, now)
+        ? snapshotGroup(child, rootInheritance, stalenessMs, now, latestByProject)
+        : snapshotProject(child, rootInheritance, stalenessMs, now, latestByProject)
     );
 
     const passRate = weightedAverage(

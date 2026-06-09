@@ -69,8 +69,18 @@ export function setMigrationMark(db: Database.Database, mark: string): void {
   );
 }
 
+function migrateReportsAddPassRate(db: Database.Database): void {
+  const tableInfo = db.pragma("table_info('reports')") as Array<{ name: string }>;
+  if (tableInfo.length === 0) return;
+
+  if (!tableInfo.some((c) => c.name === 'passRate')) {
+    db.exec('ALTER TABLE reports ADD COLUMN passRate REAL');
+  }
+}
+
 function initializeSchema(db: Database.Database): void {
   ensureMigrationMarks(db);
+  migrateReportsAddPassRate(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS results (
       resultID TEXT PRIMARY KEY,
