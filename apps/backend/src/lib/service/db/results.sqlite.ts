@@ -3,11 +3,8 @@ import { defaultProjectName } from '../../constants.js';
 import type { ReadResultsInput, ReadResultsOutput, Result } from '../../storage/types.js';
 import { getDatabase } from './db.js';
 
-const initiatedResultsDb = Symbol.for('playwright.reports.db.results');
-const instance = globalThis as typeof globalThis & {
-  [initiatedResultsDb]?: ResultDatabase;
-};
-
+import { singletonOf } from './singleton.js';
+import { buildWhere, paginationClause, type WhereFragment } from './utils.js';
 export class ResultDatabase {
   public initialized = false;
   private readonly db = getDatabase();
@@ -22,7 +19,7 @@ export class ResultDatabase {
   private readonly searchStmt: Database.Statement<[string, string, string, string]>;
   private readonly getExpiredIdsStmt: Database.Statement<[string, number]>;
 
-  private constructor() {
+  constructor() {
     this.insertStmt = this.db.prepare(`
       INSERT OR REPLACE INTO results (resultID, project, title, createdAt, size, sizeBytes, metadata, updatedAt)
       VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -55,12 +52,6 @@ export class ResultDatabase {
   public getExpiredIds(cutoffISO: string, limit: number): string[] {
     const rows = this.getExpiredIdsStmt.all(cutoffISO, limit) as Array<{ resultID: string }>;
     return rows.map((row) => row.resultID);
-  }
-
-  public static getInstance(): ResultDatabase {
-    instance[initiatedResultsDb] ??= new ResultDatabase();
-
-    return instance[initiatedResultsDb];
   }
 
   public async init() {
@@ -195,72 +186,49 @@ export class ResultDatabase {
   }
 
   public query(input?: ReadResultsInput): ReadResultsOutput {
-    let query = 'SELECT * FROM results';
-    const params: string[] = [];
-    const conditions: string[] = [];
-
-    if (input?.project && input.project !== defaultProjectName) {
-      conditions.push('project = ?');
-      params.push(input.project);
-    }
-
-    if (input?.testRun) {
-      conditions.push('metadata LIKE ?');
-      params.push(`%"testRun":"${input.testRun}"%`);
-    }
-
-    if (input?.tags && input.tags.length > 0) {
-      for (const tag of input.tags) {
+    const tagFragments =
+      input?.tags?.map((tag): WhereFragment => {
         const [key, value] = tag.split(':').map((part) => part.trim());
+        return { sql: 'metadata LIKE ?', params: [`%"${key}":"${value}"%`] };
+      }) ?? [];
 
-        conditions.push('metadata LIKE ?');
-        params.push(`%"${key}":"${value}"%`);
-      }
-    }
+    const search = input?.search?.trim();
+    const searchTerm = search ? `%${search.toLowerCase()}%` : null;
 
-    if (input?.search?.trim()) {
-      const searchTerm = `%${input.search.toLowerCase().trim()}%`;
+    const { sql: whereSql, params: whereParams } = buildWhere([
+      input?.project && input.project !== defaultProjectName
+        ? { sql: 'project = ?', params: [input.project] }
+        : null,
+      input?.testRun
+        ? { sql: 'metadata LIKE ?', params: [`%"testRun":"${input.testRun}"%`] }
+        : null,
+      ...tagFragments,
+      searchTerm
+        ? {
+            sql: '(LOWER(title) LIKE ? OR LOWER(resultID) LIKE ? OR LOWER(project) LIKE ? OR LOWER(metadata) LIKE ?)',
+            params: [searchTerm, searchTerm, searchTerm, searchTerm],
+          }
+        : null,
+      input?.from ? { sql: 'createdAt >= ?', params: [input.from] } : null,
+      input?.to ? { sql: 'createdAt < ?', params: [input.to] } : null,
+      input?.usage === 'used'
+        ? { sql: 'resultID IN (SELECT DISTINCT resultId FROM report_results)', params: [] }
+        : input?.usage === 'unused'
+          ? { sql: 'resultID NOT IN (SELECT DISTINCT resultId FROM report_results)', params: [] }
+          : null,
+    ]);
 
-      conditions.push(
-        '(LOWER(title) LIKE ? OR LOWER(resultID) LIKE ? OR LOWER(project) LIKE ? OR LOWER(metadata) LIKE ?)'
-      );
-      params.push(searchTerm, searchTerm, searchTerm, searchTerm);
-    }
+    const baseQuery = `SELECT * FROM results ${whereSql} ORDER BY createdAt DESC`.trim();
+    const countQuery = `SELECT COUNT(*) as count FROM results ${whereSql}`.trim();
 
-    if (input?.from) {
-      conditions.push('createdAt >= ?');
-      params.push(input.from);
-    }
-
-    if (input?.to) {
-      conditions.push('createdAt < ?');
-      params.push(input.to);
-    }
-
-    if (input?.usage === 'used') {
-      conditions.push('resultID IN (SELECT DISTINCT resultId FROM report_results)');
-    } else if (input?.usage === 'unused') {
-      conditions.push('resultID NOT IN (SELECT DISTINCT resultId FROM report_results)');
-    }
-
-    if (conditions.length > 0) {
-      query += ` WHERE ${conditions.join(' AND ')}`;
-    }
-
-    query += ' ORDER BY createdAt DESC';
-
-    const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as count');
-    const countResult = this.db.prepare(countQuery).get(...params) as {
-      count: number;
-    };
+    const countResult = this.db.prepare(countQuery).get(...whereParams) as { count: number };
     const total = countResult.count;
 
-    if (input?.pagination) {
-      query += ' LIMIT ? OFFSET ?';
-      params.push(input.pagination.limit.toString(), input.pagination.offset.toString());
-    }
+    const { sql: pageSql, params: pageParams } = paginationClause(input?.pagination);
+    const finalQuery = pageSql ? `${baseQuery} ${pageSql}` : baseQuery;
+    const finalParams = [...whereParams, ...pageParams];
 
-    const rows = this.db.prepare(query).all(...params) as Array<{
+    const rows = this.db.prepare(finalQuery).all(...finalParams) as Array<{
       resultID: string;
       project: string;
       title: string | null;
@@ -299,4 +267,4 @@ export class ResultDatabase {
   }
 }
 
-export const resultDb = ResultDatabase.getInstance();
+export const resultDb = singletonOf('results', () => new ResultDatabase());

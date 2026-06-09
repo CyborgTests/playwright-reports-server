@@ -2,10 +2,8 @@ import type { NotificationLogEntry } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import { getDatabase } from './db.js';
 
-const initiatedKey = Symbol.for('playwright.reports.db.notification_log');
-const instance = globalThis as typeof globalThis & {
-  [initiatedKey]?: NotificationLogDatabase;
-};
+import { singletonOf } from './singleton.js';
+import { buildWhere, paginationClause } from './utils.js';
 
 interface DbRow {
   id: string;
@@ -56,7 +54,7 @@ export class NotificationLogDatabase {
   private readonly deleteOlderThanStmt: Database.Statement<[number]>;
   private readonly deleteByIdStmt: Database.Statement<[string]>;
 
-  private constructor() {
+  constructor() {
     this.insertStmt = this.db.prepare(`
       INSERT INTO notification_log
         (id, channel_id, channel_type, rule_id, rule_kind, event, condition,
@@ -73,11 +71,6 @@ export class NotificationLogDatabase {
       DELETE FROM notification_log WHERE created_at < ?
     `);
     this.deleteByIdStmt = this.db.prepare(`DELETE FROM notification_log WHERE id = ?`);
-  }
-
-  public static getInstance(): NotificationLogDatabase {
-    instance[initiatedKey] ??= new NotificationLogDatabase();
-    return instance[initiatedKey];
   }
 
   public insert(entry: NotificationLogEntry): void {
@@ -103,33 +96,28 @@ export class NotificationLogDatabase {
     rows: NotificationLogEntry[];
     total: number;
   } {
-    const where: string[] = [];
-    const params: Array<string | number> = [];
-    if (filters.channelId) {
-      where.push('channel_id = ?');
-      params.push(filters.channelId);
-    }
-    if (filters.status) {
-      where.push('status = ?');
-      params.push(filters.status);
-    }
-    if (filters.source) {
-      where.push('source = ?');
-      params.push(filters.source);
-    }
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const { sql: whereSql, params: whereParams } = buildWhere([
+      filters.channelId ? { sql: 'channel_id = ?', params: [filters.channelId] } : null,
+      filters.status ? { sql: 'status = ?', params: [filters.status] } : null,
+      filters.source ? { sql: 'source = ?', params: [filters.source] } : null,
+    ]);
 
     const totalRow = this.db
-      .prepare(`SELECT COUNT(*) AS total FROM notification_log ${whereSql}`)
-      .get(...params) as { total: number };
+      .prepare(`SELECT COUNT(*) AS total FROM notification_log ${whereSql}`.trim())
+      .get(...whereParams) as { total: number };
+
+    const { sql: pageSql, params: pageParams } = paginationClause({
+      limit: filters.limit,
+      offset: filters.offset,
+    });
 
     const rows = this.db
       .prepare(
         `SELECT * FROM notification_log ${whereSql}
          ORDER BY created_at DESC
-         LIMIT ? OFFSET ?`
+         ${pageSql}`
       )
-      .all(...params, filters.limit, filters.offset) as DbRow[];
+      .all(...whereParams, ...pageParams) as DbRow[];
 
     return { rows: rows.map(rowToEntry), total: totalRow.total };
   }
@@ -188,4 +176,7 @@ function rowToEntry(row: DbRow): NotificationLogEntry {
   };
 }
 
-export const notificationLogDb = NotificationLogDatabase.getInstance();
+export const notificationLogDb = singletonOf(
+  'notification_log',
+  () => new NotificationLogDatabase()
+);

@@ -8,9 +8,12 @@ import {
   TEST_ANALYSIS_SYSTEM_PROMPT,
   TEST_ANALYSIS_TASK_INSTRUCTIONS,
 } from '../lib/llm/prompts/index.js';
-import { getDatabase } from '../lib/service/db/db.js';
+import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
 import type { LlmTaskRow, LlmTaskStatus, LlmTaskType } from '../lib/service/db/llmTasks.sqlite.js';
 import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
+import { getUsageByModel, getUsageStats } from '../lib/service/db/queries/llmUsage.js';
+import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
+import { testDb } from '../lib/service/db/tests.sqlite.js';
 import { service } from '../lib/service/index.js';
 import { llmTaskEvents } from '../lib/service/llmTaskEvents.js';
 import { type AuthRequest, authenticate } from './auth.js';
@@ -25,21 +28,7 @@ const TERMINAL_STATUSES: ReadonlySet<LlmTaskStatus> = new Set(['completed', 'fai
 const AVAILABLE_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
 let availableModelsCache: { key: string; models: string[]; expiresAt: number } | null = null;
 
-function getFailedTestsWithoutAnalysis() {
-  const db = getDatabase();
-  return db
-    .prepare(
-      `SELECT DISTINCT t.testId, t.fileId, t.project, tr.reportId
-       FROM test_runs tr
-       JOIN tests t ON tr.testId = t.testId AND tr.fileId = t.fileId AND tr.project = t.project
-       WHERE tr.failure_details IS NOT NULL
-       AND NOT EXISTS (
-         SELECT 1 FROM test_llm_analyses tla
-         WHERE tla.testId = tr.testId AND tla.fileId = tr.fileId AND tla.project = tr.project
-       )`
-    )
-    .all() as Array<{ testId: string; fileId: string; project: string; reportId: string }>;
-}
+const getFailedTestsWithoutAnalysis = () => testDb.getFailedTestsWithoutAnalysis();
 
 export async function registerLlmRoutes(fastify: FastifyInstance) {
   // GET /api/llm/tasks - paginated task list with optional filters
@@ -97,76 +86,19 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
       const fromDate =
         cfg.llmUsageResetAt && cfg.llmUsageResetAt > windowFrom ? cfg.llmUsageResetAt : windowFrom;
 
-      const db = getDatabase();
-
-      // Totals + byType across completed tasks. Filters on completedAt so
-      // we measure when work actually settled, not when it was queued.
-      const totalsRow = db
-        .prepare(
-          `SELECT
-               COUNT(*) AS tasks,
-               COALESCE(SUM(inputTokens), 0) AS inputTokens,
-               COALESCE(SUM(outputTokens), 0) AS outputTokens,
-               COALESCE(SUM(totalTokens), 0) AS totalTokens
-             FROM llm_tasks
-             WHERE status = 'completed' AND completedAt >= ?`
-        )
-        .get(fromDate) as {
-        tasks: number;
-        inputTokens: number;
-        outputTokens: number;
-        totalTokens: number;
-      };
-
-      const byTypeRows = db
-        .prepare(
-          `SELECT
-               type,
-               COUNT(*) AS tasks,
-               COALESCE(SUM(inputTokens), 0) AS inputTokens,
-               COALESCE(SUM(outputTokens), 0) AS outputTokens,
-               COALESCE(SUM(totalTokens), 0) AS totalTokens
-             FROM llm_tasks
-             WHERE status = 'completed' AND completedAt >= ?
-             GROUP BY type`
-        )
-        .all(fromDate) as Array<{
-        type: string;
-        tasks: number;
-        inputTokens: number;
-        outputTokens: number;
-        totalTokens: number;
-      }>;
-
-      const byType: Record<string, (typeof byTypeRows)[number]> = {};
-      for (const row of byTypeRows) byType[row.type] = row;
-
-      // Reuse rate: test_llm_analyses rows in the period, split on whether
-      // they were copied from a prior signature match (reusedFromAnalysisId).
-      const reuseRow = db
-        .prepare(
-          `SELECT
-               COUNT(*) AS analyses,
-               SUM(CASE WHEN reusedFromAnalysisId IS NOT NULL THEN 1 ELSE 0 END) AS reused
-             FROM test_llm_analyses
-             WHERE createdAt >= ?`
-        )
-        .get(fromDate) as { analyses: number; reused: number };
+      const { totals, byType, reuse } = getUsageStats(fromDate);
 
       return {
         success: true,
         data: {
           days,
           fromDate,
-          totals: totalsRow,
+          totals,
           byType,
           reuse: {
-            analyses: reuseRow.analyses ?? 0,
-            reused: reuseRow.reused ?? 0,
-            rate:
-              reuseRow.analyses && reuseRow.analyses > 0
-                ? (reuseRow.reused ?? 0) / reuseRow.analyses
-                : 0,
+            analyses: reuse.analyses ?? 0,
+            reused: reuse.reused ?? 0,
+            rate: reuse.analyses && reuse.analyses > 0 ? (reuse.reused ?? 0) / reuse.analyses : 0,
           },
         },
       };
@@ -197,32 +129,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
       const fromDate =
         cfg.llmUsageResetAt && cfg.llmUsageResetAt > windowFrom ? cfg.llmUsageResetAt : windowFrom;
 
-      const db = getDatabase();
-      // Group by (baseUrl, model). NULLs collapse to the same bucket via
-      // COALESCE so historical rows (pre-baseUrl-column) and rows with a
-      // missing model don't fragment the table into a dozen empty buckets.
-      const rows = db
-        .prepare(
-          `SELECT
-               COALESCE(baseUrl, '') AS baseUrl,
-               COALESCE(model, '') AS model,
-               COUNT(*) AS tasks,
-               COALESCE(SUM(inputTokens), 0) AS inputTokens,
-               COALESCE(SUM(outputTokens), 0) AS outputTokens,
-               COALESCE(SUM(totalTokens), 0) AS totalTokens
-             FROM llm_tasks
-             WHERE status = 'completed' AND completedAt >= ?
-             GROUP BY COALESCE(baseUrl, ''), COALESCE(model, '')
-             ORDER BY totalTokens DESC`
-        )
-        .all(fromDate) as Array<{
-        baseUrl: string;
-        model: string;
-        tasks: number;
-        inputTokens: number;
-        outputTokens: number;
-        totalTokens: number;
-      }>;
+      const rows = getUsageByModel(fromDate);
 
       return {
         success: true,
@@ -414,10 +321,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
       if (authResult) return;
 
       const { taskId } = request.params as { taskId: string };
-      const db = getDatabase();
-      const initialRow = db.prepare('SELECT * FROM llm_tasks WHERE id = ?').get(taskId) as
-        | LlmTaskRow
-        | undefined;
+      const initialRow = llmTasksDb.getById(taskId);
       if (!initialRow) {
         return reply.status(404).send({ success: false, error: 'Task not found' });
       }
@@ -613,11 +517,9 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     if (authResult) return;
 
     try {
-      const db = getDatabase();
-
       // Clear existing analyses and summaries
-      db.prepare('DELETE FROM test_llm_analyses').run();
-      db.prepare('DELETE FROM report_failure_summaries').run();
+      testAnalysisDb.deleteAll();
+      failureSummaryDb.deleteAll();
 
       // Re-queue all failed tests
       const rows = getFailedTestsWithoutAnalysis();

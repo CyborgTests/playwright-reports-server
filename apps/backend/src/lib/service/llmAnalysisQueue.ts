@@ -10,7 +10,6 @@ import {
 import type {
   FailureDetailsForPrompt,
   ProjectCluster,
-  ProjectCoverageScope,
   ProjectTrendSignal,
   ProjectTrendWindow,
   ReportSummaryTrendContext,
@@ -42,11 +41,11 @@ import {
 import { parseHtmlReport } from '../parser/index.js';
 import { REPORTS_FOLDER } from '../storage/constants.js';
 import { analysisFeedbackDb } from './db/analysisFeedback.sqlite.js';
-import { getDatabase } from './db/db.js';
 import { failureSummaryDb } from './db/failureSummary.sqlite.js';
 import type { LlmTaskRow } from './db/llmTasks.sqlite.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import { projectSummaryDb } from './db/projectSummary.sqlite.js';
+import { computeProjectCoverageScope } from './db/queries/projectCoverage.js';
 import { testAnalysisDb } from './db/testAnalysis.sqlite.js';
 import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
@@ -552,33 +551,14 @@ class LlmAnalysisQueue {
     const hasNonEmptyExisting =
       !!existingForThisReport?.analysis && existingForThisReport.analysis.trim().length > 0;
     if (!task.isRetry && !hasNonEmptyExisting && currentErrorSignature) {
-      const db = getDatabase();
-      const reuseSource = db
-        .prepare(
-          `SELECT tla.* FROM test_llm_analyses tla
-           JOIN test_runs tr ON tr.testId = tla.testId
-                            AND tr.fileId = tla.fileId
-                            AND tr.project = tla.project
-                            AND tr.reportId = tla.reportId
-           WHERE tla.testId = ? AND tla.fileId = ? AND tla.project = ?
-             AND tr.error_signature = ?
-             AND tr.failure_category = ?
-             AND tla.analysis IS NOT NULL
-             AND TRIM(tla.analysis) != ''
-             AND tla.reportId != ?
-           ORDER BY COALESCE(tla.updatedAt, tla.createdAt) DESC
-           LIMIT 1`
-        )
-        .get(testId, fileId, project, currentErrorSignature, heuristicCategory, reportId) as
-        | {
-            id: string;
-            analysis: string;
-            category: string | null;
-            model: string | null;
-            createdAt: string;
-            updatedAt: string | null;
-          }
-        | undefined;
+      const reuseSource = testAnalysisDb.findReuseSource(
+        testId,
+        fileId,
+        project,
+        currentErrorSignature,
+        heuristicCategory,
+        reportId
+      );
 
       if (reuseSource) {
         const sourceUpdatedAt = reuseSource.updatedAt || reuseSource.createdAt;
@@ -592,16 +572,14 @@ class LlmAnalysisQueue {
 
         let recurrenceExceeded = false;
         if (sourceUpdatedAt) {
-          const recurrenceRow = db
-            .prepare(
-              `SELECT COUNT(*) as count FROM test_runs
-               WHERE testId = ? AND fileId = ? AND project = ?
-                 AND error_signature = ? AND createdAt > ?`
-            )
-            .get(testId, fileId, project, currentErrorSignature, sourceUpdatedAt) as {
-            count: number;
-          };
-          recurrenceExceeded = recurrenceRow.count > REUSE_RECURRENCE_LIMIT;
+          const recurrenceCount = testDb.countRunsWithSignatureSince(
+            testId,
+            fileId,
+            project,
+            currentErrorSignature,
+            sourceUpdatedAt
+          );
+          recurrenceExceeded = recurrenceCount > REUSE_RECURRENCE_LIMIT;
         }
 
         if (ttlExpired) {
@@ -1763,137 +1741,8 @@ async function computeProjectTrendSignal(
   return { current, prior, splits, clusterFlow };
 }
 
-/** Compute the suite/quarantine/near-flake summary for the project-summary
- *  prompt. Inline SQL via getDatabase() — none of these are reused elsewhere.
- *  Project='all' → no project filter. `priorReportIds` is optional; when
- *  supplied, the helper also returns `priorDistinctTests` so the model can
- *  reason about suite shrinkage. */
-function computeProjectCoverageScope(
-  reportIds: string[],
-  priorReportIds: string[] | null,
-  windowStartIso: string,
-  windowEndIso: string,
-  project: string
-): ProjectCoverageScope | undefined {
-  if (reportIds.length === 0) return undefined;
-  const db = getDatabase();
-  const projectFilter = project === 'all' ? '' : ' AND project = ?';
-  const projectParams = project === 'all' ? [] : [project];
-
-  const totalTests = (
-    db
-      .prepare(`SELECT COUNT(*) AS c FROM tests WHERE 1=1${projectFilter}`)
-      .get(...projectParams) as { c: number }
-  ).c;
-
-  const testsAddedInWindow = (
-    db
-      .prepare(
-        `SELECT COUNT(*) AS c FROM tests WHERE createdAt >= ? AND createdAt <= ?${projectFilter}`
-      )
-      .get(windowStartIso, windowEndIso, ...projectParams) as { c: number }
-  ).c;
-
-  // Quarantined = the most recent test_run per (testId, fileId, project) has
-  // quarantined=1. Subquery picks the latest createdAt for each test; the
-  // outer count keeps rows whose latest run is quarantined.
-  const currentlyQuarantined = (
-    db
-      .prepare(
-        `SELECT COUNT(*) AS c FROM (
-           SELECT testId, fileId, project, MAX(createdAt) AS latest_at
-           FROM test_runs
-           WHERE 1=1${projectFilter}
-           GROUP BY testId, fileId, project
-         ) latest
-         JOIN test_runs tr
-           ON tr.testId = latest.testId
-           AND tr.fileId = latest.fileId
-           AND tr.project = latest.project
-           AND tr.createdAt = latest.latest_at
-         WHERE tr.quarantined = 1`
-      )
-      .get(...projectParams) as { c: number }
-  ).c;
-
-  const reportIdsPlaceholders = reportIds.map(() => '?').join(',');
-  const quarantineFailuresInWindow = (
-    db
-      .prepare(
-        `SELECT COUNT(*) AS c FROM test_runs
-         WHERE quarantined = 1
-           AND outcome IN ('unexpected', 'flaky', 'failed')
-           AND reportId IN (${reportIdsPlaceholders})`
-      )
-      .get(...reportIds) as { c: number }
-  ).c;
-
-  // Distinct tests with at least one run in the current window.
-  const windowDistinctTests = (
-    db
-      .prepare(
-        `SELECT COUNT(DISTINCT testId || '::' || fileId || '::' || project) AS c
-         FROM test_runs WHERE reportId IN (${reportIdsPlaceholders})`
-      )
-      .get(...reportIds) as { c: number }
-  ).c;
-
-  let priorDistinctTests: number | undefined;
-  if (priorReportIds && priorReportIds.length > 0) {
-    const priorPlaceholders = priorReportIds.map(() => '?').join(',');
-    priorDistinctTests = (
-      db
-        .prepare(
-          `SELECT COUNT(DISTINCT testId || '::' || fileId || '::' || project) AS c
-           FROM test_runs WHERE reportId IN (${priorPlaceholders})`
-        )
-        .get(...priorReportIds) as { c: number }
-    ).c;
-  }
-
-  // Near-flakes: tests with `flaky` outcome (passed on retry) in window
-  // reports. Group by (testId, fileId) and join `tests` for the title +
-  // filePath. Top 5 by occurrence count.
-  type NearFlakeRow = {
-    testId: string;
-    fileId: string;
-    title: string | null;
-    filePath: string | null;
-    c: number;
-  };
-  const nearFlakeRows = db
-    .prepare(
-      `SELECT tr.testId AS testId, tr.fileId AS fileId,
-              t.title AS title, t.filePath AS filePath,
-              COUNT(*) AS c
-       FROM test_runs tr
-       LEFT JOIN tests t
-         ON t.testId = tr.testId AND t.fileId = tr.fileId AND t.project = tr.project
-       WHERE tr.outcome = 'flaky'
-         AND tr.reportId IN (${reportIdsPlaceholders})
-       GROUP BY tr.testId, tr.fileId, tr.project
-       ORDER BY c DESC, tr.testId
-       LIMIT 5`
-    )
-    .all(...reportIds) as NearFlakeRow[];
-  const nearFlakes = nearFlakeRows.map((row) => ({
-    testId: row.testId,
-    fileId: row.fileId,
-    title: row.title ?? row.testId,
-    filePath: row.filePath ?? row.fileId,
-    flakyOccurrences: row.c,
-  }));
-
-  return {
-    totalTests,
-    testsAddedInWindow,
-    currentlyQuarantined,
-    quarantineFailuresInWindow,
-    windowDistinctTests,
-    priorDistinctTests,
-    nearFlakes,
-  };
-}
+// computeProjectCoverageScope has been relocated to
+// `db/queries/projectCoverage.ts` and is imported at the top of this file.
 
 type ReportFailureRecord = {
   testId: string;

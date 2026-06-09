@@ -101,6 +101,7 @@ function initializeSchema(db: Database.Database): void {
       sizeBytes INTEGER,
       stats TEXT,
       metadata TEXT,
+      passRate REAL,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -109,6 +110,7 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_reports_updatedAt ON reports(updatedAt DESC);
     CREATE INDEX IF NOT EXISTS idx_reports_displayNumber ON reports(displayNumber);
     CREATE INDEX IF NOT EXISTS idx_reports_project_created ON reports(project, createdAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_reports_project_passRate ON reports(project, passRate);
     DROP INDEX IF EXISTS idx_reports_ids;
   `);
 
@@ -494,7 +496,6 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_quality_nodes_project
       ON quality_dashboard_nodes(dashboardId, projectName);
   `);
-
 }
 
 export function getDatabase(): Database.Database {

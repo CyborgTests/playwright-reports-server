@@ -1,11 +1,7 @@
 import type Database from 'better-sqlite3';
 import { getDatabase } from './db.js';
 
-const initiated = Symbol.for('playwright.reports.db.projectSummary');
-const instance = globalThis as typeof globalThis & {
-  [initiated]?: ProjectSummaryDatabase;
-};
-
+import { singletonOf } from './singleton.js';
 export interface ProjectSummaryRow {
   project: string;
   summary: string;
@@ -52,7 +48,7 @@ export class ProjectSummaryDatabase {
   private readonly getStmt: Database.Statement<[string]>;
   private readonly deleteByProjectStmt: Database.Statement<[string]>;
 
-  private constructor() {
+  constructor() {
     this.upsertStmt = this.db.prepare(`
       INSERT INTO project_llm_summaries
         (project, summary, structured, model, lastReportId, reportCount, firstReportAt, lastReportAt, createdAt, updatedAt)
@@ -75,11 +71,6 @@ export class ProjectSummaryDatabase {
     this.deleteByProjectStmt = this.db.prepare(`
       DELETE FROM project_llm_summaries WHERE project = ?
     `);
-  }
-
-  public static getInstance(): ProjectSummaryDatabase {
-    instance[initiated] ??= new ProjectSummaryDatabase();
-    return instance[initiated];
   }
 
   public get(project: string): ProjectSummaryRow | null {
@@ -117,4 +108,4 @@ export class ProjectSummaryDatabase {
   }
 }
 
-export const projectSummaryDb = ProjectSummaryDatabase.getInstance();
+export const projectSummaryDb = singletonOf('projectSummary', () => new ProjectSummaryDatabase());

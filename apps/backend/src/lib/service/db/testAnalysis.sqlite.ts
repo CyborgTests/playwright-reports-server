@@ -2,11 +2,7 @@ import { randomUUID as uuid } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { getDatabase } from './db.js';
 
-const initiatedTestAnalysisDb = Symbol.for('playwright.reports.db.testAnalysis');
-const instance = globalThis as typeof globalThis & {
-  [initiatedTestAnalysisDb]?: TestAnalysisDatabase;
-};
-
+import { singletonOf } from './singleton.js';
 export interface TestAnalysisRow {
   id: string;
   testId: string;
@@ -58,7 +54,7 @@ export class TestAnalysisDatabase {
   private readonly deleteByReportStmt: Database.Statement<[string]>;
   private readonly deleteByTestStmt: Database.Statement<[string, string, string]>;
 
-  private constructor() {
+  constructor() {
     this.upsertStmt = this.db.prepare(`
       INSERT INTO test_llm_analyses (id, testId, fileId, project, reportId, attempt, analysis, category, model, createdAt, updatedAt, reusedFromAnalysisId, inputTokens, outputTokens, totalTokens)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -88,11 +84,6 @@ export class TestAnalysisDatabase {
     this.deleteByTestStmt = this.db.prepare(`
       DELETE FROM test_llm_analyses WHERE testId = ? AND fileId = ? AND project = ?
     `);
-  }
-
-  public static getInstance(): TestAnalysisDatabase {
-    instance[initiatedTestAnalysisDb] ??= new TestAnalysisDatabase();
-    return instance[initiatedTestAnalysisDb];
   }
 
   public upsert(
@@ -227,6 +218,58 @@ export class TestAnalysisDatabase {
   public deleteByTest(testId: string, fileId: string, project: string): void {
     this.deleteByTestStmt.run(testId, fileId, project);
   }
+
+  public findReuseSource(
+    testId: string,
+    fileId: string,
+    project: string,
+    errorSignature: string,
+    failureCategory: string,
+    excludeReportId: string
+  ): {
+    id: string;
+    reportId: string;
+    analysis: string;
+    category: string | null;
+    model: string | null;
+    createdAt: string;
+    updatedAt: string | null;
+  } | null {
+    const row = this.db
+      .prepare(
+        `SELECT tla.id, tla.reportId, tla.analysis, tla.category, tla.model,
+                tla.createdAt, tla.updatedAt
+         FROM test_llm_analyses tla
+         JOIN test_runs tr ON tr.testId = tla.testId
+                          AND tr.fileId = tla.fileId
+                          AND tr.project = tla.project
+                          AND tr.reportId = tla.reportId
+         WHERE tla.testId = ? AND tla.fileId = ? AND tla.project = ?
+           AND tr.error_signature = ?
+           AND tr.failure_category = ?
+           AND tla.analysis IS NOT NULL
+           AND TRIM(tla.analysis) != ''
+           AND tla.reportId != ?
+         ORDER BY COALESCE(tla.updatedAt, tla.createdAt) DESC
+         LIMIT 1`
+      )
+      .get(testId, fileId, project, errorSignature, failureCategory, excludeReportId) as
+      | {
+          id: string;
+          reportId: string;
+          analysis: string;
+          category: string | null;
+          model: string | null;
+          createdAt: string;
+          updatedAt: string | null;
+        }
+      | undefined;
+    return row ?? null;
+  }
+
+  public deleteAll(): void {
+    this.db.prepare('DELETE FROM test_llm_analyses').run();
+  }
 }
 
-export const testAnalysisDb = TestAnalysisDatabase.getInstance();
+export const testAnalysisDb = singletonOf('testAnalysis', () => new TestAnalysisDatabase());

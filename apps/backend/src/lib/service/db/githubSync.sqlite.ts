@@ -1,11 +1,7 @@
 import type Database from 'better-sqlite3';
 import { getDatabase } from './db.js';
 
-const initiated = Symbol.for('playwright.reports.db.githubSync');
-const instance = globalThis as typeof globalThis & {
-  [initiated]?: GithubSyncDatabase;
-};
-
+import { singletonOf } from './singleton.js';
 export interface GithubSyncConfigRow {
   id: string;
   name: string;
@@ -101,7 +97,7 @@ export class GithubSyncDatabase {
   private readonly deleteRunsByConfigStmt: Database.Statement<[string]>;
   private readonly failStaleRunningStmt: Database.Statement<[string, string]>;
 
-  private constructor() {
+  constructor() {
     this.listConfigsStmt = this.db.prepare(
       'SELECT * FROM github_sync_configs ORDER BY createdAt ASC'
     );
@@ -160,11 +156,6 @@ export class GithubSyncDatabase {
       SET status = 'failed', finishedAt = ?, message = ?
       WHERE status = 'running'
     `);
-  }
-
-  public static getInstance(): GithubSyncDatabase {
-    instance[initiated] ??= new GithubSyncDatabase();
-    return instance[initiated];
   }
 
   public listConfigs(): GithubSyncConfigRow[] {
@@ -288,4 +279,4 @@ export class GithubSyncDatabase {
   }
 }
 
-export const githubSyncDb = GithubSyncDatabase.getInstance();
+export const githubSyncDb = singletonOf('githubSync', () => new GithubSyncDatabase());

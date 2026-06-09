@@ -22,7 +22,6 @@ import {
   SubmitTestAnalysisRequestSchema,
 } from '../lib/schemas/index.js';
 import { analysisFeedbackDb } from '../lib/service/db/analysisFeedback.sqlite.js';
-import { getDatabase } from '../lib/service/db/db.js';
 import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
 import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
 import { projectSummaryDb } from '../lib/service/db/projectSummary.sqlite.js';
@@ -703,18 +702,7 @@ function resolveTestIdentity(
   testId: string,
   project: string | undefined
 ): { testId: string; fileId: string; project: string } | null {
-  const db = getDatabase();
-  const row = project
-    ? (db
-        .prepare(
-          'SELECT fileId, project FROM test_runs WHERE testId = ? AND project = ? ORDER BY createdAt DESC LIMIT 1'
-        )
-        .get(testId, project) as { fileId: string; project: string } | undefined)
-    : (db
-        .prepare(
-          'SELECT fileId, project FROM test_runs WHERE testId = ? ORDER BY createdAt DESC LIMIT 1'
-        )
-        .get(testId) as { fileId: string; project: string } | undefined);
+  const row = testDb.findRunLane(testId, project);
   if (!row) return null;
   return { testId, fileId: row.fileId, project: row.project };
 }
@@ -1219,51 +1207,19 @@ async function buildTestAnalysis(testId: string, fileId: string, project: string
 }
 
 async function buildReportResolve(displayNumber: number, project?: string) {
-  const db = getDatabase();
-  const rows = (
-    project
-      ? db
-          .prepare(
-            'SELECT reportID, project, title, displayNumber, createdAt, reportUrl FROM reports WHERE displayNumber = ? AND project = ? ORDER BY createdAt DESC'
-          )
-          .all(displayNumber, project)
-      : db
-          .prepare(
-            'SELECT reportID, project, title, displayNumber, createdAt, reportUrl FROM reports WHERE displayNumber = ? ORDER BY createdAt DESC'
-          )
-          .all(displayNumber)
-  ) as Array<{
-    reportID: string;
-    project: string;
-    title: string | null;
-    displayNumber: number;
-    createdAt: string;
-    reportUrl: string;
-  }>;
+  const rows = reportDb.findByDisplayNumber(displayNumber, project);
   return rows.map((r) => ({
     reportId: r.reportID,
     project: r.project,
     title: r.title ?? undefined,
-    displayNumber: r.displayNumber,
+    displayNumber: r.displayNumber ?? displayNumber,
     createdAt: r.createdAt,
     reportUrl: r.reportUrl,
   }));
 }
 
 async function buildFailureCategories(project?: string) {
-  const db = getDatabase();
-  if (project) {
-    return db
-      .prepare(
-        'SELECT failure_category AS category, COUNT(*) AS occurrences FROM test_runs WHERE failure_category IS NOT NULL AND project = ? GROUP BY failure_category ORDER BY occurrences DESC'
-      )
-      .all(project) as Array<{ category: string; occurrences: number }>;
-  }
-  return db
-    .prepare(
-      'SELECT failure_category AS category, COUNT(*) AS occurrences FROM test_runs WHERE failure_category IS NOT NULL GROUP BY failure_category ORDER BY occurrences DESC'
-    )
-    .all() as Array<{ category: string; occurrences: number }>;
+  return testDb.getFailureCategoryCounts(project);
 }
 
 function buildAttachmentUrls(

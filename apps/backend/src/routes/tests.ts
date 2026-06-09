@@ -1,5 +1,4 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { getDatabase } from '../lib/service/db/db.js';
 import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
@@ -245,30 +244,15 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         const { reportId } = request.query as { reportId?: string };
 
         try {
-          const db = getDatabase();
-
           // retry takes precedence over the stored row: while a
           // retry-flagged task for this (testId, reportId) is still in flight,
           // surface it as pending so the viewer renders "regenerating…" instead
           // of the about-to-be-replaced analysis. Auto-queued (isRetry=0) tasks
           // do NOT preempt — those run as background fill-in and shouldn't hide
           // an existing analysis from the user.
-          const retryPendingQuery = reportId
-            ? db.prepare(
-                `SELECT id, status FROM llm_tasks
-               WHERE type = 'test_analysis' AND testId = ? AND reportId = ?
-                 AND status IN ('queued','processing') AND isRetry = 1
-               ORDER BY createdAt DESC LIMIT 1`
-              )
-            : db.prepare(
-                `SELECT id, status FROM llm_tasks
-               WHERE type = 'test_analysis' AND testId = ?
-                 AND status IN ('queued','processing') AND isRetry = 1
-               ORDER BY createdAt DESC LIMIT 1`
-              );
-          const retryPending = (
-            reportId ? retryPendingQuery.get(testId, reportId) : retryPendingQuery.get(testId)
-          ) as { id: string; status: string } | undefined;
+          const retryPending = llmTasksDb.findInflightTestAnalysis(testId, reportId, {
+            retryOnly: true,
+          });
 
           if (retryPending) {
             return reply.send({
@@ -287,15 +271,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
           }
 
           // Fall back to llm_tasks table — the SSE endpoint saves results there
-          const taskQuery = reportId
-            ? db.prepare(
-                `SELECT result AS analysis, model, category FROM llm_tasks WHERE testId = ? AND reportId = ? AND status = 'completed' AND result IS NOT NULL ORDER BY completedAt DESC LIMIT 1`
-              )
-            : db.prepare(
-                `SELECT result AS analysis, model, category FROM llm_tasks WHERE testId = ? AND status = 'completed' AND result IS NOT NULL ORDER BY completedAt DESC LIMIT 1`
-              );
-
-          const taskRow = reportId ? taskQuery.get(testId, reportId) : taskQuery.get(testId);
+          const taskRow = llmTasksDb.getLatestCompletedTestAnalysisResult(testId, reportId);
 
           if (taskRow) {
             return reply.send({ success: true, data: taskRow });
@@ -303,23 +279,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
 
           // No completed analysis yet — surface in-flight tasks so the report viewer
           // can render a loading state instead of nothing while the queue catches up.
-          const pendingQuery = reportId
-            ? db.prepare(
-                `SELECT id, status FROM llm_tasks
-               WHERE type = 'test_analysis' AND testId = ? AND reportId = ?
-                 AND status IN ('queued','processing')
-               ORDER BY createdAt DESC LIMIT 1`
-              )
-            : db.prepare(
-                `SELECT id, status FROM llm_tasks
-               WHERE type = 'test_analysis' AND testId = ?
-                 AND status IN ('queued','processing')
-               ORDER BY createdAt DESC LIMIT 1`
-              );
-
-          const pending = (
-            reportId ? pendingQuery.get(testId, reportId) : pendingQuery.get(testId)
-          ) as { id: string; status: string } | undefined;
+          const pending = llmTasksDb.findInflightTestAnalysis(testId, reportId);
 
           return reply.send({
             success: true,
@@ -377,14 +337,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         // No completed task — build a fresh would-be prompt. Resolve
         // (fileId, project) from `test_runs` so the shared builder has
         // everything it needs.
-        const db = getDatabase();
-        const row = db
-          .prepare(
-            `SELECT fileId, project FROM test_runs
-             WHERE testId = ? AND reportId = ?
-             ORDER BY createdAt DESC LIMIT 1`
-          )
-          .get(testId, reportId) as { fileId: string; project: string } | undefined;
+        const row = testDb.findRunLaneByReport(testId, reportId);
         if (!row) {
           return reply.status(404).send({
             success: false,

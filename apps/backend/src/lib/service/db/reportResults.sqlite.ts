@@ -1,10 +1,6 @@
 import { getDatabase } from './db.js';
 
-const initiatedKey = Symbol.for('playwright.reports.db.report_results');
-const instance = globalThis as typeof globalThis & {
-  [initiatedKey]?: ReportResultsDatabase;
-};
-
+import { singletonOf } from './singleton.js';
 export class ReportResultsDatabase {
   private readonly db = getDatabase();
   private readonly insertStmt = this.db.prepare(
@@ -17,11 +13,6 @@ export class ReportResultsDatabase {
      WHERE rr.resultId = ?
      ORDER BY r.createdAt DESC`
   );
-
-  public static getInstance(): ReportResultsDatabase {
-    instance[initiatedKey] ??= new ReportResultsDatabase();
-    return instance[initiatedKey];
-  }
 
   public linkReportToResults(reportId: string, resultIds: string[]): void {
     if (!resultIds?.length) return;
@@ -102,7 +93,6 @@ export class ReportResultsDatabase {
     };
     return row.count;
   }
-
 }
 
-export const reportResultsDb = ReportResultsDatabase.getInstance();
+export const reportResultsDb = singletonOf('report_results', () => new ReportResultsDatabase());

@@ -14,10 +14,8 @@ import type Database from 'better-sqlite3';
 
 import { getDatabase, hasMigrationMark, setMigrationMark } from './db.js';
 
-const initiated = Symbol.for('playwright.reports.db.qualityDashboards');
-const instance = globalThis as typeof globalThis & {
-  [initiated]?: QualityDashboardsDatabase;
-};
+import { singletonOf } from './singleton.js';
+import { parseJsonColumn } from './utils.js';
 
 interface DashboardRow {
   id: string;
@@ -50,12 +48,6 @@ interface NodeRow {
 }
 
 function rowToDashboard(row: DashboardRow): QualityDashboard {
-  let bands: GradeBands;
-  try {
-    bands = JSON.parse(row.defaultGradeBands) as GradeBands;
-  } catch {
-    bands = { ...DEFAULT_GRADE_BANDS };
-  }
   return {
     id: row.id,
     name: row.name,
@@ -63,7 +55,9 @@ function rowToDashboard(row: DashboardRow): QualityDashboard {
     isDefault: !!row.isDefault,
     homeOrder: row.homeOrder ?? 0,
     stalenessDays: row.stalenessDays,
-    defaultGradeBands: bands,
+    defaultGradeBands: parseJsonColumn<GradeBands>(row.defaultGradeBands, {
+      ...DEFAULT_GRADE_BANDS,
+    }),
     defaultFormula: row.defaultFormula as GradeFormula,
     defaultMinOkGrade: row.defaultMinOkGrade as Grade,
     createdAt: row.createdAt,
@@ -72,14 +66,6 @@ function rowToDashboard(row: DashboardRow): QualityDashboard {
 }
 
 function rowToNode(row: NodeRow): QualityNode {
-  let bands: GradeBands | null = null;
-  if (row.gradeBands) {
-    try {
-      bands = JSON.parse(row.gradeBands) as GradeBands;
-    } catch {
-      bands = null;
-    }
-  }
   return {
     id: row.id,
     dashboardId: row.dashboardId,
@@ -89,7 +75,7 @@ function rowToNode(row: NodeRow): QualityNode {
     projectName: row.projectName,
     weight: row.weight,
     sortOrder: row.sortOrder,
-    gradeBands: bands,
+    gradeBands: parseJsonColumn<GradeBands | null>(row.gradeBands, null),
     formula: (row.formula as GradeFormula | null) ?? null,
     minOkGrade: (row.minOkGrade as Grade | null) ?? null,
   };
@@ -166,7 +152,7 @@ export class QualityDashboardsDatabase {
     ]
   >;
 
-  private constructor() {
+  constructor() {
     this.listStmt = this.db.prepare(
       `SELECT id, name, slug, isDefault, homeOrder FROM quality_dashboards
        ORDER BY isDefault DESC, homeOrder ASC, name ASC`
@@ -210,11 +196,6 @@ export class QualityDashboardsDatabase {
         createdAt, updatedAt
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-  }
-
-  public static getInstance(): QualityDashboardsDatabase {
-    instance[initiated] ??= new QualityDashboardsDatabase();
-    return instance[initiated];
   }
 
   public listDashboards(): QualityDashboardSummary[] {
@@ -517,4 +498,7 @@ export class QualityDashboardsDatabase {
   }
 }
 
-export const qualityDashboardsDb = QualityDashboardsDatabase.getInstance();
+export const qualityDashboardsDb = singletonOf(
+  'qualityDashboards',
+  () => new QualityDashboardsDatabase()
+);

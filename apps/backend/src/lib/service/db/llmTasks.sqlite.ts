@@ -4,12 +4,10 @@ import type Database from 'better-sqlite3';
 import { llmTaskEvents } from '../llmTaskEvents.js';
 import { getDatabase } from './db.js';
 
-export type { LlmTaskStatus, LlmTaskType } from '@playwright-reports/shared';
+import { singletonOf } from './singleton.js';
+import { buildWhere, paginationClause } from './utils.js';
 
-const initiatedLlmTasksDb = Symbol.for('playwright.reports.db.llmTasks');
-const instance = globalThis as typeof globalThis & {
-  [initiatedLlmTasksDb]?: LlmTasksDatabase;
-};
+export type { LlmTaskStatus, LlmTaskType } from '@playwright-reports/shared';
 
 export interface LlmTaskRow {
   id: string;
@@ -93,7 +91,7 @@ export class LlmTasksDatabase {
   private readonly areAllTestTasksCompleteStmt: Database.Statement<[string]>;
   private readonly deleteByReportStmt: Database.Statement<[string]>;
 
-  private constructor() {
+  constructor() {
     this.insertTaskStmt = this.db.prepare(`
       INSERT INTO llm_tasks (id, type, status, priority, reportId, testId, fileId, project, createdAt, isRetry, reportIds)
       VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?)
@@ -216,11 +214,6 @@ export class LlmTasksDatabase {
     this.deleteByReportStmt = this.db.prepare(`
       DELETE FROM llm_tasks WHERE reportId = ?
     `);
-  }
-
-  public static getInstance(): LlmTasksDatabase {
-    instance[initiatedLlmTasksDb] ??= new LlmTasksDatabase();
-    return instance[initiatedLlmTasksDb];
   }
 
   public createTask(
@@ -460,27 +453,20 @@ export class LlmTasksDatabase {
     limit: number;
     offset: number;
   }): { data: LlmTaskRowEnriched[]; total: number } {
-    const conditions: string[] = [];
-    const params: (string | number)[] = [];
-
-    if (opts.status) {
-      conditions.push('t.status = ?');
-      params.push(opts.status);
-    }
-    if (opts.type) {
-      conditions.push('t.type = ?');
-      params.push(opts.type);
-    }
-    if (opts.reportId) {
-      conditions.push('t.reportId = ?');
-      params.push(opts.reportId);
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const { sql: whereSql, params: whereParams } = buildWhere([
+      opts.status ? { sql: 't.status = ?', params: [opts.status] } : null,
+      opts.type ? { sql: 't.type = ?', params: [opts.type] } : null,
+      opts.reportId ? { sql: 't.reportId = ?', params: [opts.reportId] } : null,
+    ]);
 
     const countResult = this.db
-      .prepare(`SELECT COUNT(*) as total FROM llm_tasks t ${whereClause}`)
-      .get(...params) as { total: number };
+      .prepare(`SELECT COUNT(*) as total FROM llm_tasks t ${whereSql}`.trim())
+      .get(...whereParams) as { total: number };
+
+    const { sql: pageSql, params: pageParams } = paginationClause({
+      limit: opts.limit,
+      offset: opts.offset,
+    });
 
     const data = this.db
       .prepare(
@@ -493,11 +479,11 @@ export class LlmTasksDatabase {
          LEFT JOIN tests te ON te.testId = t.testId
                             AND te.fileId = t.fileId
                             AND te.project = t.project
-         ${whereClause}
+         ${whereSql}
          ORDER BY t.createdAt DESC
-         LIMIT ? OFFSET ?`
+         ${pageSql}`
       )
-      .all(...params, opts.limit, opts.offset) as LlmTaskRowEnriched[];
+      .all(...whereParams, ...pageParams) as LlmTaskRowEnriched[];
 
     return { data, total: countResult.total };
   }
@@ -576,6 +562,92 @@ export class LlmTasksDatabase {
       )
       .run(id);
   }
+
+  public findInflightTestAnalysis(
+    testId: string,
+    reportId: string | null | undefined,
+    options: { retryOnly?: boolean } = {}
+  ): { id: string; status: string } | null {
+    const retrySql = options.retryOnly ? ' AND isRetry = 1' : '';
+    if (reportId) {
+      const row = this.db
+        .prepare(
+          `SELECT id, status FROM llm_tasks
+           WHERE type = 'test_analysis'
+             AND testId = ? AND reportId = ?
+             AND status IN ('queued','processing')${retrySql}
+           ORDER BY createdAt DESC
+           LIMIT 1`
+        )
+        .get(testId, reportId) as { id: string; status: string } | undefined;
+      return row ?? null;
+    }
+    const row = this.db
+      .prepare(
+        `SELECT id, status FROM llm_tasks
+         WHERE type = 'test_analysis'
+           AND testId = ?
+           AND status IN ('queued','processing')${retrySql}
+         ORDER BY createdAt DESC
+         LIMIT 1`
+      )
+      .get(testId) as { id: string; status: string } | undefined;
+    return row ?? null;
+  }
+
+  public getLatestCompletedTestAnalysisResult(
+    testId: string,
+    reportId: string | null | undefined
+  ): { analysis: string; model: string | null; category: string | null } | null {
+    if (reportId) {
+      const row = this.db
+        .prepare(
+          `SELECT result AS analysis, model, category FROM llm_tasks
+           WHERE testId = ? AND reportId = ? AND status = 'completed' AND result IS NOT NULL
+           ORDER BY completedAt DESC LIMIT 1`
+        )
+        .get(testId, reportId) as
+        | { analysis: string; model: string | null; category: string | null }
+        | undefined;
+      return row ?? null;
+    }
+    const row = this.db
+      .prepare(
+        `SELECT result AS analysis, model, category FROM llm_tasks
+         WHERE testId = ? AND status = 'completed' AND result IS NOT NULL
+         ORDER BY completedAt DESC LIMIT 1`
+      )
+      .get(testId) as
+      | { analysis: string; model: string | null; category: string | null }
+      | undefined;
+    return row ?? null;
+  }
+
+  public findInflightReportSummary(reportId: string): { id: string } | null {
+    const row = this.db
+      .prepare(
+        `SELECT id FROM llm_tasks
+         WHERE type = 'report_summary' AND reportId = ?
+           AND status IN ('queued','processing')
+         LIMIT 1`
+      )
+      .get(reportId) as { id: string } | undefined;
+    return row ?? null;
+  }
+
+  public findInflightProjectSummary(project: string): { id: string } | null {
+    const row = this.db
+      .prepare(
+        `SELECT id FROM llm_tasks
+         WHERE type = 'project_summary'
+           AND project = ?
+           AND status IN ('queued','processing')
+         ORDER BY createdAt DESC
+         LIMIT 1`
+      )
+      .get(project) as { id: string } | undefined;
+    return row ?? null;
+  }
 }
 
-export const llmTasksDb = LlmTasksDatabase.getInstance();
+export const llmTasksDb = singletonOf('llmTasks', () => new LlmTasksDatabase());

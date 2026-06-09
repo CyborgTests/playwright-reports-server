@@ -1,6 +1,5 @@
 import type { ReportStats } from '@playwright-reports/shared';
 import type { ReportHistory } from '../storage/types.js';
-import { getDatabase } from './db/db.js';
 import { reportDb } from './db/index.js';
 import { type Test, type TestRun, testDb } from './db/tests.sqlite.js';
 
@@ -286,16 +285,5 @@ export const findPreviousReportInProject = (
   createdAtISO: string,
   excludeReportId: string
 ): { reportID: string } | null => {
-  const db = getDatabase();
-  const row = db
-    .prepare(
-      `SELECT reportID FROM reports
-       WHERE project = ?
-         AND reportID != ?
-         AND createdAt < ?
-       ORDER BY createdAt DESC
-       LIMIT 1`
-    )
-    .get(project, excludeReportId, createdAtISO) as { reportID: string } | undefined;
-  return row ?? null;
+  return reportDb.findPreviousInProject(project, excludeReportId, createdAtISO);
 };

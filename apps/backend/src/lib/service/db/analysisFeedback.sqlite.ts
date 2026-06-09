@@ -2,11 +2,7 @@ import { randomUUID as uuid } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { getDatabase } from './db.js';
 
-const initiatedAnalysisFeedbackDb = Symbol.for('playwright.reports.db.analysisFeedback');
-const instance = globalThis as typeof globalThis & {
-  [initiatedAnalysisFeedbackDb]?: AnalysisFeedbackDatabase;
-};
-
+import { singletonOf } from './singleton.js';
 export interface AnalysisFeedbackRow {
   id: string;
   testId: string | null;
@@ -30,7 +26,7 @@ export class AnalysisFeedbackDatabase {
   private readonly deleteByTestStmt: Database.Statement<[string, string, string]>;
   private readonly perTestForReportStmt: Database.Statement<[string, number]>;
 
-  private constructor() {
+  constructor() {
     this.getByTestStmt = this.db.prepare(`
       SELECT * FROM analysis_feedback
       WHERE testId = ? AND fileId = ? AND project = ?
@@ -59,11 +55,6 @@ export class AnalysisFeedbackDatabase {
       ORDER BY af.updatedAt DESC
       LIMIT ?
     `);
-  }
-
-  public static getInstance(): AnalysisFeedbackDatabase {
-    instance[initiatedAnalysisFeedbackDb] ??= new AnalysisFeedbackDatabase();
-    return instance[initiatedAnalysisFeedbackDb];
   }
 
   public getByTest(testId: string, fileId: string, project: string): AnalysisFeedbackRow | null {
@@ -173,4 +164,7 @@ type RelatedFeedbackRow = AnalysisFeedbackRow & {
   latestAnalysisModel: string | null;
 };
 
-export const analysisFeedbackDb = AnalysisFeedbackDatabase.getInstance();
+export const analysisFeedbackDb = singletonOf(
+  'analysisFeedback',
+  () => new AnalysisFeedbackDatabase()
+);

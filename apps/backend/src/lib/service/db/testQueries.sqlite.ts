@@ -2,6 +2,7 @@ import type { ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import type { DerivedPageRow, Test, TestRun, TestWithQuarantineInfo } from './tests.sqlite.js';
 import { convertDbRowToTestRun, type TestRunDbRow } from './tests.sqlite.js';
+import { chunk } from './utils.js';
 
 export interface DerivedPageOptions {
   status?: 'all' | 'quarantined' | 'not-quarantined';
@@ -236,9 +237,8 @@ export function getRunsForLanes(
   if (lanes.length === 0) return new Map();
 
   const map = new Map<string, TestRun[]>();
-  for (let i = 0; i < lanes.length; i += LANE_CHUNK_SIZE) {
-    const chunk = lanes.slice(i, i + LANE_CHUNK_SIZE);
-    runsForLaneChunk(db, chunk, opts, map);
+  for (const batch of chunk(lanes, LANE_CHUNK_SIZE)) {
+    runsForLaneChunk(db, batch, opts, map);
   }
   return map;
 }

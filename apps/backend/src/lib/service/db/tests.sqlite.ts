@@ -3,13 +3,10 @@ import type { FailureCategorySource, ReportTestOutcomeEnum } from '@playwright-r
 import type Database from 'better-sqlite3';
 import { getDatabase } from './db.js';
 import { decodeFailureDetails, encodeFailureDetails } from './failureDetailsCodec.js';
+import { singletonOf } from './singleton.js';
 import type { DerivedPageOptions } from './testQueries.sqlite.js';
 import * as testQueries from './testQueries.sqlite.js';
-
-const initiatedTestsDb = Symbol.for('playwright.reports.db.tests');
-const instance = globalThis as typeof globalThis & {
-  [initiatedTestsDb]?: TestDatabase;
-};
+import { chunk } from './utils.js';
 
 export interface Test {
   testId: string;
@@ -163,7 +160,7 @@ export class TestDatabase {
     project: string;
   }>;
 
-  private constructor() {
+  constructor() {
     this.insertTestStmt = this.db.prepare(`
       INSERT OR IGNORE INTO tests (testId, fileId, filePath, project, title, createdAt)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -290,13 +287,6 @@ export class TestDatabase {
         avgDuration = (SELECT avgDuration FROM recent_agg)
       WHERE testId=:testId AND fileId=:fileId AND project=:project
     `);
-  }
-
-  public static getInstance(): TestDatabase {
-    if (!instance[initiatedTestsDb]) {
-      instance[initiatedTestsDb] = new TestDatabase();
-    }
-    return instance[initiatedTestsDb];
   }
 
   public refreshTestStatCols(testId: string, fileId: string, project: string): void {
@@ -453,13 +443,12 @@ export class TestDatabase {
         return result.changes;
       }
 
-      const CHUNK_SIZE = 300; // 300 * 3 = 900 placeholders
-      for (let i = 0; i < affectedTests.length; i += CHUNK_SIZE) {
-        const chunk = affectedTests.slice(i, i + CHUNK_SIZE);
-        const laneSelect = chunk
+      // 300 lanes × 3 params = 900 placeholders, safely under SQLite's 999 cap.
+      for (const batch of chunk(affectedTests, 300)) {
+        const laneSelect = batch
           .map(() => 'SELECT ? AS testId, ? AS fileId, ? AS project')
           .join(' UNION ALL ');
-        const laneParams = chunk.flatMap((t) => [t.testId, t.fileId, t.project]);
+        const laneParams = batch.flatMap((t) => [t.testId, t.fileId, t.project]);
         const orphanRows = this.db
           .prepare(
             `SELECT lanes.testId, lanes.fileId, lanes.project
@@ -820,6 +809,110 @@ export class TestDatabase {
   public runTransaction<T>(fn: () => T): T {
     return this.db.transaction(fn)();
   }
+
+  public findRunLane(testId: string, project?: string): { fileId: string; project: string } | null {
+    const row = project
+      ? (this.db
+          .prepare(
+            'SELECT fileId, project FROM test_runs WHERE testId = ? AND project = ? ORDER BY createdAt DESC LIMIT 1'
+          )
+          .get(testId, project) as { fileId: string; project: string } | undefined)
+      : (this.db
+          .prepare(
+            'SELECT fileId, project FROM test_runs WHERE testId = ? ORDER BY createdAt DESC LIMIT 1'
+          )
+          .get(testId) as { fileId: string; project: string } | undefined);
+    return row ?? null;
+  }
+
+  public findRunLaneByReport(
+    testId: string,
+    reportId: string
+  ): { fileId: string; project: string } | null {
+    const row = this.db
+      .prepare(
+        `SELECT fileId, project FROM test_runs
+         WHERE testId = ? AND reportId = ?
+         ORDER BY createdAt DESC LIMIT 1`
+      )
+      .get(testId, reportId) as { fileId: string; project: string } | undefined;
+    return row ?? null;
+  }
+
+  public getFailureCategoryCounts(
+    project?: string
+  ): Array<{ category: string; occurrences: number }> {
+    if (project) {
+      return this.db
+        .prepare(
+          `SELECT failure_category AS category, COUNT(*) AS occurrences
+           FROM test_runs
+           WHERE failure_category IS NOT NULL AND project = ?
+           GROUP BY failure_category
+           ORDER BY occurrences DESC`
+        )
+        .all(project) as Array<{ category: string; occurrences: number }>;
+    }
+    return this.db
+      .prepare(
+        `SELECT failure_category AS category, COUNT(*) AS occurrences
+         FROM test_runs
+         WHERE failure_category IS NOT NULL
+         GROUP BY failure_category
+         ORDER BY occurrences DESC`
+      )
+      .all() as Array<{ category: string; occurrences: number }>;
+  }
+
+  public findTestSiblings(
+    testId: string,
+    excludeProject: string
+  ): Array<{ project: string; fileId: string }> {
+    return this.db
+      .prepare(
+        `SELECT project, fileId FROM tests
+         WHERE testId = ? AND project != ?
+         GROUP BY project, fileId`
+      )
+      .all(testId, excludeProject) as Array<{ project: string; fileId: string }>;
+  }
+
+  public countRunsWithSignatureSince(
+    testId: string,
+    fileId: string,
+    project: string,
+    errorSignature: string,
+    sinceIso: string
+  ): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) as count FROM test_runs
+         WHERE testId = ? AND fileId = ? AND project = ?
+           AND error_signature = ? AND createdAt > ?`
+      )
+      .get(testId, fileId, project, errorSignature, sinceIso) as { count: number };
+    return row.count;
+  }
+
+  public getFailedTestsWithoutAnalysis(): Array<{
+    testId: string;
+    fileId: string;
+    project: string;
+    reportId: string;
+  }> {
+    return this.db
+      .prepare(
+        `SELECT DISTINCT t.testId, t.fileId, t.project, tr.reportId
+         FROM test_runs tr
+         JOIN tests t ON tr.testId = t.testId AND tr.fileId = t.fileId AND tr.project = t.project
+         WHERE tr.failure_details IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM test_llm_analyses tla
+             WHERE tla.testId = tr.testId AND tla.fileId = tr.fileId AND tla.project = tr.project
+           )`
+      )
+      .all() as Array<{ testId: string; fileId: string; project: string; reportId: string }>;
+  }
 }
 
-export const testDb = TestDatabase.getInstance();
+export const testDb = singletonOf('tests', () => new TestDatabase());

@@ -2,11 +2,8 @@ import type { ReportAnalysisStructured } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import { getDatabase } from './db.js';
 import { decodeFailureDetails } from './failureDetailsCodec.js';
-
-const initiatedFailureSummaryDb = Symbol.for('playwright.reports.db.failureSummary');
-const instance = globalThis as typeof globalThis & {
-  [initiatedFailureSummaryDb]?: FailureSummaryDatabase;
-};
+import { singletonOf } from './singleton.js';
+import { buildWhere, chunk, parseJsonColumn } from './utils.js';
 
 export interface FailureSummaryRow {
   reportId: string;
@@ -44,7 +41,7 @@ export class FailureSummaryDatabase {
   >;
   private readonly deleteStmt: Database.Statement<[string]>;
 
-  private constructor() {
+  constructor() {
     this.upsertStmt = this.db.prepare(`
       INSERT OR REPLACE INTO report_failure_summaries (reportId, project, totalFailures, categories, createdAt)
       VALUES (?, ?, ?, ?, ?)
@@ -65,27 +62,17 @@ export class FailureSummaryDatabase {
     `);
   }
 
-  public static getInstance(): FailureSummaryDatabase {
-    instance[initiatedFailureSummaryDb] ??= new FailureSummaryDatabase();
-    return instance[initiatedFailureSummaryDb];
-  }
-
   private parseRow(row: FailureSummaryDbRow): FailureSummaryRow {
-    let structured: ReportAnalysisStructured | null = null;
-    if (row.llmSummaryStructured) {
-      try {
-        structured = JSON.parse(row.llmSummaryStructured) as ReportAnalysisStructured;
-      } catch {
-        structured = null;
-      }
-    }
     return {
       reportId: row.reportId,
       project: row.project,
       totalFailures: row.totalFailures,
-      categories: JSON.parse(row.categories) as Record<string, number>,
+      categories: parseJsonColumn<Record<string, number>>(row.categories, {}),
       llmSummary: row.llmSummary,
-      llmSummaryStructured: structured,
+      llmSummaryStructured: parseJsonColumn<ReportAnalysisStructured | null>(
+        row.llmSummaryStructured,
+        null
+      ),
       llmModel: row.llmModel,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -134,34 +121,26 @@ export class FailureSummaryDatabase {
     limit = 10,
     opts?: { from?: string; to?: string; days?: number }
   ): FailureSummaryRow[] {
-    const conditions: string[] = ['totalFailures > 0'];
-    const params: Array<string | number> = [];
-
     const hasProject = project && project !== 'all';
-    if (hasProject) {
-      conditions.push('project = ?');
-      params.push(project);
-    }
+    const defaultCutoff =
+      !opts?.from && !opts?.to
+        ? (() => {
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - (opts?.days ?? 30));
+            return cutoff.toISOString();
+          })()
+        : null;
 
-    if (opts?.from) {
-      conditions.push('createdAt >= ?');
-      params.push(opts.from);
-    }
-    if (opts?.to) {
-      conditions.push('createdAt < ?');
-      params.push(opts.to);
-    }
+    const { sql: whereSql, params } = buildWhere([
+      { sql: 'totalFailures > 0', params: [] },
+      hasProject ? { sql: 'project = ?', params: [project] } : null,
+      opts?.from ? { sql: 'createdAt >= ?', params: [opts.from] } : null,
+      opts?.to ? { sql: 'createdAt < ?', params: [opts.to] } : null,
+      defaultCutoff ? { sql: 'createdAt >= ?', params: [defaultCutoff] } : null,
+    ]);
 
-    if (!opts?.from && !opts?.to) {
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - (opts?.days ?? 30));
-      conditions.push('createdAt >= ?');
-      params.push(cutoff.toISOString());
-    }
-
-    params.push(limit);
-    const sql = `SELECT * FROM report_failure_summaries WHERE ${conditions.join(' AND ')} ORDER BY createdAt DESC LIMIT ?`;
-    const rows = this.db.prepare(sql).all(...params) as FailureSummaryDbRow[];
+    const sql = `SELECT * FROM report_failure_summaries ${whereSql} ORDER BY createdAt DESC LIMIT ?`;
+    const rows = this.db.prepare(sql).all(...params, limit) as FailureSummaryDbRow[];
     return rows.map((row) => this.parseRow(row));
   }
 
@@ -210,20 +189,12 @@ export class FailureSummaryDatabase {
       }>;
     }>;
   } {
-    const conditions: string[] = ['failure_category IS NOT NULL'];
-    const params: string[] = [];
-    if (project && project !== 'all') {
-      conditions.push('project = ?');
-      params.push(project);
-    }
-    if (opts?.from) {
-      conditions.push('createdAt >= ?');
-      params.push(opts.from);
-    }
-    if (opts?.to) {
-      conditions.push('createdAt < ?');
-      params.push(opts.to);
-    }
+    const { sql: whereSql, params } = buildWhere([
+      { sql: 'failure_category IS NOT NULL', params: [] },
+      project && project !== 'all' ? { sql: 'project = ?', params: [project] } : null,
+      opts?.from ? { sql: 'createdAt >= ?', params: [opts.from] } : null,
+      opts?.to ? { sql: 'createdAt < ?', params: [opts.to] } : null,
+    ]);
 
     // Cap the working set so a wide window on a busy project can't materialize
     // an unbounded result list into memory. The aggregate is still correct for
@@ -235,7 +206,7 @@ export class FailureSummaryDatabase {
              error_signature as signature, error_signature_global as signatureGlobal,
              failure_details, createdAt
       FROM test_runs
-      WHERE ${conditions.join(' AND ')}
+      ${whereSql}
       ORDER BY createdAt DESC
       LIMIT ${MAX_ROWS_SCANNED}
     `;
@@ -363,11 +334,10 @@ export class FailureSummaryDatabase {
         const [testId, fileId, project] = k.split('::');
         return { testId, fileId, project };
       });
-      const CHUNK = 300;
-      for (let i = 0; i < keys.length; i += CHUNK) {
-        const chunk = keys.slice(i, i + CHUNK);
-        const valuesSql = chunk.map(() => '(?, ?, ?)').join(', ');
-        const params = chunk.flatMap((k) => [k.testId, k.fileId, k.project]);
+      // 300 keys × 3 params = 900 placeholders, safely under SQLite's 999 cap.
+      for (const batch of chunk(keys, 300)) {
+        const valuesSql = batch.map(() => '(?, ?, ?)').join(', ');
+        const params = batch.flatMap((k) => [k.testId, k.fileId, k.project]);
         const rows = this.db
           .prepare(
             `SELECT testId, fileId, project, title, filePath
@@ -415,9 +385,13 @@ export class FailureSummaryDatabase {
       })),
     };
   }
+
+  public deleteAll(): void {
+    this.db.prepare('DELETE FROM report_failure_summaries').run();
+  }
 }
 
-export const failureSummaryDb = FailureSummaryDatabase.getInstance();
+export const failureSummaryDb = singletonOf('failureSummary', () => new FailureSummaryDatabase());
 
 const PAGE_CONTEXT_HEADER = '\n\n# Page Context';
 

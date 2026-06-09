@@ -18,7 +18,6 @@ import { defaultConfig } from '../config.js';
 import { llmService } from '../llm/index.js';
 import { extractFailureEvidence } from '../parser/failure-extraction.js';
 import type { ReportHistory } from '../storage/types.js';
-import { getDatabase } from './db/db.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import type { Test, TestRun, TestWithQuarantineInfo } from './db/tests.sqlite.js';
 import { testDb } from './db/tests.sqlite.js';
@@ -198,14 +197,7 @@ function buildCrossProjectOccurrences(
   testId: string,
   excludeProject: string
 ): TestCrossProjectOccurrence[] {
-  const db = getDatabase();
-  const rows = db
-    .prepare(
-      `SELECT project, fileId FROM tests
-       WHERE testId = ? AND project != ?
-       GROUP BY project, fileId`
-    )
-    .all(testId, excludeProject) as Array<{ project: string; fileId: string }>;
+  const rows = testDb.findTestSiblings(testId, excludeProject);
 
   const occurrences: TestCrossProjectOccurrence[] = [];
   for (const { project, fileId } of rows) {

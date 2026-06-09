@@ -3,10 +3,7 @@ import type Database from 'better-sqlite3';
 import { defaultConfig, isConfigValid, normalizeHeaderLinks } from '../../config.js';
 import { getDatabase } from './db.js';
 
-const initiated = Symbol.for('playwright.reports.db.siteConfig');
-const instance = globalThis as typeof globalThis & {
-  [initiated]?: SiteConfigDatabase;
-};
+import { singletonOf } from './singleton.js';
 
 interface SiteConfigRow {
   id: number;
@@ -20,7 +17,7 @@ export class SiteConfigDatabase {
   private readonly getStmt: Database.Statement<[]>;
   private readonly upsertStmt: Database.Statement<[string, string]>;
 
-  private constructor() {
+  constructor() {
     this.getStmt = this.db.prepare('SELECT * FROM site_config WHERE id = 1');
     this.upsertStmt = this.db.prepare(`
       INSERT INTO site_config (id, config, updatedAt)
@@ -29,11 +26,6 @@ export class SiteConfigDatabase {
         config = excluded.config,
         updatedAt = excluded.updatedAt
     `);
-  }
-
-  public static getInstance(): SiteConfigDatabase {
-    instance[initiated] ??= new SiteConfigDatabase();
-    return instance[initiated];
   }
 
   /** Seed the row with `defaultConfig` if missing. Idempotent. */
@@ -72,4 +64,4 @@ export class SiteConfigDatabase {
   }
 }
 
-export const siteConfigDb = SiteConfigDatabase.getInstance();
+export const siteConfigDb = singletonOf('siteConfig', () => new SiteConfigDatabase());

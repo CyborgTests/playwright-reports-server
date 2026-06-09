@@ -6,13 +6,16 @@ import { testManagementService } from '../testManagement.js';
 import { getDatabase } from './db.js';
 import { failureSummaryDb } from './failureSummary.sqlite.js';
 import { llmTasksDb } from './llmTasks.sqlite.js';
+import { singletonOf } from './singleton.js';
 import { testAnalysisDb } from './testAnalysis.sqlite.js';
 import { testDb } from './tests.sqlite.js';
-
-const initiatedReportsDb = Symbol.for('playwright.reports.db.reports');
-const instance = globalThis as typeof globalThis & {
-  [initiatedReportsDb]?: ReportDatabase;
-};
+import {
+  buildWhere,
+  chunk,
+  paginationClause,
+  parseJsonColumn,
+  type WhereFragment,
+} from './utils.js';
 
 type ReportRow = {
   reportID: string;
@@ -61,7 +64,7 @@ export class ReportDatabase {
   private readonly searchStmt: Database.Statement<[string, string, string, string]>;
   private readonly getExpiredIdsStmt: Database.Statement<[string, number]>;
 
-  private constructor() {
+  constructor() {
     this.insertStmt = this.db.prepare(`
       INSERT OR REPLACE INTO reports (reportID, project, title, displayNumber, createdAt, reportUrl, size, sizeBytes, stats, metadata, updatedAt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -92,11 +95,6 @@ export class ReportDatabase {
   public getExpiredIds(cutoffISO: string, limit: number): string[] {
     const rows = this.getExpiredIdsStmt.all(cutoffISO, limit) as Array<{ reportID: string }>;
     return rows.map((row) => row.reportID);
-  }
-
-  public static getInstance(): ReportDatabase {
-    instance[initiatedReportsDb] ??= new ReportDatabase();
-    return instance[initiatedReportsDb];
   }
 
   public async init() {
@@ -232,12 +230,7 @@ export class ReportDatabase {
 
     const applyAll = this.db.transaction(() => {
       for (const [id, row] of rows) {
-        let metadata: Record<string, unknown>;
-        try {
-          metadata = JSON.parse(row.metadata || '{}') as Record<string, unknown>;
-        } catch {
-          metadata = {};
-        }
+        const metadata = parseJsonColumn<Record<string, unknown>>(row.metadata, {});
 
         if (patch.tags) {
           for (const [k, v] of Object.entries(patch.tags)) {
@@ -283,8 +276,8 @@ export class ReportDatabase {
       }
     });
 
-    for (let i = 0; i < reportIds.length; i += CHUNK_SIZE) {
-      cascadeDelete(reportIds.slice(i, i + CHUNK_SIZE));
+    for (const batch of chunk(reportIds, CHUNK_SIZE)) {
+      cascadeDelete(batch);
     }
   }
 
@@ -371,22 +364,13 @@ export class ReportDatabase {
       return (stmt as ReportRow[]).map(this.rowToReport);
     }
 
-    const conditions: string[] = [];
-    const params: string[] = [];
-    if (hasProject) {
-      conditions.push('project = ?');
-      params.push(project ?? '');
-    }
-    if (hasFrom) {
-      conditions.push('createdAt >= ?');
-      params.push(opts?.from ?? '');
-    }
-    if (hasTo) {
-      conditions.push('createdAt < ?');
-      params.push(opts?.to ?? '');
-    }
+    const { sql: whereSql, params } = buildWhere([
+      hasProject ? { sql: 'project = ?', params: [project ?? ''] } : null,
+      hasFrom ? { sql: 'createdAt >= ?', params: [opts?.from ?? ''] } : null,
+      hasTo ? { sql: 'createdAt < ?', params: [opts?.to ?? ''] } : null,
+    ]);
 
-    const sql = `SELECT * FROM reports WHERE ${conditions.join(' AND ')} ORDER BY createdAt DESC`;
+    const sql = `SELECT * FROM reports ${whereSql} ORDER BY createdAt DESC`;
     const rows = this.db.prepare(sql).all(...params) as ReportRow[];
     return rows.map(this.rowToReport);
   }
@@ -486,87 +470,64 @@ export class ReportDatabase {
   }
 
   public query(input?: ReadReportsInput): ReadReportsOutput {
-    let query = 'SELECT * FROM reports';
-    const params: string[] = [];
-    const conditions: string[] = [];
-
-    if (input?.ids && input.ids.length > 0) {
-      conditions.push(`reportID IN (${input.ids.map(() => '?').join(', ')})`);
-      params.push(...input.ids);
-    }
-
-    if (input?.project && input?.project !== defaultProjectName) {
-      conditions.push('project = ?');
-      params.push(input.project);
-    }
-
-    if (input?.search?.trim()) {
-      const searchTerm = `%${input.search.toLowerCase().trim()}%`;
-
-      conditions.push(
-        '(LOWER(title) LIKE ? OR LOWER(reportID) LIKE ? OR LOWER(project) LIKE ? OR LOWER(metadata) LIKE ?)'
-      );
-      params.push(searchTerm, searchTerm, searchTerm, searchTerm);
-    }
-
-    if (input?.from) {
-      conditions.push('createdAt >= ?');
-      params.push(input.from);
-    }
-
-    if (input?.to) {
-      conditions.push('createdAt < ?');
-      params.push(input.to);
-    }
-
-    if (input?.tags && input.tags.length > 0) {
-      // Each tag is a "key: value" string; reports store the same shape inside the
-      // metadata JSON column (e.g. "branch":"main"). Match on the JSON repr.
-      for (const tag of input.tags) {
+    const tagFragments =
+      input?.tags?.map((tag): WhereFragment => {
         const colonIndex = tag.indexOf(':');
         if (colonIndex === -1) {
-          conditions.push('LOWER(metadata) LIKE ?');
-          params.push(`%${tag.toLowerCase()}%`);
-          continue;
+          return { sql: 'LOWER(metadata) LIKE ?', params: [`%${tag.toLowerCase()}%`] };
         }
         const key = tag.slice(0, colonIndex).trim();
         const value = tag.slice(colonIndex + 1).trim();
-        conditions.push('LOWER(metadata) LIKE ?');
-        params.push(`%"${key.toLowerCase()}":"${value.toLowerCase()}"%`);
-      }
-    }
+        return {
+          sql: 'LOWER(metadata) LIKE ?',
+          params: [`%"${key.toLowerCase()}":"${value.toLowerCase()}"%`],
+        };
+      }) ?? [];
 
-    if (input?.passRate) {
-      // pass% = expected / (total - skipped). Reports without stats are excluded.
-      const denom =
-        "(CAST(json_extract(stats, '$.total') AS REAL) - COALESCE(CAST(json_extract(stats, '$.skipped') AS REAL), 0))";
-      const numer = "CAST(json_extract(stats, '$.expected') AS REAL)";
-      const passExpr = `(${numer} * 100.0 / NULLIF(${denom}, 0))`;
-      if (input.passRate === 'passing') {
-        conditions.push(`${passExpr} >= 100`);
-      } else if (input.passRate === 'failing') {
-        conditions.push(`${passExpr} < 100`);
-      } else if (input.passRate === 'below-threshold') {
-        conditions.push(`${passExpr} < 70`);
-      }
-    }
+    const search = input?.search?.trim();
+    const searchTerm = search ? `%${search.toLowerCase()}%` : null;
 
-    if (conditions.length > 0) {
-      query += ` WHERE ${conditions.join(' AND ')}`;
-    }
+    // pass% = expected / (total - skipped). Reports without stats are excluded.
+    const passExpr =
+      "(CAST(json_extract(stats, '$.expected') AS REAL) * 100.0 / NULLIF((CAST(json_extract(stats, '$.total') AS REAL) - COALESCE(CAST(json_extract(stats, '$.skipped') AS REAL), 0)), 0))";
 
-    query += ' ORDER BY createdAt DESC';
+    const { sql: whereSql, params: whereParams } = buildWhere([
+      input?.ids && input.ids.length > 0
+        ? {
+            sql: `reportID IN (${input.ids.map(() => '?').join(', ')})`,
+            params: input.ids,
+          }
+        : null,
+      input?.project && input.project !== defaultProjectName
+        ? { sql: 'project = ?', params: [input.project] }
+        : null,
+      searchTerm
+        ? {
+            sql: '(LOWER(title) LIKE ? OR LOWER(reportID) LIKE ? OR LOWER(project) LIKE ? OR LOWER(metadata) LIKE ?)',
+            params: [searchTerm, searchTerm, searchTerm, searchTerm],
+          }
+        : null,
+      input?.from ? { sql: 'createdAt >= ?', params: [input.from] } : null,
+      input?.to ? { sql: 'createdAt < ?', params: [input.to] } : null,
+      ...tagFragments,
+      input?.passRate === 'passing'
+        ? { sql: `${passExpr} >= 100`, params: [] }
+        : input?.passRate === 'failing'
+          ? { sql: `${passExpr} < 100`, params: [] }
+          : input?.passRate === 'below-threshold'
+            ? { sql: `${passExpr} < 70`, params: [] }
+            : null,
+    ]);
 
-    const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as count');
-    const countResult = this.db.prepare(countQuery).get(...params) as {
-      count: number;
-    };
+    const baseQuery = `SELECT * FROM reports ${whereSql} ORDER BY createdAt DESC`.trim();
+    const countQuery = `SELECT COUNT(*) as count FROM reports ${whereSql}`.trim();
+
+    const countResult = this.db.prepare(countQuery).get(...whereParams) as { count: number };
     const total = countResult.count;
 
-    if (input?.pagination) {
-      query += ' LIMIT ? OFFSET ?';
-      params.push(input.pagination.limit.toString(), input.pagination.offset.toString());
-    }
+    const { sql: pageSql, params: pageParams } = paginationClause(input?.pagination);
+    const query = pageSql ? `${baseQuery} ${pageSql}` : baseQuery;
+    const params = [...whereParams, ...pageParams];
 
     const rows = this.db.prepare(query).all(...params) as Array<{
       reportID: string;
@@ -623,6 +584,60 @@ export class ReportDatabase {
     parseCache.set(key, result);
     return result;
   }
+
+  public findByDisplayNumber(
+    displayNumber: number,
+    project?: string
+  ): Array<{
+    reportID: string;
+    project: string;
+    title: string | null;
+    displayNumber: number | null;
+    createdAt: string;
+    reportUrl: string;
+  }> {
+    const rows = project
+      ? this.db
+          .prepare(
+            `SELECT reportID, project, title, displayNumber, createdAt, reportUrl
+             FROM reports WHERE displayNumber = ? AND project = ?
+             ORDER BY createdAt DESC`
+          )
+          .all(displayNumber, project)
+      : this.db
+          .prepare(
+            `SELECT reportID, project, title, displayNumber, createdAt, reportUrl
+             FROM reports WHERE displayNumber = ?
+             ORDER BY createdAt DESC`
+          )
+          .all(displayNumber);
+    return rows as Array<{
+      reportID: string;
+      project: string;
+      title: string | null;
+      displayNumber: number | null;
+      createdAt: string;
+      reportUrl: string;
+    }>;
+  }
+
+  public findPreviousInProject(
+    project: string,
+    excludeReportId: string,
+    createdAtISO: string
+  ): { reportID: string } | null {
+    const row = this.db
+      .prepare(
+        `SELECT reportID FROM reports
+         WHERE project = ?
+           AND reportID != ?
+           AND createdAt < ?
+         ORDER BY createdAt DESC
+         LIMIT 1`
+      )
+      .get(project, excludeReportId, createdAtISO) as { reportID: string } | undefined;
+    return row ?? null;
+  }
 }
 
-export const reportDb = ReportDatabase.getInstance();
+export const reportDb = singletonOf('reports', () => new ReportDatabase());

@@ -10,7 +10,6 @@ import {
 } from '../lib/schemas/index.js';
 import { analyticsService } from '../lib/service/analytics.js';
 import { analysisFeedbackDb } from '../lib/service/db/analysisFeedback.sqlite.js';
-import { getDatabase } from '../lib/service/db/db.js';
 import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
 import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
 import { projectSummaryDb } from '../lib/service/db/projectSummary.sqlite.js';
@@ -147,17 +146,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const db = getDatabase();
-      const inflightTest = db
-        .prepare(
-          `SELECT id FROM llm_tasks
-           WHERE type = 'test_analysis'
-             AND testId = ? AND reportId = ?
-             AND status IN ('queued','processing')
-           ORDER BY createdAt DESC
-           LIMIT 1`
-        )
-        .get(testId, reportId) as { id: string } | undefined;
+      const inflightTest = llmTasksDb.findInflightTestAnalysis(testId, reportId);
 
       let taskId: string;
       let deduped: boolean;
@@ -251,7 +240,6 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
       let project: string | undefined;
 
       const { detectFailureCategory } = await import('../lib/service/testManagement.js');
-      const db = getDatabase();
 
       const findReuseSource = (
         testId: string,
@@ -262,32 +250,14 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         currentReportId: string
       ) => {
         if (!errorSignature) return null;
-        return db
-          .prepare(
-            `SELECT tla.id, tla.reportId, tla.analysis, tla.category, tla.model
-             FROM test_llm_analyses tla
-             JOIN test_runs tr ON tr.testId = tla.testId
-                              AND tr.fileId = tla.fileId
-                              AND tr.project = tla.project
-                              AND tr.reportId = tla.reportId
-             WHERE tla.testId = ? AND tla.fileId = ? AND tla.project = ?
-               AND tr.error_signature = ?
-               AND tr.failure_category = ?
-               AND tla.analysis IS NOT NULL
-               AND TRIM(tla.analysis) != ''
-               AND tla.reportId != ?
-             ORDER BY COALESCE(tla.updatedAt, tla.createdAt) DESC
-             LIMIT 1`
-          )
-          .get(testId, fileId, proj, errorSignature, heuristicCategory, currentReportId) as
-          | {
-              id: string;
-              reportId: string;
-              analysis: string;
-              category: string | null;
-              model: string | null;
-            }
-          | undefined;
+        return testAnalysisDb.findReuseSource(
+          testId,
+          fileId,
+          proj,
+          errorSignature,
+          heuristicCategory,
+          currentReportId
+        );
       };
 
       for (const run of failedRuns) {
@@ -562,17 +532,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         }
 
         // Coalesce duplicate clicks while a task is already in flight.
-        const db = getDatabase();
-        const inflight = db
-          .prepare(
-            `SELECT id FROM llm_tasks
-             WHERE type = 'project_summary'
-               AND project = ?
-               AND status IN ('queued','processing')
-             ORDER BY createdAt DESC
-             LIMIT 1`
-          )
-          .get(projectKey) as { id: string } | undefined;
+        const inflight = llmTasksDb.findInflightProjectSummary(projectKey);
 
         const resolvedReportIds = hasExplicit ? latestReports.map((r) => r.reportID) : null;
 
@@ -729,18 +689,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     const keys = await resolveTestKeys(body.testId, body.fileId, body.project, body.reportId);
     if (!keys.ok) return reply.status(keys.status).send({ success: false, error: keys.error });
 
-    const db = getDatabase();
-
-    const inflightTest = db
-      .prepare(
-        `SELECT id FROM llm_tasks
-         WHERE type = 'test_analysis'
-           AND testId = ? AND reportId = ?
-           AND status IN ('queued','processing')
-         ORDER BY createdAt DESC
-         LIMIT 1`
-      )
-      .get(body.testId, body.reportId ?? '') as { id: string } | undefined;
+    const inflightTest = llmTasksDb.findInflightTestAnalysis(body.testId, body.reportId ?? '');
 
     let taskId: string;
     let deduped: boolean;
@@ -765,14 +714,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
 
     let cascadedReportTaskId: string | undefined;
     if (body.cascadeReportSummary && body.reportId) {
-      const inflightReport = db
-        .prepare(
-          `SELECT id FROM llm_tasks
-           WHERE type = 'report_summary' AND reportId = ?
-             AND status IN ('queued','processing')
-           LIMIT 1`
-        )
-        .get(body.reportId) as { id: string } | undefined;
+      const inflightReport = llmTasksDb.findInflightReportSummary(body.reportId);
       if (inflightReport) {
         cascadedReportTaskId = inflightReport.id;
       } else {
