@@ -130,31 +130,27 @@ The canonical Error block comes from the first failing attempt. Attempt History 
 `;
 
 export const REPORT_SUMMARY_TASK_INSTRUCTIONS = `
-You analyze Playwright test failures.
-
-## Task
-Summarize failures for report \`{{reportId}}\` in project "{{project}}" ({{totalFailures}} failures). Focus on root causes via failure clusters.
+Your task is to summarize failures in report \`{{reportId}}\` for project "{{project}}" ({{totalFailures}} failures). Focus on root causes.
 
 ## Data
-- Failures are grouped into **clusters** by a single fix anchor:
-  - kind: 'fixture' (failing setup/teardown), 'selector' (a Playwright locator broken across N tests), 'frame' (a specific file:line), or 'unmatched' (no extractable mechanism).
-  - Each cluster has a stable id (hash of its anchor) and a Playwright verb (toBeVisible / click / toMatch / ...) attached to the anchor.
-- Each cluster has tests with per-test root-cause analysis.
-- Optional:
-  - Run Context (branch, commit, CI build)
-  - Trend (newly failed, still failing, fixed, duration changes)
-  - Flaky Tests (passed on retry; NOT failures)
+- Tests sharing one fix target are presented together as **failure groups**. Group headers name what would fix them:
+  - **Shared fixture failure** — a failing setup/teardown that breaks many tests; fixing the fixture resolves all of them.
+  - **Shared locator failure** — a Playwright locator broken across N tests; one selector update unblocks all.
+  - **Shared failure location** — tests crashing at the same app-code file:line; one edit location.
+  - **Isolated failure** — a single failure with no shared mechanism; describe and fix the test directly.
+- Each group lists tests that failed in this report (with per-test analyses) and other group members from previous runs.
+- Optional sections that may follow: **Run Context** (branch / commit / CI build), **Trend** (newly failed, still failing, fixed, duration changes), **Flaky Tests** (passed on retry — NOT failures).
 
 ## Heuristics
-- Large cluster ⇒ likely single root cause.
-- 'fixture' clusters or converging clusters ⇒ systemic issue.
-- Unclustered failures ⇒ likely isolated issues.
+- A large failure group ⇒ likely a single root cause.
+- Shared-fixture groups ⇒ systemic issue (fixture breaks the world).
+- Isolated failures ⇒ separate root causes.
 
-## Verdict (pick one — use the lowercase)
-- isolated: ≤2 failures, all unclustered.
-- clustered: 1-2 dominant clusters explain most failures.
-- widespread: many clusters, no dominant cause.
-- systemic: a single root cause (typically a fixture or shared helper) accounts for failures across multiple clusters.
+## Verdict (pick one — use the lowercase token exactly)
+- isolated: ≤2 failures, all standalone.
+- clustered: 1-2 dominant failure groups explain most failures.
+- widespread: many failure groups, no dominant cause.
+- systemic: a single root cause (typically a fixture or shared helper) accounts for failures across multiple groups.
 
 ## Output (strict)
 Return plain Markdown. No JSON. No code fences.
@@ -171,20 +167,19 @@ Return plain Markdown. No JSON. No code fences.
 4. Sections (this order, include only if non-empty):
 
 ## Failure Patterns _(impact)_
-- Describe dominant clusters and shared root causes.
-- Name cluster strategy and evidence.
+- Describe the dominant failure groups and their shared root causes by what they actually are: a fixture failure in \`<file>\`, a broken locator \`<sel>\`, a shared failure at \`<file>:<line>\`, an isolated failure in <test>.
 - Set impact in heading suffix:
-  - largest blocking cluster: _(high impact)_
-  - smaller clusters: _(medium impact)_ or _(low impact)_
+  - largest blocking group: _(high impact)_
+  - smaller groups: _(medium impact)_ or _(low impact)_
 
 ## Recommendations
-- Order items by impact; largest cluster first.
+- Order items by impact; largest group first.
 - When trend data exists, prioritize newly failed tests.
 - Be concrete (files, fixtures, locators, infra).
 
 ## Risks (include ONLY if at least one of the following holds)
-- A correlation links two or more clusters that the cluster grouping itself misses.
-- An unclustered failure is suspicious (e.g., shares a signature with another cluster).
+- A correlation links two or more failure groups that the grouping itself misses.
+- An isolated failure is suspicious (e.g., shares a signature with another group).
 - A flaky pattern suggests infrastructure instability.
 Do NOT include duration trends, general observations, or restate Failure Patterns content. Skip this section entirely when no risk meets the above criteria.
 
@@ -195,13 +190,14 @@ Each test line in the data block already shows \`[testId: TEST_ID]\` inline. Whe
 - Do NOT repeat section headings in the body.
 - Do NOT count flaky tests as failures.
 - Mention flaky tests only if:
-  - their signature overlaps a failure cluster, or
+  - their signature overlaps a related failure group, or
   - they suggest infra instability (put under Risks).
 - Use per-test analyses as primary evidence.
 - If Run Context exists, mention branch/commit/CI build.
 - If trend data exists:
   - lead with newly failed tests (regressions),
   - reference trend summary when useful.
+- Cite failure groups by what they actually are (a fixture in \`file.ts\`, a locator \`btn[aria-label]\`, a shared failure at \`file:line\`) — describe the fix target by its concrete identity, not by an abstract category name.
 `;
 
 export const PROJECT_SUMMARY_TASK_INSTRUCTIONS = `
@@ -218,45 +214,45 @@ Your task is to summarize test health for project "{{project}}" across the lates
 3. Executive summary (1-3 sentences, no heading): start with "Project is <token>." then state the single most important supporting fact.
 4. Then up to 4 sections in this order, only if non-empty:
    - **## Health Assessment** — explain the verdict; distinguish persistent vs transient clusters; cite resolved clusters as recovery evidence when relevant.
-   - **## Recommendations** — concrete actions for Active Failure Clusters only. Order: largest unblock → latest-run presence → low retry recovery → persistence → severity. Be specific (files, fixtures, wait conditions, selectors, infra).
+   - **## Recommendations** — concrete actions for Active Failure Patterns only. Order: largest unblock → latest-run presence → low retry recovery → persistence → severity. Be specific (files, fixtures, wait conditions, selectors, infra).
    - **## Notable Trends** — cite real deltas from Trend Signal (pass rate, failures, duration, coverage, near-flakes). Do not eyeball trends from the run list.
-   - **## Risks** — include ONLY if there is a real risk not already covered (cross-cluster correlation, suspicious near-flake overlap, quarantined runs still failing). Skip otherwise.
+   - **## Risks** — include ONLY if there is a real risk not already covered (a correlation across failure patterns, suspicious near-flake overlap, quarantined runs still failing). Skip otherwise.
 
 Do NOT repeat a section heading inside its body.
 
 ## Verdict definitions (pick exactly one)
-- \`healthy\`: latest run has zero hard failures (near-flakes that passed on retry are NOT failures). If clusters exist, all must be in Recently Resolved.
-- \`stabilizing\`: latest run is green, BUT at least one cluster was active within the last 1-2 runs, or some clusters resolved while others persist. Recovery is in progress, not yet proven.
-- \`degrading\`: at least one Active Failure Cluster is present in the latest run or last 1-2 runs, AND retry recovery is low / new persistent issues appeared / pass rate dropped meaningfully vs prior window.
-- \`failing\`: many recent runs are red including the latest, AND multiple active signatures exist with no clear recovery.
+- \`healthy\`: latest run has zero hard failures (near-flakes that passed on retry are NOT failures). If any failure patterns exist, all must be in the Recently Resolved section.
+- \`stabilizing\`: latest run is green, BUT at least one failure pattern was active within the last 1-2 runs, or some patterns resolved while others persist. Recovery is in progress, not yet proven.
+- \`degrading\`: at least one Active Failure Pattern is present in the latest run or last 1-2 runs, AND retry recovery is low / new persistent issues appeared / pass rate dropped meaningfully vs prior window.
+- \`failing\`: many recent runs are red including the latest, AND multiple active patterns exist with no clear recovery.
 
 Hard rule: if the latest run has any hard failure (unexpected, not just flaky-passed-on-retry), the verdict is NOT \`healthy\`.
 
-## Cluster model
-Active Failure Clusters are the primary signal when present. Kinds:
-- \`fixture\`: failure in beforeAll/beforeEach/afterAll/afterEach — systemic; recommendations must be fixture-level, not per-test.
-- \`selector\`: shared Playwright locator broke across N tests — one selector to fix resolves all of them.
-- \`frame\`: tests crash at the same app-code file:line — a single edit location.
-- \`unmatched\`: no extractable mechanism; the test itself is the anchor.
+## How to read the data
+Failure patterns in the data block are presented under headers that say what would fix them:
+- **Shared fixture failure** — failure in beforeAll/beforeEach/afterAll/afterEach. Systemic; recommend a fixture-level fix, not per-test.
+- **Shared locator failure** — a Playwright locator broke across N tests. One selector update resolves all.
+- **Shared failure location** — tests crash at the same app-code file:line. A single edit location.
+- **Isolated failure** — one test, no shared fix target.
 
 Buckets:
-- **Active**: present in the latest run or within the last 2 runs. Only these may drive Recommendations.
-- **Recently Resolved**: last seen ≥3 runs ago. Use as recovery evidence in Health Assessment only. Never recommend fixes for resolved clusters.
+- **Active Failure Patterns**: present in the latest run or within the last 2 runs. Only these drive Recommendations.
+- **Recently Resolved Patterns**: last seen ≥3 runs ago. Use as recovery evidence in Health Assessment only. Never recommend fixes for resolved patterns.
 
-Classification (use each Active cluster's Window + Retry recovery):
+Classification (use each Active pattern's Window + Retry recovery):
 - in latest run AND recovery <50%: active regression — lead Recommendations with these.
 - in latest run AND recovery ≥50%: likely flake/infra — recommend stabilization (retries, fixture hardening), not a product-code fix.
 - last seen 1-2 runs ago: recently transient — mention in Health Assessment.
 - recovery 0% with ≥3 occurrences: call out as "never recovers".
 
-If Active Failure Clusters is empty: omit Recommendations entirely; verdict must be \`healthy\` (or \`stabilizing\` only if a cluster was last seen 1-2 runs ago).
+If Active Failure Patterns is empty: omit Recommendations entirely; verdict must be \`healthy\` (or \`stabilizing\` only if a pattern was last seen 1-2 runs ago).
 
 ## Trend signal
 Trend Signal in the data is the numeric anchor for Notable Trends. Cite real deltas.
-- high resolved + low new + latest green → healthy (if all resolved are ≥3 runs old) or stabilizing (if any resolved is 1-2 runs old). Name top resolved clusters in Health Assessment.
-- high new + latest red → at least degrading. Lead Recommendations with the new clusters.
+- high resolved + low new + latest green → healthy (if all resolved are ≥3 runs old) or stabilizing (if any resolved is 1-2 runs old). Name the top resolved patterns in Health Assessment.
+- high new + latest red → at least degrading. Lead Recommendations with the new patterns.
 - high persisting, low new/resolved → project is stuck; verdict follows current pass rate + latest-run state.
-- no prior data → fall back to per-cluster Window markers. Do not claim a trend without a baseline.
+- no prior data → fall back to per-pattern Window markers. Do not claim a trend without a baseline.
 
 If "Last N vs prior N (in-window)" is skewed worse in the recent half, treat that as a degrading signal even when overall pass rate looks flat.
 
@@ -264,18 +260,20 @@ If "Last N vs prior N (in-window)" is skewed worse in the recent half, treat tha
 - Suite size: interpret severity in context ("5 failures across 30 tests" ≠ "5 across 3000").
 - Quarantine: mention ONLY if the Suite line shows a quarantined count. If quarantined runs are still failing in-window, flag in Risks.
 - Coverage: delta ≤ -5% → flag shrinkage in Notable Trends.
-- Near-flakes (passed on retry): not failures; don't drive the verdict. Mention only in Notable Trends or in Risks when overlapping an active cluster.
-- Per-run Context (branch / commit / CI build): if a cluster first appears at a visible boundary, mention that boundary. Do not speculate.
+- Near-flakes (passed on retry): not failures; don't drive the verdict. Mention only in Notable Trends or in Risks when overlapping an active failure pattern.
+- Per-run Context (branch / commit / CI build): if a failure pattern first appears at a visible boundary, mention that boundary. Do not speculate.
 
 ## Cross-project aggregate
-When the data says cross-project: treat each project as a separate area, never imply a cluster crosses projects, tie each recommendation to the project of the cited test.
+When the data says cross-project: treat each project as a separate area, never imply a failure pattern crosses projects, tie each recommendation to the project of the cited test.
 
 ## Links
 Every linkable test in the data block is tagged inline with \`[testId: TEST_ID]\`. Every linkable run is tagged with \`[reportId: REPORT_ID]\`. When you mention either by title or number, render it as a link using that tagged ID:
 - Test: \`[test title](pwrs:test/TEST_ID?project={{project}})\`
 - Run: \`[run #N](pwrs:report/REPORT_ID)\`
 
-If no inline tag is present for a mention, don't link it. Don't invent or rewrite IDs. For paths, signatures, and fixture files, use backticks.
+If no inline tag is present for a mention, don't link it. Don't invent or rewrite IDs. For paths, fixture files, and locator strings, use backticks.
+
+Cite failure patterns by what they actually are (a fixture in \`file.ts\`, a broken locator \`btn[aria-label]\`, a shared failure at \`file:line\`) rather than by an abstract category name.
 
 Final reminder: do NOT wrap the response in code fences. The output must start directly with \`**Verdict:**\` on line 1.
 `;
@@ -1274,25 +1272,26 @@ export const buildReportSummarySegments = (args: {
   dataBlock += `## Failure Count\n${totalFailures} hard failures (flaky tests are listed separately below and do NOT count toward this total).\n\n`;
 
   if (args.clusters.length > 0) {
-    dataBlock += `## Failure Clusters (${args.clusters.length} clusters)\n`;
-    dataBlock += `Each cluster is anchored to one fix target: \`fixture\` (failing setup/teardown hook), \`selector\` (a Playwright locator that broke across N tests), \`frame\` (a specific file:line of app code), or \`unmatched\` (no extractable mechanism — test identity becomes the anchor). Same anchor → same cluster ID across calls.\n\n`;
+    dataBlock += `## Failure Groups (${args.clusters.length})\n`;
+    dataBlock += `Multiple tests sharing one fix target are grouped together so the same fix unblocks all of them. Each group below names that fix target (a shared fixture, a shared locator, or a shared file:line). Use the per-group test list to decide impact.\n\n`;
     for (const cluster of args.clusters) {
-      dataBlock += `### Cluster: ${cluster.name} [kind: ${cluster.kind}, id: ${cluster.id}]\n`;
+      const kindLabel = describeGroupKind(cluster.kind);
+      dataBlock += `### ${kindLabel}: ${cluster.name}\n`;
       const factsParts: string[] = [];
       if (cluster.category) factsParts.push(`category: \`${cluster.category}\``);
       factsParts.push(`${cluster.testCount} tests`);
       factsParts.push(`${cluster.failureCount} failures (window)`);
       dataBlock += `- ${factsParts.join(' · ')}\n`;
       const anchorLine = renderAnchorInline(cluster.anchor);
-      if (anchorLine) dataBlock += `- Fix anchor: ${anchorLine}\n`;
+      if (anchorLine) dataBlock += `- Fix target: ${anchorLine}\n`;
       if (cluster.sampleMessage) {
         dataBlock += `- Sample error:\n\`\`\`\n${cluster.sampleMessage}\n\`\`\`\n`;
       }
       const membersInRun = cluster.members.filter((m) => m.inThisReport);
       const membersHistorical = cluster.members.filter((m) => !m.inThisReport);
-      dataBlock += `\n#### Members in this report (${membersInRun.length})\n`;
+      dataBlock += `\n#### Tests in this group that failed in this report (${membersInRun.length})\n`;
       if (membersInRun.length === 0) {
-        dataBlock += `_None of this cluster's tests failed in this report._\n`;
+        dataBlock += `_None of this group's tests failed in this report._\n`;
       }
       for (const m of membersInRun) {
         const fileSuffix = m.filePath ? ` (${m.filePath})` : '';
@@ -1310,7 +1309,7 @@ export const buildReportSummarySegments = (args: {
         }
       }
       if (membersHistorical.length > 0) {
-        dataBlock += `\n#### Historical members (${membersHistorical.length}) — failed in this cluster's window but not in this report\n`;
+        dataBlock += `\n#### Other tests in this group (${membersHistorical.length}) — failed previously but not in this report\n`;
         for (const m of membersHistorical) {
           const fileSuffix = m.filePath ? ` (${m.filePath})` : '';
           dataBlock += `- ${m.title} [testId: ${m.testId}]${fileSuffix} (${m.occurrences} occurrences)\n`;
@@ -1321,8 +1320,8 @@ export const buildReportSummarySegments = (args: {
   }
 
   if (args.unclustered.length > 0) {
-    dataBlock += `## Unclustered Failures (${args.unclustered.length})\n`;
-    dataBlock += `Failures in this report that didn't group into any multi-test cluster. Each carries its per-test analysis.\n\n`;
+    dataBlock += `## Isolated Failures (${args.unclustered.length})\n`;
+    dataBlock += `Failures in this report that don't share a fix target with any other test. Each carries its per-test analysis.\n\n`;
     for (const f of args.unclustered) {
       const fileSuffix = f.filePath ? ` (${f.filePath})` : '';
       const trendLabel = renderTrendLabel(f.trend);
@@ -1689,10 +1688,13 @@ function formatRunLabel(reportId: string, displayNumber?: number): string {
     : `[reportId: ${reportId}]`;
 }
 
-/** "#42" when displayNumber is known, else the reportId. For dense in-line
- *  citations where the raw reportId is just visual noise. */
+/** "#42 [reportId: abc1234]" when displayNumber is known, else just the
+ *  marker. The reportId is needed so the model can render the mention as a
+ *  pwrs:report link in prose — see the Links section of each task prompt. */
 function formatRunRef(reportId: string, displayNumber?: number): string {
-  return typeof displayNumber === 'number' ? `#${displayNumber}` : reportId;
+  return typeof displayNumber === 'number'
+    ? `#${displayNumber} [reportId: ${reportId}]`
+    : `[reportId: ${reportId}]`;
 }
 
 /** ISO timestamp -> `YYYY-MM-DD` for the calendar-only views. */
@@ -1709,17 +1711,29 @@ function daysBetweenIso(fromIso: string, toIso: string): number {
   return Math.max(1, Math.round((to - from) / 86_400_000));
 }
 
-/** Compact anchor line per cluster. */
 function renderAnchorInline(anchor: ClusterAnchor): string | null {
   switch (anchor.kind) {
     case 'fixture':
-      return `fixture \`${anchor.phase}\` in \`${anchor.filePath}\` (verb=${anchor.verb})`;
+      return `shared fixture \`${anchor.phase}\` in \`${anchor.filePath}\` (verb=${anchor.verb})`;
     case 'selector':
-      return `selector \`${anchor.selector}\` (verb=${anchor.verb})`;
+      return `shared locator \`${anchor.selector}\` (verb=${anchor.verb})`;
     case 'frame':
-      return `frame \`${anchor.frame}\` (verb=${anchor.verb})`;
+      return `shared failure location \`${anchor.frame}\` (verb=${anchor.verb})`;
     case 'unmatched':
-      return `no extractable mechanism — anchored to test \`${anchor.testId}\``;
+      return `no shared fix target — failure is specific to test \`${anchor.testId}\``;
+  }
+}
+
+function describeGroupKind(kind: 'fixture' | 'selector' | 'frame' | 'unmatched'): string {
+  switch (kind) {
+    case 'fixture':
+      return 'Shared fixture failure';
+    case 'selector':
+      return 'Shared locator failure';
+    case 'frame':
+      return 'Shared failure location';
+    case 'unmatched':
+      return 'Isolated failure';
   }
 }
 
@@ -1944,13 +1958,14 @@ export const buildProjectSummarySegments = (args: {
   const resolvedClusters = (args.clusters ?? []).filter((c) => !isActiveCluster(c));
 
   if (activeClusters.length > 0) {
-    dataBlock += `## Active Failure Clusters (present in latest run or within last 2 runs — drive Recommendations)\n`;
+    dataBlock += `## Active Failure Patterns (present in latest run or within last 2 runs — drive Recommendations)\n`;
     for (let i = 0; i < activeClusters.length; i++) {
       const c = activeClusters[i];
       const anchorLine = renderAnchorInline(c.anchor);
-      dataBlock += `\n### ${i + 1}. \`${c.kind}\` cluster — \`${c.category}\` — ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'} (${c.affectedTests.length} test${c.affectedTests.length === 1 ? '' : 's'})\n`;
+      const kindLabel = describeGroupKind(c.kind);
+      dataBlock += `\n### ${i + 1}. ${kindLabel} — \`${c.category}\` — ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'} (${c.affectedTests.length} test${c.affectedTests.length === 1 ? '' : 's'})\n`;
       if (anchorLine) {
-        dataBlock += `- **Fix anchor:** ${anchorLine}\n`;
+        dataBlock += `- **Fix target:** ${anchorLine}\n`;
       }
       const sample = c.sampleMessage.replace(/\s+/g, ' ').trim();
       const sampleTrunc = sample.length > 300 ? `${sample.substring(0, 300)}…` : sample;
@@ -1985,7 +2000,7 @@ export const buildProjectSummarySegments = (args: {
   // "stabilized after the X cluster cleared" in Health Assessment, but not
   // enough detail to invite a Recommendations bullet.
   if (resolvedClusters.length > 0) {
-    dataBlock += `## Recently Resolved Failure Clusters (NOT for Recommendations — cite only as recovery evidence in Health Assessment)\n`;
+    dataBlock += `## Recently Resolved Patterns (NOT for Recommendations — cite only as recovery evidence in Health Assessment)\n`;
     for (const c of resolvedClusters) {
       const lastSeenRef = formatRunRef(c.lastSeenReportId, c.lastSeenDisplayNumber);
       const titles = c.affectedTests
@@ -1993,7 +2008,8 @@ export const buildProjectSummarySegments = (args: {
         .map((t) => `\`${t.title}\``)
         .join(', ');
       const more = c.affectedTests.length > 2 ? ` +${c.affectedTests.length - 2} more` : '';
-      dataBlock += `- \`${c.kind}\`/\`${c.category}\` — ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'}; last seen ${lastSeenRef} (${c.runsSinceLastSeen} runs ago); tests: ${titles}${more}\n`;
+      const kindLabel = describeGroupKind(c.kind);
+      dataBlock += `- ${kindLabel} (\`${c.category}\`) — ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'}; last seen ${lastSeenRef} (${c.runsSinceLastSeen} runs ago); tests: ${titles}${more}\n`;
     }
     dataBlock += '\n';
   }
