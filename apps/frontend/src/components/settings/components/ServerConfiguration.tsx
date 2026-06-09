@@ -400,7 +400,7 @@ export default function ServerConfiguration({
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Paths to custom Playwright reporter files (relative to project root)
+              Paths to custom Playwright reporter files.
             </p>
           </div>
 

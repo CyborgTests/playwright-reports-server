@@ -1,11 +1,11 @@
 import { execFile } from 'node:child_process';
 import type { UUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import util from 'node:util';
 import { defaultConfig } from './config.js';
 import { resolvePlaywrightCli } from './pw-cache.js';
+import { normalizeReporterPaths, validateReporterPaths } from './pw-reporters.js';
 import { siteConfigDb } from './service/db/siteConfig.sqlite.js';
 import { REPORTS_FOLDER, TMP_FOLDER } from './storage/constants.js';
 import { createDirectory } from './storage/folders.js';
@@ -32,20 +32,17 @@ export const generatePlaywrightReport = async (
   );
 
   const config = siteConfigDb.get();
-  const customReporters = config.reporterPaths || defaultConfig.reporterPaths || [];
+  const customReporters = normalizeReporterPaths(
+    config.reporterPaths ?? defaultConfig.reporterPaths
+  );
 
   const reporters = ['html'];
   if (customReporters.length > 0) {
-    const resolved = customReporters
-      .map((reporterPath) =>
-        path.isAbsolute(reporterPath) ? reporterPath : path.resolve(process.cwd(), reporterPath)
-      )
-      .filter((reporterPath) => {
-        if (existsSync(reporterPath)) return true;
-        console.warn(`[pw] reporter file not found: ${reporterPath}`);
-        return false;
-      });
-    reporters.push(...resolved);
+    const { valid, missing } = validateReporterPaths(customReporters);
+    for (const { input, resolved } of missing) {
+      console.warn(`[pw] reporter file not found: ${input} (resolved to ${resolved})`);
+    }
+    reporters.push(...valid);
   }
 
   // Force a synthetic testDir so blob reports recorded under different working directories

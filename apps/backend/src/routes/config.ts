@@ -8,6 +8,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
 import { defaultConfig } from '../lib/config.js';
 import { llmService } from '../lib/llm/index.js';
+import { normalizeReporterPaths, validateReporterPaths } from '../lib/pw-reporters.js';
 import { CronService, cronService } from '../lib/service/cron.js';
 import { getDatabaseStats } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
@@ -322,11 +323,23 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         }
 
         if (formData.reporterPaths !== undefined) {
+          let raw: unknown;
           try {
-            config.reporterPaths = JSON.parse(formData.reporterPaths);
+            raw = JSON.parse(formData.reporterPaths);
           } catch {
-            config.reporterPaths = [formData.reporterPaths];
+            raw = [formData.reporterPaths];
           }
+          const cleaned = normalizeReporterPaths(raw);
+          const { missing } = validateReporterPaths(cleaned);
+          if (missing.length > 0) {
+            const details = missing
+              .map(({ input, resolved }) => `"${input}" (looked at ${resolved})`)
+              .join(', ');
+            return reply.status(400).send({
+              error: `reporter file not found: ${details}. Use an absolute path, or a path relative to the server's working directory.`,
+            });
+          }
+          config.reporterPaths = cleaned;
         }
 
         if (formData.headerLinks !== undefined) {
