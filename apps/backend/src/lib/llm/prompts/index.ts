@@ -205,211 +205,79 @@ Each test line in the data block already shows \`[testId: TEST_ID]\` inline. Whe
 `;
 
 export const PROJECT_SUMMARY_TASK_INSTRUCTIONS = `
-Analyze test health for project "{{project}}" across the latest {{totalRuns}} runs ({{passingRuns}} clean).
+Your task is to summarize test health for project "{{project}}" across the latest {{totalRuns}} runs ({{passingRuns}} clean).
 
-Return plain Markdown only. No JSON. No code fences.
+## Grounding rules (read first)
+- State only what the data block below shows. Do NOT claim that issues are "being handled", "in progress", "already covered", or otherwise infer fix/quarantine/remediation status that is not present in the data.
+- If a signal (quarantine, fix-in-flight, owner, etc.) is missing from the data, do not invent it.
+- Return plain Markdown. NEVER wrap the response in code fences, even for code-like content. No JSON, no triple-backtick envelopes.
 
 ## Output
-1. First line:
-   **Verdict:** <healthy|stabilizing|degrading|failing>
-
-2. Blank line
-
-3. Executive summary (1-3 sentences, no heading):
-   - Start with: "Project is <status>."
-   - <status> must match the verdict exactly.
-   - State the single most important supporting fact.
-
-4. Then up to 4 sections, in this order, only if non-empty:
-
-## Health Assessment
-Explain the verdict. Distinguish persistent vs transient clusters. Call out new issues. Use recently resolved clusters as recovery evidence when relevant.
-
-## Recommendations
-Concrete actions for Active Failure Clusters only.
-
-## Notable Trends
-Use Trend Signal and run-window movement: pass rate, failures, duration, category drift, unusual runs, coverage changes, near-flakes.
-
-## Risks
-Optional. Extra concerns not covered above.
+1. First line, exactly: \`**Verdict:** <token>\` — \`<token>\` is one of \`healthy\`, \`stabilizing\`, \`degrading\`, \`failing\` (lowercase, exact spelling).
+2. Blank line.
+3. Executive summary (1-3 sentences, no heading): start with "Project is <token>." then state the single most important supporting fact.
+4. Then up to 4 sections in this order, only if non-empty:
+   - **## Health Assessment** — explain the verdict; distinguish persistent vs transient clusters; cite resolved clusters as recovery evidence when relevant.
+   - **## Recommendations** — concrete actions for Active Failure Clusters only. Order: largest unblock → latest-run presence → low retry recovery → persistence → severity. Be specific (files, fixtures, wait conditions, selectors, infra).
+   - **## Notable Trends** — cite real deltas from Trend Signal (pass rate, failures, duration, coverage, near-flakes). Do not eyeball trends from the run list.
+   - **## Risks** — include ONLY if there is a real risk not already covered (cross-cluster correlation, suspicious near-flake overlap, quarantined runs still failing). Skip otherwise.
 
 Do NOT repeat a section heading inside its body.
 
-## Verdict rules
-Choose exactly one:
+## Verdict definitions (pick exactly one)
+- \`healthy\`: latest run has zero hard failures (near-flakes that passed on retry are NOT failures). If clusters exist, all must be in Recently Resolved.
+- \`stabilizing\`: latest run is green, BUT at least one cluster was active within the last 1-2 runs, or some clusters resolved while others persist. Recovery is in progress, not yet proven.
+- \`degrading\`: at least one Active Failure Cluster is present in the latest run or last 1-2 runs, AND retry recovery is low / new persistent issues appeared / pass rate dropped meaningfully vs prior window.
+- \`failing\`: many recent runs are red including the latest, AND multiple active signatures exist with no clear recovery.
 
-- healthy:
-  - no Active Failure Clusters, AND
-  - latest runs are clean.
-  - Also treat as healthy when the latest run is green and either:
-    - all clusters are in Recently Resolved, or
-    - any latest-run failures are flake/infra signals already covered by quarantine.
-  - If a fix has held for ≥3 clean runs, use healthy, not stabilizing.
-
-- stabilizing:
-  - latest run is green, BUT
-  - at least one cluster was active in the last 1-2 runs, OR
-  - some clusters resolved while others still persist.
-  - This means recovery is in progress but not yet proven.
-
-- degrading:
-  - at least one Active Failure Cluster is present in the latest run or last 1-2 runs, AND
-  - retry recovery is low, OR
-  - new persistent issues were introduced, OR
-  - pass rate worsened meaningfully vs the prior window.
-
-- failing:
-  - many recent runs are red, including the latest, AND
-  - multiple active signatures exist with no clear recovery.
-
-Critical:
-- A run with any unexpected or flaky tests is NOT a passing run.
-- If the latest run has failures, do NOT call the project healthy.
-
-## Cross-project aggregate
-When the data says this is a cross-project aggregate:
-- Treat each project as a separate area.
-- Do NOT imply a cluster in one project affects another.
-- Prefer per-project framing in the prose.
-- Tie each recommendation to the project of the cited test.
-
-## Links
-Write links as real Markdown links, not backticked text.
-
-Test link format:
-[test title](pwrs:test/TEST_ID?project=PROJECT_NAME)
-// example: pwrs:test/abcde12345-dcaega54321?project=main
-
-Report link format:
-[run #123](pwrs:report/REPORT_ID)
-// example: pwrs:report/abcd-e123-45dc-aega
-
-Test link rules:
-- Canonical test IDs appear inline in entries such as:
-  - (project=PROJECT_NAME; ...; testId=TEST_ID)
-  - [testId: TEST_ID]
-- For a linked test, copy the title, PROJECT_NAME, and TEST_ID from the same entry.
-- Never mix a title from one entry with an ID from another.
-- If the same title appears multiple times, use the ID from the exact entry you are discussing.
-- If a test mention has no inline testId, do NOT link it; mention it in backticks instead.
-- The visible label must be the human-readable test title, not a path or ID.
-- IDs are opaque. Do NOT infer, normalize, shorten, or rewrite them.
-- Use only IDs present in the supplied data.
-
-Report link rules:
-- REPORT_ID must come from the per-run dump.
-- Do NOT invent or alter report IDs.
-
-For non-clickable mentions (paths, signatures, fixture files), use backticks. There is no pwrs:file scheme.
+Hard rule: if the latest run has any hard failure (unexpected, not just flaky-passed-on-retry), the verdict is NOT \`healthy\`.
 
 ## Cluster model
-Active Failure Clusters are the primary input when present.
+Active Failure Clusters are the primary signal when present. Kinds:
+- \`fixture\`: failure in beforeAll/beforeEach/afterAll/afterEach — systemic; recommendations must be fixture-level, not per-test.
+- \`selector\`: shared Playwright locator broke across N tests — one selector to fix resolves all of them.
+- \`frame\`: tests crash at the same app-code file:line — a single edit location.
+- \`unmatched\`: no extractable mechanism; the test itself is the anchor.
 
-Cluster kinds:
-- fixture: failure in beforeAll/beforeEach/afterAll/afterEach -> systemic; recommendations must be fixture-level, not per-test.
-- selector: tests share a Playwright locator (e.g., aria-label) that became unreachable -> one selector to fix resolves N tests across files.
-- frame: tests crash at the same app-code file:line -> a single code location to edit.
-- unmatched: no extractable mechanism; the test itself is the anchor.
+Buckets:
+- **Active**: present in the latest run or within the last 2 runs. Only these may drive Recommendations.
+- **Recently Resolved**: last seen ≥3 runs ago. Use as recovery evidence in Health Assessment only. Never recommend fixes for resolved clusters.
 
-Each cluster has a Fix anchor line naming the precise target (path + line, selector string, or fixture phase + file). Refer to clusters by their anchor in prose, e.g. "the selector cluster on \`button[aria-label="Approve"]\`" or "the frame cluster at \`UsersPage.ts:35\`".
+Classification (use each Active cluster's Window + Retry recovery):
+- in latest run AND recovery <50%: active regression — lead Recommendations with these.
+- in latest run AND recovery ≥50%: likely flake/infra — recommend stabilization (retries, fixture hardening), not a product-code fix.
+- last seen 1-2 runs ago: recently transient — mention in Health Assessment.
+- recovery 0% with ≥3 occurrences: call out as "never recovers".
 
-Cluster buckets:
-- Active Failure Clusters: present in the latest run or within the last 2 runs. Only these may appear in Recommendations.
-- Recently Resolved Failure Clusters: last seen ≥3 runs ago. Use only as recovery evidence in Health Assessment. Never recommend fixes for resolved clusters.
+If Active Failure Clusters is empty: omit Recommendations entirely; verdict must be \`healthy\` (or \`stabilizing\` only if a cluster was last seen 1-2 runs ago).
 
-If Active Failure Clusters is empty:
-- Omit Recommendations entirely.
-- Verdict must be healthy.
-- Cite resolved clusters as evidence that recovery held.
-- Do NOT use stabilizing here; stabilizing requires at least one cluster seen within the last 2 runs.
+## Trend signal
+Trend Signal in the data is the numeric anchor for Notable Trends. Cite real deltas.
+- high resolved + low new + latest green → healthy (if all resolved are ≥3 runs old) or stabilizing (if any resolved is 1-2 runs old). Name top resolved clusters in Health Assessment.
+- high new + latest red → at least degrading. Lead Recommendations with the new clusters.
+- high persisting, low new/resolved → project is stuck; verdict follows current pass rate + latest-run state.
+- no prior data → fall back to per-cluster Window markers. Do not claim a trend without a baseline.
 
-## Cluster classification
-Use each Active Failure Cluster's Window and Retry recovery:
+If "Last N vs prior N (in-window)" is skewed worse in the recent half, treat that as a degrading signal even when overall pass rate looks flat.
 
-- in latest run AND recovery <50%:
-  active regression. Lead Recommendations with these. Mention consecutive count when ≥2.
+## Other signals
+- Suite size: interpret severity in context ("5 failures across 30 tests" ≠ "5 across 3000").
+- Quarantine: mention ONLY if the Suite line shows a quarantined count. If quarantined runs are still failing in-window, flag in Risks.
+- Coverage: delta ≤ -5% → flag shrinkage in Notable Trends.
+- Near-flakes (passed on retry): not failures; don't drive the verdict. Mention only in Notable Trends or in Risks when overlapping an active cluster.
+- Per-run Context (branch / commit / CI build): if a cluster first appears at a visible boundary, mention that boundary. Do not speculate.
 
-- in latest run AND recovery ≥50%:
-  likely flake/infra. Recommend stabilization (retry tuning, fixture hardening, infra), not a product-code fix.
+## Cross-project aggregate
+When the data says cross-project: treat each project as a separate area, never imply a cluster crosses projects, tie each recommendation to the project of the cited test.
 
-- last seen 1-2 runs ago:
-  recently transient. Mention in Health Assessment. Include in Recommendations only if its evidence overlaps a currently active cluster.
+## Links
+Every linkable test in the data block is tagged inline with \`[testId: TEST_ID]\`. Every linkable run is tagged with \`[reportId: REPORT_ID]\`. When you mention either by title or number, render it as a link using that tagged ID:
+- Test: \`[test title](pwrs:test/TEST_ID?project={{project}})\`
+- Run: \`[run #N](pwrs:report/REPORT_ID)\`
 
-- recovery 0% with ≥3 occurrences:
-  call out explicitly as "never recovers".
+If no inline tag is present for a mention, don't link it. Don't invent or rewrite IDs. For paths, signatures, and fixture files, use backticks.
 
-When discussing fixture clusters:
-- name the fixture file in backticks,
-- link one affected test if helpful,
-- do not frame the fix as a per-test change.
-
-## Trend rules
-Trend Signal is the numeric anchor for Notable Trends. Cite real deltas; do not eyeball trends from run lists.
-
-Use the prior-window baseline and "Cluster flow vs prior window" together:
-
-- high resolved, low new, latest run green:
-  - healthy if all resolved clusters are ≥3 runs old,
-  - stabilizing if any resolved cluster was last seen 1-2 runs ago.
-  - In both cases, name the top resolved clusters in Health Assessment.
-
-- high new, latest run red:
-  - at least degrading.
-  - Lead Recommendations with the new clusters.
-
-- high persisting, low new/resolved:
-  - the project is stuck; verdict follows current pass rate and latest-run state.
-
-- no prior data:
-  - fall back to per-cluster Window markers.
-  - Do not claim a trend without a baseline.
-
-- if "Last N vs prior N (in-window)" is skewed worse in the recent half:
-  - treat that as a degrading signal even if overall pass rate looks flat.
-
-Anchor the overall verdict primarily on the latest run and the most recent 1-2 runs.
-
-## Additional signals
-Suite:
-- Interpret severity in context of suite size; "5 failures across 30 tests" is not the same as "5 across 3000".
-
-Quarantine:
-- Mention quarantine only if the Suite line includes a quarantined count.
-- If quarantined tests exist, remind that they still need a real fix and should be un-quarantined after that.
-- If "quarantined runs still failing in window" > 0, flag it in Risks.
-
-Suite coverage:
-- coverage delta ≤ -5% -> flag shrinkage in Notable Trends.
-- strong positive coverage after a green window may indicate newly added coverage; mention when relevant.
-
-Near-flakes (passed on retry):
-- not failures,
-- do not let them drive the verdict,
-- mention them in Notable Trends for healthy verdicts,
-- mention them in Risks when they overlap an active cluster.
-
-Per-run Context lines:
-- branch / commit / CI build may explain first appearance of a cluster.
-- If a cluster first appears at a visible branch or commit boundary, mention that boundary.
-- Do not speculate beyond the provided context.
-
-## Recommendation rules
-- Recommend actions only for Active Failure Clusters.
-- Do not recommend fixes for resolved clusters.
-- Prioritize by:
-  1. largest unblock,
-  2. latest-run presence,
-  3. low retry recovery,
-  4. persistence,
-  5. severity.
-- Be concrete: files, fixtures, wait conditions, locators, network expectations, infra actions.
-- Avoid generic testing advice.
-
-## No-failure window
-If Active Failure Clusters are absent for the whole window:
-- focus on Trend Signal, suite coverage, and near-flakes,
-- keep Health Assessment to 1-2 sentences confirming no failures were observed and why the project still looks healthy.
+Final reminder: do NOT wrap the response in code fences. The output must start directly with \`**Verdict:**\` on line 1.
 `;
 
 /** One entry in a test's retry timeline. Drawn from Playwright's
@@ -1815,13 +1683,10 @@ function formatSignedDuration(deltaMs: number): string {
   return `${sign}${formatDuration(Math.abs(deltaMs))}`;
 }
 
-/** "#42 (abc1234, …)" when displayNumber is known, else just the reportId.
- *  Used for the run-dump header where readers want both forms to cross-
- *  reference. The slimmer `formatRunRef` variant below is used in dense
- *  in-line citations (root-cause Window lines) where the raw reportId is
- *  noise. */
 function formatRunLabel(reportId: string, displayNumber?: number): string {
-  return typeof displayNumber === 'number' ? `#${displayNumber} (${reportId})` : reportId;
+  return typeof displayNumber === 'number'
+    ? `#${displayNumber} [reportId: ${reportId}]`
+    : `[reportId: ${reportId}]`;
 }
 
 /** "#42" when displayNumber is known, else the reportId. For dense in-line
@@ -2060,7 +1925,8 @@ export const buildProjectSummarySegments = (args: {
     if (c.nearFlakes.length > 0) {
       const list = c.nearFlakes
         .map(
-          (nf) => `\`${nf.title}\` (${nf.filePath}; testId=${nf.testId}) — ${nf.flakyOccurrences}×`
+          (nf) =>
+            `\`${nf.title}\` (${nf.filePath}) [testId: ${nf.testId}] — ${nf.flakyOccurrences}×`
         )
         .join('; ');
       dataBlock += `**Near-flakes (passed on retry):** ${list}\n`;
@@ -2093,7 +1959,7 @@ export const buildProjectSummarySegments = (args: {
       }
       const testsList = c.affectedTests
         .slice(0, 3)
-        .map((t) => `\`${t.title}\` (project=${t.project}; ${t.filePath}; testId=${t.testId})`)
+        .map((t) => `\`${t.title}\` (${t.filePath}; project=${t.project}) [testId: ${t.testId}]`)
         .join(', ');
       const more = c.affectedTests.length > 3 ? ` +${c.affectedTests.length - 3} more` : '';
       dataBlock += `- **Affected tests:** ${testsList}${more}\n`;
