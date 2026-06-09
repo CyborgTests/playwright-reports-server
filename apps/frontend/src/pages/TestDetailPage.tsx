@@ -451,9 +451,6 @@ function FailureClusterCard({
                 </pre>
               </div>
             )}
-            <div className="text-xs text-muted-foreground">
-              Signature: <code>{group.signature.slice(0, 12)}</code>
-            </div>
             {group.recentReports.length > 0 && (
               <div>
                 <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">

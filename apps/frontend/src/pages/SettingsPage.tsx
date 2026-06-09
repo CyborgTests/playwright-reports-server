@@ -21,8 +21,8 @@ const SECTION_NAV: Array<{ id: string; label: string }> = [
   { id: 'server', label: 'General' },
   { id: 'cron', label: 'Schedules' },
   { id: 'github', label: 'GitHub Sync' },
-  { id: 'testManagement', label: 'Test Management' },
   { id: 'llm', label: 'LLM' },
+  { id: 'testManagement', label: 'Test Management' },
   { id: 'notifications', label: 'Notifications' },
 ];
 
