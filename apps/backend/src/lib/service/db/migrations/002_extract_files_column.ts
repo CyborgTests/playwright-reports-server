@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { Migration } from './index.js';
 
-// Splits `reports.metadata.files[]` into its own column. 
+// Splits `reports.metadata.files[]` into its own column.
 // So list queries select the small columns
 // only the detail endpoint pulls it.
 export const migration002ExtractFilesColumn: Migration = {

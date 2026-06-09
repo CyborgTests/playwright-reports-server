@@ -142,7 +142,10 @@ export function TopFailuresWidget({ errors, isLoading }: Readonly<TopFailuresWid
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <Badge variant={categoryVariant[error.category] ?? 'outline'}>
+                    <Badge
+                      variant={categoryVariant[error.category] ?? 'outline'}
+                      className="shrink-0 whitespace-nowrap"
+                    >
                       {formatCategoryName(error.category)}
                     </Badge>
                     <span className="text-sm text-muted-foreground truncate">

@@ -11,7 +11,7 @@ interface AttachmentOpts {
 /**
  * Fetch an attachment (or any server-relative URL) with Bearer auth.
  *
- * Default emits `{ url, status, contentType, bytes }` 
+ * Default emits `{ url, status, contentType, bytes }`
  * Server-relative paths (`/api/serve/...`) are resolved against the configured
  * server. Absolute URLs are used as-is.
  */
