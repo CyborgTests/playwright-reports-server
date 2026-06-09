@@ -37,6 +37,11 @@ interface CleanupGroupProps {
   onScheduleChange: (value: string) => void;
 }
 
+function isCleanupEnabled(daysValue: string, scheduleValue: string): boolean {
+  const days = Number.parseInt(daysValue, 10);
+  return Number.isFinite(days) && days > 0 && scheduleValue.trim().length > 0;
+}
+
 function CleanupGroup({
   title,
   description,
@@ -54,11 +59,37 @@ function CleanupGroup({
   onDaysChange,
   onScheduleChange,
 }: CleanupGroupProps) {
+  const enabled = isCleanupEnabled(daysValue, scheduleValue);
   return (
-    <div className="space-y-4 rounded-lg border bg-card/40 p-4">
-      <div>
-        <h3 className="font-medium">{title}</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+    <div
+      className={cn(
+        'space-y-4 rounded-lg border-2 p-4 transition-colors',
+        enabled
+          ? 'border-emerald-500/40 bg-emerald-500/[0.04]'
+          : 'border-dashed border-muted-foreground/30 bg-muted/30'
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-medium">{title}</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+        </div>
+        <Badge
+          variant={enabled ? 'success' : 'outline'}
+          className={cn(
+            'shrink-0 gap-1.5 px-2 py-0.5',
+            !enabled && 'text-muted-foreground border-muted-foreground/40'
+          )}
+        >
+          <span
+            className={cn(
+              'inline-block h-1.5 w-1.5 rounded-full',
+              enabled ? 'bg-emerald-500' : 'bg-muted-foreground/60'
+            )}
+            aria-hidden
+          />
+          {enabled ? 'Enabled' : 'Disabled'}
+        </Badge>
       </div>
       <div className="space-y-2">
         <Label htmlFor={daysId}>{daysLabel}</Label>
@@ -86,6 +117,11 @@ function CleanupGroup({
         />
         <p className="text-xs text-muted-foreground">{scheduleHelp}</p>
       </div>
+      {!enabled && (
+        <p className="text-xs text-muted-foreground italic">
+          Set both a positive "expire after" value and a schedule to enable this task.
+        </p>
+      )}
     </div>
   );
 }
