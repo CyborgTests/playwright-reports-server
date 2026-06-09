@@ -11,7 +11,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   Pagination,
   PaginationContent,
+  PaginationFirst,
   PaginationItem,
+  PaginationLast,
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
@@ -435,6 +437,12 @@ export default function ReportsTable({
         <Pagination>
           <PaginationContent>
             <PaginationItem>
+              <PaginationFirst
+                onClick={() => page !== 1 && onPageChange(1)}
+                className={page === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+              />
+            </PaginationItem>
+            <PaginationItem>
               <PaginationPrevious
                 onClick={goToPrevPage}
                 className={page === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
@@ -467,6 +475,12 @@ export default function ReportsTable({
             <PaginationItem>
               <PaginationNext
                 onClick={goToNextPage}
+                className={page === pages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+              />
+            </PaginationItem>
+            <PaginationItem>
+              <PaginationLast
+                onClick={() => page !== pages && onPageChange(pages)}
                 className={page === pages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
               />
             </PaginationItem>

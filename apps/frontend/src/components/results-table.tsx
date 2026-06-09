@@ -8,7 +8,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   Pagination,
   PaginationContent,
+  PaginationFirst,
   PaginationItem,
+  PaginationLast,
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
@@ -230,6 +232,12 @@ export default function ResultsTable({
         <Pagination>
           <PaginationContent>
             <PaginationItem>
+              <PaginationFirst
+                onClick={() => page !== 1 && onPageChange(1)}
+                className={page === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+              />
+            </PaginationItem>
+            <PaginationItem>
               <PaginationPrevious
                 onClick={() => page > 1 && onPageChange(page - 1)}
                 className={page === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
@@ -262,6 +270,12 @@ export default function ResultsTable({
             <PaginationItem>
               <PaginationNext
                 onClick={() => page < pages && onPageChange(page + 1)}
+                className={page === pages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+              />
+            </PaginationItem>
+            <PaginationItem>
+              <PaginationLast
+                onClick={() => page !== pages && onPageChange(pages)}
                 className={page === pages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
               />
             </PaginationItem>
