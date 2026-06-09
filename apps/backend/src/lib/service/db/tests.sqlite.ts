@@ -147,8 +147,6 @@ export class TestDatabase {
       string | null,
     ]
   >;
-  private readonly backfillGlobalSignatureStmt: Database.Statement<[string, string]>;
-  private readonly getRunsMissingGlobalSignatureStmt: Database.Statement<[]>;
   private readonly quarantineTestRunStmt: Database.Statement<[number, string | null, string]>;
   private readonly fixTestRunStmt: Database.Statement<[number, string]>;
   private readonly getTestRunsStmt: Database.Statement<[string, string, string]>;
@@ -191,15 +189,6 @@ export class TestDatabase {
     this.insertTestRunStmt = this.db.prepare(`
       INSERT INTO test_runs (runId, testId, fileId, project, reportId, outcome, duration, createdAt, flakinessScore, quarantineReason, quarantined, failure_details, failure_category, failure_category_source, error_signature, error_signature_global)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    this.backfillGlobalSignatureStmt = this.db.prepare(`
-      UPDATE test_runs SET error_signature_global = ? WHERE runId = ?
-    `);
-
-    this.getRunsMissingGlobalSignatureStmt = this.db.prepare(`
-      SELECT runId, failure_details FROM test_runs
-      WHERE error_signature_global IS NULL AND failure_details IS NOT NULL
     `);
 
     this.quarantineTestRunStmt = this.db.prepare(`
@@ -306,75 +295,12 @@ export class TestDatabase {
   public static getInstance(): TestDatabase {
     if (!instance[initiatedTestsDb]) {
       instance[initiatedTestsDb] = new TestDatabase();
-      instance[initiatedTestsDb].backfillTestStatsIfNeeded();
     }
     return instance[initiatedTestsDb];
   }
 
   public refreshTestStatCols(testId: string, fileId: string, project: string): void {
     this.refreshTestStatStmt.run({ testId, fileId, project });
-  }
-
-  private backfillTestStatsIfNeeded(): void {
-    const mark = 'tests_stats_v2';
-    const has = this.db.prepare('SELECT 1 FROM schema_migration_marks WHERE mark = ?').get(mark);
-    if (has) return;
-
-    const tx = this.db.transaction(() => {
-      this.db.exec(`
-        UPDATE tests AS t SET
-          totalRuns = COALESCE(s.totalRuns, 0),
-          latestRunAt = s.latestRunAt,
-          latestOutcome = s.latestOutcome,
-          latestNonSkippedAt = s.latestNonSkippedAt,
-          flakinessScore = s.flakinessScore,
-          quarantined = COALESCE(s.quarantined, 0),
-          quarantineReason = s.quarantineReason,
-          latestFailureCategory = s.latestFailureCategory,
-          recentPassRate = s.recentPassRate,
-          avgDuration = s.avgDuration
-        FROM (
-          SELECT
-            tt.testId, tt.fileId, tt.project,
-            (SELECT COUNT(*) FROM test_runs
-              WHERE testId=tt.testId AND fileId=tt.fileId AND project=tt.project) AS totalRuns,
-            (SELECT MAX(createdAt) FROM test_runs
-              WHERE testId=tt.testId AND fileId=tt.fileId AND project=tt.project) AS latestRunAt,
-            (SELECT outcome FROM test_runs
-              WHERE testId=tt.testId AND fileId=tt.fileId AND project=tt.project
-              ORDER BY createdAt DESC LIMIT 1) AS latestOutcome,
-            (SELECT MAX(createdAt) FROM test_runs
-              WHERE testId=tt.testId AND fileId=tt.fileId AND project=tt.project AND outcome != 'skipped') AS latestNonSkippedAt,
-            (SELECT flakinessScore FROM test_runs
-              WHERE testId=tt.testId AND fileId=tt.fileId AND project=tt.project AND outcome != 'skipped'
-              ORDER BY createdAt DESC LIMIT 1) AS flakinessScore,
-            (SELECT quarantined FROM test_runs
-              WHERE testId=tt.testId AND fileId=tt.fileId AND project=tt.project AND outcome != 'skipped'
-              ORDER BY createdAt DESC LIMIT 1) AS quarantined,
-            (SELECT quarantineReason FROM test_runs
-              WHERE testId=tt.testId AND fileId=tt.fileId AND project=tt.project AND outcome != 'skipped'
-              ORDER BY createdAt DESC LIMIT 1) AS quarantineReason,
-            (SELECT failure_category FROM test_runs
-              WHERE testId=tt.testId AND fileId=tt.fileId AND project=tt.project AND outcome != 'skipped'
-              ORDER BY createdAt DESC LIMIT 1) AS latestFailureCategory,
-            (SELECT CAST(SUM(CASE WHEN outcome IN ('expected','passed') THEN 1 ELSE 0 END) AS REAL)
-                    / NULLIF(COUNT(*), 0)
-             FROM (SELECT outcome FROM test_runs
-                   WHERE testId=tt.testId AND fileId=tt.fileId AND project=tt.project
-                   ORDER BY createdAt DESC LIMIT 50)) AS recentPassRate,
-            (SELECT AVG(CASE WHEN duration >= 0 THEN duration END)
-             FROM (SELECT duration FROM test_runs
-                   WHERE testId=tt.testId AND fileId=tt.fileId AND project=tt.project
-                   ORDER BY createdAt DESC LIMIT 50)) AS avgDuration
-          FROM tests tt
-        ) s
-        WHERE s.testId = t.testId AND s.fileId = t.fileId AND s.project = t.project
-      `);
-      this.db
-        .prepare('INSERT OR IGNORE INTO schema_migration_marks (mark, appliedAt) VALUES (?, ?)')
-        .run(mark, new Date().toISOString());
-    });
-    tx();
   }
 
   public createTest(test: Omit<Test, 'createdAt'>): Test {
@@ -855,86 +781,9 @@ export class TestDatabase {
     };
   }
 
-  public backfillGlobalSignatures(computeSignature: (message: string) => string): number {
-    const rows = this.getRunsMissingGlobalSignatureStmt.all() as Array<{
-      runId: string;
-      failure_details: Buffer | string | null;
-    }>;
-    if (rows.length === 0) return 0;
-
-    let updated = 0;
-    let skippedNull = 0;
-    let skippedParseError = 0;
-    let skippedEmptyMessage = 0;
-    const tx = this.db.transaction(() => {
-      for (const row of rows) {
-        const decoded = decodeFailureDetails(row.failure_details);
-        if (!decoded) {
-          skippedNull++;
-          continue;
-        }
-        let message = '';
-        try {
-          message = String((JSON.parse(decoded) as { message?: string }).message ?? '');
-        } catch {
-          skippedParseError++;
-          continue;
-        }
-        if (!message) {
-          skippedEmptyMessage++;
-          continue;
-        }
-        const signature = computeSignature(message);
-        this.backfillGlobalSignatureStmt.run(signature, row.runId);
-        updated++;
-      }
-    });
-    tx();
-    const totalSkipped = skippedNull + skippedParseError + skippedEmptyMessage;
-    if (totalSkipped > 0) {
-      console.warn(
-        `[tests db] backfillGlobalSignatures: updated=${updated}, skipped=${totalSkipped} ` +
-          `(null=${skippedNull}, parseError=${skippedParseError}, emptyMessage=${skippedEmptyMessage})`
-      );
-    }
-    return updated;
-  }
-
   public clear(): void {
     this.db.prepare('DELETE FROM test_runs').run();
     this.db.prepare('DELETE FROM tests').run();
-  }
-
-  /** One-shot migration: gzip every existing plaintext `failure_details`. */
-  public compressLegacyFailureDetails(): number {
-    const ids = this.db
-      .prepare(`SELECT runId FROM test_runs WHERE failure_details IS NOT NULL`)
-      .all() as Array<{ runId: string }>;
-    if (ids.length === 0) return 0;
-
-    const getOne = this.db.prepare(`SELECT failure_details FROM test_runs WHERE runId = ?`);
-    const update = this.db.prepare(`UPDATE test_runs SET failure_details = ? WHERE runId = ?`);
-
-    let rewritten = 0;
-    const tx = this.db.transaction(() => {
-      for (const { runId } of ids) {
-        const row = getOne.get(runId) as { failure_details: Buffer | string | null } | undefined;
-        const raw = row?.failure_details;
-        if (raw === null || raw === undefined) continue;
-        // Already gzip-compressed → skip.
-        if (Buffer.isBuffer(raw) && raw.length >= 2 && raw[0] === 0x1f && raw[1] === 0x8b) {
-          continue;
-        }
-        const plaintext = typeof raw === 'string' ? raw : Buffer.from(raw).toString('utf8');
-        if (!plaintext) continue;
-        const encoded = encodeFailureDetails(plaintext);
-        if (!encoded) continue;
-        update.run(encoded, runId);
-        rewritten++;
-      }
-    });
-    tx();
-    return rewritten;
   }
 
   public runTransaction<T>(fn: () => T): T {

@@ -42,43 +42,6 @@ export function createDatabase(): Database.Database {
   return db;
 }
 
-/** Add a column if it does not already exist on the given table. SQLite has
- *  no IF NOT EXISTS for ADD COLUMN, so we introspect via PRAGMA table_info.
- *  Used to migrate persistent DBs forward without dropping data.
- *
- *  Identifier args are interpolated into raw SQL — callers MUST pass static
- *  strings, never user input. The shape check below is a safety net so a
- *  future caller from a route handler can't smuggle in a quote-laden
- *  identifier. */
-const SAFE_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const SAFE_TYPE = /^[A-Za-z_][A-Za-z0-9_ ()]*$/;
-function addColumnIfMissing(
-  db: Database.Database,
-  table: string,
-  column: string,
-  type: string
-): void {
-  if (!SAFE_IDENT.test(table)) throw new Error(`addColumnIfMissing: unsafe table "${table}"`);
-  if (!SAFE_IDENT.test(column)) throw new Error(`addColumnIfMissing: unsafe column "${column}"`);
-  if (!SAFE_TYPE.test(type)) throw new Error(`addColumnIfMissing: unsafe type "${type}"`);
-  const cols = db.pragma(`table_info('${table}')`) as Array<{ name: string }>;
-  if (!cols.some((c) => c.name === column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-  }
-}
-
-/** Drop a column if it still exists on a persistent DB. SQLite supports
- *  `ALTER TABLE … DROP COLUMN` from 3.35; better-sqlite3 ships a newer build.
- *  Identifier args are interpolated raw — callers MUST pass static strings. */
-function dropColumnIfExists(db: Database.Database, table: string, column: string): void {
-  if (!SAFE_IDENT.test(table)) throw new Error(`dropColumnIfExists: unsafe table "${table}"`);
-  if (!SAFE_IDENT.test(column)) throw new Error(`dropColumnIfExists: unsafe column "${column}"`);
-  const cols = db.pragma(`table_info('${table}')`) as Array<{ name: string }>;
-  if (cols.some((c) => c.name === column)) {
-    db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
-  }
-}
-
 /** One-shot migration marks. The table is a tiny key/value store of
  *  migration identifiers that have already been applied on this DB. Use it
  *  for one-time data migrations (e.g., cache wipes) that should not run on
@@ -170,24 +133,21 @@ function initializeSchema(db: Database.Database): void {
       project TEXT NOT NULL,
       title TEXT NOT NULL,
       createdAt TEXT NOT NULL,
+      latestRunAt TEXT,
+      latestOutcome TEXT,
+      latestNonSkippedAt TEXT,
+      flakinessScore REAL,
+      quarantined INTEGER NOT NULL DEFAULT 0,
+      quarantineReason TEXT,
+      totalRuns INTEGER NOT NULL DEFAULT 0,
+      recentPassRate REAL,
+      avgDuration REAL,
+      latestFailureCategory TEXT,
       PRIMARY KEY (testId, fileId, project)
     );
 
     CREATE INDEX IF NOT EXISTS idx_tests_project ON tests(project);
     CREATE INDEX IF NOT EXISTS idx_tests_createdAt ON tests(createdAt DESC);
-  `);
-
-  addColumnIfMissing(db, 'tests', 'latestRunAt', 'TEXT');
-  addColumnIfMissing(db, 'tests', 'latestOutcome', 'TEXT');
-  addColumnIfMissing(db, 'tests', 'latestNonSkippedAt', 'TEXT');
-  addColumnIfMissing(db, 'tests', 'flakinessScore', 'REAL');
-  addColumnIfMissing(db, 'tests', 'quarantined', 'INTEGER NOT NULL DEFAULT 0');
-  addColumnIfMissing(db, 'tests', 'quarantineReason', 'TEXT');
-  addColumnIfMissing(db, 'tests', 'totalRuns', 'INTEGER NOT NULL DEFAULT 0');
-  addColumnIfMissing(db, 'tests', 'recentPassRate', 'REAL');
-  addColumnIfMissing(db, 'tests', 'avgDuration', 'REAL');
-  addColumnIfMissing(db, 'tests', 'latestFailureCategory', 'TEXT');
-  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_tests_proj_flakiness
       ON tests(project, flakinessScore DESC);
     CREATE INDEX IF NOT EXISTS idx_tests_proj_lastRunAt
@@ -232,14 +192,6 @@ function initializeSchema(db: Database.Database): void {
     END;
   `);
 
-  if (!hasMigrationMark(db, 'tests_fts_backfill_v1')) {
-    db.exec(`
-      INSERT INTO tests_fts(testId, fileId, project, title, filePath)
-      SELECT testId, fileId, project, title, filePath FROM tests;
-    `);
-    setMigrationMark(db, 'tests_fts_backfill_v1');
-  }
-
   db.exec(`
     CREATE TABLE IF NOT EXISTS test_runs (
       runId TEXT PRIMARY KEY,
@@ -258,6 +210,7 @@ function initializeSchema(db: Database.Database): void {
       failure_category TEXT,
       failure_category_source TEXT,
       error_signature TEXT,
+      error_signature_global TEXT,
       FOREIGN KEY (testId, fileId, project)
         REFERENCES tests(testId, fileId, project)
     );
@@ -275,11 +228,9 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_test_runs_project_created ON test_runs(project, createdAt DESC);
     CREATE INDEX IF NOT EXISTS idx_test_runs_test_lane_created
       ON test_runs(testId, fileId, project, createdAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_test_runs_error_signature_global
+      ON test_runs(error_signature_global);
   `);
-  addColumnIfMissing(db, 'test_runs', 'error_signature_global', 'TEXT');
-  db.exec(
-    'CREATE INDEX IF NOT EXISTS idx_test_runs_error_signature_global ON test_runs(error_signature_global)'
-  );
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS llm_tasks (
@@ -304,23 +255,14 @@ function initializeSchema(db: Database.Database): void {
       inputTokens INTEGER,
       outputTokens INTEGER,
       totalTokens INTEGER,
-      isRetry INTEGER NOT NULL DEFAULT 0
+      isRetry INTEGER NOT NULL DEFAULT 0,
+      reportIds TEXT,
+      baseUrl TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_llm_tasks_status ON llm_tasks(status, priority DESC, createdAt);
     CREATE INDEX IF NOT EXISTS idx_llm_tasks_report ON llm_tasks(reportId);
     CREATE INDEX IF NOT EXISTS idx_llm_tasks_type ON llm_tasks(type, status);
   `);
-  // ALTER TABLE migrations for upgrades from earlier schema versions.
-  addColumnIfMissing(db, 'llm_tasks', 'inputTokens', 'INTEGER');
-  addColumnIfMissing(db, 'llm_tasks', 'outputTokens', 'INTEGER');
-  addColumnIfMissing(db, 'llm_tasks', 'totalTokens', 'INTEGER');
-  addColumnIfMissing(db, 'llm_tasks', 'isRetry', 'INTEGER NOT NULL DEFAULT 0');
-  dropColumnIfExists(db, 'llm_tasks', 'promptVersion');
-  // JSON-encoded array of reportIDs to feed into the worker. Currently used
-  // only by project_summary so the dashboard's selected reports flow through
-  // to the LLM input. NULL keeps the legacy "latest N for project" behavior.
-  addColumnIfMissing(db, 'llm_tasks', 'reportIds', 'TEXT');
-  addColumnIfMissing(db, 'llm_tasks', 'baseUrl', 'TEXT');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS report_failure_summaries (
@@ -330,6 +272,7 @@ function initializeSchema(db: Database.Database): void {
       categories TEXT NOT NULL DEFAULT '{}',
       llmSummary TEXT,
       llmModel TEXT,
+      llmSummaryStructured TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT,
       FOREIGN KEY (reportId) REFERENCES reports(reportID)
@@ -337,28 +280,6 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_rfs_project ON report_failure_summaries(project);
     CREATE INDEX IF NOT EXISTS idx_rfs_created ON report_failure_summaries(createdAt DESC);
   `);
-  addColumnIfMissing(db, 'report_failure_summaries', 'llmModel', 'TEXT');
-  dropColumnIfExists(db, 'report_failure_summaries', 'errorGroups');
-  // Phase 1: structured output for report-level analysis. The column holds
-  // the JSON-encoded ReportAnalysisStructured; the legacy llmSummary column
-  // keeps a rendered-markdown fallback so older clients keep working.
-  addColumnIfMissing(db, 'report_failure_summaries', 'llmSummaryStructured', 'TEXT');
-  // One-shot cache wipe: prior summaries were unstructured markdown with the
-  // old three-section emoji format. Wipe them so users see the new structured
-  // UI on next view; per-report re-summarize triggers a fresh LLM call.
-  if (!hasMigrationMark(db, 'rfs_structured_v1')) {
-    db.exec('DELETE FROM report_failure_summaries');
-    setMigrationMark(db, 'rfs_structured_v1');
-  }
-  // Second wipe: cluster-shaped prompt + verdict semantics changed (flakes
-  // excluded from failure counts, CI/trend tags added). Existing structured
-  // payloads were written against the pre-cluster prompt and don't carry
-  // the project-on-codeRefs fix from the same release. Wipe so users see
-  // fresh analyses with the new shape on next view.
-  if (!hasMigrationMark(db, 'rfs_clusters_v2')) {
-    db.exec('DELETE FROM report_failure_summaries');
-    setMigrationMark(db, 'rfs_clusters_v2');
-  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS test_llm_analyses (
@@ -384,10 +305,6 @@ function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tla_report ON test_llm_analyses(reportId);
     CREATE INDEX IF NOT EXISTS idx_tla_test_report ON test_llm_analyses(testId, reportId);
   `);
-  addColumnIfMissing(db, 'test_llm_analyses', 'inputTokens', 'INTEGER');
-  addColumnIfMissing(db, 'test_llm_analyses', 'outputTokens', 'INTEGER');
-  addColumnIfMissing(db, 'test_llm_analyses', 'totalTokens', 'INTEGER');
-  dropColumnIfExists(db, 'test_llm_analyses', 'promptVersion');
 
   // Drop any pre-existing table that doesn't match the current schema, then recreate.
   // The cache is cheap to regenerate on demand, so a one-shot reset is preferable to
@@ -578,50 +495,6 @@ function initializeSchema(db: Database.Database): void {
       ON quality_dashboard_nodes(dashboardId, projectName);
   `);
 
-  // Drift cleanup: an older non-versioned schema in some deployed DBs left a
-  // `targetType` column with a NOT NULL constraint and no default. The current
-  // code never writes it, so every INSERT 500s with SQLITE_CONSTRAINT_NOTNULL.
-  // The same legacy schema also bound `targetType` into some indexes (e.g.
-  // `ux_af_test`), so a bare DROP COLUMN errors out — drop every index that
-  // mentions the column, then drop the column, then recreate the canonical
-  // indexes (which already exist via CREATE INDEX IF NOT EXISTS above for
-  // fresh DBs, but were missing the bare form on legacy ones).
-  dropAnalysisFeedbackTargetTypeIfPresent(db);
-}
-
-function dropAnalysisFeedbackTargetTypeIfPresent(db: Database.Database): void {
-  const cols = db.pragma(`table_info('analysis_feedback')`) as Array<{ name: string }>;
-  if (!cols.some((c) => c.name === 'targetType')) return;
-
-  // Find every index whose definition references `targetType` and drop it.
-  // `sqlite_master.sql` is the canonical source for the index definition.
-  const indexes = db
-    .prepare(
-      `SELECT name, sql FROM sqlite_master
-       WHERE type = 'index' AND tbl_name = 'analysis_feedback' AND sql IS NOT NULL`
-    )
-    .all() as Array<{ name: string; sql: string }>;
-  for (const idx of indexes) {
-    if (idx.sql.includes('targetType') && SAFE_IDENT.test(idx.name)) {
-      db.exec(`DROP INDEX IF EXISTS ${idx.name}`);
-    }
-  }
-
-  db.exec('ALTER TABLE analysis_feedback DROP COLUMN targetType');
-
-  // Re-create the indexes the code expects. Idempotent — no-ops if they
-  // survived the targetType binding (i.e. were already on the right columns).
-  db.exec(`
-    CREATE UNIQUE INDEX IF NOT EXISTS ux_af_test
-      ON analysis_feedback(testId, fileId, project);
-    CREATE INDEX IF NOT EXISTS idx_af_updated
-      ON analysis_feedback(updatedAt DESC);
-    CREATE INDEX IF NOT EXISTS idx_af_test_lookup
-      ON analysis_feedback(testId, fileId);
-    CREATE INDEX IF NOT EXISTS idx_af_signature
-      ON analysis_feedback(errorSignature)
-      WHERE errorSignature IS NOT NULL;
-  `);
 }
 
 export function getDatabase(): Database.Database {

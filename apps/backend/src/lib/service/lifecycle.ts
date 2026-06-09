@@ -9,16 +9,13 @@ import { storage } from '../storage/index.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
 import { cronService } from './cron.js';
-import { getDatabase, hasMigrationMark, setMigrationMark } from './db/db.js';
 import { githubSyncDb } from './db/githubSync.sqlite.js';
-import { reportDb, reportResultsDb, resultDb } from './db/index.js';
+import { reportDb, resultDb } from './db/index.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import { qualityDashboardsDb } from './db/qualityDashboards.sqlite.js';
 import { siteConfigDb } from './db/siteConfig.sqlite.js';
-import { testDb } from './db/tests.sqlite.js';
 import { litestreamService } from './litestream.js';
 import { notificationScheduler } from './notifications/scheduler.js';
-import { testManagementService } from './testManagement.js';
 
 const createdLifecycle = Symbol.for('playwright.reports.lifecycle');
 const instance = globalThis as typeof globalThis & {
@@ -91,38 +88,6 @@ export class Lifecycle {
       const reaped = llmTasksDb.failStaleProcessing();
       if (reaped > 0) {
         console.log(`[lifecycle] Failed ${reaped} stale processing LLM task(s) from prior run`);
-      }
-
-      // One-shot backfill for the filepath-independent error signature so the
-      // Most Common Failures widget aggregates pre-existing rows after upgrade.
-      const backfilled = testManagementService.backfillGlobalSignatures();
-      if (backfilled > 0) {
-        console.log(
-          `[lifecycle] Backfilled error_signature_global for ${backfilled} test_runs row(s)`
-        );
-      }
-
-      // One-shot: compress legacy plaintext failure_details rows. Skipped on
-      // subsequent boots via the migration mark — new rows are gzipped at
-      // write time.
-      const db = getDatabase();
-      if (!hasMigrationMark(db, 'failure_details_gzip_v1')) {
-        const rewritten = testDb.compressLegacyFailureDetails();
-        if (rewritten > 0) {
-          console.log(
-            `[lifecycle] Compressed failure_details for ${rewritten} legacy test_runs row(s)`
-          );
-        }
-        setMigrationMark(db, 'failure_details_gzip_v1');
-      }
-
-      // Backfill report ↔ result links for reports created before the join
-      // table existed. Best-effort via shared testRun metadata.
-      const { reports: rrReports, links: rrLinks } = reportResultsDb.backfillFromTestRun();
-      if (rrLinks > 0) {
-        console.log(
-          `[lifecycle] Linked ${rrLinks} result(s) to ${rrReports} pre-existing report(s) via testRun`
-        );
       }
 
       await litestreamService.start();

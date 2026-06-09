@@ -4,7 +4,7 @@ import { Cron } from 'croner';
 import { env } from '../../config/env.js';
 import { withError } from '../../lib/withError.js';
 import { TMP_FOLDER } from '../storage/constants.js';
-import { getDatabase, hasMigrationMark, optimizeDB, setMigrationMark } from './db/db.js';
+import { getDatabase, optimizeDB } from './db/db.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import { notificationLogDb } from './db/notificationLog.sqlite.js';
 import { service } from './index.js';
@@ -350,19 +350,6 @@ export class CronService {
     const prunedTasks = llmTasksDb.pruneCompletedOlderThan(cutoff);
     if (prunedTasks > 0) {
       console.log(`[cron-job] db-maintenance pruned ${prunedTasks} completed llm_tasks row(s)`);
-    }
-
-    // switching the pragma only takes effect after a full VACUUM
-    // so do that once (off-peak) and mark it so it never repeats.
-    const db = getDatabase();
-    if (!hasMigrationMark(db, 'auto_vacuum_incremental_v1')) {
-      const mode = db.pragma('auto_vacuum', { simple: true }) as number;
-      if (mode !== 2) {
-        db.pragma('auto_vacuum = INCREMENTAL');
-        db.exec('VACUUM;');
-        console.log('[cron-job] db-maintenance converted database to auto_vacuum=INCREMENTAL');
-      }
-      setMigrationMark(db, 'auto_vacuum_incremental_v1');
     }
 
     optimizeDB();

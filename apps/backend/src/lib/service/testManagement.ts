@@ -724,10 +724,6 @@ export class TestManagementService {
     return hash.toString(36);
   }
 
-  public backfillGlobalSignatures(): number {
-    return testDb.backfillGlobalSignatures((message) => this.computeErrorSignature(message));
-  }
-
   private calculateFlakinessSync(
     testId: string,
     fileId: string,

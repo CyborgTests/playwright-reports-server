@@ -1,4 +1,4 @@
-import { getDatabase, hasMigrationMark, setMigrationMark } from './db.js';
+import { getDatabase } from './db.js';
 
 const initiatedKey = Symbol.for('playwright.reports.db.report_results');
 const instance = globalThis as typeof globalThis & {
@@ -103,57 +103,6 @@ export class ReportResultsDatabase {
     return row.count;
   }
 
-  /**
-   * Backfill missing links for reports created before this table existed.
-   * Joins report.metadata.testRun ↔ result.metadata.testRun.
-   */
-  public backfillFromTestRun(options: { runUnconditionally?: boolean } = {}): {
-    reports: number;
-    links: number;
-  } {
-    const MARK = 'report_results_backfill_v1';
-    if (!options.runUnconditionally && hasMigrationMark(this.db, MARK)) {
-      return { reports: 0, links: 0 };
-    }
-
-    const reports = this.db
-      .prepare(
-        `SELECT reportID, metadata FROM reports
-         WHERE reportID NOT IN (SELECT DISTINCT reportId FROM report_results)`
-      )
-      .all() as Array<{ reportID: string; metadata: string | null }>;
-
-    if (!reports.length) {
-      setMigrationMark(this.db, MARK);
-      return { reports: 0, links: 0 };
-    }
-
-    let linkedCount = 0;
-    const link = this.db.transaction((rows: typeof reports) => {
-      for (const row of rows) {
-        if (!row.metadata) continue;
-        let parsed: Record<string, unknown>;
-        try {
-          parsed = JSON.parse(row.metadata);
-        } catch {
-          continue;
-        }
-        const testRun = parsed.testRun;
-        if (typeof testRun !== 'string' || !testRun) continue;
-
-        const matches = this.db
-          .prepare('SELECT resultID FROM results WHERE metadata LIKE ?')
-          .all(`%"testRun":"${testRun}"%`) as Array<{ resultID: string }>;
-        for (const m of matches) {
-          this.insertStmt.run(row.reportID, m.resultID);
-          linkedCount += 1;
-        }
-      }
-    });
-    link(reports);
-    setMigrationMark(this.db, MARK);
-    return { reports: reports.length, links: linkedCount };
-  }
 }
 
 export const reportResultsDb = ReportResultsDatabase.getInstance();
