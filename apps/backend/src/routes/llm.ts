@@ -427,7 +427,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
         },
         testAnalysisInstructions: {
           content: TEST_ANALYSIS_TASK_INSTRUCTIONS,
-          vars: ['project', 'testTitle', 'filePath', 'errorCategory'],
+          vars: ['project', 'testTitle', 'filePath'],
         },
         // Combined override for the report-summary task. The system message
         // is built-in and not user-overridable; this slot covers the entire

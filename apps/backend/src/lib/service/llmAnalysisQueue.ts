@@ -654,7 +654,6 @@ class LlmAnalysisQueue {
       reportSummaryPrompt: llmCfg.customReportSummaryPrompt,
       projectSummaryInstructions: llmCfg.customProjectSummaryInstructions,
       project,
-      errorCategory: heuristicCategory,
     };
 
     // Same-test feedback in other projects — purely additive context that
@@ -1391,7 +1390,6 @@ export async function buildTestAnalysisRequest(opts: {
     reportSummaryPrompt: llmCfg.customReportSummaryPrompt,
     projectSummaryInstructions: llmCfg.customProjectSummaryInstructions,
     project,
-    errorCategory: heuristicCategory,
   };
 
   const { entries: crossProjectEntries, totalCount: crossProjectTotalCount } =

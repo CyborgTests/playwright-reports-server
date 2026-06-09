@@ -58,7 +58,6 @@ const TEST_ANALYSIS_VARS = new Set([
   'project',
   'testTitle',
   'filePath',
-  'errorCategory',
 ] as const) as ReadonlySet<string>;
 const REPORT_SUMMARY_VARS = new Set([
   'reportId',
@@ -72,29 +71,41 @@ const PROJECT_SUMMARY_VARS = new Set([
 ] as const) as ReadonlySet<string>;
 
 export const DEFAULT_SYSTEM_PROMPT =
-  'You are a Playwright test failure analyst. Use only the structured evidence below to explain what broke and why. Cite line numbers, file paths, error signatures, and response codes. Be direct and specific; avoid filler and generic testing advice.';
+  'Your task is to analyze a Playwright test failure from the structured evidence below and explain what broke and why. Cite line numbers, file paths, error signatures, and response codes. Be direct and specific; avoid filler and generic testing advice. Do NOT restate the report — the reader already sees the step tree, page snapshot, stack trace, console events, and error message in the UI. Quote at most the few lines that prove your conclusion. Every claim must add insight beyond what is already visible in the evidence.';
 export const TEST_ANALYSIS_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT;
 export const REPORT_SUMMARY_SYSTEM_PROMPT =
-  'You are a test lead reviewing a single Playwright CI run. Group failures by root cause, using the fewest meaningful clusters. Prioritize fixes by how many tests each cluster would unblock, then by severity. Call out systemic patterns (shared fixtures, infra issues, repeated signatures) versus isolated bugs. Keep findings concrete: name specific files, fixtures, categories, and signatures. Avoid filler or generic testing advice.';
+  'Your task is to review a single Playwright CI run and summarize its failures. Group failures by root cause using the fewest meaningful clusters. Prioritize fixes by how many tests each cluster would unblock, then by severity. Call out systemic patterns (shared fixtures, infra issues, repeated signatures) versus isolated bugs. Keep findings concrete: name specific files, fixtures, categories, and signatures. Avoid filler or generic testing advice.';
 export const PROJECT_SUMMARY_SYSTEM_PROMPT =
-  'You are a QA lead writing a brief health summary for a Playwright test project across its latest runs. Start with an overall verdict and a one-line headline. Base the verdict primarily on the most recent runs. Clearly separate transient flakes from persistent regressions. Do not restate per-run details the reader already sees in the UI; instead, synthesize patterns over runs. Be concrete about which tests, suites, or product areas regressed.';
+  'Your task is to produce a brief health summary for a Playwright test project across its latest runs. Start with an overall verdict and a one-line headline. Base the verdict primarily on the most recent runs. Clearly separate transient flakes from persistent regressions. Do not restate per-run details the reader already sees in the UI; instead, synthesize patterns over runs. Be concrete about which tests, suites, or product areas regressed.';
 
 export const TEST_ANALYSIS_TASK_INSTRUCTIONS = `
 Test: {{testTitle}} (project "{{project}}", {{filePath}})
-Heuristic surface label (technical hint only, may be misleading): {{errorCategory}}
 
-Reply in plain Markdown. Use the exact section headings below. Sections 1 and 2 are required; section 3 is optional. Do not use JSON or code fences.
+Reply in plain Markdown. Use the exact section headings below. Sections 1 and 2
+are required; section 3 is optional. The trailing Category line is REQUIRED.
+Do not use JSON or code fences around the response.
 
 ## Root Cause
-Explain what broke. Ground every claim in concrete evidence: line numbers from Test Source / Step Tree / Stack, console errors, failed requests with status codes, attempt-history differences.
+Explain what broke and why. Ground every claim in concrete evidence: line
+numbers from Test Source / Step Tree / Stack, console errors, failed requests
+with status codes, attempt-history differences. Do NOT restate data the reader
+can already see in the report (page snapshot dumps, full step trees, raw stack
+traces). Quote at most the few lines that prove your conclusion. The goal is
+to add insight, not to summarize the report.
 
 ## What to Verify
-List 2-3 specific checks to confirm or disprove the root cause. Each must be directly runnable (e.g., log query, env flag to toggle, code path to inspect, repro step). Avoid generic advice.
+List 2-3 specific checks to confirm or disprove the root cause. Each must be
+directly runnable (e.g., log query, env flag to toggle, code path to inspect,
+repro step). Avoid generic advice ("check the logs", "increase the timeout").
 
 ## Recommendation
-Optional. Include only if you can name a clear fix (code edit, config change, infra action). Skip this section if the correct next step is “investigate further”. Short concrete code snippets are allowed.
+Optional. Include only if you can name a clear fix (code edit, config change,
+infra action). Skip this section entirely if the correct next step is just
+"investigate further". Short concrete code snippets are allowed; vague
+suggestions are not.
 
-After the sections, end with exactly one footer line, on its own line, with no heading or extra text:
+After the sections, end with exactly one footer line, on its own line, with no
+heading or extra text. This line is REQUIRED — emit it even when uncertain:
 
 Category: <one of: ${ROOT_CAUSE_CATEGORY_LIST}>
 
@@ -106,7 +117,9 @@ Pick the label that best matches the root cause you described above:
 - slow_path: the operation finished, but past the timeout — a real perf issue, not a hang.
 - unknown: the evidence is genuinely insufficient to decide.
 
-Use "unknown" only when you cannot point at any specific category from the evidence. Do not default to it just because the heuristic label was ambiguous — pick the best-supported semantic category. Your Category line WILL override the heuristic label whenever it is not "unknown".
+Use "unknown" only when no specific category is supported by the evidence;
+prefer a concrete label whenever the data points at one.
+Category line is mandatory.
 
 Attempt-history rules:
 - eventually passed -> transient or environmental; focus on retry/wait or instability diagnosis.
@@ -671,6 +684,24 @@ function buildTestSourceFrameBlock(evidence: FailureEvidence | undefined): strin
   return `## Test Source\n\`\`\`\n${evidence.testSourceFrame}\n\`\`\``;
 }
 
+const PRIOR_ANALYSIS_EXCERPT_MAX_CHARS = 240;
+
+function extractRootCauseExcerpt(analysisMarkdown: string): string {
+  // Take the first paragraph under "## Root Cause" if present, otherwise the
+  // first non-empty paragraph of the analysis. Strip headings and code fences
+  // so the excerpt is plain prose.
+  const trimmed = analysisMarkdown.trim();
+  const rootCauseStart = trimmed.search(/^##\s+Root Cause\s*$/im);
+  const body = rootCauseStart >= 0 ? trimmed.slice(rootCauseStart) : trimmed;
+  const lines = body
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#') && !l.startsWith('```'));
+  const para = lines.length > 0 ? lines[0] : '';
+  if (para.length <= PRIOR_ANALYSIS_EXCERPT_MAX_CHARS) return para;
+  return `${para.slice(0, PRIOR_ANALYSIS_EXCERPT_MAX_CHARS - 1).trimEnd()}…`;
+}
+
 function buildPriorInProjectAnalysisBlock(
   prior:
     | {
@@ -687,7 +718,9 @@ function buildPriorInProjectAnalysisBlock(
   if (prior.model) meta.push(prior.model);
   if (prior.updatedAt) meta.push(relativeTime(prior.updatedAt));
   const header = meta.length > 0 ? ` (${meta.join(' · ')})` : '';
-  return `## Prior Analysis${header}\n${prior.analysis.trim()}`;
+  const excerpt = extractRootCauseExcerpt(prior.analysis);
+  if (!excerpt) return `## Prior Analysis${header}\n_(excerpt unavailable)_`;
+  return `## Prior Analysis${header}\n_Treat as a hint to verify against the current evidence. Disagree if the new evidence contradicts it._\n\n> ${excerpt}`;
 }
 
 function buildStdoutBlock(evidence: FailureEvidence | undefined): string {
@@ -998,9 +1031,6 @@ export interface CustomPromptOverrides {
    *  instructions template; the system message for this task is built-in
    *  and not user-overridable. */
   reportSummaryPrompt?: string;
-  /** Failure category from the heuristic baseline — useful as a {{errorCategory}}
-   *  binding when the user wants to bias the LLM toward / away from a baseline. */
-  errorCategory?: string;
   /** Project name for binding in test/report/project instructions. */
   project?: string;
 }
@@ -1047,7 +1077,6 @@ export const buildTestFailureSegments = (args: {
       project: args.overrides?.project,
       testTitle: args.failureDetails.testTitle,
       filePath: args.failureDetails.filePath,
-      errorCategory: args.overrides?.errorCategory,
     },
     TEST_ANALYSIS_VARS
   );
