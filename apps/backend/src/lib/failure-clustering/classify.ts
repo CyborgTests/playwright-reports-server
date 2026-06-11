@@ -12,15 +12,19 @@ import type { FailedTestRun } from './types.js';
  * fallback, no temporal grouping.
  *
  * Priority order:
- *   1. fixture  — failure occurred in a hook; the hook is the root cause and
- *                 dominates whichever selector/frame surfaced the symptom.
- *   2. selector — a Playwright locator is identifiable in the message; UI
- *                 element identity is the most cross-cutting fix anchor
- *                 (one aria-label rename can break N tests across files).
- *   3. frame    — app-code file:line of the failing statement; concrete fix
- *                 location when no selector is involved.
- *   4. unmatched — no usable signal; anchor = test identity so chronic
- *                 failures of the same test still cluster together.
+ *   1. fixture   — failure occurred in a hook; the hook is the root cause and
+ *                  dominates whichever selector/frame surfaced the symptom.
+ *   2. selector  — a Playwright locator is identifiable in the message; UI
+ *                  element identity is the most cross-cutting fix anchor
+ *                  (one aria-label rename can break N tests across files).
+ *   3. frame     — app-code file:line of the failing statement; concrete fix
+ *                  location when no selector is involved.
+ *   4. signature — none of the above extracts, but the upstream
+ *                  errorSignatureGlobal is set; groups N tests that share an
+ *                  error pattern (e.g. test timeouts, framework crashes) into
+ *                  one cluster instead of fragmenting per-test.
+ *   5. unmatched — no usable signal at all; anchor = test identity so chronic
+ *                  failures of the same test still cluster together.
  *
  * The Playwright verb is part of every anchor (except `unmatched`). Two
  * tests failing at the same line but with different verbs (e.g. one click,
@@ -50,7 +54,14 @@ export function classify(run: FailedTestRun, parsed: ParsedFailureDetails): Clus
   const frame = extractFrameFromFailure(parsed);
   if (frame) return { kind: 'frame', verb, frame };
 
-  // 4. Fallback — test identity. Repeated failures of the same test cluster
+  // 4. Signature — upstream-computed error_signature_global. Used as a
+  //    secondary key for the cases where extractors find nothing but
+  //    multiple tests share an identical failure shape.
+  if (run.errorSignatureGlobal && run.errorSignatureGlobal.length > 0) {
+    return { kind: 'signature', verb, signature: run.errorSignatureGlobal };
+  }
+
+  // 5. Fallback — test identity. Repeated failures of the same test cluster
   //    together even without a mechanism we can name.
   return {
     kind: 'unmatched',
@@ -76,6 +87,8 @@ export function anchorKey(anchor: ClusterAnchor): string {
       return JSON.stringify(['selector', anchor.verb, anchor.selector]);
     case 'frame':
       return JSON.stringify(['frame', anchor.verb, anchor.frame]);
+    case 'signature':
+      return JSON.stringify(['signature', anchor.verb, anchor.signature]);
     case 'unmatched':
       return JSON.stringify(['unmatched', anchor.project, anchor.fileId, anchor.testId]);
   }

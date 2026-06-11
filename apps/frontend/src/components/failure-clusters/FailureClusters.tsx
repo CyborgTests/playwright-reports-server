@@ -278,6 +278,13 @@ function AnchorDetail({ anchor }: { anchor: ClusterAnchor }) {
           <span className="text-foreground">{anchor.frame}</span>
         </div>
       );
+    case 'signature':
+      return (
+        <div className="text-xs text-muted-foreground font-mono break-all">
+          verb: <span className="text-foreground">{anchor.verb}</span> · signature:{' '}
+          <span className="text-foreground">{anchor.signature.slice(0, 32)}…</span>
+        </div>
+      );
     case 'unmatched':
       return null;
   }

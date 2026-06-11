@@ -6,6 +6,7 @@ const INLINE_LOCATOR_RE =
 const UUID_LIKE_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const LONG_HEX_RE = /\b[0-9a-f]{16,}\b/gi;
 const POSITIONAL_REFINEMENT_RE = /\.(?:first\(\)|last\(\)|nth\([^()]*\)|describe\([^()]*\))\s*$/g;
+const QUOTED_RANDOM_SUFFIX_RE = /(['"])([^'"]*?\S\s+)\d{3,}(\1)/g;
 
 export function extractLocator(message: string | undefined): string | undefined {
   if (!message) return undefined;
@@ -32,7 +33,10 @@ export function extractLocator(message: string | undefined): string | undefined 
  * preserved because their arguments determine which element is targeted.
  */
 export function normalizeLocator(locator: string): string {
-  let normalized = locator.replace(UUID_LIKE_RE, '<id>').replace(LONG_HEX_RE, '<id>');
+  let normalized = locator
+    .replace(UUID_LIKE_RE, '<id>')
+    .replace(LONG_HEX_RE, '<id>')
+    .replace(QUOTED_RANDOM_SUFFIX_RE, '$1$2<n>$3');
   for (let i = 0; i < 4; i++) {
     const next = normalized.replace(POSITIONAL_REFINEMENT_RE, '');
     if (next === normalized) break;

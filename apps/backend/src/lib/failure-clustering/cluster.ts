@@ -40,13 +40,18 @@ export function buildClusters(
     else buckets.set(key, [a]);
   }
 
-  // 3. Emit one cluster per bucket.
+  // 3. Coalesce adjacent-line frame buckets in the same (file, verb) within
+  //    a short line window. Same helper function with multiple assertions on
+  //    adjacent lines otherwise produces a separate cluster per assertion line
+  coalesceAdjacentFrameBuckets(buckets);
+
+  // 4. Emit one cluster per bucket.
   const clusters: FailureCluster[] = [];
   for (const [key, members] of buckets) {
     clusters.push(buildOneCluster(members[0].anchor, key, members, metaByKey, resolveReportUrl));
   }
 
-  // 4. Impact-sort: higher failureCount × testCount come first.
+  // 5. Impact-sort: higher failureCount × testCount come first.
   clusters.sort((a, b) => {
     const impact = b.failureCount * b.testCount - a.failureCount * a.testCount;
     if (impact !== 0) return impact;
@@ -55,6 +60,64 @@ export function buildClusters(
   });
 
   return clusters;
+}
+
+const ADJACENT_FRAME_LINE_GAP = 10;
+
+function coalesceAdjacentFrameBuckets(buckets: Map<string, AnnotatedRun[]>): void {
+  interface Entry {
+    key: string;
+    file: string;
+    line: number;
+    verb: string;
+  }
+  // Group frame buckets by (file, verb).
+  const groups = new Map<string, Entry[]>();
+  for (const [key, members] of buckets) {
+    const anchor = members[0].anchor;
+    if (anchor.kind !== 'frame') continue;
+    const m = /^(.*):(\d+)$/.exec(anchor.frame);
+    if (!m) continue;
+    const file = m[1];
+    const line = Number.parseInt(m[2], 10);
+    if (!Number.isFinite(line)) continue;
+    const groupKey = `${file}|${anchor.verb}`;
+    const entry: Entry = { key, file, line, verb: anchor.verb };
+    const arr = groups.get(groupKey);
+    if (arr) arr.push(entry);
+    else groups.set(groupKey, [entry]);
+  }
+
+  for (const entries of groups.values()) {
+    if (entries.length < 2) continue;
+    entries.sort((a, b) => a.line - b.line);
+    // sliding-window merge: each entry joins the previous if within
+    // the line gap. Keeps the anchor on the lowest line.
+    let survivor = entries[0];
+    for (let i = 1; i < entries.length; i++) {
+      const next = entries[i];
+      if (next.line - survivor.line <= ADJACENT_FRAME_LINE_GAP) {
+        // Move members of `next` into `survivor` and drop the next bucket.
+        const survivorMembers = buckets.get(survivor.key);
+        const nextMembers = buckets.get(next.key);
+        if (survivorMembers && nextMembers) {
+          // Rewrite frame anchor on incoming members so anchorKey/clusterId
+          // stays consistent inside the surviving bucket.
+          for (const m of nextMembers) {
+            if (m.anchor.kind === 'frame') {
+              m.anchor = { ...m.anchor, frame: `${survivor.file}:${survivor.line}` };
+            }
+            survivorMembers.push(m);
+          }
+          buckets.delete(next.key);
+        }
+        // Don't advance survivor - stay anchored on the lowest line so
+        // every following member that fits the window merges in too.
+      } else {
+        survivor = next;
+      }
+    }
+  }
 }
 
 function buildOneCluster(
@@ -106,11 +169,9 @@ function buildOneCluster(
   }
   tests.sort((a, b) => b.occurrences - a.occurrences);
 
-  const sampleSource = members.reduce(
-    (acc, m) => (m.run.createdAt > acc.run.createdAt ? m : acc),
-    members[0]
-  );
+  const sampleSource = pickRepresentativeSample(members);
   const sampleMessage = sampleSource.parsed.message;
+  const sampleCodeframe = extractCodeframeLine(sampleMessage);
 
   // Category: most common failureCategory among member runs.
   const categoryCounts = new Map<string, number>();
@@ -125,18 +186,67 @@ function buildOneCluster(
     anchor,
     name: buildName(anchor, sampleMessage, tests),
     sampleMessage,
+    sampleCodeframe,
     category,
     confidence: deriveConfidence(anchor.kind, tests.length, members.length),
+    chronicFlake: isChronicFlake(tests.length, members.length),
     testCount: tests.length,
     failureCount: members.length,
     tests,
   };
 }
 
+const CHRONIC_FLAKE_MIN_FAILURES = 10;
+
+function isChronicFlake(testCount: number, failureCount: number): boolean {
+  return testCount === 1 && failureCount >= CHRONIC_FLAKE_MIN_FAILURES;
+}
+
 /** Stable ID = hex sha1 of the anchor key, truncated to 16 chars. Same anchor
  *  → same ID, across calls and across servers. */
 function clusterId(key: string): string {
   return createHash('sha1').update(key).digest('hex').slice(0, 16);
+}
+
+/** Pick the most representative run in a cluster — the one whose message
+ *  shape repeats most often. */
+function pickRepresentativeSample(members: AnnotatedRun[]): AnnotatedRun {
+  if (members.length === 1) return members[0];
+  const shapeCounts = new Map<string, { count: number; member: AnnotatedRun }>();
+  for (const m of members) {
+    const shape = messageShape(m.parsed.message);
+    const existing = shapeCounts.get(shape);
+    if (existing) {
+      existing.count++;
+      // Prefer the most-recent member within the modal shape so the sample
+      // also has a recent createdAt — keeps the cluster's lastSeen aligned.
+      if (m.run.createdAt > existing.member.run.createdAt) existing.member = m;
+    } else {
+      shapeCounts.set(shape, { count: 1, member: m });
+    }
+  }
+  let best: { count: number; member: AnnotatedRun } | undefined;
+  for (const entry of shapeCounts.values()) {
+    if (!best || entry.count > best.count) best = entry;
+  }
+  return best?.member ?? members[0];
+}
+
+function messageShape(message: string): string {
+  return message
+    .replace(/\d+/g, 'N')
+    .replace(/'[^']*'/g, "'V'")
+    .replace(/"[^"]*"/g, '"V"')
+    .replace(/0x[0-9a-fA-F]+/g, 'H')
+    .slice(0, 240);
+}
+
+function extractCodeframeLine(message: string): string | undefined {
+  for (const raw of message.split('\n')) {
+    const match = /^\s*>\s*(\d+\s*\|.+)$/.exec(raw);
+    if (match) return match[1].trim();
+  }
+  return undefined;
 }
 
 /** Human-readable cluster name shaped as a sentence */
@@ -148,6 +258,11 @@ function buildName(anchor: ClusterAnchor, sampleMessage: string, tests: ClusterT
       return `${verbLabel(anchor.verb)} on ${truncate(anchor.selector, 80)}`;
     case 'frame':
       return `${verbLabel(anchor.verb)} at ${anchor.frame}`;
+    case 'signature': {
+      const symptom = firstSignificantLine(sampleMessage);
+      const verb = verbLabel(anchor.verb);
+      return symptom ? `${verb}: ${truncate(symptom, 70)}` : `${verb} (shared signature)`;
+    }
     case 'unmatched': {
       const title = tests[0]?.title ?? 'Unknown test';
       const symptom = firstSignificantLine(sampleMessage);

@@ -74,12 +74,13 @@ export type PlaywrightVerb =
 
 /**
  * The anchor uniquely identifies a cluster. Discriminated union by `kind`.
- * Priority during classification: fixture > selector > frame > unmatched.
+ * Priority during classification: fixture > selector > frame > signature > unmatched.
  */
 export type ClusterAnchor =
   | { kind: 'fixture'; verb: PlaywrightVerb; phase: FixturePhase; filePath: string }
   | { kind: 'selector'; verb: PlaywrightVerb; selector: string }
   | { kind: 'frame'; verb: PlaywrightVerb; frame: string }
+  | { kind: 'signature'; verb: PlaywrightVerb; signature: string }
   | {
       kind: 'unmatched';
       testId: string;
@@ -95,6 +96,7 @@ export const CLUSTER_KIND_LABELS: Record<ClusterAnchorKind, string> = {
   fixture: 'Fixture',
   selector: 'Selector',
   frame: 'Frame',
+  signature: 'Signature',
   unmatched: 'Unmatched',
 };
 
@@ -105,6 +107,8 @@ export const CLUSTER_KIND_DESCRIPTIONS: Record<ClusterAnchorKind, string> = {
     'Tests share a failing Playwright locator (aria-label, role, css). Typically one UI element drift breaking N tests across files.',
   frame:
     'Tests crash at the same line of app code. The frame is the literal fix location (file:line).',
+  signature:
+    'Tests share an error_signature_global but no extractable fixture/selector/frame anchor. Often a deep-stack failure pattern (timeouts, framework errors) that the upstream extractors can\'t pin to a single line.',
   unmatched:
     'No extractable fix mechanism — the failure shape is unique to the test. Anchored to test identity so repeated failures of the same test still group together.',
 };
@@ -139,8 +143,10 @@ export interface FailureCluster {
   anchor: ClusterAnchor;
   name: string;
   sampleMessage: string;
+  sampleCodeframe?: string;
   category?: string;
   confidence: ClusterConfidence;
+  chronicFlake: boolean;
   testCount: number;
   failureCount: number;
   tests: ClusterTest[];

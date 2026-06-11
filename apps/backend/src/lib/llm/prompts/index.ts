@@ -1719,12 +1719,16 @@ function renderAnchorInline(anchor: ClusterAnchor): string | null {
       return `shared locator \`${anchor.selector}\` (verb=${anchor.verb})`;
     case 'frame':
       return `shared failure location \`${anchor.frame}\` (verb=${anchor.verb})`;
+    case 'signature':
+      return `shared error signature (verb=${anchor.verb})`;
     case 'unmatched':
       return `no shared fix target — failure is specific to test \`${anchor.testId}\``;
   }
 }
 
-function describeGroupKind(kind: 'fixture' | 'selector' | 'frame' | 'unmatched'): string {
+function describeGroupKind(
+  kind: 'fixture' | 'selector' | 'frame' | 'signature' | 'unmatched'
+): string {
   switch (kind) {
     case 'fixture':
       return 'Shared fixture failure';
@@ -1732,6 +1736,8 @@ function describeGroupKind(kind: 'fixture' | 'selector' | 'frame' | 'unmatched')
       return 'Shared locator failure';
     case 'frame':
       return 'Shared failure location';
+    case 'signature':
+      return 'Shared error signature';
     case 'unmatched':
       return 'Isolated failure';
   }

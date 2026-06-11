@@ -21,9 +21,17 @@ const SKIP_PATTERNS = [
   /^node:/,
   /^internal\//,
 ];
+const SPEC_FRAME_PATTERNS = [/\.spec\.(?:t|j)sx?\b/, /\.test\.(?:t|j)sx?\b/];
+const SPEC_DIR_PATTERNS = [/(?:^|\/)tests?\//, /(?:^|\/)e2e\//, /(?:^|\/)__tests__\//];
+
+function isSpecFrame(file: string): boolean {
+  if (SPEC_FRAME_PATTERNS.some((re) => re.test(file))) return true;
+  return SPEC_DIR_PATTERNS.some((re) => re.test(file));
+}
 
 export function extractAppCodeFrame(stack: string | undefined): string | undefined {
   if (!stack) return undefined;
+  let firstNonSkipped: string | undefined;
   for (const rawLine of stack.split('\n')) {
     const line = rawLine.trim();
     if (!line.startsWith('at ')) continue;
@@ -32,9 +40,11 @@ export function extractAppCodeFrame(stack: string | undefined): string | undefin
     const [, file, lineNo] = match;
     if (!file) continue;
     if (SKIP_PATTERNS.some((re) => re.test(file))) continue;
-    return `${normalizePath(file)}:${lineNo}`;
+    const candidate = `${normalizePath(file)}:${lineNo}`;
+    if (isSpecFrame(file)) return candidate;
+    if (!firstNonSkipped) firstNonSkipped = candidate;
   }
-  return undefined;
+  return firstNonSkipped;
 }
 
 export function extractFrameFromFailure(parsed: {
