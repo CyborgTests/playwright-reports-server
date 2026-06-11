@@ -402,6 +402,7 @@ export class LlmTasksDatabase {
     status?: LlmTaskStatus;
     type?: LlmTaskType;
     reportId?: string;
+    model?: string;
     limit: number;
     offset: number;
   }): { data: LlmTaskRowEnriched[]; total: number } {
@@ -411,6 +412,7 @@ export class LlmTasksDatabase {
     if (opts.status) countQuery = countQuery.where('t.status', '=', opts.status);
     if (opts.type) countQuery = countQuery.where('t.type', '=', opts.type);
     if (opts.reportId) countQuery = countQuery.where('t.reportId', '=', opts.reportId);
+    if (opts.model) countQuery = countQuery.where('t.model', '=', opts.model);
     const countCompiled = countQuery.compile();
     const total = (
       this.db.prepare(countCompiled.sql).get(...countCompiled.parameters) as { total: number }
@@ -437,12 +439,27 @@ export class LlmTasksDatabase {
     if (opts.status) dataQuery = dataQuery.where('t.status', '=', opts.status);
     if (opts.type) dataQuery = dataQuery.where('t.type', '=', opts.type);
     if (opts.reportId) dataQuery = dataQuery.where('t.reportId', '=', opts.reportId);
+    if (opts.model) dataQuery = dataQuery.where('t.model', '=', opts.model);
     const dataCompiled = dataQuery.compile();
     const data = this.db
       .prepare(dataCompiled.sql)
       .all(...dataCompiled.parameters) as Array<LlmTaskRowEnriched>;
 
     return { data, total };
+  }
+
+  public getDistinctModels(): string[] {
+    const compiled = this.k
+      .selectFrom('llm_tasks')
+      .select('model')
+      .distinct()
+      .where('model', 'is not', null)
+      .orderBy('model', 'asc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      model: string | null;
+    }>;
+    return rows.map((r) => r.model).filter((m): m is string => !!m && m.length > 0);
   }
 
   public getByReport(reportId: string): LlmTaskRow[] {

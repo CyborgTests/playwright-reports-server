@@ -44,10 +44,11 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     if (authResult) return;
 
     try {
-      const { status, type, reportId, limit, offset } = request.query as {
+      const { status, type, reportId, model, limit, offset } = request.query as {
         status?: LlmTaskStatus;
         type?: LlmTaskType;
         reportId?: string;
+        model?: string;
         limit?: string;
         offset?: string;
       };
@@ -61,6 +62,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
         status,
         type,
         reportId,
+        model: model && model.length > 0 ? model : undefined,
         limit: parsedLimit,
         offset: parsedOffset,
       });
@@ -165,6 +167,22 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     } catch (error) {
       fastify.log.error(error);
       return reply.status(500).send({ success: false, error: 'Failed to reset usage counters' });
+    }
+  });
+
+  fastify.get('/api/llm/tasks/models', async (request: FastifyRequest, reply: FastifyReply) => {
+    const authResult = await authenticate(request as AuthRequest, reply);
+    if (authResult) return;
+
+    try {
+      const models = llmTasksDb.getDistinctModels();
+      return { success: true, models };
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Failed to fetch LLM task models',
+      });
     }
   });
 

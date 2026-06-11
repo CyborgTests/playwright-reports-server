@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/table';
 import {
   type LlmUsageByModelRow,
+  useLlmTaskModels,
   useLlmTaskStats,
   useLlmTasks,
   useLlmUsageByModel,
@@ -186,6 +187,8 @@ export default function LlmQueuePage() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [modelFilter, setModelFilter] = useState<string>('all');
+  const [modelDropdownOpened, setModelDropdownOpened] = useState(false);
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // Usage card period — 7d default, toggleable to 30d.
@@ -202,9 +205,11 @@ export default function LlmQueuePage() {
   const { data: tasksData, refetch: refetchTasks } = useLlmTasks({
     status: statusFilter === 'all' ? undefined : statusFilter,
     type: typeFilter === 'all' ? undefined : typeFilter,
+    model: modelFilter === 'all' ? undefined : modelFilter,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   });
+  const { data: modelsData } = useLlmTaskModels(modelDropdownOpened);
 
   const tasks = tasksData?.data ?? [];
   const total = tasksData?.total ?? 0;
@@ -351,7 +356,7 @@ export default function LlmQueuePage() {
   useEffect(() => {
     setPage(1);
     setSelectedIds(new Set());
-  }, [statusFilter, typeFilter]);
+  }, [statusFilter, typeFilter, modelFilter]);
 
   const statCards = useMemo(
     () => [
@@ -509,6 +514,32 @@ export default function LlmQueuePage() {
                   {t === 'all' ? 'All' : (TYPE_SHORT_LABEL[t] ?? formatCategoryName(t))}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">Model:</span>
+          <Select
+            value={modelFilter}
+            onValueChange={setModelFilter}
+            onOpenChange={(open) => {
+              if (open) setModelDropdownOpened(true);
+            }}
+          >
+            <SelectTrigger className="w-[220px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              {(modelsData?.models ?? []).map((m) => (
+                <SelectItem key={m} value={m}>
+                  {m}
+                </SelectItem>
+              ))}
+              {modelFilter !== 'all' && !(modelsData?.models ?? []).includes(modelFilter) && (
+                <SelectItem value={modelFilter}>{modelFilter}</SelectItem>
+              )}
             </SelectContent>
           </Select>
         </div>
