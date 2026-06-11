@@ -211,6 +211,7 @@ export function getDerivedPage(
       t.quarantineReason AS quarantineReason,
       ${passRateExpr} AS recentPassRate,
       ${avgDurationExpr} AS avgDuration,
+      t.flakinessResetAt AS flakinessResetAt,
       COUNT(*) OVER () AS __total
     ${baseFrom}
     ${orderBy}

@@ -9,6 +9,7 @@ export interface TestWithQuarantineInfo {
   quarantinedAt?: string;
   quarantineReason?: string;
   flakinessScore?: number;
+  flakinessResetAt?: string;
   totalRuns?: number;
   runs?: TestRun[];
   lastRunAt?: string;
@@ -94,6 +95,7 @@ export interface TestDetail {
   quarantineReason?: string;
   quarantinedAt?: string;
   flakinessScore?: number;
+  flakinessResetAt?: string;
   stats: TestDetailStats;
   runs: TestRun[];
   failureGroups: TestFailureGroup[];

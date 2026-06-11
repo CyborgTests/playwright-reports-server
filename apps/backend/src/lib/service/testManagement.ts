@@ -729,13 +729,65 @@ export class TestManagementService {
 
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - windowDays!);
+    let effectiveCutoff = cutoffDate.toISOString();
+
+    const test = testDb.getTest(testId, fileId, project);
+    const resetAt = test?.flakinessResetAt;
+    if (resetAt) {
+      if (resetAt < effectiveCutoff) {
+        testDb.setFlakinessResetAt(testId, fileId, project, null);
+      } else if (resetAt > effectiveCutoff) {
+        effectiveCutoff = resetAt;
+      }
+    }
 
     // Returned in DESC order — reverse to get oldest-first for transition counting
     const recentRuns = testDb
-      .getRecentTestRunsForFlakiness(testId, fileId, project, cutoffDate.toISOString())
+      .getRecentTestRunsForFlakiness(testId, fileId, project, effectiveCutoff)
       .reverse();
 
     return computeFlakinessFromOutcomes(recentRuns, minRuns ?? 1);
+  }
+
+  async resetFlakiness(testId: string, fileId: string, project: string): Promise<void> {
+    const test = testDb.getTest(testId, fileId, project);
+    if (!test) {
+      throw new Error('Test not found');
+    }
+
+    const config = await this.getConfig();
+    const now = new Date().toISOString();
+
+    testDb.runTransaction(() => {
+      testDb.setFlakinessResetAt(testId, fileId, project, now);
+
+      const latestRun = testDb.getLatestTestRun(testId, fileId, project);
+      if (latestRun) {
+        const newScore = this.calculateFlakinessSync(testId, fileId, project, config);
+        testDb.updateFlakinessScore(latestRun.runId, newScore);
+        testDb.refreshTestStatCols(testId, fileId, project);
+      }
+    });
+  }
+
+  async clearFlakinessReset(testId: string, fileId: string, project: string): Promise<void> {
+    const test = testDb.getTest(testId, fileId, project);
+    if (!test) {
+      throw new Error('Test not found');
+    }
+
+    const config = await this.getConfig();
+
+    testDb.runTransaction(() => {
+      testDb.setFlakinessResetAt(testId, fileId, project, null);
+
+      const latestRun = testDb.getLatestTestRun(testId, fileId, project);
+      if (latestRun) {
+        const newScore = this.calculateFlakinessSync(testId, fileId, project, config);
+        testDb.updateFlakinessScore(latestRun.runId, newScore);
+        testDb.refreshTestStatCols(testId, fileId, project);
+      }
+    });
   }
 
   async updateQuarantineStatus(
@@ -830,6 +882,7 @@ export class TestManagementService {
         totalRuns: row.totalRuns,
         lastRunAt: row.lastRunAt ?? undefined,
         flakinessScore: row.flakinessScore ?? undefined,
+        flakinessResetAt: row.flakinessResetAt ?? undefined,
         isQuarantined,
         quarantinedAt: isQuarantined && row.latestNonSkippedAt ? row.latestNonSkippedAt : undefined,
         quarantineReason: isQuarantined && row.quarantineReason ? row.quarantineReason : undefined,
@@ -910,6 +963,7 @@ export class TestManagementService {
       quarantineReason: test.quarantineReason,
       quarantinedAt: test.quarantinedAt,
       flakinessScore: test.flakinessScore,
+      flakinessResetAt: test.flakinessResetAt,
       stats,
       runs,
       failureGroups,

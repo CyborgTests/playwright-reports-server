@@ -176,6 +176,70 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
       });
     });
 
+    fastify.post(
+      '/api/test/:testId/flakiness-reset',
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { testId } = request.params as { testId: string };
+        const { project } = request.query as { project?: string };
+
+        if (!project) {
+          return reply
+            .status(400)
+            .send({ success: false, error: 'project query parameter is required' });
+        }
+
+        const lane = testDb.findByTestId(testId, project);
+        if (!lane) {
+          return reply.status(404).send({ success: false, error: 'Test not found' });
+        }
+
+        const { error } = await withError(
+          testManagementService.resetFlakiness(lane.testId, lane.fileId, lane.project)
+        );
+
+        if (error) {
+          fastify.log.error(error);
+          return reply
+            .status(500)
+            .send({ success: false, error: 'Failed to reset flakiness score' });
+        }
+
+        return reply.send({ success: true });
+      }
+    );
+
+    fastify.delete(
+      '/api/test/:testId/flakiness-reset',
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { testId } = request.params as { testId: string };
+        const { project } = request.query as { project?: string };
+
+        if (!project) {
+          return reply
+            .status(400)
+            .send({ success: false, error: 'project query parameter is required' });
+        }
+
+        const lane = testDb.findByTestId(testId, project);
+        if (!lane) {
+          return reply.status(404).send({ success: false, error: 'Test not found' });
+        }
+
+        const { error } = await withError(
+          testManagementService.clearFlakinessReset(lane.testId, lane.fileId, lane.project)
+        );
+
+        if (error) {
+          fastify.log.error(error);
+          return reply
+            .status(500)
+            .send({ success: false, error: 'Failed to clear flakiness reset' });
+        }
+
+        return reply.send({ success: true });
+      }
+    );
+
     fastify.get(
       '/api/test/:testId/detail',
       async (request: FastifyRequest, reply: FastifyReply) => {

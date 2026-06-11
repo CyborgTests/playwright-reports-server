@@ -204,6 +204,7 @@ export interface TestsRow {
   recentPassRate: number | null;
   avgDuration: number | null;
   latestFailureCategory: string | null;
+  flakinessResetAt: string | null;
 }
 
 export interface TestRunsRow {

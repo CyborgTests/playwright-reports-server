@@ -16,6 +16,7 @@ export interface Test {
   project: string;
   title: string;
   createdAt: string;
+  flakinessResetAt?: string;
 }
 
 export interface TestRun {
@@ -45,6 +46,7 @@ export interface TestWithQuarantineInfo extends Test {
   quarantinedAt?: string;
   quarantineReason?: string;
   flakinessScore?: number;
+  flakinessResetAt?: string;
   totalRuns?: number;
   lastRunAt?: string;
   runs?: TestRun[];
@@ -66,6 +68,7 @@ export interface DerivedPageRow {
   quarantineReason: string | null;
   recentPassRate: number;
   avgDuration: number | null;
+  flakinessResetAt: string | null;
 }
 
 export interface TestRunDbRow {
@@ -190,6 +193,7 @@ export class TestDatabase {
         recentPassRate: null,
         avgDuration: null,
         latestFailureCategory: null,
+        flakinessResetAt: null,
       })
       .onConflict((oc) => oc.doNothing())
       .compile();
@@ -610,6 +614,7 @@ export class TestDatabase {
       totalRuns: stats.totalRuns || 0,
       lastRunAt: stats.lastRunAt || undefined,
       flakinessScore: latestRun?.flakinessScore,
+      flakinessResetAt: test.flakinessResetAt ?? undefined,
       isQuarantined: latestRun?.quarantined || false,
       quarantinedAt: latestRun?.quarantined ? latestRun.createdAt : undefined,
       quarantineReason: latestRun?.quarantined ? latestRun?.quarantineReason : undefined,
@@ -711,6 +716,22 @@ export class TestDatabase {
       .updateTable('test_runs')
       .set({ flakinessScore: score })
       .where('runId', '=', runId)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
+  }
+
+  public setFlakinessResetAt(
+    testId: string,
+    fileId: string,
+    project: string,
+    timestamp: string | null
+  ): void {
+    const compiled = this.k
+      .updateTable('tests')
+      .set({ flakinessResetAt: timestamp })
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
   }

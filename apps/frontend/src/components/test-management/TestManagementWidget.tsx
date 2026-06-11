@@ -8,7 +8,7 @@ import {
   type TestWithQuarantineInfo,
 } from '@playwright-reports/shared';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Clock } from 'lucide-react';
+import { AlertTriangle, Clock, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -245,6 +245,34 @@ export default function TestManagementWidget({
     },
   });
 
+  const { mutate: resetFlakinessMutation } = useMutation('/api/test', {
+    method: 'POST',
+    onSuccess: () => {
+      invalidateCache(queryClient, { predicate: '/api/tests' });
+      toast.success('Flakiness score reset — new flakiness will be tracked from now');
+    },
+  });
+
+  const { mutate: clearFlakinessResetMutation } = useMutation('/api/test', {
+    method: 'DELETE',
+    onSuccess: () => {
+      invalidateCache(queryClient, { predicate: '/api/tests' });
+      toast.success('Flakiness reset removed — score recomputed over full window');
+    },
+  });
+
+  const handleResetFlakiness = (test: TestWithQuarantineInfo) => {
+    resetFlakinessMutation({
+      path: `/api/test/${test.testId}/flakiness-reset?project=${encodeURIComponent(test.project)}`,
+    });
+  };
+
+  const handleClearFlakinessReset = (test: TestWithQuarantineInfo) => {
+    clearFlakinessResetMutation({
+      path: `/api/test/${test.testId}/flakiness-reset?project=${encodeURIComponent(test.project)}`,
+    });
+  };
+
   const tests = useMemo(() => testsData?.pages.flatMap((page) => page.data) ?? [], [testsData]);
 
   const totalTests = testsData?.pages[0]?.total ?? 0;
@@ -434,7 +462,7 @@ export default function TestManagementWidget({
                       <TableCell className="whitespace-nowrap w-px">
                         {getStatusBadge(item)}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap w-px">
+                      <TableCell className="whitespace-nowrap w-px relative">
                         <div className="flex items-center gap-2">
                           <Progress
                             value={item.flakinessScore || 0}
@@ -442,6 +470,19 @@ export default function TestManagementWidget({
                           />
                           <span className="text-sm">{item.flakinessScore?.toFixed(1)}%</span>
                         </div>
+                        {item.flakinessResetAt && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <RotateCcw className="absolute top-7 right-0 h-3 w-3 text-muted-foreground" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                Flakiness reset on{' '}
+                                {new Date(item.flakinessResetAt).toLocaleString()}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap w-px">
                         <Badge variant="outline">{item.totalRuns || 0}</Badge>
@@ -487,6 +528,15 @@ export default function TestManagementWidget({
                             >
                               {item.isQuarantined ? 'Remove Quarantine' : 'Send Quarantine'}
                             </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => handleResetFlakiness(item)}>
+                              Reset Flakiness Score
+                            </DropdownMenuItem>
+                            {item.flakinessResetAt && (
+                              <DropdownMenuItem onClick={() => handleClearFlakinessReset(item)}>
+                                Remove Flakiness Reset
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               onClick={() => handleDeleteAction(item)}

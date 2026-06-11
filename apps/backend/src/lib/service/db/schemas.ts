@@ -272,6 +272,7 @@ export const TESTS_SCHEMA_SQL = `
     recentPassRate REAL,
     avgDuration REAL,
     latestFailureCategory TEXT,
+    flakinessResetAt TEXT,
     PRIMARY KEY (testId, fileId, project)
   );
   CREATE INDEX IF NOT EXISTS idx_tests_project ON tests(project);
