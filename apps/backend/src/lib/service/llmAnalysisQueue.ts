@@ -1061,14 +1061,21 @@ class LlmAnalysisQueue {
     if (project) targets.add(project);
     targets.add('all');
 
+    const queued: string[] = [];
+    const skipped: string[] = [];
     for (const projectKey of targets) {
+      if (llmTasksDb.findInflightProjectSummary(projectKey)) {
+        skipped.push(projectKey);
+        continue;
+      }
       llmTasksDb.createTask('project_summary', {
         project: projectKey,
         priority: AUTO_PROJECT_SUMMARY_PRIORITY,
       });
+      queued.push(projectKey);
     }
     console.log(
-      `[llmQueue] Auto-queued project_summary for ${[...targets].join(', ')} after report ${reportId}`
+      `[llmQueue] Auto project_summary after report ${reportId} — queued: ${queued.join(', ') || 'none'}; skipped (in-flight): ${skipped.join(', ') || 'none'}`
     );
   }
 
