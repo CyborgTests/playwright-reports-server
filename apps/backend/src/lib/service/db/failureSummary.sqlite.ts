@@ -1,4 +1,5 @@
 import type { ReportAnalysisStructured } from '@playwright-reports/shared';
+import { linkifyReportAnalysisStructured, linkifyReportRefs } from '../../llm/linkifyReportRefs.js';
 import { getDatabase } from './db.js';
 import { decodeFailureDetails } from './failureDetailsCodec.js';
 import { getKysely } from './kysely.js';
@@ -110,11 +111,25 @@ export class FailureSummaryDatabase {
     structured: ReportAnalysisStructured | null,
     llmModel?: string | null
   ): void {
+    const projectCompiled = this.k
+      .selectFrom('report_failure_summaries')
+      .select('project')
+      .where('reportId', '=', reportId)
+      .compile();
+    const projectRow = this.db.prepare(projectCompiled.sql).get(...projectCompiled.parameters) as
+      | { project: string }
+      | undefined;
+    const ctx = { project: projectRow?.project || undefined };
+    const linkifiedSummary = linkifyReportRefs(llmSummary, ctx);
+    const linkifiedStructured = structured
+      ? linkifyReportAnalysisStructured(structured, ctx)
+      : null;
+
     const compiled = this.k
       .updateTable('report_failure_summaries')
       .set({
-        llmSummary,
-        llmSummaryStructured: structured ? JSON.stringify(structured) : null,
+        llmSummary: linkifiedSummary,
+        llmSummaryStructured: linkifiedStructured ? JSON.stringify(linkifiedStructured) : null,
         llmModel: llmModel ?? null,
         updatedAt: new Date().toISOString(),
       })

@@ -1,6 +1,7 @@
 import { randomUUID as uuid } from 'node:crypto';
 import type { LlmTaskStatus, LlmTaskType } from '@playwright-reports/shared';
 import { sql } from 'kysely';
+import { linkifyReportRefs } from '../../llm/linkifyReportRefs.js';
 import { llmTaskEvents } from '../llmTaskEvents.js';
 import { getDatabase } from './db.js';
 import { getKysely, type LlmTasksRow } from './kysely.js';
@@ -230,12 +231,24 @@ export class LlmTasksDatabase {
   ): void {
     const now = new Date().toISOString();
     const usage = extras?.usage;
+    const projectCompiled = this.k
+      .selectFrom('llm_tasks')
+      .select('project')
+      .where('id', '=', id)
+      .compile();
+    const projectRow = this.db.prepare(projectCompiled.sql).get(...projectCompiled.parameters) as
+      | { project: string | null }
+      | undefined;
+    const linkifiedResult = linkifyReportRefs(result, {
+      project: projectRow?.project && projectRow.project !== 'all' ? projectRow.project : undefined,
+    });
+
     const compiled = this.k
       .updateTable('llm_tasks')
       .set({
         status: 'completed',
         completedAt: now,
-        result,
+        result: linkifiedResult,
         category: category ?? null,
         model: model ?? null,
         baseUrl: extras?.baseUrl ?? null,

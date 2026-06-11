@@ -1,3 +1,8 @@
+import type { ProjectAnalysisStructured } from '@playwright-reports/shared';
+import {
+  linkifyProjectAnalysisStructured,
+  linkifyReportRefs,
+} from '../../llm/linkifyReportRefs.js';
 import { getDatabase } from './db.js';
 import { getKysely, type ProjectLlmSummariesRow } from './kysely.js';
 
@@ -36,7 +41,7 @@ export class ProjectSummaryDatabase {
   public upsert(opts: {
     project: string;
     summary: string;
-    structured?: string | null;
+    structured?: ProjectAnalysisStructured | string | null;
     model?: string;
     lastReportId?: string;
     reportCount?: number;
@@ -44,12 +49,22 @@ export class ProjectSummaryDatabase {
     lastReportAt?: string;
   }): void {
     const now = new Date().toISOString();
+    const ctx = { project: opts.project === 'all' ? undefined : opts.project };
+    const linkifiedSummary = linkifyReportRefs(opts.summary, ctx);
+    let structuredJson: string | null = null;
+    if (opts.structured) {
+      const obj =
+        typeof opts.structured === 'string'
+          ? (JSON.parse(opts.structured) as ProjectAnalysisStructured)
+          : opts.structured;
+      structuredJson = JSON.stringify(linkifyProjectAnalysisStructured(obj, ctx));
+    }
     const compiled = this.k
       .insertInto('project_llm_summaries')
       .values({
         project: opts.project,
-        summary: opts.summary,
-        structured: opts.structured ?? null,
+        summary: linkifiedSummary,
+        structured: structuredJson,
         model: opts.model ?? null,
         lastReportId: opts.lastReportId ?? null,
         reportCount: opts.reportCount ?? null,

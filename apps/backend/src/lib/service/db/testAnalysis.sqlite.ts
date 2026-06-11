@@ -1,5 +1,6 @@
 import { randomUUID as uuid } from 'node:crypto';
 import { sql } from 'kysely';
+import { linkifyReportRefs } from '../../llm/linkifyReportRefs.js';
 import { getDatabase } from './db.js';
 import { getKysely, type TestLlmAnalysesRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
@@ -29,6 +30,7 @@ export class TestAnalysisDatabase {
     const id = uuid();
     const now = new Date().toISOString();
     const usage = extras?.usage;
+    const linkifiedAnalysis = analysis ? linkifyReportRefs(analysis, { project }) : null;
 
     const compiled = this.k
       .insertInto('test_llm_analyses')
@@ -39,7 +41,7 @@ export class TestAnalysisDatabase {
         project,
         reportId,
         attempt,
-        analysis: analysis ?? null,
+        analysis: linkifiedAnalysis,
         category: category ?? null,
         model: model ?? null,
         createdAt: now,
@@ -71,7 +73,7 @@ export class TestAnalysisDatabase {
       project,
       reportId,
       attempt,
-      analysis: analysis ?? null,
+      analysis: linkifiedAnalysis,
       category: category ?? null,
       model: model ?? null,
       createdAt: now,
