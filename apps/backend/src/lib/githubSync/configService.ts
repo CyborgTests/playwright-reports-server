@@ -12,6 +12,7 @@ import {
   githubSyncDb,
 } from '../service/db/githubSync.sqlite.js';
 import { decryptToken, encryptToken } from './encryption.js';
+import { getSyncProgress } from './syncService.js';
 
 export interface GithubSyncConfigResolved extends GithubSyncConfig {
   token: string | undefined;
@@ -73,12 +74,14 @@ export const githubSyncConfigService = {
     const counts = githubSyncDb.countSyncedArtifactsBatch(ids);
     return configs.map((row) => {
       const latest = latestRuns.get(row.id);
+      const isRunning = latest?.status === 'running';
       const status: GithubSyncStatus = {
         configId: row.id,
-        isRunning: latest?.status === 'running',
+        isRunning,
         lastRun: latest ? runRowToPublic(latest) : undefined,
         nextRun: nextRunOf(row.id),
         syncedArtifacts: counts.get(row.id) ?? 0,
+        progress: isRunning ? (getSyncProgress(row.id) ?? undefined) : undefined,
       };
       return { ...rowToPublic(row), status };
     });
@@ -167,12 +170,14 @@ export const githubSyncConfigService = {
     const row = githubSyncDb.getConfig(id);
     if (!row) return undefined;
     const latest = githubSyncDb.getLatestRun(id);
+    const isRunning = latest?.status === 'running';
     return {
       configId: id,
-      isRunning: latest?.status === 'running',
+      isRunning,
       lastRun: latest ? runRowToPublic(latest) : undefined,
       nextRun,
       syncedArtifacts: githubSyncDb.countSyncedArtifacts(id),
+      progress: isRunning ? (getSyncProgress(id) ?? undefined) : undefined,
     };
   },
 };

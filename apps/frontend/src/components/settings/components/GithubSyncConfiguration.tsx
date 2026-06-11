@@ -4,6 +4,7 @@ import type {
   GithubSyncConfig,
   GithubSyncConfigInput,
   GithubSyncStatus,
+  SyncProgress,
 } from '@playwright-reports/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -20,6 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
 import { useAuth } from '@/hooks/useAuth';
 
 type GithubSyncConfigWithStatus = GithubSyncConfig & { status?: GithubSyncStatus };
@@ -52,6 +54,47 @@ const blankForm: FormState = {
   token: '',
   enabled: true,
 };
+
+function SyncProgressPanel({ progress }: { progress: SyncProgress }) {
+  if (progress.phase === 'scanning') {
+    return (
+      <div className="rounded-md border bg-muted/30 p-2 space-y-1">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-medium">Scanning workflow runs…</span>
+          <span className="text-muted-foreground">
+            {progress.total} artifact{progress.total === 1 ? '' : 's'} found
+          </span>
+        </div>
+        <Progress value={undefined} className="h-1.5 animate-pulse" />
+      </div>
+    );
+  }
+  const pct =
+    progress.total > 0 ? Math.min(100, Math.round((progress.current / progress.total) * 100)) : 0;
+  return (
+    <div className="rounded-md border bg-muted/30 p-2 space-y-1">
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-medium tabular-nums">
+          [{progress.current}/{progress.total}] {pct}%
+        </span>
+        <span className="text-muted-foreground tabular-nums">
+          ✓ {progress.uploaded}
+          {progress.failed > 0 ? ` · ✕ ${progress.failed}` : ''}
+          {progress.skipped > 0 ? ` · skipped ${progress.skipped}` : ''}
+        </span>
+      </div>
+      <Progress value={pct} className="h-1.5" />
+      {progress.currentArtifact && (
+        <div
+          className="text-xs text-muted-foreground font-mono truncate"
+          title={progress.currentArtifact}
+        >
+          ↓ {progress.currentArtifact}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function statusBadge(cfg: GithubSyncConfigWithStatus) {
   if (cfg.status?.isRunning) {
@@ -213,8 +256,8 @@ export default function GithubSyncConfiguration() {
   useEffect(() => {
     if (session.status !== 'authenticated') return;
     const anyRunning = configs.some((c) => c.status?.isRunning);
-    // 10s when running sync, 30s by default
-    const interval = anyRunning ? 10_000 : 30_000;
+    // 1s while a sync is in flight for progress display, otherwise 30s
+    const interval = anyRunning ? 1_000 : 30_000;
     const handle = window.setInterval(refresh, interval);
     return () => window.clearInterval(handle);
   }, [session.status, configs, refresh]);
@@ -359,7 +402,7 @@ export default function GithubSyncConfiguration() {
                 key={cfg.id}
                 className="border rounded-md p-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
               >
-                <div className="space-y-1 min-w-0">
+                <div className="space-y-1 min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium truncate">{cfg.name}</span>
                     {statusBadge(cfg)}
@@ -389,6 +432,9 @@ export default function GithubSyncConfiguration() {
                       {cfg.status?.lastRun?.message && <> · last: {cfg.status.lastRun.message}</>}
                     </div>
                   </div>
+                  {cfg.status?.isRunning && cfg.status.progress && (
+                    <SyncProgressPanel progress={cfg.status.progress} />
+                  )}
                 </div>
                 <div className="flex gap-2 flex-wrap sm:flex-nowrap shrink-0">
                   {cfg.status?.isRunning ? (

@@ -30,12 +30,24 @@ export interface GithubSyncRun {
   message?: string;
 }
 
+export interface SyncProgress {
+  phase: 'scanning' | 'uploading';
+  total: number;
+  current: number;
+  currentArtifact?: string;
+  uploaded: number;
+  failed: number;
+  skipped: number;
+  startedAt: string;
+}
+
 export interface GithubSyncStatus {
   configId: string;
   isRunning: boolean;
   lastRun?: GithubSyncRun;
   nextRun?: string;
   syncedArtifacts: number;
+  progress?: SyncProgress;
 }
 
 export interface GithubSyncConfigInput {

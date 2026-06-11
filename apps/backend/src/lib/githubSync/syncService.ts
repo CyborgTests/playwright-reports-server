@@ -3,6 +3,7 @@ import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import type { SyncProgress } from '@playwright-reports/shared';
 import { serveReportRoute } from '../constants.js';
 import { githubSyncDb } from '../service/db/githubSync.sqlite.js';
 import { reportDb } from '../service/db/index.js';
@@ -32,9 +33,16 @@ interface RunningHandle {
   runId: string;
   controller: AbortController;
   cancelled: boolean;
+  progress: SyncProgress;
 }
 
 const running = new Map<string, RunningHandle>();
+
+export function getSyncProgress(configId: string): SyncProgress | null {
+  const handle = running.get(configId);
+  if (!handle) return null;
+  return { ...handle.progress };
+}
 
 export interface SyncResult {
   status: 'success' | 'failed' | 'cancelled' | 'skipped';
@@ -99,14 +107,28 @@ export async function runSync(
 
   const runId = randomUUID();
   const controller = new AbortController();
-  const handle: RunningHandle = { runId, controller, cancelled: false };
+  const startedAtIso = new Date().toISOString();
+  const handle: RunningHandle = {
+    runId,
+    controller,
+    cancelled: false,
+    progress: {
+      phase: 'scanning',
+      total: 0,
+      current: 0,
+      uploaded: 0,
+      failed: 0,
+      skipped: 0,
+      startedAt: startedAtIso,
+    },
+  };
   running.set(cfg.id, handle);
 
   githubSyncDb.startRun({
     id: runId,
     syncConfigId: cfg.id,
     trigger,
-    startedAt: new Date().toISOString(),
+    startedAt: startedAtIso,
   });
 
   const api = new GithubApiClient(cfg.repo, cfg.token);
@@ -142,6 +164,7 @@ export async function runSync(
       const alreadySynced = matching.some((a) => githubSyncDb.hasArtifact(String(a.id)));
       if (alreadySynced) {
         skippedSynced += matching.length;
+        handle.progress.skipped = skippedSynced + skippedExpired;
         earlyExit = `artifact already synced in run ${run.id}`;
         break;
       }
@@ -149,28 +172,39 @@ export async function runSync(
       const allExpired = matching.every((a) => a.expired);
       if (allExpired) {
         skippedExpired += matching.length;
+        handle.progress.skipped = skippedSynced + skippedExpired;
         earlyExit = `all artifacts expired in run ${run.id}`;
         break;
       }
 
       const fresh = matching.filter((a) => !a.expired);
       skippedExpired += matching.length - fresh.length;
+      handle.progress.skipped = skippedSynced + skippedExpired;
       const runDate = run.created_at.slice(0, 10);
       for (const artifact of fresh) {
         const match = artifact.name.match(pattern);
         const envMatch = match?.[1] ?? '';
         toUpload.push({ artifact, run, envMatch, runDate });
       }
+      handle.progress.total = toUpload.length;
     }
 
     toUpload.reverse();
+    handle.progress.phase = 'uploading';
+    handle.progress.total = toUpload.length;
+    handle.progress.current = 0;
+    handle.progress.currentArtifact = undefined;
 
     if (earlyExit) {
       console.log(`[github-sync] ${cfg.name}: early exit — ${earlyExit}`);
     }
 
-    for (const item of toUpload) {
+    for (let i = 0; i < toUpload.length; i++) {
+      const item = toUpload[i];
       if (handle.cancelled) throw new CancelledError();
+
+      handle.progress.current = i + 1;
+      handle.progress.currentArtifact = item.artifact.name;
 
       const matchArr = item.artifact.name.match(pattern) ?? [];
       const ctx = {
@@ -205,13 +239,16 @@ export async function runSync(
           throw new CancelledError();
         }
         failed++;
+        handle.progress.failed = failed;
         console.error(
           `[github-sync] ${cfg.name}: artifact ${item.artifact.id} failed: ${uploadErr.message}`
         );
       } else {
         uploaded++;
+        handle.progress.uploaded = uploaded;
       }
     }
+    handle.progress.currentArtifact = undefined;
 
     if (failed > 0 && uploaded === 0) {
       outcome = 'failed';
