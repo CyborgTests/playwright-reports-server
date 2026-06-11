@@ -155,7 +155,7 @@ export class CronService {
       timeoutMs: CronService.CLEANUP_TIMEOUT_MS,
       task: () => this.clearOutdatedResults(),
     });
-    if (env.DATA_STORAGE === 's3') {
+    if (env.DATA_STORAGE === 's3' || env.DATA_STORAGE === 'azure') {
       this.clearResultCacheJob = this.scheduleResultCacheJob();
     }
     this.clearNotificationLogJob = this.scheduleNotificationLogJob();
@@ -425,7 +425,7 @@ export class CronService {
 
   private static readonly CLEANUP_BATCH_SIZE = 200;
   private static readonly RESULT_CACHE_SCHEDULE = '*/15 * * * *';
-  private static readonly RESULT_CACHE_TTL_MS = 60 * 60 * 1000;
+  private static readonly RESULT_CACHE_TTL_MS = 3 * 60 * 60 * 1000;
   private static readonly NOTIFICATION_LOG_SCHEDULE = '30 3 * * *';
   private static readonly NOTIFICATION_LOG_RETENTION_DAYS = 7;
   private static readonly DB_MAINTENANCE_SCHEDULE = '45 3 * * *';

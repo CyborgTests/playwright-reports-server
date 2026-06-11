@@ -1,10 +1,15 @@
-import type { PassThrough } from 'node:stream';
+import type { PassThrough, Readable } from 'node:stream';
 import type { ReportInfo, ReportTest, UUID } from '@playwright-reports/shared';
 import type { Pagination } from './pagination.js';
 
+export interface ReadFileResult {
+  body: Readable;
+  size?: number;
+}
+
 export interface Storage {
   getServerDataInfo: () => Promise<ServerDataInfo>;
-  readFile: (targetPath: string, contentType: string | null) => Promise<string | Buffer>;
+  readFile: (targetPath: string, contentType: string | null) => Promise<ReadFileResult | null>;
   deleteResults: (resultIDs: string[]) => Promise<void>;
   deleteReports: (reports: ReportPath[]) => Promise<void>;
   saveResult: (filename: string, stream: PassThrough) => Promise<void>;

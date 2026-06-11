@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { PassThrough } from 'node:stream';
@@ -21,7 +21,9 @@ import {
 } from './constants.js';
 import { createDirectory } from './folders.js';
 import { bytesToString } from './format.js';
+import { safeZipEntryPath } from './streamUtils.js';
 import type {
+  ReadFileResult,
   ReportHistory,
   ReportMetadata,
   ReportPath,
@@ -80,10 +82,14 @@ export async function getServerDataInfo(): Promise<ServerDataInfo> {
   };
 }
 
-export async function readFile(targetPath: string, contentType: string | null) {
-  return await fs.readFile(path.join(REPORTS_FOLDER, targetPath), {
-    encoding: contentType === 'text/html' ? 'utf-8' : null,
-  });
+export async function readFile(
+  targetPath: string,
+  _contentType: string | null
+): Promise<ReadFileResult | null> {
+  const fullPath = path.join(REPORTS_FOLDER, targetPath);
+  const { result: stat, error: statErr } = await withError(fs.stat(fullPath));
+  if (statErr || !stat?.isFile()) return null;
+  return { body: createReadStream(fullPath), size: stat.size };
 }
 
 export async function deleteResults(resultsIds: string[]) {
@@ -214,17 +220,19 @@ async function uploadReportFromZipFile(
   const semaphore = new Semaphore(concurrency);
 
   const directory = await Open.file(zipFilePath);
-  const fileEntries = directory.files.filter((file) => file.type === 'File');
-  const foundIndexHtml = fileEntries.some((file) => file.path === 'index.html');
+  const fileEntries = directory.files
+    .filter((file) => file.type === 'File')
+    .map((file) => ({ file, safePath: safeZipEntryPath(file.path) }));
+  const foundIndexHtml = fileEntries.some((entry) => entry.safePath === 'index.html');
 
   if (!foundIndexHtml) {
     throw new Error('index.html not found at root of uploaded report ZIP');
   }
 
   await Promise.all(
-    fileEntries.map((file) =>
+    fileEntries.map(({ file, safePath }) =>
       semaphore.run(async () => {
-        const targetPath = path.join(reportPath, file.path);
+        const targetPath = path.join(reportPath, safePath);
         await fs.mkdir(path.dirname(targetPath), { recursive: true });
         await pipeline(file.stream(), createWriteStream(targetPath));
       })

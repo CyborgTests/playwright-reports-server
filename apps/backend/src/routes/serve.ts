@@ -8,6 +8,7 @@ import { env } from '../config/env.js';
 import { llmService } from '../lib/llm/index.js';
 import { DATA_FOLDER, REPORTS_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';
+import { streamToString } from '../lib/storage/streamUtils.js';
 import { injectTestAnalysis } from '../lib/utils/html-injector.js';
 import { extractReportIdFromPath } from '../lib/utils/url-parser.js';
 import { withError } from '../lib/withError.js';
@@ -57,56 +58,58 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: 'Not Found' });
       }
 
-      const { result: content, error } = await withError(
-        storage.readFile(targetPath, contentType || null)
-      );
+      const { result, error } = await withError(storage.readFile(targetPath, contentType || null));
 
-      if (error || !content) {
+      if (error || !result) {
         return reply.code(404).send({
           error: `Could not read file: ${error?.message || 'File not found'}`,
         });
       }
 
-      let reportHtml = content;
       const headers: Record<string, string> = {
         'Content-Type': contentType ?? 'application/octet-stream',
       };
-
-      const isLlmEnabled = llmService.isConfigured();
       const isIndexHtml = contentType === 'text/html' && targetPath.endsWith('index.html');
 
-      if (isIndexHtml) {
-        const reportId = extractReportIdFromPath(targetPath);
-
-        try {
-          if (!reportId) {
-            console.warn('[serve] missing reportId, skipping button injection');
-            throw new Error('missing reportId or testId, skipping button injection');
-          }
-
-          const testUrl = {
-            reportId,
-            // testId is resolved client-side once the user clicks into a test page.
-            testId: 'unknown',
-            isPlaywrightReport: true,
-            isTestPage: false,
-          };
-
-          reportHtml = await injectTestAnalysis(content.toString(), testUrl, isLlmEnabled);
-        } catch (injectionError) {
-          // Fall through with the original content if injection fails.
-          console.error('[serve] Failed to inject LLM analysis:', injectionError);
-        }
-      }
-
-      // Report served assets are effectively immutable per reportId.
-      // Cache on the static assets keeps browsers from refetching CSS/JS/img
-      // on every navigation; a shorter window on the injected index.html so
-      // LLM config flips reach the user within a minute even without a reload.
       if (isIndexHtml) {
         headers['Cache-Control'] = 'private, max-age=60, must-revalidate';
       } else {
         headers['Cache-Control'] = 'public, max-age=86400, must-revalidate';
+      }
+
+      if (!isIndexHtml) {
+        if (result.size !== undefined) headers['Content-Length'] = String(result.size);
+        return reply.code(200).headers(headers).send(result.body);
+      }
+
+      let reportHtml: string;
+      try {
+        reportHtml = await streamToString(result.body);
+      } catch (err) {
+        fastify.log.error({ err, targetPath }, '[serve] failed to buffer index.html');
+        return reply.code(500).send({ error: 'failed to read report index' });
+      }
+
+      const isLlmEnabled = llmService.isConfigured();
+      const reportId = extractReportIdFromPath(targetPath);
+      if (reportId) {
+        const testUrl = {
+          reportId,
+          // testId is resolved client-side once the user clicks into a test page.
+          testId: 'unknown',
+          isPlaywrightReport: true,
+          isTestPage: false,
+        };
+        const { result: injected, error: injectionError } = await withError(
+          injectTestAnalysis(reportHtml, testUrl, isLlmEnabled)
+        );
+        if (injectionError) {
+          console.error('[serve] Failed to inject LLM analysis:', injectionError);
+        } else if (injected) {
+          reportHtml = injected;
+        }
+      } else {
+        console.warn('[serve] missing reportId, skipping button injection');
       }
 
       return reply.code(200).headers(headers).send(reportHtml);

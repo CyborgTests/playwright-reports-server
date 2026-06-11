@@ -21,6 +21,7 @@ import {
   storage,
 } from '../storage/index.js';
 import type { S3 } from '../storage/s3.js';
+import { CoordinatedTee } from '../storage/streamUtils.js';
 import type { Report } from '../storage/types.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
@@ -122,14 +123,36 @@ class Service {
 
     const { reportId, report } = await storage.generateReport(resultsIds, metadataWithVersion);
 
-    reportDb.onCreated(report);
-    reportResultsDb.linkReportToResults(reportId, resultsIds);
+    const rollbackStorage = async (reason: string): Promise<void> => {
+      console.error(`[service] generateReport - rolling back storage for ${reportId}: ${reason}`);
+      await withError(storage.deleteReports([{ reportID: reportId, project: report.project }]));
+    };
+
+    const { error: onCreatedErr } = await withError(
+      Promise.resolve().then(() => {
+        reportDb.onCreated(report);
+        reportResultsDb.linkReportToResults(reportId, resultsIds);
+      })
+    );
+    if (onCreatedErr) {
+      await rollbackStorage(`reportDb.onCreated failed: ${onCreatedErr.message}`);
+      throw onCreatedErr;
+    }
 
     const { error: testsErr } = await withError(testManagementService.processReport(report));
     if (testsErr) {
       console.error(
         `[service] generateReport - failed to process report tests: ${testsErr instanceof Error ? testsErr?.message : String(testsErr)}`
       );
+      try {
+        reportDb.onDeleted([reportId]);
+      } catch (dbErr) {
+        console.error(
+          `[service] generateReport - DB rollback failed for ${reportId}: ${dbErr instanceof Error ? dbErr.message : String(dbErr)}`
+        );
+      }
+      await rollbackStorage(`processReport failed: ${testsErr.message}`);
+      throw testsErr;
     }
 
     this.dispatchNotificationsForReport(report).catch((err) => {
@@ -257,9 +280,10 @@ class Service {
       shouldStoreLocalCopy?: boolean;
     }
   ) {
-    // Forks the upload to a local temp copy (remote-storage modes only) so it can be reused without
-    // re-downloading. Writes go to <filename>.part and are renamed to <filename> only after the
-    // upload succeeds, so a partial blob is never visible to generateReport.
+    // Forks the upload to a local temp copy (remote-storage modes only) so
+    // it can be reused without re-downloading. Writes go to <filename>.part
+    // and are renamed to <filename> only after the upload succeeds, so a
+    // partial blob is never visible to generateReport.
     const uploadStream = new PassThrough({ highWaterMark: DEFAULT_STREAM_CHUNK_SIZE });
 
     let onUploadSuccess: (() => Promise<void>) | undefined;
@@ -268,12 +292,9 @@ class Service {
     const usesRemoteStorage = env.DATA_STORAGE === 's3' || env.DATA_STORAGE === 'azure';
 
     if (options?.shouldStoreLocalCopy && usesRemoteStorage) {
-      const localCopyStream = new PassThrough({ highWaterMark: DEFAULT_STREAM_CHUNK_SIZE });
-      stream.pipe(localCopyStream);
       const finalPath = path.join(TMP_FOLDER, 'results', filename);
       const partialPath = `${finalPath}.part`;
       const writeStream = createWriteStream(partialPath);
-      localCopyStream.pipe(writeStream);
 
       let writeFailed = false;
       writeStream.on('error', (error) => {
@@ -285,6 +306,11 @@ class Service {
         writeStream.on('finish', () => resolve());
         writeStream.on('close', () => resolve());
       });
+
+      const tee = new CoordinatedTee(writeStream, uploadStream, {
+        highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
+      });
+      stream.pipe(tee);
 
       onUploadSuccess = async () => {
         await writeSettled;
@@ -302,9 +328,9 @@ class Service {
         await writeSettled;
         await withError(fs.unlink(partialPath));
       };
+    } else {
+      stream.pipe(uploadStream);
     }
-
-    stream.pipe(uploadStream);
 
     try {
       if (!options?.presignedUrl) {

@@ -1,7 +1,7 @@
 import { randomUUID, type UUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { PassThrough } from 'node:stream';
+import { PassThrough, type Readable } from 'node:stream';
 import {
   BlobSASPermissions,
   BlobServiceClient,
@@ -9,6 +9,7 @@ import {
   StorageSharedKeyCredential,
 } from '@azure/storage-blob';
 import getFolderSize from 'get-folder-size';
+import mime from 'mime';
 import { Open } from 'unzipper';
 import { env } from '../../config/env.js';
 import { withError } from '../../lib/withError.js';
@@ -26,7 +27,9 @@ import {
   TMP_FOLDER,
 } from './constants.js';
 import { bytesToString } from './format.js';
+import { safeZipEntryPath } from './streamUtils.js';
 import type {
+  ReadFileResult,
   ReportHistory,
   ReportMetadata,
   ReportPath,
@@ -88,7 +91,7 @@ export class AzureBlob implements Storage {
     }
   }
 
-  private async read(targetPath: string, contentType?: string | null) {
+  private async readStream(targetPath: string): Promise<ReadFileResult | null> {
     await this.ensureContainerExists();
 
     const remotePath = targetPath.includes(REPORTS_BUCKET)
@@ -96,15 +99,16 @@ export class AzureBlob implements Storage {
       : `${REPORTS_BUCKET}/${targetPath}`;
 
     const blobClient = this.container.getBlobClient(remotePath);
-    const { result: response, error } = await withError(blobClient.downloadToBuffer());
+    const { result: response, error } = await withError(blobClient.download());
 
-    if (error) {
-      return { result: null, error };
+    if (error || !response?.readableStreamBody) {
+      if (error) console.error(`[azure] failed to read file ${targetPath}: ${error.message}`);
+      return null;
     }
 
     return {
-      result: contentType === 'text/html' ? response?.toString('utf-8') : response,
-      error: null,
+      body: response.readableStreamBody as unknown as Readable,
+      size: typeof response.contentLength === 'number' ? response.contentLength : undefined,
     };
   }
 
@@ -215,15 +219,8 @@ export class AzureBlob implements Storage {
     };
   }
 
-  async readFile(targetPath: string, contentType: string | null): Promise<string | Buffer> {
-    const { result, error } = await this.read(targetPath, contentType);
-
-    if (error) {
-      console.error(`[azure] failed to read file ${targetPath}: ${error.message}`);
-      throw new Error(`[azure] failed to read file: ${error.message}`);
-    }
-
-    return result!;
+  async readFile(targetPath: string, _contentType: string | null): Promise<ReadFileResult | null> {
+    return this.readStream(targetPath);
   }
 
   async deleteResults(resultIDs: string[]): Promise<void> {
@@ -320,8 +317,13 @@ export class AzureBlob implements Storage {
     }
 
     const blockBlobClient = this.container.getBlockBlobClient(remotePath);
+    const contentType = mime.getType(remotePath) ?? 'application/octet-stream';
 
-    const { error } = await withError(blockBlobClient.uploadFile(filePath));
+    const { error } = await withError(
+      blockBlobClient.uploadFile(filePath, {
+        blobHTTPHeaders: { blobContentType: contentType },
+      })
+    );
 
     if (error) {
       console.error(`[azure] failed to upload file: ${error.message}, retrying in 3s...`);
@@ -360,6 +362,19 @@ export class AzureBlob implements Storage {
       console.error(`[azure] failed to create temporary folder: ${mkdirTempError.message}`);
     }
 
+    try {
+      return await this.generateReportInner(reportId, resultsIds, tempFolder, metadata);
+    } finally {
+      await this.clearTempFolders(reportId);
+    }
+  }
+
+  private async generateReportInner(
+    reportId: UUID,
+    resultsIds: string[],
+    tempFolder: string,
+    metadata?: ReportMetadata
+  ): Promise<{ reportId: UUID; reportPath: string; report: ReportHistory }> {
     for (const resultId of resultsIds) {
       const fileName = `${resultId}.zip`;
 
@@ -417,22 +432,56 @@ export class AzureBlob implements Storage {
 
     if (parseReportMetadataError) console.error(parseReportMetadataError.message);
 
-    const remotePath = path.posix.join(REPORTS_BUCKET, reportId);
-
-    const { error: uploadError } = await withError(this.uploadReport(reportPath, remotePath));
-
-    await this.clearTempFolders(reportId);
-
-    if (uploadError) {
-      await this.cleanupGeneratedReport(reportId);
-      throw new Error(`[azure] failed to upload report: ${uploadError.message}`);
-    }
+    await this.uploadReportAtomic(reportPath, path.posix.join(REPORTS_BUCKET, reportId));
 
     return {
       reportId,
       reportPath,
       report: (info ?? metadata ?? {}) as unknown as ReportHistory,
     };
+  }
+
+  /** Upload a generated report directory under a `.tmp` prefix first, then
+   *  server-side copy to the canonical prefix. On failure, the tmp prefix
+   *  is purged so the container never carries half a report under the real
+   *  reportId. */
+  private async uploadReportAtomic(reportPath: string, remotePath: string): Promise<void> {
+    const tmpPrefix = `${remotePath}.tmp`;
+    const { error: uploadError } = await withError(this.uploadReport(reportPath, tmpPrefix));
+    if (uploadError) {
+      await withError(this.clearPrefix(tmpPrefix));
+      throw new Error(`[azure] failed to upload report: ${uploadError.message}`);
+    }
+    const { error: commitError } = await withError(this.commitPrefix(tmpPrefix, remotePath));
+    if (commitError) {
+      await withError(this.clearPrefix(tmpPrefix));
+      await withError(this.clearPrefix(remotePath));
+      throw new Error(`[azure] failed to commit report: ${commitError.message}`);
+    }
+  }
+
+  private async commitPrefix(srcPrefix: string, dstPrefix: string): Promise<void> {
+    const srcBlobs = await this.listBlobsUnderPrefix(srcPrefix);
+    await processWithConcurrency(srcBlobs, this.batchSize, async (srcKey) => {
+      const dstKey = `${dstPrefix}${srcKey.slice(srcPrefix.length)}`;
+      const srcUrl = this.container.getBlobClient(srcKey).url;
+      await this.container.getBlobClient(dstKey).syncCopyFromURL(srcUrl);
+    });
+    await this.clearPrefix(srcPrefix);
+  }
+
+  private async clearPrefix(prefix: string): Promise<void> {
+    const keys = await this.listBlobsUnderPrefix(prefix);
+    await this.clear(...keys);
+  }
+
+  private async listBlobsUnderPrefix(prefix: string): Promise<string[]> {
+    const keys: string[] = [];
+    const normalized = prefix.endsWith('/') ? prefix : `${prefix}/`;
+    for await (const blob of this.container.listBlobsFlat({ prefix: normalized })) {
+      keys.push(blob.name);
+    }
+    return keys;
   }
 
   private async parseReportMetadata(
@@ -479,17 +528,19 @@ export class AzureBlob implements Storage {
 
     const semaphore = new Semaphore(this.batchSize);
     const directory = await Open.file(zipFilePath);
-    const fileEntries = directory.files.filter((file) => file.type === 'File');
-    const indexFile = fileEntries.find((file) => file.path === 'index.html');
+    const fileEntries = directory.files
+      .filter((file) => file.type === 'File')
+      .map((file) => ({ file, safePath: safeZipEntryPath(file.path) }));
+    const indexFile = fileEntries.find((entry) => entry.safePath === 'index.html');
 
     if (!indexFile) {
       throw new Error('index.html not found at root of uploaded report ZIP');
     }
 
     const uploadResults = await Promise.all(
-      fileEntries.map((file) =>
+      fileEntries.map(({ file, safePath }) =>
         semaphore.run(async () => {
-          const blobKey = path.posix.join(remotePath, file.path);
+          const blobKey = path.posix.join(remotePath, safePath);
 
           let entrySize = 0;
           const countingPassThrough = new PassThrough({
@@ -502,7 +553,11 @@ export class AzureBlob implements Storage {
           file.stream().pipe(countingPassThrough);
 
           const blockBlobClient = this.container.getBlockBlobClient(blobKey);
-          await blockBlobClient.uploadStream(countingPassThrough);
+          await blockBlobClient.uploadStream(countingPassThrough, undefined, undefined, {
+            blobHTTPHeaders: {
+              blobContentType: mime.getType(blobKey) ?? 'application/octet-stream',
+            },
+          });
 
           return { size: entrySize };
         })
@@ -511,7 +566,7 @@ export class AzureBlob implements Storage {
 
     const totalSizeBytes = uploadResults.reduce((sum, { size }) => sum + size, 0);
 
-    const htmlContent = (await indexFile.buffer()).toString('utf-8');
+    const htmlContent = (await indexFile.file.buffer()).toString('utf-8');
     const info = await this.parseReportMetadata(
       reportId,
       remotePath,

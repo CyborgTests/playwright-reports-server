@@ -4,10 +4,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PassThrough, type Readable } from 'node:stream';
 import {
-  AbortMultipartUploadCommand,
-  CompleteMultipartUploadCommand,
+  CopyObjectCommand,
   CreateBucketCommand,
-  CreateMultipartUploadCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
@@ -15,11 +13,11 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
-  UploadPartCommand,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import getFolderSize from 'get-folder-size';
+import mime from 'mime';
 import { Open } from 'unzipper';
 import { env } from '../../config/env.js';
 import { withError } from '../../lib/withError.js';
@@ -37,7 +35,9 @@ import {
   TMP_FOLDER,
 } from './constants.js';
 import { bytesToString } from './format.js';
+import { safeZipEntryPath } from './streamUtils.js';
 import type {
+  ReadFileResult,
   ReportHistory,
   ReportMetadata,
   ReportPath,
@@ -133,7 +133,7 @@ export class S3 implements Storage {
     console.error('[s3] failed to check that bucket exists:', error);
   }
 
-  private async read(targetPath: string, contentType?: string | null) {
+  private async readStream(targetPath: string): Promise<ReadFileResult | null> {
     await this.ensureBucketExist();
 
     const remotePath = targetPath.includes(REPORTS_BUCKET)
@@ -149,36 +149,14 @@ export class S3 implements Storage {
       )
     );
 
-    if (error ?? !response?.Body) {
-      return { result: null, error };
+    if (error || !response?.Body) {
+      if (error) console.error(`[s3] failed to read file ${targetPath}: ${error.message}`);
+      return null;
     }
 
-    const stream = response.Body as Readable;
-
-    const readStream = new Promise<Buffer>((resolve, reject) => {
-      const chunks: Uint8Array[] = [];
-
-      stream.on('data', (chunk: Uint8Array) => {
-        chunks.push(chunk);
-      });
-
-      stream.on('end', () => {
-        const fullContent = Buffer.concat(chunks);
-
-        resolve(fullContent);
-      });
-
-      stream.on('error', (error) => {
-        console.error(`[s3] failed to read stream: ${error.message}`);
-        reject(error);
-      });
-    });
-
-    const { result, error: readError } = await withError(readStream);
-
     return {
-      result: contentType === 'text/html' ? result?.toString('utf-8') : result,
-      error: error ?? readError ?? null,
+      body: response.Body as Readable,
+      size: typeof response.ContentLength === 'number' ? response.ContentLength : undefined,
     };
   }
 
@@ -333,15 +311,8 @@ export class S3 implements Storage {
     };
   }
 
-  async readFile(targetPath: string, contentType: string | null): Promise<string | Buffer> {
-    const { result, error } = await this.read(targetPath, contentType);
-
-    if (error) {
-      console.error(`[s3] failed to read file ${targetPath}: ${error.message}`);
-      throw new Error(`[s3] failed to read file: ${error.message}`);
-    }
-
-    return result!;
+  async readFile(targetPath: string, _contentType: string | null): Promise<ReadFileResult | null> {
+    return this.readStream(targetPath);
   }
 
   async deleteResults(resultIDs: string[]): Promise<void> {
@@ -405,139 +376,25 @@ export class S3 implements Storage {
   async saveResult(filename: string, stream: PassThrough) {
     await this.ensureBucketExist();
 
-    const chunkSizeMB = env.S3_MULTIPART_CHUNK_SIZE_MB;
-    const chunkSize = chunkSizeMB * 1024 * 1024;
-
+    const chunkSize = env.S3_MULTIPART_CHUNK_SIZE_MB * 1024 * 1024;
     const remotePath = path.join(RESULTS_BUCKET, filename);
 
-    const { UploadId: uploadID } = await this.client.send(
-      new CreateMultipartUploadCommand({
+    const upload = new Upload({
+      client: this.client,
+      params: {
         Bucket: this.bucket,
         Key: remotePath,
-      })
-    );
-
-    if (!uploadID) {
-      throw new Error('[s3] failed to initiate multipart upload: no UploadId received');
-    }
-
-    const uploadedParts: { PartNumber: number; ETag: string }[] = [];
-    let partNumber = 1;
-    const chunks: Buffer[] = [];
-    let currentSize = 0;
+        Body: stream,
+      },
+      partSize: chunkSize,
+      queueSize: this.batchSize,
+    });
 
     try {
-      for await (const chunk of stream) {
-        chunks.push(chunk);
-        currentSize += chunk.length;
-
-        while (currentSize >= chunkSize) {
-          const partData = Buffer.allocUnsafe(chunkSize);
-          let copied = 0;
-
-          while (copied < chunkSize && chunks.length > 0) {
-            const currentChunk = chunks[0];
-            const needed = chunkSize - copied;
-            const available = currentChunk.length;
-
-            if (available <= needed) {
-              currentChunk.copy(partData, copied);
-              copied += available;
-              chunks.shift();
-            } else {
-              currentChunk.copy(partData, copied, 0, needed);
-              copied += needed;
-              chunks[0] = currentChunk.subarray(needed);
-            }
-          }
-
-          currentSize -= chunkSize;
-
-          stream.pause();
-
-          const uploadPartResult = await this.client.send(
-            new UploadPartCommand({
-              Bucket: this.bucket,
-              Key: remotePath,
-              UploadId: uploadID,
-              PartNumber: partNumber,
-              Body: partData,
-            })
-          );
-
-          // Zero the buffer so GC can reclaim it sooner.
-          partData.fill(0);
-
-          stream.resume();
-
-          if (!uploadPartResult.ETag) {
-            throw new Error(`[s3] failed to upload part ${partNumber}: no ETag received`);
-          }
-
-          uploadedParts.push({
-            PartNumber: partNumber,
-            ETag: uploadPartResult.ETag,
-          });
-
-          partNumber++;
-        }
-      }
-
-      if (currentSize > 0) {
-        const finalPart = Buffer.allocUnsafe(currentSize);
-        let offset = 0;
-
-        for (const chunk of chunks) {
-          chunk.copy(finalPart, offset);
-          offset += chunk.length;
-        }
-
-        const uploadPartResult = await this.client.send(
-          new UploadPartCommand({
-            Bucket: this.bucket,
-            Key: remotePath,
-            UploadId: uploadID,
-            PartNumber: partNumber,
-            Body: finalPart,
-          })
-        );
-
-        chunks.length = 0;
-        finalPart.fill(0);
-
-        if (!uploadPartResult.ETag) {
-          throw new Error(`[s3] failed to upload final part ${partNumber}: no ETag received`);
-        }
-
-        uploadedParts.push({
-          PartNumber: partNumber,
-          ETag: uploadPartResult.ETag,
-        });
-      }
-
-      await this.client.send(
-        new CompleteMultipartUploadCommand({
-          Bucket: this.bucket,
-          Key: remotePath,
-          UploadId: uploadID,
-          MultipartUpload: {
-            Parts: uploadedParts,
-          },
-        })
-      );
-
-      console.log(`[s3] uploaded ${filename} (${uploadedParts.length} parts)`);
+      await upload.done();
+      console.log(`[s3] uploaded ${filename}`);
     } catch (error) {
-      console.error(`[s3] multipart upload failed, aborting: ${(error as Error).message}`);
-
-      await this.client.send(
-        new AbortMultipartUploadCommand({
-          Bucket: this.bucket,
-          Key: remotePath,
-          UploadId: uploadID,
-        })
-      );
-
+      console.error(`[s3] multipart upload failed: ${(error as Error).message}`);
       throw error;
     }
   }
@@ -581,6 +438,7 @@ export class S3 implements Storage {
     }
 
     const fileStream = createReadStream(filePath);
+    const contentType = mime.getType(remotePath) ?? 'application/octet-stream';
 
     const { error } = await withError(
       this.client.send(
@@ -588,6 +446,7 @@ export class S3 implements Storage {
           Bucket: this.bucket,
           Key: remotePath,
           Body: fileStream,
+          ContentType: contentType,
         })
       )
     );
@@ -629,6 +488,19 @@ export class S3 implements Storage {
       console.error(`[s3] failed to create temporary folder: ${mkdirTempError.message}`);
     }
 
+    try {
+      return await this.generateReportInner(reportId, resultsIds, tempFolder, metadata);
+    } finally {
+      await this.clearTempFolders(reportId);
+    }
+  }
+
+  private async generateReportInner(
+    reportId: UUID,
+    resultsIds: string[],
+    tempFolder: string,
+    metadata?: ReportMetadata
+  ): Promise<{ reportId: UUID; reportPath: string; report: ReportHistory }> {
     for (const resultId of resultsIds) {
       const fileName = `${resultId}.zip`;
 
@@ -719,22 +591,73 @@ export class S3 implements Storage {
 
     if (parseReportMetadataError) console.error(parseReportMetadataError.message);
 
-    const remotePath = path.join(REPORTS_BUCKET, reportId);
-
-    const { error: uploadError } = await withError(this.uploadReport(reportPath, remotePath));
-
-    await this.clearTempFolders(reportId);
-
-    if (uploadError) {
-      await this.cleanupGeneratedReport(reportId);
-      throw new Error(`[s3] failed to upload report: ${uploadError.message}`);
-    }
+    await this.uploadReportAtomic(reportPath, path.join(REPORTS_BUCKET, reportId));
 
     return {
       reportId,
       reportPath,
       report: (info ?? metadata ?? {}) as unknown as ReportHistory,
     };
+  }
+
+  /** Upload a generated report directory to S3 under a `.tmp/` prefix first,
+   *  then "commit" by copying objects to the canonical prefix and deleting
+   *  the temp objects. On failure, the temp prefix is purged so the bucket
+   *  never carries half a report under the real reportId. */
+  private async uploadReportAtomic(reportPath: string, remotePath: string): Promise<void> {
+    const tmpPrefix = `${remotePath}.tmp`;
+    const { error: uploadError } = await withError(this.uploadReport(reportPath, tmpPrefix));
+    if (uploadError) {
+      await withError(this.clearPrefix(tmpPrefix));
+      throw new Error(`[s3] failed to upload report: ${uploadError.message}`);
+    }
+    const { error: commitError } = await withError(this.commitPrefix(tmpPrefix, remotePath));
+    if (commitError) {
+      await withError(this.clearPrefix(tmpPrefix));
+      await withError(this.clearPrefix(remotePath));
+      throw new Error(`[s3] failed to commit report: ${commitError.message}`);
+    }
+  }
+
+  private async commitPrefix(srcPrefix: string, dstPrefix: string): Promise<void> {
+    const srcObjects = await this.listObjectsUnderPrefix(srcPrefix);
+    await processWithConcurrency(srcObjects, this.batchSize, async (srcKey) => {
+      const dstKey = `${dstPrefix}${srcKey.slice(srcPrefix.length)}`;
+      await this.client.send(
+        new CopyObjectCommand({
+          Bucket: this.bucket,
+          CopySource: encodeURIComponent(`${this.bucket}/${srcKey}`),
+          Key: dstKey,
+          ContentType: mime.getType(dstKey) ?? 'application/octet-stream',
+          MetadataDirective: 'REPLACE',
+        })
+      );
+    });
+    await this.clearPrefix(srcPrefix);
+  }
+
+  private async clearPrefix(prefix: string): Promise<void> {
+    const objects = await this.listObjectsUnderPrefix(prefix);
+    await this.clear(...objects);
+  }
+
+  private async listObjectsUnderPrefix(prefix: string): Promise<string[]> {
+    const keys: string[] = [];
+    let continuationToken: string | undefined;
+    do {
+      const response = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix.endsWith('/') ? prefix : `${prefix}/`,
+          ContinuationToken: continuationToken,
+        })
+      );
+      for (const obj of response.Contents ?? []) {
+        if (obj.Key) keys.push(obj.Key);
+      }
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    } while (continuationToken);
+    return keys;
   }
 
   private async parseReportMetadata(
@@ -779,17 +702,19 @@ export class S3 implements Storage {
 
     const semaphore = new Semaphore(this.batchSize);
     const directory = await Open.file(zipFilePath);
-    const fileEntries = directory.files.filter((file) => file.type === 'File');
-    const indexFile = fileEntries.find((file) => file.path === 'index.html');
+    const fileEntries = directory.files
+      .filter((file) => file.type === 'File')
+      .map((file) => ({ file, safePath: safeZipEntryPath(file.path) }));
+    const indexFile = fileEntries.find((entry) => entry.safePath === 'index.html');
 
     if (!indexFile) {
       throw new Error('index.html not found at root of uploaded report ZIP');
     }
 
     const uploadResults = await Promise.all(
-      fileEntries.map((file) =>
+      fileEntries.map(({ file, safePath }) =>
         semaphore.run(async () => {
-          const s3Key = path.join(remotePath, file.path);
+          const s3Key = path.posix.join(remotePath, safePath);
 
           let entrySize = 0;
           const countingPassThrough = new PassThrough({
@@ -807,6 +732,7 @@ export class S3 implements Storage {
               Bucket: this.bucket,
               Key: s3Key,
               Body: countingPassThrough,
+              ContentType: mime.getType(s3Key) ?? 'application/octet-stream',
             },
           }).done();
 
@@ -821,7 +747,7 @@ export class S3 implements Storage {
 
     const totalSizeBytes = uploadResults.reduce((sum, { size }) => sum + size, 0);
 
-    const htmlContent = (await indexFile.buffer()).toString('utf-8');
+    const htmlContent = (await indexFile.file.buffer()).toString('utf-8');
     const info = await this.parseReportMetadata(
       reportId,
       remotePath,
