@@ -171,6 +171,34 @@ function parseProjectAnalysisFromMarkdown(text: string): ProjectAnalysisStructur
   return { verdict, summary, sections: enriched };
 }
 
+const LABELED_TEST_TAG_RE =
+  /(?:`([^`\n]+)`|\*\*([^*\n]+)\*\*)\s*\[testId:\s*([A-Za-z0-9_-]+)\s*\]/g;
+const LABELED_REPORT_TAG_RE =
+  /(?:`([^`\n]+)`|\*\*([^*\n]+)\*\*)\s*\[reportId:\s*([A-Za-z0-9_-]+)\s*\]/g;
+const BARE_ID_TAG_RE = /\s*\[(?:test|report)Id:\s*[A-Za-z0-9_-]+\s*\]/g;
+
+export function linkifyDataBlockTags(
+  text: string,
+  opts: {
+    validTestIds: ReadonlySet<string>;
+    validReportIds: ReadonlySet<string>;
+    project?: string;
+  }
+): string {
+  const projectSuffix = opts.project ? `?project=${encodeURIComponent(opts.project)}` : '';
+  let out = text.replace(LABELED_TEST_TAG_RE, (_m, backtick, bold, tid) => {
+    const label = String(backtick ?? bold).trim();
+    if (!opts.validTestIds.has(tid)) return label;
+    return `[${label}](pwrs:test/${tid}${projectSuffix})`;
+  });
+  out = out.replace(LABELED_REPORT_TAG_RE, (_m, backtick, bold, rid) => {
+    const label = String(backtick ?? bold).trim();
+    if (!opts.validReportIds.has(rid)) return label;
+    return `[${label}](pwrs:report/${rid})`;
+  });
+  return out.replace(BARE_ID_TAG_RE, '');
+}
+
 /**
  * Strip code refs that point to data the UI can't resolve into a link:
  *  - `kind: 'test'` refs whose testId isn't in `validTestIds`.

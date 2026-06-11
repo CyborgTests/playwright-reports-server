@@ -3,6 +3,7 @@ import path from 'node:path';
 import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import { llmService } from '../llm/index.js';
 import {
+  linkifyDataBlockTags,
   parseProjectAnalysisFromText,
   pruneInvalidCodeRefs,
   renderProjectAnalysisAsMarkdown,
@@ -1229,19 +1230,22 @@ class LlmAnalysisQueue {
       temperature: projectTemp,
     });
 
-    // The model emits plain markdown with a `**Verdict:** …` opening line,
-    // an executive summary paragraph, and up to 4 `## Heading` sections.
-    let structured = parseProjectAnalysisFromText(response.content);
+    const validReportIds = new Set(latestReports.map((r) => r.reportID));
+    const validTestIds = new Set<string>();
+    for (const c of clusters) {
+      for (const t of c.affectedTests) validTestIds.add(t.testId);
+    }
+
+    // recover any data-block that model copied as-is instead of rendering as links
+    const linkified = linkifyDataBlockTags(response.content, {
+      validTestIds,
+      validReportIds,
+      project: project === 'all' ? undefined : project,
+    });
+
+    let structured = parseProjectAnalysisFromText(linkified);
 
     if (structured) {
-      // Drop refs pointing at testIds / reportIds the model fabricated — those
-      // would render as 404 links. Valid IDs are the report IDs in the window
-      // and the testIds the aggregator surfaced as affected by some root cause.
-      const validReportIds = new Set(latestReports.map((r) => r.reportID));
-      const validTestIds = new Set<string>();
-      for (const c of clusters) {
-        for (const t of c.affectedTests) validTestIds.add(t.testId);
-      }
       structured = pruneInvalidCodeRefs(structured, validTestIds, validReportIds);
 
       // Inject `project` into test-kind code refs so the test detail page's
