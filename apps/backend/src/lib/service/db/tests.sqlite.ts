@@ -466,7 +466,7 @@ export class TestDatabase {
           .compile()
       : this.k
           .updateTable('test_runs')
-          .set({ quarantined: quarantinedInt, fixedAt: sql`CURRENT_TIMESTAMP` as never })
+          .set({ quarantined: quarantinedInt, fixedAt: new Date().toISOString() })
           .where('runId', '=', latestRun.runId)
           .compile();
     const result = this.db.prepare(compiled.sql).run(...compiled.parameters);

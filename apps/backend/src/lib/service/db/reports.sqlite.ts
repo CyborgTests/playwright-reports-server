@@ -192,7 +192,7 @@ export class ReportDatabase {
           metadata: eb.ref('excluded.metadata'),
           files: eb.ref('excluded.files'),
           passRate: eb.ref('excluded.passRate'),
-          updatedAt: sql`CURRENT_TIMESTAMP`,
+          updatedAt: new Date().toISOString(),
         }))
       )
       .compile();
@@ -250,7 +250,7 @@ export class ReportDatabase {
           .set({
             project: nextProject,
             metadata: JSON.stringify(metadata),
-            updatedAt: sql`CURRENT_TIMESTAMP` as never,
+            updatedAt: new Date().toISOString(),
           })
           .where('reportID', '=', id)
           .compile();
@@ -271,7 +271,7 @@ export class ReportDatabase {
                )
                SELECT DISTINCT
                  t.testId, t.fileId, ?, t.filePath, t.title,
-                 CURRENT_TIMESTAMP,
+                 ?,
                  NULL, NULL, NULL, NULL, 0, NULL, 0, NULL, NULL, NULL, NULL
                FROM tests t
                WHERE t.project = ?
@@ -280,7 +280,7 @@ export class ReportDatabase {
                    WHERE regressedAtReportId = ? OR recoveredAtReportId = ?
                  )`
             )
-            .run(nextProject, row.project, id, id);
+            .run(nextProject, new Date().toISOString(), row.project, id, id);
           this.db
             .prepare(
               `UPDATE regressions SET project = ?

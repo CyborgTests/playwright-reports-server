@@ -6,6 +6,7 @@ import { migration004AddFlakinessResetAt } from './004_add_flakiness_reset_at.js
 import { migration005AddRegressionsTable } from './005_add_regressions_table.js';
 import { migration006BackfillRegressions } from './006_backfill_regressions.js';
 import { migration007AddClusterResolutionState } from './007_add_cluster_resolution_state.js';
+import { migration008NormalizeDateFormats } from './008_normalize_date_formats.js';
 
 export interface Migration {
   id: string;
@@ -25,6 +26,7 @@ const MIGRATIONS: Migration[] = [
   migration005AddRegressionsTable,
   migration006BackfillRegressions,
   migration007AddClusterResolutionState,
+  migration008NormalizeDateFormats,
 ];
 
 export function runMigrations(db: Database.Database): void {

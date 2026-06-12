@@ -60,7 +60,7 @@ export const REPORT_RESULTS_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS report_results (
     reportId TEXT NOT NULL,
     resultId TEXT NOT NULL,
-    createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     PRIMARY KEY (reportId, resultId),
     FOREIGN KEY (reportId) REFERENCES reports(reportID) ON DELETE CASCADE,
     FOREIGN KEY (resultId) REFERENCES results(resultID) ON DELETE CASCADE
@@ -78,7 +78,7 @@ export const RESULTS_SCHEMA_SQL = `
     size TEXT,
     sizeBytes INTEGER,
     metadata TEXT,
-    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+    updatedAt TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   );
   CREATE INDEX IF NOT EXISTS idx_results_project ON results(project);
   CREATE INDEX IF NOT EXISTS idx_results_createdAt ON results(createdAt DESC);
@@ -100,7 +100,7 @@ export const REPORTS_SCHEMA_SQL = `
     metadata TEXT,
     files TEXT,
     passRate REAL,
-    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+    updatedAt TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   );
   CREATE INDEX IF NOT EXISTS idx_reports_project ON reports(project);
   CREATE INDEX IF NOT EXISTS idx_reports_createdAt ON reports(createdAt DESC);
