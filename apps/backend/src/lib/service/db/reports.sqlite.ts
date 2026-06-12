@@ -54,16 +54,18 @@ export class ReportDatabase {
   private readonly db = getDatabase();
 
   public getExpiredIds(cutoffISO: string, limit: number): string[] {
-    const compiled = this.k
-      .selectFrom('reports')
-      .select('reportID')
-      .where('createdAt', '<', cutoffISO)
-      .orderBy('createdAt', 'asc')
-      .limit(limit)
-      .compile();
-    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
-      reportID: string;
-    }>;
+    const rows = this.db
+      .prepare(
+        `SELECT reportID FROM reports
+         WHERE createdAt < ?
+           AND reportID NOT IN (
+             SELECT regressedAtReportId FROM regressions
+             WHERE recoveredAtReportId IS NULL
+           )
+         ORDER BY createdAt ASC
+         LIMIT ?`
+      )
+      .all(cutoffISO, limit) as Array<{ reportID: string }>;
     return rows.map((row) => row.reportID);
   }
 
@@ -253,6 +255,39 @@ export class ReportDatabase {
           .where('reportID', '=', id)
           .compile();
         this.db.prepare(compiled.sql).run(...compiled.parameters);
+
+        if (setProject && nextProject !== row.project) {
+          this.db
+            .prepare('UPDATE test_runs SET project = ? WHERE reportId = ?')
+            .run(nextProject, id);
+          this.db
+            .prepare(
+              `INSERT OR IGNORE INTO tests (
+                 testId, fileId, project, filePath, title, createdAt,
+                 latestRunAt, latestOutcome, latestNonSkippedAt,
+                 flakinessScore, quarantined, quarantineReason,
+                 totalRuns, recentPassRate, avgDuration,
+                 latestFailureCategory, flakinessResetAt
+               )
+               SELECT DISTINCT
+                 t.testId, t.fileId, ?, t.filePath, t.title,
+                 CURRENT_TIMESTAMP,
+                 NULL, NULL, NULL, NULL, 0, NULL, 0, NULL, NULL, NULL, NULL
+               FROM tests t
+               WHERE t.project = ?
+                 AND (t.testId, t.fileId) IN (
+                   SELECT testId, fileId FROM regressions
+                   WHERE regressedAtReportId = ? OR recoveredAtReportId = ?
+                 )`
+            )
+            .run(nextProject, row.project, id, id);
+          this.db
+            .prepare(
+              `UPDATE regressions SET project = ?
+               WHERE regressedAtReportId = ? OR recoveredAtReportId = ?`
+            )
+            .run(nextProject, id, id);
+        }
       }
     });
     applyAll();

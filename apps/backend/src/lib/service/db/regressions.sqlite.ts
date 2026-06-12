@@ -530,6 +530,124 @@ export class RegressionsDatabase {
     return out;
   }
 
+  public detailsForReports(
+    reportIds: string[],
+    perSideLimit = 10
+  ): Map<
+    string,
+    {
+      newHere: Array<{
+        testId: string;
+        fileId: string;
+        project: string;
+        title: string;
+        filePath: string;
+      }>;
+      resolvedHere: Array<{
+        testId: string;
+        fileId: string;
+        project: string;
+        title: string;
+        filePath: string;
+      }>;
+    }
+  > {
+    const out = new Map<
+      string,
+      {
+        newHere: Array<{
+          testId: string;
+          fileId: string;
+          project: string;
+          title: string;
+          filePath: string;
+        }>;
+        resolvedHere: Array<{
+          testId: string;
+          fileId: string;
+          project: string;
+          title: string;
+          filePath: string;
+        }>;
+      }
+    >();
+    if (reportIds.length === 0) return out;
+    for (const id of reportIds) out.set(id, { newHere: [], resolvedHere: [] });
+    const BATCH = 200;
+    type Row = {
+      id: string;
+      testId: string;
+      fileId: string;
+      project: string;
+      title: string;
+      filePath: string;
+      rn: number;
+    };
+    for (let i = 0; i < reportIds.length; i += BATCH) {
+      const slice = reportIds.slice(i, i + BATCH);
+      const placeholders = slice.map(() => '?').join(',');
+      const opened = this.db
+        .prepare(
+          `WITH ranked AS (
+             SELECT r.regressedAtReportId AS id,
+                    r.testId, r.fileId, r.project,
+                    t.title, t.filePath,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY r.regressedAtReportId
+                      ORDER BY r.regressedAtCreatedAt DESC
+                    ) AS rn
+             FROM regressions r
+             JOIN tests t USING (testId, fileId, project)
+             WHERE r.regressedAtReportId IN (${placeholders})
+           )
+           SELECT id, testId, fileId, project, title, filePath, rn
+           FROM ranked WHERE rn <= ?`
+        )
+        .all(...slice, perSideLimit) as Row[];
+      for (const r of opened) {
+        const entry = out.get(r.id);
+        if (entry)
+          entry.newHere.push({
+            testId: r.testId,
+            fileId: r.fileId,
+            project: r.project,
+            title: r.title,
+            filePath: r.filePath,
+          });
+      }
+      const resolved = this.db
+        .prepare(
+          `WITH ranked AS (
+             SELECT r.recoveredAtReportId AS id,
+                    r.testId, r.fileId, r.project,
+                    t.title, t.filePath,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY r.recoveredAtReportId
+                      ORDER BY r.recoveredAtCreatedAt DESC
+                    ) AS rn
+             FROM regressions r
+             JOIN tests t USING (testId, fileId, project)
+             WHERE r.recoveredAtReportId IN (${placeholders})
+           )
+           SELECT id, testId, fileId, project, title, filePath, rn
+           FROM ranked WHERE rn <= ?`
+        )
+        .all(...slice, perSideLimit) as Row[];
+      for (const r of resolved) {
+        const entry = out.get(r.id);
+        if (entry)
+          entry.resolvedHere.push({
+            testId: r.testId,
+            fileId: r.fileId,
+            project: r.project,
+            title: r.title,
+            filePath: r.filePath,
+          });
+      }
+    }
+    return out;
+  }
+
   public detectForReport(reportId: string, currentCommit: string | null): void {
     const reportRow = this.db
       .prepare(`SELECT createdAt FROM reports WHERE reportID = ?`)
@@ -548,6 +666,8 @@ export class RegressionsDatabase {
       lastGreenCreatedAt: string | null;
       lastGreenCommit: string | null;
       openRegressionId: string | null;
+      mostRecentClosedRegressionId: string | null;
+      mostRecentClosedCommit: string | null;
     };
     const lanes = this.db
       .prepare(
@@ -583,7 +703,15 @@ export class RegressionsDatabase {
            (SELECT id FROM regressions reg
             WHERE reg.testId = rr.testId AND reg.fileId = rr.fileId AND reg.project = rr.project
               AND reg.recoveredAtReportId IS NULL
-            LIMIT 1) AS openRegressionId
+            LIMIT 1) AS openRegressionId,
+           (SELECT id FROM regressions reg
+            WHERE reg.testId = rr.testId AND reg.fileId = rr.fileId AND reg.project = rr.project
+              AND reg.recoveredAtReportId IS NOT NULL
+            ORDER BY reg.recoveredAtCreatedAt DESC LIMIT 1) AS mostRecentClosedRegressionId,
+           (SELECT recoveredAtCommit FROM regressions reg
+            WHERE reg.testId = rr.testId AND reg.fileId = rr.fileId AND reg.project = rr.project
+              AND reg.recoveredAtReportId IS NOT NULL
+            ORDER BY reg.recoveredAtCreatedAt DESC LIMIT 1) AS mostRecentClosedCommit
          FROM report_runs rr`
       )
       .all(reportId) as LaneRow[];
@@ -597,6 +725,14 @@ export class RegressionsDatabase {
     );
     const bumpFailureStmt = this.db.prepare(
       `UPDATE regressions SET failureCount = failureCount + 1 WHERE id = ?`
+    );
+    const reopenStmt = this.db.prepare(
+      `UPDATE regressions
+       SET recoveredAtReportId = NULL,
+           recoveredAtCreatedAt = NULL,
+           recoveredAtCommit = NULL,
+           daysOpen = NULL
+       WHERE id = ?`
     );
     const bumpFlakyStmt = this.db.prepare(
       `UPDATE regressions SET flakyCount = flakyCount + 1 WHERE id = ?`
@@ -649,6 +785,11 @@ export class RegressionsDatabase {
 
       if (lane.openRegressionId) {
         bumpFailureStmt.run(lane.openRegressionId);
+        continue;
+      }
+      if (lane.mostRecentClosedRegressionId && lane.mostRecentClosedCommit === null) {
+        reopenStmt.run(lane.mostRecentClosedRegressionId);
+        bumpFailureStmt.run(lane.mostRecentClosedRegressionId);
         continue;
       }
       if (!lane.lastGreenReportId) continue;

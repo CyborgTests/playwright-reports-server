@@ -412,6 +412,12 @@ export const REGRESSIONS_SCHEMA_SQL = `
 
     FOREIGN KEY (testId, fileId, project)
       REFERENCES tests(testId, fileId, project)
+      ON DELETE CASCADE,
+    FOREIGN KEY (regressedAtReportId)
+      REFERENCES reports(reportID)
+      ON DELETE CASCADE,
+    FOREIGN KEY (recoveredAtReportId)
+      REFERENCES reports(reportID)
       ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_regressions_open

@@ -113,7 +113,7 @@ export function getDerivedPage(
     whereConds.push('t.project = ?');
     whereParams.push(project as string);
   }
-  if (windowed) {
+  if (windowed && !options.resolvedSince && !options.regressedSince) {
     whereConds.push('agg_w.totalRuns IS NOT NULL AND agg_w.totalRuns > 0');
   }
   if (options.status === 'quarantined') {

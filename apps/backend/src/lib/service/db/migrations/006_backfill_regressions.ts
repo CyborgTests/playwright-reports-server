@@ -82,6 +82,8 @@ export const migration006BackfillRegressions: Migration = {
       const isFlaky = outcome === 'flaky';
       const isFailed = outcome === 'failed' || outcome === 'unexpected';
 
+      const isSkipped = outcome === 'skipped';
+
       if (isGreen) {
         if (open) {
           const daysOpen =
@@ -98,6 +100,21 @@ export const migration006BackfillRegressions: Migration = {
           open = null;
         }
         lastGreen = { reportId: row.reportId, createdAt: row.createdAt, commit: row.commitHash };
+      } else if (isSkipped) {
+        if (open) {
+          const daysOpen =
+            (Date.parse(row.createdAt) - Date.parse(open.regressedAtCreatedAt)) / 86_400_000;
+          const inserted = toInsert.find((r) => r.id === open?.id);
+          if (inserted) {
+            inserted.recoveredAtReportId = row.reportId;
+            inserted.recoveredAtCreatedAt = row.createdAt;
+            inserted.recoveredAtCommit = null;
+            inserted.daysOpen = daysOpen;
+            inserted.failureCount = open.failureCount;
+            inserted.flakyCount = open.flakyCount;
+          }
+          open = null;
+        }
       } else if (isFailed) {
         if (open) {
           open.failureCount += 1;
