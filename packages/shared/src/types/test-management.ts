@@ -13,6 +13,11 @@ export interface TestWithQuarantineInfo {
   totalRuns?: number;
   runs?: TestRun[];
   lastRunAt?: string;
+  regression?: TestDetailRegression;
+  regressionHighlights?: {
+    newAtReportId?: string;
+    resolvedAtReportId?: string;
+  };
 }
 
 export type FailureCategorySource = 'heuristic' | 'llm' | 'manual' | 'consensus';
@@ -100,10 +105,20 @@ export interface TestDetail {
   runs: TestRun[];
   failureGroups: TestFailureGroup[];
   crossProject: TestCrossProjectOccurrence[];
+  regression?: TestDetailRegression;
+}
+
+export interface TestDetailRegression {
+  regressedAt: string;
+  regressedAtCommit?: string;
+  lastGreenCommit?: string;
+  daysOpen: number;
+  failureCount: number;
+  flakyCount: number;
 }
 
 export type FlakinessTier = 'stable' | 'flaky' | 'critical';
-export type TestsSort = 'default' | 'slowest' | 'stale';
+export type TestsSort = 'default' | 'slowest' | 'stale' | 'regression-age';
 
 export interface TestFilters {
   search?: string;
@@ -112,6 +127,9 @@ export interface TestFilters {
   sort?: TestsSort;
   project?: string;
   failureCategory?: string;
+  regressedOnly?: boolean;
+  regressedSince?: string;
+  resolvedSince?: string;
 }
 
 export interface TestMetrics {

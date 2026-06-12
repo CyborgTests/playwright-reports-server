@@ -291,6 +291,7 @@ export interface ReportHistory {
   duration?: number;
   metadata?: ReportMetadata;
   previousReportId?: string | null;
+  regressions?: { newHere: number; resolvedHere: number };
 }
 
 export interface TestHistory extends ReportTest {

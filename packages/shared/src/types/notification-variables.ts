@@ -33,6 +33,8 @@ export const EVENT_RECOVERED_EXTRA = [
   'compareUrl',
 ] as const;
 
+export const EVENT_REGRESSION_EXTRA = ['newRegressions', 'resolvedRegressions'] as const;
+
 export const SCHEDULE_VARS = [
   // window
   'windowStart',
@@ -65,6 +67,9 @@ export const SCHEDULE_VARS = [
 export function eventVariableNames(condition: EventCondition): readonly string[] {
   if (condition === 'recovered_to_clean' || condition === 'recovered_no_hard_failures') {
     return [...EVENT_BASE_VARS, ...EVENT_RECOVERED_EXTRA];
+  }
+  if (condition === 'new_regressions' || condition === 'resolved_regressions') {
+    return [...EVENT_BASE_VARS, ...EVENT_REGRESSION_EXTRA];
   }
   return EVENT_BASE_VARS;
 }

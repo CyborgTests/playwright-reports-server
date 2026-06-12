@@ -94,6 +94,32 @@ const slackEventAlways: SlackBlock[] = [
   },
 ];
 
+const slackEventNewRegressions: SlackBlock[] = [
+  { type: 'header', text: '🔻 New regressions — {{project}}' },
+  {
+    type: 'section',
+    text: '*{{newRegressions}}* tests regressed in report #{{displayNumber}}.',
+  },
+  { type: 'context', text: '{{timestamp}}' },
+  {
+    type: 'actions',
+    buttons: [{ label: 'View report', url: '{{reportUrl}}' }],
+  },
+];
+
+const slackEventResolvedRegressions: SlackBlock[] = [
+  { type: 'header', text: '✅ Regressions resolved — {{project}}' },
+  {
+    type: 'section',
+    text: '*{{resolvedRegressions}}* tests recovered in report #{{displayNumber}}.',
+  },
+  { type: 'context', text: '{{timestamp}}' },
+  {
+    type: 'actions',
+    buttons: [{ label: 'View report', url: '{{reportUrl}}' }],
+  },
+];
+
 const slackScheduleAllClean: SlackBlock[] = [
   { type: 'header', text: '✅ Daily QA — {{project}}' },
   {
@@ -198,6 +224,8 @@ const SLACK_EVENT_BY_CONDITION: Record<EventCondition, SlackBlock[]> = {
   pass_rate_below_100: slackEventPassRateBelow100,
   recovered_to_clean: slackEventRecoveredToClean,
   recovered_no_hard_failures: slackEventRecoveredNoHardFailures,
+  new_regressions: slackEventNewRegressions,
+  resolved_regressions: slackEventResolvedRegressions,
 };
 
 const SLACK_SCHEDULE_BY_CONDITION: Record<ScheduleCondition, SlackBlock[]> = {

@@ -32,6 +32,8 @@ export interface RunHealthMetric {
   duration: number;
   title?: string;
   displayNumber?: number;
+  newRegressions?: number;
+  resolvedRegressions?: number;
 }
 
 export interface TrendMetrics {
@@ -71,6 +73,16 @@ export interface AnalyticsData {
   trendMetrics: TrendMetrics;
   testsSummary: TestsSummary;
   failureCategories: FailureCategoryAnalytics;
+  regressions: RegressionsAggregate;
+}
+
+export interface RegressionsAggregate {
+  active: number;
+  newInWindow: number;
+  resolvedInWindow: number;
+  medianMttrDays: number | null;
+  topFiles: Array<{ filePath: string; count: number }>;
+  topCommits: Array<{ commit: string; count: number }>;
 }
 
 export type ProjectAnalysisVerdict = 'healthy' | 'stabilizing' | 'degrading' | 'failing';
