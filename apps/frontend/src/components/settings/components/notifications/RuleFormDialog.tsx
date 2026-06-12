@@ -57,6 +57,8 @@ const EVENT_CONDITION_LABELS: Record<EventCondition, string> = {
   pass_rate_below_100: 'Pass rate < 100% (failures OR flakies)',
   recovered_to_clean: 'Recovered to clean (back to 100% pass)',
   recovered_no_hard_failures: 'Recovered — no hard failures (flakies OK)',
+  new_regressions: 'New regressions opened in this report',
+  resolved_regressions: 'Regressions resolved in this report',
 };
 
 function newEventRule(channelType: ChannelType): EventRule {

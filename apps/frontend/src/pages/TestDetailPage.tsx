@@ -46,6 +46,11 @@ import { defaultProjectName } from '@/lib/constants';
 import { parseMilliseconds } from '@/lib/time';
 import { withBase } from '@/lib/url';
 
+function formatDaysOpen(days: number): string {
+  if (days < 1) return `${Math.round(days * 24)}h open`;
+  return `${Math.round(days * 10) / 10}d open`;
+}
+
 function servedReportUrl(reportId: string, testId: string): string {
   return `${withBase(`/api/serve/${reportId}/index.html`)}#?testId=${testId}`;
 }
@@ -391,8 +396,7 @@ function FailureGroupsList({
       <div className="mb-3">
         <h3 className="text-lg font-semibold">Failure clusters</h3>
         <p className="text-sm text-muted-foreground">
-          Failures for this test grouped by error signature — likely same root cause within each
-          cluster.
+          Failures for this test grouped by error signature
         </p>
       </div>
       <Accordion type="multiple" className="space-y-3">
@@ -559,6 +563,11 @@ export default function TestDetailPage() {
           <div className="flex flex-wrap gap-2 items-center">
             <Badge variant="secondary">{detail.project}</Badge>
             {detail.isQuarantined && <Badge variant="destructive">🔒 Quarantined</Badge>}
+            {detail.regression && (
+              <Badge variant="destructive" title="green → red transition, currently open">
+                Regression · {formatDaysOpen(detail.regression.daysOpen)}
+              </Badge>
+            )}
             {typeof detail.flakinessScore === 'number' && (
               <Badge variant="outline">Flakiness {detail.flakinessScore.toFixed(1)}%</Badge>
             )}
@@ -567,6 +576,37 @@ export default function TestDetailPage() {
         {detail.isQuarantined && detail.quarantineReason && (
           <Alert className="mt-3 text-sm">
             <strong>Quarantine reason:</strong> {detail.quarantineReason}
+          </Alert>
+        )}
+        {detail.regression && (
+          <Alert className="mt-3 text-sm">
+            <div>
+              <strong>Active regression:</strong> opened{' '}
+              {new Date(detail.regression.regressedAt).toLocaleString()} ·{' '}
+              {detail.regression.failureCount} failing run
+              {detail.regression.failureCount === 1 ? '' : 's'} since.
+              {detail.regression.regressedAtCommit && detail.regression.lastGreenCommit ? (
+                <>
+                  {' '}
+                  Suspect range:{' '}
+                  <code className="text-xs">{detail.regression.lastGreenCommit.slice(0, 12)}</code>
+                  {' → '}
+                  <code className="text-xs">
+                    {detail.regression.regressedAtCommit.slice(0, 12)}
+                  </code>
+                  .
+                </>
+              ) : detail.regression.regressedAtCommit ? (
+                <>
+                  {' '}
+                  First red commit:{' '}
+                  <code className="text-xs">
+                    {detail.regression.regressedAtCommit.slice(0, 12)}
+                  </code>
+                  .
+                </>
+              ) : null}
+            </div>
           </Alert>
         )}
       </div>

@@ -99,6 +99,10 @@ export function sampleEventContext(condition: EventCondition): AnyContext {
       return { ...CLEAN_EVENT_SAMPLE, ...RECOVERED_PREV_DIRTY };
     case 'recovered_no_hard_failures':
       return { ...PASS_BELOW_100_SAMPLE, ...RECOVERED_PREV_DIRTY };
+    case 'new_regressions':
+      return { ...BASE_EVENT_SAMPLE, newRegressions: 3, resolvedRegressions: 0 };
+    case 'resolved_regressions':
+      return { ...CLEAN_EVENT_SAMPLE, newRegressions: 0, resolvedRegressions: 2 };
     case 'always':
       return BASE_EVENT_SAMPLE;
     default: {
