@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -185,11 +185,17 @@ function formatDuration(startedAt?: string, completedAt?: string): string {
 
 export default function LlmQueuePage() {
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [modelFilter, setModelFilter] = useState<string>('all');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [statusFilter, setStatusFilter] = useState<string>(
+    () => searchParams.get('status') ?? 'all'
+  );
+  const [typeFilter, setTypeFilter] = useState<string>(() => searchParams.get('type') ?? 'all');
+  const [modelFilter, setModelFilter] = useState<string>(() => searchParams.get('model') ?? 'all');
   const [modelDropdownOpened, setModelDropdownOpened] = useState(false);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => {
+    const raw = Number.parseInt(searchParams.get('page') ?? '1', 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : 1;
+  });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // Usage card period — 7d default, toggleable to 30d.
   const [usageDays, setUsageDays] = useState<7 | 30>(7);
@@ -357,6 +363,22 @@ export default function LlmQueuePage() {
     setPage(1);
     setSelectedIds(new Set());
   }, [statusFilter, typeFilter, modelFilter]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    const writeOrDrop = (key: string, value: string, defaultValue: string) => {
+      if (value === defaultValue) next.delete(key);
+      else next.set(key, value);
+    };
+    writeOrDrop('status', statusFilter, 'all');
+    writeOrDrop('type', typeFilter, 'all');
+    writeOrDrop('model', modelFilter, 'all');
+    if (page > 1) next.set('page', String(page));
+    else next.delete('page');
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [statusFilter, typeFilter, modelFilter, page, searchParams, setSearchParams]);
 
   const statCards = useMemo(
     () => [

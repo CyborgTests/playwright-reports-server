@@ -290,10 +290,16 @@ export default function ReportsTable({
   const reportListEndpoint = '/api/report/list';
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [project, setProject] = useState(defaultProjectName);
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [project, setProject] = useState(() => searchParams.get('project') ?? defaultProjectName);
+  const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
+  const [page, setPage] = useState(() => {
+    const raw = Number.parseInt(searchParams.get('page') ?? '1', 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : 1;
+  });
+  const [rowsPerPage, setRowsPerPage] = useState(() => {
+    const raw = Number.parseInt(searchParams.get('perPage') ?? '10', 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : 10;
+  });
   const selectedIds = useMemo(() => new Set(selected ?? []), [selected]);
   const [selectedTags, setSelectedTags] = useState<string[]>(() => {
     const raw = searchParams.get('tags');
@@ -318,10 +324,28 @@ export default function ReportsTable({
     else next.delete('to');
     if (passRate && passRate !== 'all') next.set('passRate', passRate);
     else next.delete('passRate');
+    if (project && project !== defaultProjectName) next.set('project', project);
+    else next.delete('project');
+    if (search.trim()) next.set('search', search.trim());
+    else next.delete('search');
+    if (page > 1) next.set('page', String(page));
+    else next.delete('page');
+    if (rowsPerPage !== 10) next.set('perPage', String(rowsPerPage));
+    else next.delete('perPage');
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [selectedTags, dateRange, passRate, searchParams, setSearchParams]);
+  }, [
+    selectedTags,
+    dateRange,
+    passRate,
+    project,
+    search,
+    page,
+    rowsPerPage,
+    searchParams,
+    setSearchParams,
+  ]);
 
   const queryUrl = useMemo(
     () =>
