@@ -1,7 +1,7 @@
 ---
 name: playwright-reports
 description: Pull Playwright Reports Server context — failing tests, flakiness, run history, failure clusters, and LLM-written analyses. Trigger on mentions of a failing test, flaky run, `.spec.ts` file under suspicion, a CI reportId, "what failed in the last run", "why is X failing", or aggregate questions like "what's flaky this week" / "compare last two reports".
-allowed-tools: Bash(pwrs-cli test:*), Bash(pwrs-cli report:*), Bash(pwrs-cli cluster:*), Bash(pwrs-cli project:*), Bash(pwrs-cli tag:*), Bash(pwrs-cli category:*), Bash(pwrs-cli stats:*), Bash(pwrs-cli ping:*), Bash(pwrs-cli attachment:*), Bash(pwrs-cli help:*), Bash(pwrs-cli --help), Bash(pwrs-cli --version)
+allowed-tools: Bash(pwrs-cli test:*), Bash(pwrs-cli report:*), Bash(pwrs-cli cluster:*), Bash(pwrs-cli project:*), Bash(pwrs-cli tag:*), Bash(pwrs-cli category:*), Bash(pwrs-cli stats:*), Bash(pwrs-cli ping:*), Bash(pwrs-cli attachment:*), Bash(pwrs-cli regression:*), Bash(pwrs-cli help:*), Bash(pwrs-cli --help), Bash(pwrs-cli --version)
 ---
 
 <!-- cspell:words pwrs unclustered quarantineable -->
@@ -29,6 +29,7 @@ The CLI is read-only. Write commands (`analysis-submit`, `summary-submit`, `feed
 | What ran in a window | `pwrs-cli report list --from --to` | paginated reports |
 | Active failure clusters | `pwrs-cli cluster list` | top clusters by impact |
 | Drill into a cluster | `pwrs-cli cluster brief <id>` | full member roster |
+| Active regressions (broke recently) | `pwrs-cli regression list [--active] [--sort impact\|recent\|oldest]` | tests in green→red state with commit attribution |
 | Diff two reports | `pwrs-cli report compare A B` | newlyFailed / fixed / stillFailing / … |
 | Per-run history of a test | `pwrs-cli test history <testId>` | runs + signatureGroups |
 | Verdict on a report | `pwrs-cli report summary <id>` | persisted LLM summary + verdict |
@@ -42,7 +43,7 @@ The CLI is read-only. Write commands (`analysis-submit`, `summary-submit`, `feed
 | Attachment metadata | `pwrs-cli attachment <url>` | URL + content-type + bytes (HEAD) |
 | Sanity check | `pwrs-cli ping` | server + token + latency |
 
-All list-returning commands carry `total` + `hasMore`. Defaults: `report list`/`test search`/`report compare` = 20, `cluster list` = 10, `test history` = 20 (max 50). For exact flags run `pwrs-cli help <group>` or `pwrs-cli <command> --help`.
+All list-returning commands carry `total` + `hasMore`. Defaults: `report list`/`test search`/`report compare` = 20, `cluster list` = 10, `test history` = 20 (max 50), `regression list` = 25 (max 200). For exact flags run `pwrs-cli help <group>` or `pwrs-cli <command> --help`.
 
 ## Worked examples
 
@@ -132,12 +133,13 @@ Decision rules — apply top-to-bottom. Field shapes live in the workflow sectio
 1. **`feedback` present** → trust the team's note, override everything else.
 2. **`signals.quarantined: true`** → skip; the team already marked it broken.
 3. **Report-level verdict first.** Before assuming it's *your* test, read `report summary <reportId>` → `summary.llmSummaryStructured.verdict`. `widespread`/`systemic` means fix the run (infra, fixtures, deploy), not the test. For multi-day patterns, escalate to `project summary` → `summary.structured.verdict`.
-4. **`cluster` present** → fix at `cluster.anchor`, not the test. Every member resolves together.
-5. **`signals.flakyTier`** → `critical` urgent, `flaky` investigate, `stable` ignore. (The server classifies using the active site config; don't hardcode a percent.)
-6. **`signals.signatureOccurrenceCount > 1` with a stable `signature`** → real regression. Counts prior runs of the same `latestFailure.signature`, not total test runs.
-7. **`signals.signatureFirstSeen`** → correlate with deploys / PRs.
-8. **`llmAnalysis.rootCause` present** → start from this hypothesis. Use `test analysis` for the unmodified markdown if the regex-split lost a section, `test analysis-prompt` to inspect what the model saw.
-9. **`llmAnalysis: null` with a failing run** → analysis hasn't been generated. Pull `test failure-context` and reason from `evidence` yourself rather than waiting.
+4. **`regression` present** → a tracked green→red transition. `regression.regressedAtCommit` + `regression.lastGreenCommit` define the suspect range; frame the fix around what landed there, not chronic flake. On `cluster brief`, `regressionContext.sharedRegressionCommit` (when set) means ≥80% of the cluster regressed at one commit.
+5. **`cluster` present** → fix at `cluster.anchor`, not the test. Every member likely resolves together.
+6. **`signals.flakyTier`** → `critical` urgent, `flaky` investigate, `stable` ignore.
+7. **`signals.signatureOccurrenceCount > 1` with a stable `signature`** → recurring failure. Counts prior runs of the same `latestFailure.signature`, not total. Distinct from `regression`: a signature can recur without a green→red transition.
+8. **`signals.signatureFirstSeen`** → likely correlate with deploys / PRs.
+9. **`llmAnalysis.rootCause` present** → start from this hypothesis. Use `test analysis` for the unmodified markdown, `test analysis-prompt` to inspect what the model saw.
+10. **`llmAnalysis: null` with a failing run** → analysis hasn't been generated. Pull `test failure-context` and reason from `evidence` yourself rather than waiting.
 
 ### Cluster anchors
 
@@ -158,6 +160,50 @@ Each cluster carries `confidence: 'high' | 'medium' | 'low'`. `cluster list` ret
 | `project summary` | `summary.structured.verdict` | `healthy` / `stabilizing` / `degrading` / `failing` |
 
 `structured.sections[].codeRefs[]` carry pre-resolved `{ kind, testId?, fileId?, filePath?, line? }` pointers — jump straight to the implicated tests/files.
+
+### Regressions
+
+A **regression** is a tracked green → red state transition for one test — different from a chronic flake. The server records it on the failing run, closes it on the next passing run, and attributes the breakage to the commit that landed in between (when git metadata is available).
+
+#### When to reach for it
+
+| Question | Command |
+|---|---|
+| "Did this deploy break anything?" | `pwrs-cli regression list --active --sort recent` |
+| "What's been broken longest?" | `pwrs-cli regression list --active --sort oldest` |
+| "What recovered this week?" | `pwrs-cli regression list --resolved --from <date>` |
+| "Is *this* test a regression or chronic flake?" | `pwrs-cli test brief <testId>` → read `regression` field |
+| "Did one commit break multiple tests?" | `pwrs-cli cluster brief <id>` → read `regressionContext.sharedRegressionCommit` |
+| "What's the regression load right now?" | `pwrs-cli stats` → `regressions: { active, newInWindow, resolvedInWindow, medianMttrDays }` |
+
+`--active` (still failing) and `--resolved` (closed) are mutually exclusive; omit both to see everything. Sort defaults to `impact` = `failureCount × daysOpen`.
+
+#### Cross-command surfacing
+
+The same regression signal threads through every brief — you usually don't need a separate `regression list` call:
+
+- `test brief.regression` — `null` when the test isn't currently regressed. When set: `{ regressedAtCommit, lastGreenCommit, daysOpen, failureCount, flakyCount, regressedAtReportId, lastGreenReportId }`. The commit pair is your bisect window.
+- `cluster brief.regressionContext` — `null` when no cluster member is regressed. When set: `{ membersInRegression, totalMembers, sharedRegressionCommit, earliestRegression }`. `sharedRegressionCommit` is set when ≥80% of members regressed at the same commit → that's a deploy-induced cluster, fix once at the commit, not per-test.
+- `report brief.regressions` — `null` when this report neither opened nor resolved any regressions. When set: `{ newHere, resolvedHere }`. Lets you ask "did this CI run introduce/fix breakage?" without diffing against the previous run.
+- `report compare.summary.regressionsOpenedBetween` / `regressionsResolvedBetween` — drop-in deploy-window counts.
+- `stats.regressions` — project-wide rollup, scoped to the `--from` / `--to` window.
+
+#### Filtering the test roster by regression state
+
+| Want | Flag |
+|---|---|
+| Only currently-regressed tests | `test search --regressed-only` |
+| Tests that opened a regression in window | `test search --regressed-since <date>` |
+| Tests whose regression resolved in window | `test search --resolved-since <date>` (Note: only resolution date is filterable; combine with `--from`/`--to` for run-window scoping.) |
+| Sort by oldest open regression | `test search --sort regression-age` |
+
+Combine with `--tier`, `--project`, `--failure-category` like any other test filter.
+
+#### Decision rule (use this when interpreting `test brief`)
+
+If `regression` is non-null, the test is in an active green→red state — frame the analysis as **"what landed between `lastGreenCommit` and `regressedAtCommit`"**, not as "this test has been flaky." If `regression` is null but `signals.signatureOccurrenceCount > 1`, you're looking at a *recurring* signature on a test that never had a regression event — likely a chronic flake or a never-was-green test. Different fix.
+
+Excluded automatically from `regression list --active`, the `Active` widget tile, and `test search --regressed-only`: quarantined tests and tests whose latest outcome is `skipped`. If you need those, drop the `--active` filter and check `isActive` per row.
 
 ## Common gotchas
 
