@@ -22,7 +22,7 @@ const remarkPlugins = [remarkGfm];
  *  `fallbackProject` only applies when the URL omits the query (legacy
  *  markdown stored before per-link project encoding). */
 function resolvePwrsHref(href: string, fallbackProject?: string): string | null {
-  const m = href.match(/^pwrs:(test|report)\/(.+)$/);
+  const m = href.match(/^pwrs:(test|report|cluster)\/(.+)$/);
   if (!m) return null;
   const [, kind, target] = m;
   if (kind === 'test') {
@@ -40,6 +40,10 @@ function resolvePwrsHref(href: string, fallbackProject?: string): string | null 
     project = project ?? fallbackProject;
     const query = project ? `?project=${encodeURIComponent(project)}` : '';
     return `/test/${pathPart}${query}`;
+  }
+  if (kind === 'cluster') {
+    if (!target || target.includes('/')) return null;
+    return `/failures/clusters?clusterId=${encodeURIComponent(target)}`;
   }
   return `/report/${target}`;
 }

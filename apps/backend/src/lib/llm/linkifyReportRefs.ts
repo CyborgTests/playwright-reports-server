@@ -15,6 +15,20 @@ const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\
 /** Match a `#NNN` report numeric reference*/
 const DISPLAY_NUMBER_RE = /(^|[\s([{,;:.!?])#(\d+)\b/g;
 
+/** Marker syntax the prompts emit as DATA in the input. When the LLM ignores
+ *  the instruction to wrap mentions as proper markdown links and instead
+ *  echoes the marker token, this catches it as a fallback.
+ */
+const MARKER_RE = /\[(testId|reportId|clusterId):\s*([^\]\s]+)\s*\]/g;
+
+/** Short label for the produced link. Long opaque IDs (40-char Playwright
+ *  testIds, full UUIDs) read poorly inline; truncate to a recognizable
+ *  prefix while preserving the full ID inside the link target. */
+function shortLabel(kind: 'test' | 'report' | 'cluster', id: string): string {
+  const trunc = id.length > 12 ? `${id.slice(0, 12)}…` : id;
+  return `${kind} ${trunc}`;
+}
+
 export interface LinkifyContext {
   project?: string;
 }
@@ -27,17 +41,43 @@ export interface LinkifyContext {
  */
 export function linkifyReportRefs(markdown: string, ctx: LinkifyContext = {}): string {
   if (!markdown) return markdown;
-  if (!UUID_RE.test(markdown) && !/#\d/.test(markdown)) {
+
+  const afterMarkers = rewriteMarkers(markdown);
+
+  if (!UUID_RE.test(afterMarkers) && !/#\d/.test(afterMarkers)) {
     UUID_RE.lastIndex = 0;
-    return markdown;
+    return afterMarkers;
   }
   UUID_RE.lastIndex = 0;
 
-  const parts = markdown.split(SKIP_TOKEN_RE);
+  const parts = afterMarkers.split(SKIP_TOKEN_RE);
   for (let i = 0; i < parts.length; i++) {
     const isSkipToken = i % 2 === 1;
     if (isSkipToken) continue;
     parts[i] = linkifySegment(parts[i], ctx);
+  }
+  return parts.join('');
+}
+
+function rewriteMarkers(text: string): string {
+  if (!text.includes('[')) return text; // micro-opt: no markers possible
+  const parts = text.split(SKIP_TOKEN_RE);
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) continue; // skip-token, leave alone
+    parts[i] = parts[i].replace(MARKER_RE, (full, kind: string, id: string) => {
+      const cleanId = id.trim();
+      if (!cleanId) return full;
+      switch (kind) {
+        case 'testId':
+          return `[${shortLabel('test', cleanId)}](pwrs:test/${cleanId})`;
+        case 'reportId':
+          return `[${shortLabel('report', cleanId)}](pwrs:report/${cleanId})`;
+        case 'clusterId':
+          return `[${shortLabel('cluster', cleanId)}](pwrs:cluster/${cleanId})`;
+        default:
+          return full;
+      }
+    });
   }
   return parts.join('');
 }

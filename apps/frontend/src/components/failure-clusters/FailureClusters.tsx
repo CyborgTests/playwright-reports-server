@@ -47,6 +47,7 @@ function buildTestLink(reportUrl: string | undefined, testId: string): string | 
 export default function FailureClusters() {
   const [searchParams, setSearchParams] = useSearchParams();
   const reportId = searchParams.get('reportId') ?? undefined;
+  const deepLinkClusterId = searchParams.get('clusterId') ?? undefined;
 
   const [project, setProject] = useState(searchParams.get('project') ?? defaultProjectName);
   const [dateRange, setDateRange] = useState<DateRange>(() => ({
@@ -141,7 +142,11 @@ export default function FailureClusters() {
       ) : clusters.length === 0 ? (
         <EmptyState reportScoped={!!reportId} />
       ) : (
-        <ClusterList clusters={clusters} reportId={reportId} />
+        <ClusterList
+          clusters={clusters}
+          reportId={reportId}
+          deepLinkClusterId={deepLinkClusterId}
+        />
       )}
     </div>
   );
@@ -163,13 +168,44 @@ function EmptyState({ reportScoped }: { reportScoped: boolean }) {
   );
 }
 
-function ClusterList({ clusters, reportId }: { clusters: FailureCluster[]; reportId?: string }) {
+function ClusterList({
+  clusters,
+  reportId,
+  deepLinkClusterId,
+}: {
+  clusters: FailureCluster[];
+  reportId?: string;
+  deepLinkClusterId?: string;
+}) {
   const actionable = clusters.filter((c) => c.anchor.kind !== 'unmatched');
   const unmatched = clusters.filter((c) => c.anchor.kind === 'unmatched');
+
+  const [openActionable, setOpenActionable] = useState<string[]>(() =>
+    deepLinkClusterId && actionable.some((c) => c.id === deepLinkClusterId)
+      ? [deepLinkClusterId]
+      : []
+  );
+  const [openUnmatched, setOpenUnmatched] = useState<string[]>(() =>
+    deepLinkClusterId && unmatched.some((c) => c.id === deepLinkClusterId)
+      ? [deepLinkClusterId]
+      : []
+  );
+
+  useEffect(() => {
+    if (!deepLinkClusterId) return;
+    const el = document.getElementById(`cluster-${deepLinkClusterId}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [deepLinkClusterId]);
+
   return (
     <div className="space-y-3">
       {actionable.length > 0 && (
-        <Accordion type="multiple" className="space-y-3">
+        <Accordion
+          type="multiple"
+          className="space-y-3"
+          value={openActionable}
+          onValueChange={setOpenActionable}
+        >
           {actionable.map((cluster) => (
             <ClusterCard key={cluster.id} cluster={cluster} reportId={reportId} />
           ))}
@@ -180,7 +216,12 @@ function ClusterList({ clusters, reportId }: { clusters: FailureCluster[]; repor
           <div className="text-xs uppercase tracking-wide text-muted-foreground pt-4 mb-2 px-1">
             Unmatched failures ({unmatched.length}) — no extractable mechanism
           </div>
-          <Accordion type="multiple" className="space-y-3">
+          <Accordion
+            type="multiple"
+            className="space-y-3"
+            value={openUnmatched}
+            onValueChange={setOpenUnmatched}
+          >
             {unmatched.map((cluster) => (
               <ClusterCard key={cluster.id} cluster={cluster} reportId={reportId} />
             ))}
@@ -194,7 +235,7 @@ function ClusterList({ clusters, reportId }: { clusters: FailureCluster[]; repor
 function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?: string }) {
   const kind = cluster.anchor.kind;
   return (
-    <Card>
+    <Card id={`cluster-${cluster.id}`}>
       <AccordionItem value={cluster.id} className="border-b-0">
         <AccordionTrigger className="px-6 hover:no-underline">
           <div className="flex flex-1 flex-col items-start gap-1 text-left">
