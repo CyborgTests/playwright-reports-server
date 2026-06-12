@@ -533,7 +533,7 @@ export default function TestDetailPage() {
   if (!detail) {
     return (
       <div className="max-w-3xl mx-auto py-12">
-        <RouterLink to="/">
+        <RouterLink to="/analytics">
           <Button variant="ghost" size="sm" className="mb-4">
             <ArrowLeft className="h-4 w-4 mr-1" />
             Back to dashboard
@@ -549,7 +549,7 @@ export default function TestDetailPage() {
   return (
     <div className="space-y-6">
       <div>
-        <RouterLink to="/">
+        <RouterLink to="/analytics">
           <Button variant="ghost" size="sm" className="mb-2 -ml-2">
             <ArrowLeft className="h-4 w-4 mr-1" />
             Back to dashboard
