@@ -692,18 +692,19 @@ export class RegressionsDatabase {
       thisOutcome: string;
       thisCreatedAt: string;
       thisFailureCategory: string | null;
+      thisSignature: string | null;
       priorOutcome: string | null;
       lastGreenReportId: string | null;
       lastGreenCreatedAt: string | null;
       lastGreenCommit: string | null;
       openRegressionId: string | null;
       mostRecentClosedRegressionId: string | null;
-      mostRecentClosedCommit: string | null;
+      mostRecentClosedSignature: string | null;
     };
     const lanes = this.db
       .prepare(
         `WITH report_runs AS (
-           SELECT testId, fileId, project, outcome, createdAt, failure_category
+           SELECT testId, fileId, project, outcome, createdAt, failure_category, error_signature
            FROM test_runs WHERE reportId = ?
          )
          SELECT
@@ -711,6 +712,7 @@ export class RegressionsDatabase {
            rr.outcome  AS thisOutcome,
            rr.createdAt AS thisCreatedAt,
            rr.failure_category AS thisFailureCategory,
+           rr.error_signature AS thisSignature,
            (SELECT outcome FROM test_runs t
             WHERE t.testId = rr.testId AND t.fileId = rr.fileId AND t.project = rr.project
               AND t.createdAt < rr.createdAt
@@ -739,10 +741,13 @@ export class RegressionsDatabase {
             WHERE reg.testId = rr.testId AND reg.fileId = rr.fileId AND reg.project = rr.project
               AND reg.recoveredAtReportId IS NOT NULL
             ORDER BY reg.recoveredAtCreatedAt DESC LIMIT 1) AS mostRecentClosedRegressionId,
-           (SELECT recoveredAtCommit FROM regressions reg
+           (SELECT tr2.error_signature FROM regressions reg
+            JOIN test_runs tr2
+              ON tr2.testId = reg.testId AND tr2.fileId = reg.fileId AND tr2.project = reg.project
+              AND tr2.reportId = reg.regressedAtReportId
             WHERE reg.testId = rr.testId AND reg.fileId = rr.fileId AND reg.project = rr.project
               AND reg.recoveredAtReportId IS NOT NULL
-            ORDER BY reg.recoveredAtCreatedAt DESC LIMIT 1) AS mostRecentClosedCommit
+            ORDER BY reg.recoveredAtCreatedAt DESC LIMIT 1) AS mostRecentClosedSignature
          FROM report_runs rr`
       )
       .all(reportId) as LaneRow[];
@@ -818,7 +823,11 @@ export class RegressionsDatabase {
         bumpFailureStmt.run(lane.openRegressionId);
         continue;
       }
-      if (lane.mostRecentClosedRegressionId && lane.mostRecentClosedCommit === null) {
+      const sameSignature =
+        lane.thisSignature &&
+        lane.mostRecentClosedSignature &&
+        lane.thisSignature === lane.mostRecentClosedSignature;
+      if (lane.mostRecentClosedRegressionId && sameSignature) {
         reopenStmt.run(lane.mostRecentClosedRegressionId);
         bumpFailureStmt.run(lane.mostRecentClosedRegressionId);
         continue;
