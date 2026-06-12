@@ -12,7 +12,7 @@ import { chunk } from './utils.js';
 
 export interface DerivedPageOptions {
   status?: 'all' | 'quarantined' | 'not-quarantined';
-  sort?: 'default' | 'slowest' | 'stale';
+  sort?: 'default' | 'slowest' | 'stale' | 'regression-age';
   tier?: {
     warningThreshold: number;
     quarantineThreshold: number;
@@ -24,6 +24,9 @@ export interface DerivedPageOptions {
   from?: string;
   to?: string;
   search?: string;
+  regressedOnly?: boolean;
+  regressedSince?: string;
+  resolvedSince?: string;
 }
 
 function scopedRunFilter(
@@ -164,12 +167,45 @@ export function getDerivedPage(
     }
   }
 
+  if (options.regressedOnly) {
+    whereConds.push(`EXISTS (
+      SELECT 1 FROM regressions r
+      WHERE r.testId = t.testId AND r.fileId = t.fileId AND r.project = t.project
+        AND r.recoveredAtReportId IS NULL
+    )`);
+    whereConds.push('COALESCE(t.quarantined, 0) = 0');
+    whereConds.push(`COALESCE(t.latestOutcome, '') != 'skipped'`);
+  }
+  if (options.regressedSince) {
+    whereConds.push(`EXISTS (
+      SELECT 1 FROM regressions r
+      WHERE r.testId = t.testId AND r.fileId = t.fileId AND r.project = t.project
+        AND r.regressedAtCreatedAt >= ?
+    )`);
+    whereParams.push(options.regressedSince);
+  }
+  if (options.resolvedSince) {
+    whereConds.push(`EXISTS (
+      SELECT 1 FROM regressions r
+      WHERE r.testId = t.testId AND r.fileId = t.fileId AND r.project = t.project
+        AND r.recoveredAtReportId IS NOT NULL
+        AND r.recoveredAtCreatedAt >= ?
+    )`);
+    whereParams.push(options.resolvedSince);
+  }
+
   const tieBreaker = 't.createdAt DESC, t.rowid';
   let orderBy: string;
   if (options.sort === 'slowest') {
     orderBy = `ORDER BY COALESCE(${avgDurationExpr}, -1) DESC, ${tieBreaker}`;
   } else if (options.sort === 'stale') {
     orderBy = `ORDER BY COALESCE(${lastRunAtExpr}, '') ASC, ${tieBreaker}`;
+  } else if (options.sort === 'regression-age') {
+    orderBy = `ORDER BY (
+      SELECT MIN(r.regressedAtCreatedAt) FROM regressions r
+      WHERE r.testId = t.testId AND r.fileId = t.fileId AND r.project = t.project
+        AND r.recoveredAtReportId IS NULL
+    ) ASC, ${tieBreaker}`;
   } else {
     orderBy = `ORDER BY
       CASE WHEN t.latestOutcome = 'skipped' THEN 1 ELSE 0 END ASC,

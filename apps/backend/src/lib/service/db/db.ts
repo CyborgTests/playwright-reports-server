@@ -12,6 +12,7 @@ import {
   NOTIFICATION_STATE_SCHEMA_SQL,
   PROJECT_SUMMARY_SCHEMA_SQL,
   QUALITY_DASHBOARDS_SCHEMA_SQL,
+  REGRESSIONS_SCHEMA_SQL,
   REPORT_RESULTS_SCHEMA_SQL,
   REPORTS_SCHEMA_SQL,
   RESULTS_SCHEMA_SQL,
@@ -102,6 +103,7 @@ const SCHEMA_MODULES: Array<{ name: string; sql: string }> = [
   { name: 'notification_log', sql: NOTIFICATION_LOG_SCHEMA_SQL },
   { name: 'notification_state', sql: NOTIFICATION_STATE_SCHEMA_SQL },
   { name: 'quality_dashboards', sql: QUALITY_DASHBOARDS_SCHEMA_SQL },
+  { name: 'regressions', sql: REGRESSIONS_SCHEMA_SQL },
 ];
 
 function initializeSchema(db: Database.Database): void {

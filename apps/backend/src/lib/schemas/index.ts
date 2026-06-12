@@ -79,6 +79,10 @@ export const ListReportsQuerySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   passRate: z.enum(['all', 'passing', 'failing', 'below-threshold']).optional(),
+  regressionsOnly: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true' || v === '1'),
   limit: z.coerce.number().min(1).max(100).optional(),
   offset: z.coerce.number().min(0).optional(),
 });

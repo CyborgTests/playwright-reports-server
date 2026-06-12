@@ -263,7 +263,28 @@ export interface SchemaMigrationsRow {
   description: string | null;
 }
 
+export interface RegressionsRow {
+  id: string;
+  testId: string;
+  fileId: string;
+  project: string;
+  regressedAtReportId: string;
+  regressedAtCreatedAt: string;
+  regressedAtCommit: string | null;
+  regressedAtCategory: string | null;
+  lastGreenReportId: string | null;
+  lastGreenCreatedAt: string | null;
+  lastGreenCommit: string | null;
+  recoveredAtReportId: string | null;
+  recoveredAtCreatedAt: string | null;
+  recoveredAtCommit: string | null;
+  daysOpen: number | null;
+  failureCount: ColumnType<number, number | undefined, number>;
+  flakyCount: ColumnType<number, number | undefined, number>;
+}
+
 export interface Database {
+  regressions: RegressionsRow;
   analysis_feedback: AnalysisFeedbackTableRow;
   github_sync_configs: GithubSyncConfigsRow;
   github_sync_runs: GithubSyncRunsRow;

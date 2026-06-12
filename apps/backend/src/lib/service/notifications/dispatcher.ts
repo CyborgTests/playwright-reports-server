@@ -1,5 +1,6 @@
 import type { NotificationChannel, NotificationsConfig } from '@playwright-reports/shared';
 import { configCache } from '../cache/config.js';
+import { regressionsDb } from '../db/regressions.sqlite.js';
 import { reportDb } from '../db/reports.sqlite.js';
 import { dispatchOne, writeLog } from './dispatch-helpers.js';
 import { projectFilterMatches } from './filters.js';
@@ -40,7 +41,11 @@ export async function dispatchReportUploaded(
     return prev;
   };
 
-  const tasks = enabledChannels.map((channel) => runChannelRules(channel, report, getPrev));
+  const regressionsForReport = regressionsDb.countsForReport(report.reportID);
+
+  const tasks = enabledChannels.map((channel) =>
+    runChannelRules(channel, report, getPrev, regressionsForReport)
+  );
   const settled = await Promise.allSettled(tasks);
 
   const out: DispatchedRule[] = [];
@@ -71,7 +76,8 @@ export async function dispatchReportUploaded(
 async function runChannelRules(
   channel: NotificationChannel,
   report: ReportLike,
-  getPrev: () => Promise<ReportLike | undefined>
+  getPrev: () => Promise<ReportLike | undefined>,
+  regressionsForReport: { newHere: number; resolvedHere: number }
 ): Promise<DispatchedRule[]> {
   const results: DispatchedRule[] = [];
   let fired = false;
@@ -86,7 +92,8 @@ async function runChannelRules(
       rule.condition === 'recovered_to_clean' || rule.condition === 'recovered_no_hard_failures';
     const previous = needsPrev ? await getPrev() : undefined;
 
-    if (!eventConditionMatches(rule.condition, { report, previous })) continue;
+    if (!eventConditionMatches(rule.condition, { report, previous, regressionsForReport }))
+      continue;
 
     if (fired) {
       const dup: DispatchResult = { ok: false, attempts: 0, skipReason: 'duplicate' };
@@ -100,6 +107,7 @@ async function runChannelRules(
       report,
       previous,
       serverUrl: configCache.config?.serverBaseUrl ?? '',
+      regressionsForReport,
     });
     const allowlist = eventVariablesForCondition(rule.condition);
 

@@ -1,4 +1,9 @@
-import type { ClusterAnchor, ClusterAnchorKind } from '@playwright-reports/shared';
+import type {
+  ClusterAnchor,
+  ClusterAnchorKind,
+  RegressionsAggregate,
+  TestDetailRegression,
+} from '@playwright-reports/shared';
 import { formatDuration, ROOT_CAUSE_CATEGORIES } from '@playwright-reports/shared';
 import type { FailureEvidence } from '../../parser/failure-extraction.js';
 import type { PerFileStep } from '../../parser/report-payload.js';
@@ -903,6 +908,35 @@ export interface PriorInProjectAnalysis {
   updatedAt?: string;
 }
 
+function buildRegressionContextBlock(reg: TestDetailRegression | null | undefined): string {
+  if (!reg) return '';
+  const lines: string[] = ['## Regression'];
+  lines.push(`- This test is a tracked regression: pass -> fail transition, not resolved.`);
+  const ageLabel =
+    reg.daysOpen < 1
+      ? `${Math.round(reg.daysOpen * 24)}h`
+      : `${Math.round(reg.daysOpen * 10) / 10}d`;
+  lines.push(`- Opened ${ageLabel} ago (${reg.regressedAt}).`);
+  if (reg.regressedAtCommit && reg.lastGreenCommit) {
+    lines.push(
+      `- Suspect range: last green commit \`${reg.lastGreenCommit}\` → first red commit \`${reg.regressedAtCommit}\`.`
+    );
+  } else if (reg.regressedAtCommit) {
+    lines.push(
+      `- First red commit: \`${reg.regressedAtCommit}\` (no green baseline commit recorded).`
+    );
+  } else if (reg.lastGreenCommit) {
+    lines.push(`- Last green commit: \`${reg.lastGreenCommit}\` (regressing commit not recorded).`);
+  }
+  lines.push(
+    `- Since opening: ${reg.failureCount} failing run${reg.failureCount === 1 ? '' : 's'}, ${reg.flakyCount} flaky pass${reg.flakyCount === 1 ? '' : 'es'}.`
+  );
+  lines.push(
+    '- Frame Root Cause around the change that landed in the suspect range, not chronic flake or first-time-ever defect. If evidence contradicts the regression framing, say so.'
+  );
+  return lines.join('\n');
+}
+
 export const buildTestFailureSegments = (args: {
   systemPrompt?: string;
   failureDetails: FailureDetailsForPrompt;
@@ -910,9 +944,8 @@ export const buildTestFailureSegments = (args: {
   feedback?: { comment: string; updatedAt: string } | null;
   crossProjectEntries?: CrossProjectEntry[];
   crossProjectTotalCount?: number;
-  /** Most recent completed LLM analysis for this same (testId, fileId, project)
-   *  from any prior run. Rendered as the `prior_in_project_analysis` segment. */
   priorInProjectAnalysis?: PriorInProjectAnalysis | null;
+  regressionContext?: TestDetailRegression | null;
   overrides?: CustomPromptOverrides;
 }): SegmentedPrompt => {
   const segments: PromptSegment[] = [];
@@ -975,6 +1008,15 @@ export const buildTestFailureSegments = (args: {
       role: 'user',
       stable: false,
       content: flakinessBlock,
+    });
+  }
+  const regressionBlock = buildRegressionContextBlock(args.regressionContext);
+  if (regressionBlock) {
+    segments.push({
+      id: 'regression_context',
+      role: 'user',
+      stable: false,
+      content: regressionBlock,
     });
   }
   if (args.crossProjectEntries && args.crossProjectEntries.length > 0) {
@@ -1768,6 +1810,40 @@ function renderRunContextInline(ctx: ReportSummaryRunContext): string | null {
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
+function renderRegressionsAggregate(reg: RegressionsAggregate): string {
+  const lines: string[] = ['## Regression Activity'];
+  lines.push(
+    `- **Active regressions:** ${reg.active} (tests that failed and have not yet recovered)`
+  );
+  lines.push(`- **New in window:** ${reg.newInWindow}`);
+  lines.push(`- **Resolved in window:** ${reg.resolvedInWindow}`);
+  if (reg.medianMttrDays !== null) {
+    const mttr =
+      reg.medianMttrDays < 1
+        ? `${Math.round(reg.medianMttrDays * 24)}h`
+        : `${Math.round(reg.medianMttrDays * 10) / 10}d`;
+    lines.push(`- **Median MTTR (resolved):** ${mttr}`);
+  }
+  if (reg.topCommits.length > 0) {
+    const list = reg.topCommits
+      .slice(0, 3)
+      .map((c) => `\`${c.commit}\` (${c.count})`)
+      .join('; ');
+    lines.push(`- **Top regressing commits:** ${list}`);
+  }
+  if (reg.topFiles.length > 0) {
+    const list = reg.topFiles
+      .slice(0, 3)
+      .map((f) => `\`${f.filePath}\` (${f.count})`)
+      .join('; ');
+    lines.push(`- **Top regressing files:** ${list}`);
+  }
+  lines.push(
+    '- Interpretation: a non-zero "Active regressions" count means failures are still unresolved; weight these higher than chronic-flake clusters when picking the verdict.'
+  );
+  return `${lines.join('\n')}\n\n`;
+}
+
 function renderTrendSignal(signal: ProjectTrendSignal): string {
   let block = `## Trend Signal\n`;
   const { current, prior, splits, clusterFlow } = signal;
@@ -1847,6 +1923,7 @@ export const buildProjectSummarySegments = (args: {
   clusters?: ProjectCluster[];
   trendSignal?: ProjectTrendSignal;
   coverage?: ProjectCoverageScope;
+  regressions?: RegressionsAggregate;
   overrides?: CustomPromptOverrides;
 }): SegmentedPrompt => {
   const segments: PromptSegment[] = [];
@@ -2020,12 +2097,12 @@ export const buildProjectSummarySegments = (args: {
     dataBlock += '\n';
   }
 
-  // Trend signal: pass rate / flaky / duration deltas vs the prior window, plus
-  // the in-window last-half-vs-first-half failure split. Pre-computed so the
-  // verdict can be anchored on numbers rather than the model eyeballing the
-  // per-run dump for a slope.
   if (args.trendSignal) {
     dataBlock += renderTrendSignal(args.trendSignal);
+  }
+
+  if (args.regressions) {
+    dataBlock += renderRegressionsAggregate(args.regressions);
   }
 
   dataBlock += `Runs are listed from most recent to oldest:\n\n`;

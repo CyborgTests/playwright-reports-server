@@ -51,6 +51,8 @@ export interface EventContext extends Record<string, unknown> {
   prevTotal?: number;
   prevTotalWithSkipped?: number;
   compareUrl?: string;
+  newRegressions?: number;
+  resolvedRegressions?: number;
 }
 
 function statCounts(report: ReportLike) {
@@ -105,8 +107,9 @@ export function buildEventContext(args: {
   report: ReportLike;
   previous?: ReportLike;
   serverUrl: string;
+  regressionsForReport?: { newHere: number; resolvedHere: number };
 }): EventContext {
-  const { report, previous, serverUrl } = args;
+  const { report, previous, serverUrl, regressionsForReport } = args;
   const stats = statCounts(report);
   const ctx: EventContext = {
     project: report.project,
@@ -124,6 +127,8 @@ export function buildEventContext(args: {
     passRate: formatPassRate(stats.passRate),
     duration: formatDuration(report.duration),
     durationMs: report.duration ?? 0,
+    newRegressions: regressionsForReport?.newHere,
+    resolvedRegressions: regressionsForReport?.resolvedHere,
   };
 
   if (previous) {
@@ -146,6 +151,7 @@ export function buildEventContext(args: {
 export interface EventConditionContext {
   report: ReportLike;
   previous?: ReportLike;
+  regressionsForReport?: { newHere: number; resolvedHere: number };
 }
 
 export function eventConditionMatches(
@@ -173,6 +179,10 @@ export function eventConditionMatches(
       const prev = statCounts(ctx.previous);
       return prev.unexpected > 0 && cur.unexpected === 0;
     }
+    case 'new_regressions':
+      return (ctx.regressionsForReport?.newHere ?? 0) > 0;
+    case 'resolved_regressions':
+      return (ctx.regressionsForReport?.resolvedHere ?? 0) > 0;
     default: {
       const _exhaustive: never = condition;
       void _exhaustive;

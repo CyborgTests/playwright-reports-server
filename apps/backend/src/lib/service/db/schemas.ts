@@ -385,3 +385,49 @@ export const QUALITY_DASHBOARDS_SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_quality_nodes_project
     ON quality_dashboard_nodes(dashboardId, projectName);
 `;
+
+export const REGRESSIONS_SCHEMA_SQL = `
+  CREATE TABLE IF NOT EXISTS regressions (
+    id TEXT PRIMARY KEY,
+    testId TEXT NOT NULL,
+    fileId TEXT NOT NULL,
+    project TEXT NOT NULL,
+
+    regressedAtReportId TEXT NOT NULL,
+    regressedAtCreatedAt TEXT NOT NULL,
+    regressedAtCommit TEXT,
+    regressedAtCategory TEXT,
+
+    lastGreenReportId TEXT,
+    lastGreenCreatedAt TEXT,
+    lastGreenCommit TEXT,
+
+    recoveredAtReportId TEXT,
+    recoveredAtCreatedAt TEXT,
+    recoveredAtCommit TEXT,
+
+    daysOpen REAL,
+    failureCount INTEGER NOT NULL DEFAULT 1,
+    flakyCount INTEGER NOT NULL DEFAULT 0,
+
+    FOREIGN KEY (testId, fileId, project)
+      REFERENCES tests(testId, fileId, project)
+      ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_regressions_open
+    ON regressions(recoveredAtReportId, regressedAtCreatedAt DESC);
+  CREATE INDEX IF NOT EXISTS idx_regressions_project_open
+    ON regressions(project, recoveredAtReportId, regressedAtCreatedAt DESC);
+  CREATE INDEX IF NOT EXISTS idx_regressions_test
+    ON regressions(testId, fileId, project);
+  CREATE INDEX IF NOT EXISTS idx_regressions_commit
+    ON regressions(regressedAtCommit);
+  CREATE INDEX IF NOT EXISTS idx_regressions_regressedAtReport
+    ON regressions(regressedAtReportId);
+  CREATE INDEX IF NOT EXISTS idx_regressions_recoveredAtReport
+    ON regressions(recoveredAtReportId)
+    WHERE recoveredAtReportId IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_regressions_recoveredAt
+    ON regressions(recoveredAtCreatedAt)
+    WHERE recoveredAtCreatedAt IS NOT NULL;
+`;

@@ -1,4 +1,5 @@
 import type { ClusterOptions, ClusterReport, FailureCluster } from '@playwright-reports/shared';
+import { type RegressionSummary, regressionsDb } from '../service/db/regressions.sqlite.js';
 import { reportDb } from '../service/db/reports.sqlite.js';
 import { testDb } from '../service/db/tests.sqlite.js';
 import { buildClusters, type ReportUrlLookup } from './cluster.js';
@@ -51,6 +52,15 @@ export async function getFailureClusters(opts: ClusterOptions): Promise<ClusterR
 
   if (opts.reportId) clusters = scopeToReport(clusters, opts.reportId);
 
+  enrichClustersWithRegressionContext(clusters);
+
+  clusters.sort((a, b) => {
+    const ra = a.regressionContext?.membersInRegression ?? 0;
+    const rb = b.regressionContext?.membersInRegression ?? 0;
+    if (ra !== rb) return rb - ra;
+    return 0;
+  });
+
   const report: ClusterReport = {
     clusters,
     totalFailures: failedRuns.length,
@@ -58,6 +68,56 @@ export async function getFailureClusters(opts: ClusterOptions): Promise<ClusterR
   };
   cacheSet(key, report);
   return report;
+}
+
+const SHARED_COMMIT_THRESHOLD = 0.8;
+
+function enrichClustersWithRegressionContext(clusters: FailureCluster[]): void {
+  const keys: Array<{ testId: string; fileId: string; project: string }> = [];
+  const seen = new Set<string>();
+  for (const c of clusters) {
+    for (const t of c.tests) {
+      const k = testKey(t.testId, t.fileId, t.project);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      keys.push({ testId: t.testId, fileId: t.fileId, project: t.project });
+    }
+  }
+  if (keys.length === 0) return;
+  const map = regressionsDb.getOpenForTests(keys);
+
+  for (const c of clusters) {
+    const memberRegressions = c.tests
+      .map((t) => map.get(testKey(t.testId, t.fileId, t.project)))
+      .filter((r): r is RegressionSummary => r !== undefined);
+    if (memberRegressions.length === 0) {
+      c.regressionContext = undefined;
+      continue;
+    }
+    const commitCounts = new Map<string, number>();
+    for (const r of memberRegressions) {
+      if (r.regressedAtCommit) {
+        commitCounts.set(r.regressedAtCommit, (commitCounts.get(r.regressedAtCommit) ?? 0) + 1);
+      }
+    }
+    let sharedCommit: string | null = null;
+    for (const [commit, count] of commitCounts) {
+      if (count / memberRegressions.length >= SHARED_COMMIT_THRESHOLD) {
+        sharedCommit = commit;
+        break;
+      }
+    }
+    const earliest = memberRegressions
+      .map((r) => r.regressedAtCreatedAt)
+      .sort()
+      .at(0);
+    c.regressionContext = {
+      membersInRegression: memberRegressions.length,
+      totalMembers: c.tests.length,
+      sharedRegressionCommit: sharedCommit,
+      earliestRegression: earliest ?? null,
+    };
+  }
 }
 
 export function invalidateFailureClustersCache(): void {

@@ -58,6 +58,7 @@ export interface ReadReportsInput {
   from?: string;
   to?: string;
   passRate?: 'passing' | 'failing' | 'below-threshold';
+  regressionsOnly?: boolean;
 }
 
 export interface ReadReportsOutput {
@@ -93,6 +94,7 @@ export type Report = {
   createdAt: Date;
   size: string;
   sizeBytes: number;
+  regressions?: { newHere: number; resolvedHere: number };
 };
 
 export type ReportHistory = Report & ReportInfo;

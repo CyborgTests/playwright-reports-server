@@ -47,6 +47,7 @@ import type { LlmTaskRow } from './db/llmTasks.sqlite.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
 import { projectSummaryDb } from './db/projectSummary.sqlite.js';
 import { computeProjectCoverageScope } from './db/queries/projectCoverage.js';
+import { regressionsDb, toRegressionContext } from './db/regressions.sqlite.js';
 import { testAnalysisDb } from './db/testAnalysis.sqlite.js';
 import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
@@ -667,6 +668,7 @@ class LlmAnalysisQueue {
     await enrichEnvironmentFromReport(details, reportId);
 
     const priorPrior = testAnalysisDb.getLatestPriorByTest(testId, fileId, project, reportId);
+    const openRegression = regressionsDb.getOpenForTest(testId, fileId, project);
     const builtPrompt = buildTestFailureSegments({
       failureDetails: details,
       historicalContext: {
@@ -690,6 +692,7 @@ class LlmAnalysisQueue {
             updatedAt: priorPrior.updatedAt ?? priorPrior.createdAt,
           }
         : null,
+      regressionContext: openRegression ? toRegressionContext(openRegression) : null,
       overrides: promptOverrides,
     });
 
@@ -1179,6 +1182,14 @@ class LlmAnalysisQueue {
 
     const projectConfig = await service.getConfig();
     const projectLlmCfg = projectConfig.llm ?? {};
+    // Regression activity for the same window the trend signal is computed over.
+    // `project='all'` is the cross-project aggregate path; pass undefined so the
+    // aggregator returns global counts.
+    const regressionsAggregate = regressionsDb.aggregateForAnalytics({
+      project: project === 'all' ? undefined : project,
+      since: oldestReportCreatedAt,
+      until: latestReportCreatedAt,
+    });
     const builtPrompt = buildProjectSummarySegments({
       project,
       runs: latestReports.map((r) => {
@@ -1203,6 +1214,7 @@ class LlmAnalysisQueue {
       clusters,
       trendSignal,
       coverage,
+      regressions: regressionsAggregate,
       overrides: {
         systemPrompt: projectLlmCfg.customSystemPrompt,
         projectSummarySystemPrompt: projectLlmCfg.customProjectSummarySystemPrompt,
@@ -1411,6 +1423,7 @@ export async function buildTestAnalysisRequest(opts: {
   await enrichEnvironmentFromReport(details, reportId);
 
   const priorPrior = testAnalysisDb.getLatestPriorByTest(testId, fileId, project, reportId);
+  const openRegression = regressionsDb.getOpenForTest(testId, fileId, project);
   const builtPrompt = buildTestFailureSegments({
     failureDetails: details,
     historicalContext: {
@@ -1434,6 +1447,7 @@ export async function buildTestAnalysisRequest(opts: {
           updatedAt: priorPrior.updatedAt ?? priorPrior.createdAt,
         }
       : null,
+    regressionContext: openRegression ? toRegressionContext(openRegression) : null,
     overrides: promptOverrides,
   });
 

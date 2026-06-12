@@ -598,6 +598,16 @@ export class ReportDatabase {
       } else if (input?.passRate === 'below-threshold') {
         q = q.where('passRate', '<', 70).where('passRate', 'is not', null);
       }
+      if (input?.regressionsOnly) {
+        q = q.where((eb: ExpressionBuilder<Database, 'reports'>) =>
+          eb.exists(
+            eb
+              .selectFrom('regressions')
+              .select((sub) => sub.lit(1).as('x'))
+              .whereRef('regressions.regressedAtReportId', '=', 'reports.reportID')
+          )
+        );
+      }
       return q;
     };
 

@@ -3,6 +3,8 @@ import { migration001FkCascade } from './001_fk_cascade_dependent_tables.js';
 import { migration002ExtractFilesColumn } from './002_extract_files_column.js';
 import { migration003AddPassRateColumn } from './003_add_pass_rate_column.js';
 import { migration004AddFlakinessResetAt } from './004_add_flakiness_reset_at.js';
+import { migration005AddRegressionsTable } from './005_add_regressions_table.js';
+import { migration006BackfillRegressions } from './006_backfill_regressions.js';
 
 export interface Migration {
   id: string;
@@ -19,6 +21,8 @@ const MIGRATIONS: Migration[] = [
   migration002ExtractFilesColumn,
   migration003AddPassRateColumn,
   migration004AddFlakinessResetAt,
+  migration005AddRegressionsTable,
+  migration006BackfillRegressions,
 ];
 
 export function runMigrations(db: Database.Database): void {

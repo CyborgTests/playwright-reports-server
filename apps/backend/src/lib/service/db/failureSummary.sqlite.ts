@@ -3,6 +3,7 @@ import { linkifyReportAnalysisStructured, linkifyReportRefs } from '../../llm/li
 import { getDatabase } from './db.js';
 import { decodeFailureDetails } from './failureDetailsCodec.js';
 import { getKysely } from './kysely.js';
+import { regressionsDb } from './regressions.sqlite.js';
 import { singletonOf } from './singleton.js';
 import { chunk, parseJsonColumn } from './utils.js';
 
@@ -204,6 +205,7 @@ export class FailureSummaryDatabase {
       sampleReportId?: string;
       sampleReportUrl?: string;
       sampleTestId?: string;
+      regressedTestCount: number;
       affectedTests?: Array<{
         testId: string;
         title: string;
@@ -211,6 +213,7 @@ export class FailureSummaryDatabase {
         project: string;
         reportId: string;
         reportUrl?: string;
+        isRegressed?: boolean;
       }>;
     }>;
   } {
@@ -220,8 +223,7 @@ export class FailureSummaryDatabase {
       return cached.value;
     }
 
-    // Cap the working set so a wide window can't materialize unbounded results.
-    const MAX_ROWS_SCANNED = 20_000;
+    const MAX_ROWS_SCANNED = 10_000;
     let q = this.k
       .selectFrom('test_runs')
       .select([
@@ -229,6 +231,7 @@ export class FailureSummaryDatabase {
         'fileId',
         'project',
         'reportId',
+        'outcome',
         'failure_category as category',
         'error_signature as signature',
         'error_signature_global as signatureGlobal',
@@ -242,17 +245,27 @@ export class FailureSummaryDatabase {
     if (opts?.from) q = q.where('createdAt', '>=', opts.from);
     if (opts?.to) q = q.where('createdAt', '<', opts.to);
     const compiled = q.compile();
-    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+    const rawRows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
       testId: string;
       fileId: string;
       project: string;
       reportId: string;
+      outcome: string;
       category: string;
       signature: string | null;
       signatureGlobal: string | null;
       failure_details: Buffer | string | null;
       createdAt: string;
     }>;
+
+    const isHardFailure = (outcome: string): boolean =>
+      outcome === 'unexpected' || outcome === 'failed';
+    const rows = rawRows.slice().sort((a, b) => {
+      const aHard = isHardFailure(a.outcome) ? 0 : 1;
+      const bHard = isHardFailure(b.outcome) ? 0 : 1;
+      if (aHard !== bHard) return aHard - bHard;
+      return a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0;
+    });
 
     const categoryCounts: Record<string, number> = {};
     const errorMap = new Map<
@@ -391,19 +404,19 @@ export class FailureSummaryDatabase {
       }
     }
 
+    const allTestKeys = Array.from(testKeys).map((k) => {
+      const [testId, fileId, project] = k.split('::');
+      return { testId, fileId, project };
+    });
+    const regMap = regressionsDb.getOpenForTests(allTestKeys);
+
     const result = {
       categories,
       totalFailures,
-      topErrors: topErrors.map((e) => ({
-        message: e.message,
-        category: e.category,
-        count: e.count,
-        signature: e.signature,
-        sampleReportId: e.sampleReportId,
-        sampleTestId: e.sampleTestId,
-        sampleReportUrl: e.sampleReportId ? urlMap.get(e.sampleReportId) : undefined,
-        affectedTests: e.examples.map((ex) => {
+      topErrors: topErrors.map((e) => {
+        const affectedTests = e.examples.map((ex) => {
           const t = titleMap.get(makeTestKey(ex.testId, ex.fileId, ex.project));
+          const isRegressed = regMap.has(makeTestKey(ex.testId, ex.fileId, ex.project));
           return {
             testId: ex.testId,
             title: t?.title ?? ex.testId,
@@ -411,9 +424,21 @@ export class FailureSummaryDatabase {
             project: ex.project,
             reportId: ex.reportId,
             reportUrl: urlMap.get(ex.reportId),
+            isRegressed,
           };
-        }),
-      })),
+        });
+        return {
+          message: e.message,
+          category: e.category,
+          count: e.count,
+          signature: e.signature,
+          sampleReportId: e.sampleReportId,
+          sampleTestId: e.sampleTestId,
+          sampleReportUrl: e.sampleReportId ? urlMap.get(e.sampleReportId) : undefined,
+          regressedTestCount: affectedTests.filter((t) => t.isRegressed).length,
+          affectedTests,
+        };
+      }),
     };
     this.aggregatedCategoriesCache.set(cacheKey, {
       value: result,

@@ -10,7 +10,7 @@
  * are passed through verbatim; the only hard cap is on the per-report
  * `failedTests` array size so a 500-failure run can't pull the whole report.
  */
-import type { ClusterAnchor } from '@playwright-reports/shared';
+import type { ClusterAnchor, ClusterRegressionContext } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { defaultConfig } from '../lib/config.js';
 import { parseFailureDetails } from '../lib/failure-clustering/extractors/failure-details.js';
@@ -25,6 +25,7 @@ import { analysisFeedbackDb } from '../lib/service/db/analysisFeedback.sqlite.js
 import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
 import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
 import { projectSummaryDb } from '../lib/service/db/projectSummary.sqlite.js';
+import { regressionsDb } from '../lib/service/db/regressions.sqlite.js';
 import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
@@ -113,6 +114,21 @@ interface TestBrief {
     otherTestsTotal: number;
     otherTestsTruncated: boolean;
   } | null;
+  regression: {
+    id: string;
+    regressedAtReportId: string;
+    regressedAtDisplayNumber: number | null;
+    regressedAtCreatedAt: string;
+    regressedAtCommit: string | null;
+    regressedAtCategory: string | null;
+    lastGreenReportId: string | null;
+    lastGreenDisplayNumber: number | null;
+    lastGreenCreatedAt: string | null;
+    lastGreenCommit: string | null;
+    daysOpen: number;
+    failureCount: number;
+    flakyCount: number;
+  } | null;
 }
 
 interface ReportBriefSummaryEntry {
@@ -147,6 +163,7 @@ interface ReportBriefBase {
   clusterSummary: ReportBriefCluster[];
   unclusteredFailures: number;
   failedTestsTruncated: boolean;
+  regressions: { newHere: number; resolvedHere: number } | null;
 }
 
 // Discriminated by `mode` so the agent can statically pick the right payload
@@ -546,6 +563,64 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
       return reply.send({ success: true, data: { rows: out } });
     });
 
+    api.get('/api/cli/regression/list', async (request: FastifyRequest, reply: FastifyReply) => {
+      const { project, open, from, to, sort, limit } = request.query as {
+        project?: string;
+        open?: string;
+        from?: string;
+        to?: string;
+        sort?: string;
+        limit?: string;
+      };
+      const openFilter = open === 'true' ? true : open === 'false' ? false : undefined;
+      const sortKey = sort === 'recent' || sort === 'oldest' || sort === 'impact' ? sort : 'impact';
+      const parsedLimit = limit ? Number.parseInt(limit, 10) : 25;
+      const cappedLimit =
+        Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 25;
+
+      const { data, total } = regressionsDb.list({
+        project: project && project !== 'all' ? project : undefined,
+        open: openFilter,
+        since: from,
+        until: to,
+        limit: cappedLimit,
+        sort: sortKey,
+      });
+
+      const rows = data.map((r) => {
+        const live = r.daysOpen ?? (Date.now() - Date.parse(r.regressedAtCreatedAt)) / 86_400_000;
+        return {
+          id: r.id,
+          testId: r.testId,
+          fileId: r.fileId,
+          project: r.project,
+          title: r.title ?? null,
+          filePath: r.filePath ?? null,
+          regressedAtReportId: r.regressedAtReportId,
+          regressedAtDisplayNumber: r.regressedDisplayNumber,
+          regressedAtCreatedAt: r.regressedAtCreatedAt,
+          regressedAtCommit: r.regressedAtCommit,
+          regressedAtCategory: r.regressedAtCategory,
+          lastGreenReportId: r.lastGreenReportId,
+          lastGreenDisplayNumber: r.lastGreenDisplayNumber,
+          lastGreenCreatedAt: r.lastGreenCreatedAt,
+          lastGreenCommit: r.lastGreenCommit,
+          recoveredAtReportId: r.recoveredAtReportId,
+          recoveredAtCreatedAt: r.recoveredAtCreatedAt,
+          recoveredAtCommit: r.recoveredAtCommit,
+          daysOpen: Math.round(live * 10) / 10,
+          failureCount: r.failureCount,
+          flakyCount: r.flakyCount,
+          isOpen: r.recoveredAtReportId === null,
+        };
+      });
+
+      return reply.send({
+        success: true,
+        data: { rows, total, hasMore: total > rows.length },
+      });
+    });
+
     // GET /api/cli/categories?project=...
     // Enumerate the failure categories the heuristic has emitted, so agents
     // can pick a valid value for `test search --failure-category`. Pass
@@ -851,6 +926,25 @@ async function buildTestBrief(
           };
         })()
       : null,
+    regression: (() => {
+      const reg = regressionsDb.getOpenForTest(testId, fileId, project);
+      if (!reg) return null;
+      return {
+        id: reg.id,
+        regressedAtReportId: reg.regressedAtReportId,
+        regressedAtDisplayNumber: reg.regressedAtDisplayNumber,
+        regressedAtCreatedAt: reg.regressedAtCreatedAt,
+        regressedAtCommit: reg.regressedAtCommit,
+        regressedAtCategory: reg.regressedAtCategory,
+        lastGreenReportId: reg.lastGreenReportId,
+        lastGreenDisplayNumber: reg.lastGreenDisplayNumber,
+        lastGreenCreatedAt: reg.lastGreenCreatedAt,
+        lastGreenCommit: reg.lastGreenCommit,
+        daysOpen: Math.round(reg.daysOpen * 10) / 10,
+        failureCount: reg.failureCount,
+        flakyCount: reg.flakyCount,
+      };
+    })(),
   };
 }
 
@@ -951,6 +1045,7 @@ async function buildReportBrief(reportId: string, full: boolean): Promise<Report
   const unclustered = briefs.filter((b) => !b.cluster);
   const unclusteredFailures = unclustered.length;
 
+  const regressionCounts = regressionsDb.countsForReport(report.reportID);
   const base: ReportBriefBase = {
     reportId: report.reportID,
     displayNumber: report.displayNumber,
@@ -969,6 +1064,10 @@ async function buildReportBrief(reportId: string, full: boolean): Promise<Report
     clusterSummary,
     unclusteredFailures,
     failedTestsTruncated: truncated,
+    regressions:
+      regressionCounts.newHere === 0 && regressionCounts.resolvedHere === 0
+        ? null
+        : regressionCounts,
   };
 
   if (full) {
@@ -1133,6 +1232,7 @@ interface ClusterBrief {
   };
   members: TestBrief[];
   membersTruncated: boolean;
+  regressionContext: ClusterRegressionContext | null;
 }
 
 async function buildClusterBrief(
@@ -1177,6 +1277,7 @@ async function buildClusterBrief(
     },
     members,
     membersTruncated: truncated,
+    regressionContext: cluster.regressionContext ?? null,
   };
 }
 
@@ -1186,12 +1287,14 @@ async function buildReportSummary(reportId: string) {
   const summary = failureSummaryDb.getSummary(reportId);
   const runs = testDb.getTestRunsByReport(reportId);
   const hasFailures = runs.some((r) => FAILED_OUTCOMES.has(r.outcome));
+  const regressions = regressionsDb.countsForReport(reportId);
   return {
     reportId,
     project: report.project,
     displayNumber: report.displayNumber,
     hasFailures,
     summary: summary ?? null,
+    regressions: regressions.newHere === 0 && regressions.resolvedHere === 0 ? null : regressions,
   };
 }
 

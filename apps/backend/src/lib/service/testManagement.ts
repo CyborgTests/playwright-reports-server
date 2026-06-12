@@ -19,6 +19,7 @@ import { llmService } from '../llm/index.js';
 import { extractFailureEvidence } from '../parser/failure-extraction.js';
 import type { ReportHistory } from '../storage/types.js';
 import { llmTasksDb } from './db/llmTasks.sqlite.js';
+import { regressionsDb, toRegressionContext } from './db/regressions.sqlite.js';
 import type { Test, TestRun, TestWithQuarantineInfo } from './db/tests.sqlite.js';
 import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
@@ -493,6 +494,9 @@ export class TestManagementService {
       }
     }
 
+    const reportMetadata = (report as { metadata?: { gitCommit?: { hash?: string } } }).metadata;
+    const currentReportCommit: string | null = reportMetadata?.gitCommit?.hash ?? null;
+
     const transaction = () => {
       for (const file of report.files!) {
         if (!file.tests) continue;
@@ -567,6 +571,7 @@ export class TestManagementService {
           testDb.refreshTestStatCols(testId, fileId, report.project);
         }
       }
+      regressionsDb.detectForReport(report.reportID, currentReportCommit);
     };
 
     try {
@@ -816,6 +821,17 @@ export class TestManagementService {
     }
 
     testDb.refreshTestStatCols(testId, fileId, project);
+
+    if (isQuarantined && regressionsDb.hasOpenForTest(testId, fileId, project)) {
+      regressionsDb.closeOpenForTest({
+        testId,
+        fileId,
+        project,
+        recoveredAtReportId: latestRun.reportId,
+        recoveredAtCreatedAt: latestRun.createdAt,
+        recoveredAtCommit: null,
+      });
+    }
   }
 
   async getTests(
@@ -823,13 +839,16 @@ export class TestManagementService {
     options?: {
       status?: 'all' | 'quarantined' | 'not-quarantined';
       tiers?: Array<'stable' | 'flaky' | 'critical'>;
-      sort?: 'default' | 'slowest' | 'stale';
+      sort?: 'default' | 'slowest' | 'stale' | 'regression-age';
       failureCategory?: string;
       limit?: number;
       offset?: number;
       from?: string;
       to?: string;
       search?: string;
+      regressedOnly?: boolean;
+      regressedSince?: string;
+      resolvedSince?: string;
     }
   ): Promise<{ data: TestWithQuarantineInfo[]; total: number }> {
     let tierOpt:
@@ -859,6 +878,9 @@ export class TestManagementService {
       from: options?.from,
       to: options?.to,
       search: options?.search,
+      regressedOnly: options?.regressedOnly,
+      regressedSince: options?.regressedSince,
+      resolvedSince: options?.resolvedSince,
     });
 
     if (rows.length === 0) return { data: [], total };
@@ -951,6 +973,7 @@ export class TestManagementService {
     const stats = buildTestDetailStats(runs);
     const failureGroups = buildFailureGroups(runs);
     const crossProject = buildCrossProjectOccurrences(testId, resolvedProject);
+    const openRegression = regressionsDb.getOpenForTest(testId, fileId, resolvedProject);
 
     return {
       testId: test.testId,
@@ -968,6 +991,7 @@ export class TestManagementService {
       runs,
       failureGroups,
       crossProject,
+      regression: openRegression ? toRegressionContext(openRegression) : undefined,
     };
   }
 

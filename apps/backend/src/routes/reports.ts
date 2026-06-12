@@ -16,6 +16,7 @@ import {
   UploadReportRequestSchema,
 } from '../lib/schemas/index.js';
 import { reportDb } from '../lib/service/db/index.js';
+import { regressionsDb } from '../lib/service/db/regressions.sqlite.js';
 import { service } from '../lib/service/index.js';
 import { compareReports } from '../lib/service/reportCompare.js';
 import { testManagementService } from '../lib/service/testManagement.js';
@@ -93,11 +94,23 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
             from: query.from,
             to: query.to,
             passRate,
+            regressionsOnly: query.regressionsOnly,
           })
         );
 
         if (error) {
           return reply.status(400).send({ error: error.message });
+        }
+
+        if (reports?.reports?.length) {
+          const ids = reports.reports.map((r) => r.reportID);
+          const countsByReport = regressionsDb.countsForReports(ids);
+          for (const r of reports.reports) {
+            const counts = countsByReport.get(r.reportID);
+            if (counts && (counts.newHere > 0 || counts.resolvedHere > 0)) {
+              r.regressions = counts;
+            }
+          }
         }
 
         return reports;
@@ -143,6 +156,13 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
 
         if (error) {
           return reply.status(404).send({ error: error.message });
+        }
+
+        if (report) {
+          const counts = regressionsDb.countsForReport(report.reportID);
+          if (counts.newHere > 0 || counts.resolvedHere > 0) {
+            report.regressions = counts;
+          }
         }
 
         return report;

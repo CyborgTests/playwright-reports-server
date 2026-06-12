@@ -1,6 +1,7 @@
 import type { ReportStats } from '@playwright-reports/shared';
 import type { ReportHistory } from '../storage/types.js';
 import { reportDb } from './db/index.js';
+import { regressionsDb } from './db/regressions.sqlite.js';
 import { type Test, type TestRun, testDb } from './db/tests.sqlite.js';
 
 const FAILURE_OUTCOMES = new Set(['failed', 'unexpected', 'timedOut']);
@@ -64,6 +65,8 @@ export interface ReportDiffSummary {
   removedTestsCount: number;
   durationRegressionsCount: number;
   durationImprovementsCount: number;
+  regressionsOpenedBetween: number;
+  regressionsResolvedBetween: number;
 }
 
 export interface ReportDiffResult {
@@ -247,6 +250,18 @@ export const compareReports = (
   durationDeltas.sort((x, y) => Math.abs(y.deltaMs) - Math.abs(x.deltaMs));
   const trimmedDeltas = durationDeltas.slice(0, MAX_DURATION_DELTAS_RETURNED);
 
+  const reportARef = toReportRef(reportA);
+  const reportBRef = toReportRef(reportB);
+  const [winSince, winUntil] =
+    reportARef.createdAt <= reportBRef.createdAt
+      ? [reportARef.createdAt, reportBRef.createdAt]
+      : [reportBRef.createdAt, reportARef.createdAt];
+  const regressionWindow = regressionsDb.countsBetween({
+    project: matchByTestIdOnly ? undefined : reportA.project,
+    since: winSince,
+    until: winUntil,
+  });
+
   const summary: ReportDiffSummary = {
     totalA: runsA.size,
     totalB: runsB.size,
@@ -259,12 +274,14 @@ export const compareReports = (
     removedTestsCount: removedTests.length,
     durationRegressionsCount: trimmedDeltas.filter((d) => d.deltaMs > 0).length,
     durationImprovementsCount: trimmedDeltas.filter((d) => d.deltaMs < 0).length,
+    regressionsOpenedBetween: regressionWindow.opened,
+    regressionsResolvedBetween: regressionWindow.resolved,
   };
 
   return {
     result: {
-      reportA: toReportRef(reportA),
-      reportB: toReportRef(reportB),
+      reportA: reportARef,
+      reportB: reportBRef,
       summary,
       newlyFailed,
       fixed,

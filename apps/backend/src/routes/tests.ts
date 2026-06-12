@@ -1,5 +1,7 @@
+import type { TestWithQuarantineInfo } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
+import { regressionsDb, toRegressionContext } from '../lib/service/db/regressions.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
 import { testManagementService } from '../lib/service/testManagement.js';
@@ -11,19 +13,35 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
     fastify.addHook('preHandler', (request, reply) => authenticate(request as AuthRequest, reply));
 
     fastify.get('/api/tests', async (request: FastifyRequest, reply: FastifyReply) => {
-      const { project, status, tiers, sort, failureCategory, limit, offset, from, to, search } =
-        request.query as {
-          project?: string;
-          status?: string;
-          tiers?: string;
-          sort?: string;
-          failureCategory?: string;
-          limit?: string;
-          offset?: string;
-          from?: string;
-          to?: string;
-          search?: string;
-        };
+      const {
+        project,
+        status,
+        tiers,
+        sort,
+        failureCategory,
+        limit,
+        offset,
+        from,
+        to,
+        search,
+        regressedOnly,
+        regressedSince,
+        resolvedSince,
+      } = request.query as {
+        project?: string;
+        status?: string;
+        tiers?: string;
+        sort?: string;
+        failureCategory?: string;
+        limit?: string;
+        offset?: string;
+        from?: string;
+        to?: string;
+        search?: string;
+        regressedOnly?: string;
+        regressedSince?: string;
+        resolvedSince?: string;
+      };
 
       try {
         const parsedTiers = tiers
@@ -42,16 +60,45 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
               ? ('slowest' as const)
               : sort === 'stale'
                 ? ('stale' as const)
-                : undefined,
+                : sort === 'regression-age'
+                  ? ('regression-age' as const)
+                  : undefined,
           failureCategory: failureCategory || undefined,
           limit: limit ? Number.parseInt(limit, 10) : undefined,
           offset: offset ? Number.parseInt(offset, 10) : undefined,
           from,
           to,
           search,
+          regressedOnly: regressedOnly === 'true',
+          regressedSince: regressedSince || undefined,
+          resolvedSince: resolvedSince || undefined,
         };
 
         const { data, total } = await testManagementService.getTests(project, options);
+
+        if (data.length > 0) {
+          const keys = data.map((t) => ({
+            testId: t.testId,
+            fileId: t.fileId,
+            project: t.project,
+          }));
+          const openMap = regressionsDb.getOpenForTests(keys);
+          const onlyActiveFilter =
+            options.regressedOnly && !options.regressedSince && !options.resolvedSince;
+          const highlightMap = regressionsDb.getRegressionHighlightsForTests(
+            keys,
+            onlyActiveFilter ? undefined : from,
+            onlyActiveFilter ? undefined : to
+          );
+          for (const t of data as TestWithQuarantineInfo[]) {
+            const k = `${t.testId}::${t.fileId}::${t.project}`;
+            const reg = openMap.get(k);
+            if (reg) t.regression = toRegressionContext(reg);
+            const hl = highlightMap.get(k);
+            if (hl) t.regressionHighlights = hl;
+          }
+        }
+
         return reply.send({ success: true, data, total });
       } catch (error) {
         fastify.log.error(error);

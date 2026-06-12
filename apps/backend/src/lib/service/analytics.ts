@@ -9,6 +9,7 @@ import type {
 import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import type { ReportHistory as BackendReportHistory } from '../storage/types.js';
 import { failureSummaryDb } from './db/failureSummary.sqlite.js';
+import { regressionsDb } from './db/regressions.sqlite.js';
 import { reportDb } from './db/reports.sqlite.js';
 import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
@@ -104,6 +105,7 @@ export class AnalyticsService {
       testsSummary,
       previousTestsSummary,
       failureCategories,
+      regressions,
     ] = await Promise.all([
       this.calculateOverviewStats(
         displayReports,
@@ -120,6 +122,9 @@ export class AnalyticsService {
         ? testManagementService.getTestsSummary(projectKey, warningThreshold, olderRange)
         : Promise.resolve({ total: 0, flakyCount: 0 }),
       Promise.resolve(failureSummaryDb.getAggregatedCategories(projectKey, 10, { from, to })),
+      Promise.resolve(
+        regressionsDb.aggregateForAnalytics({ project: projectKey, since: from, until: to })
+      ),
     ]);
 
     if (olderRange) {
@@ -144,6 +149,7 @@ export class AnalyticsService {
       trendMetrics,
       testsSummary,
       failureCategories,
+      regressions,
     };
   }
 
@@ -341,12 +347,16 @@ export class AnalyticsService {
     isBounded: boolean
   ): Promise<RunHealthMetric[]> {
     const limited = isBounded ? reports : reports.slice(0, HEALTH_GRID_UNBOUNDED_CAP);
+    const regressionCounts = regressionsDb.countsForReports(limited.map((r) => r.reportID));
     return limited.map((report) => {
       const stats = report.stats;
       const totalTests = stats?.total || 0;
       const passed = stats?.expected || 0;
       const failed = stats?.unexpected || 0;
       const flaky = stats?.flaky || 0;
+      const counts = regressionCounts.get(report.reportID);
+      const newRegressions = counts?.newHere ?? 0;
+      const resolvedRegressions = counts?.resolvedHere ?? 0;
 
       return {
         runId: report.reportID,
@@ -358,6 +368,8 @@ export class AnalyticsService {
         duration: report.duration || 0,
         title: report.title,
         displayNumber: report.displayNumber,
+        newRegressions: newRegressions > 0 ? newRegressions : undefined,
+        resolvedRegressions: resolvedRegressions > 0 ? resolvedRegressions : undefined,
       };
     });
   }
