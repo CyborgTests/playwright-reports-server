@@ -291,6 +291,14 @@ export interface AnalyticsResponse {
   };
   testsSummary: { total: number; flakyCount: number };
   failureCategories: unknown;
+  regressions: {
+    active: number;
+    newInWindow: number;
+    closedInWindow: number;
+    medianMttrDays: number | null;
+    topFiles: Array<{ filePath: string; count: number }>;
+    topCommits: Array<{ commit: string; count: number }>;
+  };
 }
 
 export interface ClusterTest {

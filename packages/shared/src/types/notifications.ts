@@ -11,6 +11,8 @@ export const EVENT_CONDITIONS = [
   'pass_rate_below_100',
   'recovered_to_clean',
   'recovered_no_hard_failures',
+  'new_regressions',
+  'resolved_regressions',
 ] as const;
 
 export type EventCondition = (typeof EVENT_CONDITIONS)[number];

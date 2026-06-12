@@ -5,6 +5,7 @@ import { CliHttpError } from './client.js';
 import { runAttachment } from './commands/attachment.js';
 import { runCategoryList } from './commands/category.js';
 import { runClusterBrief, runClusterList } from './commands/cluster.js';
+import { runRegressionList } from './commands/regression.js';
 import { runConfigCommand } from './commands/config.js';
 import { runTestFeedbackClear, runTestFeedbackUpsert } from './commands/feedback.js';
 import { runPing } from './commands/ping.js';
@@ -51,6 +52,7 @@ const HELP = [
   '  report compare <a|latest|prev> <b|latest|prev> [--project <p>] [--limit N]',
   '                                          Diff two reports (accepts `latest` / `prev` keywords)',
   '  cluster list [filters]                 Active failure clusters across reports',
+  '  regression list [filters]              Impact-ranked regressions (tests that broke after a green streak)',
   '  stats [filters]                        Aggregate health + trend totals for a window',
   '  ping                                   Sanity-check the server is reachable',
   '',
@@ -290,6 +292,10 @@ interface CommonOpts {
   lastReportAt?: string;
   force?: boolean;
   inline?: boolean;
+  active?: boolean;
+  resolved?: boolean;
+  regressedSince?: string;
+  regressedOnly?: boolean;
 }
 
 function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonOpts } {
@@ -329,6 +335,10 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
       'last-report-at': { type: 'string' },
       force: { type: 'boolean' },
       inline: { type: 'boolean' },
+      active: { type: 'boolean' },
+      resolved: { type: 'boolean' },
+      'regressed-since': { type: 'string' },
+      'regressed-only': { type: 'boolean' },
       help: { type: 'boolean' },
     },
   };
@@ -378,6 +388,10 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
       lastReportAt: str(v['last-report-at']),
       force: v.force === true,
       inline: v.inline === true,
+      active: v.active === true,
+      resolved: v.resolved === true,
+      regressedSince: str(v['regressed-since']),
+      regressedOnly: v['regressed-only'] === true,
     },
   };
 }
@@ -478,6 +492,8 @@ async function dispatch(argv: string[]): Promise<void> {
           to: opts.to,
           limit: opts.limit,
           offset: opts.offset,
+          regressedOnly: opts.regressedOnly,
+          regressedSince: opts.regressedSince,
         });
         return;
       case 'analysis-submit':
@@ -653,6 +669,28 @@ async function dispatch(argv: string[]): Promise<void> {
       failedOnly: opts.failedOnly,
     });
     return;
+  }
+
+  if (group === 'regression') {
+    const [subcommand, ...subArgs] = rest;
+    const { opts } = parseCommonOpts(subArgs);
+    switch (subcommand) {
+      case 'list':
+        await runRegressionList({
+          project: opts.project,
+          active: opts.active,
+          resolved: opts.resolved,
+          from: opts.from,
+          to: opts.to,
+          sort: opts.sort,
+          limit: opts.limit,
+        });
+        return;
+      default:
+        throw new Error(
+          `Unknown subcommand: regression ${subcommand ?? ''}. Run 'pwrs-cli help regression' for the list.`
+        );
+    }
   }
 
   throw new Error(`Unknown command: ${group}. Run 'pwrs-cli --help' for the list.`);

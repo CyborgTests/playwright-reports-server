@@ -35,6 +35,7 @@ export async function runStats(opts: StatsOpts): Promise<void> {
     overview: data.overviewStats,
     tests: data.testsSummary,
     failureCategories: data.failureCategories,
+    regressions: data.regressions,
     recentRunsCount: data.runHealthMetrics?.length ?? 0,
   });
 }

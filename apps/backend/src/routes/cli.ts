@@ -564,15 +564,17 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
     });
 
     api.get('/api/cli/regression/list', async (request: FastifyRequest, reply: FastifyReply) => {
-      const { project, open, from, to, sort, limit } = request.query as {
+      const { project, active, resolved, from, to, sort, limit } = request.query as {
         project?: string;
-        open?: string;
+        active?: string;
+        resolved?: string;
         from?: string;
         to?: string;
         sort?: string;
         limit?: string;
       };
-      const openFilter = open === 'true' ? true : open === 'false' ? false : undefined;
+      const openFilter =
+        active === 'true' ? true : resolved === 'true' ? false : undefined;
       const sortKey = sort === 'recent' || sort === 'oldest' || sort === 'impact' ? sort : 'impact';
       const parsedLimit = limit ? Number.parseInt(limit, 10) : 25;
       const cappedLimit =
@@ -611,7 +613,7 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
           daysOpen: Math.round(live * 10) / 10,
           failureCount: r.failureCount,
           flakyCount: r.flakyCount,
-          isOpen: r.recoveredAtReportId === null,
+          isActive: r.recoveredAtReportId === null,
         };
       });
 

@@ -296,6 +296,8 @@ interface SearchOpts {
   to?: string;
   limit?: number;
   offset?: number;
+  regressedOnly?: boolean;
+  regressedSince?: string;
 }
 
 const SEARCH_DEFAULT_LIMIT = 20;
@@ -330,8 +332,11 @@ export async function runTestSearch(opts: SearchOpts): Promise<void> {
       );
     }
   }
-  if (opts.sort && opts.sort !== 'slowest') {
-    throw new Error(`--sort currently only supports 'slowest' (got '${opts.sort}')`);
+  const allowedSorts = new Set(['slowest', 'stale', 'regression-age']);
+  if (opts.sort && !allowedSorts.has(opts.sort)) {
+    throw new Error(
+      `--sort must be one of: slowest, stale, regression-age (got '${opts.sort}')`
+    );
   }
   const data = await apiGet<{ data: TestSummary[]; total: number } | TestSummary[]>(
     config,
@@ -347,6 +352,8 @@ export async function runTestSearch(opts: SearchOpts): Promise<void> {
       to: opts.to,
       limit,
       offset: opts.offset,
+      regressedOnly: opts.regressedOnly ? 'true' : undefined,
+      regressedSince: opts.regressedSince,
     }
   );
   const tests = Array.isArray(data) ? data : ((data as { data?: TestSummary[] }).data ?? []);
