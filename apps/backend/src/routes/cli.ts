@@ -1437,7 +1437,7 @@ function buildAttachmentUrls(
 
 /**
  * The persisted LLM analysis is markdown with section headers like
- * "## Root Cause" / "## Recommendation". 
+ * "## Root Cause" / "## Recommendation".
  * Pull every line after the first header matching `pattern`
  * up to the next header.
  */

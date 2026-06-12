@@ -66,6 +66,8 @@ pwrs-cli report brief <reportId> [--with-failures]  Specific report's brief (com
 pwrs-cli report summary <reportId>            Persisted LLM failure summary for a report
 pwrs-cli report resolve <displayNumber>       Resolve a #479-style number to UUID reportId(s)
 pwrs-cli cluster brief <clusterId>            Drill into one cluster: brief per member test
+pwrs-cli cluster resolve <clusterId>          Mark a cluster as resolved (write)
+pwrs-cli cluster reopen <clusterId>           Re-open a resolved cluster (write)
 pwrs-cli attachment <url>                     Fetch screenshot/error-context/report with Bearer auth
 ```
 
@@ -81,7 +83,7 @@ pwrs-cli report compare <a|latest|prev> <b|latest|prev> [--limit N]
                                               Diff two reports (accepts `latest` / `prev` keywords)
 pwrs-cli test search [filters]                Search tests by tier / status / category / sort / window
 pwrs-cli stats [filters]                      Aggregate health + trend deltas for a window
-pwrs-cli cluster list [filters]               Active failure clusters across recent reports
+pwrs-cli cluster list [filters]               Failure clusters (active by default; --include-resolved for all)
 ```
 
 Authoring & feedback (only when the user explicitly asks an agent to write
@@ -170,10 +172,21 @@ ISO timestamps) — there is no `--since` flag.
     "comment": "Flaky in CI — see #INC-1234",
     "updatedAt": "…"
   },
+  "regression": {                    // null if not currently regressed
+    "regressedAtCommit": "abc123",   // commit where regression started (may be test or app repo)
+    "lastGreenCommit": "def456",     // last passing commit before the regression
+    "daysOpen": 3.2,
+    "failureCount": 5,               // failing runs since regression opened
+    "flakyCount": 1,                 // flaky-pass runs since regression opened
+    "regressedAtReportId": "…",
+    "lastGreenReportId": "…"
+  },
   "cluster": {                       // null if not clustered
-    "id": "…", "strategy": "signature", "name": "…",
+    "id": "…", "kind": "signature", "name": "…",
     "sampleError": "…",
-    "otherTests": [{ "testId": "…", "fileId": "…", "project": "…", "title": "…" }]
+    "otherTests": [{ "testId": "…", "fileId": "…", "project": "…", "title": "…" }],
+    "otherTestsTotal": 12,
+    "otherTestsTruncated": true      // true when cluster has >5 members
   }
 }
 ```
@@ -268,6 +281,9 @@ pwrs-cli report list --pass-rate failing --from 2026-05-20 --to 2026-05-21
 
 # "What clusters are active?"
 pwrs-cli cluster list --project chromium --limit 5
+
+# "What clusters were resolved?"
+pwrs-cli cluster list --include-resolved --project chromium
 
 # "What changed between these two runs?"
 pwrs-cli report compare <reportIdA> <reportIdB>

@@ -4,12 +4,17 @@ import { type ParseArgsConfig, parseArgs } from 'node:util';
 import { CliHttpError } from './client.js';
 import { runAttachment } from './commands/attachment.js';
 import { runCategoryList } from './commands/category.js';
-import { runClusterBrief, runClusterList } from './commands/cluster.js';
-import { runRegressionList } from './commands/regression.js';
+import {
+  runClusterBrief,
+  runClusterList,
+  runClusterReopen,
+  runClusterResolve,
+} from './commands/cluster.js';
 import { runConfigCommand } from './commands/config.js';
 import { runTestFeedbackClear, runTestFeedbackUpsert } from './commands/feedback.js';
 import { runPing } from './commands/ping.js';
 import { runProjectList, runProjectSummarySubmit } from './commands/project.js';
+import { runRegressionList } from './commands/regression.js';
 import {
   runReportBrief,
   runReportCompare,
@@ -51,7 +56,7 @@ const HELP = [
   '  report list [filters]                  List reports (filters below)',
   '  report compare <a|latest|prev> <b|latest|prev> [--project <p>] [--limit N]',
   '                                          Diff two reports (accepts `latest` / `prev` keywords)',
-  '  cluster list [filters]                 Active failure clusters across reports',
+  '  cluster list [filters]                 Active failure clusters across reports (--include-resolved to show all)',
   '  regression list [filters]              Impact-ranked regressions (tests that broke after a green streak)',
   '  stats [filters]                        Aggregate health + trend totals for a window',
   '  ping                                   Sanity-check the server is reachable',
@@ -72,6 +77,8 @@ const HELP = [
   '  report summary <reportId>              Persisted LLM failure summary for a report',
   '  report resolve <displayNumber>         Resolve a `#479` to its UUID reportId',
   '  cluster brief <clusterId>              Drill into one cluster: brief per member test',
+  '  cluster resolve <clusterId>            Mark a cluster as resolved (write)',
+  '  cluster reopen <clusterId>             Re-open a resolved cluster (write)',
   '  attachment <url>                       Fetch screenshot/error-context with Bearer auth',
   '',
   'Authoring & feedback (write — only when the user explicitly asks):',
@@ -180,15 +187,21 @@ const GROUP_HELP: Record<string, string> = {
     '',
   ].join('\n'),
   cluster: [
-    'pwrs-cli cluster — failure-cluster drill-down',
+    'pwrs-cli cluster — failure-cluster drill-down & lifecycle',
     '',
     'Subcommands:',
-    '  cluster list [--project <p>] [--from/--to] [--limit N]',
+    '  cluster list [--project <p>] [--from/--to] [--limit N] [--include-resolved]',
     '      Active failure clusters across reports (default --limit 10). Each cluster',
-    '      is anchored to one fix target: fixture / selector / frame / unmatched.',
+    '      is anchored to one fix target: fixture / selector / frame / signature / unmatched.',
+    '      Pass --include-resolved to include resolved clusters. Each cluster carries',
+    '      lifecycle (active|resolved|unattributed) and resolution fields.',
     '  cluster brief <clusterId> [--project <p>]',
     '      Drill into one cluster: brief per member test (capped at 50 members).',
     '      Cluster IDs are deterministic (sha1 of the anchor) and stable across calls.',
+    '  cluster resolve <clusterId> [--project <p>] [--note "..."]',
+    '      Mark a cluster as resolved. Optional --note for resolution context (PR, commit, etc.).',
+    '  cluster reopen <clusterId> [--project <p>] [--note "..."]',
+    '      Re-open a previously resolved cluster.',
     '',
   ].join('\n'),
   project: [
@@ -296,6 +309,8 @@ interface CommonOpts {
   resolved?: boolean;
   regressedSince?: string;
   regressedOnly?: boolean;
+  includeResolved?: boolean;
+  note?: string;
 }
 
 function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonOpts } {
@@ -339,6 +354,8 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
       resolved: { type: 'boolean' },
       'regressed-since': { type: 'string' },
       'regressed-only': { type: 'boolean' },
+      'include-resolved': { type: 'boolean' },
+      note: { type: 'string' },
       help: { type: 'boolean' },
     },
   };
@@ -392,6 +409,8 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
       resolved: v.resolved === true,
       regressedSince: str(v['regressed-since']),
       regressedOnly: v['regressed-only'] === true,
+      includeResolved: v['include-resolved'] === true,
+      note: str(v.note),
     },
   };
 }
@@ -648,10 +667,17 @@ async function dispatch(argv: string[]): Promise<void> {
           from: opts.from,
           to: opts.to,
           limit: opts.limit,
+          includeResolved: opts.includeResolved,
         });
         return;
       case 'brief':
         await runClusterBrief(arg0, { project: opts.project });
+        return;
+      case 'resolve':
+        await runClusterResolve(arg0, { project: opts.project, note: opts.note });
+        return;
+      case 'reopen':
+        await runClusterReopen(arg0, { project: opts.project, note: opts.note });
         return;
       default:
         throw new Error(

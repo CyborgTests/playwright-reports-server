@@ -75,9 +75,8 @@ const PROJECT_SUMMARY_VARS = new Set([
   'passingRuns',
 ] as const) as ReadonlySet<string>;
 
-export const DEFAULT_SYSTEM_PROMPT =
+export const TEST_ANALYSIS_SYSTEM_PROMPT =
   'Your task is to analyze a Playwright test failure from the structured evidence below and explain what broke and why. Cite line numbers, file paths, error signatures, and response codes. Be direct and specific; avoid filler and generic testing advice. Do NOT restate the report — the reader already sees the step tree, page snapshot, stack trace, console events, and error message in the UI. Quote at most the few lines that prove your conclusion. Every claim must add insight beyond what is already visible in the evidence.';
-export const TEST_ANALYSIS_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT;
 export const REPORT_SUMMARY_SYSTEM_PROMPT =
   'Your task is to review a single Playwright CI run and summarize its failures. Group failures by root cause using the fewest meaningful clusters. Prioritize fixes by how many tests each cluster would unblock, then by severity. Call out systemic patterns (shared fixtures, infra issues, repeated signatures) versus isolated bugs. Keep findings concrete: name specific files, fixtures, categories, and signatures. Avoid filler or generic testing advice.';
 export const PROJECT_SUMMARY_SYSTEM_PROMPT =
@@ -119,7 +118,7 @@ Pick the label that best matches the root cause you described above:
 - test_bug: the test code is wrong (bad selector, missing wait, wrong assumption, race condition in the test).
 - infrastructure: runner, browser, or network outage; not related to application or test logic.
 - environment: test environment is in a bad state (missing data, stale fixtures, dependency unavailable, auth misconfigured).
-- slow_path: the operation finished, but past the timeout — a real perf issue, not a hang.
+- slow_path: the operation was progressing normally but exceeded the timeout budget — a genuine performance regression, not a hang or deadlock. The test would have passed given more time.
 - unknown: the evidence is genuinely insufficient to decide.
 
 Use "unknown" only when no specific category is supported by the evidence;
@@ -159,6 +158,7 @@ Your task is to summarize failures in report \`{{reportId}}\` for project "{{pro
 
 ## Output (strict)
 Return plain Markdown. No JSON. No code fences.
+Target 250–400 words. Favor density over completeness — the reader has the data; you add the interpretation. Cut sections short rather than padding with generic advice.
 
 1. Line 1:
    **Verdict:** <one of: isolated, clustered, widespread, systemic> (lowercase, exact token).
@@ -214,6 +214,8 @@ Your task is to summarize test health for project "{{project}}" across the lates
 - Return plain Markdown. NEVER wrap the response in code fences, even for code-like content. No JSON, no triple-backtick envelopes.
 
 ## Output
+Target 200–350 words. Favor density over completeness — the reader has the data; you add the interpretation. Cut sections short rather than padding with generic advice.
+
 1. First line, exactly: \`**Verdict:** <token>\` — \`<token>\` is one of \`healthy\`, \`stabilizing\`, \`degrading\`, \`failing\` (lowercase, exact spelling).
 2. Blank line.
 3. Executive summary (1-3 sentences, no heading): start with "Project is <token>." then state the single most important supporting fact.
@@ -232,6 +234,7 @@ Do NOT repeat a section heading inside its body.
 - \`failing\`: many recent runs are red including the latest, AND multiple active patterns exist with no clear recovery.
 
 Hard rule: if the latest run has any hard failure (unexpected, not just flaky-passed-on-retry), the verdict is NOT \`healthy\`.
+Disambiguation: if the latest run is green AND all failure patterns are resolved (none active), the verdict is \`healthy\` — even if resolution was recent. \`stabilizing\` requires at least one still-active pattern that hasn't yet cleared.
 
 ## How to read the data
 Failure patterns in the data block are presented under headers that say what would fix them:
@@ -586,7 +589,7 @@ function buildPriorInProjectAnalysisBlock(
   const header = meta.length > 0 ? ` (${meta.join(' · ')})` : '';
   const excerpt = extractRootCauseExcerpt(prior.analysis);
   if (!excerpt) return `## Prior Analysis${header}\n_(excerpt unavailable)_`;
-  return `## Prior Analysis${header}\n_Treat as a hint to verify against the current evidence. Disagree if the new evidence contradicts it._\n\n> ${excerpt}`;
+  return `## Prior Analysis${header}\n_This is a prior hypothesis, not ground truth. Compare it against the current evidence. If it still holds, confirm briefly and note any new supporting evidence. If the current evidence contradicts it, say so explicitly and explain what changed._\n\n> ${excerpt}`;
 }
 
 function buildStdoutBlock(evidence: FailureEvidence | undefined): string {
@@ -1542,9 +1545,7 @@ const renderReportTrendContext = (
   const lines: string[] = [];
   lines.push(`## Trend vs previous report (${prevLabel} from ${previousReport.createdAt})`);
   lines.push('');
-  lines.push(
-    'Use this to call out what changed in your "Failure Patterns" and "Correlations" sections.'
-  );
+  lines.push('Use this to call out what changed in your "Failure Patterns" and "Risks" sections.');
   lines.push('');
   lines.push(`- Newly failed: **${counts.newlyFailed}**`);
   lines.push(`- Fixed since previous: **${counts.fixed}**`);

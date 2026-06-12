@@ -146,12 +146,13 @@ export interface TestHistory {
   runs: TestHistoryRun[];
 }
 
-export type ClusterAnchorKind = 'fixture' | 'selector' | 'frame' | 'unmatched';
+export type ClusterAnchorKind = 'fixture' | 'selector' | 'frame' | 'signature' | 'unmatched';
 
 export type ClusterAnchor =
   | { kind: 'fixture'; verb: string; phase: string; filePath: string }
   | { kind: 'selector'; verb: string; selector: string }
   | { kind: 'frame'; verb: string; frame: string }
+  | { kind: 'signature'; verb: string; signature: string }
   | { kind: 'unmatched'; testId: string; fileId: string; project: string };
 
 export interface ClusterBriefResponse {
@@ -313,6 +314,14 @@ export interface ClusterTest {
   lastReportUrl?: string;
 }
 
+export type ClusterLifecycle = 'active' | 'resolved' | 'unattributed';
+
+export interface ClusterResolution {
+  resolvedAt: string;
+  note?: string;
+  manual: boolean;
+}
+
 export interface FailureCluster {
   id: string;
   anchor: ClusterAnchor;
@@ -323,6 +332,8 @@ export interface FailureCluster {
   testCount: number;
   failureCount: number;
   tests: ClusterTest[];
+  lifecycle?: ClusterLifecycle;
+  resolution?: ClusterResolution;
 }
 
 export interface ClusterReport {

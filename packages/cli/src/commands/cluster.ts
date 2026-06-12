@@ -1,4 +1,4 @@
-import { apiGet } from '../client.js';
+import { apiGet, apiPost } from '../client.js';
 import { resolveConfig } from '../config.js';
 import { emitJson } from '../format.js';
 import type { ClusterBriefResponse, ClusterReport } from '../types.js';
@@ -8,6 +8,7 @@ interface ClusterListOpts {
   from?: string;
   to?: string;
   limit?: number;
+  includeResolved?: boolean;
 }
 
 const DEFAULT_LIMIT = 10;
@@ -24,6 +25,7 @@ export async function runClusterList(opts: ClusterListOpts): Promise<void> {
     project: opts.project,
     from: opts.from,
     to: opts.to,
+    includeResolved: opts.includeResolved ? '1' : undefined,
   });
 
   const trimmed = report.clusters.slice(0, limit);
@@ -43,6 +45,8 @@ export async function runClusterList(opts: ClusterListOpts): Promise<void> {
       testCount: c.testCount,
       failureCount: c.failureCount,
       anchor: c.anchor,
+      lifecycle: c.lifecycle ?? 'active',
+      resolution: c.resolution ?? null,
     })),
     clustersTruncated: report.clusters.length > limit,
   });
@@ -66,4 +70,41 @@ export async function runClusterBrief(clusterId: string, opts: ClusterBriefOpts)
     opts.project ? { project: opts.project } : {}
   );
   emitJson(brief);
+}
+
+interface ClusterMutationOpts {
+  project?: string;
+  note?: string;
+}
+
+export async function runClusterResolve(
+  clusterId: string,
+  opts: ClusterMutationOpts
+): Promise<void> {
+  if (!clusterId) {
+    throw new Error('Usage: pwrs-cli cluster resolve <clusterId> [--project <p>] [--note "..."]');
+  }
+  const config = resolveConfig();
+  const result = await apiPost<{ success: boolean }>(
+    config,
+    `/api/analytics/failure-clusters/${encodeURIComponent(clusterId)}/resolve`,
+    { project: opts.project, note: opts.note }
+  );
+  emitJson(result);
+}
+
+export async function runClusterReopen(
+  clusterId: string,
+  opts: ClusterMutationOpts
+): Promise<void> {
+  if (!clusterId) {
+    throw new Error('Usage: pwrs-cli cluster reopen <clusterId> [--project <p>] [--note "..."]');
+  }
+  const config = resolveConfig();
+  const result = await apiPost<{ success: boolean }>(
+    config,
+    `/api/analytics/failure-clusters/${encodeURIComponent(clusterId)}/reopen`,
+    { project: opts.project, note: opts.note }
+  );
+  emitJson(result);
 }

@@ -334,9 +334,7 @@ export async function runTestSearch(opts: SearchOpts): Promise<void> {
   }
   const allowedSorts = new Set(['slowest', 'stale', 'regression-age']);
   if (opts.sort && !allowedSorts.has(opts.sort)) {
-    throw new Error(
-      `--sort must be one of: slowest, stale, regression-age (got '${opts.sort}')`
-    );
+    throw new Error(`--sort must be one of: slowest, stale, regression-age (got '${opts.sort}')`);
   }
   const data = await apiGet<{ data: TestSummary[]; total: number } | TestSummary[]>(
     config,

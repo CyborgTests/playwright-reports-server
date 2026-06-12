@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { llmService } from '../lib/llm/index.js';
 import {
-  DEFAULT_SYSTEM_PROMPT,
   PROJECT_SUMMARY_SYSTEM_PROMPT,
   PROJECT_SUMMARY_TASK_INSTRUCTIONS,
   REPORT_SUMMARY_TASK_INSTRUCTIONS,
@@ -428,7 +427,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
         // Legacy single-prompt field — kept for back-compat with older UIs
         // that haven't been updated to the per-task overrides below.
         systemPrompt: {
-          content: DEFAULT_SYSTEM_PROMPT,
+          content: TEST_ANALYSIS_SYSTEM_PROMPT,
           vars: [],
         },
         // Per-task system prompts. The settings UI shows these alongside the

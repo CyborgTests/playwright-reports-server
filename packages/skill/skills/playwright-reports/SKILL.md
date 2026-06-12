@@ -28,6 +28,7 @@ The CLI is read-only. Write commands (`analysis-submit`, `summary-submit`, `feed
 | What's flaky now | `pwrs-cli test search --tier flaky` | filtered test roster |
 | What ran in a window | `pwrs-cli report list --from --to` | paginated reports |
 | Active failure clusters | `pwrs-cli cluster list` | top clusters by impact |
+| All clusters incl. resolved | `pwrs-cli cluster list --include-resolved` | full list with lifecycle state |
 | Drill into a cluster | `pwrs-cli cluster brief <id>` | full member roster |
 | Active regressions (broke recently) | `pwrs-cli regression list [--active] [--sort impact\|recent\|oldest]` | tests in green→red state with commit attribution |
 | Diff two reports | `pwrs-cli report compare A B` | newlyFailed / fixed / stillFailing / … |
@@ -45,18 +46,44 @@ The CLI is read-only. Write commands (`analysis-submit`, `summary-submit`, `feed
 
 All list-returning commands carry `total` + `hasMore`. Defaults: `report list`/`test search`/`report compare` = 20, `cluster list` = 10, `test history` = 20 (max 50), `regression list` = 25 (max 200). For exact flags run `pwrs-cli help <group>` or `pwrs-cli <command> --help`.
 
+## Project identification
+
+Most commands accept `--project` to scope data. If the user's query doesn't name a project, **identify the project first** — don't guess or omit it silently.
+
+```bash
+pwrs-cli project list    # → { "projects": ["head:main", "staging:main", "e2e:local:sh"] }
+```
+
+`project list` returns all known project names — use exact string values from this list in `--project`. Projects are named by the reporter config, not by you.
+
+**When to pass `--project`:**
+- **User names a project** ("how's staging?") → use the matching string from `project list` (e.g. `staging:main`).
+- **User doesn't name a project and only one project exists** → use it implicitly, don't ask.
+- **User doesn't name a project and multiple projects exist** → ask which project they mean, or if the question is aggregate ("overall health"), omit `--project` to get cross-project results. Commands without `--project` return data across all projects.
+- **`PWRS_PROJECT` env var is set** → it serves as the default; explicit `--project` still wins. You can check if it's set via `pwrs-cli config get`.
+
+**Cross-project (`--project` omitted or `all`):**
+- `test find` / `test search` return results from all projects — the `project` field on each row tells you which project it belongs to.
+- `project summary` without `--project` produces a cross-project digest. Per-project summaries are more specific; prefer them when the user asks about one area.
+- `report list` / `stats` / `cluster list` aggregate across projects when `--project` is omitted.
+
+**Don't assume project names.** Project names vary by server (e.g. `chromium`, `staging:main`, `head:main`, `nightly`). Always start from `project list` output.
+
 ## Worked examples
 
 **User: "Why is the checkout test failing?"**
 ```bash
-pwrs-cli test find "checkout"           # → matches[0].testId
+pwrs-cli project list                   # → identify available projects first
+pwrs-cli test find "checkout"           # → matches[]; each row has a `project` field
+# If matches span multiple projects, ask the user which one, or pick the project they're working in.
 pwrs-cli test brief <testId>            # → signals + latestFailure + llmAnalysis + cluster
 ```
 If `cluster` is non-null, fix at `cluster.anchor`, not the test. If `llmAnalysis: null`, fall back to `pwrs-cli test failure-context <testId> --report-id <reportId>` and reason from the `evidence` envelope yourself.
 
 **User: "How did staging do yesterday?"**
 ```bash
-pwrs-cli report list --project staging --from 2026-06-08 --to 2026-06-08
+pwrs-cli project list                   # → confirm exact project name (e.g. "staging:main")
+pwrs-cli report list --project "staging:main" --from 2026-06-08 --to 2026-06-08
 # → reports[0].reportId
 pwrs-cli report brief <reportId>        # compact: 5 KB even on a 50-failure report
 pwrs-cli report summary <reportId>      # → verdict ('isolated' | 'clustered' | 'widespread' | 'systemic')
@@ -84,7 +111,8 @@ pwrs-cli test search [--project p] [--tier flaky|critical|stable] \
 pwrs-cli stats [--project p] [--from --to] [--failed-only]  # numeric digest
 pwrs-cli project summary [--project p]                      # LLM-written digest + verdict
 
-pwrs-cli cluster list [--project p] [--from --to]           # active failure clusters
+pwrs-cli cluster list [--project p] [--from --to] \
+    [--include-resolved]                                    # failure clusters (active only by default)
 ```
 
 ### Drill-down (you have an ID)
@@ -152,6 +180,32 @@ Decision rules — apply top-to-bottom. Field shapes live in the workflow sectio
 - `unmatched` → `{testId, fileId, project}` — no extractable shared mechanism. Treat as a single-test failure; the cluster only groups repeated occurrences of the same test.
 
 Each cluster carries `confidence: 'high' | 'medium' | 'low'`. `cluster list` returns anchor + counts only — drill into `cluster brief <id>` for the full membership. In `test brief`, `cluster.otherTests` is capped at 5; when `cluster.otherTestsTruncated: true`, use `cluster brief` for the full roster (`cluster.otherTestsTotal` is the true size).
+
+### Cluster lifecycle
+
+Every cluster carries a `lifecycle` field with one of three states:
+
+- `active` — the cluster has recent failures and has not been marked resolved.
+- `resolved` — the cluster was explicitly marked resolved (manually via UI/CLI, or automatically when no member failed in the latest run window). `resolution` field is set.
+- `unattributed` — the cluster exists in the data but has no explicit state override. Treated as active for display.
+
+When `lifecycle` is `resolved`, the cluster also carries a `resolution` object:
+
+```jsonc
+"resolution": {
+  "resolvedAt": "2026-06-10T…",  // when it was marked resolved
+  "note": "Fixed in PR #421",    // optional resolution note
+  "manual": true                  // true = human/CLI marked it; false = auto-resolved
+}
+```
+
+By default, `cluster list` returns only active clusters. Pass `--include-resolved` to see all.
+
+#### Decision rules for resolved clusters
+
+1. **Resolved + no recent failures** → skip. The fix landed.
+2. **Resolved + failures reappeared** → likely a regression of the same root cause. Use `cluster reopen` (see `authoring.md`) and investigate.
+3. **`resolution.note` present** → read it before investigating; it may contain a PR link or commit that explains the fix.
 
 ### Verdict vocabularies
 

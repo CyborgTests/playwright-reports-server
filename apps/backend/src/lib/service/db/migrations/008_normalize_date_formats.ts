@@ -66,8 +66,11 @@ export const migration008NormalizeDateFormats: Migration = {
     ];
 
     const existingTables = new Set(
-      (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>)
-        .map((r) => r.name)
+      (
+        db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
+          name: string;
+        }>
+      ).map((r) => r.name)
     );
 
     let totalFixed = 0;
@@ -92,10 +95,12 @@ export const migration008NormalizeDateFormats: Migration = {
       totalFixed += r1.changes;
 
       // Pattern 2: JS toDateString() — starts with a letter (e.g. "Fri Jun 12 2026")
-      const badRows = db.prepare(
-        `SELECT rowid, ${column} FROM ${table}
+      const badRows = db
+        .prepare(
+          `SELECT rowid, ${column} FROM ${table}
          WHERE ${column} GLOB '[A-Z]*' ${nullClause}`
-      ).all() as Array<{ rowid: number; [key: string]: unknown }>;
+        )
+        .all() as Array<{ rowid: number; [key: string]: unknown }>;
 
       if (badRows.length > 0) {
         const update = db.prepare(`UPDATE ${table} SET ${column} = ? WHERE rowid = ?`);

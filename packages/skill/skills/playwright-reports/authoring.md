@@ -149,6 +149,44 @@ Structured JSON shape (`ProjectAnalysisStructured`):
 
 `409` → existing digest present. Ask the user; on `yes` re-run with `--force`.
 
+## 5. Managing cluster lifecycle
+
+Clusters can be marked as resolved (fixed) or re-opened (regression returned). These are write operations — ask the user before invoking.
+
+### Marking a cluster resolved
+
+When the user confirms a cluster's root cause is fixed:
+
+```bash
+pwrs-cli cluster resolve <clusterId> --note "Fixed in PR #421 — selector updated"
+```
+
+The `--note` is optional but strongly encouraged — it creates a paper trail for future investigators. Good notes reference a PR, commit, or deploy.
+
+### Re-opening a resolved cluster
+
+When a resolved cluster's failures reappear:
+
+```bash
+pwrs-cli cluster reopen <clusterId> --note "Failures returned after deploy 2026-06-12"
+```
+
+### Viewing resolved clusters
+
+```bash
+pwrs-cli cluster list --include-resolved   # shows all clusters, not just active
+```
+
+Check `lifecycle` and `resolution` fields in the output to distinguish active from resolved.
+
+### Decision rule
+
+| Scenario | Action |
+|---|---|
+| User says "mark X as fixed" / "we fixed that cluster" | `cluster resolve` with a note citing the fix |
+| Resolved cluster shows new failures | Ask user, then `cluster reopen` with context |
+| User asks "what clusters were resolved?" | `cluster list --include-resolved`, filter by `lifecycle: 'resolved'` |
+
 ## Guardrails
 
 - **Always read before authoring.** `failure-context` for tests; `report brief` for reports; `stats` + `project summary` for projects.
