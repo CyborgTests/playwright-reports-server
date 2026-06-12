@@ -145,32 +145,29 @@ function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
     }
     const CHIP_H = 14;
     const CHIP_PADDING = 6;
-    const CHIP_GAP = 2;
+    const CHIP_ROW_GAP = 2;
     const CHIP_FONT = 10;
     const charWidth = (ch: string) => (ch === '↑' || ch === '↓' ? 9 : 6.5);
     const chipWidths = segments.map((s) => {
       const inner = [...s.text].reduce((sum, c) => sum + charWidth(c), 0);
       return Math.max(20, Math.ceil(inner) + CHIP_PADDING * 2);
     });
-    const totalWidth =
-      chipWidths.reduce((a, b) => a + b, 0) + Math.max(0, segments.length - 1) * CHIP_GAP;
-    const startX = x + (width - totalWidth) / 2;
-    const chipY = y - CHIP_H - 2;
-    let cursor = startX;
+    const stackHeight = segments.length * CHIP_H + Math.max(0, segments.length - 1) * CHIP_ROW_GAP;
+    const baseChipY = y - stackHeight - 2;
     return (
       <g>
         <rect x={x} y={y} width={width} height={height} fill={fill} />
         {hasMark &&
           segments.map((s, i) => {
             const w = chipWidths[i];
-            const cx = cursor;
-            cursor += w + CHIP_GAP;
+            const cx = x + (width - w) / 2;
+            const cy = baseChipY + i * (CHIP_H + CHIP_ROW_GAP);
             return (
               <g key={s.text}>
-                <rect x={cx} y={chipY} width={w} height={CHIP_H} rx={4} ry={4} fill={s.bg} />
+                <rect x={cx} y={cy} width={w} height={CHIP_H} rx={4} ry={4} fill={s.bg} />
                 <text
                   x={cx + w / 2}
-                  y={chipY + CHIP_H / 2 + 1}
+                  y={cy + CHIP_H / 2 + 1}
                   textAnchor="middle"
                   dominantBaseline="middle"
                   fontSize={CHIP_FONT}
@@ -238,6 +235,7 @@ function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
               width={chartWidth}
               height={CHART_HEIGHT}
               data={chartData}
+              margin={{ top: 40, right: 0, bottom: 0, left: 0 }}
               onClick={(e) => {
                 const reportId = e.activePayload?.[0]?.payload?.runId;
                 if (reportId) window.open(`/report/${reportId}`, '_blank');
@@ -252,7 +250,11 @@ function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
                 height={80}
               />
               <YAxis />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip
+                content={<CustomTooltip />}
+                wrapperStyle={{ pointerEvents: 'auto' }}
+                isAnimationActive={false}
+              />
               <Bar dataKey="passed" stackId="a" fill={chartColors.passed} />
               <Bar dataKey="flaky" stackId="a" fill={chartColors.flaky} />
               <Bar

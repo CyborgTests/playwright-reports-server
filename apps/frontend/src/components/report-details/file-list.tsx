@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReportHistory } from '@playwright-reports/shared';
-import { type FC, useEffect, useState } from 'react';
+import { type FC, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import InlineStatsCircle from '@/components/inline-stats-circle';
 import { subtitle } from '@/components/primitives';
@@ -42,6 +42,15 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
       toast.error(historyError.message);
     }
   }, [historyError]);
+
+  const newRegressionTestIds = useMemo(
+    () => new Set((report?.regressions?.newTests ?? []).map((t) => t.testId)),
+    [report?.regressions?.newTests]
+  );
+  const resolvedRegressionTestIds = useMemo(
+    () => new Set((report?.regressions?.resolvedTests ?? []).map((t) => t.testId)),
+    [report?.regressions?.resolvedTests]
+  );
 
   useEffect(() => {
     if (highlightTestId && filteredTests?.files) {
@@ -93,6 +102,8 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
                       history={history ?? []}
                       reportId={report?.reportID}
                       project={report?.project}
+                      newRegressionTestIds={newRegressionTestIds}
+                      resolvedRegressionTestIds={resolvedRegressionTestIds}
                     />
                   </div>
                 </div>

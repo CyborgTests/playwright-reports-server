@@ -120,9 +120,18 @@ interface SuiteNodeComponentProps {
   history: ReportHistory[];
   reportId?: string;
   project?: string;
+  newRegressionTestIds?: Set<string>;
+  resolvedRegressionTestIds?: Set<string>;
 }
 
-const SuiteNodeComponent = ({ suite, history, reportId, project }: SuiteNodeComponentProps) => {
+const SuiteNodeComponent = ({
+  suite,
+  history,
+  reportId,
+  project,
+  newRegressionTestIds,
+  resolvedRegressionTestIds,
+}: SuiteNodeComponentProps) => {
   const childStats = useMemo(
     () => suite.children.map((child) => computeSuiteStats(child)),
     [suite]
@@ -147,6 +156,8 @@ const SuiteNodeComponent = ({ suite, history, reportId, project }: SuiteNodeComp
                   reportId={reportId}
                   suite={child}
                   project={project}
+                  newRegressionTestIds={newRegressionTestIds}
+                  resolvedRegressionTestIds={resolvedRegressionTestIds}
                 />
               </AccordionContent>
             </AccordionItem>
@@ -154,6 +165,8 @@ const SuiteNodeComponent = ({ suite, history, reportId, project }: SuiteNodeComp
         }),
         ...suite.tests.map((test) => {
           const status = testStatusToColor(test.outcome || 'passed');
+          const isNewRegression = !!test.testId && newRegressionTestIds?.has(test.testId);
+          const isResolvedRegression = !!test.testId && resolvedRegressionTestIds?.has(test.testId);
 
           return (
             <AccordionItem key={test.testId || 'unknown'} value={test.testId || 'unknown'}>
@@ -165,6 +178,24 @@ const SuiteNodeComponent = ({ suite, history, reportId, project }: SuiteNodeComp
                       {status.title}
                     </Badge>
                     <Badge variant="secondary">{test.projectName || 'Unknown'}</Badge>
+                    {isNewRegression && (
+                      <Badge
+                        variant="outline"
+                        className="border-danger/40 text-danger"
+                        title="This test newly regressed in this report"
+                      >
+                        regression
+                      </Badge>
+                    )}
+                    {isResolvedRegression && (
+                      <Badge
+                        variant="outline"
+                        className="border-success/40 text-success"
+                        title="A prior regression for this test was resolved here"
+                      >
+                        resolved
+                      </Badge>
+                    )}
                   </span>
                 </span>
               </AccordionTrigger>
@@ -184,16 +215,32 @@ interface FileSuitesTreeProps {
   history: ReportHistory[];
   reportId?: string;
   project?: string;
+  newRegressionTestIds?: Set<string>;
+  resolvedRegressionTestIds?: Set<string>;
 }
 
-const FileSuitesTreeImpl = ({ file, history, reportId, project }: FileSuitesTreeProps) => {
+const FileSuitesTreeImpl = ({
+  file,
+  history,
+  reportId,
+  project,
+  newRegressionTestIds,
+  resolvedRegressionTestIds,
+}: FileSuitesTreeProps) => {
   const suiteTree = useMemo(
     () => buildTestTree(file.fileName || file.name || 'unknown', file.tests || []),
     [file]
   );
 
   return (
-    <SuiteNodeComponent history={history} reportId={reportId} suite={suiteTree} project={project} />
+    <SuiteNodeComponent
+      history={history}
+      reportId={reportId}
+      suite={suiteTree}
+      project={project}
+      newRegressionTestIds={newRegressionTestIds}
+      resolvedRegressionTestIds={resolvedRegressionTestIds}
+    />
   );
 };
 
