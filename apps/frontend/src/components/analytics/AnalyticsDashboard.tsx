@@ -116,6 +116,11 @@ export default function AnalyticsDashboard() {
     [applyTestsFilter]
   );
 
+  const handleCategoryClick = useCallback(
+    (category: string) => applyTestsFilter({ failureCategory: category }),
+    [applyTestsFilter]
+  );
+
   const activeRegressionFilter = ((): 'active' | 'new' | 'resolved' | null => {
     const ro = searchParams.get('regressedOnly') === '1';
     const rs = searchParams.get('regressedSince');
@@ -260,6 +265,7 @@ export default function AnalyticsDashboard() {
               categories={failureCategories?.categories}
               totalFailures={totalFailures}
               isLoading={isLoading}
+              onCategoryClick={handleCategoryClick}
             />
             <TopFailuresWidget errors={failureCategories?.topErrors} isLoading={isLoading} />
           </div>

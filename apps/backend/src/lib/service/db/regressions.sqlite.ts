@@ -393,6 +393,37 @@ export class RegressionsDatabase {
     return !!row;
   }
 
+  // Batched existence check used by cluster lifecycle classification to
+  // distinguish 'resolved' (had a regression that closed) from 'unattributed'
+  // (never opened one).
+  public hasAnyForTests(
+    keys: Array<{ testId: string; fileId: string; project: string }>
+  ): Set<string> {
+    const out = new Set<string>();
+    if (keys.length === 0) return out;
+    const BATCH = 200;
+    for (let i = 0; i < keys.length; i += BATCH) {
+      const slice = keys.slice(i, i + BATCH);
+      const valuesRows = slice.map(() => '(?, ?, ?)').join(',');
+      const params: string[] = [];
+      for (const k of slice) params.push(k.testId, k.fileId, k.project);
+      const rows = this.db
+        .prepare(
+          `WITH keys(testId, fileId, project) AS (VALUES ${valuesRows})
+           SELECT DISTINCT k.testId, k.fileId, k.project
+           FROM keys k
+           JOIN regressions r
+             ON r.testId = k.testId AND r.fileId = k.fileId AND r.project = k.project`
+        )
+        .all(...params) as Array<{ testId: string; fileId: string; project: string }>;
+      for (const row of rows) {
+        // Mirror the `testKey` shape used by callers (project::fileId::testId).
+        out.add(`${row.project}::${row.fileId}::${row.testId}`);
+      }
+    }
+    return out;
+  }
+
   public countsBetween(args: { project?: string; since: string; until: string }): {
     opened: number;
     resolved: number;

@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 import { runMigrations } from './migrations/index.js';
 import {
   ANALYSIS_FEEDBACK_SCHEMA_SQL,
+  CLUSTER_RESOLUTIONS_SCHEMA_SQL,
   FAILURE_SUMMARY_SCHEMA_SQL,
   GITHUB_SYNC_SCHEMA_SQL,
   LLM_TASKS_SCHEMA_SQL,
@@ -104,6 +105,7 @@ const SCHEMA_MODULES: Array<{ name: string; sql: string }> = [
   { name: 'notification_state', sql: NOTIFICATION_STATE_SCHEMA_SQL },
   { name: 'quality_dashboards', sql: QUALITY_DASHBOARDS_SCHEMA_SQL },
   { name: 'regressions', sql: REGRESSIONS_SCHEMA_SQL },
+  { name: 'cluster_resolutions', sql: CLUSTER_RESOLUTIONS_SCHEMA_SQL },
 ];
 
 function initializeSchema(db: Database.Database): void {

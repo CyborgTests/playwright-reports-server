@@ -90,6 +90,7 @@ export default function TestManagementWidget({
     status: 'all',
     tiers: parseTiersParam(searchParams.get('tiers')),
     sort: parseSortParam(searchParams.get('sort')),
+    failureCategory: searchParams.get('failureCategory') || undefined,
     regressedOnly: searchParams.get('regressedOnly') === '1',
     regressedSince: searchParams.get('regressedSince') || undefined,
     resolvedSince: searchParams.get('resolvedSince') || undefined,
@@ -107,6 +108,7 @@ export default function TestManagementWidget({
   useEffect(() => {
     const urlTiers = parseTiersParam(searchParams.get('tiers'));
     const urlSort = parseSortParam(searchParams.get('sort'));
+    const urlFailureCategory = searchParams.get('failureCategory') || undefined;
     const urlRegressedOnly = searchParams.get('regressedOnly') === '1';
     const urlRegressedSince = searchParams.get('regressedSince') || undefined;
     const urlResolvedSince = searchParams.get('resolvedSince') || undefined;
@@ -117,6 +119,7 @@ export default function TestManagementWidget({
       if (
         sameTiers &&
         prev.sort === urlSort &&
+        prev.failureCategory === urlFailureCategory &&
         (prev.regressedOnly ?? false) === urlRegressedOnly &&
         prev.regressedSince === urlRegressedSince &&
         prev.resolvedSince === urlResolvedSince
@@ -127,6 +130,7 @@ export default function TestManagementWidget({
         ...prev,
         tiers: urlTiers,
         sort: urlSort,
+        failureCategory: urlFailureCategory,
         regressedOnly: urlRegressedOnly,
         regressedSince: urlRegressedSince,
         resolvedSince: urlResolvedSince,

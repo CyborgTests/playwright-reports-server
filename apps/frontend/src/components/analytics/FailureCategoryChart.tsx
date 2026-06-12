@@ -25,6 +25,7 @@ interface FailureCategoryChartProps {
   categories?: CategoryData[];
   totalFailures?: number;
   isLoading?: boolean;
+  onCategoryClick?: (category: string) => void;
 }
 
 const categoryColors: Record<string, string> = {
@@ -54,6 +55,7 @@ function FailureCategoryChartImpl({
   categories,
   totalFailures,
   isLoading,
+  onCategoryClick,
 }: Readonly<FailureCategoryChartProps>) {
   const chartData = useMemo(
     () => (categories ?? []).filter((c) => c.count > 0).sort((a, b) => b.count - a.count),
@@ -108,9 +110,11 @@ function FailureCategoryChartImpl({
             const only = chartData[0];
             const accent = categoryColors[only.category] ?? categoryColors.unknown;
             return (
-              <div
-                className="flex items-center gap-4 rounded-md border bg-muted/30 p-4"
+              <button
+                type="button"
+                className={`flex items-center gap-4 rounded-md border bg-muted/30 p-4 text-left w-full${onCategoryClick ? ' cursor-pointer hover:bg-muted/50 transition-colors' : ''}`}
                 style={{ borderLeft: `4px solid ${accent}` }}
+                onClick={() => onCategoryClick?.(only.category)}
               >
                 <div className="text-3xl font-bold tabular-nums">{only.count}</div>
                 <div className="text-sm">
@@ -119,7 +123,7 @@ function FailureCategoryChartImpl({
                     All {only.count === 1 ? 'failure is' : 'failures are'} in this category
                   </div>
                 </div>
-              </div>
+              </button>
             );
           })()
         ) : (
@@ -140,7 +144,12 @@ function FailureCategoryChartImpl({
                 width={110}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+              <Bar
+                dataKey="count"
+                radius={[0, 4, 4, 0]}
+                cursor={onCategoryClick ? 'pointer' : undefined}
+                onClick={(data: CategoryData) => onCategoryClick?.(data.category)}
+              >
                 {chartData.map((entry) => (
                   <Cell
                     key={entry.category}

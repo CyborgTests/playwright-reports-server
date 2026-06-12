@@ -1,15 +1,21 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { getFailureClusters } from '../lib/failure-clustering/index.js';
+import {
+  getFailureClusters,
+  invalidateFailureClustersCache,
+} from '../lib/failure-clustering/index.js';
 import { llmService } from '../lib/llm/index.js';
 import {
   DeleteFeedbackRequestSchema,
   FeedbackRegenerateRequestSchema,
   GetFeedbackQuerySchema,
   GetRelatedFeedbackQuerySchema,
+  ResolveClusterBodySchema,
+  ResolveClusterParamsSchema,
   UpsertFeedbackRequestSchema,
 } from '../lib/schemas/index.js';
 import { analyticsService } from '../lib/service/analytics.js';
 import { analysisFeedbackDb } from '../lib/service/db/analysisFeedback.sqlite.js';
+import { clusterResolutionsDb } from '../lib/service/db/clusterResolutions.sqlite.js';
 import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
 import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
 import { projectSummaryDb } from '../lib/service/db/projectSummary.sqlite.js';
@@ -21,6 +27,7 @@ import {
   MANUAL_PROJECT_SUMMARY_PRIORITY,
   PROJECT_SUMMARY_REPORT_LIMIT,
 } from '../lib/service/llmAnalysisQueue.js';
+import { ValidationError, validateSchema } from '../lib/validation/index.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
 /** Project-summary cache is considered too stale to display when the newest
@@ -853,14 +860,28 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
       const authResult = await authenticate(request as AuthRequest, reply);
       if (authResult) return;
 
-      const { project, from, to, reportId } = request.query as {
-        project?: string;
-        from?: string;
-        to?: string;
-        reportId?: string;
-      };
+      const { project, from, to, reportId, testId, fileId, clusterId, includeResolved } =
+        request.query as {
+          project?: string;
+          from?: string;
+          to?: string;
+          reportId?: string;
+          testId?: string;
+          fileId?: string;
+          clusterId?: string;
+          includeResolved?: string;
+        };
 
-      const report = await getFailureClusters({ project, from, to, reportId });
+      const report = await getFailureClusters({
+        project,
+        from,
+        to,
+        reportId,
+        testId,
+        fileId,
+        clusterId,
+        includeResolved: includeResolved === '1' || includeResolved === 'true',
+      });
       return reply.send({ success: true, data: report });
     } catch (error) {
       fastify.log.error(error);
@@ -870,4 +891,53 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
       });
     }
   });
+
+  const handleClusterMutation = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    apply: (clusterId: string) => void,
+    failureMsg: string
+  ) => {
+    try {
+      const authResult = await authenticate(request as AuthRequest, reply);
+      if (authResult) return;
+      const { id } = validateSchema(ResolveClusterParamsSchema, request.params);
+      apply(id);
+      invalidateFailureClustersCache();
+      return reply.send({ success: true });
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        return reply.status(400).send({ error: error.message, details: error.details });
+      }
+      fastify.log.error(error);
+      return reply.status(500).send({
+        success: false,
+        error: `${failureMsg}: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  };
+
+  fastify.post('/api/analytics/failure-clusters/:id/resolve', async (request, reply) =>
+    handleClusterMutation(
+      request,
+      reply,
+      (clusterId) => {
+        const body = validateSchema(ResolveClusterBodySchema, request.body ?? {});
+        clusterResolutionsDb.setOverride({ clusterId, state: 'resolved', ...body });
+      },
+      'Failed to mark cluster resolved'
+    )
+  );
+
+  fastify.post('/api/analytics/failure-clusters/:id/reopen', async (request, reply) =>
+    handleClusterMutation(
+      request,
+      reply,
+      (clusterId) => {
+        const body = validateSchema(ResolveClusterBodySchema, request.body ?? {});
+        clusterResolutionsDb.setOverride({ clusterId, state: 'active', ...body });
+      },
+      'Failed to re-open cluster'
+    )
+  );
 }

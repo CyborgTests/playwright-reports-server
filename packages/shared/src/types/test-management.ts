@@ -71,6 +71,7 @@ export interface FailureGroupReportRef {
 
 export interface TestFailureGroup {
   signature: string;
+  signatureGlobal?: string;
   category?: string;
   count: number;
   sampleMessage: string;

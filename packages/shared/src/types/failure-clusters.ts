@@ -150,7 +150,18 @@ export interface FailureCluster {
   testCount: number;
   failureCount: number;
   tests: ClusterTest[];
+  signatureGlobals?: string[];
   regressionContext?: ClusterRegressionContext;
+  lifecycle?: ClusterLifecycle;
+  resolution?: ClusterResolution;
+}
+
+export type ClusterLifecycle = 'active' | 'resolved' | 'unattributed';
+
+export interface ClusterResolution {
+  resolvedAt: string;
+  note?: string;
+  manual: boolean;
 }
 
 export interface ClusterRegressionContext {
@@ -171,4 +182,8 @@ export interface ClusterOptions {
   from?: string;
   to?: string;
   reportId?: string;
+  testId?: string;
+  fileId?: string;
+  clusterId?: string;
+  includeResolved?: boolean;
 }

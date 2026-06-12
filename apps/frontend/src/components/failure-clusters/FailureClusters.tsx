@@ -10,15 +10,16 @@ import {
   type ClusterTest,
   type DateRange,
   type FailureCluster,
-  type ReportHistory,
 } from '@playwright-reports/shared';
-import { AlertOctagon, ExternalLink, GitMerge, HelpCircle, Users } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { AlertOctagon, ExternalLink, GitMerge, HelpCircle, RotateCcw, Users } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import DateRangeSelect from '@/components/date-range-select';
+import { MarkClusterResolvedDialog } from '@/components/failure-clusters/MarkClusterResolvedDialog';
 import { subtitle, title } from '@/components/primitives';
 import ProjectSelect from '@/components/project-select';
+import ReportPicker from '@/components/report-picker';
 import {
   Accordion,
   AccordionContent,
@@ -26,9 +27,13 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 import { defaultProjectName } from '@/lib/constants';
 import { buildUrl, withBase } from '@/lib/url';
@@ -46,27 +51,50 @@ function buildTestLink(reportUrl: string | undefined, testId: string): string | 
 
 export default function FailureClusters() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const reportId = searchParams.get('reportId') ?? undefined;
-  const deepLinkClusterId = searchParams.get('clusterId') ?? undefined;
 
   const [project, setProject] = useState(searchParams.get('project') ?? defaultProjectName);
+  const [reportId, setReportId] = useState<string | undefined>(
+    searchParams.get('reportId') ?? undefined
+  );
+  const [clusterId, setClusterId] = useState<string | undefined>(
+    searchParams.get('clusterId') ?? undefined
+  );
   const [dateRange, setDateRange] = useState<DateRange>(() => ({
     from: searchParams.get('from') ?? undefined,
     to: searchParams.get('to') ?? undefined,
   }));
+  const [includeResolved, setIncludeResolved] = useState(
+    searchParams.get('includeResolved') === '1' || !!searchParams.get('clusterId')
+  );
 
   useEffect(() => {
-    const next = new URLSearchParams(searchParams);
+    const next = new URLSearchParams();
     if (project && project !== defaultProjectName) next.set('project', project);
-    else next.delete('project');
+    if (reportId) next.set('reportId', reportId);
+    if (clusterId) next.set('clusterId', clusterId);
     if (dateRange.from) next.set('from', dateRange.from);
-    else next.delete('from');
     if (dateRange.to) next.set('to', dateRange.to);
-    else next.delete('to');
+    if (includeResolved) next.set('includeResolved', '1');
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [project, dateRange, searchParams, setSearchParams]);
+  }, [project, reportId, clusterId, dateRange, includeResolved, searchParams, setSearchParams]);
+
+  const hasFilters =
+    project !== defaultProjectName ||
+    !!reportId ||
+    !!clusterId ||
+    !!dateRange.from ||
+    !!dateRange.to ||
+    includeResolved;
+
+  const clearFilters = useCallback(() => {
+    setProject(defaultProjectName);
+    setReportId(undefined);
+    setClusterId(undefined);
+    setDateRange({ from: undefined, to: undefined });
+    setIncludeResolved(false);
+  }, []);
 
   const queryUrl = useMemo(() => {
     const params: Record<string, string> = {};
@@ -74,25 +102,19 @@ export default function FailureClusters() {
     if (dateRange.from) params.from = dateRange.from;
     if (dateRange.to) params.to = dateRange.to;
     if (reportId) params.reportId = reportId;
+    if (clusterId) params.clusterId = clusterId;
+    if (includeResolved) params.includeResolved = '1';
     return buildUrl('/api/analytics/failure-clusters', params);
-  }, [project, dateRange.from, dateRange.to, reportId]);
+  }, [project, dateRange.from, dateRange.to, reportId, clusterId, includeResolved]);
 
-  const { data, error, isLoading, isFetching } = useQuery<ClusterReportEnvelope>(queryUrl, {
-    dependencies: [project, dateRange.from, dateRange.to, reportId],
-    select: (raw: unknown) => raw as ClusterReportEnvelope,
-    staleTime: 20_000,
-  });
-
-  const { data: scopingReport } = useQuery<ReportHistory>(`/api/report/${reportId}`, {
-    enabled: !!reportId,
-    dependencies: [reportId],
-    select: (raw: unknown) => {
-      if (raw && typeof raw === 'object' && 'data' in raw) {
-        return (raw as { data: ReportHistory }).data;
-      }
-      return raw as ReportHistory;
-    },
-  });
+  const { data, error, isLoading, isFetching, refetch } = useQuery<ClusterReportEnvelope>(
+    queryUrl,
+    {
+      dependencies: [project, dateRange.from, dateRange.to, reportId, clusterId, includeResolved],
+      select: (raw: unknown) => raw as ClusterReportEnvelope,
+      staleTime: 20_000,
+    }
+  );
 
   useEffect(() => {
     if (error) toast.error(error.message);
@@ -101,27 +123,12 @@ export default function FailureClusters() {
   const report = data?.data;
   const clusters = report?.clusters ?? [];
 
-  const scopeLabel = useMemo(() => {
-    if (!reportId) return undefined;
-    if (!scopingReport) return `report ${reportId.slice(0, 8)}`;
-    const parts: string[] = [];
-    if (scopingReport.displayNumber !== undefined) parts.push(`#${scopingReport.displayNumber}`);
-    if (scopingReport.title) parts.push(scopingReport.title);
-    return parts.length > 0 ? parts.join(' ') : `report ${reportId.slice(0, 8)}`;
-  }, [reportId, scopingReport]);
-
   return (
     <div className="w-full">
       <h1 className={`${title()} mb-2`}>Failure clusters</h1>
       <p className={`${subtitle()} mb-2`}>
         Groups of failing tests likely caused by the same underlying defect.
       </p>
-      {reportId && scopeLabel && (
-        <p className="text-sm text-muted-foreground mb-6">
-          Showing only clusters that contain tests that failed in{' '}
-          <span className="font-medium text-foreground">{scopeLabel}</span>.
-        </p>
-      )}
 
       <Card className="mb-6">
         <CardContent className="flex flex-wrap items-end gap-4 pt-6">
@@ -131,9 +138,46 @@ export default function FailureClusters() {
             onSelect={setProject}
             className="w-56"
           />
+          <ReportPicker
+            selectedReportId={reportId}
+            onSelect={setReportId}
+            defaultProject={project}
+          />
           <DateRangeSelect selectedRange={dateRange} onSelect={setDateRange} disablePersistence />
+          <div className="flex items-center gap-2 pb-2">
+            <Switch
+              id="include-resolved"
+              checked={includeResolved}
+              onCheckedChange={setIncludeResolved}
+            />
+            <Label htmlFor="include-resolved" className="text-sm cursor-pointer">
+              Show resolved
+            </Label>
+          </div>
+          {hasFilters && (
+            <Button variant="ghost" size="sm" className="gap-1.5 pb-2" onClick={clearFilters}>
+              <RotateCcw className="h-3.5 w-3.5" />
+              Clear filters
+            </Button>
+          )}
         </CardContent>
       </Card>
+
+      {clusterId && (
+        <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground">
+          <span>
+            Filtered to cluster <code className="text-xs">{clusterId.slice(0, 12)}</code>
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2"
+            onClick={() => setClusterId(undefined)}
+          >
+            Clear
+          </Button>
+        </div>
+      )}
 
       {(isLoading || isFetching) && clusters.length === 0 ? (
         <div className="flex items-center justify-center py-12">
@@ -145,7 +189,9 @@ export default function FailureClusters() {
         <ClusterList
           clusters={clusters}
           reportId={reportId}
-          deepLinkClusterId={deepLinkClusterId}
+          deepLinkClusterId={clusterId}
+          project={project}
+          onChange={refetch}
         />
       )}
     </div>
@@ -172,10 +218,14 @@ function ClusterList({
   clusters,
   reportId,
   deepLinkClusterId,
+  project,
+  onChange,
 }: {
   clusters: FailureCluster[];
   reportId?: string;
   deepLinkClusterId?: string;
+  project: string;
+  onChange: () => void;
 }) {
   const actionable = clusters.filter((c) => c.anchor.kind !== 'unmatched');
   const unmatched = clusters.filter((c) => c.anchor.kind === 'unmatched');
@@ -207,7 +257,13 @@ function ClusterList({
           onValueChange={setOpenActionable}
         >
           {actionable.map((cluster) => (
-            <ClusterCard key={cluster.id} cluster={cluster} reportId={reportId} />
+            <ClusterCard
+              key={cluster.id}
+              cluster={cluster}
+              reportId={reportId}
+              project={project}
+              onChange={onChange}
+            />
           ))}
         </Accordion>
       )}
@@ -223,7 +279,13 @@ function ClusterList({
             onValueChange={setOpenUnmatched}
           >
             {unmatched.map((cluster) => (
-              <ClusterCard key={cluster.id} cluster={cluster} reportId={reportId} />
+              <ClusterCard
+                key={cluster.id}
+                cluster={cluster}
+                reportId={reportId}
+                project={project}
+                onChange={onChange}
+              />
             ))}
           </Accordion>
         </>
@@ -232,14 +294,75 @@ function ClusterList({
   );
 }
 
-function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?: string }) {
+function ClusterCard({
+  cluster,
+  reportId,
+  project,
+  onChange,
+}: {
+  cluster: FailureCluster;
+  reportId?: string;
+  project: string;
+  onChange: () => void;
+}) {
   const kind = cluster.anchor.kind;
+  const resolved = cluster.lifecycle === 'resolved';
+  const manualResolution = cluster.resolution?.manual === true;
+  const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
+
+  const markMutation = useMutation<{ success: boolean }, Record<string, unknown>>(
+    `/api/analytics/failure-clusters/${cluster.id}/resolve`,
+    {
+      method: 'POST',
+      onSuccess: () => {
+        toast.success('Cluster marked as resolved');
+        setResolveDialogOpen(false);
+        onChange();
+      },
+    }
+  );
+  const reopenMutation = useMutation<{ success: boolean }, Record<string, unknown>>(
+    `/api/analytics/failure-clusters/${cluster.id}/reopen`,
+    {
+      method: 'POST',
+      onSuccess: () => {
+        toast.success('Cluster re-opened');
+        onChange();
+      },
+    }
+  );
+
+  const handleResolveSubmit = (input: { note?: string }) => {
+    const body: Record<string, unknown> = { project };
+    if (input.note) body.note = input.note;
+    markMutation.mutate({ body });
+  };
+  const handleUnresolve = () => {
+    reopenMutation.mutate({ body: { project } });
+  };
+
   return (
-    <Card id={`cluster-${cluster.id}`}>
+    <Card
+      id={`cluster-${cluster.id}`}
+      className={resolved ? 'opacity-70 border-success/30' : undefined}
+    >
       <AccordionItem value={cluster.id} className="border-b-0">
         <AccordionTrigger className="px-6 hover:no-underline">
           <div className="flex flex-1 flex-col items-start gap-1 text-left">
             <div className="flex flex-wrap items-center gap-2">
+              {resolved && (
+                <Badge
+                  variant="outline"
+                  className="border-success/40 text-success gap-1"
+                  title={
+                    manualResolution
+                      ? `Marked resolved${cluster.resolution?.note ? ` — ${cluster.resolution.note}` : ''}`
+                      : 'All member regressions resolved'
+                  }
+                >
+                  {manualResolution ? 'resolved (manual)' : 'resolved'}
+                </Badge>
+              )}
               <TooltipProvider delayDuration={200}>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -291,9 +414,50 @@ function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?
           </div>
         </AccordionTrigger>
         <AccordionContent className="px-6 pb-6">
+          <div className="flex justify-end gap-2 mb-3">
+            {resolved ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleUnresolve}
+                disabled={reopenMutation.isPending}
+              >
+                Re-open cluster
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setResolveDialogOpen(true)}
+                disabled={markMutation.isPending}
+              >
+                Mark as resolved
+              </Button>
+            )}
+          </div>
+          {resolved && cluster.resolution?.note && (
+            <div className="mb-3 rounded-md border border-success/30 bg-success/5 p-3 text-sm">
+              <div className="font-medium text-xs uppercase tracking-wide text-success mb-1">
+                Resolution note
+              </div>
+              <div>{cluster.resolution.note}</div>
+              {cluster.resolution.resolvedAt && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  {new Date(cluster.resolution.resolvedAt).toLocaleString()}
+                </div>
+              )}
+            </div>
+          )}
           <ClusterBody cluster={cluster} reportId={reportId} />
         </AccordionContent>
       </AccordionItem>
+      <MarkClusterResolvedDialog
+        open={resolveDialogOpen}
+        onOpenChange={setResolveDialogOpen}
+        clusterName={cluster.name}
+        isPending={markMutation.isPending}
+        onSubmit={handleResolveSubmit}
+      />
     </Card>
   );
 }

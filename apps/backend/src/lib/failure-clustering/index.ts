@@ -1,4 +1,5 @@
 import type { ClusterOptions, ClusterReport, FailureCluster } from '@playwright-reports/shared';
+import { clusterResolutionsDb } from '../service/db/clusterResolutions.sqlite.js';
 import { type RegressionSummary, regressionsDb } from '../service/db/regressions.sqlite.js';
 import { reportDb } from '../service/db/reports.sqlite.js';
 import { testDb } from '../service/db/tests.sqlite.js';
@@ -15,7 +16,16 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 
 function cacheKey(opts: ClusterOptions): string {
-  return [opts.project ?? 'all', opts.from ?? '', opts.to ?? '', opts.reportId ?? ''].join('|');
+  return [
+    opts.project ?? 'all',
+    opts.from ?? '',
+    opts.to ?? '',
+    opts.reportId ?? '',
+    opts.testId ?? '',
+    opts.fileId ?? '',
+    opts.clusterId ?? '',
+    opts.includeResolved ? '+resolved' : '',
+  ].join('|');
 }
 
 function cacheGet(key: string): ClusterReport | undefined {
@@ -51,10 +61,22 @@ export async function getFailureClusters(opts: ClusterOptions): Promise<ClusterR
   let clusters = buildClusters(failedRuns, metaByKey, resolveReportUrl);
 
   if (opts.reportId) clusters = scopeToReport(clusters, opts.reportId);
+  if (opts.testId) clusters = scopeToTest(clusters, opts.testId, opts.fileId);
+  if (opts.clusterId) clusters = clusters.filter((c) => c.id === opts.clusterId);
 
-  enrichClustersWithRegressionContext(clusters);
+  enrichClustersWithLifecycle(clusters);
+
+  if (!opts.includeResolved) {
+    clusters = clusters.filter((c) => c.lifecycle !== 'resolved');
+  }
 
   clusters.sort((a, b) => {
+    // Active first, then unattributed, then resolved.
+    const order = (c: FailureCluster) =>
+      c.lifecycle === 'active' ? 0 : c.lifecycle === 'unattributed' ? 1 : 2;
+    const oa = order(a);
+    const ob = order(b);
+    if (oa !== ob) return oa - ob;
     const ra = a.regressionContext?.membersInRegression ?? 0;
     const rb = b.regressionContext?.membersInRegression ?? 0;
     if (ra !== rb) return rb - ra;
@@ -72,7 +94,7 @@ export async function getFailureClusters(opts: ClusterOptions): Promise<ClusterR
 
 const SHARED_COMMIT_THRESHOLD = 0.8;
 
-function enrichClustersWithRegressionContext(clusters: FailureCluster[]): void {
+function enrichClustersWithLifecycle(clusters: FailureCluster[]): void {
   const keys: Array<{ testId: string; fileId: string; project: string }> = [];
   const seen = new Set<string>();
   for (const c of clusters) {
@@ -83,40 +105,63 @@ function enrichClustersWithRegressionContext(clusters: FailureCluster[]): void {
       keys.push({ testId: t.testId, fileId: t.fileId, project: t.project });
     }
   }
-  if (keys.length === 0) return;
-  const map = regressionsDb.getOpenForTests(keys);
+  const openMap = regressionsDb.getOpenForTests(keys);
+  const everSet = regressionsDb.hasAnyForTests(keys);
+  const overrides = clusterResolutionsDb.getAllOverrides();
 
+  // Lifecycle states:
+  //   active       — ≥1 member has an open regression
+  //   resolved     — manual resolution OR members had regressions, none open
+  //   unattributed — no member ever opened a regression; can't tell if fixed
   for (const c of clusters) {
     const memberRegressions = c.tests
-      .map((t) => map.get(testKey(t.testId, t.fileId, t.project)))
+      .map((t) => openMap.get(testKey(t.testId, t.fileId, t.project)))
       .filter((r): r is RegressionSummary => r !== undefined);
+
     if (memberRegressions.length === 0) {
       c.regressionContext = undefined;
-      continue;
-    }
-    const commitCounts = new Map<string, number>();
-    for (const r of memberRegressions) {
-      if (r.regressedAtCommit) {
-        commitCounts.set(r.regressedAtCommit, (commitCounts.get(r.regressedAtCommit) ?? 0) + 1);
+    } else {
+      const commitCounts = new Map<string, number>();
+      for (const r of memberRegressions) {
+        if (r.regressedAtCommit) {
+          commitCounts.set(r.regressedAtCommit, (commitCounts.get(r.regressedAtCommit) ?? 0) + 1);
+        }
       }
-    }
-    let sharedCommit: string | null = null;
-    for (const [commit, count] of commitCounts) {
-      if (count / memberRegressions.length >= SHARED_COMMIT_THRESHOLD) {
-        sharedCommit = commit;
-        break;
+      let sharedCommit: string | null = null;
+      for (const [commit, count] of commitCounts) {
+        if (count / memberRegressions.length >= SHARED_COMMIT_THRESHOLD) {
+          sharedCommit = commit;
+          break;
+        }
       }
+      const earliest = memberRegressions
+        .map((r) => r.regressedAtCreatedAt)
+        .sort()
+        .at(0);
+      c.regressionContext = {
+        membersInRegression: memberRegressions.length,
+        totalMembers: c.tests.length,
+        sharedRegressionCommit: sharedCommit,
+        earliestRegression: earliest ?? null,
+      };
     }
-    const earliest = memberRegressions
-      .map((r) => r.regressedAtCreatedAt)
-      .sort()
-      .at(0);
-    c.regressionContext = {
-      membersInRegression: memberRegressions.length,
-      totalMembers: c.tests.length,
-      sharedRegressionCommit: sharedCommit,
-      earliestRegression: earliest ?? null,
-    };
+
+    const override = overrides.get(c.id);
+    if (override) {
+      c.lifecycle = override.state;
+      if (override.state === 'resolved') {
+        c.resolution = {
+          resolvedAt: override.resolvedAt,
+          note: override.note ?? undefined,
+          manual: true,
+        };
+      }
+    } else if (memberRegressions.length > 0) {
+      c.lifecycle = 'active';
+    } else {
+      const anyEver = c.tests.some((t) => everSet.has(testKey(t.testId, t.fileId, t.project)));
+      c.lifecycle = anyEver ? 'resolved' : 'unattributed';
+    }
   }
 }
 
@@ -162,6 +207,16 @@ function loadTestMeta(runs: FailedTestRun[]): Map<string, TestMeta> {
     }
   }
   return meta;
+}
+
+function scopeToTest(
+  clusters: FailureCluster[],
+  testId: string,
+  fileId: string | undefined
+): FailureCluster[] {
+  return clusters.filter((c) =>
+    c.tests.some((t) => t.testId === testId && (!fileId || t.fileId === fileId))
+  );
 }
 
 function scopeToReport(clusters: FailureCluster[], reportId: string): FailureCluster[] {

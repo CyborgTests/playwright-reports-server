@@ -2,12 +2,14 @@
 
 import type {
   ApiResponse,
+  ClusterReport,
+  FailureCluster,
   TestDetail,
   TestFailureGroup,
   TestRun,
 } from '@playwright-reports/shared';
 import { ArrowLeft, ExternalLink, GitMerge, Info } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom';
 import {
   CartesianGrid,
@@ -21,6 +23,7 @@ import {
 } from 'recharts';
 import { toast } from 'sonner';
 import FormattedDate from '@/components/date-format';
+import { MarkClusterResolvedDialog } from '@/components/failure-clusters/MarkClusterResolvedDialog';
 import {
   Accordion,
   AccordionContent,
@@ -41,10 +44,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 import { defaultProjectName } from '@/lib/constants';
 import { parseMilliseconds } from '@/lib/time';
-import { withBase } from '@/lib/url';
+import { buildUrl, withBase } from '@/lib/url';
 
 function formatDaysOpen(days: number): string {
   if (days < 1) return `${Math.round(days * 24)}h open`;
@@ -386,64 +390,385 @@ function firstLine(message: string): string {
   return newlineIdx === -1 ? trimmed : trimmed.slice(0, newlineIdx);
 }
 
+function CrossTestClusterCard({
+  cluster,
+  project,
+  onChange,
+}: Readonly<{ cluster: FailureCluster; project: string; onChange: () => void }>) {
+  const resolved = cluster.lifecycle === 'resolved';
+  const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
+  const markMutation = useMutation<{ success: boolean }, Record<string, unknown>>(
+    `/api/analytics/failure-clusters/${cluster.id}/resolve`,
+    {
+      method: 'POST',
+      onSuccess: () => {
+        toast.success('Cluster marked as resolved');
+        setResolveDialogOpen(false);
+        onChange();
+      },
+    }
+  );
+  const reopenMutation = useMutation<{ success: boolean }, Record<string, unknown>>(
+    `/api/analytics/failure-clusters/${cluster.id}/reopen`,
+    {
+      method: 'POST',
+      onSuccess: () => {
+        toast.success('Cluster re-opened');
+        onChange();
+      },
+    }
+  );
+  return (
+    <Card className={resolved ? 'opacity-70 border-success/30' : undefined}>
+      <CardContent className="py-4 flex flex-wrap items-center gap-3 justify-between">
+        <div className="flex flex-col gap-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="gap-1">
+              <GitMerge className="h-3 w-3" />
+              {cluster.anchor.kind}
+            </Badge>
+            {resolved && (
+              <Badge variant="outline" className="border-success/40 text-success">
+                resolved
+              </Badge>
+            )}
+            <span className="text-xs text-muted-foreground">
+              {cluster.testCount} test{cluster.testCount === 1 ? '' : 's'} · {cluster.failureCount}{' '}
+              failure{cluster.failureCount === 1 ? '' : 's'}
+            </span>
+          </div>
+          <CardTitle className="text-sm font-medium leading-snug break-words">
+            {cluster.name}
+          </CardTitle>
+          {resolved && cluster.resolution?.note && (
+            <div className="text-xs text-muted-foreground italic mt-1">
+              &ldquo;{cluster.resolution.note}&rdquo;
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <RouterLink
+            to={withBase(
+              `/failures/clusters?clusterId=${cluster.id}&project=${encodeURIComponent(project)}`
+            )}
+          >
+            <Button variant="ghost" size="sm">
+              View
+            </Button>
+          </RouterLink>
+          {resolved ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => reopenMutation.mutate({ body: { project } })}
+              disabled={reopenMutation.isPending}
+            >
+              Re-open
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setResolveDialogOpen(true)}
+              disabled={markMutation.isPending}
+            >
+              Mark resolved
+            </Button>
+          )}
+        </div>
+      </CardContent>
+      <MarkClusterResolvedDialog
+        open={resolveDialogOpen}
+        onOpenChange={setResolveDialogOpen}
+        clusterName={cluster.name}
+        isPending={markMutation.isPending}
+        onSubmit={(input) => {
+          const body: Record<string, unknown> = { project };
+          if (input.note) body.note = input.note;
+          markMutation.mutate({ body });
+        }}
+      />
+    </Card>
+  );
+}
+
 function FailureGroupsList({
   groups,
   testId,
-}: Readonly<{ groups: TestFailureGroup[]; testId: string }>) {
-  if (groups.length === 0) return null;
+  clusterForGroup,
+  unmatchedClusters,
+  project,
+  onClustersChanged,
+}: Readonly<{
+  groups: TestFailureGroup[];
+  testId: string;
+  clusterForGroup: Map<string, FailureCluster>;
+  unmatchedClusters: FailureCluster[];
+  project: string;
+  onClustersChanged: () => void;
+}>) {
+  const RESOLVED_LIMIT = 5;
+  const [showAllResolved, setShowAllResolved] = useState(false);
+
+  const activeGroups = groups.filter((g) => {
+    const c = clusterForGroup.get(g.signature);
+    return c?.lifecycle !== 'resolved';
+  });
+  const resolvedGroups = groups.filter((g) => {
+    const c = clusterForGroup.get(g.signature);
+    return c?.lifecycle === 'resolved';
+  });
+
+  const activeUnmatched = unmatchedClusters.filter((c) => c.lifecycle !== 'resolved');
+  const resolvedUnmatched = unmatchedClusters.filter((c) => c.lifecycle === 'resolved');
+
+  const allResolved = [
+    ...resolvedGroups.map((g) => ({ kind: 'group' as const, group: g })),
+    ...resolvedUnmatched.map((c) => ({ kind: 'cluster' as const, cluster: c })),
+  ];
+  const visibleResolved = showAllResolved ? allResolved : allResolved.slice(0, RESOLVED_LIMIT);
+  const hiddenCount = allResolved.length - visibleResolved.length;
+
+  if (groups.length === 0 && unmatchedClusters.length === 0) return null;
   return (
     <div>
-      <div className="mb-3">
-        <h3 className="text-lg font-semibold">Failure clusters</h3>
-        <p className="text-sm text-muted-foreground">
-          Failures for this test grouped by error signature
-        </p>
-      </div>
-      <Accordion type="multiple" className="space-y-3">
-        {groups.map((group) => (
-          <FailureClusterCard key={group.signature} group={group} testId={testId} />
-        ))}
-      </Accordion>
+      {activeGroups.length > 0 && (
+        <>
+          <div className="mb-3">
+            <h3 className="text-lg font-semibold">Failure patterns</h3>
+            <p className="text-sm text-muted-foreground">
+              Failures for this test grouped by error signature
+            </p>
+          </div>
+          <Accordion type="multiple" className="space-y-3">
+            {activeGroups.map((group) => (
+              <FailureGroupCard
+                key={group.signature}
+                group={group}
+                testId={testId}
+                cluster={clusterForGroup.get(group.signature)}
+                project={project}
+                onClustersChanged={onClustersChanged}
+              />
+            ))}
+          </Accordion>
+        </>
+      )}
+      {activeUnmatched.length > 0 && (
+        <div className={activeGroups.length > 0 ? 'mt-6' : undefined}>
+          <div className="mb-3">
+            <h3 className="text-lg font-semibold">Cross-test failure clusters</h3>
+            <p className="text-sm text-muted-foreground">
+              Clusters that group this test with others failing the same way
+            </p>
+          </div>
+          <div className="space-y-3">
+            {activeUnmatched.map((c) => (
+              <CrossTestClusterCard
+                key={c.id}
+                cluster={c}
+                project={project}
+                onChange={onClustersChanged}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      {allResolved.length > 0 && (
+        <div className={activeGroups.length > 0 || activeUnmatched.length > 0 ? 'mt-6' : undefined}>
+          <div className="mb-3">
+            <h3 className="text-lg font-semibold text-muted-foreground">
+              Resolved ({allResolved.length})
+            </h3>
+          </div>
+          <div className="space-y-3">
+            {visibleResolved.map((item) => {
+              if (item.kind === 'group') {
+                const c = clusterForGroup.get(item.group.signature);
+                if (!c) return null;
+                return (
+                  <CrossTestClusterCard
+                    key={item.group.signature}
+                    cluster={c}
+                    project={project}
+                    onChange={onClustersChanged}
+                  />
+                );
+              }
+              return (
+                <CrossTestClusterCard
+                  key={item.cluster.id}
+                  cluster={item.cluster}
+                  project={project}
+                  onChange={onClustersChanged}
+                />
+              );
+            })}
+          </div>
+          {hiddenCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full text-muted-foreground mt-2"
+              onClick={() => setShowAllResolved(true)}
+            >
+              Show {hiddenCount} more resolved
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function FailureClusterCard({
+function ClusterActions({
+  cluster,
+  resolved,
+  project,
+  onResolve,
+  onReopen,
+  resolvePending,
+  reopenPending,
+}: Readonly<{
+  cluster: FailureCluster;
+  resolved: boolean;
+  project: string;
+  onResolve: () => void;
+  onReopen: () => void;
+  resolvePending: boolean;
+  reopenPending: boolean;
+}>) {
+  return (
+    <div
+      role="toolbar"
+      className="flex items-center gap-2 shrink-0"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+      }}
+    >
+      {cluster.anchor.kind !== 'signature' && (
+        <RouterLink
+          to={withBase(
+            `/failures/clusters?clusterId=${cluster.id}&project=${encodeURIComponent(project)}`
+          )}
+        >
+          <Button variant="ghost" size="sm">
+            View
+          </Button>
+        </RouterLink>
+      )}
+      {resolved ? (
+        <Button variant="outline" size="sm" onClick={onReopen} disabled={reopenPending}>
+          Re-open
+        </Button>
+      ) : (
+        <Button variant="outline" size="sm" onClick={onResolve} disabled={resolvePending}>
+          Mark resolved
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function FailureGroupCard({
   group,
   testId,
-}: Readonly<{ group: TestFailureGroup; testId: string }>) {
+  cluster,
+  project,
+  onClustersChanged,
+}: Readonly<{
+  group: TestFailureGroup;
+  testId: string;
+  cluster: FailureCluster | undefined;
+  project: string;
+  onClustersChanged: () => void;
+}>) {
   const name = firstLine(group.sampleMessage || group.signature);
+  const resolved = cluster?.lifecycle === 'resolved';
+  const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
+  const clusterId = cluster?.id ?? '_';
+  const markMutation = useMutation<{ success: boolean }, Record<string, unknown>>(
+    `/api/analytics/failure-clusters/${clusterId}/resolve`,
+    {
+      method: 'POST',
+      onSuccess: () => {
+        toast.success('Cluster marked as resolved');
+        setResolveDialogOpen(false);
+        onClustersChanged();
+      },
+    }
+  );
+  const reopenMutation = useMutation<{ success: boolean }, Record<string, unknown>>(
+    `/api/analytics/failure-clusters/${clusterId}/reopen`,
+    {
+      method: 'POST',
+      onSuccess: () => {
+        toast.success('Cluster re-opened');
+        onClustersChanged();
+      },
+    }
+  );
   return (
-    <Card>
+    <Card className={resolved ? 'opacity-70 border-success/30' : undefined}>
       <AccordionItem value={group.signature} className="border-b-0">
         <AccordionTrigger className="px-6 hover:no-underline">
-          <div className="flex flex-1 flex-col items-start gap-1 text-left">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="gap-1">
-                <GitMerge className="h-3 w-3" />
-                signature
-              </Badge>
-              {group.category && (
-                <Badge variant="secondary" className="font-mono text-xs">
-                  {group.category}
-                </Badge>
-              )}
+          <div className="flex flex-1 items-start justify-between gap-2 text-left">
+            <div className="flex flex-col items-start gap-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                {group.category && (
+                  <Badge variant="secondary" className="font-mono text-xs">
+                    {group.category}
+                  </Badge>
+                )}
+                {resolved && (
+                  <Badge variant="outline" className="border-success/40 text-success">
+                    resolved
+                  </Badge>
+                )}
+              </div>
+              <CardTitle className="text-base font-medium leading-snug break-words">
+                {name}
+              </CardTitle>
+              <div className="text-sm text-muted-foreground">
+                <span className="font-semibold text-foreground">{group.count}</span>{' '}
+                {group.count === 1 ? 'occurrence' : 'occurrences'} ·{' '}
+                <span>
+                  first <FormattedDate date={group.firstSeen} />
+                </span>{' '}
+                ·{' '}
+                <span>
+                  last <FormattedDate date={group.lastSeen} />
+                </span>
+              </div>
             </div>
-            <CardTitle className="text-base font-medium leading-snug break-words">{name}</CardTitle>
-            <div className="text-sm text-muted-foreground">
-              <span className="font-semibold text-foreground">{group.count}</span>{' '}
-              {group.count === 1 ? 'occurrence' : 'occurrences'} ·{' '}
-              <span>
-                first <FormattedDate date={group.firstSeen} />
-              </span>{' '}
-              ·{' '}
-              <span>
-                last <FormattedDate date={group.lastSeen} />
-              </span>
-            </div>
+            {cluster && (
+              <ClusterActions
+                cluster={cluster}
+                resolved={resolved}
+                project={project}
+                onResolve={() => setResolveDialogOpen(true)}
+                onReopen={() => reopenMutation.mutate({ body: { project } })}
+                resolvePending={markMutation.isPending}
+                reopenPending={reopenMutation.isPending}
+              />
+            )}
           </div>
         </AccordionTrigger>
         <AccordionContent className="px-6 pb-6">
+          {resolved && cluster?.resolution?.note && (
+            <div className="mb-3 rounded-md border border-success/30 bg-success/5 p-3 text-sm">
+              <div className="font-medium text-xs uppercase tracking-wide text-success mb-1">
+                Resolution note
+              </div>
+              <div>{cluster.resolution.note}</div>
+              {cluster.resolution.resolvedAt && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  {new Date(cluster.resolution.resolvedAt).toLocaleString()}
+                </div>
+              )}
+            </div>
+          )}
           <div className="space-y-4">
             {group.sampleMessage && (
               <div>
@@ -486,7 +811,87 @@ function FailureClusterCard({
           </div>
         </AccordionContent>
       </AccordionItem>
+      {cluster && (
+        <MarkClusterResolvedDialog
+          open={resolveDialogOpen}
+          onOpenChange={setResolveDialogOpen}
+          clusterName={cluster.name}
+          isPending={markMutation.isPending}
+          onSubmit={(input) => {
+            const body: Record<string, unknown> = { project };
+            if (input.note) body.note = input.note;
+            markMutation.mutate({ body });
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+function FailurePatternsWithClusters({
+  groups,
+  testId,
+  fileId,
+  project,
+}: Readonly<{
+  groups: TestFailureGroup[];
+  testId: string;
+  fileId: string;
+  project: string;
+}>) {
+  const queryUrl = useMemo(
+    () =>
+      buildUrl('/api/analytics/failure-clusters', {
+        project,
+        testId,
+        fileId,
+        includeResolved: '1',
+      }),
+    [project, testId, fileId]
+  );
+  const { data, refetch } = useQuery<{ success: boolean; data: ClusterReport }>(queryUrl, {
+    dependencies: [project, testId, fileId],
+    staleTime: 20_000,
+  });
+
+  const { clusterForGroup, unmatchedClusters } = useMemo(() => {
+    const clusters = data?.data?.clusters ?? [];
+    const map = new Map<string, FailureCluster>();
+    const matchedIds = new Set<string>();
+
+    const sigGlobalIndex = new Map<string, FailureCluster>();
+    for (const c of clusters) {
+      if (c.anchor.kind === 'signature') sigGlobalIndex.set(c.anchor.signature, c);
+      for (const sig of c.signatureGlobals ?? []) {
+        if (!sigGlobalIndex.has(sig)) sigGlobalIndex.set(sig, c);
+      }
+    }
+
+    for (const g of groups) {
+      if (g.signatureGlobal) {
+        const c = sigGlobalIndex.get(g.signatureGlobal);
+        if (c && !matchedIds.has(c.id)) {
+          map.set(g.signature, c);
+          matchedIds.add(c.id);
+        }
+      }
+    }
+
+    return {
+      clusterForGroup: map,
+      unmatchedClusters: clusters.filter((c) => !matchedIds.has(c.id)),
+    };
+  }, [data, groups]);
+
+  return (
+    <FailureGroupsList
+      groups={groups}
+      testId={testId}
+      clusterForGroup={clusterForGroup}
+      unmatchedClusters={unmatchedClusters}
+      project={project}
+      onClustersChanged={refetch}
+    />
   );
 }
 
@@ -657,7 +1062,12 @@ export default function TestDetailPage() {
         testId={testId}
       />
 
-      <FailureGroupsList groups={failureGroups} testId={testId} />
+      <FailurePatternsWithClusters
+        groups={failureGroups}
+        testId={testId}
+        fileId={detail.fileId}
+        project={project}
+      />
 
       <CollapsibleSection
         title="Run History"

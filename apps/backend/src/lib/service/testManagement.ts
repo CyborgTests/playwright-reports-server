@@ -136,6 +136,7 @@ function buildFailureGroups(runs: TestRun[]): TestFailureGroup[] {
     string,
     {
       signature: string;
+      signatureGlobal?: string;
       category?: string;
       sampleMessage: string;
       runs: TestRun[];
@@ -162,6 +163,7 @@ function buildFailureGroups(runs: TestRun[]): TestFailureGroup[] {
       }
       bucket = {
         signature: sig,
+        signatureGlobal: run.errorSignatureGlobal,
         category: run.failureCategory,
         sampleMessage,
         runs: [],
@@ -179,6 +181,7 @@ function buildFailureGroups(runs: TestRun[]): TestFailureGroup[] {
       const sortedDesc = [...sortedAsc].reverse();
       return {
         signature: g.signature,
+        signatureGlobal: g.signatureGlobal,
         category: g.category,
         count: g.runs.length,
         sampleMessage: g.sampleMessage,

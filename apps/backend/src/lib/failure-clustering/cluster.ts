@@ -181,6 +181,11 @@ function buildOneCluster(
   }
   const category = [...categoryCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
 
+  const sigGlobals = new Set<string>();
+  for (const { run } of members) {
+    if (run.errorSignatureGlobal) sigGlobals.add(run.errorSignatureGlobal);
+  }
+
   return {
     id,
     anchor,
@@ -193,6 +198,7 @@ function buildOneCluster(
     testCount: tests.length,
     failureCount: members.length,
     tests,
+    signatureGlobals: sigGlobals.size > 0 ? [...sigGlobals] : undefined,
   };
 }
 

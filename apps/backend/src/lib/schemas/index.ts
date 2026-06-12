@@ -175,6 +175,15 @@ export const DeleteReportsResponseSchema = z.object({
   reportsIds: z.array(z.string()),
 });
 
+export const ResolveClusterParamsSchema = z.object({
+  id: z.string().min(1).max(128),
+});
+
+export const ResolveClusterBodySchema = z.object({
+  project: z.string().trim().min(1).max(256).optional(),
+  note: z.string().max(2000).optional(),
+});
+
 export const EditReportsRequestSchema = z
   .object({
     reportsIds: z.array(z.string()).min(1).max(500),

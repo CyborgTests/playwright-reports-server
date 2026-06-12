@@ -437,3 +437,15 @@ export const REGRESSIONS_SCHEMA_SQL = `
     ON regressions(recoveredAtCreatedAt)
     WHERE recoveredAtCreatedAt IS NOT NULL;
 `;
+
+export const CLUSTER_RESOLUTIONS_SCHEMA_SQL = `
+  CREATE TABLE IF NOT EXISTS cluster_resolutions (
+    clusterId TEXT PRIMARY KEY,
+    project TEXT,
+    resolvedAt TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'resolved',
+    note TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_cluster_resolutions_project
+    ON cluster_resolutions(project, resolvedAt DESC);
+`;

@@ -154,11 +154,11 @@ export class ReportDatabase {
 
     let createdAtStr: string;
     if (createdAt instanceof Date) {
-      createdAtStr = createdAt.toDateString();
+      createdAtStr = createdAt.toISOString();
     } else if (typeof createdAt === 'string') {
       createdAtStr = createdAt;
     } else {
-      createdAtStr = String(createdAt);
+      createdAtStr = new Date(createdAt as number).toISOString();
     }
 
     // kysely doesn't model INSERT OR REPLACE well; use ON CONFLICT REPLACE shape.
