@@ -97,6 +97,17 @@ export function getDerivedPage(
       FROM test_runs WHERE ${winConds.join(' AND ')}
       GROUP BY testId, fileId, project
     )`);
+    if (options.failureCategory) {
+      const catConds = [...winConds, 'failure_category = ?'];
+      if (scoped) cteParams.push(project as string);
+      if (options.from) cteParams.push(options.from);
+      if (options.to) cteParams.push(options.to);
+      cteParams.push(options.failureCategory);
+      ctes.push(`cat_w AS (
+        SELECT DISTINCT testId, fileId, project
+        FROM test_runs WHERE ${catConds.join(' AND ')}
+      )`);
+    }
   }
 
   const totalRunsExpr = windowed ? 'COALESCE(agg_w.totalRuns, 0)' : 'COALESCE(t.totalRuns, 0)';
@@ -141,8 +152,14 @@ export function getDerivedPage(
     if (tierConds.length > 0) whereConds.push(`(${tierConds.join(' OR ')})`);
   }
   if (options.failureCategory) {
-    whereConds.push('t.latestFailureCategory = ?');
-    whereParams.push(options.failureCategory);
+    if (windowed) {
+      whereConds.push(
+        '(t.testId, t.fileId, t.project) IN (SELECT testId, fileId, project FROM cat_w)'
+      );
+    } else {
+      whereConds.push('t.latestFailureCategory = ?');
+      whereParams.push(options.failureCategory);
+    }
   }
   if (options.search) {
     const term = options.search.trim();
