@@ -46,6 +46,8 @@ function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
             failed: metric.failed,
             flaky: metric.flaky,
             duration: metric.duration,
+            newRegressions: metric.newRegressions ?? 0,
+            resolvedRegressions: metric.resolvedRegressions ?? 0,
           };
         })
         .reverse(),
@@ -66,11 +68,14 @@ function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
         failed: number;
         flaky: number;
         total: number;
+        newRegressions: number;
+        resolvedRegressions: number;
       };
     }>;
   }) => {
     if (active && payload?.length) {
       const data = payload[0].payload;
+      const hasRegressionInfo = data.newRegressions > 0 || data.resolvedRegressions > 0;
       return (
         <div className="bg-popover text-popover-foreground p-3 rounded-lg shadow-lg border">
           <p className="font-medium">{data.heading}</p>
@@ -92,11 +97,93 @@ function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
               <span>Total:</span>
               <span>{data.total}</span>
             </div>
+            {hasRegressionInfo && (
+              <div className="border-t border-border/40 pt-1 mt-1 space-y-0.5">
+                {data.newRegressions > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-danger">↓ New regressions:</span>
+                    <span className="text-danger font-medium">{data.newRegressions}</span>
+                  </div>
+                )}
+                {data.resolvedRegressions > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-success">↑ Resolved here:</span>
+                    <span className="text-success font-medium">{data.resolvedRegressions}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       );
     }
     return null;
+  };
+
+  interface BarShapeProps {
+    x?: number;
+    y?: number;
+    width?: number;
+    payload?: { newRegressions?: number; resolvedRegressions?: number };
+    fill?: string;
+  }
+  const RegressionMarkBar = (props: BarShapeProps) => {
+    const { x = 0, y = 0, width = 0, fill = chartColors.failed, payload } = props;
+    const height = (props as { height?: number }).height ?? 0;
+    const opened = payload?.newRegressions ?? 0;
+    const closed = payload?.resolvedRegressions ?? 0;
+    const hasMark = opened > 0 || closed > 0;
+    // cap at "99+" so an unusually-broken run can't blow out the chip width
+    // and run into the next bar.
+    const fmt = (n: number) => (n > 99 ? '99+' : String(n));
+    const segments: Array<{ text: string; bg: string; fg: string }> = [];
+    if (opened > 0) {
+      segments.push({ text: `↓${fmt(opened)}`, bg: 'hsl(0, 84%, 60%)', fg: 'white' });
+    }
+    if (closed > 0) {
+      segments.push({ text: `↑${fmt(closed)}`, bg: 'hsl(142, 76%, 36%)', fg: 'white' });
+    }
+    const CHIP_H = 14;
+    const CHIP_PADDING = 6;
+    const CHIP_GAP = 2;
+    const CHIP_FONT = 10;
+    const charWidth = (ch: string) => (ch === '↑' || ch === '↓' ? 9 : 6.5);
+    const chipWidths = segments.map((s) => {
+      const inner = [...s.text].reduce((sum, c) => sum + charWidth(c), 0);
+      return Math.max(20, Math.ceil(inner) + CHIP_PADDING * 2);
+    });
+    const totalWidth =
+      chipWidths.reduce((a, b) => a + b, 0) + Math.max(0, segments.length - 1) * CHIP_GAP;
+    const startX = x + (width - totalWidth) / 2;
+    const chipY = y - CHIP_H - 2;
+    let cursor = startX;
+    return (
+      <g>
+        <rect x={x} y={y} width={width} height={height} fill={fill} />
+        {hasMark &&
+          segments.map((s, i) => {
+            const w = chipWidths[i];
+            const cx = cursor;
+            cursor += w + CHIP_GAP;
+            return (
+              <g key={s.text}>
+                <rect x={cx} y={chipY} width={w} height={CHIP_H} rx={4} ry={4} fill={s.bg} />
+                <text
+                  x={cx + w / 2}
+                  y={chipY + CHIP_H / 2 + 1}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize={CHIP_FONT}
+                  fontWeight={600}
+                  fill={s.fg}
+                >
+                  {s.text}
+                </text>
+              </g>
+            );
+          })}
+      </g>
+    );
   };
 
   const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
@@ -168,7 +255,12 @@ function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="passed" stackId="a" fill={chartColors.passed} />
               <Bar dataKey="flaky" stackId="a" fill={chartColors.flaky} />
-              <Bar dataKey="failed" stackId="a" fill={chartColors.failed} />
+              <Bar
+                dataKey="failed"
+                stackId="a"
+                fill={chartColors.failed}
+                shape={RegressionMarkBar}
+              />
             </BarChart>
           </div>
         )}

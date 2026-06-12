@@ -70,8 +70,13 @@ function parseTiersParam(raw: string | null): FlakinessTier[] | undefined {
 }
 
 function parseSortParam(raw: string | null): TestsSort | undefined {
-  if (raw === 'slowest' || raw === 'stale') return raw;
+  if (raw === 'slowest' || raw === 'stale' || raw === 'regression-age') return raw;
   return undefined;
+}
+
+function formatRegressionAge(days: number): string {
+  if (days < 1) return `${Math.round(days * 24)}h`;
+  return `${Math.round(days * 10) / 10}d`;
 }
 
 export default function TestManagementWidget({
@@ -85,6 +90,9 @@ export default function TestManagementWidget({
     status: 'all',
     tiers: parseTiersParam(searchParams.get('tiers')),
     sort: parseSortParam(searchParams.get('sort')),
+    regressedOnly: searchParams.get('regressedOnly') === '1',
+    regressedSince: searchParams.get('regressedSince') || undefined,
+    resolvedSince: searchParams.get('resolvedSince') || undefined,
   }));
   const [quarantineTest, setQuarantineTest] = useState<TestWithQuarantineInfo | null>(null);
   const [quarantineReason, setQuarantineReason] = useState('');
@@ -96,21 +104,36 @@ export default function TestManagementWidget({
     setFilters((prev) => ({ ...prev, project: project ?? defaultProjectName }));
   }, [project]);
 
-  // Pick up external changes to tiers/sort (e.g. a stat-widget click on the dashboard
-  // updating the URL). Compare against current state before setting to avoid loops.
   useEffect(() => {
     const urlTiers = parseTiersParam(searchParams.get('tiers'));
     const urlSort = parseSortParam(searchParams.get('sort'));
+    const urlRegressedOnly = searchParams.get('regressedOnly') === '1';
+    const urlRegressedSince = searchParams.get('regressedSince') || undefined;
+    const urlResolvedSince = searchParams.get('resolvedSince') || undefined;
     setFilters((prev) => {
       const sameTiers =
         (prev.tiers?.length ?? 0) === (urlTiers?.length ?? 0) &&
         (prev.tiers ?? []).every((t) => urlTiers?.includes(t));
-      if (sameTiers && prev.sort === urlSort) return prev;
-      return { ...prev, tiers: urlTiers, sort: urlSort };
+      if (
+        sameTiers &&
+        prev.sort === urlSort &&
+        (prev.regressedOnly ?? false) === urlRegressedOnly &&
+        prev.regressedSince === urlRegressedSince &&
+        prev.resolvedSince === urlResolvedSince
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        tiers: urlTiers,
+        sort: urlSort,
+        regressedOnly: urlRegressedOnly,
+        regressedSince: urlRegressedSince,
+        resolvedSince: urlResolvedSince,
+      };
     });
   }, [searchParams]);
 
-  // Sync tier/sort changes initiated inside the table back to the URL.
   const handleFiltersChange = useCallback(
     (next: TestFilters) => {
       setFilters(next);
@@ -119,6 +142,12 @@ export default function TestManagementWidget({
       else params.delete('tiers');
       if (next.sort && next.sort !== 'default') params.set('sort', next.sort);
       else params.delete('sort');
+      if (next.regressedOnly) params.set('regressedOnly', '1');
+      else params.delete('regressedOnly');
+      if (next.regressedSince) params.set('regressedSince', next.regressedSince);
+      else params.delete('regressedSince');
+      if (next.resolvedSince) params.set('resolvedSince', next.resolvedSince);
+      else params.delete('resolvedSince');
       if (params.toString() !== searchParams.toString()) {
         setSearchParams(params, { replace: true });
       }
@@ -159,6 +188,15 @@ export default function TestManagementWidget({
       }
       if (filters.search) {
         params.append('search', filters.search);
+      }
+      if (filters.regressedOnly) {
+        params.append('regressedOnly', 'true');
+      }
+      if (filters.regressedSince) {
+        params.append('regressedSince', filters.regressedSince);
+      }
+      if (filters.resolvedSince) {
+        params.append('resolvedSince', filters.resolvedSince);
       }
       if (dateRange?.from) params.append('from', dateRange.from);
       if (dateRange?.to) params.append('to', dateRange.to);
@@ -274,6 +312,14 @@ export default function TestManagementWidget({
   };
 
   const tests = useMemo(() => testsData?.pages.flatMap((page) => page.data) ?? [], [testsData]);
+
+  const regressionFilterActive =
+    !!filters.regressedOnly || !!filters.regressedSince || !!filters.resolvedSince;
+  const regressionHighlightMode: 'opened' | 'closed' | null = filters.resolvedSince
+    ? 'closed'
+    : filters.regressedOnly || filters.regressedSince
+      ? 'opened'
+      : null;
 
   const totalTests = testsData?.pages[0]?.total ?? 0;
 
@@ -442,12 +488,23 @@ export default function TestManagementWidget({
                     <TableRow key={`${item.testId}-${item.fileId}-${item.project}`}>
                       <TableCell className="break-words">
                         <div>
-                          <RouterLink
-                            to={`/test/${item.testId}?project=${encodeURIComponent(item.project)}`}
-                            className="font-medium break-words hover:underline"
-                          >
-                            {item.title}
-                          </RouterLink>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <RouterLink
+                              to={`/test/${item.testId}?project=${encodeURIComponent(item.project)}`}
+                              className="font-medium break-words hover:underline"
+                            >
+                              {item.title}
+                            </RouterLink>
+                            {item.regression && (
+                              <Badge
+                                variant="danger"
+                                title={`Regression · opened ${new Date(item.regression.regressedAt).toLocaleString()} · ${item.regression.failureCount} failing run${item.regression.failureCount === 1 ? '' : 's'} since`}
+                                className="gap-1 text-[10px] px-1.5 py-0"
+                              >
+                                Regression · {formatRegressionAge(item.regression.daysOpen)}
+                              </Badge>
+                            )}
+                          </div>
                           <p className="text-sm text-muted-foreground break-words">
                             {item.filePath}
                           </p>
@@ -488,7 +545,21 @@ export default function TestManagementWidget({
                         <Badge variant="outline">{item.totalRuns || 0}</Badge>
                       </TableCell>
                       <TableCell className="whitespace-nowrap w-px">
-                        <TrendSparklineHistory runs={item.runs ?? []} />
+                        <TrendSparklineHistory
+                          runs={item.runs ?? []}
+                          highlights={
+                            regressionFilterActive && item.regressionHighlights
+                              ? regressionHighlightMode === 'closed'
+                                ? {
+                                    resolvedAtReportId:
+                                      item.regressionHighlights.resolvedAtReportId,
+                                  }
+                                : {
+                                    newAtReportId: item.regressionHighlights.newAtReportId,
+                                  }
+                              : undefined
+                          }
+                        />
                       </TableCell>
                       <TableCell className="whitespace-nowrap w-px">
                         <span className="flex items-center">

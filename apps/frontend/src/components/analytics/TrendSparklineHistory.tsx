@@ -14,7 +14,18 @@ const reportLabel = (run: TestRun): string => {
   return parts.join(' ');
 };
 
-const SparklineChart = ({ recentRuns }: { recentRuns: Array<TestRun> }) => {
+interface RegressionHighlights {
+  newAtReportId?: string;
+  resolvedAtReportId?: string;
+}
+
+const SparklineChart = ({
+  recentRuns,
+  highlights,
+}: {
+  recentRuns: Array<TestRun>;
+  highlights?: RegressionHighlights;
+}) => {
   const maxRuns = Math.min(recentRuns.length, 30);
   const recentRunsSlice = recentRuns.slice(0, maxRuns).reverse();
 
@@ -30,12 +41,26 @@ const SparklineChart = ({ recentRuns }: { recentRuns: Array<TestRun> }) => {
       <div className="flex items-end gap-px h-4">
         {recentRunsSlice.map((run) => {
           const isPassed = run.outcome === ReportTestOutcomeEnum.Expected;
+          const isOpenedHere =
+            highlights?.newAtReportId && run.reportId === highlights.newAtReportId;
+          const isClosedHere =
+            highlights?.resolvedAtReportId && run.reportId === highlights.resolvedAtReportId;
+          const outlineClass = isOpenedHere
+            ? 'ring-2 ring-danger ring-offset-1 ring-offset-background shadow-[0_0_6px] shadow-danger/70'
+            : isClosedHere
+              ? 'ring-2 ring-success ring-offset-1 ring-offset-background shadow-[0_0_6px] shadow-success/70'
+              : '';
+          const annotation = isOpenedHere
+            ? ' · new regression here'
+            : isClosedHere
+              ? ' · regression resolved here'
+              : '';
           return (
             <Tooltip key={run.runId}>
               <TooltipTrigger asChild>
                 <a href={`/report/${run.reportId}`}>
                   <div
-                    className={`w-1 rounded-sm ${colorPerOutcome[run.outcome] || colorPerOutcome.default}`}
+                    className={`w-1 rounded-sm ${colorPerOutcome[run.outcome] || colorPerOutcome.default} ${outlineClass}`}
                     style={{ height: `${Math.max(2, (isPassed ? 0.8 : 1.0) * 16)}px` }}
                   />
                 </a>
@@ -44,6 +69,7 @@ const SparklineChart = ({ recentRuns }: { recentRuns: Array<TestRun> }) => {
                 <p>
                   {outcomeLabel(run.outcome)}
                   {reportLabel(run) && <> &mdash; {reportLabel(run)}</>}
+                  {annotation}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {new Date(run.createdAt).toLocaleDateString()}
@@ -67,9 +93,10 @@ const getPassRateColor = (passRate: number) => {
 
 interface TrendSparklinesProps {
   runs: Array<TestRun>;
+  highlights?: RegressionHighlights;
 }
 
-export function TrendSparklineHistory({ runs }: Readonly<TrendSparklinesProps>) {
+export function TrendSparklineHistory({ runs, highlights }: Readonly<TrendSparklinesProps>) {
   const totalMeaningfulRuns = runs.reduce(
     (sum, run) => sum + (run.outcome === ReportTestOutcomeEnum.Skipped ? 0 : 1),
     0
@@ -87,7 +114,7 @@ export function TrendSparklineHistory({ runs }: Readonly<TrendSparklinesProps>) 
         <span className={getPassRateColor(passRate)}>{passRate.toFixed(2)}%</span>
       </div>
       <div className="flex items-center">
-        <SparklineChart recentRuns={runs} />
+        <SparklineChart recentRuns={runs} highlights={highlights} />
       </div>
     </div>
   );

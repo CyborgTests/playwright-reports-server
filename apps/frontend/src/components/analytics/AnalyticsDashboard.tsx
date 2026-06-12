@@ -1,6 +1,6 @@
 'use client';
 
-import type { DateRange } from '@playwright-reports/shared';
+import type { DateRange, RegressionsAggregate } from '@playwright-reports/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -17,6 +17,7 @@ import { FailureAnalysisSummary } from './FailureAnalysisSummary';
 import { FailureCategoryChart } from './FailureCategoryChart';
 import { HealthGrid } from './HealthGrid';
 import { OverviewStatsCard } from './OverviewStats';
+import { RegressionsStrip } from './RegressionsStrip';
 import { TopFailuresWidget } from './TopFailuresWidget';
 import { TrendSparklines } from './TrendSparklines';
 
@@ -33,6 +34,12 @@ interface DashboardSectionNavProps {
   onDateRangeChange: (range: DateRange) => void;
   project: string;
   onProjectChange: (project: string) => void;
+  regressions?: RegressionsAggregate;
+  isLoadingRegressions?: boolean;
+  onActiveRegressionsClick: () => void;
+  onNewRegressionsClick: () => void;
+  onResolvedRegressionsClick: () => void;
+  activeRegressionFilter?: 'active' | 'new' | 'resolved' | null;
 }
 
 export default function AnalyticsDashboard() {
@@ -109,6 +116,82 @@ export default function AnalyticsDashboard() {
     [applyTestsFilter]
   );
 
+  const activeRegressionFilter = ((): 'active' | 'new' | 'resolved' | null => {
+    const ro = searchParams.get('regressedOnly') === '1';
+    const rs = searchParams.get('regressedSince');
+    const re = searchParams.get('resolvedSince');
+    if (re && !ro && !rs) return 'resolved';
+    if (rs && !ro && !re) return 'new';
+    if (ro && !rs && !re) return 'active';
+    return null;
+  })();
+
+  const clearRegressionFilters = useCallback(
+    () =>
+      applyTestsFilter({
+        regressedOnly: null,
+        regressedSince: null,
+        resolvedSince: null,
+      }),
+    [applyTestsFilter]
+  );
+
+  const handleActiveRegressionsClick = useCallback(() => {
+    const alreadyActive =
+      searchParams.get('regressedOnly') === '1' &&
+      !searchParams.get('regressedSince') &&
+      !searchParams.get('resolvedSince');
+    if (alreadyActive) {
+      clearRegressionFilters();
+      return;
+    }
+    applyTestsFilter({
+      regressedOnly: '1',
+      regressedSince: null,
+      resolvedSince: null,
+      tiers: null,
+      sort: null,
+    });
+  }, [applyTestsFilter, clearRegressionFilters, searchParams]);
+
+  const handleNewRegressionsClick = useCallback(() => {
+    const target = dateRange.from ?? null;
+    const alreadyActive =
+      searchParams.get('regressedSince') === target &&
+      searchParams.get('regressedOnly') !== '1' &&
+      !searchParams.get('resolvedSince');
+    if (alreadyActive) {
+      clearRegressionFilters();
+      return;
+    }
+    applyTestsFilter({
+      regressedOnly: null,
+      regressedSince: target,
+      resolvedSince: null,
+      tiers: null,
+      sort: null,
+    });
+  }, [applyTestsFilter, clearRegressionFilters, dateRange.from, searchParams]);
+
+  const handleResolvedRegressionsClick = useCallback(() => {
+    const target = dateRange.from ?? null;
+    const alreadyActive =
+      searchParams.get('resolvedSince') === target &&
+      !searchParams.get('regressedOnly') &&
+      !searchParams.get('regressedSince');
+    if (alreadyActive) {
+      clearRegressionFilters();
+      return;
+    }
+    applyTestsFilter({
+      regressedOnly: null,
+      regressedSince: null,
+      resolvedSince: target,
+      tiers: null,
+      sort: null,
+    });
+  }, [applyTestsFilter, clearRegressionFilters, dateRange.from, searchParams]);
+
   error && toast.error(error.message);
 
   const isLoading = isPending || isFetching;
@@ -132,6 +215,7 @@ export default function AnalyticsDashboard() {
     trendMetrics,
     testsSummary,
     failureCategories,
+    regressions,
   } = analyticsData ?? {};
   const totalFailures = failureCategories?.totalFailures ?? 0;
 
@@ -144,6 +228,12 @@ export default function AnalyticsDashboard() {
         onDateRangeChange={onDateRangeChange}
         project={project}
         onProjectChange={onProjectChange}
+        regressions={regressions}
+        isLoadingRegressions={isLoading}
+        onActiveRegressionsClick={handleActiveRegressionsClick}
+        onNewRegressionsClick={handleNewRegressionsClick}
+        onResolvedRegressionsClick={handleResolvedRegressionsClick}
+        activeRegressionFilter={activeRegressionFilter}
       />
 
       <section id="stats" className="scroll-mt-40">
@@ -212,6 +302,12 @@ function DashboardSectionNav({
   onDateRangeChange,
   project,
   onProjectChange,
+  regressions,
+  isLoadingRegressions,
+  onActiveRegressionsClick,
+  onNewRegressionsClick,
+  onResolvedRegressionsClick,
+  activeRegressionFilter,
 }: DashboardSectionNavProps) {
   const ids = DASHBOARD_SECTIONS.map((s) => s.id);
   const active = useActiveSection(ids);
@@ -219,7 +315,7 @@ function DashboardSectionNav({
   return (
     <nav className="sticky top-14 z-30 -mx-4 px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border/40">
       <div className="flex flex-col gap-2 py-2 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex gap-1 overflow-x-auto text-sm">
+        <div className="flex items-center gap-1 overflow-x-auto text-sm min-w-0 flex-1">
           {DASHBOARD_SECTIONS.map((item) => {
             const isActive = active === item.id;
             return (
@@ -238,6 +334,14 @@ function DashboardSectionNav({
               </a>
             );
           })}
+          <RegressionsStrip
+            regressions={regressions}
+            isLoading={isLoadingRegressions}
+            onActiveClick={onActiveRegressionsClick}
+            onNewClick={onNewRegressionsClick}
+            onResolvedClick={onResolvedRegressionsClick}
+            activeFilter={activeRegressionFilter}
+          />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label

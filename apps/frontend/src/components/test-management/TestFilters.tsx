@@ -139,6 +139,7 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
             <SelectItem value="default">Default</SelectItem>
             <SelectItem value="slowest">Slowest first</SelectItem>
             <SelectItem value="stale">Tests not running</SelectItem>
+            <SelectItem value="regression-age">Oldest regression first</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -162,12 +163,25 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
               </Button>
             );
           })}
-          {selectedTiers.length > 0 && (
+          <Button
+            type="button"
+            size="sm"
+            variant={filters.regressedOnly ? 'default' : 'outline'}
+            onClick={() => onFiltersChange({ ...filters, regressedOnly: !filters.regressedOnly })}
+            aria-pressed={!!filters.regressedOnly}
+            className={cn('h-8 text-xs px-2', filters.regressedOnly && 'shadow-sm')}
+            title="Only tests with an active regression (green → red transition, currently open)"
+          >
+            regressed
+          </Button>
+          {(selectedTiers.length > 0 || filters.regressedOnly) && (
             <Button
               type="button"
               size="sm"
               variant="ghost"
-              onClick={() => onFiltersChange({ ...filters, tiers: undefined })}
+              onClick={() =>
+                onFiltersChange({ ...filters, tiers: undefined, regressedOnly: false })
+              }
               className="h-8 text-xs px-2 text-muted-foreground"
             >
               Clear

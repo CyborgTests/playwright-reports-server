@@ -12,7 +12,7 @@ import {
   type FailureCluster,
   type ReportHistory,
 } from '@playwright-reports/shared';
-import { ExternalLink, GitMerge, HelpCircle, Users } from 'lucide-react';
+import { AlertOctagon, ExternalLink, GitMerge, HelpCircle, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -287,6 +287,7 @@ function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?
               {cluster.failureCount === 1 ? '' : 's'}
             </div>
             <AnchorDetail anchor={cluster.anchor} />
+            <RegressionClusterCallout cluster={cluster} />
           </div>
         </AccordionTrigger>
         <AccordionContent className="px-6 pb-6">
@@ -294,6 +295,37 @@ function ClusterCard({ cluster, reportId }: { cluster: FailureCluster; reportId?
         </AccordionContent>
       </AccordionItem>
     </Card>
+  );
+}
+
+function RegressionClusterCallout({ cluster }: { cluster: FailureCluster }) {
+  const ctx = cluster.regressionContext;
+  if (!ctx || ctx.membersInRegression === 0) return null;
+  const isDeployInduced = !!ctx.sharedRegressionCommit;
+  return (
+    <div
+      className={`mt-1 flex items-start gap-2 rounded border px-2 py-1.5 text-xs ${
+        isDeployInduced
+          ? 'border-danger/40 bg-danger/5 text-danger'
+          : 'border-warning/40 bg-warning/5 text-warning'
+      }`}
+    >
+      <AlertOctagon className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+      <div>
+        {isDeployInduced ? (
+          <>
+            <strong>Deploy-induced cluster:</strong> {ctx.membersInRegression} of {ctx.totalMembers}{' '}
+            members regressed at commit{' '}
+            <code className="text-[11px]">{ctx.sharedRegressionCommit?.slice(0, 12)}</code>.
+          </>
+        ) : (
+          <>
+            {ctx.membersInRegression} of {ctx.totalMembers} cluster members are sitting on open
+            regressions (commits differ).
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -1,6 +1,5 @@
 'use client';
 
-import { ExternalLink } from 'lucide-react';
 import { useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +15,7 @@ interface AffectedTest {
   project: string;
   reportId: string;
   reportUrl?: string;
+  isRegressed?: boolean;
 }
 
 interface ErrorGroup {
@@ -26,6 +26,8 @@ interface ErrorGroup {
   sampleReportId?: string;
   sampleReportUrl?: string;
   sampleTestId?: string;
+  /** Number of affectedTests currently in an open regression. */
+  regressedTestCount?: number;
   affectedTests?: AffectedTest[];
 }
 
@@ -48,10 +50,11 @@ interface ExampleListProps {
   groupKey: string;
 }
 
+const EXAMPLE_LIST_MAX = 5;
+
 function ExampleList({ tests, totalCount, groupKey }: Readonly<ExampleListProps>) {
-  const [showAll, setShowAll] = useState(false);
-  const visible = showAll ? tests : tests.slice(0, 1);
-  const hidden = tests.length - visible.length;
+  const visible = tests.slice(0, EXAMPLE_LIST_MAX);
+  const overflow = tests.length - visible.length;
 
   return (
     <div className="text-xs">
@@ -69,19 +72,29 @@ function ExampleList({ tests, totalCount, groupKey }: Readonly<ExampleListProps>
             >
               <span className="text-muted-foreground shrink-0">•</span>
               <div className="min-w-0 flex-1">
-                {link ? (
-                  <RouterLink
-                    to={link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline break-words"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {t.title}
-                  </RouterLink>
-                ) : (
-                  <span className="break-words">{t.title}</span>
-                )}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {link ? (
+                    <RouterLink
+                      to={link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline break-words"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {t.title}
+                    </RouterLink>
+                  ) : (
+                    <span className="break-words">{t.title}</span>
+                  )}
+                  {t.isRegressed && (
+                    <span
+                      className="inline-flex items-center rounded-full border border-danger/40 bg-danger/5 px-1.5 text-[10px] font-medium text-danger"
+                      title="This test currently has an open regression"
+                    >
+                      regressed
+                    </span>
+                  )}
+                </div>
                 <div className="text-muted-foreground break-words">
                   {t.project}
                   {t.filePath ? ` · ${t.filePath}` : ''}
@@ -91,18 +104,7 @@ function ExampleList({ tests, totalCount, groupKey }: Readonly<ExampleListProps>
           );
         })}
       </ul>
-      {tests.length > 1 && (
-        <button
-          type="button"
-          className="mt-1 text-primary hover:underline"
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowAll((v) => !v);
-          }}
-        >
-          {showAll ? 'Show less' : `Show ${hidden} more`}
-        </button>
-      )}
+      {overflow > 0 && <div className="mt-1 text-muted-foreground">+{overflow} more not shown</div>}
     </div>
   );
 }
@@ -153,27 +155,24 @@ export function TopFailuresWidget({ errors, isLoading }: Readonly<TopFailuresWid
                       {error.message.length > 100 ? '...' : ''}
                     </span>
                   </div>
-                  <Badge variant="secondary" className="shrink-0">
-                    {error.count}x
-                  </Badge>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {error.regressedTestCount !== undefined && error.regressedTestCount > 0 && (
+                      <Badge
+                        variant="danger"
+                        className="whitespace-nowrap"
+                        title={`${error.regressedTestCount} of the affected tests have an open regression — likely a real recent breakage rather than a chronic flake`}
+                      >
+                        {error.regressedTestCount} regressed
+                      </Badge>
+                    )}
+                    <Badge variant="secondary">{error.count}x</Badge>
+                  </div>
                 </div>
                 {expandedIndex === index && (
                   <div className="mt-2 space-y-2">
                     <pre className="text-xs bg-muted p-3 rounded overflow-x-auto whitespace-pre-wrap break-words">
                       {error.message}
                     </pre>
-                    {error.sampleReportUrl && error.sampleTestId && (
-                      <RouterLink
-                        to={`${withBase(error.sampleReportUrl)}#?testId=${error.sampleTestId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        Open this failure in the Playwright report
-                      </RouterLink>
-                    )}
                     {error.affectedTests && error.affectedTests.length > 0 && (
                       <ExampleList
                         tests={error.affectedTests}
