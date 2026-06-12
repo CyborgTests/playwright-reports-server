@@ -109,13 +109,12 @@ function enrichClustersWithLifecycle(clusters: FailureCluster[]): void {
   const everSet = regressionsDb.hasAnyForTests(keys);
   const overrides = clusterResolutionsDb.getAllOverrides();
 
-  // Lifecycle states:
-  //   active       — ≥1 member has an open regression
-  //   resolved     — manual resolution OR members had regressions, none open
-  //   unattributed — no member ever opened a regression; can't tell if fixed
+  const openMapKey = (t: { testId: string; fileId: string; project: string }) =>
+    `${t.testId}::${t.fileId}::${t.project}`;
+
   for (const c of clusters) {
     const memberRegressions = c.tests
-      .map((t) => openMap.get(testKey(t.testId, t.fileId, t.project)))
+      .map((t) => openMap.get(openMapKey(t)))
       .filter((r): r is RegressionSummary => r !== undefined);
 
     if (memberRegressions.length === 0) {
