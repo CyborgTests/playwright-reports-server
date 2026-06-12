@@ -148,6 +148,34 @@ const getMetadataItems = (item: ReportHistory): MetadataItem[] => {
 
 const MAX_INLINE_META = 3;
 
+function RegressionChip({
+  regressions,
+}: Readonly<{ regressions?: { newHere: number; resolvedHere: number } }>) {
+  if (!regressions) return null;
+  const { newHere, resolvedHere } = regressions;
+  if (newHere === 0 && resolvedHere === 0) return null;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs">
+      {newHere > 0 && (
+        <span
+          className="inline-flex items-center gap-0.5 rounded-full border border-danger/40 bg-danger/5 px-1.5 py-0.5 text-danger font-medium"
+          title={`${newHere} new regression${newHere === 1 ? '' : 's'} in this report`}
+        >
+          ↓ {newHere}
+        </span>
+      )}
+      {resolvedHere > 0 && (
+        <span
+          className="inline-flex items-center gap-0.5 rounded-full border border-success/40 bg-success/5 px-1.5 py-0.5 text-success font-medium"
+          title={`${resolvedHere} regression${resolvedHere === 1 ? '' : 's'} resolved in this report`}
+        >
+          ↑ {resolvedHere}
+        </span>
+      )}
+    </span>
+  );
+}
+
 const renderMetaValue = (item: MetadataItem) => {
   const labelless =
     item.key === 'branch' || item.key === 'workingDir' || item.key === 'environment';
@@ -193,15 +221,18 @@ const ReportRow = memo(function ReportRow({
       </TableCell>
       <TableCell className="w-1/3 py-2">
         <div className="flex flex-col gap-0.5">
-          <Link to={withBase(`/report/${item.reportID}`)} className="hover:underline w-fit">
-            <div className="flex flex-row items-center gap-1.5 text-sm font-medium">
-              {item.displayNumber ? `#${item.displayNumber}` : ''}
-              {item.title && (
-                <span className="text-muted-foreground font-normal">{item.title}</span>
-              )}
-              <LinkIcon width={12} height={12} />
-            </div>
-          </Link>
+          <div className="flex flex-row items-center gap-2">
+            <Link to={withBase(`/report/${item.reportID}`)} className="hover:underline w-fit">
+              <div className="flex flex-row items-center gap-1.5 text-sm font-medium">
+                {item.displayNumber ? `#${item.displayNumber}` : ''}
+                {item.title && (
+                  <span className="text-muted-foreground font-normal">{item.title}</span>
+                )}
+                <LinkIcon width={12} height={12} />
+              </div>
+            </Link>
+            <RegressionChip regressions={item.regressions} />
+          </div>
 
           {(primary.length > 0 || overflow.length > 0) && (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">

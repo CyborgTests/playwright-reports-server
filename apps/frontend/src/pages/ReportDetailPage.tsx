@@ -1,5 +1,5 @@
 import type { ReportHistory } from '@playwright-reports/shared';
-import { GitCompare, Users } from 'lucide-react';
+import { AlertOctagon, GitCompare, Users } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -13,6 +13,29 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import useQuery from '@/hooks/useQuery';
 import { withBase } from '@/lib/url';
+
+function RegressionHeaderChip({
+  regressions,
+}: Readonly<{ regressions?: { newHere: number; resolvedHere: number } }>) {
+  if (!regressions) return null;
+  const { newHere, resolvedHere } = regressions;
+  if (newHere === 0 && resolvedHere === 0) return null;
+  const parts: string[] = [];
+  if (newHere > 0) parts.push(`${newHere} new`);
+  if (resolvedHere > 0) parts.push(`${resolvedHere} resolved`);
+  const accent = newHere > 0 ? 'danger' : 'success';
+  const borderClass =
+    accent === 'danger' ? 'border-danger/40 text-danger' : 'border-success/40 text-success';
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${borderClass}`}
+      title="Regressions new/resolved in this report"
+    >
+      <AlertOctagon className="h-3.5 w-3.5" />
+      {parts.join(' · ')} regression{newHere + resolvedHere === 1 ? '' : 's'}
+    </span>
+  );
+}
 
 function ReportDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -76,6 +99,7 @@ function ReportDetailPage() {
             </Button>
           </Link>
         )}
+        <RegressionHeaderChip regressions={report?.regressions} />
       </div>
       {report?.createdAt && (
         <span className={`${subtitle()} mt-4 mb-6 text-right`}>
