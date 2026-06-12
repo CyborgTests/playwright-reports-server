@@ -161,7 +161,14 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         if (report) {
           const counts = regressionsDb.countsForReport(report.reportID);
           if (counts.newHere > 0 || counts.resolvedHere > 0) {
-            report.regressions = counts;
+            const details = regressionsDb.detailsForReports([report.reportID], 500);
+            const entry = details.get(report.reportID);
+            report.regressions = {
+              ...counts,
+              newTests: entry && entry.newHere.length > 0 ? entry.newHere : undefined,
+              resolvedTests:
+                entry && entry.resolvedHere.length > 0 ? entry.resolvedHere : undefined,
+            };
           }
         }
 

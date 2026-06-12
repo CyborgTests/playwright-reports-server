@@ -36,6 +36,14 @@ export interface RunHealthMetric {
   resolvedRegressions?: number;
 }
 
+export interface RegressionTestRef {
+  testId: string;
+  fileId: string;
+  project: string;
+  title: string;
+  filePath: string;
+}
+
 export interface TrendMetrics {
   durationTrend: Array<{ date: string; duration: number }>;
   flakyCountTrend: Array<{ date: string; count: number }>;

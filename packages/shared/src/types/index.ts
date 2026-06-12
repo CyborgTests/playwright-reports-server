@@ -291,7 +291,12 @@ export interface ReportHistory {
   duration?: number;
   metadata?: ReportMetadata;
   previousReportId?: string | null;
-  regressions?: { newHere: number; resolvedHere: number };
+  regressions?: {
+    newHere: number;
+    resolvedHere: number;
+    newTests?: RegressionTestRef[];
+    resolvedTests?: RegressionTestRef[];
+  };
 }
 
 export interface TestHistory extends ReportTest {
@@ -390,4 +395,5 @@ export * from './notifications.js';
 export * from './report-compare.js';
 export * from './test-management.js';
 
+import type { RegressionTestRef } from './analytics.js';
 import type { NotificationsConfig } from './notifications.js';

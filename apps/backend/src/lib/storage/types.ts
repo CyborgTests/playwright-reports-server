@@ -94,7 +94,24 @@ export type Report = {
   createdAt: Date;
   size: string;
   sizeBytes: number;
-  regressions?: { newHere: number; resolvedHere: number };
+  regressions?: {
+    newHere: number;
+    resolvedHere: number;
+    newTests?: Array<{
+      testId: string;
+      fileId: string;
+      project: string;
+      title: string;
+      filePath: string;
+    }>;
+    resolvedTests?: Array<{
+      testId: string;
+      fileId: string;
+      project: string;
+      title: string;
+      filePath: string;
+    }>;
+  };
 };
 
 export type ReportHistory = Report & ReportInfo;
