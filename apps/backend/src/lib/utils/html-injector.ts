@@ -427,11 +427,49 @@ async function injectClientSideScript(
     .llm-feedback-firstfound a:hover {
       text-decoration: none;
     }
+
+    .pwrs-nav-btn {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      font-weight: 500;
+      font-size: 14px;
+      font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";
+      line-height: 20px;
+      color: var(--color-fg-subtle, #6e7781);
+      border: none;
+      border-radius: 0;
+      background: none;
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .pwrs-nav-btn:hover {
+      color: var(--color-accent-fg, #0969da);
+    }
+
+    .pwrs-nav-btn svg {
+      width: 12px;
+      height: 12px;
+      flex-shrink: 0;
+    }
+
+    .pwrs-nav-bar {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 0;
+      margin: 0 8px;
+    }
     `;
 
   const scriptBody = await fs.readFile(new URL('./llmButton.js', import.meta.url), 'utf-8');
   const scriptContent = `
     const reportId = ${JSON.stringify(testUrl.reportId)};
+    const reportProject = ${JSON.stringify(testUrl.project ?? '')};
     const isLlmEnabled = ${isLlmEnabled ? 'true' : 'false'};
     ${scriptBody}`;
 

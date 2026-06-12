@@ -1120,10 +1120,78 @@ async function refreshFeedbackStaleIndicator(testId, rid) {
   else staleEl.setAttribute('hidden', '');
 }
 
+// ---------------------------------------------------------------------------
+// Navigation buttons — link back to the UI
+// ---------------------------------------------------------------------------
+const ARROW_LEFT_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>';
+const EXTERNAL_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
+
+function injectNavBar() {
+  if (document.getElementById('pwrs-nav-bar')) return;
+
+  const bar = document.createElement('div');
+  bar.id = 'pwrs-nav-bar';
+  bar.className = 'pwrs-nav-bar';
+
+  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+  const rid = typeof reportId !== 'undefined' ? reportId : '';
+  if (rid) {
+    const reportBtn = document.createElement('a');
+    reportBtn.className = 'pwrs-nav-btn';
+    reportBtn.href = `/report/${encodeURIComponent(rid)}`;
+    reportBtn.innerHTML = `${ARROW_LEFT_SVG} Report Details`;
+    reportBtn.title = 'View this report in the dashboard';
+    bar.appendChild(reportBtn);
+  }
+
+  const headerView = document.querySelector('.header-view');
+  if (headerView) {
+    headerView.prepend(bar);
+  } else {
+    document.body.prepend(bar);
+  }
+}
+
+function updateTestDetailsButton() {
+  const bar = document.getElementById('pwrs-nav-bar');
+  if (!bar) return;
+
+  const testId = extractTestIdFromCurrentUrl();
+  const existing = bar.querySelector('.pwrs-test-details-btn');
+
+  if (!testId || testId === 'unknown') {
+    if (existing) existing.remove();
+    return;
+  }
+
+  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+  const project = typeof reportProject !== 'undefined' ? reportProject : '';
+  const href = `/test/${encodeURIComponent(testId)}?project=${encodeURIComponent(project)}`;
+
+  if (existing) {
+    existing.href = href;
+    return;
+  }
+
+  const btn = document.createElement('a');
+  btn.className = 'pwrs-nav-btn pwrs-test-details-btn';
+  btn.href = href;
+  btn.innerHTML = `${EXTERNAL_SVG} Test Details`;
+  btn.title = 'View test history and analytics';
+  bar.appendChild(btn);
+}
+
 let llmButtonRetryCount = 0;
 const MAX_LLM_BUTTON_RETRIES = 100; // ~5 seconds at 50ms intervals
 
 function tryInjectAskLLMButton() {
+  // avoid injecting buttons on trace viewer page
+  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+  if (typeof reportId !== 'undefined' && reportId === 'trace') return;
+
+  injectNavBar();
+  updateTestDetailsButton();
+
   const injected = injectAskLLMButton();
 
   if (!injected && llmButtonRetryCount < MAX_LLM_BUTTON_RETRIES) {

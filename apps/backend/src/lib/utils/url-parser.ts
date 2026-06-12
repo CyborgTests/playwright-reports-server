@@ -1,5 +1,6 @@
 export interface ParsedTestUrl {
   reportId: string;
+  project?: string;
   isPlaywrightReport: boolean;
 }
 

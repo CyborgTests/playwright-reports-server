@@ -9,6 +9,7 @@ import { llmService } from '../lib/llm/index.js';
 import { DATA_FOLDER, REPORTS_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';
 import { streamToString } from '../lib/storage/streamUtils.js';
+import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { injectTestAnalysis } from '../lib/utils/html-injector.js';
 import { extractReportIdFromPath } from '../lib/utils/url-parser.js';
 import { withError } from '../lib/withError.js';
@@ -92,10 +93,11 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
 
       const isLlmEnabled = llmService.isConfigured();
       const reportId = extractReportIdFromPath(targetPath);
-      if (reportId) {
+      if (reportId && reportId !== 'trace') {
+        const report = reportDb.getByID(reportId);
         const testUrl = {
           reportId,
-          // testId is resolved client-side once the user clicks into a test page.
+          project: report?.project ?? '',
           testId: 'unknown',
           isPlaywrightReport: true,
           isTestPage: false,
