@@ -934,6 +934,9 @@ function buildRegressionContextBlock(reg: TestDetailRegression | null | undefine
   lines.push(
     '- Frame Root Cause around the change that landed in the suspect range, not chronic flake or first-time-ever defect. If evidence contradicts the regression framing, say so.'
   );
+  lines.push(
+    '- Caveat: the commits above are whatever git workspace the reporter ran in. We do not know whether that workspace is the test repo, the app repo, or both (monorepo) — if the stack frame points at code that does not appear in the available diff, treat the commits as a hint and name the gap rather than forcing a conclusion.'
+  );
   return lines.join('\n');
 }
 

@@ -164,6 +164,23 @@ interface ReportBriefBase {
   unclusteredFailures: number;
   failedTestsTruncated: boolean;
   regressions: { newHere: number; resolvedHere: number } | null;
+  runContext?: {
+    gitCommit?: {
+      hash?: string;
+      shortHash?: string;
+      branch?: string;
+      subject?: string;
+    };
+    ciBuild?: {
+      buildHref?: string;
+      commitHref?: string;
+      commitHash?: string;
+    };
+    appCommit?: string;
+    appVersion?: string;
+    releaseVersion?: string;
+    deployedSha?: string;
+  };
 }
 
 // Discriminated by `mode` so the agent can statically pick the right payload
@@ -573,8 +590,7 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
         sort?: string;
         limit?: string;
       };
-      const openFilter =
-        active === 'true' ? true : resolved === 'true' ? false : undefined;
+      const openFilter = active === 'true' ? true : resolved === 'true' ? false : undefined;
       const sortKey = sort === 'recent' || sort === 'oldest' || sort === 'impact' ? sort : 'impact';
       const parsedLimit = limit ? Number.parseInt(limit, 10) : 25;
       const cappedLimit =
@@ -902,7 +918,9 @@ async function buildTestBrief(
     llmAnalysis: analysisRow?.analysis
       ? {
           rootCause: extractSection(analysisRow.analysis, /root cause/i) ?? analysisRow.analysis,
-          fix: extractSection(analysisRow.analysis, /fix|best practice|solution/i) ?? '',
+          fix:
+            extractSection(analysisRow.analysis, /recommendation|fix|best practice|solution/i) ??
+            '',
           model: analysisRow.model ?? undefined,
         }
       : null,
@@ -1070,6 +1088,7 @@ async function buildReportBrief(reportId: string, full: boolean): Promise<Report
       regressionCounts.newHere === 0 && regressionCounts.resolvedHere === 0
         ? null
         : regressionCounts,
+    runContext: buildReportRunContext(report),
   };
 
   if (full) {
@@ -1084,6 +1103,45 @@ async function buildReportBrief(reportId: string, full: boolean): Promise<Report
       .slice(0, SAMPLE_UNCLUSTERED_FAILURES)
       .map(briefToSummaryEntry),
   };
+}
+
+function buildReportRunContext(report: {
+  metadata?: Record<string, unknown> | null;
+}): ReportBriefBase['runContext'] | undefined {
+  const meta = (report.metadata ?? {}) as Record<string, unknown>;
+  const out: NonNullable<ReportBriefBase['runContext']> = {};
+
+  const gitCommit = meta.gitCommit as
+    | { hash?: string; shortHash?: string; branch?: string; subject?: string }
+    | undefined;
+  if (gitCommit && (gitCommit.hash || gitCommit.branch || gitCommit.subject)) {
+    out.gitCommit = {
+      hash: gitCommit.hash,
+      shortHash: gitCommit.shortHash,
+      branch: gitCommit.branch,
+      subject: gitCommit.subject,
+    };
+  }
+
+  const ciBuild = (meta.ci ?? meta.ciBuild) as
+    | { buildHref?: string; commitHref?: string; commitHash?: string }
+    | undefined;
+  if (ciBuild && (ciBuild.buildHref || ciBuild.commitHref || ciBuild.commitHash)) {
+    out.ciBuild = {
+      buildHref: ciBuild.buildHref,
+      commitHref: ciBuild.commitHref,
+      commitHash: ciBuild.commitHash,
+    };
+  }
+
+  const pickStr = (k: string): string | undefined =>
+    typeof meta[k] === 'string' && (meta[k] as string).length > 0 ? (meta[k] as string) : undefined;
+  out.appCommit = pickStr('appCommit');
+  out.appVersion = pickStr('appVersion');
+  out.releaseVersion = pickStr('releaseVersion');
+  out.deployedSha = pickStr('deployedSha');
+
+  return Object.values(out).some((v) => v !== undefined) ? out : undefined;
 }
 
 function briefToSummaryEntry(brief: TestBrief) {
@@ -1379,8 +1437,9 @@ function buildAttachmentUrls(
 
 /**
  * The persisted LLM analysis is markdown with section headers like
- * "## 🔍 Root Cause" / "## 🛠️ Fix". Pull the first paragraph after a header
- * matching `pattern`. Returns undefined if no header matches.
+ * "## Root Cause" / "## Recommendation". 
+ * Pull every line after the first header matching `pattern`
+ * up to the next header.
  */
 function extractSection(markdown: string, pattern: RegExp): string | undefined {
   const lines = markdown.split('\n');

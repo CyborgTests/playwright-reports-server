@@ -148,6 +148,7 @@ Decision rules — apply top-to-bottom. Field shapes live in the workflow sectio
 - `fixture` → `{verb, phase, filePath}` — a `beforeAll`/`beforeEach`/`afterAll`/`afterEach` hook failed and cascaded. Fix the hook once.
 - `selector` → `{verb, selector}` — N tests share a failing Playwright locator. Usually one UI drift breaking many tests; fix the selector or the element.
 - `frame` → `{verb, frame}` — N tests crash at the same `file:line` of app code. The frame is the literal fix location.
+- `signature` → `{verb, signature}` - N tests share a normalized error signature but no extractable fixture/selector/frame. Usually a deep-stack pattern (timeouts, framework errors) the extractors can't pin to one line. No single fix location - start from `sampleError` + the per-member `failure-context`, and look for a common cause (shared timeout budget, flaky dependency, infra).
 - `unmatched` → `{testId, fileId, project}` — no extractable shared mechanism. Treat as a single-test failure; the cluster only groups repeated occurrences of the same test.
 
 Each cluster carries `confidence: 'high' | 'medium' | 'low'`. `cluster list` returns anchor + counts only — drill into `cluster brief <id>` for the full membership. In `test brief`, `cluster.otherTests` is capped at 5; when `cluster.otherTestsTruncated: true`, use `cluster brief` for the full roster (`cluster.otherTestsTotal` is the true size).
@@ -204,6 +205,79 @@ Combine with `--tier`, `--project`, `--failure-category` like any other test fil
 If `regression` is non-null, the test is in an active green→red state — frame the analysis as **"what landed between `lastGreenCommit` and `regressedAtCommit`"**, not as "this test has been flaky." If `regression` is null but `signals.signatureOccurrenceCount > 1`, you're looking at a *recurring* signature on a test that never had a regression event — likely a chronic flake or a never-was-green test. Different fix.
 
 Excluded automatically from `regression list --active`, the `Active` widget tile, and `test search --regressed-only`: quarantined tests and tests whose latest outcome is `skipped`. If you need those, drop the `--active` filter and check `isActive` per row.
+
+#### Investigating an active regression playbook
+
+Run these in order when you're trying to root-cause a regression. Skip steps where the data is missing — don't fabricate.
+
+**1. Read what's already been done.**
+`test brief.llmAnalysis` may already contain a root cause. If present, treat it as a hypothesis to verify. If `feedback` is set, trust the team note over the LLM.
+
+**2. Pull the full evidence envelope.**
+```bash
+pwrs-cli test failure-context <testId> --report-id <regression.regressedAtReportId>
+```
+Returns `errorMessage`, `stackTrace`, `testSourceFrame`, `pageSnapshot`, `consoleEvents`, `networkEvents`, `gitCommit`, `gitDiff`, `ciBuild`, `environment`, `actionLog`. This is your primary source - everything below is interpretation on top of it.
+
+**3. Classify: test bug vs app bug vs infra.** Decides which repo to bisect.
+
+| Signal | Read as |
+|---|---|
+| `latestFailure.appFrame` resolves to a path under the test's directory tree | **test bug** — assertion or selector logic |
+| `latestFailure.appFrame` resolves to app-source path (different tree) | **app bug** — code under test misbehaved |
+| `appFrame` missing, or only inside `node_modules` / framework code | **infra/fixture** — flake, retry behavior, or shared setup |
+| Failed `networkEvents` with 4xx/5xx OR error message references HTTP | **app bug** at the API layer, even if the frame is in test code |
+
+**4. Figure out what `regressedAtCommit` actually refers to, then pick the range.** `regression.regressedAtCommit` is the commit of whatever git workspace the reporter happened to run in. No evidence it is test repo, the app repo, a monorepo containing both is provided. You have to determine it before treating `<lastGreen>..<regressed>` as a useful bisect window.
+
+Verify by inspecting available signals (in order of cheapness):
+
+| Signal | What it tells you |
+|---|---|
+| `evidence.gitDiff` from `test failure-context` | If the diff contains test files (`*.spec.ts`, `tests/`), the workspace includes tests. If it contains app code (`src/`, `app/`), it includes app code. Both → monorepo. Neither -> ambiguous. |
+| `evidence.gitCommit.branch` / `subject` | Branch names could specify the repo (`e2e/main`, `release/v2`, etc.). |
+| `runContext.ciBuild.buildHref` from `report brief` | Open in browser if practical; the CI job usually pins the app revision and prints the repo name. |
+| `runContext.appCommit` / `appVersion` / `releaseVersion` / `deployedSha` from `report brief` | When present, treat these as the app-side SHA and `gitCommit.hash` as whatever workspace ran the tests (still unknown which). |
+| App version response header in `evidence.networkEvents[*].responseHeaders` | `x-app-version` / `x-build-sha` / `x-release` etc. — the app under test announcing itself. |
+
+If the classification in step 3 is **test bug** AND the diff/branch evidence shows the workspace contains test code, `<lastGreenCommit>..<regressedAtCommit>` is the right range.
+
+If the classification is **app bug**: bisect in the app repo using the app revision you derived above, NOT `regressedAtCommit` — unless evidence shows the workspace IS the app repo (monorepo / colocated tests).
+
+If signals don't resolve it, **ask the user** which repo `regressedAtCommit` lives in and where the app source is. Don't guess.
+
+**5. Diff in the right repo.** Suspect file = `latestFailure.location.file` or `latestFailure.appFrame`.
+```bash
+# In whichever repo step 3 pointed at:
+git -C <repo> log --oneline <lastGreen>..<regressed>
+git -C <repo> diff <lastGreen>..<regressed> -- <suspect-file>
+# Widen if the narrow diff is empty / unrelated:
+git -C <repo> diff <lastGreen>..<regressed> -- $(dirname <suspect-file>)/
+```
+
+If you only have access to one of the relevant repos and the classification points at code in another, say so explicitly:
+> Frame is at `src/cart/total.ts:42`. The available diff (`<lastGreen>..<regressed>`) doesn't touch that path, suggesting it's in a different repo than `regressedAtCommit` belongs to. Local checkout doesn't cover that repo, so I can't bisect. Next step: confirm where `src/cart/total.ts` lives and inspect changes to `computeTotal` between `<X>` and `<Y>`.
+Don't pretend partial visibility is the full picture.
+
+**6. Cross-check with related signals before concluding.**
+
+- `cluster.regressionContext.sharedRegressionCommit` set -> that commit broke ≥80% of the cluster. Prime suspect regardless of which file you started from.
+- `signals.signatureFirstSeen` is recent -> narrow the bisect window further.
+- `crossProject` shows the same test failing in other projects -> seems like not code issue, likely infra.
+- `signals.flakyTier === 'critical'` AND `regression` is set -> recovery may be noisy. Don't declare "fixed" on a single green run.
+- `signals.signatureOccurrenceCount > 1` with the SAME signature in prior runs but no regression record -> this signature was seen before the regression occur. The regression event captures *re-emergence*, but the root cause may predate it. Walk the signature's earlier appearances via `test history`.
+
+**7. Caveats - flag these explicitly if they apply.**
+
+- Force-pushed branch -> `regressedAtCommit` / `lastGreenCommit` may be unreachable. `git show <sha>` returns `unknown revision`. Explicitly tell when can't bisect what isn't in history.
+- Squashed PR merge -> a single commit on `main` collapses many real changes; diff the PR branch instead if accessible.
+- Reporter ran without git context -> `gitCommit.hash` is empty/missing. No bisect possible from this side; fall back to CI build timestamps.
+- `lastGreenCommit` is null -> first-ever failure for this test, treated as a regression because at least one green existed in history before backfill saw the failure. Verify the test was actually green before by checking `test history`.
+- Flaky-on-retry tests: a `flaky` outcome doesn't open a regression; only `failed`/`unexpected` does. A flaky-then-failed→flaky sequence may close a regression that doesn't deserve to close. Confirm recovery with two consecutive non-flaky greens before declaring it fixed.
+
+**8. Write up the root cause with citations.**
+
+When you have it, your output should reference: (a) the commit SHA at fault, (b) the file:line of the change, (c) the file:line where the test caught it, (d) how it propagates from one to the other. If any of those is missing, name what's missing instead of glossing it.
 
 ## Common gotchas
 
