@@ -406,6 +406,8 @@ function formatCondition(rule: NotificationRule): string {
         return 'When recovered to 100% pass';
       case 'recovered_no_hard_failures':
         return 'When hard failures resolved';
+      default:
+        return rule.condition;
     }
   }
   const cadence = typeof rule.cadence === 'string' ? rule.cadence : `cron ${rule.cadence.cron}`;
