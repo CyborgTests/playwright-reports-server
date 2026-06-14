@@ -38,8 +38,9 @@ const useQuery = <ReturnType>(
       });
 
       if (!response.ok && response.status !== 401) {
-        toast.error(`Network response was not ok: ${await response.text()}`);
-        throw new Error(`Network response was not ok: ${await response.text()}`);
+        const errorBody = await response.text();
+        toast.error(`Network response was not ok: ${errorBody}`);
+        throw new Error(`Network response was not ok: ${errorBody}`);
       }
 
       return response.json();
