@@ -347,18 +347,18 @@ export class TestManagementService {
             errorSignatureGlobal: errorSignatureGlobal ?? undefined,
           };
 
+          const quarantineThreshold =
+            config.quarantineThresholdPercentage ?? FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE;
           if (
             config.autoQuarantineEnabled &&
-            testRun.flakinessScore >=
-              (config.quarantineThresholdPercentage ??
-                FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE) &&
-            testRun.quarantined
+            !testRun.quarantined &&
+            testRun.flakinessScore >= quarantineThreshold
           ) {
             console.log(
               `[testManagement] Auto-quarantining testId=${testId} due to flakinessScore=${testRun.flakinessScore.toFixed(1)}%`
             );
             testRun.quarantined = true;
-            testRun.quarantineReason = `Auto-quarantined due to ${testRun.flakinessScore.toFixed(1)}% flakiness over treshold ${config.quarantineThresholdPercentage ?? FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE}%`;
+            testRun.quarantineReason = `Auto-quarantined due to ${testRun.flakinessScore.toFixed(1)}% flakiness over threshold ${quarantineThreshold}%`;
           }
 
           testDb.createTestRun(testRun);
