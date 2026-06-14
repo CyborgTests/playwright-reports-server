@@ -25,14 +25,29 @@ const logByEnv = {
   },
 };
 
+function resolveCorsOrigin(): false | string[] {
+  const configured = process.env.CORS_ORIGIN?.trim();
+  if (!configured) return false;
+  return configured
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 async function start() {
   const fastify = Fastify({
     logger: logByEnv[env.isDev ? 'dev' : 'prod'],
     bodyLimit: 4294967294, // ~4GB, effectively unlimited
   });
 
+  const corsOrigin = resolveCorsOrigin();
+  console.log(
+    corsOrigin === false
+      ? '[server] CORS: same-origin only (set CORS_ORIGIN to allow cross-origin clients)'
+      : `[server] CORS: allowing origins ${corsOrigin.join(', ')}`
+  );
   await fastify.register(fastifyCors, {
-    origin: process.env.CORS_ORIGIN || true,
+    origin: corsOrigin,
     credentials: true,
   });
 
