@@ -1,3 +1,4 @@
+import { getFailureClusters } from '../../../failure-clustering/index.js';
 import {
   computeProjectCoverageScope,
   failureSummaryDb,
@@ -8,6 +9,7 @@ import {
   testAnalysisDb,
   testDb,
 } from '../../../service/db/index.js';
+import { reportDb } from '../../../service/db/reports.sqlite.js';
 import { service } from '../../../service/index.js';
 import { llmService } from '../../index.js';
 import {
@@ -53,7 +55,6 @@ async function aggregateProjectClusters(
   const latest = reports[0];
   const projectArg = project === 'all' ? undefined : project;
 
-  const { getFailureClusters } = await import('../../../failure-clustering/index.js');
   const clusterReport = await getFailureClusters({
     project: projectArg,
     from: oldest.createdAt,
@@ -286,8 +287,6 @@ export async function processProjectSummary(task: LlmTaskRow): Promise<void> {
     return;
   }
 
-  const { reportDb } = await import('../../../service/db/reports.sqlite.js');
-
   const explicitReportIds = (() => {
     if (!reportIdsJson) return null;
     try {
@@ -334,9 +333,8 @@ export async function processProjectSummary(task: LlmTaskRow): Promise<void> {
     ? String(latestReports[latestReports.length - 1].createdAt)
     : '';
   const latestReportCreatedAt = latestReports.length ? String(latestReports[0].createdAt) : '';
-  const { reportDb: trendReportDb } = await import('../../../service/db/reports.sqlite.js');
   const priorReports = oldestReportCreatedAt
-    ? trendReportDb.getLatestByProjectBefore(
+    ? reportDb.getLatestByProjectBefore(
         project === 'all' ? undefined : project,
         oldestReportCreatedAt,
         latestReports.length

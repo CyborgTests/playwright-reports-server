@@ -16,6 +16,10 @@ import { buildTestFailureSegments, renderSegmentsForDebug } from '../../prompts/
 import { extractTestAnalysisFromMarkdown } from '../../testAnalysis.js';
 import type { SegmentedPrompt } from '../../types/index.js';
 import {
+  detectFailureCategory,
+  isRootCauseCategory,
+} from '../../../service/test-management/index.js';
+import {
   attachScreenshotIfAny,
   fitToContextWindow,
   OUTPUT_RESERVE_TOKENS_BY_TASK,
@@ -115,7 +119,6 @@ async function resolveTestFailureContext(
   const isNewFailure = !previousAnalysis;
   const feedback = analysisFeedbackDb.getByTest(testId, fileId, project);
 
-  const { detectFailureCategory } = await import('../../../service/test-management/index.js');
   const heuristicCategory = detectFailureCategory(details.message);
 
   return {
@@ -413,8 +416,6 @@ export async function processTestAnalysis(task: LlmTaskRow): Promise<void> {
     llmTasksDb.fail(task.id, `LLM returned empty analysis`);
     return;
   }
-
-  const { isRootCauseCategory } = await import('../../../service/test-management/index.js');
 
   let category: string = resolved.heuristicCategory;
   let categorySource: 'heuristic' | 'llm' = 'heuristic';

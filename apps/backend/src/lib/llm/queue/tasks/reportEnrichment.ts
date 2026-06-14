@@ -5,6 +5,7 @@ import {
   type FailureEvidence,
 } from '../../../parser/failure-extraction.js';
 import { parseHtmlReport } from '../../../parser/index.js';
+import { reportDb } from '../../../service/db/reports.sqlite.js';
 import { REPORTS_FOLDER } from '../../../storage/constants.js';
 import type { AttemptSummary, FailureDetailsForPrompt } from '../../prompts/index.js';
 
@@ -66,7 +67,6 @@ export async function enrichEnvironmentFromReport(
   if (!details.evidence?.environment) return;
   if (details.evidence.environment.playwrightVersion) return;
   try {
-    const { reportDb } = await import('../../../service/db/reports.sqlite.js');
     const reportRow = reportDb.getByID(reportId);
     const pwVersion = (reportRow?.metadata as { playwrightVersion?: string } | undefined)
       ?.playwrightVersion;

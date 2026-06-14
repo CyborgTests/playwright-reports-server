@@ -25,6 +25,7 @@ import {
 } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { compareReports } from '../lib/service/reportCompare.js';
+import { detectFailureCategory } from '../lib/service/test-management/index.js';
 import { testManagementService } from '../lib/service/test-management/index.js';
 import { storage } from '../lib/storage/index.js';
 import { parseFromRequest } from '../lib/storage/pagination.js';
@@ -379,8 +380,6 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         let queued = 0;
         let skipped = 0;
         let project: string | undefined;
-
-        const { detectFailureCategory } = await import('../lib/service/test-management/index.js');
 
         const findReuseSource = (
           testId: string,

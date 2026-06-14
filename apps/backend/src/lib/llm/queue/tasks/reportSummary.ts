@@ -1,4 +1,5 @@
 import type { LLMConfig } from '@playwright-reports/shared';
+import { getFailureClusters } from '../../../failure-clustering/index.js';
 import {
   failureSummaryDb,
   type LlmTaskRow,
@@ -6,6 +7,7 @@ import {
   testAnalysisDb,
   testDb,
 } from '../../../service/db/index.js';
+import { reportDb } from '../../../service/db/reports.sqlite.js';
 import { service } from '../../../service/index.js';
 import { compareReports, findPreviousReportInProject } from '../../../service/reportCompare.js';
 import { llmService } from '../../index.js';
@@ -184,7 +186,6 @@ function shapeClustersForPrompt(args: {
 async function buildTrendContextForReport(
   reportId: string
 ): Promise<ReportSummaryTrendContext | undefined> {
-  const { reportDb } = await import('../../../service/db/reports.sqlite.js');
   const current = reportDb.getByID(reportId);
   if (!current) return undefined;
 
@@ -262,7 +263,6 @@ export async function processReportSummary(task: LlmTaskRow): Promise<void> {
   const analysisByTest = collectPerTestAnalyses(reportId);
   const { hardFailingByKey, flakyByKey } = partitionFailingRunsByOutcome(reportId);
 
-  const { getFailureClusters } = await import('../../../failure-clustering/index.js');
   const clusterReport = await getFailureClusters({
     project: project ?? undefined,
     reportId,
@@ -277,7 +277,6 @@ export async function processReportSummary(task: LlmTaskRow): Promise<void> {
     trendContext,
   });
 
-  const { reportDb } = await import('../../../service/db/reports.sqlite.js');
   const currentReport = reportDb.getByID(reportId) as
     | (Record<string, unknown> & { createdAt?: string | Date })
     | undefined;
