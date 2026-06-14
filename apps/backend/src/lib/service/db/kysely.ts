@@ -257,12 +257,6 @@ export interface QualityDashboardNodesRow {
   updatedAt: string;
 }
 
-export interface SchemaMigrationsRow {
-  id: string;
-  appliedAt: string;
-  description: string | null;
-}
-
 export interface RegressionsRow {
   id: string;
   testId: string;
@@ -299,7 +293,6 @@ export interface Database {
   report_results: ReportResultsRow;
   reports: ReportsRow;
   results: ResultsRow;
-  schema_migrations: SchemaMigrationsRow;
   site_config: SiteConfigRow;
   test_llm_analyses: TestLlmAnalysesRow;
   test_runs: TestRunsRow;

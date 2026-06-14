@@ -9,17 +9,9 @@ import { storage } from '../storage/index.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
 import { cronService } from './cron.js';
-import {
-  getDatabase,
-  githubSyncDb,
-  hasMigrationMark,
-  llmTasksDb,
-  qualityDashboardsDb,
-  reportDb,
-  resultDb,
-  setMigrationMark,
-  siteConfigDb,
-} from './db/index.js';
+import { githubSyncDb, llmTasksDb, reportDb, resultDb, siteConfigDb } from './db/index.js';
+import { getKysely } from './db/kysely.js';
+import { migrateToLatest } from './db/migrations/index.js';
 import { litestreamService } from './litestream.js';
 import { notificationScheduler } from './notifications/scheduler.js';
 
@@ -27,16 +19,6 @@ const createdLifecycle = Symbol.for('playwright.reports.lifecycle');
 const instance = globalThis as typeof globalThis & {
   [createdLifecycle]?: Lifecycle;
 };
-
-function backfillReportPassRateOnce(): void {
-  const db = getDatabase();
-  if (hasMigrationMark(db, 'reports_passrate_backfill_v1')) return;
-  const updated = reportDb.backfillPassRate();
-  if (updated > 0) {
-    console.log(`[lifecycle] Backfilled passRate for ${updated} report(s)`);
-  }
-  setMigrationMark(db, 'reports_passrate_backfill_v1');
-}
 
 export class Lifecycle {
   private initialized = false;
@@ -63,10 +45,13 @@ export class Lifecycle {
       await litestreamService.preflight();
       const restored = await litestreamService.restoreIfNeeded();
 
+      // Build/upgrade the schema and run seed migrations. 
+      // Must happen after any Litestream restore (which swaps the DB file) and before the first query.
+      await migrateToLatest(getKysely());
+
       if (!restored) {
         await Promise.all([configCache.init(), reportDb.init(), resultDb.init()]);
         await reportDb.populateTestRuns();
-        backfillReportPassRateOnce();
         console.log('[lifecycle] Databases initialized successfully');
       }
 
@@ -81,7 +66,6 @@ export class Lifecycle {
       }
 
       siteConfigDb.ensureSeeded();
-      qualityDashboardsDb.seedDefaultIfEmpty();
       const cfg = siteConfigDb.get();
       const brandingCandidates: string[] = [];
       if (cfg.logoPath) brandingCandidates.push(cfg.logoPath);

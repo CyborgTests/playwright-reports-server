@@ -11,9 +11,7 @@ export {
   createDatabase,
   getDatabase,
   getDatabaseStats,
-  hasMigrationMark,
   optimizeDB,
-  setMigrationMark,
 } from './db.js';
 export type { FailureSummaryRow } from './failureSummary.sqlite.js';
 export { failureSummaryDb } from './failureSummary.sqlite.js';

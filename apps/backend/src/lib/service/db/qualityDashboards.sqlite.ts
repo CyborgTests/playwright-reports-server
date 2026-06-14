@@ -11,7 +11,7 @@ import type {
 } from '@playwright-reports/shared';
 import { DEFAULT_GRADE_BANDS } from '@playwright-reports/shared';
 import { sql } from 'kysely';
-import { getDatabase, hasMigrationMark, setMigrationMark } from './db.js';
+import { getDatabase } from './db.js';
 import { getKysely, type QualityDashboardNodesRow, type QualityDashboardsRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
 import { parseJsonColumn } from './utils.js';
@@ -414,19 +414,13 @@ export class QualityDashboardsDatabase {
     return rows.map((r) => r.project).filter(Boolean);
   }
 
-  public seedDefaultIfEmpty(): void {
-    const mark = 'quality_dashboards_seed_v1';
-    if (hasMigrationMark(this.db, mark)) return;
-
+  public seedDefaultDashboard(): void {
     const compiled = this.k
       .selectFrom('quality_dashboards')
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .compile();
     const existing = this.db.prepare(compiled.sql).get(...compiled.parameters) as { count: number };
-    if (existing.count > 0) {
-      setMigrationMark(this.db, mark);
-      return;
-    }
+    if (existing.count > 0) return;
 
     const dashboard = this.createDashboard({
       name: 'Overview',
@@ -446,8 +440,6 @@ export class QualityDashboardsDatabase {
       }));
       this.replaceTree(dashboard.id, nodes);
     }
-
-    setMigrationMark(this.db, mark);
   }
 }
 

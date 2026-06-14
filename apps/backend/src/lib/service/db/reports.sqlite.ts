@@ -593,34 +593,6 @@ export class ReportDatabase {
     this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
-  public backfillPassRate(): number {
-    const selectCompiled = this.k
-      .selectFrom('reports')
-      .select(['reportID', 'stats'])
-      .where('passRate', 'is', null)
-      .compile();
-    const rows = this.db.prepare(selectCompiled.sql).all(...selectCompiled.parameters) as Array<{
-      reportID: string;
-      stats: string | null;
-    }>;
-    if (rows.length === 0) return 0;
-
-    const apply = this.db.transaction((batch: typeof rows) => {
-      for (const row of batch) {
-        const stats = parseJsonColumn<ReportStats | undefined>(row.stats, undefined);
-        const updateCompiled = this.k
-          .updateTable('reports')
-          .set({ passRate: computePassRateFromStats(stats) })
-          .where('reportID', '=', row.reportID)
-          .compile();
-        this.db.prepare(updateCompiled.sql).run(...updateCompiled.parameters);
-      }
-    });
-    apply(rows);
-
-    return rows.length;
-  }
-
   public query(input?: ReadReportsInput): ReadReportsOutput {
     const applyWhere = <O>(
       qb: SelectQueryBuilder<Database, 'reports', O>

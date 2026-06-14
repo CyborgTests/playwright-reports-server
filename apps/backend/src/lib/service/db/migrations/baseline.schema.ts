@@ -83,7 +83,6 @@ export const RESULTS_SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_results_project ON results(project);
   CREATE INDEX IF NOT EXISTS idx_results_createdAt ON results(createdAt DESC);
   CREATE INDEX IF NOT EXISTS idx_results_updatedAt ON results(updatedAt DESC);
-  DROP INDEX IF EXISTS idx_results_ids;
 `;
 
 export const REPORTS_SCHEMA_SQL = `
@@ -108,7 +107,6 @@ export const REPORTS_SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_reports_displayNumber ON reports(displayNumber);
   CREATE INDEX IF NOT EXISTS idx_reports_project_created ON reports(project, createdAt DESC);
   CREATE INDEX IF NOT EXISTS idx_reports_project_passRate ON reports(project, passRate);
-  DROP INDEX IF EXISTS idx_reports_ids;
 `;
 
 export const ANALYSIS_FEEDBACK_SCHEMA_SQL = `
@@ -339,8 +337,6 @@ export const TESTS_SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_test_runs_test_created ON test_runs(testId, project, createdAt DESC);
   CREATE INDEX IF NOT EXISTS idx_test_runs_outcome_created ON test_runs(outcome, createdAt DESC);
   CREATE INDEX IF NOT EXISTS idx_test_runs_quarantined_created ON test_runs(quarantined, createdAt DESC);
-  DROP INDEX IF EXISTS idx_test_runs_testId;
-  DROP INDEX IF EXISTS idx_test_runs_quarantined;
   CREATE INDEX IF NOT EXISTS idx_test_runs_failure_category ON test_runs(failure_category);
   CREATE INDEX IF NOT EXISTS idx_test_runs_error_signature ON test_runs(error_signature);
   CREATE INDEX IF NOT EXISTS idx_test_runs_project_created ON test_runs(project, createdAt DESC);

@@ -2,25 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import Database from 'better-sqlite3';
-import { runMigrations } from './migrations/index.js';
-import {
-  ANALYSIS_FEEDBACK_SCHEMA_SQL,
-  CLUSTER_RESOLUTIONS_SCHEMA_SQL,
-  FAILURE_SUMMARY_SCHEMA_SQL,
-  GITHUB_SYNC_SCHEMA_SQL,
-  LLM_TASKS_SCHEMA_SQL,
-  NOTIFICATION_LOG_SCHEMA_SQL,
-  NOTIFICATION_STATE_SCHEMA_SQL,
-  PROJECT_SUMMARY_SCHEMA_SQL,
-  QUALITY_DASHBOARDS_SCHEMA_SQL,
-  REGRESSIONS_SCHEMA_SQL,
-  REPORT_RESULTS_SCHEMA_SQL,
-  REPORTS_SCHEMA_SQL,
-  RESULTS_SCHEMA_SQL,
-  SITE_CONFIG_SCHEMA_SQL,
-  TEST_ANALYSIS_SCHEMA_SQL,
-  TESTS_SCHEMA_SQL,
-} from './schemas.js';
 
 const initiatedDb = Symbol.for('playwright.reports.db');
 const instance = globalThis as typeof globalThis & {
@@ -55,65 +36,9 @@ export function createDatabase(): Database.Database {
   db.pragma('foreign_keys = ON');
   db.pragma('auto_vacuum = INCREMENTAL');
 
-  runMigrations(db);
-  initializeSchema(db);
   instance[initiatedDb] = db;
 
   return db;
-}
-
-/** One-shot migration marks. The table is a tiny key/value store of
- *  migration identifiers that have already been applied on this DB. Use it
- *  for one-time data migrations (e.g., cache wipes) that should not run on
- *  every server start. */
-function ensureMigrationMarks(db: Database.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS schema_migration_marks (
-      mark TEXT PRIMARY KEY,
-      appliedAt TEXT NOT NULL
-    );
-  `);
-}
-
-export function hasMigrationMark(db: Database.Database, mark: string): boolean {
-  const row = db.prepare('SELECT 1 FROM schema_migration_marks WHERE mark = ?').get(mark) as
-    | { 1: number }
-    | undefined;
-  return !!row;
-}
-
-export function setMigrationMark(db: Database.Database, mark: string): void {
-  db.prepare('INSERT OR IGNORE INTO schema_migration_marks (mark, appliedAt) VALUES (?, ?)').run(
-    mark,
-    new Date().toISOString()
-  );
-}
-
-const SCHEMA_MODULES: Array<{ name: string; sql: string }> = [
-  { name: 'results', sql: RESULTS_SCHEMA_SQL },
-  { name: 'reports', sql: REPORTS_SCHEMA_SQL },
-  { name: 'report_results', sql: REPORT_RESULTS_SCHEMA_SQL },
-  { name: 'tests', sql: TESTS_SCHEMA_SQL },
-  { name: 'llm_tasks', sql: LLM_TASKS_SCHEMA_SQL },
-  { name: 'failure_summary', sql: FAILURE_SUMMARY_SCHEMA_SQL },
-  { name: 'test_analysis', sql: TEST_ANALYSIS_SCHEMA_SQL },
-  { name: 'project_summary', sql: PROJECT_SUMMARY_SCHEMA_SQL },
-  { name: 'site_config', sql: SITE_CONFIG_SCHEMA_SQL },
-  { name: 'github_sync', sql: GITHUB_SYNC_SCHEMA_SQL },
-  { name: 'analysis_feedback', sql: ANALYSIS_FEEDBACK_SCHEMA_SQL },
-  { name: 'notification_log', sql: NOTIFICATION_LOG_SCHEMA_SQL },
-  { name: 'notification_state', sql: NOTIFICATION_STATE_SCHEMA_SQL },
-  { name: 'quality_dashboards', sql: QUALITY_DASHBOARDS_SCHEMA_SQL },
-  { name: 'regressions', sql: REGRESSIONS_SCHEMA_SQL },
-  { name: 'cluster_resolutions', sql: CLUSTER_RESOLUTIONS_SCHEMA_SQL },
-];
-
-function initializeSchema(db: Database.Database): void {
-  ensureMigrationMarks(db);
-
-  for (const mod of SCHEMA_MODULES) {
-    db.exec(mod.sql);
-  }
 }
 
 export function getDatabase(): Database.Database {
