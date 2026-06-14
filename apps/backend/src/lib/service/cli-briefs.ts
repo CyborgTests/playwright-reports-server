@@ -279,7 +279,12 @@ export async function buildTestBrief(
 
   const history =
     latestFailedRun?.errorSignature && latestFailedRun.errorSignature.length > 0
-      ? testDb.getFailureHistory(testId, fileId, latestFailedRun.errorSignature, '')
+      ? testDb.getFailureHistory(
+          testId,
+          fileId,
+          latestFailedRun.errorSignature,
+          latestFailedRun.reportId
+        )
       : { priorOccurrenceCount: 0, firstOccurrence: null };
 
   const analysisRow = testAnalysisDb.getByTest(testId, fileId, project);
