@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -393,21 +393,16 @@ export default function LlmQueuePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">LLM Queue</h1>
-
       {/* Stats Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         {statCards.map((s) => (
           <Card key={s.label} className="p-3">
-            <CardHeader className="p-0 pb-1">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{s.label}</CardTitle>
-            </CardHeader>
             <CardContent className="p-0">
               <div className="flex items-center gap-2">
-                <span className="text-2xl font-bold">{s.count}</span>
                 <Badge variant={s.variant} className="text-xs">
                   {s.label}
                 </Badge>
+                <span className="text-2xl font-bold">{s.count}</span>
               </div>
             </CardContent>
           </Card>
