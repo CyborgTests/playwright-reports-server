@@ -81,47 +81,34 @@ export class ReportDatabase {
       return;
     }
 
-    console.log('[report db] Processing existing reports into tests and test runs');
-
     try {
-      const reports = this.getAll();
-
-      if (!reports.length) {
-        console.log('[report db] No reports to process');
-        return;
-      }
-
-      console.log(`[report db] Found ${reports.length} reports to parse`);
-
-      const distinctCompiled = this.k
-        .selectFrom('test_runs')
-        .select('reportId')
-        .distinct()
+      const unprocessedCompiled = this.k
+        .selectFrom('reports')
+        .select('reportID')
+        .where('reportID', 'not in', this.k.selectFrom('test_runs').select('reportId').distinct())
+        .orderBy('createdAt', 'asc')
         .compile();
-      const existingReportIds = this.db
-        .prepare(distinctCompiled.sql)
-        .all(...distinctCompiled.parameters) as Array<{ reportId: string }>;
-      const existingReportIdSet = new Set(existingReportIds.map((row) => row.reportId));
+      const unprocessedRows = this.db
+        .prepare(unprocessedCompiled.sql)
+        .all(...unprocessedCompiled.parameters) as Array<{ reportID: string }>;
 
-      const unprocessedReports = reports.filter(
-        (report) => !existingReportIdSet.has(report.reportID)
-      );
-
-      if (!unprocessedReports.length) {
+      if (!unprocessedRows.length) {
         console.log('[report db] All reports have already been parsed');
         return;
       }
 
-      console.log(`[report db] Processing ${unprocessedReports.length} unprocessed reports`);
+      console.log(`[report db] Processing ${unprocessedRows.length} unprocessed reports`);
 
       let processedCount = 0;
       let errorCount = 0;
 
-      for (const report of unprocessedReports) {
+      for (const { reportID } of unprocessedRows) {
+        const report = this.getByID(reportID);
+        if (!report) continue;
         const { error } = await withError(testManagementService.processReport(report));
 
         if (error) {
-          console.error(`[report db] Error processing report ${report.reportID}:`, error);
+          console.error(`[report db] Error processing report ${reportID}:`, error);
           errorCount++;
         }
 
