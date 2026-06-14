@@ -26,7 +26,7 @@ import { service } from '../lib/service/index.js';
 import {
   MANUAL_PROJECT_SUMMARY_PRIORITY,
   PROJECT_SUMMARY_REPORT_LIMIT,
-} from '../lib/service/llmAnalysisQueue.js';
+} from '../lib/llm/queue/index.js';
 import { ValidationError, validateSchema } from '../lib/validation/index.js';
 import { type AuthRequest, authenticate } from './auth.js';
 

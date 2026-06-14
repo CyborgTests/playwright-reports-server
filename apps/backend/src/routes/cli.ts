@@ -30,7 +30,7 @@ import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
 import { service } from '../lib/service/index.js';
-import { buildTestAnalysisRequest } from '../lib/service/llmAnalysisQueue.js';
+import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
 import { testManagementService } from '../lib/service/testManagement.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
@@ -65,19 +65,9 @@ interface TestBrief {
   filePath: string;
   signals: {
     quarantined: boolean;
-    /** Flakiness percent (0–100). Compare against thresholds via `flakyTier`. */
     flakinessScore: number;
-    /**
-     * Derived classification from `flakinessScore` and the active site config
-     * thresholds (warningThresholdPercentage / quarantineThresholdPercentage).
-     * - `stable` — below warning threshold (worth ignoring)
-     * - `flaky` — between warning and quarantine (worth flagging)
-     * - `critical` — at or above quarantine threshold (worth fixing now)
-     */
     flakyTier: FlakyTier;
-    /** Count of prior runs sharing the same `latestFailure.signature`. */
     signatureOccurrenceCount: number;
-    /** Timestamp this `signature` first appeared (not the test's first run). */
     signatureFirstSeen?: string;
   };
   latestFailure: {
@@ -109,8 +99,6 @@ interface TestBrief {
     name: string;
     sampleError: string;
     otherTests: Array<{ testId: string; fileId: string; project: string; title: string }>;
-    /** Total member count including the current test. Use `cluster brief <id>`
-     *  when the cluster has more members than `otherTests` (capped). */
     otherTestsTotal: number;
     otherTestsTruncated: boolean;
   } | null;

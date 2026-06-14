@@ -12,7 +12,7 @@ import { normalizeReporterPaths, validateReporterPaths } from '../lib/pw-reporte
 import { CronService, cronService } from '../lib/service/cron.js';
 import { getDatabaseStats } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
-import { TASK_TEMPERATURE_DEFAULTS } from '../lib/service/llmAnalysisQueue.js';
+import { TASK_TEMPERATURE_DEFAULTS } from '../lib/llm/queue/index.js';
 import { testManagementService } from '../lib/service/testManagement.js';
 import { DATA_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';

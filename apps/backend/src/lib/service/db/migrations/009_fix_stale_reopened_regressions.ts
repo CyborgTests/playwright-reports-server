@@ -150,31 +150,27 @@ export const migration009FixStaleReopenedRegressions: Migration = {
         row.fileId,
         row.project,
         lastGreen.createdAt
-      ) as {
-        reportId: string;
-        createdAt: string;
-        failure_category: string | null;
-        commitHash: string | null;
-      } | undefined;
+      ) as
+        | {
+            reportId: string;
+            createdAt: string;
+            failure_category: string | null;
+            commitHash: string | null;
+          }
+        | undefined;
 
       if (!firstFail) continue;
 
       const failCount = (
-        countFailsAfterGreen.get(
-          row.testId,
-          row.fileId,
-          row.project,
-          lastGreen.createdAt
-        ) as { cnt: number }
+        countFailsAfterGreen.get(row.testId, row.fileId, row.project, lastGreen.createdAt) as {
+          cnt: number;
+        }
       ).cnt;
 
       const flakyCount = (
-        countFlakysAfterGreen.get(
-          row.testId,
-          row.fileId,
-          row.project,
-          lastGreen.createdAt
-        ) as { cnt: number }
+        countFlakysAfterGreen.get(row.testId, row.fileId, row.project, lastGreen.createdAt) as {
+          cnt: number;
+        }
       ).cnt;
 
       insertStmt.run(

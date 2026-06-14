@@ -5,6 +5,7 @@ import { regressionsDb, toRegressionContext } from '../lib/service/db/regression
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
 import { testManagementService } from '../lib/service/testManagement.js';
+import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
@@ -455,7 +456,6 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
             error: 'No test run found for this test+report',
           });
         }
-        const { buildTestAnalysisRequest } = await import('../lib/service/llmAnalysisQueue.js');
         const built = await buildTestAnalysisRequest({
           testId,
           fileId: row.fileId,
