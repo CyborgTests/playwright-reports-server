@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 import { withBase } from '../lib/url';
 import { useAuth } from './useAuth';
 
+const UNAUTHORIZED_ERROR = 'Unauthorized';
+
 const useQuery = <ReturnType>(
   path: string,
   options?: Omit<UseQueryOptions<ReturnType, Error>, 'queryKey' | 'queryFn'> & {
@@ -37,7 +39,11 @@ const useQuery = <ReturnType>(
         method: options?.method ?? 'GET',
       });
 
-      if (!response.ok && response.status !== 401) {
+      if (response.status === 401) {
+        throw new Error(UNAUTHORIZED_ERROR);
+      }
+
+      if (!response.ok) {
         const errorBody = await response.text();
         toast.error(`Network response was not ok: ${errorBody}`);
         throw new Error(`Network response was not ok: ${errorBody}`);
@@ -48,7 +54,9 @@ const useQuery = <ReturnType>(
     enabled,
     ...(options?.staleTime !== undefined && { staleTime: options.staleTime }),
     ...(options?.gcTime !== undefined && { gcTime: options.gcTime }),
-    ...(options?.retry !== undefined && { retry: options.retry }),
+    retry:
+      options?.retry ??
+      ((failureCount, error) => error.message !== UNAUTHORIZED_ERROR && failureCount < 3),
     ...(options?.select !== undefined && { select: options.select }),
     ...(options?.placeholderData !== undefined && { placeholderData: options.placeholderData }),
     ...(options?.refetchInterval !== undefined && { refetchInterval: options.refetchInterval }),
