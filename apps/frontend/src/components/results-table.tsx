@@ -93,7 +93,7 @@ export default function ResultsTable({
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(selected ?? []));
+  const selectedIds = useMemo(() => new Set(selected ?? []), [selected]);
   const [dateRange, setDateRange] = useState<DateRange>(() => ({
     from: searchParams.get('from') ?? undefined,
     to: searchParams.get('to') ?? undefined,
@@ -202,7 +202,6 @@ export default function ResultsTable({
     const newSelectedIds = isChecked
       ? new Set(results?.map((r) => r.resultID) ?? [])
       : new Set<string>();
-    setSelectedIds(newSelectedIds);
     const selectedResults = results?.filter((r) => newSelectedIds.has(r.resultID)) ?? [];
     onSelect?.(selectedResults);
   };
@@ -215,7 +214,6 @@ export default function ResultsTable({
     } else {
       newSelectedIds.delete(resultId);
     }
-    setSelectedIds(newSelectedIds);
     const selectedResults = results?.filter((r) => newSelectedIds.has(r.resultID)) ?? [];
     onSelect?.(selectedResults);
   };

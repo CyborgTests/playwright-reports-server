@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReportHistory, ReportTestOutcome } from '@playwright-reports/shared';
-import { type FC, useEffect, useMemo, useRef, useState } from 'react';
+import { type FC, useEffect, useMemo, useState } from 'react';
 import {
   Accordion,
   AccordionContent,
@@ -24,7 +24,6 @@ const testOutcomes: ReportTestOutcome[] = ['expected', 'unexpected', 'skipped', 
 const ReportFilters: FC<ReportFiltersProps> = ({ report, onChangeFilters }) => {
   const [byName, setByName] = useState('');
   const [byOutcomes, setByOutcomes] = useState<ReportTestOutcome[]>(testOutcomes);
-  const previousStateRef = useRef<{ testCount: number; totalTestCount: number } | null>(null);
 
   const onNameChange = (name: string) => {
     setByName(name);
@@ -42,20 +41,8 @@ const ReportFilters: FC<ReportFiltersProps> = ({ report, onChangeFilters }) => {
   }, [byName, byOutcomes, report]);
 
   useEffect(() => {
-    const currentCounts = {
-      testCount: currentState.testCount,
-      totalTestCount: currentState.totalTestCount,
-    };
-
-    if (
-      !previousStateRef.current ||
-      previousStateRef.current.testCount !== currentCounts.testCount ||
-      previousStateRef.current.totalTestCount !== currentCounts.totalTestCount
-    ) {
-      previousStateRef.current = currentCounts;
-      onChangeFilters(currentState);
-    }
-  }, [currentState.testCount, currentState.totalTestCount, currentState, onChangeFilters]);
+    onChangeFilters(currentState);
+  }, [currentState, onChangeFilters]);
 
   return (
     <Accordion type="single" collapsible className="mb-5">

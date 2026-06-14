@@ -35,7 +35,7 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
   const [filteredTests, setFilteredTests] = useState<ReportHistory | undefined>(
     report ?? undefined
   );
-  const [defaultExpandedKeys, setDefaultExpandedKeys] = useState<string[]>([]);
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
 
   useEffect(() => {
     if (historyError) {
@@ -58,7 +58,7 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
         file.tests?.some((test) => test.testId === highlightTestId)
       );
       if (fileWithTest?.fileId) {
-        setDefaultExpandedKeys([fileWithTest.fileId]);
+        setExpandedKeys((prev) => (prev.includes(fileWithTest.fileId) ? prev : [...prev, fileWithTest.fileId]));
       }
     }
   }, [highlightTestId, filteredTests]);
@@ -82,7 +82,12 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
         <ReportFilters report={report} onChangeFilters={setFilteredTests} />
       </div>
       {filteredTests?.files?.length ? (
-        <Accordion type="multiple" defaultValue={defaultExpandedKeys} className="w-full">
+        <Accordion
+          type="multiple"
+          value={expandedKeys}
+          onValueChange={setExpandedKeys}
+          className="w-full"
+        >
           {(filteredTests?.files ?? []).map((file) => (
             <AccordionItem key={file.fileId} value={file.fileId}>
               <AccordionTrigger className="hover:no-underline">
