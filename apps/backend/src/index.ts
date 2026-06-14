@@ -6,8 +6,8 @@ import fastifyMultipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import { env } from './config/env.js';
-import { lifecycle } from './lib/service/lifecycle.js';
 import { llmAnalysisQueue } from './lib/llm/queue/index.js';
+import { lifecycle } from './lib/service/lifecycle.js';
 import { registerApiRoutes } from './routes/index.js';
 
 const logByEnv = {

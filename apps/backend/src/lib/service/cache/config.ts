@@ -1,5 +1,5 @@
 import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
-import { siteConfigDb } from '../db/siteConfig.sqlite.js';
+import { siteConfigDb } from '../db/index.js';
 
 const initiatedConfigDb = Symbol.for('playwright.reports.db.config');
 const instance = globalThis as typeof globalThis & {

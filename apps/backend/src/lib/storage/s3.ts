@@ -24,7 +24,7 @@ import { withError } from '../../lib/withError.js';
 import { serveReportRoute } from '../constants.js';
 import { parse } from '../parser/index.js';
 import { generatePlaywrightReport } from '../pw.js';
-import { resultDb } from '../service/db/results.sqlite.js';
+import { resultDb } from '../service/db/index.js';
 import { processWithConcurrency, Semaphore } from '../utils/semaphore.js';
 import {
   DATA_FOLDER,

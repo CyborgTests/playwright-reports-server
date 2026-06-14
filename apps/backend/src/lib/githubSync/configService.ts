@@ -10,7 +10,7 @@ import {
   type GithubSyncConfigRow,
   type GithubSyncRunRow,
   githubSyncDb,
-} from '../service/db/githubSync.sqlite.js';
+} from '../service/db/index.js';
 import { decryptToken, encryptToken } from './encryption.js';
 import { getSyncProgress } from './syncService.js';
 

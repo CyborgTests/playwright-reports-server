@@ -1,5 +1,4 @@
-import type { LlmTaskRow } from '../../service/db/llmTasks.sqlite.js';
-import { llmTasksDb } from '../../service/db/llmTasks.sqlite.js';
+import { type LlmTaskRow, llmTasksDb } from '../../service/db/index.js';
 import { service } from '../../service/index.js';
 import { llmService } from '../index.js';
 import { LLMProviderError } from '../types/index.js';

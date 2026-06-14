@@ -5,9 +5,7 @@ import {
   PROJECT_SUMMARY_REPORT_LIMIT,
 } from '../lib/llm/queue/index.js';
 import { analyticsService } from '../lib/service/analytics.js';
-import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
-import { projectSummaryDb } from '../lib/service/db/projectSummary.sqlite.js';
-import { reportDb } from '../lib/service/db/reports.sqlite.js';
+import { llmTasksDb, projectSummaryDb, reportDb } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';

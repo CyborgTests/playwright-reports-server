@@ -2,7 +2,7 @@ import type {
   ProjectAnalysisStructured,
   ReportAnalysisStructured,
 } from '@playwright-reports/shared';
-import { reportDb } from '../service/db/reports.sqlite.js';
+import { reportDb } from '../service/db/index.js';
 
 /** markdown that must NOT be included: fenced code blocks,
  *  inline code spans, existing markdown links.

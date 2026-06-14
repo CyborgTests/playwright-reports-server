@@ -1,8 +1,11 @@
 import type { ClusterOptions, ClusterReport, FailureCluster } from '@playwright-reports/shared';
-import { clusterResolutionsDb } from '../service/db/clusterResolutions.sqlite.js';
-import { type RegressionSummary, regressionsDb } from '../service/db/regressions.sqlite.js';
-import { reportDb } from '../service/db/reports.sqlite.js';
-import { testDb } from '../service/db/tests.sqlite.js';
+import {
+  clusterResolutionsDb,
+  type RegressionSummary,
+  regressionsDb,
+  reportDb,
+  testDb,
+} from '../service/db/index.js';
 import { buildClusters, type ReportUrlLookup } from './cluster.js';
 import { FAILED_OUTCOMES, type FailedTestRun, type TestMeta, testKey } from './types.js';
 

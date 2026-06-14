@@ -1,4 +1,4 @@
-import type { TestRun } from '../service/db/tests.sqlite.js';
+import type { TestRun } from '../service/db/index.js';
 
 export type { FixturePhase } from '@playwright-reports/shared';
 

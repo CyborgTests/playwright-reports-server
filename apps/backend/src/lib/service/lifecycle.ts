@@ -9,12 +9,17 @@ import { storage } from '../storage/index.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
 import { cronService } from './cron.js';
-import { getDatabase, hasMigrationMark, setMigrationMark } from './db/db.js';
-import { githubSyncDb } from './db/githubSync.sqlite.js';
-import { reportDb, resultDb } from './db/index.js';
-import { llmTasksDb } from './db/llmTasks.sqlite.js';
-import { qualityDashboardsDb } from './db/qualityDashboards.sqlite.js';
-import { siteConfigDb } from './db/siteConfig.sqlite.js';
+import {
+  getDatabase,
+  githubSyncDb,
+  hasMigrationMark,
+  llmTasksDb,
+  qualityDashboardsDb,
+  reportDb,
+  resultDb,
+  setMigrationMark,
+  siteConfigDb,
+} from './db/index.js';
 import { litestreamService } from './litestream.js';
 import { notificationScheduler } from './notifications/scheduler.js';
 

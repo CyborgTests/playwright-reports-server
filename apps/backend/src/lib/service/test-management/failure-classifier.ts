@@ -4,7 +4,7 @@ import {
   ROOT_CAUSE_CATEGORIES,
   type RootCauseCategory,
 } from '@playwright-reports/shared';
-import { testDb } from '../db/tests.sqlite.js';
+import { testDb } from '../db/index.js';
 
 const KNOWN_CATEGORIES = new Set<string>(FAILURE_CATEGORIES);
 const KNOWN_ROOT_CAUSE_CATEGORIES = new Set<string>(ROOT_CAUSE_CATEGORIES);

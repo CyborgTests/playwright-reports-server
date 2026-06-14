@@ -19,8 +19,7 @@ import { getPresignedUploadUrl, uploadResult } from '../storage/resultUpload.js'
 import type { Report } from '../storage/types.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
-import { reportDb, reportResultsDb, resultDb } from './db/index.js';
-import { siteConfigDb } from './db/siteConfig.sqlite.js';
+import { reportDb, reportResultsDb, resultDb, siteConfigDb } from './db/index.js';
 import { lifecycle } from './lifecycle.js';
 import { dispatchReportUploaded } from './notifications/dispatcher.js';
 import { testManagementService } from './test-management/index.js';

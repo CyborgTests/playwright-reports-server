@@ -6,10 +6,7 @@ import {
 } from '@playwright-reports/shared';
 import type { ReportHistory } from '../../storage/types.js';
 import { configCache } from '../cache/config.js';
-import { failureSummaryDb } from '../db/failureSummary.sqlite.js';
-import { notificationStateDb } from '../db/notificationState.sqlite.js';
-import { reportDb } from '../db/reports.sqlite.js';
-import { testDb } from '../db/tests.sqlite.js';
+import { failureSummaryDb, notificationStateDb, reportDb, testDb } from '../db/index.js';
 import { projectFilterMatches } from './filters.js';
 import type { ScheduleSummary } from './variables.js';
 

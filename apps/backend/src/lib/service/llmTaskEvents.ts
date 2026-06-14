@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { LlmTaskRow } from './db/llmTasks.sqlite.js';
+import type { LlmTaskRow } from './db/index.js';
 
 /**
  * Process-local pub/sub for LLM task transitions. Emits `task:{id}` per-task

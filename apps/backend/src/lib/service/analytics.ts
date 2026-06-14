@@ -8,10 +8,7 @@ import type {
 } from '@playwright-reports/shared';
 import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import type { ReportHistory as BackendReportHistory } from '../storage/types.js';
-import { failureSummaryDb } from './db/failureSummary.sqlite.js';
-import { regressionsDb } from './db/regressions.sqlite.js';
-import { reportDb } from './db/reports.sqlite.js';
-import { testDb } from './db/tests.sqlite.js';
+import { failureSummaryDb, regressionsDb, reportDb, testDb } from './db/index.js';
 import { service } from './index.js';
 import { testManagementService } from './test-management/index.js';
 

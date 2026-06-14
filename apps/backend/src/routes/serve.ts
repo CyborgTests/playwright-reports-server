@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import mime from 'mime';
 import { env } from '../config/env.js';
 import { llmService } from '../lib/llm/index.js';
-import { reportDb } from '../lib/service/db/reports.sqlite.js';
+import { reportDb } from '../lib/service/db/index.js';
 import { DATA_FOLDER, REPORTS_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';
 import { streamToString } from '../lib/storage/streamUtils.js';

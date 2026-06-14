@@ -5,7 +5,7 @@ import type {
   ScheduleRule,
 } from '@playwright-reports/shared';
 import { configCache } from '../cache/config.js';
-import { reportDb } from '../db/reports.sqlite.js';
+import { reportDb } from '../db/index.js';
 import { dispatchOne, writeLog } from './dispatch-helpers.js';
 import type { DispatchResult } from './providers/types.js';
 import { buildSummaryForProject, type WindowRange } from './schedule.js';

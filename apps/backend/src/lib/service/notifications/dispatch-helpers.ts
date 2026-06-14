@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { NotificationChannel, NotificationRule } from '@playwright-reports/shared';
-import { notificationLogDb } from '../db/notificationLog.sqlite.js';
+import { notificationLogDb } from '../db/index.js';
 import { sendSlack } from './providers/slack.js';
 import type { DispatchInput, DispatchResult } from './providers/types.js';
 import { sendWebhook } from './providers/webhook.js';

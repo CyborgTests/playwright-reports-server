@@ -3,11 +3,8 @@ import {
   getFailureClusters,
   invalidateFailureClustersCache,
 } from '../lib/failure-clustering/index.js';
-import {
-  ResolveClusterBodySchema,
-  ResolveClusterParamsSchema,
-} from '../lib/schemas/index.js';
-import { clusterResolutionsDb } from '../lib/service/db/clusterResolutions.sqlite.js';
+import { ResolveClusterBodySchema, ResolveClusterParamsSchema } from '../lib/schemas/index.js';
+import { clusterResolutionsDb } from '../lib/service/db/index.js';
 import { ValidationError, validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';

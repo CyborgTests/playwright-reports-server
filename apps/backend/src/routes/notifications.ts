@@ -6,7 +6,7 @@ import {
   NotificationsConfigSchema,
   NotificationTestRequestSchema,
 } from '../lib/schemas/index.js';
-import { notificationLogDb } from '../lib/service/db/notificationLog.sqlite.js';
+import { notificationLogDb } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { notificationScheduler } from '../lib/service/notifications/scheduler.js';
 import { maskNotifications, mergeWithStored } from '../lib/service/notifications/secrets.js';

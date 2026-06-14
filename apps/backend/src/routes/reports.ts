@@ -15,12 +15,14 @@ import {
   ListReportsQuerySchema,
   UploadReportRequestSchema,
 } from '../lib/schemas/index.js';
-import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
-import { reportDb } from '../lib/service/db/index.js';
-import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
-import { regressionsDb } from '../lib/service/db/regressions.sqlite.js';
-import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
-import { testDb } from '../lib/service/db/tests.sqlite.js';
+import {
+  failureSummaryDb,
+  llmTasksDb,
+  regressionsDb,
+  reportDb,
+  testAnalysisDb,
+  testDb,
+} from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { compareReports } from '../lib/service/reportCompare.js';
 import { testManagementService } from '../lib/service/test-management/index.js';

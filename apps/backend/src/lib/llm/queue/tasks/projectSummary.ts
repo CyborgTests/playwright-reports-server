@@ -1,11 +1,13 @@
-import { failureSummaryDb } from '../../../service/db/failureSummary.sqlite.js';
-import type { LlmTaskRow } from '../../../service/db/llmTasks.sqlite.js';
-import { llmTasksDb } from '../../../service/db/llmTasks.sqlite.js';
-import { projectSummaryDb } from '../../../service/db/projectSummary.sqlite.js';
-import { computeProjectCoverageScope } from '../../../service/db/queries/projectCoverage.js';
-import { regressionsDb } from '../../../service/db/regressions.sqlite.js';
-import { testAnalysisDb } from '../../../service/db/testAnalysis.sqlite.js';
-import { testDb } from '../../../service/db/tests.sqlite.js';
+import {
+  computeProjectCoverageScope,
+  failureSummaryDb,
+  type LlmTaskRow,
+  llmTasksDb,
+  projectSummaryDb,
+  regressionsDb,
+  testAnalysisDb,
+  testDb,
+} from '../../../service/db/index.js';
 import { service } from '../../../service/index.js';
 import { llmService } from '../../index.js';
 import {

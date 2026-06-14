@@ -1,9 +1,11 @@
 import type { LLMConfig } from '@playwright-reports/shared';
-import { failureSummaryDb } from '../../../service/db/failureSummary.sqlite.js';
-import type { LlmTaskRow } from '../../../service/db/llmTasks.sqlite.js';
-import { llmTasksDb } from '../../../service/db/llmTasks.sqlite.js';
-import { testAnalysisDb } from '../../../service/db/testAnalysis.sqlite.js';
-import { testDb } from '../../../service/db/tests.sqlite.js';
+import {
+  failureSummaryDb,
+  type LlmTaskRow,
+  llmTasksDb,
+  testAnalysisDb,
+  testDb,
+} from '../../../service/db/index.js';
 import { service } from '../../../service/index.js';
 import { compareReports, findPreviousReportInProject } from '../../../service/reportCompare.js';
 import { llmService } from '../../index.js';

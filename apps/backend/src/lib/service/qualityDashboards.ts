@@ -21,8 +21,7 @@ import {
 } from '@playwright-reports/shared';
 
 import type { ReportHistory } from '../storage/types.js';
-import { qualityDashboardsDb } from './db/qualityDashboards.sqlite.js';
-import { type ReportHistoryLite, reportDb } from './db/reports.sqlite.js';
+import { qualityDashboardsDb, type ReportHistoryLite, reportDb } from './db/index.js';
 
 function buildTree(nodes: QualityNode[]): QualityTreeNode[] {
   const byId = new Map<string, QualityTreeNode>();

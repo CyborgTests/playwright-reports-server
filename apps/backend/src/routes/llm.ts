@@ -7,13 +7,18 @@ import {
   TEST_ANALYSIS_SYSTEM_PROMPT,
   TEST_ANALYSIS_TASK_INSTRUCTIONS,
 } from '../lib/llm/prompts/index.js';
-import { getDatabase } from '../lib/service/db/db.js';
-import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
-import type { LlmTaskRow, LlmTaskStatus, LlmTaskType } from '../lib/service/db/llmTasks.sqlite.js';
-import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
-import { getUsageByModel, getUsageStats } from '../lib/service/db/queries/llmUsage.js';
-import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
-import { testDb } from '../lib/service/db/tests.sqlite.js';
+import {
+  failureSummaryDb,
+  getDatabase,
+  getUsageByModel,
+  getUsageStats,
+  type LlmTaskRow,
+  type LlmTaskStatus,
+  type LlmTaskType,
+  llmTasksDb,
+  testAnalysisDb,
+  testDb,
+} from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { llmTaskEvents } from '../lib/service/llmTaskEvents.js';
 import { type AuthRequest, authenticate } from './auth.js';

@@ -1,8 +1,6 @@
 import type { ReportStats } from '@playwright-reports/shared';
 import type { ReportHistory } from '../storage/types.js';
-import { reportDb } from './db/index.js';
-import { regressionsDb } from './db/regressions.sqlite.js';
-import { type Test, type TestRun, testDb } from './db/tests.sqlite.js';
+import { regressionsDb, reportDb, type Test, type TestRun, testDb } from './db/index.js';
 
 const FAILURE_OUTCOMES = new Set(['failed', 'unexpected', 'timedOut']);
 const PASS_OUTCOMES = new Set(['passed', 'expected']);

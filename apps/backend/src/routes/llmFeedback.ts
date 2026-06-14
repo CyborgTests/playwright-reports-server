@@ -7,10 +7,7 @@ import {
   GetRelatedFeedbackQuerySchema,
   UpsertFeedbackRequestSchema,
 } from '../lib/schemas/index.js';
-import { analysisFeedbackDb } from '../lib/service/db/analysisFeedback.sqlite.js';
-import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
-import { reportDb } from '../lib/service/db/reports.sqlite.js';
-import { testDb } from '../lib/service/db/tests.sqlite.js';
+import { analysisFeedbackDb, llmTasksDb, reportDb, testDb } from '../lib/service/db/index.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
 function feedbackRowToShared(

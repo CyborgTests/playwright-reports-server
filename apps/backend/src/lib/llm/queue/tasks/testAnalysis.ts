@@ -1,11 +1,14 @@
 import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import { stripAnsi } from '../../../parser/failure-extraction.js';
-import { analysisFeedbackDb } from '../../../service/db/analysisFeedback.sqlite.js';
-import type { LlmTaskRow } from '../../../service/db/llmTasks.sqlite.js';
-import { llmTasksDb } from '../../../service/db/llmTasks.sqlite.js';
-import { regressionsDb, toRegressionContext } from '../../../service/db/regressions.sqlite.js';
-import { testAnalysisDb } from '../../../service/db/testAnalysis.sqlite.js';
-import { testDb } from '../../../service/db/tests.sqlite.js';
+import {
+  analysisFeedbackDb,
+  type LlmTaskRow,
+  llmTasksDb,
+  regressionsDb,
+  testAnalysisDb,
+  testDb,
+  toRegressionContext,
+} from '../../../service/db/index.js';
 import { service } from '../../../service/index.js';
 import { llmService } from '../../index.js';
 import type { FailureDetailsForPrompt } from '../../prompts/index.js';

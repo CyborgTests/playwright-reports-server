@@ -6,7 +6,7 @@ import util from 'node:util';
 import { defaultConfig } from './config.js';
 import { resolvePlaywrightCli } from './pw-cache.js';
 import { normalizeReporterPaths, validateReporterPaths } from './pw-reporters.js';
-import { siteConfigDb } from './service/db/siteConfig.sqlite.js';
+import { siteConfigDb } from './service/db/index.js';
 import { REPORTS_FOLDER, TMP_FOLDER } from './storage/constants.js';
 import { createDirectory } from './storage/folders.js';
 import type { ReportMetadata } from './storage/types.js';

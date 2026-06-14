@@ -4,9 +4,7 @@ import { Cron } from 'croner';
 import { env } from '../../config/env.js';
 import { withError } from '../../lib/withError.js';
 import { TMP_FOLDER } from '../storage/constants.js';
-import { getDatabase, optimizeDB } from './db/db.js';
-import { llmTasksDb } from './db/llmTasks.sqlite.js';
-import { notificationLogDb } from './db/notificationLog.sqlite.js';
+import { getDatabase, llmTasksDb, notificationLogDb, optimizeDB } from './db/index.js';
 import { service } from './index.js';
 
 const runningCron = Symbol.for('playwright.reports.cron.service');

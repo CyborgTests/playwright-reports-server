@@ -6,9 +6,9 @@
 //   - UNION ALL VALUES tuple lists for lane lookup
 import type { ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
-import type { DerivedPageRow, Test, TestRun, TestWithQuarantineInfo } from './tests.sqlite.js';
-import { convertDbRowToTestRun, type TestRunDbRow } from './tests.sqlite.js';
-import { chunk } from './utils.js';
+import type { DerivedPageRow, Test, TestRun, TestWithQuarantineInfo } from '../tests.sqlite.js';
+import { convertDbRowToTestRun, type TestRunDbRow } from '../tests.sqlite.js';
+import { chunk } from '../utils.js';
 
 export interface DerivedPageOptions {
   status?: 'all' | 'quarantined' | 'not-quarantined';

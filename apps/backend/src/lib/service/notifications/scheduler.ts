@@ -6,7 +6,7 @@ import type {
 import { Cron } from 'croner';
 import { configCache } from '../cache/config.js';
 import { CronService } from '../cron.js';
-import { notificationStateDb } from '../db/notificationState.sqlite.js';
+import { notificationStateDb } from '../db/index.js';
 import { dispatchOne, writeLog } from './dispatch-helpers.js';
 import type { DispatchResult } from './providers/types.js';
 import {

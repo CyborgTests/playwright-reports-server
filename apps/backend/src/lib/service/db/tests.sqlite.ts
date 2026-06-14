@@ -4,9 +4,9 @@ import { sql } from 'kysely';
 import { getDatabase } from './db.js';
 import { decodeFailureDetails, encodeFailureDetails } from './failureDetailsCodec.js';
 import { getKysely } from './kysely.js';
+import type { DerivedPageOptions } from './queries/testAnalytics.js';
+import * as testQueries from './queries/testAnalytics.js';
 import { singletonOf } from './singleton.js';
-import type { DerivedPageOptions } from './testQueries.sqlite.js';
-import * as testQueries from './testQueries.sqlite.js';
 import { chunk } from './utils.js';
 
 export interface Test {
