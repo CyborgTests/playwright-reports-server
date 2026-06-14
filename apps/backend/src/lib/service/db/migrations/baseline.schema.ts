@@ -1,3 +1,5 @@
+// ⚠️ FROZEN BASELINE SCHEMA
+// This is the body of migration `0001_baseline`, NOT the live schema.
 export const SITE_CONFIG_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS site_config (
     id INTEGER PRIMARY KEY CHECK (id = 1),

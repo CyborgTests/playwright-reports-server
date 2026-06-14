@@ -1,17 +1,13 @@
 import { getDatabase } from './db.js';
+import { type ClusterResolutionsRow, getKysely } from './kysely.js';
 import { singletonOf } from './singleton.js';
 
 export type ClusterOverrideState = 'resolved' | 'active';
 
-export interface ClusterResolutionRow {
-  clusterId: string;
-  project: string | null;
-  resolvedAt: string;
-  state: ClusterOverrideState;
-  note: string | null;
-}
+export type ClusterResolutionRow = ClusterResolutionsRow;
 
 export class ClusterResolutionsDatabase {
+  private readonly k = getKysely();
   private readonly db = getDatabase();
 
   public setOverride(input: {
@@ -20,30 +16,36 @@ export class ClusterResolutionsDatabase {
     project?: string | null;
     note?: string | null;
   }): void {
-    this.db
-      .prepare(
-        `INSERT INTO cluster_resolutions (clusterId, project, resolvedAt, state, note)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(clusterId) DO UPDATE SET
-           resolvedAt = excluded.resolvedAt,
-           state = excluded.state,
-           note = excluded.note`
+    const compiled = this.k
+      .insertInto('cluster_resolutions')
+      .values({
+        clusterId: input.clusterId,
+        project: input.project ?? null,
+        resolvedAt: new Date().toISOString(),
+        state: input.state,
+        note: input.note ?? null,
+      })
+      .onConflict((oc) =>
+        oc.column('clusterId').doUpdateSet((eb) => ({
+          resolvedAt: eb.ref('excluded.resolvedAt'),
+          state: eb.ref('excluded.state'),
+          note: eb.ref('excluded.note'),
+        }))
       )
-      .run(
-        input.clusterId,
-        input.project ?? null,
-        new Date().toISOString(),
-        input.state,
-        input.note ?? null
-      );
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   // Single-pass load used by the cluster enrichment. Keyed by clusterId so the
   // caller can look up by cluster.id without an extra round-trip per cluster.
   public getAllOverrides(): Map<string, ClusterResolutionRow> {
+    const compiled = this.k
+      .selectFrom('cluster_resolutions')
+      .select(['clusterId', 'project', 'resolvedAt', 'state', 'note'])
+      .compile();
     const rows = this.db
-      .prepare('SELECT clusterId, project, resolvedAt, state, note FROM cluster_resolutions')
-      .all() as ClusterResolutionRow[];
+      .prepare(compiled.sql)
+      .all(...compiled.parameters) as ClusterResolutionRow[];
     return new Map(rows.map((r) => [r.clusterId, r]));
   }
 }

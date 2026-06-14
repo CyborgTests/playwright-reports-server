@@ -45,7 +45,7 @@ export class Lifecycle {
       await litestreamService.preflight();
       const restored = await litestreamService.restoreIfNeeded();
 
-      // Build/upgrade the schema and run seed migrations. 
+      // Build/upgrade the schema and run seed migrations.
       // Must happen after any Litestream restore (which swaps the DB file) and before the first query.
       await migrateToLatest(getKysely());
 

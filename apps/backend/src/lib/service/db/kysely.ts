@@ -277,7 +277,26 @@ export interface RegressionsRow {
   flakyCount: ColumnType<number, number | undefined, number>;
 }
 
+export interface ClusterResolutionsRow {
+  clusterId: string;
+  project: string | null;
+  resolvedAt: string;
+  state: 'resolved' | 'active';
+  note: string | null;
+}
+
+// FTS5 virtual table mirroring tests(title, filePath), maintained by triggers.
+// The id columns are UNINDEXED but still selectable, so they belong on the row.
+export interface TestsFtsRow {
+  testId: string;
+  fileId: string;
+  project: string;
+  title: string;
+  filePath: string;
+}
+
 export interface Database {
+  cluster_resolutions: ClusterResolutionsRow;
   regressions: RegressionsRow;
   analysis_feedback: AnalysisFeedbackTableRow;
   github_sync_configs: GithubSyncConfigsRow;
@@ -297,6 +316,7 @@ export interface Database {
   test_llm_analyses: TestLlmAnalysesRow;
   test_runs: TestRunsRow;
   tests: TestsRow;
+  tests_fts: TestsFtsRow;
 }
 
 let kyselyInstance: Kysely<Database> | undefined;

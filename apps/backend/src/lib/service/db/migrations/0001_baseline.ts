@@ -17,7 +17,7 @@ import {
   SITE_CONFIG_SCHEMA_SQL,
   TEST_ANALYSIS_SCHEMA_SQL,
   TESTS_SCHEMA_SQL,
-} from '../schemas.js';
+} from './baseline.schema.js';
 
 // Frozen baseline schema.
 // Do NOT edit this list to evolve the schema.
