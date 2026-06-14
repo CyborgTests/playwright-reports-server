@@ -233,7 +233,7 @@ export const ListResultsResponseSchema = z.object({
 });
 
 export const DeleteResultsRequestSchema = z.object({
-  resultsIds: z.array(z.string()).min(1),
+  resultsIds: z.array(UUIDSchema).min(1),
 });
 
 export const DeleteResultsResponseSchema = z.object({

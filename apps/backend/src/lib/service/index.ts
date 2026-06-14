@@ -3,6 +3,7 @@ import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import { serveReportRoute } from '../constants.js';
 import { invalidateFailureClustersCache } from '../failure-clustering/index.js';
 import { isValidPlaywrightVersion } from '../pw-cache.js';
+import { UUIDSchema } from '../schemas/index.js';
 import { bytesToString } from '../storage/format.js';
 import {
   type ReadReportsInput,
@@ -212,6 +213,11 @@ class Service {
   }
 
   public async deleteResults(resultIDs: string[]): Promise<void> {
+    const invalid = resultIDs.filter((id) => !UUIDSchema.safeParse(id).success);
+    if (invalid.length > 0) {
+      throw new Error(`deleteResults: invalid result id(s): ${invalid.join(', ')}`);
+    }
+
     const { error } = await withError(storage.deleteResults(resultIDs));
 
     if (error) {
