@@ -150,25 +150,6 @@ export class ResultDatabase {
     return rows.map(this.rowToResult);
   }
 
-  public search(query: string): Result[] {
-    const pattern = `%${query}%`;
-    const compiled = this.k
-      .selectFrom('results')
-      .selectAll()
-      .where((eb) =>
-        eb.or([
-          eb('title', 'like', pattern),
-          eb('resultID', 'like', pattern),
-          eb('project', 'like', pattern),
-          eb('metadata', 'like', pattern),
-        ])
-      )
-      .orderBy('createdAt', 'desc')
-      .compile();
-    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ResultRow[];
-    return rows.map(this.rowToResult);
-  }
-
   public getCount(): number {
     const compiled = this.k
       .selectFrom('results')

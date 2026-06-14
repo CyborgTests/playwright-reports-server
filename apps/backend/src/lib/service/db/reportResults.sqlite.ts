@@ -35,27 +35,6 @@ export class ReportResultsDatabase {
     this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
-  public getReportsForResult(resultId: string): Array<{
-    reportID: string;
-    displayNumber: number | null;
-    title: string | null;
-    createdAt: string;
-  }> {
-    const compiled = this.k
-      .selectFrom('report_results as rr')
-      .innerJoin('reports as r', 'r.reportID', 'rr.reportId')
-      .select(['r.reportID', 'r.displayNumber', 'r.title', 'r.createdAt'])
-      .where('rr.resultId', '=', resultId)
-      .orderBy('r.createdAt', 'desc')
-      .compile();
-    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
-      reportID: string;
-      displayNumber: number | null;
-      title: string | null;
-      createdAt: string;
-    }>;
-  }
-
   public getReportsForResultIds(
     resultIds: string[]
   ): Map<string, Array<{ reportID: string; displayNumber: number | null }>> {
@@ -80,14 +59,6 @@ export class ReportResultsDatabase {
       out.set(row.resultId, list);
     }
     return out;
-  }
-
-  public getUsedResultIds(): string[] {
-    const compiled = this.k.selectFrom('report_results').select('resultId').distinct().compile();
-    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
-      resultId: string;
-    }>;
-    return rows.map((r) => r.resultId);
   }
 
   public getCount(): number {

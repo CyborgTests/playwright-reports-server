@@ -1,4 +1,4 @@
-export const getApiUrl = (): string => {
+const getApiUrl = (): string => {
   // In dockerized environment frontend and backend are served from the same origin.
   // Use relative paths by default so API calls go to the same host:port that serves the frontend.
   // VITE_API_URL should ONLY be set for cross-origin deployments (e.g., separate frontend/backend servers).
@@ -7,13 +7,6 @@ export const getApiUrl = (): string => {
   }
 
   return '';
-};
-
-export const getCurrentPath = (): string => {
-  if (typeof globalThis !== 'undefined') {
-    return globalThis.location.pathname;
-  }
-  return '/';
 };
 
 export const buildUrl = (path: string, params?: Record<string, string>): string => {

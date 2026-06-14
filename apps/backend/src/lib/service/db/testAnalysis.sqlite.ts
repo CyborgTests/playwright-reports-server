@@ -147,17 +147,6 @@ export class TestAnalysisDatabase {
     return row ?? null;
   }
 
-  public getAllByTestAndReport(testId: string, reportId: string): TestAnalysisRow[] {
-    const compiled = this.k
-      .selectFrom('test_llm_analyses')
-      .selectAll()
-      .where('testId', '=', testId)
-      .where('reportId', '=', reportId)
-      .orderBy('attempt')
-      .compile();
-    return this.db.prepare(compiled.sql).all(...compiled.parameters) as TestAnalysisRow[];
-  }
-
   public getByReport(reportId: string): TestAnalysisRow[] {
     const compiled = this.k
       .selectFrom('test_llm_analyses')

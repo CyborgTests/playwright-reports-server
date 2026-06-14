@@ -33,17 +33,6 @@ export interface AuthConfig {
   azureContainer?: string;
 }
 
-export const getAuthSession = (): Promise<AuthSession> => {
-  return fetch(withBase('/api/auth/session'))
-    .then((res) => res.json())
-    .catch(() => ({ user: undefined, expires: '' }));
-};
-
-export const signOut = async (): Promise<void> => {
-  await fetch(withBase('/api/auth/signout'), { method: 'POST' });
-  localStorage.removeItem('jwtToken');
-};
-
 export const signIn = async (
   _provider: string,
   options?: { apiToken?: string; redirect?: boolean }

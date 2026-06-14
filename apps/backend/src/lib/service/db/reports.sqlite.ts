@@ -427,25 +427,6 @@ export class ReportDatabase {
     return rows.map((row) => this.rowToReport(row));
   }
 
-  public search(query: string): ReportHistory[] {
-    const pattern = `%${query}%`;
-    const compiled = this.k
-      .selectFrom('reports')
-      .selectAll()
-      .where((eb) =>
-        eb.or([
-          eb('title', 'like', pattern),
-          eb('reportID', 'like', pattern),
-          eb('project', 'like', pattern),
-          eb('metadata', 'like', pattern),
-        ])
-      )
-      .orderBy('createdAt', 'desc')
-      .compile();
-    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportRow[];
-    return rows.map((row) => this.rowToReport(row));
-  }
-
   public getLatestByProject(project?: string, limit = 10): ReportHistory[] {
     let q = this.k.selectFrom('reports').selectAll().orderBy('createdAt', 'desc').limit(limit);
     if (project && project !== 'all') q = q.where('project', '=', project);
