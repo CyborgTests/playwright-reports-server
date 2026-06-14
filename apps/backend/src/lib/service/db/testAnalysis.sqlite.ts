@@ -92,6 +92,9 @@ export class TestAnalysisDatabase {
       .where('testId', '=', testId)
       .where('fileId', '=', fileId)
       .where('project', '=', project)
+      .orderBy(sql`COALESCE(updatedAt, createdAt)`, 'desc')
+      .orderBy('attempt', 'desc')
+      .limit(1)
       .compile();
     const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
       | TestAnalysisRow
