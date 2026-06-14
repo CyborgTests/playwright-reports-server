@@ -571,12 +571,17 @@ export class ReportDatabase {
       const search = input?.search?.trim();
       if (search) {
         const pattern = `%${search.toLowerCase()}%`;
+        const numericSearch = search.replace(/^#/, '');
+        const displayNumberMatch = /^\d+$/.test(numericSearch)
+          ? Number.parseInt(numericSearch, 10)
+          : null;
         q = q.where((eb) =>
           eb.or([
             eb(eb.fn('LOWER', ['title']), 'like', pattern),
             eb(eb.fn('LOWER', ['reportID']), 'like', pattern),
             eb(eb.fn('LOWER', ['project']), 'like', pattern),
             eb(eb.fn('LOWER', ['metadata']), 'like', pattern),
+            ...(displayNumberMatch !== null ? [eb('displayNumber', '=', displayNumberMatch)] : []),
           ])
         );
       }

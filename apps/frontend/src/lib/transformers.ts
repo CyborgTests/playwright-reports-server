@@ -29,7 +29,7 @@ export const filterReportHistory = (
       filteredFileTests = filteredFileTests.filter(
         (test) =>
           test.title?.toLowerCase().includes(searchLower) ||
-          test.location?.file.toLowerCase().includes(searchLower)
+          test.location?.file?.toLowerCase()?.includes(searchLower)
       );
     }
 

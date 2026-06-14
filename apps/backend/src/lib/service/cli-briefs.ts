@@ -3,6 +3,7 @@ import { defaultConfig } from '../config.js';
 import { parseFailureDetails } from '../failure-clustering/extractors/failure-details.js';
 import { extractFrameFromFailure } from '../failure-clustering/extractors/stack-trace.js';
 import { getFailureClusters } from '../failure-clustering/index.js';
+import { FAILED_OUTCOMES } from '../failure-clustering/types.js';
 import {
   analysisFeedbackDb,
   failureSummaryDb,
@@ -16,7 +17,6 @@ import { service } from './index.js';
 import { testManagementService } from './test-management/index.js';
 
 export const FAILED_TESTS_PER_REPORT_MAX = 50;
-export const FAILED_OUTCOMES = new Set(['unexpected', 'failed', 'flaky']);
 
 export const DEFAULT_HISTORY_LIMIT = 20;
 export const MAX_HISTORY_LIMIT = 50;

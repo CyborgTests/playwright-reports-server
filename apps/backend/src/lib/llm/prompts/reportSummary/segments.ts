@@ -21,7 +21,6 @@ const SAMPLE_MESSAGE_MAX_CHARS = 800;
 
 export type ReportSummaryTrendStatus = 'newlyFailed' | 'stillFailing' | 'unknown';
 export type ReportSummaryClusterKind = ClusterAnchorKind;
-export type ReportSummaryRunContext = RunContext;
 
 export interface ReportSummaryTrendContext {
   previousReport: {

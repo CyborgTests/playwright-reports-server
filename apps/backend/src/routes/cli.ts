@@ -6,6 +6,7 @@
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { parseFailureDetails } from '../lib/failure-clustering/extractors/failure-details.js';
+import { FAILED_OUTCOMES } from '../lib/failure-clustering/types.js';
 import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
 import {
   SubmitProjectSummaryRequestSchema,
@@ -24,7 +25,6 @@ import {
   buildTestBrief,
   buildTestHistory,
   DEFAULT_HISTORY_LIMIT,
-  FAILED_OUTCOMES,
   MAX_HISTORY_LIMIT,
   resolveTestIdentity,
   resolveTestRun,
