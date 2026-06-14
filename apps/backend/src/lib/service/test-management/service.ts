@@ -11,10 +11,15 @@ import { defaultConfig } from '../../config.js';
 import { llmService } from '../../llm/index.js';
 import { extractFailureEvidence } from '../../parser/failure-extraction.js';
 import type { ReportHistory } from '../../storage/types.js';
-import { llmTasksDb } from '../db/llmTasks.sqlite.js';
-import { regressionsDb, toRegressionContext } from '../db/regressions.sqlite.js';
-import type { Test, TestRun, TestWithQuarantineInfo } from '../db/tests.sqlite.js';
-import { testDb } from '../db/tests.sqlite.js';
+import {
+  llmTasksDb,
+  regressionsDb,
+  type Test,
+  type TestRun,
+  type TestWithQuarantineInfo,
+  testDb,
+  toRegressionContext,
+} from '../db/index.js';
 import { service } from '../index.js';
 import { computeErrorSignature } from './error-signature.js';
 import { classifyFailure } from './failure-classifier.js';
@@ -595,6 +600,7 @@ export class TestManagementService {
       regressedOnly?: boolean;
       regressedSince?: string;
       resolvedSince?: string;
+      slim?: boolean;
     }
   ): Promise<{ data: TestWithQuarantineInfo[]; total: number }> {
     let tierOpt:
@@ -631,11 +637,13 @@ export class TestManagementService {
 
     if (rows.length === 0) return { data: [], total };
 
-    const windowed = !!(options?.from || options?.to);
-    const runsByKey = testDb.getRunsForLanes(
-      rows.map((r) => ({ testId: r.testId, fileId: r.fileId, project: r.project })),
-      windowed ? { from: options?.from, to: options?.to } : undefined
-    );
+    const skipRuns = options?.slim === true;
+    const runsByKey = skipRuns
+      ? undefined
+      : testDb.getRunsForLanes(
+          rows.map((r) => ({ testId: r.testId, fileId: r.fileId, project: r.project })),
+          options?.from || options?.to ? { from: options?.from, to: options?.to } : undefined
+        );
 
     const data: TestWithQuarantineInfo[] = rows.map((row) => {
       const key = `${row.testId}::${row.fileId}::${row.project}`;
@@ -654,7 +662,7 @@ export class TestManagementService {
         isQuarantined,
         quarantinedAt: isQuarantined && row.latestNonSkippedAt ? row.latestNonSkippedAt : undefined,
         quarantineReason: isQuarantined && row.quarantineReason ? row.quarantineReason : undefined,
-        runs: runsByKey.get(key) ?? [],
+        runs: runsByKey?.get(key) ?? [],
       };
     });
 

@@ -48,6 +48,10 @@ export interface TestBrief {
     reportId: string;
     reportUrl?: string;
     createdAt: string;
+    attachments?: {
+      screenshotUrl?: string;
+      errorContextUrl?: string;
+    };
   } | null;
   llmAnalysis: {
     rootCause: string;
@@ -66,6 +70,21 @@ export interface TestBrief {
     otherTests: Array<{ testId: string; fileId: string; project: string; title: string }>;
     otherTestsTotal: number;
     otherTestsTruncated: boolean;
+  } | null;
+  regression: {
+    id: string;
+    regressedAtReportId: string;
+    regressedAtDisplayNumber: number | null;
+    regressedAtCreatedAt: string;
+    regressedAtCommit: string | null;
+    regressedAtCategory: string | null;
+    lastGreenReportId: string | null;
+    lastGreenDisplayNumber: number | null;
+    lastGreenCreatedAt: string | null;
+    lastGreenCommit: string | null;
+    daysOpen: number;
+    failureCount: number;
+    flakyCount: number;
   } | null;
 }
 
@@ -101,6 +120,15 @@ interface ReportBriefBase {
   clusterSummary: ReportBriefCluster[];
   unclusteredFailures: number;
   failedTestsTruncated: boolean;
+  regressions: { newHere: number; resolvedHere: number } | null;
+  runContext?: {
+    gitCommit?: { hash?: string; shortHash?: string; branch?: string; subject?: string };
+    ciBuild?: { buildHref?: string; commitHref?: string; commitHash?: string };
+    appCommit?: string;
+    appVersion?: string;
+    releaseVersion?: string;
+    deployedSha?: string;
+  };
 }
 
 /** Discriminated by `mode` — agents can statically pick the right arm. */
@@ -155,6 +183,13 @@ export type ClusterAnchor =
   | { kind: 'signature'; verb: string; signature: string }
   | { kind: 'unmatched'; testId: string; fileId: string; project: string };
 
+export interface ClusterRegressionContext {
+  membersInRegression: number;
+  totalMembers: number;
+  sharedRegressionCommit: string | null;
+  earliestRegression: string | null;
+}
+
 export interface ClusterBriefResponse {
   cluster: {
     id: string;
@@ -169,6 +204,7 @@ export interface ClusterBriefResponse {
   };
   members: TestBrief[];
   membersTruncated: boolean;
+  regressionContext: ClusterRegressionContext | null;
 }
 
 /** Mirrors the backend FailureSummaryRow shape (`failureSummary.sqlite.ts`). */

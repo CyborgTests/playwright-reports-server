@@ -1,11 +1,14 @@
 import type { TestWithQuarantineInfo } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
-import { regressionsDb, toRegressionContext } from '../lib/service/db/regressions.sqlite.js';
-import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
-import { testDb } from '../lib/service/db/tests.sqlite.js';
-import { testManagementService } from '../lib/service/test-management/index.js';
 import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
+import {
+  llmTasksDb,
+  regressionsDb,
+  testAnalysisDb,
+  testDb,
+  toRegressionContext,
+} from '../lib/service/db/index.js';
+import { testManagementService } from '../lib/service/test-management/index.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
@@ -28,6 +31,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         regressedOnly,
         regressedSince,
         resolvedSince,
+        slim,
       } = request.query as {
         project?: string;
         status?: string;
@@ -42,6 +46,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         regressedOnly?: string;
         regressedSince?: string;
         resolvedSince?: string;
+        slim?: string;
       };
 
       try {
@@ -73,11 +78,13 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
           regressedOnly: regressedOnly === 'true',
           regressedSince: regressedSince || undefined,
           resolvedSince: resolvedSince || undefined,
+          slim: slim === '1',
         };
 
         const { data, total } = await testManagementService.getTests(project, options);
 
-        if (data.length > 0) {
+        const isSlim = slim === '1';
+        if (!isSlim && data.length > 0) {
           const keys = data.map((t) => ({
             testId: t.testId,
             fileId: t.fileId,

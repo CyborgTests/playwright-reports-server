@@ -33,6 +33,7 @@ export async function runTestFind(query: string, opts: FindOpts): Promise<void> 
       search: query,
       project: opts.project,
       limit: opts.limit,
+      slim: '1',
     }
   );
   const tests = Array.isArray(data) ? data : ((data as { data?: TestSummary[] }).data ?? []);
@@ -193,6 +194,7 @@ export async function runTestFromFile(spec: string, opts: FromFileOpts): Promise
       search: basename,
       project: opts.project,
       limit: opts.limit,
+      slim: '1',
     }
   );
   const tests = Array.isArray(data) ? data : ((data as { data?: TestSummary[] }).data ?? []);
@@ -352,6 +354,7 @@ export async function runTestSearch(opts: SearchOpts): Promise<void> {
       offset: opts.offset,
       regressedOnly: opts.regressedOnly ? 'true' : undefined,
       regressedSince: opts.regressedSince,
+      slim: '1',
     }
   );
   const tests = Array.isArray(data) ? data : ((data as { data?: TestSummary[] }).data ?? []);
