@@ -31,7 +31,7 @@ import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
 import { service } from '../lib/service/index.js';
 import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
-import { testManagementService } from '../lib/service/testManagement.js';
+import { testManagementService } from '../lib/service/test-management/index.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
 

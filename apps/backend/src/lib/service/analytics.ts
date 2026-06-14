@@ -13,7 +13,7 @@ import { regressionsDb } from './db/regressions.sqlite.js';
 import { reportDb } from './db/reports.sqlite.js';
 import { testDb } from './db/tests.sqlite.js';
 import { service } from './index.js';
-import { testManagementService } from './testManagement.js';
+import { testManagementService } from './test-management/index.js';
 
 const HEALTH_GRID_UNBOUNDED_CAP = 200;
 

@@ -29,7 +29,7 @@ import { reportDb, reportResultsDb, resultDb } from './db/index.js';
 import { siteConfigDb } from './db/siteConfig.sqlite.js';
 import { lifecycle } from './lifecycle.js';
 import { dispatchReportUploaded } from './notifications/dispatcher.js';
-import { testManagementService } from './testManagement.js';
+import { testManagementService } from './test-management/index.js';
 
 class Service {
   private static instance: Service | null = null;

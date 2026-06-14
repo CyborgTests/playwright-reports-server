@@ -3,7 +3,7 @@ import { type ExpressionBuilder, type SelectQueryBuilder, sql } from 'kysely';
 import { defaultProjectName } from '../../constants.js';
 import type { ReadReportsInput, ReadReportsOutput, ReportHistory } from '../../storage/types.js';
 import { withError } from '../../withError.js';
-import { testManagementService } from '../testManagement.js';
+import { testManagementService } from '../test-management/index.js';
 import { getDatabase } from './db.js';
 import { type Database, getKysely, type ReportsRow } from './kysely.js';
 import { singletonOf } from './singleton.js';

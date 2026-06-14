@@ -7,7 +7,7 @@ import type { SyncProgress } from '@playwright-reports/shared';
 import { serveReportRoute } from '../constants.js';
 import { githubSyncDb } from '../service/db/githubSync.sqlite.js';
 import { reportDb } from '../service/db/index.js';
-import { testManagementService } from '../service/testManagement.js';
+import { testManagementService } from '../service/test-management/index.js';
 import { storage } from '../storage/index.js';
 import { withError } from '../withError.js';
 import type { GithubSyncConfigResolved } from './configService.js';

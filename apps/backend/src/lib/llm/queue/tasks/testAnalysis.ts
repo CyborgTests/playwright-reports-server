@@ -112,7 +112,7 @@ async function resolveTestFailureContext(
   const isNewFailure = !previousAnalysis;
   const feedback = analysisFeedbackDb.getByTest(testId, fileId, project);
 
-  const { detectFailureCategory } = await import('../../../service/testManagement.js');
+  const { detectFailureCategory } = await import('../../../service/test-management/index.js');
   const heuristicCategory = detectFailureCategory(details.message);
 
   return {
@@ -411,7 +411,7 @@ export async function processTestAnalysis(task: LlmTaskRow): Promise<void> {
     return;
   }
 
-  const { isRootCauseCategory } = await import('../../../service/testManagement.js');
+  const { isRootCauseCategory } = await import('../../../service/test-management/index.js');
 
   let category: string = resolved.heuristicCategory;
   let categorySource: 'heuristic' | 'llm' = 'heuristic';

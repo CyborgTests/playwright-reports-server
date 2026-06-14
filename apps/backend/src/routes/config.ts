@@ -13,7 +13,7 @@ import { CronService, cronService } from '../lib/service/cron.js';
 import { getDatabaseStats } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { TASK_TEMPERATURE_DEFAULTS } from '../lib/llm/queue/index.js';
-import { testManagementService } from '../lib/service/testManagement.js';
+import { testManagementService } from '../lib/service/test-management/index.js';
 import { DATA_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';
 import { withError } from '../lib/withError.js';

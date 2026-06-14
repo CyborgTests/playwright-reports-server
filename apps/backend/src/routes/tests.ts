@@ -4,7 +4,7 @@ import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
 import { regressionsDb, toRegressionContext } from '../lib/service/db/regressions.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
-import { testManagementService } from '../lib/service/testManagement.js';
+import { testManagementService } from '../lib/service/test-management/index.js';
 import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';

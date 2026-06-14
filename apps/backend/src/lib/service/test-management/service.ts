@@ -6,60 +6,19 @@ import type {
   TestFailureGroup,
   TestManagementConfig,
 } from '@playwright-reports/shared';
-import {
-  FAILURE_CATEGORIES,
-  type FailureCategory,
-  FLAKINESS_THRESHOLDS,
-  ReportTestOutcomeEnum,
-  ROOT_CAUSE_CATEGORIES,
-  type RootCauseCategory,
-} from '@playwright-reports/shared';
-import { defaultConfig } from '../config.js';
-import { llmService } from '../llm/index.js';
-import { extractFailureEvidence } from '../parser/failure-extraction.js';
-import type { ReportHistory } from '../storage/types.js';
-import { llmTasksDb } from './db/llmTasks.sqlite.js';
-import { regressionsDb, toRegressionContext } from './db/regressions.sqlite.js';
-import type { Test, TestRun, TestWithQuarantineInfo } from './db/tests.sqlite.js';
-import { testDb } from './db/tests.sqlite.js';
-import { service } from './index.js';
-
-/**
- * Compute flakiness score (% of runs that triggered an instability event) from an
- * oldest-first sequence of run outcomes. Mirrors the algorithm in calculateFlakinessSync.
- */
-export function computeFlakinessFromOutcomes(
-  runs: Array<{ outcome: ReportTestOutcomeEnum | string }>,
-  minRuns = 1
-): number {
-  if (runs.length < minRuns || runs.length <= 1) return 0;
-
-  const isPass = (outcome: string): boolean =>
-    outcome === ReportTestOutcomeEnum.Expected || outcome === 'passed';
-
-  let events = 0;
-  let inFailStreak = false;
-  let seenPass = false;
-
-  for (const { outcome } of runs) {
-    if (outcome === ReportTestOutcomeEnum.Flaky) {
-      events++;
-      seenPass = true;
-      inFailStreak = false;
-      continue;
-    }
-
-    if (isPass(outcome)) {
-      seenPass = true;
-      inFailStreak = false;
-    } else if (seenPass && !inFailStreak) {
-      events++;
-      inFailStreak = true;
-    }
-  }
-
-  return (events / runs.length) * 100;
-}
+import { FLAKINESS_THRESHOLDS, ReportTestOutcomeEnum } from '@playwright-reports/shared';
+import { defaultConfig } from '../../config.js';
+import { llmService } from '../../llm/index.js';
+import { extractFailureEvidence } from '../../parser/failure-extraction.js';
+import type { ReportHistory } from '../../storage/types.js';
+import { llmTasksDb } from '../db/llmTasks.sqlite.js';
+import { regressionsDb, toRegressionContext } from '../db/regressions.sqlite.js';
+import type { Test, TestRun, TestWithQuarantineInfo } from '../db/tests.sqlite.js';
+import { testDb } from '../db/tests.sqlite.js';
+import { service } from '../index.js';
+import { computeErrorSignature } from './error-signature.js';
+import { classifyFailure } from './failure-classifier.js';
+import { computeFlakinessFromOutcomes } from './flakiness.js';
 
 function percentile(sortedAsc: number[], p: number): number {
   if (sortedAsc.length === 0) return 0;
@@ -219,179 +178,6 @@ function buildCrossProjectOccurrences(
   return occurrences.sort((a, b) => (b.flakinessScore ?? 0) - (a.flakinessScore ?? 0));
 }
 
-const KNOWN_CATEGORIES = new Set<string>(FAILURE_CATEGORIES);
-const KNOWN_ROOT_CAUSE_CATEGORIES = new Set<string>(ROOT_CAUSE_CATEGORIES);
-
-export function isKnownCategory(value: string | undefined | null): value is FailureCategory {
-  return !!value && KNOWN_CATEGORIES.has(value);
-}
-
-export function isRootCauseCategory(value: string | undefined | null): value is RootCauseCategory {
-  return !!value && KNOWN_ROOT_CAUSE_CATEGORIES.has(value);
-}
-
-/**
- * Detect failure category from a Playwright error message via anchored, ordered patterns.
- * Most-specific shapes match first; ambiguous inputs fall through to `unknown` rather than
- * being mis-labelled. Used as the baseline; LLM and signature-consensus layers may override.
- */
-export function detectFailureCategory(errorMessage: string): FailureCategory {
-  if (!errorMessage) return 'unknown';
-  const msg = errorMessage.trim();
-  const lower = msg.toLowerCase();
-
-  // Extract leading error class name when Playwright prefixes the message.
-  // e.g. "TimeoutError: locator.click: Timeout 30000ms exceeded."
-  const errorNameMatch = msg.match(/^([A-Z][A-Za-z]*Error)\b/);
-  const errorName = errorNameMatch?.[1];
-
-  // 1. Browser/page lifecycle issues — check before network so "browser closed" doesn't slip into network.
-  if (
-    /Target page, context or browser has been closed/.test(msg) ||
-    /Page (?:crashed|closed)/.test(msg) ||
-    /browser has (?:disconnected|been closed)/i.test(msg) ||
-    /Execution context (?:was destroyed|is unavailable)/.test(msg)
-  ) {
-    return 'browser_crash';
-  }
-
-  // 2. Snapshot / visual-regression — explicit Playwright phrasing.
-  if (
-    /Screenshot comparison failed/.test(msg) ||
-    /toHaveScreenshot|toMatchSnapshot/.test(msg) ||
-    /pixels?\s+\(?ratio/.test(msg)
-  ) {
-    return 'snapshot_mismatch';
-  }
-
-  // 3. Network transport — explicit `net::ERR_*` or low-level socket errors.
-  if (
-    /net::ERR_[A-Z_]+/.test(msg) ||
-    /\b(?:ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN)\b/.test(msg)
-  ) {
-    return 'network_error';
-  }
-
-  // 4. Setup/teardown — error originates inside a hook or fixture.
-  if (
-    /\b(?:beforeAll|afterAll|beforeEach|afterEach)\b/.test(msg) ||
-    /Error in fixture\b/.test(msg) ||
-    /Worker process (?:exited|crashed)/.test(msg)
-  ) {
-    return 'setup_teardown';
-  }
-
-  // 5. Assertion-shaped failures — distinguish "element didn't appear" from "value mismatch".
-  //    Playwright's web-first assertions emit `expect(locator).toBeVisible()` etc.; if the
-  //    failure also mentions a timeout, the locator never resolved — bucket as element_not_visible.
-  const isExpect = /\bexpect\s*\(/.test(msg);
-  if (isExpect) {
-    if (
-      /\.(?:toBeVisible|toBeAttached|toBeEnabled|toBeFocused|toBeInViewport|toContainText|toHaveText|toHaveValue|toHaveCount|toHaveAttribute|toBeChecked)\b/.test(
-        msg
-      ) &&
-      /Timed? out|Timeout/i.test(msg)
-    ) {
-      return 'element_not_visible';
-    }
-    if (
-      /\.(?:toEqual|toBe|toMatch|toContain|toStrictEqual|toHaveLength|toBeTruthy|toBeFalsy|toBeNull|toBeDefined|toBeGreaterThan|toBeLessThan|toBeCloseTo)\b/.test(
-        msg
-      )
-    ) {
-      return 'assertion_error';
-    }
-  }
-
-  // 6. Locator failures — strict-mode violations or "resolved to 0 elements".
-  if (
-    /resolved to 0 elements/.test(msg) ||
-    /strict mode violation/i.test(msg) ||
-    /locator\.\w+: .*not found/i.test(msg) ||
-    /No node found for selector/.test(msg)
-  ) {
-    return 'element_not_found';
-  }
-
-  // 7. Timeouts — the typed TimeoutError class, or test-level timeout messages.
-  if (
-    errorName === 'TimeoutError' ||
-    /^Test timeout of \d+ms exceeded/.test(msg) ||
-    /\bTimeout \d+ms exceeded\b/.test(msg) ||
-    /exceeded the maximum/i.test(lower)
-  ) {
-    return 'timeout';
-  }
-
-  // 8. Navigation — page.goto or frame navigation, when not already classified as network.
-  if (
-    /page\.(?:goto|reload|goBack|goForward):/.test(msg) ||
-    /Navigation (?:failed|timeout|to .+ was interrupted)/i.test(msg) ||
-    /frame (?:was )?detached/i.test(msg)
-  ) {
-    return 'navigation_error';
-  }
-
-  // 9. HTTP API failures — explicit 4xx/5xx mention, narrow to avoid false positives.
-  const statusCodeMatch = msg.match(/\bstatus(?:\s+code)?[:\s]+(\d{3})\b/i);
-  if (statusCodeMatch) {
-    const status = Number(statusCodeMatch[1]);
-    if (status === 401 || status === 403) return 'authentication_error';
-    if (status >= 400) return 'api_error';
-  }
-  if (/\bHTTP\s+(?:4|5)\d{2}\b/.test(msg)) {
-    return 'api_error';
-  }
-
-  // 10. Authentication keywords — only when paired with explicit auth/identity context.
-  if (
-    /\b(?:Unauthorized|Forbidden)\b/.test(msg) ||
-    /\b401\b|\b403\b/.test(msg) ||
-    /(?:authentication|login|credentials) (?:failed|required|invalid)/i.test(msg)
-  ) {
-    return 'authentication_error';
-  }
-
-  // 11. JS runtime errors thrown inside the page under test.
-  if (
-    /^(?:ReferenceError|SyntaxError|TypeError):/.test(msg) ||
-    /Uncaught \(in promise\)/.test(msg) ||
-    /page\.evaluate(?:Handle)?:/.test(msg)
-  ) {
-    return 'javascript_error';
-  }
-
-  return 'unknown';
-}
-
-const CONSENSUS_MIN_OBSERVATIONS = 3;
-const CONSENSUS_MIN_SHARE = 0.7;
-
-/**
- * Classify a failure with provenance. Order:
- *   1. If `errorSignature` has a strong historical consensus → use it (`'consensus'`).
- *   2. Otherwise → run the heuristic (`'heuristic'`).
- *
- * The LLM layer may override afterwards (see llmAnalysisQueue).
- */
-export function classifyFailure(
-  errorMessage: string,
-  errorSignature: string | null
-): { category: FailureCategory; source: 'heuristic' | 'consensus' } {
-  if (errorSignature) {
-    const consensus = testDb.getCategoryConsensus(errorSignature);
-    if (
-      consensus &&
-      isKnownCategory(consensus.category) &&
-      consensus.total >= CONSENSUS_MIN_OBSERVATIONS &&
-      consensus.share >= CONSENSUS_MIN_SHARE
-    ) {
-      return { category: consensus.category, source: 'consensus' };
-    }
-  }
-  return { category: detectFailureCategory(errorMessage), source: 'heuristic' };
-}
-
 export class TestManagementService {
   private config: TestManagementConfig | null = null;
 
@@ -429,6 +215,7 @@ export class TestManagementService {
   public invalidateConfigCache(): void {
     this.config = null;
   }
+
   async processReport(report: ReportHistory): Promise<void> {
     console.log(
       `[testManagement] Processing report ${report.reportID} for project ${report.project}`
@@ -437,15 +224,15 @@ export class TestManagementService {
 
     const config = await this.getConfig();
 
-    // Pre-extract failure details for every failed attempt (async — may read
-    // trace ZIPs and error-context files from disk). Done OUTSIDE the SQL
-    // transaction so the transaction stays sync and short.
     type PreparedFailure = {
       details: string;
       message: string;
       signature: string;
       signatureGlobal: string;
-      classification: { category: FailureCategory; source: 'heuristic' | 'consensus' };
+      classification: {
+        category: import('@playwright-reports/shared').FailureCategory;
+        source: 'heuristic' | 'consensus';
+      };
     };
     const preparedByKey = new Map<string, PreparedFailure>();
 
@@ -484,8 +271,8 @@ export class TestManagementService {
         } catch {
           /* ignore */
         }
-        const signature = this.computeErrorSignature(message, job.filePath);
-        const signatureGlobal = this.computeErrorSignature(message);
+        const signature = computeErrorSignature(message, job.filePath);
+        const signatureGlobal = computeErrorSignature(message);
         const classification = classifyFailure(message, signature);
         preparedByKey.set(job.key, {
           details,
@@ -500,8 +287,9 @@ export class TestManagementService {
     const reportMetadata = (report as { metadata?: { gitCommit?: { hash?: string } } }).metadata;
     const currentReportCommit: string | null = reportMetadata?.gitCommit?.hash ?? null;
 
+    const files = report.files;
     const transaction = () => {
-      for (const file of report.files!) {
+      for (const file of files) {
         if (!file.tests) continue;
 
         for (const test of file.tests) {
@@ -555,8 +343,6 @@ export class TestManagementService {
           };
 
           if (
-            //TODO: test automatic quarantine feature
-            // considering case when test is removed from quarantine but score is still high
             config.autoQuarantineEnabled &&
             testRun.flakinessScore >=
               (config.quarantineThresholdPercentage ??
@@ -586,15 +372,6 @@ export class TestManagementService {
       );
     }
 
-    // Persist the cached project-level LLM summary across new-report ingest.
-    // Staleness is now surfaced at fetch time by the project-summary route
-    // (compares `lastReportAt` against the current newest report and emits
-    // `isStale` / `isTooStale` flags). Deleting here would defeat that signal —
-    // the UI would have no cached verdict to attach the "Stale" badge to.
-
-    // After the transaction, queue LLM analysis for failed tests — but only if the user
-    // opted in via Settings → LLM Configuration → "Auto-analyze new reports". Default off
-    // so deployments don't burn LLM tokens unprompted.
     if (llmService.isConfigured()) {
       const cfg = await service.getConfig();
       if (cfg.llm?.autoAnalyzeNewReports) {
@@ -625,7 +402,6 @@ export class TestManagementService {
         });
       }
 
-      // Queue report summary — low priority so test analyses are processed first
       llmTasksDb.createTask('report_summary', {
         reportId,
         project,
@@ -661,18 +437,8 @@ export class TestManagementService {
     const result = test.results?.[attempt - 1];
     if (!result || result.status === 'passed') return null;
 
-    // Pull the full evidence payload: canonical error message + stack, page
-    // snapshot from the error-context attachment, and sanitized console /
-    // network / action events from the trace ZIP. Persisted alongside the
-    // legacy message/stack fields so the LLM queue can render dedicated
-    // segments without re-parsing the trace.
     const evidence = await extractFailureEvidence(reportId, test, result);
 
-    // Build the full retry timeline so the LLM can reason about flaky-vs-persistent
-    // directly. Single-line message summaries keep this compact even with many retries.
-    // Merged-blob `report.json` often leaves `result.status` empty on failed
-    // results — fall back to the test-level outcome so the timeline doesn't
-    // render `(unknown)` for every attempt.
     const attempts = (test.results ?? []).map((r, idx) => {
       const summary =
         r.status === 'passed'
@@ -686,9 +452,6 @@ export class TestManagementService {
       };
     });
 
-    // Persist message + stackTrace as flat fields for backward compatibility
-    // with the heuristic classifier (which only reads `message`). The full
-    // evidence payload is nested under `evidence` for the LLM prompt builder.
     const details = {
       message: evidence.errorMessage,
       stackTrace: evidence.stackTrace,
@@ -705,25 +468,6 @@ export class TestManagementService {
     return JSON.stringify(details);
   }
 
-  public computeErrorSignature(message: string, filePath?: string): string {
-    // Strip numbers, quoted strings, and excess whitespace so the same root failure groups together.
-    const normalized = message
-      .replace(/\d+/g, 'N')
-      .replace(/['"][^'"]*['"]/g, 'S')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .substring(0, 500);
-
-    let hash = 0;
-    const input = filePath !== undefined ? `${filePath}:${normalized}` : normalized;
-    for (let i = 0; i < input.length; i++) {
-      const char = input.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash |= 0;
-    }
-    return hash.toString(36);
-  }
-
   private calculateFlakinessSync(
     testId: string,
     fileId: string,
@@ -736,7 +480,7 @@ export class TestManagementService {
     const minRuns = config.flakinessMinRuns ?? defaultConfig.testManagement?.flakinessMinRuns;
 
     const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - windowDays!);
+    cutoffDate.setDate(cutoffDate.getDate() - (windowDays ?? 30));
     let effectiveCutoff = cutoffDate.toISOString();
 
     const test = testDb.getTest(testId, fileId, project);
@@ -749,7 +493,6 @@ export class TestManagementService {
       }
     }
 
-    // Returned in DESC order — reverse to get oldest-first for transition counting
     const recentRuns = testDb
       .getRecentTestRunsForFlakiness(testId, fileId, project, effectiveCutoff)
       .reverse();
@@ -959,9 +702,6 @@ export class TestManagementService {
   }
 
   async getTestDetail(testId: string, fileId: string, project: string): Promise<TestDetail | null> {
-    // Aggregate links (`?project=all`) and stale/hand-typed URLs don't carry
-    // a real project — resolve to the canonical (most-recent) project for
-    // this test.
     let resolvedProject = project;
     if (!project || project === 'all') {
       const canonical = testDb.findTestByIds(testId, fileId);

@@ -23,7 +23,7 @@ import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
 import { service } from '../lib/service/index.js';
 import { compareReports } from '../lib/service/reportCompare.js';
-import { testManagementService } from '../lib/service/testManagement.js';
+import { testManagementService } from '../lib/service/test-management/index.js';
 import { storage } from '../lib/storage/index.js';
 import { parseFromRequest } from '../lib/storage/pagination.js';
 import { ValidationError, validateSchema } from '../lib/validation/index.js';
@@ -378,7 +378,7 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         let skipped = 0;
         let project: string | undefined;
 
-        const { detectFailureCategory } = await import('../lib/service/testManagement.js');
+        const { detectFailureCategory } = await import('../lib/service/test-management/index.js');
 
         const findReuseSource = (
           testId: string,
