@@ -40,9 +40,13 @@ await build({
   logLevel: 'info',
 });
 
-// html-injector reads llmButton relative to import.meta.url. After
-// bundling, that URL resolves to dist/llmButton.js — copy the file there.
+// html-injector reads inject.js/inject.css relative to import.meta.url.
+// After bundling, that URL resolves to dist/ — copy both files there.
 await copyFile(
-  resolve(backendRoot, 'src/lib/utils/llmButton.js'),
-  resolve(outdir, 'llmButton.js')
+  resolve(backendRoot, 'src/lib/report-injection/inject.js'),
+  resolve(outdir, 'inject.js')
+);
+await copyFile(
+  resolve(backendRoot, 'src/lib/report-injection/inject.css'),
+  resolve(outdir, 'inject.css')
 );
