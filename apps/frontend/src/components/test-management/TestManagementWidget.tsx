@@ -413,7 +413,7 @@ export default function TestManagementWidget({
   const handleDeleteSubmit = () => {
     if (!deleteTest) return;
     deleteTestMutation({
-      path: `/api/test/${deleteTest.testId}?project=${deleteTest.project}`,
+      path: `/api/test/${deleteTest.testId}?project=${encodeURIComponent(deleteTest.project)}`,
     });
   };
 
@@ -433,7 +433,7 @@ export default function TestManagementWidget({
         isQuarantined,
         reason: quarantineReason,
       },
-      path: `/api/test/${quarantineTest.testId}?project=${quarantineTest.project}`,
+      path: `/api/test/${quarantineTest.testId}?project=${encodeURIComponent(quarantineTest.project)}`,
     });
   };
 

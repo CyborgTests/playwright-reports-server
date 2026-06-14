@@ -28,8 +28,8 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { useAuth } from '@/hooks/useAuth';
 import { useLlmDefaultPrompts } from '@/hooks/useLlmTasks';
+import { authHeaders } from '@/lib/auth';
 
 interface LLMConfigurationProps {
   config: ServerConfig;
@@ -53,7 +53,6 @@ export default function LLMConfiguration({
   onUpdateTempConfig,
 }: Readonly<LLMConfigurationProps>) {
   const navigate = useNavigate();
-  const session = useAuth();
   const providers = [
     { key: 'openai', label: 'OpenAI' },
     { key: 'anthropic', label: 'Anthropic' },
@@ -86,10 +85,7 @@ export default function LLMConfiguration({
   const handleRefreshModels = async () => {
     setRefreshingModels(true);
     try {
-      const jwt = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;
-      const headers: HeadersInit = {};
-      if (jwt) headers.Authorization = `Bearer ${jwt}`;
-      const res = await fetch('/api/llm/available-models?refresh=1', { headers });
+      const res = await fetch('/api/llm/available-models?refresh=1', { headers: authHeaders() });
       const data = await res.json();
       if (data?.success && Array.isArray(data.models)) {
         setAvailableModels(data.models);
@@ -128,7 +124,7 @@ export default function LLMConfiguration({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: session.data?.user?.apiToken || '',
+          ...authHeaders(),
         },
         body: JSON.stringify(body),
       });

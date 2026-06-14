@@ -14,6 +14,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useActiveSection } from '@/hooks/useActiveSection';
 import { useAuth } from '@/hooks/useAuth';
 import { useConfig } from '@/hooks/useConfig';
+import { authHeaders } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
 const SECTION_NAV: Array<{ id: string; label: string }> = [
@@ -252,9 +253,7 @@ export default function SettingsPage() {
       const response = await fetch('/api/config', {
         method: 'PATCH',
         body: formData,
-        headers: {
-          Authorization: session.data?.user?.apiToken || '',
-        },
+        headers: authHeaders(),
       });
 
       if (!response.ok) {
