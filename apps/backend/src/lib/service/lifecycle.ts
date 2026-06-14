@@ -49,11 +49,11 @@ export class Lifecycle {
       // Must happen after any Litestream restore (which swaps the DB file) and before the first query.
       await migrateToLatest(getKysely());
 
+      await Promise.all([configCache.init(), reportDb.init(), resultDb.init()]);
       if (!restored) {
-        await Promise.all([configCache.init(), reportDb.init(), resultDb.init()]);
         await reportDb.populateTestRuns();
-        console.log('[lifecycle] Databases initialized successfully');
       }
+      console.log('[lifecycle] Databases initialized successfully');
 
       llmService.applyConfig(configCache.config?.llm as Partial<LLMProviderConfig> | undefined);
 
