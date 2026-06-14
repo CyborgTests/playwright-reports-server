@@ -1,7 +1,7 @@
 'use client';
 
 import type { RunHealthMetric } from '@playwright-reports/shared';
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -185,7 +185,6 @@ function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
 
   const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
-  const hasAutoScrolledRef = useRef(false);
 
   const scrollContainerRef = useCallback((node: HTMLDivElement | null) => {
     setScrollContainer(node);
@@ -207,11 +206,9 @@ function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
   const chartWidth = Math.max(containerWidth, chartData.length * BAR_PX);
 
   useLayoutEffect(() => {
-    if (!scrollContainer || hasAutoScrolledRef.current) return;
-    if (isLoading || chartData.length === 0) return;
+    if (!scrollContainer || isLoading || chartData.length === 0) return;
     scrollContainer.scrollLeft = scrollContainer.scrollWidth;
-    hasAutoScrolledRef.current = true;
-  }, [scrollContainer, chartData.length, isLoading]);
+  }, [scrollContainer, chartData, isLoading]);
 
   return (
     <Card>
