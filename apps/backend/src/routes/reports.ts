@@ -25,8 +25,10 @@ import {
 } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { compareReports } from '../lib/service/reportCompare.js';
-import { detectFailureCategory } from '../lib/service/test-management/index.js';
-import { testManagementService } from '../lib/service/test-management/index.js';
+import {
+  detectFailureCategory,
+  testManagementService,
+} from '../lib/service/test-management/index.js';
 import { storage } from '../lib/storage/index.js';
 import { parseFromRequest } from '../lib/storage/pagination.js';
 import { ValidationError, validateSchema } from '../lib/validation/index.js';

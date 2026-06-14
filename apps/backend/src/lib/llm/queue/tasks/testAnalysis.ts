@@ -10,15 +10,15 @@ import {
   toRegressionContext,
 } from '../../../service/db/index.js';
 import { service } from '../../../service/index.js';
+import {
+  detectFailureCategory,
+  isRootCauseCategory,
+} from '../../../service/test-management/index.js';
 import { llmService } from '../../index.js';
 import type { FailureDetailsForPrompt } from '../../prompts/index.js';
 import { buildTestFailureSegments, renderSegmentsForDebug } from '../../prompts/index.js';
 import { extractTestAnalysisFromMarkdown } from '../../testAnalysis.js';
 import type { SegmentedPrompt } from '../../types/index.js';
-import {
-  detectFailureCategory,
-  isRootCauseCategory,
-} from '../../../service/test-management/index.js';
 import {
   attachScreenshotIfAny,
   fitToContextWindow,

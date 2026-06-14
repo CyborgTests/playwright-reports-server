@@ -28,7 +28,7 @@ export function resolveSystemPrompt(
  * - per-call `<task>` request
  * - stable contract (output format, rubrics, data-format)
  * Emitting the contract as its own segment lets it join the cacheable prefix
- * instead of being re-tokenized behind the varying header on every request. 
+ * instead of being re-tokenized behind the varying header on every request.
  * Falls back to treating the whole string as the request when no `</task>`.
  */
 export function splitTaskInstructions(rendered: string): { request: string; contract: string } {
