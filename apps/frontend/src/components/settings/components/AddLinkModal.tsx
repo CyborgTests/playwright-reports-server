@@ -1,7 +1,7 @@
 'use client';
 
 import type { HeaderLink } from '@playwright-reports/shared';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getPresetIcon, HEADER_LINK_ICON_CATALOG } from '@/components/header-link-icons';
 import { LinkIcon } from '@/components/icons';
 import { Button } from '@/components/ui/button';
@@ -52,6 +52,16 @@ export default function AddLinkModal({ isOpen, onAddLink, onCancel }: Readonly<A
     }
   }, [isOpen]);
 
+  const iconPreviewUrl = useMemo(
+    () => (iconFile ? URL.createObjectURL(iconFile) : null),
+    [iconFile]
+  );
+  useEffect(() => {
+    return () => {
+      if (iconPreviewUrl) URL.revokeObjectURL(iconPreviewUrl);
+    };
+  }, [iconPreviewUrl]);
+
   const isCustom = iconChoice === CUSTOM_VALUE;
   const isNone = iconChoice === NONE_VALUE;
   const preset = !isCustom && !isNone ? getPresetIcon(iconChoice) : undefined;
@@ -98,10 +108,10 @@ export default function AddLinkModal({ isOpen, onAddLink, onCancel }: Readonly<A
             <Label htmlFor="link-icon">Icon</Label>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center text-muted-foreground">
-                {isCustom && iconFile ? (
+                {isCustom && iconPreviewUrl ? (
                   <img
                     alt="Icon preview"
-                    src={URL.createObjectURL(iconFile)}
+                    src={iconPreviewUrl}
                     className="h-10 w-10 object-contain"
                   />
                 ) : isNone ? (

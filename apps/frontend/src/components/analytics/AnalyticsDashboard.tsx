@@ -76,7 +76,6 @@ export default function AnalyticsDashboard() {
   const {
     data: analyticsData,
     error,
-    isFetching,
     isPending,
   } = useAnalyticsData(project, dateRange, failedOnly);
 
@@ -201,7 +200,7 @@ export default function AnalyticsDashboard() {
     if (error) toast.error(error.message);
   }, [error]);
 
-  const isLoading = isPending || isFetching;
+  const isLoading = isPending;
 
   if (!isLoading && !analyticsData) {
     return (

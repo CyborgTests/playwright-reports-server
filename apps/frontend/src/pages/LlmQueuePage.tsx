@@ -48,8 +48,8 @@ export default function LlmQueuePage() {
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const { data: stats, refetch: refetchStats } = useLlmTaskStats();
-  const { data: tasksData, refetch: refetchTasks } = useLlmTasks({
+  const { data: stats } = useLlmTaskStats();
+  const { data: tasksData } = useLlmTasks({
     status: statusFilter === 'all' ? undefined : statusFilter,
     type: typeFilter === 'all' ? undefined : typeFilter,
     model: modelFilter === 'all' ? undefined : modelFilter,
@@ -61,14 +61,6 @@ export default function LlmQueuePage() {
   const tasks = tasksData?.data ?? [];
   const total = tasksData?.total ?? 0;
   const totalPages = Math.ceil(total / PAGE_SIZE);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      refetchStats();
-      refetchTasks();
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [refetchStats, refetchTasks]);
 
   const invalidateLlmQueries = useCallback(() => {
     invalidateCache(queryClient, { predicate: '/api/llm' });
@@ -116,13 +108,15 @@ export default function LlmQueuePage() {
       if (jwtToken) {
         headers.Authorization = `Bearer ${jwtToken}`;
       }
-      for (const id of ids) {
-        await fetch(`/api/llm/tasks/${id}/cancel`, {
-          method: 'PATCH',
-          headers,
-        });
+      const results = await Promise.allSettled(
+        ids.map((id) => fetch(`/api/llm/tasks/${id}/cancel`, { method: 'PATCH', headers }))
+      );
+      const failed = results.filter((r) => r.status === 'rejected' || !r.value.ok).length;
+      if (failed > 0) {
+        toast.error(`Failed to cancel ${failed} of ${ids.length} task(s)`);
+      } else {
+        toast.success('Selected tasks cancelled');
       }
-      toast.success('Selected tasks cancelled');
       setSelectedIds(new Set());
       invalidateLlmQueries();
     } catch {

@@ -8,6 +8,7 @@ export type { LlmTask, LlmTaskStats };
 export function useLlmTaskStats() {
   return useQuery<{ success: boolean } & LlmTaskStats>('/api/llm/tasks/stats', {
     staleTime: 5000,
+    refetchInterval: 5000,
   });
 }
 
@@ -125,6 +126,7 @@ export function useLlmTasks(filters: {
         filters.offset,
       ],
       staleTime: 5000,
+      refetchInterval: 5000,
       placeholderData: keepPreviousData,
     }
   );
