@@ -81,6 +81,43 @@ export class ResultDatabase {
     return rows.map(this.rowToResult);
   }
 
+  public getDistinctProjects(): string[] {
+    const compiled = this.k
+      .selectFrom('results')
+      .select('project')
+      .distinct()
+      .where('project', '!=', '')
+      .orderBy('project', 'asc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      project: string;
+    }>;
+    return rows.map((r) => r.project);
+  }
+
+  public getDistinctTags(project?: string): string[] {
+    let q = this.k.selectFrom('results').select('metadata');
+    if (project) {
+      q = q.where('project', '=', project);
+    }
+    const compiled = q.compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      metadata: string;
+    }>;
+
+    const allTags = new Set<string>();
+    for (const row of rows) {
+      const parsed = JSON.parse(row.metadata || '{}') as Record<string, unknown>;
+      for (const [key, value] of Object.entries(parsed)) {
+        if (value === undefined || value === null) continue;
+        if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')
+          continue;
+        allTags.add(`${key}: ${value}`);
+      }
+    }
+    return Array.from(allTags).sort();
+  }
+
   public getByID(resultID: string): Result | undefined {
     const compiled = this.k
       .selectFrom('results')

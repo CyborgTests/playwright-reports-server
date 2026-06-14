@@ -1,14 +1,9 @@
-import { createWriteStream } from 'node:fs';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { PassThrough, Readable } from 'node:stream';
-import { RESERVED_REPORT_FIELDS, type SiteWhiteLabelConfig } from '@playwright-reports/shared';
-import { env } from '../../config/env.js';
+import type { PassThrough } from 'node:stream';
+import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import { serveReportRoute } from '../constants.js';
 import { invalidateFailureClustersCache } from '../failure-clustering/index.js';
 import { isValidPlaywrightVersion } from '../pw-cache.js';
-import { DEFAULT_STREAM_CHUNK_SIZE, TMP_FOLDER } from '../storage/constants.js';
-import { bytesToString, getUniqueProjectsList } from '../storage/format.js';
+import { bytesToString } from '../storage/format.js';
 import {
   type ReadReportsInput,
   type ReadResultsInput,
@@ -20,8 +15,7 @@ import {
   type ServerDataInfo,
   storage,
 } from '../storage/index.js';
-import type { S3 } from '../storage/s3.js';
-import { CoordinatedTee } from '../storage/streamUtils.js';
+import { getPresignedUploadUrl, uploadResult } from '../storage/resultUpload.js';
 import type { Report } from '../storage/types.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
@@ -207,29 +201,11 @@ class Service {
   }
 
   public async getReportsProjects(): Promise<string[]> {
-    const { reports } = await this.getReports();
-    const projects = getUniqueProjectsList(reports);
-
-    return projects;
+    return reportDb.getDistinctProjects();
   }
 
   public async getReportsTags(project?: string): Promise<string[]> {
-    const { reports } = await this.getReports(project ? { project } : undefined);
-
-    const allTags = new Set<string>();
-
-    reports.forEach((report) => {
-      Object.entries(report as unknown as Record<string, unknown>).forEach(([key, value]) => {
-        if (RESERVED_REPORT_FIELDS.has(key)) return;
-        if (value === undefined || value === null) return;
-        if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
-          return;
-        }
-        allTags.add(`${key}: ${value}`);
-      });
-    });
-
-    return Array.from(allTags).sort();
+    return reportDb.getDistinctTags(project);
   }
 
   public async getResults(input?: ReadResultsInput): Promise<ReadResultsOutput> {
@@ -247,28 +223,8 @@ class Service {
     resultDb.onDeleted(resultIDs);
   }
 
-  public async getPresignedUrl(fileName: string): Promise<string | undefined> {
-    if (env.DATA_STORAGE !== 's3') {
-      return '';
-    }
-
-    const { result: presignedUrl, error } = await withError(
-      (storage as S3).generatePresignedUploadUrl(fileName)
-    );
-
-    if (error) {
-      console.error(`[service] getPresignedUrl | error: ${error.message}`);
-
-      return '';
-    }
-
-    if (!presignedUrl) {
-      console.error(`[service] getPresignedUrl | presigned URL is null or undefined`);
-
-      return '';
-    }
-
-    return presignedUrl;
+  public async getPresignedUrl(fileName: string): Promise<string> {
+    return getPresignedUploadUrl(fileName);
   }
 
   public async saveResult(
@@ -279,92 +235,8 @@ class Service {
       contentLength?: string;
       shouldStoreLocalCopy?: boolean;
     }
-  ) {
-    // Forks the upload to a local temp copy (remote-storage modes only) so
-    // it can be reused without re-downloading. Writes go to <filename>.part
-    // and are renamed to <filename> only after the upload succeeds, so a
-    // partial blob is never visible to generateReport.
-    const uploadStream = new PassThrough({ highWaterMark: DEFAULT_STREAM_CHUNK_SIZE });
-
-    let onUploadSuccess: (() => Promise<void>) | undefined;
-    let onUploadFailure: (() => Promise<void>) | undefined;
-
-    const usesRemoteStorage = env.DATA_STORAGE === 's3' || env.DATA_STORAGE === 'azure';
-
-    if (options?.shouldStoreLocalCopy && usesRemoteStorage) {
-      const finalPath = path.join(TMP_FOLDER, 'results', filename);
-      const partialPath = `${finalPath}.part`;
-      const writeStream = createWriteStream(partialPath);
-
-      let writeFailed = false;
-      writeStream.on('error', (error) => {
-        writeFailed = true;
-        console.error(`[service] local copy write error: ${error.message}`);
-      });
-
-      const writeSettled = new Promise<void>((resolve) => {
-        writeStream.on('finish', () => resolve());
-        writeStream.on('close', () => resolve());
-      });
-
-      const tee = new CoordinatedTee(writeStream, uploadStream, {
-        highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
-      });
-      stream.pipe(tee);
-
-      onUploadSuccess = async () => {
-        await writeSettled;
-        if (writeFailed) {
-          await withError(fs.unlink(partialPath));
-          return;
-        }
-        const { error } = await withError(fs.rename(partialPath, finalPath));
-        if (error) {
-          console.error(`[service] local copy rename error: ${error.message}`);
-          await withError(fs.unlink(partialPath));
-        }
-      };
-      onUploadFailure = async () => {
-        await writeSettled;
-        await withError(fs.unlink(partialPath));
-      };
-    } else {
-      stream.pipe(uploadStream);
-    }
-
-    try {
-      if (!options?.presignedUrl) {
-        const result = await storage.saveResult(filename, uploadStream);
-        await onUploadSuccess?.();
-        return result;
-      }
-
-      const { error } = await withError(
-        fetch(options?.presignedUrl, {
-          method: 'PUT',
-          body: Readable.toWeb(uploadStream, {
-            strategy: {
-              highWaterMark: DEFAULT_STREAM_CHUNK_SIZE,
-            },
-          }),
-          headers: {
-            'Content-Type': 'application/zip',
-            'Content-Length': options?.contentLength,
-          },
-          duplex: 'half',
-        } as RequestInit)
-      );
-
-      if (error) {
-        console.error(`[s3] saveResult | error: ${error.message}`);
-        throw error;
-      }
-
-      await onUploadSuccess?.();
-    } catch (err) {
-      await onUploadFailure?.();
-      throw err;
-    }
+  ): Promise<void> {
+    return uploadResult(filename, stream, options);
   }
 
   public async saveResultDetails(resultID: string, resultDetails: ResultDetails, size: number) {
@@ -383,39 +255,16 @@ class Service {
   }
 
   public async getResultsProjects(): Promise<string[]> {
-    const { results } = await this.getResults();
-    const projects = getUniqueProjectsList(results);
-
-    const reportProjects = await this.getReportsProjects();
-
-    return Array.from(new Set([...projects, ...reportProjects]));
+    const resultProjects = resultDb.getDistinctProjects();
+    const reportProjects = reportDb.getDistinctProjects();
+    return Array.from(new Set([...resultProjects, ...reportProjects]));
   }
 
   public async getResultsTags(project?: string): Promise<string[]> {
-    const { results } = await this.getResults(project ? { project } : undefined);
-
-    const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'];
-    const allTags = new Set<string>();
-
-    results.forEach((result) => {
-      Object.entries(result).forEach(([key, value]) => {
-        if (!notMetadataKeys.includes(key) && value !== undefined && value !== null) {
-          allTags.add(`${key}: ${value}`);
-        }
-      });
-    });
-
-    return Array.from(allTags).sort();
+    return resultDb.getDistinctTags(project);
   }
 
   public async getServerInfo(): Promise<ServerDataInfo> {
-    const canCalculateFromCache =
-      lifecycle.isInitialized() && reportDb.initialized && resultDb.initialized;
-
-    if (!canCalculateFromCache) {
-      return await storage.getServerDataInfo();
-    }
-
     return storage.getServerDataInfo();
   }
 

@@ -1,4 +1,4 @@
-import type { ReportStats } from '@playwright-reports/shared';
+import { RESERVED_REPORT_FIELDS, type ReportStats } from '@playwright-reports/shared';
 import { type ExpressionBuilder, type SelectQueryBuilder, sql } from 'kysely';
 import { defaultProjectName } from '../../constants.js';
 import type { ReadReportsInput, ReadReportsOutput, ReportHistory } from '../../storage/types.js';
@@ -336,6 +336,44 @@ export class ReportDatabase {
       .compile();
     const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportRow[];
     return rows.map((row) => this.rowToReport(row));
+  }
+
+  public getDistinctProjects(): string[] {
+    const compiled = this.k
+      .selectFrom('reports')
+      .select('project')
+      .distinct()
+      .where('project', '!=', '')
+      .orderBy('project', 'asc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      project: string;
+    }>;
+    return rows.map((r) => r.project);
+  }
+
+  public getDistinctTags(project?: string): string[] {
+    let q = this.k.selectFrom('reports').select('metadata');
+    if (project) {
+      q = q.where('project', '=', project);
+    }
+    const compiled = q.compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      metadata: string;
+    }>;
+
+    const allTags = new Set<string>();
+    for (const row of rows) {
+      const parsed = JSON.parse(row.metadata || '{}') as Record<string, unknown>;
+      for (const [key, value] of Object.entries(parsed)) {
+        if (RESERVED_REPORT_FIELDS.has(key)) continue;
+        if (value === undefined || value === null) continue;
+        if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')
+          continue;
+        allTags.add(`${key}: ${value}`);
+      }
+    }
+    return Array.from(allTags).sort();
   }
 
   public getNewestReportBefore(project: string, beforeISO: string): ReportHistory | undefined {
