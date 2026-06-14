@@ -1,6 +1,38 @@
 // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
 const llmEnabled = typeof isLlmEnabled !== 'undefined' ? !!isLlmEnabled : true;
 
+function findErrorsChipBody() {
+  const headers = document.querySelectorAll('.chip-header');
+  for (const header of headers) {
+    if (header.textContent?.trim().startsWith('Errors')) {
+      const chip = header.closest('.chip');
+      const body = chip?.querySelector('.chip-body');
+      if (body) return body;
+    }
+  }
+  return null;
+}
+
+function getOrCreateFallbackAnchor() {
+  const existing = document.querySelector('.llm-fallback-anchor');
+  if (existing) return existing;
+
+  const errorsBody = findErrorsChipBody();
+  if (!errorsBody) return null;
+
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'position: absolute; right: 16px; padding: 10px; z-index: 1;';
+  wrapper.className = 'llm-btn-wrapper';
+  errorsBody.style.position = 'relative';
+  errorsBody.insertBefore(wrapper, errorsBody.firstChild);
+
+  const anchor = document.createElement('span');
+  anchor.className = 'llm-fallback-anchor';
+  anchor.style.display = 'none';
+  wrapper.appendChild(anchor);
+  return anchor;
+}
+
 function injectAskLLMButton() {
   // Only Playwright's native "Copy prompt" button — exclude our own
   // .llm-copy-prompt-btn (which also contains the text "Copy prompt") so the
@@ -12,11 +44,14 @@ function injectAskLLMButton() {
       !btn.classList.contains('llm-copy-prompt-full-btn')
   );
 
-  if (!copyPromptButtons.length) {
-    return false;
-  }
+  let copyPromptButton;
 
-  const copyPromptButton = copyPromptButtons.at(0);
+  if (copyPromptButtons.length) {
+    copyPromptButton = copyPromptButtons.at(0);
+  } else {
+    copyPromptButton = getOrCreateFallbackAnchor();
+    if (!copyPromptButton) return false;
+  }
 
   // Read-only mode: LLM is disabled but we still want to surface previously-
   // generated analyses. Skip the Ask LLM button and the feedback panel.
@@ -578,15 +613,10 @@ function renderLoadingInto(testId, rid, copyPromptButton, askBtn, errorsSection,
  * The errors section is typically the container holding the "Copy prompt" button.
  */
 function findErrorsSection(copyPromptButton) {
-  // Walk up from the Copy prompt button to find the test result container
-  let node = copyPromptButton.parentNode;
-  for (let i = 0; i < 5 && node; i++) {
-    // Look for a sibling or parent that is the errors area
-    if (node.previousElementSibling || node.parentNode) break;
-    node = node.parentNode;
-  }
-  // The errors area is the closest ancestor that holds error content
-  // Use the grandparent of the button row as insertion point
+  // Walk up from the anchor (Copy prompt button or fallback) to the chip-body
+  // that holds the error content.
+  const chipBody = copyPromptButton.closest('.chip-body');
+  if (chipBody) return chipBody;
   return (
     copyPromptButton.closest('.test-result-error') ||
     copyPromptButton.parentNode?.parentNode ||
@@ -1219,6 +1249,7 @@ if (document.readyState === 'loading') {
 // The Playwright report swaps tests via URL hash without reloading. Re-check analysis
 // when the testId changes so we don't keep stale state from the previously-viewed test.
 globalThis.addEventListener?.('hashchange', () => {
+  llmButtonRetryCount = 0;
   setTimeout(tryInjectAskLLMButton, 50);
 });
 
@@ -1236,19 +1267,20 @@ globalThis.addEventListener?.('hashchange', () => {
     if (pending) return;
     pending = setTimeout(() => {
       pending = null;
-      // Cheap pre-check: only run if either (a) there's a Copy prompt without a
-      // sibling Ask LLM button, or (b) an Ask LLM button exists but the inline
-      // analysis is missing for the current testId. Avoids work on unrelated
-      // mutations (e.g., the modal opening, our own DOM inserts).
       const copyPromptBtns = Array.from(document.querySelectorAll('button')).filter(
         (b) =>
-          b.textContent?.includes('Copy prompt') && !b.classList.contains('llm-copy-prompt-btn')
+          b.textContent?.includes('Copy prompt') &&
+          !b.classList.contains('llm-copy-prompt-btn') &&
+          !b.classList.contains('llm-copy-prompt-full-btn')
       );
-      if (copyPromptBtns.length === 0) return;
-      const btn = copyPromptBtns[0];
-      const askBtn = btn.parentNode?.querySelector('.llm-ask-btn');
-      // In read-only mode there's no Ask LLM button to inject; we only need to
-      // re-attempt when the inline analysis was wiped by a Playwright DOM swap.
+      const hasCopyPrompt = copyPromptBtns.length > 0;
+      const hasErrorsSection = !hasCopyPrompt && !!findErrorsChipBody();
+      if (!hasCopyPrompt && !hasErrorsSection) return;
+
+      const askBtn = hasCopyPrompt
+        ? copyPromptBtns[0].parentNode?.querySelector('.llm-ask-btn')
+        : document.querySelector('.llm-btn-wrapper .llm-ask-btn');
+
       if (!llmEnabled) {
         if (!document.getElementById('llm-inline-analysis')) {
           injectAskLLMButton();
