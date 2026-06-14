@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import { getDatabase } from './db.js';
 import { type AnalysisFeedbackTableRow, getKysely } from './kysely.js';
 import { singletonOf } from './singleton.js';
+import { chunk } from './utils.js';
 
 export type AnalysisFeedbackRow = AnalysisFeedbackTableRow;
 
@@ -22,6 +23,24 @@ export class AnalysisFeedbackDatabase {
       | AnalysisFeedbackRow
       | undefined;
     return row ?? null;
+  }
+
+  public getByTests(
+    keys: Array<{ testId: string; fileId: string; project: string }>
+  ): Map<string, AnalysisFeedbackRow> {
+    const out = new Map<string, AnalysisFeedbackRow>();
+    if (keys.length === 0) return out;
+    for (const part of chunk(keys, 300)) {
+      const tuples = part.map(() => '(?, ?, ?)').join(', ');
+      const params = part.flatMap((k) => [k.testId, k.fileId, k.project]);
+      const sqlText = `SELECT * FROM analysis_feedback
+        WHERE (testId, fileId, project) IN (VALUES ${tuples})`;
+      const rows = this.db.prepare(sqlText).all(...params) as AnalysisFeedbackRow[];
+      for (const row of rows) {
+        out.set(`${row.testId}::${row.fileId}::${row.project}`, row);
+      }
+    }
+    return out;
   }
 
   public upsertTest(params: {

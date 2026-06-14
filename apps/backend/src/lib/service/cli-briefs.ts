@@ -264,16 +264,24 @@ function classifyFlakyTier(
   return 'stable';
 }
 
+export interface PreFetchedTestData {
+  analysisByKey: ReturnType<typeof testAnalysisDb.getByTests>;
+  feedbackByKey: ReturnType<typeof analysisFeedbackDb.getByTests>;
+  regressionByKey: ReturnType<typeof regressionsDb.getOpenForTests>;
+}
+
 export async function buildTestBrief(
   testId: string,
   fileId: string,
   project: string,
   preFetchedClusters?: Awaited<ReturnType<typeof getFailureClusters>>,
-  preFetchedThresholds?: { warning: number; quarantine: number }
+  preFetchedThresholds?: { warning: number; quarantine: number },
+  preFetched?: PreFetchedTestData
 ): Promise<TestBrief | null> {
   const detail = await testManagementService.getTestDetail(testId, fileId, project);
   if (!detail) return null;
 
+  const key = `${testId}::${fileId}::${project}`;
   const latestFailedRun = detail.runs.find((r) => FAILED_OUTCOMES.has(r.outcome));
   const parsed = latestFailedRun ? parseFailureDetails(latestFailedRun.failureDetails) : undefined;
 
@@ -287,8 +295,12 @@ export async function buildTestBrief(
         )
       : { priorOccurrenceCount: 0, firstOccurrence: null };
 
-  const analysisRow = testAnalysisDb.getByTest(testId, fileId, project);
-  const feedbackRow = analysisFeedbackDb.getByTest(testId, fileId, project);
+  const analysisRow = preFetched
+    ? (preFetched.analysisByKey.get(key) ?? null)
+    : testAnalysisDb.getByTest(testId, fileId, project);
+  const feedbackRow = preFetched
+    ? (preFetched.feedbackByKey.get(key) ?? null)
+    : analysisFeedbackDb.getByTest(testId, fileId, project);
 
   const thresholds = preFetchedThresholds ?? (await getFlakinessThresholds());
   const roundedScore = Math.round((detail.flakinessScore ?? 0) * 10) / 10;
@@ -365,7 +377,9 @@ export async function buildTestBrief(
         })()
       : null,
     regression: (() => {
-      const reg = regressionsDb.getOpenForTest(testId, fileId, project);
+      const reg = preFetched
+        ? (preFetched.regressionByKey.get(key) ?? null)
+        : regressionsDb.getOpenForTest(testId, fileId, project);
       if (!reg) return null;
       return {
         id: reg.id,
@@ -404,6 +418,12 @@ export async function buildReportBrief(
   const clusterReport = await getFailureClusters({ project: report.project });
   const thresholds = await getFlakinessThresholds();
 
+  const preFetched: PreFetchedTestData = {
+    analysisByKey: testAnalysisDb.getByTests(refsToBrief),
+    feedbackByKey: analysisFeedbackDb.getByTests(refsToBrief),
+    regressionByKey: regressionsDb.getOpenForTests(refsToBrief),
+  };
+
   const briefs: TestBrief[] = [];
   for (const ref of refsToBrief) {
     const brief = await buildTestBrief(
@@ -411,7 +431,8 @@ export async function buildReportBrief(
       ref.fileId,
       ref.project,
       clusterReport,
-      thresholds
+      thresholds,
+      preFetched
     );
     if (brief) briefs.push(brief);
   }

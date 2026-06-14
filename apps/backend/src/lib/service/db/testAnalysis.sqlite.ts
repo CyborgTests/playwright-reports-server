@@ -4,6 +4,7 @@ import { linkifyReportRefs } from '../../llm/linkifyReportRefs.js';
 import { getDatabase } from './db.js';
 import { getKysely, type TestLlmAnalysesRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
+import { chunk } from './utils.js';
 
 export type TestAnalysisRow = TestLlmAnalysesRow;
 
@@ -100,6 +101,26 @@ export class TestAnalysisDatabase {
       | TestAnalysisRow
       | undefined;
     return row ?? null;
+  }
+
+  public getByTests(
+    keys: Array<{ testId: string; fileId: string; project: string }>
+  ): Map<string, TestAnalysisRow> {
+    const out = new Map<string, TestAnalysisRow>();
+    if (keys.length === 0) return out;
+    for (const part of chunk(keys, 300)) {
+      const tuples = part.map(() => '(?, ?, ?)').join(', ');
+      const params = part.flatMap((k) => [k.testId, k.fileId, k.project]);
+      const sqlText = `SELECT * FROM test_llm_analyses
+        WHERE (testId, fileId, project) IN (VALUES ${tuples})
+        ORDER BY COALESCE(updatedAt, createdAt) DESC, attempt DESC`;
+      const rows = this.db.prepare(sqlText).all(...params) as TestAnalysisRow[];
+      for (const row of rows) {
+        const key = `${row.testId}::${row.fileId}::${row.project}`;
+        if (!out.has(key)) out.set(key, row);
+      }
+    }
+    return out;
   }
 
   /**
