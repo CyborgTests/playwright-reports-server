@@ -3,12 +3,18 @@ export interface Pagination {
   offset: number;
 }
 
-export const parseFromRequest = (searchParams: URLSearchParams): Pagination => {
-  const limitQuery = searchParams.get('limit') ?? '';
-  const offsetQuery = searchParams.get('offset') ?? '';
+const LIMIT_DEFAULT = 20;
+const LIMIT_MAX = 100;
 
-  const limit = limitQuery ? Number.parseInt(limitQuery, 10) : 20;
-  const offset = offsetQuery ? Number.parseInt(offsetQuery, 10) : 0;
+const parseQueryInt = (raw: string | null, fallback: number, min: number): number => {
+  if (!raw) return fallback;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= min ? n : fallback;
+};
+
+export const parseFromRequest = (searchParams: URLSearchParams): Pagination => {
+  const limit = Math.min(parseQueryInt(searchParams.get('limit'), LIMIT_DEFAULT, 1), LIMIT_MAX);
+  const offset = parseQueryInt(searchParams.get('offset'), 0, 0);
 
   return { limit, offset };
 };

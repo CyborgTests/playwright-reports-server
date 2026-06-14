@@ -58,6 +58,11 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
               'stable' | 'flaky' | 'critical'
             >)
           : undefined;
+        const toInt = (v: string | undefined, min: number): number | undefined => {
+          if (!v) return undefined;
+          const n = Number.parseInt(v, 10);
+          return Number.isFinite(n) && n >= min ? n : undefined;
+        };
         const options = {
           status: status as 'all' | 'quarantined' | 'not-quarantined' | undefined,
           tiers: parsedTiers,
@@ -70,8 +75,8 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
                   ? ('regression-age' as const)
                   : undefined,
           failureCategory: failureCategory || undefined,
-          limit: limit ? Number.parseInt(limit, 10) : undefined,
-          offset: offset ? Number.parseInt(offset, 10) : undefined,
+          limit: toInt(limit, 1),
+          offset: toInt(offset, 0),
           from,
           to,
           search,

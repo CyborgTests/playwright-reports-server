@@ -452,7 +452,15 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
         if (formData.llmProvider !== undefined) {
           const provider = formData.llmProvider.trim();
-          config.llm.provider = (provider || undefined) as any;
+          if (!provider) {
+            config.llm.provider = undefined;
+          } else if (provider === 'openai' || provider === 'anthropic') {
+            config.llm.provider = provider;
+          } else {
+            return reply.status(400).send({
+              error: `Invalid LLM provider type "${provider}". Must be "openai" or "anthropic".`,
+            });
+          }
         }
         if (formData.llmBaseUrl !== undefined) {
           config.llm.baseUrl = formData.llmBaseUrl.trim() || undefined;
