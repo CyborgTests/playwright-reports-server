@@ -180,34 +180,24 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
     });
 
     fastify.get('/api/report/projects', async (_request, reply) => {
-      try {
-        const { result: projects, error } = await withError(service.getReportsProjects());
+      const { result: projects, error } = await withError(service.getReportsProjects());
 
-        if (error) {
-          return reply.status(400).send({ error: error.message });
-        }
-
-        return projects;
-      } catch (error) {
-        console.error('[routes] get projects error:', error);
-        return reply.status(500).send({ error: 'Internal server error' });
+      if (error) {
+        return reply.status(400).send({ error: error.message });
       }
+
+      return projects;
     });
 
     fastify.get('/api/report/tags', async (request, reply) => {
-      try {
-        const query = request.query as { project?: string };
-        const { result: tags, error } = await withError(service.getReportsTags(query.project));
+      const query = request.query as { project?: string };
+      const { result: tags, error } = await withError(service.getReportsTags(query.project));
 
-        if (error) {
-          return reply.status(400).send({ error: error.message });
-        }
-
-        return tags;
-      } catch (error) {
-        console.error('[routes] get report tags error:', error);
-        return reply.status(500).send({ error: 'Internal server error' });
+      if (error) {
+        return reply.status(400).send({ error: error.message });
       }
+
+      return tags;
     });
 
     fastify.post('/api/report/generate', async (request, reply) => {

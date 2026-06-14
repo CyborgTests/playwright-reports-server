@@ -6,10 +6,10 @@ import type { FastifyInstance } from 'fastify';
 import mime from 'mime';
 import { env } from '../config/env.js';
 import { llmService } from '../lib/llm/index.js';
+import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { DATA_FOLDER, REPORTS_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';
 import { streamToString } from '../lib/storage/streamUtils.js';
-import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { injectTestAnalysis } from '../lib/utils/html-injector.js';
 import { extractReportIdFromPath } from '../lib/utils/url-parser.js';
 import { withError } from '../lib/withError.js';
@@ -122,47 +122,46 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/api/static/*', async (request, reply) => {
+    const filePath = (request.params as { '*': string })['*'] || '';
+    let targetPath: string;
     try {
-      const filePath = (request.params as { '*': string })['*'] || '';
-      let targetPath: string;
-      try {
-        targetPath = decodeURIComponent(filePath);
-      } catch {
-        return reply.code(400).send({ error: 'Invalid path' });
-      }
+      targetPath = decodeURIComponent(filePath);
+    } catch {
+      return reply.code(400).send({ error: 'Invalid path' });
+    }
 
-      const contentType = mime.getType(targetPath.split('/').pop() || '');
+    const contentType = mime.getType(targetPath.split('/').pop() || '');
 
-      if (!contentType && !targetPath.includes('.')) {
-        return reply.code(404).send({ error: 'Not Found' });
-      }
+    if (!contentType && !targetPath.includes('.')) {
+      return reply.code(404).send({ error: 'Not Found' });
+    }
 
-      const dataRoot = resolve(DATA_FOLDER);
-      const publicRoot = BACKEND_PUBLIC_DIR;
-      const safeRelative = path.normalize(targetPath).replace(/^([/\\])+/, '');
-      const candidateInData = resolve(dataRoot, safeRelative);
-      const candidateInPublic = resolve(publicRoot, safeRelative);
+    const dataRoot = resolve(DATA_FOLDER);
+    const publicRoot = BACKEND_PUBLIC_DIR;
+    const safeRelative = path.normalize(targetPath).replace(/^([/\\])+/, '');
+    const candidateInData = resolve(dataRoot, safeRelative);
+    const candidateInPublic = resolve(publicRoot, safeRelative);
 
-      const isInside = (child: string, parent: string) =>
-        child === parent || child.startsWith(parent + sep);
+    const isInside = (child: string, parent: string) =>
+      child === parent || child.startsWith(parent + sep);
 
-      if (!isInside(candidateInData, dataRoot) && !isInside(candidateInPublic, publicRoot)) {
-        return reply.code(400).send({ error: 'Invalid path' });
-      }
+    if (!isInside(candidateInData, dataRoot) && !isInside(candidateInPublic, publicRoot)) {
+      return reply.code(400).send({ error: 'Invalid path' });
+    }
 
-      const { error: dataAccessError } = await withError(access(candidateInData));
-      const imagePath = dataAccessError ? candidateInPublic : candidateInData;
+    const { error: dataAccessError } = await withError(access(candidateInData));
+    const imagePath = dataAccessError ? candidateInPublic : candidateInData;
 
-      const imageBuffer = await readFile(imagePath);
+    const { result: imageBuffer, error: readError } = await withError(readFile(imagePath));
 
-      return reply
-        .code(200)
-        .header('Content-Type', contentType || 'image/*')
-        .header('Cache-Control', 'public, max-age=300, must-revalidate')
-        .send(imageBuffer);
-    } catch (error) {
-      fastify.log.error({ error }, 'Static file serving error');
+    if (readError) {
       return reply.code(404).send({ error: 'File not found' });
     }
+
+    return reply
+      .code(200)
+      .header('Content-Type', contentType || 'image/*')
+      .header('Cache-Control', 'public, max-age=300, must-revalidate')
+      .send(imageBuffer);
   });
 }

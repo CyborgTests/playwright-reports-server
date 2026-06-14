@@ -5,6 +5,10 @@ import {
 } from '../lib/failure-clustering/index.js';
 import { llmService } from '../lib/llm/index.js';
 import {
+  MANUAL_PROJECT_SUMMARY_PRIORITY,
+  PROJECT_SUMMARY_REPORT_LIMIT,
+} from '../lib/llm/queue/index.js';
+import {
   DeleteFeedbackRequestSchema,
   FeedbackRegenerateRequestSchema,
   GetFeedbackQuerySchema,
@@ -23,11 +27,8 @@ import { reportDb } from '../lib/service/db/reports.sqlite.js';
 import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
 import { testDb } from '../lib/service/db/tests.sqlite.js';
 import { service } from '../lib/service/index.js';
-import {
-  MANUAL_PROJECT_SUMMARY_PRIORITY,
-  PROJECT_SUMMARY_REPORT_LIMIT,
-} from '../lib/llm/queue/index.js';
 import { ValidationError, validateSchema } from '../lib/validation/index.js';
+import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
 /** Project-summary cache is considered too stale to display when the newest
@@ -87,37 +88,33 @@ function resolveTestRun(
 
 export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/analytics', async (request, reply) => {
-    try {
-      const authResult = await authenticate(request as AuthRequest, reply);
-      if (authResult) return;
+    const authResult = await authenticate(request as AuthRequest, reply);
+    if (authResult) return;
 
-      const {
-        project = 'all',
-        from,
-        to,
-        failedOnly,
-      } = request.query as {
-        project?: string;
-        from?: string;
-        to?: string;
-        failedOnly?: string;
-      };
-      const failedOnlyFlag = failedOnly === 'true' || failedOnly === '1';
-      const analyticsData = await analyticsService.getAnalyticsData(
-        project,
-        from,
-        to,
-        failedOnlyFlag
-      );
+    const {
+      project = 'all',
+      from,
+      to,
+      failedOnly,
+    } = request.query as {
+      project?: string;
+      from?: string;
+      to?: string;
+      failedOnly?: string;
+    };
+    const failedOnlyFlag = failedOnly === 'true' || failedOnly === '1';
+    const { result: analyticsData, error } = await withError(
+      analyticsService.getAnalyticsData(project, from, to, failedOnlyFlag)
+    );
 
-      return { success: true, data: analyticsData };
-    } catch (error) {
-      reply.status(500);
-      return {
+    if (error) {
+      return reply.status(500).send({
         success: false,
-        error: `Failed to fetch analytics data: ${error instanceof Error ? error.message : String(error)}`,
-      };
+        error: `Failed to fetch analytics data: ${error.message}`,
+      });
     }
+
+    return { success: true, data: analyticsData };
   });
 
   // POST /api/llm/analyze-failed-test - enqueue a fresh analysis run for the
@@ -856,23 +853,23 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   // When `reportId` is supplied, clusters are filtered to those that include
   // at least one test that failed in that report.
   fastify.get('/api/analytics/failure-clusters', async (request, reply) => {
-    try {
-      const authResult = await authenticate(request as AuthRequest, reply);
-      if (authResult) return;
+    const authResult = await authenticate(request as AuthRequest, reply);
+    if (authResult) return;
 
-      const { project, from, to, reportId, testId, fileId, clusterId, includeResolved } =
-        request.query as {
-          project?: string;
-          from?: string;
-          to?: string;
-          reportId?: string;
-          testId?: string;
-          fileId?: string;
-          clusterId?: string;
-          includeResolved?: string;
-        };
+    const { project, from, to, reportId, testId, fileId, clusterId, includeResolved } =
+      request.query as {
+        project?: string;
+        from?: string;
+        to?: string;
+        reportId?: string;
+        testId?: string;
+        fileId?: string;
+        clusterId?: string;
+        includeResolved?: string;
+      };
 
-      const report = await getFailureClusters({
+    const { result: report, error } = await withError(
+      getFailureClusters({
         project,
         from,
         to,
@@ -881,15 +878,18 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         fileId,
         clusterId,
         includeResolved: includeResolved === '1' || includeResolved === 'true',
-      });
-      return reply.send({ success: true, data: report });
-    } catch (error) {
+      })
+    );
+
+    if (error) {
       fastify.log.error(error);
       return reply.status(500).send({
         success: false,
-        error: `Failed to fetch failure clusters: ${error instanceof Error ? error.message : String(error)}`,
+        error: `Failed to fetch failure clusters: ${error.message}`,
       });
     }
+
+    return reply.send({ success: true, data: report });
   });
 
   const handleClusterMutation = async (
