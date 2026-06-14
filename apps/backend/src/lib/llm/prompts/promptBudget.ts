@@ -29,15 +29,6 @@ const transformSegment = (
   return { segments: next };
 };
 
-/** Drop the bullet list under `## Attachments` header but keep the count. */
-function shrinkAttachmentList(content: string): string {
-  const re = /## Attachments\n((?:- .*\n)+)\n?/;
-  const match = content.match(re);
-  if (!match) return content;
-  const count = match[1].trim().split('\n').length;
-  return content.replace(re, `## Attachments\n_(${count} attachments — names omitted)_\n\n`);
-}
-
 /** Replace each fenced block with a middle-truncated copy at the given size. */
 function shrinkFencedBlocks(content: string, blockMax: number): string {
   return content.replace(/```([\s\S]*?)```/g, (_full, body: string) => {
@@ -46,9 +37,11 @@ function shrinkFencedBlocks(content: string, blockMax: number): string {
   });
 }
 
-/** Drop the recent-categories line — least informative when budget tight. */
+/** Drop the recent-categories line — least informative when budget tight.
+ *  Must match the line emitted by buildHistoricalContextBlock:
+ *  `- recent_categories (newest first): …`. */
 function shrinkHistoricalContext(content: string): string {
-  return content.replace(/- Recent failure categories.*\n/, '');
+  return content.replace(/- recent_categories\b.*\n/, '');
 }
 
 /** Cap a block to a max char count by truncating from the tail (keeps the
@@ -62,9 +55,8 @@ function truncateTail(content: string, maxChars: number): string {
 /**
  * Fit a SegmentedPrompt to `charsBudget` by applying shrink steps in priority
  * order until size <= budget or all steps are exhausted. Stable segments
- * (system_prompt, task_instructions) are never touched — they're the
- * cacheable prefix and dropping them would defeat caching for marginal char
- * savings.
+ * (system_prompt, task_contract) are never touched — they're the cacheable
+ * prefix and dropping them would defeat caching for marginal char savings.
  */
 export function fitPromptToBudget(prompt: SegmentedPrompt, charsBudget: number): PromptFitResult {
   if (segmentChars(prompt) <= charsBudget) {
@@ -86,14 +78,6 @@ export function fitPromptToBudget(prompt: SegmentedPrompt, charsBudget: number):
     }
     return segmentChars(p) <= charsBudget;
   };
-
-  if (
-    tryStep('omitted attachment names', (cur) =>
-      transformSegment(cur, 'current_failure', shrinkAttachmentList)
-    )
-  ) {
-    return { prompt: p, changes };
-  }
 
   // Evidence segments — tail-truncate before dropping anything. Each block's
   // most-informative entries are at the top (failed network requests first,

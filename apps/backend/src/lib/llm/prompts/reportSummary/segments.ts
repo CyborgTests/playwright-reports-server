@@ -5,15 +5,19 @@ import {
   assembleSegments,
   buildSegment,
   resolveSystemPrompt,
+  splitTaskInstructions,
 } from '../assembleSegments.js';
 import { describeGroupKind, renderAnchorInline, renderTrendLabel } from '../clusterRendering.js';
 import type { CustomPromptOverrides, RunContext } from '../promptTypes.js';
-import { extractRootCauseParagraph } from '../textTransforms.js';
+import { extractRootCauseParagraph, truncateMiddle } from '../textTransforms.js';
 import {
   REPORT_SUMMARY_SYSTEM_PROMPT,
   REPORT_SUMMARY_TASK_INSTRUCTIONS,
   REPORT_SUMMARY_VARS,
 } from './instructions.js';
+
+const MEMBER_MESSAGE_MAX_CHARS = 600;
+const SAMPLE_MESSAGE_MAX_CHARS = 800;
 
 export type ReportSummaryTrendStatus = 'newlyFailed' | 'stillFailing' | 'unknown';
 export type ReportSummaryClusterKind = ClusterAnchorKind;
@@ -198,8 +202,7 @@ function buildReportHeaderBlock(reportId: string, totalFailures: number): string
 
 function buildFailureGroupsBlock(clusters: ReportSummaryCluster[]): string {
   if (clusters.length === 0) return '';
-  let block = `## Failure Groups (${clusters.length})\n`;
-  block += `Multiple tests sharing one fix target are grouped together so the same fix unblocks all of them. Each group below names that fix target (a shared fixture, a shared locator, or a shared file:line). Use the per-group test list to decide impact.\n\n`;
+  let block = `## Failure Groups (${clusters.length})\n\n`;
   for (const cluster of clusters) {
     const kindLabel = describeGroupKind(cluster.kind);
     block += `### ${kindLabel}: ${cluster.name}\n`;
@@ -211,7 +214,7 @@ function buildFailureGroupsBlock(clusters: ReportSummaryCluster[]): string {
     const anchorLine = renderAnchorInline(cluster.anchor);
     if (anchorLine) block += `- Fix target: ${anchorLine}\n`;
     if (cluster.sampleMessage) {
-      block += `- Sample error:\n\`\`\`\n${cluster.sampleMessage}\n\`\`\`\n`;
+      block += `- Sample error:\n\`\`\`\n${truncateMiddle(cluster.sampleMessage, SAMPLE_MESSAGE_MAX_CHARS)}\n\`\`\`\n`;
     }
     const membersInRun = cluster.members.filter((m) => m.inThisReport);
     const membersHistorical = cluster.members.filter((m) => !m.inThisReport);
@@ -225,7 +228,10 @@ function buildFailureGroupsBlock(clusters: ReportSummaryCluster[]): string {
       const trendLabel = renderTrendLabel(m.trend);
       block += `- **${m.title}** [testId: ${m.testId}]${catLabel}${fileSuffix}${trendLabel}\n`;
       if (m.message) {
-        const indentedMessage = m.message.replace(/\n/g, '\n    ');
+        const indentedMessage = truncateMiddle(m.message, MEMBER_MESSAGE_MAX_CHARS).replace(
+          /\n/g,
+          '\n    '
+        );
         block += `    Error: ${indentedMessage}\n`;
       }
       if (m.analysis) {
@@ -258,7 +264,7 @@ function buildIsolatedFailuresBlock(unclustered: ReportSummaryUnclusteredFailure
       block += `- Signature: \`${f.errorSignature}\`\n`;
     }
     if (f.message) {
-      block += `- Error:\n\`\`\`\n${f.message}\n\`\`\`\n`;
+      block += `- Error:\n\`\`\`\n${truncateMiddle(f.message, MEMBER_MESSAGE_MAX_CHARS)}\n\`\`\`\n`;
     }
     if (f.analysis) {
       const rootCause = extractRootCauseParagraph(f.analysis);
@@ -272,8 +278,7 @@ function buildIsolatedFailuresBlock(unclustered: ReportSummaryUnclusteredFailure
 
 function buildFlakyTestsBlock(flaky: ReportSummaryFlakyTest[] | undefined): string {
   if (!flaky || flaky.length === 0) return '';
-  let block = `## Flaky Tests (${flaky.length})\n`;
-  block += `These tests failed at least once but eventually passed on retry. **They are NOT failures.** Do NOT include them in the failure count, do NOT let them drive the verdict. Mention them only as observations (e.g., "X test flaked — worth watching") if they share a signature with a real cluster or look systemic.\n\n`;
+  let block = `## Flaky Tests (${flaky.length}) — passed on retry; not failures\n\n`;
   for (const f of flaky) {
     const fileSuffix = f.filePath ? ` (${f.filePath})` : '';
     block += `### ${f.title} [testId: ${f.testId}] [${f.category}]${fileSuffix}\n`;
@@ -281,7 +286,7 @@ function buildFlakyTestsBlock(flaky: ReportSummaryFlakyTest[] | undefined): stri
       block += `- Signature: \`${f.errorSignature}\`\n`;
     }
     if (f.message) {
-      block += `- Error (from the failing attempt):\n\`\`\`\n${f.message}\n\`\`\`\n`;
+      block += `- Error (from the failing attempt):\n\`\`\`\n${truncateMiddle(f.message, MEMBER_MESSAGE_MAX_CHARS)}\n\`\`\`\n`;
     }
     if (f.analysis) {
       const rootCause = extractRootCauseParagraph(f.analysis);
@@ -378,15 +383,16 @@ export const buildReportSummarySegments = (args: {
 
   const reportInstructionsTemplate =
     args.overrides?.reportSummaryPrompt ?? REPORT_SUMMARY_TASK_INSTRUCTIONS;
-  const reportSub = applyMustache(
-    reportInstructionsTemplate,
-    {
-      reportId: args.reportId,
-      project: args.overrides?.project,
-      totalFailures,
-    },
-    REPORT_SUMMARY_VARS
+  const reportBindings = {
+    reportId: args.reportId,
+    project: args.overrides?.project,
+    totalFailures,
+  };
+  const { request: requestTemplate, contract: contractTemplate } = splitTaskInstructions(
+    reportInstructionsTemplate
   );
+  const requestSub = applyMustache(requestTemplate, reportBindings, REPORT_SUMMARY_VARS);
+  const contractSub = applyMustache(contractTemplate, reportBindings, REPORT_SUMMARY_VARS);
 
   const dataBlock = [
     buildReportHeaderBlock(args.reportId, totalFailures),
@@ -415,9 +421,12 @@ export const buildReportSummarySegments = (args: {
         args.overrides?.systemPrompt ?? args.systemPrompt
       )
     ),
-    buildSegment('task_instructions', 'user', !reportSub.substituted, reportSub.rendered),
+    buildSegment('task_contract', 'user', !contractSub.substituted, contractSub.rendered),
+    buildSegment('task_request', 'user', !requestSub.substituted, requestSub.rendered),
+    buildSegment('run_data_open', 'user', false, '<run_data>'),
     buildSegment('run_context', 'user', false, buildRunContextBlock(args.runContext)),
     buildSegment('report_data', 'user', false, dataBlock),
     buildSegment('trend_context', 'user', false, trendBlock),
+    buildSegment('run_data_close', 'user', false, '</run_data>'),
   ]);
 };

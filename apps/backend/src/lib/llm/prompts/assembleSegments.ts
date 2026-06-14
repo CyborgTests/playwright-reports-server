@@ -23,6 +23,22 @@ export function resolveSystemPrompt(
   return perTaskCustom?.trim() || legacyCustom?.trim() || builtInDefault;
 }
 
+/**
+ * Split rendered task instructions into
+ * - per-call `<task>` request
+ * - stable contract (output format, rubrics, data-format)
+ * Emitting the contract as its own segment lets it join the cacheable prefix
+ * instead of being re-tokenized behind the varying header on every request. 
+ * Falls back to treating the whole string as the request when no `</task>`.
+ */
+export function splitTaskInstructions(rendered: string): { request: string; contract: string } {
+  const marker = '</task>';
+  const idx = rendered.indexOf(marker);
+  if (idx < 0) return { request: rendered.trim(), contract: '' };
+  const end = idx + marker.length;
+  return { request: rendered.slice(0, end).trim(), contract: rendered.slice(end).trim() };
+}
+
 export function applyMustache(
   template: string,
   bindings: Record<string, string | number | boolean | undefined>,

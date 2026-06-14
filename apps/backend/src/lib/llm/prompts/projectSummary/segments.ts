@@ -10,6 +10,7 @@ import {
   assembleSegments,
   buildSegment,
   resolveSystemPrompt,
+  splitTaskInstructions,
 } from '../assembleSegments.js';
 import { describeGroupKind, renderAnchorInline } from '../clusterRendering.js';
 import type { CustomPromptOverrides, RunContext } from '../promptTypes.js';
@@ -428,15 +429,16 @@ export const buildProjectSummarySegments = (args: {
 
   const projectInstructionsTemplate =
     args.overrides?.projectSummaryInstructions ?? PROJECT_SUMMARY_TASK_INSTRUCTIONS;
-  const projectSub = applyMustache(
-    projectInstructionsTemplate,
-    {
-      project: args.project,
-      totalRuns,
-      passingRuns,
-    },
-    PROJECT_SUMMARY_VARS
+  const projectBindings = {
+    project: args.project,
+    totalRuns,
+    passingRuns,
+  };
+  const { request: requestTemplate, contract: contractTemplate } = splitTaskInstructions(
+    projectInstructionsTemplate
   );
+  const requestSub = applyMustache(requestTemplate, projectBindings, PROJECT_SUMMARY_VARS);
+  const contractSub = applyMustache(contractTemplate, projectBindings, PROJECT_SUMMARY_VARS);
 
   const isActiveCluster = (c: ProjectCluster): boolean =>
     c.appearedInLatestRun || c.runsSinceLastSeen <= 2;
@@ -467,7 +469,10 @@ export const buildProjectSummarySegments = (args: {
         args.overrides?.projectSummarySystemPrompt
       )
     ),
-    buildSegment('task_instructions', 'user', !projectSub.substituted, projectSub.rendered),
+    buildSegment('task_contract', 'user', !contractSub.substituted, contractSub.rendered),
+    buildSegment('task_request', 'user', !requestSub.substituted, requestSub.rendered),
+    buildSegment('project_data_open', 'user', false, '<project_data>'),
     buildSegment('project_data', 'user', false, dataBlock),
+    buildSegment('project_data_close', 'user', false, '</project_data>'),
   ]);
 };

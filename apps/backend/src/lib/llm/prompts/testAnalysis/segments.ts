@@ -7,6 +7,7 @@ import {
   assembleSegments,
   buildSegment,
   resolveSystemPrompt,
+  splitTaskInstructions,
 } from '../assembleSegments.js';
 import type { CustomPromptOverrides } from '../promptTypes.js';
 import { extractRootCauseParagraph } from '../textTransforms.js';
@@ -303,10 +304,10 @@ function buildRegressionContextBlock(reg: TestDetailRegression | null | undefine
     `- Since opening: ${reg.failureCount} failing run${reg.failureCount === 1 ? '' : 's'}, ${reg.flakyCount} flaky pass${reg.flakyCount === 1 ? '' : 'es'}.`
   );
   lines.push(
-    '- Frame Root Cause around the change that landed in the suspect range, not chronic flake or first-time-ever defect. If evidence contradicts the regression framing, say so.'
+    '- Frame the root cause around the change in the suspect range, not chronic flake or a first-time defect; if the evidence contradicts that, say so.'
   );
   lines.push(
-    '- Caveat: the commits above are whatever git workspace the reporter ran in. We do not know whether that workspace is the test repo, the app repo, or both (monorepo) — if the stack frame points at code that does not appear in the available diff, treat the commits as a hint and name the gap rather than forcing a conclusion.'
+    "- Treat the commits as a hint: they're from whatever workspace the reporter ran in (test repo, app repo, or a monorepo), so if the failing frame isn't in that diff, name the gap rather than force a conclusion."
   );
   return lines.join('\n');
 }
@@ -352,19 +353,18 @@ function buildPriorInProjectAnalysisBlock(
 function buildConsoleLogBlock(evidence: FailureEvidence | undefined): string {
   if (!evidence?.consoleEvents || evidence.consoleEvents.length === 0) return '';
   const errors = evidence.consoleEvents.filter((e) => e.level === 'error' || e.level === 'warning');
-  const others = evidence.consoleEvents.filter((e) => e.level !== 'error' && e.level !== 'warning');
+  const otherCount = evidence.consoleEvents.length - errors.length;
   if (errors.length === 0) return '';
-  let block = `## Console (errors+warnings, +${others.length} other)\n`;
-  const render = (events: typeof evidence.consoleEvents) => {
-    for (const ev of events) {
-      const loc = ev.location?.url
-        ? ` @${ev.location.url}${ev.location.lineNumber ? `:${ev.location.lineNumber}` : ''}`
-        : '';
-      block += `- ${ev.level}: ${ev.text}${loc}\n`;
-    }
-  };
-  render(errors);
-  if (others.length > 0) render(others);
+  // Only errors/warnings are diagnostic; info/debug/log events are omitted (the
+  // count is kept so the model knows they existed) to avoid a low-signal dump.
+  const suffix = otherCount > 0 ? `, ${otherCount} info/debug omitted` : '';
+  let block = `## Console (errors+warnings${suffix})\n`;
+  for (const ev of errors) {
+    const loc = ev.location?.url
+      ? ` @${ev.location.url}${ev.location.lineNumber ? `:${ev.location.lineNumber}` : ''}`
+      : '';
+    block += `- ${ev.level}: ${ev.text}${loc}\n`;
+  }
   return block;
 }
 
@@ -426,9 +426,9 @@ function buildEnvironmentBlock(evidence: FailureEvidence | undefined): string {
   if (env.baseURL) lines.push(`- base_url: ${env.baseURL}`);
   if (env.locale) lines.push(`- locale: ${env.locale}`);
   if (env.timezone) lines.push(`- timezone: ${env.timezone}`);
-  if (env.userAgent) lines.push(`- user_agent: ${env.userAgent}`);
+  // user_agent (duplicates browser + channel + version) and sdkLanguage are
+  // dropped as low-signal-per-token for a single-failure diagnosis.
   if (env.playwrightVersion) lines.push(`- playwright: ${env.playwrightVersion}`);
-  if (env.sdkLanguage) lines.push(`- sdk: ${env.sdkLanguage}`);
   if (lines.length === 0) return '';
   return `## Environment\n${lines.join('\n')}`;
 }
@@ -565,15 +565,17 @@ export const buildTestFailureSegments = (args: {
 
   const taskInstructionsTemplate =
     args.overrides?.testAnalysisInstructions ?? TEST_ANALYSIS_TASK_INSTRUCTIONS;
-  const taskSub = applyMustache(
-    taskInstructionsTemplate,
-    {
-      project: args.overrides?.project,
-      testTitle: args.failureDetails.testTitle,
-      filePath: args.failureDetails.filePath,
-    },
-    TEST_ANALYSIS_VARS
-  );
+  const taskBindings = {
+    project: args.overrides?.project,
+    testTitle: args.failureDetails.testTitle,
+    filePath: args.failureDetails.filePath,
+  };
+  // Split so the stable contract (output format + rubrics, identical across every
+  // test analysis) caches separately from the per-test request header.
+  const { request: requestTemplate, contract: contractTemplate } =
+    splitTaskInstructions(taskInstructionsTemplate);
+  const requestSub = applyMustache(requestTemplate, taskBindings, TEST_ANALYSIS_VARS);
+  const contractSub = applyMustache(contractTemplate, taskBindings, TEST_ANALYSIS_VARS);
 
   const crossProjectBlock =
     args.crossProjectEntries && args.crossProjectEntries.length > 0
@@ -596,7 +598,9 @@ export const buildTestFailureSegments = (args: {
         args.overrides?.testAnalysisSystemPrompt
       )
     ),
-    buildSegment('task_instructions', 'user', !taskSub.substituted, taskSub.rendered),
+    buildSegment('task_contract', 'user', !contractSub.substituted, contractSub.rendered),
+    buildSegment('task_request', 'user', !requestSub.substituted, requestSub.rendered),
+    buildSegment('evidence_open', 'user', false, '<evidence>'),
     buildSegment('run_context', 'user', false, buildRunContextBlock(evidence)),
     buildSegment('test_metadata', 'user', false, buildTestMetadataBlock(evidence)),
     buildSegment('environment', 'user', false, buildEnvironmentBlock(evidence)),
@@ -661,5 +665,6 @@ export const buildTestFailureSegments = (args: {
     ),
     buildSegment('user_feedback', 'user', false, feedbackBlock),
     buildSegment('current_failure', 'user', false, buildFailureDetailsBlock(args.failureDetails)),
+    buildSegment('evidence_close', 'user', false, '</evidence>'),
   ]);
 };

@@ -63,9 +63,13 @@ export class AnthropicProvider extends LLMProvider {
   /**
    * Build the Anthropic body from a segmented prompt. Joins same-role segments
    * (system/user) into single fields, then applies cache_control:ephemeral on
-   * the last stable system block and the last stable user block. Two cache
-   * breakpoints — well within Anthropic's 4-block limit — capture the full
-   * stable prefix while leaving the varying tail uncached.
+   * the last stable system block and on BOTH the first and last stable user
+   * blocks. The two user breakpoints nest: the first (the task contract, which is
+   * identical across every call of a task type) is reused across the whole queue
+   * batch; the last (e.g. cross-project context, which varies per test) is reused
+   * on regenerate of the same request. Up to three breakpoints — within
+   * Anthropic's 4-block limit — capturing the stable prefix while leaving the
+   * varying tail uncached.
    */
   private buildBodyFromSegments(segments: PromptSegment[], request: LLMRequest): AnthropicRequest {
     const systemBlocks: AnthropicTextBlock[] = [];
@@ -74,6 +78,7 @@ export class AnthropicProvider extends LLMProvider {
     // cache_control on the right one (Anthropic caches the prefix up to and
     // including the marked block — must be a stable segment's text block).
     let lastStableSystemTextIdx = -1;
+    let firstStableUserTextIdx = -1;
     let lastStableUserTextIdx = -1;
 
     for (const seg of segments) {
@@ -95,7 +100,10 @@ export class AnthropicProvider extends LLMProvider {
         if (seg.stable) lastStableSystemTextIdx = systemBlocks.length;
         systemBlocks.push(textBlock);
       } else {
-        if (seg.stable) lastStableUserTextIdx = userBlocks.length;
+        if (seg.stable) {
+          if (firstStableUserTextIdx === -1) firstStableUserTextIdx = userBlocks.length;
+          lastStableUserTextIdx = userBlocks.length;
+        }
         userBlocks.push(textBlock);
       }
     }
@@ -103,8 +111,10 @@ export class AnthropicProvider extends LLMProvider {
     if (lastStableSystemTextIdx >= 0) {
       systemBlocks[lastStableSystemTextIdx].cache_control = { type: 'ephemeral' };
     }
-    if (lastStableUserTextIdx >= 0) {
-      const target = userBlocks[lastStableUserTextIdx];
+    // dedupe: when only one stable user block exists, first === last.
+    for (const idx of new Set([firstStableUserTextIdx, lastStableUserTextIdx])) {
+      if (idx < 0) continue;
+      const target = userBlocks[idx];
       if (target.type === 'text') {
         target.cache_control = { type: 'ephemeral' };
       }
