@@ -212,6 +212,30 @@ export class TestDatabase {
     return this.db.prepare(compiled.sql).get(...compiled.parameters) as Test | undefined;
   }
 
+  public getTestsByKeys(
+    keys: Array<{ testId: string; fileId: string; project: string }>
+  ): Map<string, { title: string; filePath: string }> {
+    const out = new Map<string, { title: string; filePath: string }>();
+    if (keys.length === 0) return out;
+    for (const part of chunk(keys, 300)) {
+      const tuples = part.map(() => '(?, ?, ?)').join(', ');
+      const params = part.flatMap((k) => [k.testId, k.fileId, k.project]);
+      const sqlText = `SELECT testId, fileId, project, title, filePath FROM tests
+        WHERE (testId, fileId, project) IN (VALUES ${tuples})`;
+      const rows = this.db.prepare(sqlText).all(...params) as Array<{
+        testId: string;
+        fileId: string;
+        project: string;
+        title: string;
+        filePath: string;
+      }>;
+      for (const r of rows) {
+        out.set(`${r.testId}::${r.fileId}::${r.project}`, { title: r.title, filePath: r.filePath });
+      }
+    }
+    return out;
+  }
+
   public findTestByIds(testId: string, fileId: string): Test | undefined {
     const compiled = this.k
       .selectFrom('tests as t')

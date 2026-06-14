@@ -62,10 +62,14 @@ function partitionFailingRunsByOutcome(reportId: string): {
   const reportRuns = testDb.getTestRunsByReport(reportId);
   const hardFailingByKey: FailingByKey = new Map();
   const flakyByKey: FailingByKey = new Map();
-  for (const run of reportRuns) {
+  const failing = reportRuns.filter(
+    (run) => run.outcome === 'unexpected' || run.outcome === 'failed' || run.outcome === 'flaky'
+  );
+  const testInfoByKey = testDb.getTestsByKeys(
+    failing.map((run) => ({ testId: run.testId, fileId: run.fileId, project: run.project }))
+  );
+  for (const run of failing) {
     const isHardFail = run.outcome === 'unexpected' || run.outcome === 'failed';
-    const isFlaky = run.outcome === 'flaky';
-    if (!isHardFail && !isFlaky) continue;
     let message = '';
     if (run.failureDetails) {
       try {
@@ -75,8 +79,8 @@ function partitionFailingRunsByOutcome(reportId: string): {
         // ignore — empty message
       }
     }
-    const test = testDb.getTest(run.testId, run.fileId, run.project);
     const key = `${run.testId}::${run.fileId}::${run.project}`;
+    const test = testInfoByKey.get(key);
     const rec: ReportFailureRecord = {
       testId: run.testId,
       fileId: run.fileId,

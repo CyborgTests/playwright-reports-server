@@ -13,6 +13,7 @@ import {
   activeProjectsForWindow,
   buildSummaryForProject,
   cadenceToCron,
+  createReportsWindowCache,
   resolveDiscoveryWindow,
   resolveWindow,
 } from './schedule.js';
@@ -107,8 +108,9 @@ export class NotificationScheduler {
   private async fire(channel: NotificationChannel, rule: ScheduleRule): Promise<void> {
     try {
       const now = Date.now();
+      const reportsCache = createReportsWindowCache();
       const discoveryWindow = resolveDiscoveryWindow(rule, now);
-      const projects = activeProjectsForWindow(rule.projectFilter, discoveryWindow);
+      const projects = activeProjectsForWindow(rule.projectFilter, discoveryWindow, reportsCache);
 
       if (projects.length === 0) {
         const skipped: DispatchResult = {
@@ -122,7 +124,7 @@ export class NotificationScheduler {
 
       for (const project of projects) {
         const window = resolveWindow(rule, channel.id, project, now);
-        const summary = buildSummaryForProject({ rule, project, window });
+        const summary = buildSummaryForProject({ rule, project, window, cache: reportsCache });
 
         if (!scheduleConditionMatches(rule.condition, summary)) {
           const skipped: DispatchResult = {

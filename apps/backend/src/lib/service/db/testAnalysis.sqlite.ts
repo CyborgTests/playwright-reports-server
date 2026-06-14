@@ -150,6 +150,28 @@ export class TestAnalysisDatabase {
     return row ?? null;
   }
 
+  public getLatestAnalysisByTestIds(testIds: string[], reportIds: string[]): Map<string, string> {
+    const out = new Map<string, string>();
+    if (testIds.length === 0 || reportIds.length === 0) return out;
+    const compiled = this.k
+      .selectFrom('test_llm_analyses')
+      .select(['testId', 'analysis'])
+      .where('testId', 'in', [...new Set(testIds)])
+      .where('reportId', 'in', [...new Set(reportIds)])
+      .where('analysis', 'is not', null)
+      .where(sql`TRIM(analysis)`, '!=', '')
+      .orderBy(sql`COALESCE(updatedAt, createdAt)`, 'desc')
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      testId: string;
+      analysis: string | null;
+    }>;
+    for (const row of rows) {
+      if (row.analysis && !out.has(row.testId)) out.set(row.testId, row.analysis);
+    }
+    return out;
+  }
+
   public getByReport(reportId: string): TestAnalysisRow[] {
     const compiled = this.k
       .selectFrom('test_llm_analyses')

@@ -23,6 +23,11 @@ export interface WindowRange {
   label: string;
 }
 
+export type ReportsWindowCache = Map<string, ReportHistory[]>;
+export function createReportsWindowCache(): ReportsWindowCache {
+  return new Map();
+}
+
 export function resolveWindow(
   rule: ScheduleRule,
   channelId: string,
@@ -76,8 +81,12 @@ export function cadenceToCron(rule: ScheduleRule): string {
   return `${mm} ${hh} * * 1`;
 }
 
-export function activeProjectsForWindow(filter: ProjectFilter, window: WindowRange): string[] {
-  const reports = reportsInWindow(window);
+export function activeProjectsForWindow(
+  filter: ProjectFilter,
+  window: WindowRange,
+  cache?: ReportsWindowCache
+): string[] {
+  const reports = reportsInWindow(window, cache);
   const seen = new Set<string>();
   for (const r of reports) {
     if (!projectFilterMatches(filter, r.project)) continue;
@@ -90,12 +99,13 @@ export function buildSummaryForProject(args: {
   rule: ScheduleRule;
   project: string;
   window: WindowRange;
+  cache?: ReportsWindowCache;
 }): ScheduleSummary {
-  const { rule, project, window } = args;
+  const { rule, project, window, cache } = args;
   const fromISO = new Date(window.start).toISOString();
   const toISO = new Date(window.end).toISOString();
 
-  const all = reportsInWindow(window);
+  const all = reportsInWindow(window, cache);
   const inScope = all.filter((r) => r.project === project);
 
   const totals = aggregateStats(inScope);
@@ -107,7 +117,7 @@ export function buildSummaryForProject(args: {
     end: window.start,
     label: window.label,
   };
-  const prevReports = reportsInWindow(prevWindow).filter((r) => r.project === project);
+  const prevReports = reportsInWindow(prevWindow, cache).filter((r) => r.project === project);
   const prevPassRate = prevReports.length === 0 ? null : aggregateStats(prevReports).passRate;
   const passRateDelta = prevPassRate === null ? null : passRate - prevPassRate;
 
@@ -183,11 +193,16 @@ function countReportTransitions(
   return { regressions, recoveries };
 }
 
-function reportsInWindow(window: WindowRange): ReportHistory[] {
-  return reportDb.getByProject(undefined, {
+function reportsInWindow(window: WindowRange, cache?: ReportsWindowCache): ReportHistory[] {
+  const key = `${window.start}|${window.end}`;
+  const cached = cache?.get(key);
+  if (cached) return cached;
+  const reports = reportDb.getByProject(undefined, {
     from: new Date(window.start).toISOString(),
     to: new Date(window.end).toISOString(),
   });
+  cache?.set(key, reports);
+  return reports;
 }
 
 interface AggregateStats {

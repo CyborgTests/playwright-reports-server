@@ -1,4 +1,5 @@
 import type { ReportAnalysisStructured } from '@playwright-reports/shared';
+import { sql } from 'kysely';
 import { linkifyReportAnalysisStructured, linkifyReportRefs } from '../../llm/linkifyReportRefs.js';
 import { getDatabase } from './db.js';
 import { decodeFailureDetails } from './failureDetailsCodec.js';
@@ -239,6 +240,7 @@ export class FailureSummaryDatabase {
         'createdAt',
       ])
       .where('failure_category', 'is not', null)
+      .orderBy(sql`CASE WHEN outcome IN ('failed', 'unexpected') THEN 0 ELSE 1 END`, 'asc')
       .orderBy('createdAt', 'desc')
       .limit(MAX_ROWS_SCANNED);
     if (project && project !== 'all') q = q.where('project', '=', project);

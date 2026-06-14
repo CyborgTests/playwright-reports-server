@@ -200,16 +200,14 @@ export class ReportDatabase {
     }
 
     const rows = new Map<string, ReportRow>();
-    for (const id of reportIds) {
+    for (const idChunk of chunk(reportIds, 500)) {
       const compiled = this.k
         .selectFrom('reports')
         .selectAll()
-        .where('reportID', '=', id)
+        .where('reportID', 'in', idChunk)
         .compile();
-      const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
-        | ReportRow
-        | undefined;
-      if (row) rows.set(id, row);
+      const found = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportRow[];
+      for (const row of found) rows.set(row.reportID, row);
     }
     const missing = reportIds.filter((id) => !rows.has(id));
     if (missing.length > 0) {

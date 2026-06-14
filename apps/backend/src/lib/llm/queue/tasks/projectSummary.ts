@@ -166,15 +166,19 @@ async function aggregateProjectClusters(
 
   const top = projectClusters.slice(0, options.topN);
 
+  const repTestIds = top
+    .map((cluster) => cluster.affectedTests[0]?.testId)
+    .filter((id): id is string => !!id);
+  const rootCauseByTestId = testAnalysisDb.getLatestAnalysisByTestIds(
+    repTestIds,
+    reports.map((r) => r.reportId)
+  );
   for (const cluster of top) {
     const repTest = cluster.affectedTests[0];
     if (!repTest) continue;
-    for (const r of reports) {
-      const analysis = testAnalysisDb.getByTestAndReport(repTest.testId, r.reportId);
-      if (analysis?.analysis) {
-        cluster.latestRootCause = extractRootCauseParagraph(analysis.analysis);
-        break;
-      }
+    const analysis = rootCauseByTestId.get(repTest.testId);
+    if (analysis) {
+      cluster.latestRootCause = extractRootCauseParagraph(analysis);
     }
   }
 
