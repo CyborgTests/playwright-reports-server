@@ -222,7 +222,9 @@ export default function ResultsTable({
 
   const isAllSelected = results?.length > 0 && results.every((r) => selectedIds.has(r.resultID));
 
-  error && toast.error(error.message);
+  useEffect(() => {
+    if (error) toast.error(error.message);
+  }, [error]);
 
   const renderPagination = () => {
     if (pages <= 1) return null;

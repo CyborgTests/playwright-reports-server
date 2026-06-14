@@ -197,7 +197,9 @@ export default function AnalyticsDashboard() {
     });
   }, [applyTestsFilter, clearRegressionFilters, dateRange.from, searchParams]);
 
-  error && toast.error(error.message);
+  useEffect(() => {
+    if (error) toast.error(error.message);
+  }, [error]);
 
   const isLoading = isPending || isFetching;
 

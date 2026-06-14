@@ -46,7 +46,9 @@ export default function TestDetailPage() {
     dependencies: [testId, project],
   });
 
-  error && toast.error(error.message);
+  useEffect(() => {
+    if (error) toast.error(error.message);
+  }, [error]);
 
   const detail = data?.data;
   const recentRuns = useMemo(
