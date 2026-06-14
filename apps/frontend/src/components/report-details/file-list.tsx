@@ -58,7 +58,9 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
         file.tests?.some((test) => test.testId === highlightTestId)
       );
       if (fileWithTest?.fileId) {
-        setExpandedKeys((prev) => (prev.includes(fileWithTest.fileId) ? prev : [...prev, fileWithTest.fileId]));
+        setExpandedKeys((prev) =>
+          prev.includes(fileWithTest.fileId) ? prev : [...prev, fileWithTest.fileId]
+        );
       }
     }
   }, [highlightTestId, filteredTests]);

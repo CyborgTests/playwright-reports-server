@@ -91,6 +91,7 @@ export default function TestManagementWidget({
     tiers: parseTiersParam(searchParams.get('tiers')),
     sort: parseSortParam(searchParams.get('sort')),
     failureCategory: searchParams.get('failureCategory') || undefined,
+    search: searchParams.get('search') || undefined,
     regressedOnly: searchParams.get('regressedOnly') === '1',
     regressedSince: searchParams.get('regressedSince') || undefined,
     resolvedSince: searchParams.get('resolvedSince') || undefined,
@@ -109,6 +110,7 @@ export default function TestManagementWidget({
     const urlTiers = parseTiersParam(searchParams.get('tiers'));
     const urlSort = parseSortParam(searchParams.get('sort'));
     const urlFailureCategory = searchParams.get('failureCategory') || undefined;
+    const urlSearch = searchParams.get('search') || undefined;
     const urlRegressedOnly = searchParams.get('regressedOnly') === '1';
     const urlRegressedSince = searchParams.get('regressedSince') || undefined;
     const urlResolvedSince = searchParams.get('resolvedSince') || undefined;
@@ -120,6 +122,7 @@ export default function TestManagementWidget({
         sameTiers &&
         prev.sort === urlSort &&
         prev.failureCategory === urlFailureCategory &&
+        prev.search === urlSearch &&
         (prev.regressedOnly ?? false) === urlRegressedOnly &&
         prev.regressedSince === urlRegressedSince &&
         prev.resolvedSince === urlResolvedSince
@@ -131,6 +134,7 @@ export default function TestManagementWidget({
         tiers: urlTiers,
         sort: urlSort,
         failureCategory: urlFailureCategory,
+        search: urlSearch,
         regressedOnly: urlRegressedOnly,
         regressedSince: urlRegressedSince,
         resolvedSince: urlResolvedSince,
@@ -152,6 +156,10 @@ export default function TestManagementWidget({
       else params.delete('regressedSince');
       if (next.resolvedSince) params.set('resolvedSince', next.resolvedSince);
       else params.delete('resolvedSince');
+      if (next.failureCategory) params.set('failureCategory', next.failureCategory);
+      else params.delete('failureCategory');
+      if (next.search) params.set('search', next.search);
+      else params.delete('search');
       if (params.toString() !== searchParams.toString()) {
         setSearchParams(params, { replace: true });
       }
