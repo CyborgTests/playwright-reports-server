@@ -520,8 +520,8 @@ export class TestDatabase {
     const params: (string | number)[] = [...testIds];
     if (project) params.push(project);
     const sqlText = `
-      SELECT testId, fileId, project, failureDetails FROM (
-        SELECT testId, fileId, project, failureDetails, createdAt,
+      SELECT testId, fileId, project, failure_details FROM (
+        SELECT testId, fileId, project, failure_details, createdAt,
           ROW_NUMBER() OVER (
             PARTITION BY testId
             ORDER BY createdAt DESC
@@ -536,14 +536,14 @@ export class TestDatabase {
       testId: string;
       fileId: string;
       project: string;
-      failureDetails?: string;
+      failure_details: Buffer | string | null;
     }>;
     for (const row of rows) {
       out.set(row.testId, {
         testId: row.testId,
         fileId: row.fileId,
         project: row.project,
-        failureDetails: row.failureDetails,
+        failureDetails: decodeFailureDetails(row.failure_details) || undefined,
       });
     }
     return out;
