@@ -170,7 +170,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         );
 
         const projectConfig = await service.getConfig();
-        const analyzeGreen = (projectConfig as any)?.llm?.analyzeGreenWindows === true;
+        const analyzeGreen = projectConfig.llm?.analyzeGreenWindows === true;
 
         if (!hasAnyFailures && !analyzeGreen) {
           const lastReportId = latestReports[0]?.reportID;

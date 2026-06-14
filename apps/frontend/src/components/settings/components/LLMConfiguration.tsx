@@ -1,6 +1,6 @@
 'use client';
 
-import type { PromptVariable, ServerConfig } from '@playwright-reports/shared';
+import type { LLMProviderType, PromptVariable, ServerConfig } from '@playwright-reports/shared';
 import { PROMPT_VARIABLES } from '@playwright-reports/shared';
 import { CheckCircle2, ListTodo, Plug, RefreshCw, X, XCircle } from 'lucide-react';
 import { useRef, useState } from 'react';
@@ -76,7 +76,7 @@ export default function LLMConfiguration({
   const [promptsAccordionValue, setPromptsAccordionValue] = useState<string>('');
   const promptsAccordionOpen = promptsAccordionValue === 'custom-prompts';
   const { data: defaultPromptsData } = useLlmDefaultPrompts({
-    enabled: isEditing && promptsAccordionOpen,
+    enabled: promptsAccordionOpen,
   });
   const defaultPrompts = defaultPromptsData?.data;
   // Per-task numeric defaults come back on the saved config response. Used
@@ -304,7 +304,7 @@ export default function LLMConfiguration({
                 onValueChange={(value) => {
                   if (editingSection === 'llm') {
                     onUpdateTempConfig({
-                      llm: { ...tempConfig.llm, provider: value as any },
+                      llm: { ...tempConfig.llm, provider: value as LLMProviderType },
                     });
                   }
                 }}
