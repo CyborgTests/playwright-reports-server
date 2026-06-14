@@ -148,7 +148,9 @@ function FailureCategoryChartImpl({
                 dataKey="count"
                 radius={[0, 4, 4, 0]}
                 cursor={onCategoryClick ? 'pointer' : undefined}
-                onClick={(data: CategoryData) => onCategoryClick?.(data.category)}
+                onClick={(data: { payload: CategoryData }) =>
+                  onCategoryClick?.(data.payload.category)
+                }
               >
                 {chartData.map((entry) => (
                   <Cell
