@@ -453,7 +453,7 @@ export class S3 implements Storage {
 
     if (error) {
       console.error(`[s3] failed to upload file: ${error.message}, retrying in 3s...`);
-
+      await new Promise((resolve) => setTimeout(resolve, 3000));
       return await this.uploadFileWithRetry(remotePath, filePath, attempt + 1);
     }
   }
@@ -580,7 +580,7 @@ export class S3 implements Storage {
       }
     }
 
-    const { reportPath } = await generatePlaywrightReport(reportId, metadata!);
+    const { reportPath } = await generatePlaywrightReport(reportId, metadata ?? {});
 
     const sizeBytes = await getFolderSize.loose(reportPath);
     console.log(`[s3] report ${reportId} generated (${bytesToString(sizeBytes)})`);

@@ -421,7 +421,7 @@ export class AzureBlob implements Storage {
       }
     }
 
-    const { reportPath } = await generatePlaywrightReport(reportId, metadata!);
+    const { reportPath } = await generatePlaywrightReport(reportId, metadata ?? {});
 
     const sizeBytes = await getFolderSize.loose(reportPath);
     console.log(`[azure] report ${reportId} generated (${bytesToString(sizeBytes)})`);

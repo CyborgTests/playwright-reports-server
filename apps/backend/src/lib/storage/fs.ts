@@ -194,7 +194,7 @@ async function parseReportMetadata(
     {
       reportID,
       createdAt: info.startTime ? new Date(info.startTime).toISOString() : new Date().toISOString(),
-      sizeBytes: await getFolderSize.loose(reportPath).then(bytesToString),
+      sizeBytes,
       size: bytesToString(sizeBytes),
       reportUrl: `${serveReportRoute}/${reportID}/index.html`,
       project: '',

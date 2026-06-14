@@ -196,10 +196,7 @@ export function DeliveryLogPanel({ channels }: Readonly<DeliveryLogPanelProps>) 
         <>
           {selected.size > 0 && (
             <div className="flex items-center gap-2 rounded border bg-muted/30 px-3 py-1.5 text-xs">
-              <span>
-                {selected.size} selected
-                {someChecked && visibleIds.length > selected.size ? '' : ''}
-              </span>
+              <span>{selected.size} selected</span>
               <Button
                 type="button"
                 variant="ghost"

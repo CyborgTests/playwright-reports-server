@@ -85,44 +85,36 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
       return tags;
     });
 
-    fastify.delete(
-      '/api/result/delete',
-      {
-        config: {
-          rawBody: true,
-        },
-      },
-      async (request, reply) => {
-        try {
-          const body = (request.body as { resultsIds?: unknown }) || { resultsIds: [] };
+    fastify.delete('/api/result/delete', async (request, reply) => {
+      try {
+        const body = (request.body as { resultsIds?: unknown }) || { resultsIds: [] };
 
-          if (!body.resultsIds || !Array.isArray(body.resultsIds)) {
-            return reply.status(400).send({ error: 'resultsIds array is required' });
-          }
-
-          if (body.resultsIds.length === 0) {
-            return reply.status(400).send({ error: 'At least one result ID must be provided' });
-          }
-
-          const validatedBody = validateSchema(DeleteResultsRequestSchema, body);
-
-          const { error } = await withError(service.deleteResults(validatedBody.resultsIds));
-
-          if (error) {
-            console.error(`[routes] delete results error:`, error);
-            return reply.status(404).send({ error: error.message });
-          }
-
-          return reply.status(200).send({
-            message: 'Results files deleted successfully',
-            resultsIds: validatedBody.resultsIds,
-          });
-        } catch (error) {
-          console.error('[routes] delete results validation error:', error);
-          return reply.status(400).send({ error: 'Invalid request format' });
+        if (!body.resultsIds || !Array.isArray(body.resultsIds)) {
+          return reply.status(400).send({ error: 'resultsIds array is required' });
         }
+
+        if (body.resultsIds.length === 0) {
+          return reply.status(400).send({ error: 'At least one result ID must be provided' });
+        }
+
+        const validatedBody = validateSchema(DeleteResultsRequestSchema, body);
+
+        const { error } = await withError(service.deleteResults(validatedBody.resultsIds));
+
+        if (error) {
+          console.error(`[routes] delete results error:`, error);
+          return reply.status(404).send({ error: error.message });
+        }
+
+        return reply.status(200).send({
+          message: 'Results files deleted successfully',
+          resultsIds: validatedBody.resultsIds,
+        });
+      } catch (error) {
+        console.error('[routes] delete results validation error:', error);
+        return reply.status(400).send({ error: 'Invalid request format' });
       }
-    );
+    });
   });
 
   await fastify.register(async (fastify) => {
