@@ -183,6 +183,12 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         reason?: string;
       };
 
+      if (!project) {
+        return reply
+          .status(400)
+          .send({ success: false, error: 'project query parameter is required' });
+      }
+
       if (body.isQuarantined && (!body.reason || body.reason.trim().length === 0)) {
         return reply.status(400).send({
           success: false,
