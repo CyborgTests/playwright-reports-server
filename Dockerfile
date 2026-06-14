@@ -58,7 +58,7 @@ RUN mkdir -p /app/apps/frontend/packages && \
 ENV DOCKER_BUILD=true
 RUN pnpm --filter @playwright-reports/frontend build:vite
 
-# Bundle backend with esbuild — produces dist/index.js + dist/llmButton.js.
+# Bundle backend with esbuild — produces dist/index.js + inject.js + inject.css.
 # All prod deps except externals get folded and tree-shaken.
 FROM build-base AS backend-bundler
 WORKDIR /app
