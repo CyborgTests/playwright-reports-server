@@ -15,8 +15,12 @@ import {
   ListReportsQuerySchema,
   UploadReportRequestSchema,
 } from '../lib/schemas/index.js';
+import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
 import { reportDb } from '../lib/service/db/index.js';
+import { llmTasksDb } from '../lib/service/db/llmTasks.sqlite.js';
 import { regressionsDb } from '../lib/service/db/regressions.sqlite.js';
+import { testAnalysisDb } from '../lib/service/db/testAnalysis.sqlite.js';
+import { testDb } from '../lib/service/db/tests.sqlite.js';
 import { service } from '../lib/service/index.js';
 import { compareReports } from '../lib/service/reportCompare.js';
 import { testManagementService } from '../lib/service/testManagement.js';
@@ -324,6 +328,145 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
       } catch (error) {
         console.error('[routes] delete reports validation error:', error);
         return reply.status(400).send({ error: 'Invalid request format' });
+      }
+    });
+
+    // GET /api/report/:id/failure-summary - get stored failure summary for a report
+    fastify.get('/api/report/:id/failure-summary', async (request, reply) => {
+      try {
+        const { id } = (request as { params: { id: string } }).params;
+        const summary = failureSummaryDb.getSummary(id);
+
+        const runs = testDb.getTestRunsByReport(id);
+        const hasFailures = runs.some(
+          (r) => r.outcome === 'unexpected' || r.outcome === 'failed' || r.outcome === 'flaky'
+        );
+
+        const pendingAnalysisCount = llmTasksDb.getInflightCountForReport(id);
+
+        return reply.send({
+          success: true,
+          data: summary ?? null,
+          hasFailures,
+          pendingAnalysisCount,
+        });
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({
+          success: false,
+          error: 'Failed to fetch failure summary',
+        });
+      }
+    });
+
+    // POST /api/report/:id/analyze - trigger analysis for a specific report
+    fastify.post('/api/report/:id/analyze', async (request, reply) => {
+      try {
+        const { id } = (request as { params: { id: string } }).params;
+        const testRuns = testDb.getTestRunsByReport(id);
+
+        const failedRuns = testRuns.filter(
+          (run) =>
+            run.failureDetails ||
+            run.outcome === 'unexpected' ||
+            run.outcome === 'failed' ||
+            run.outcome === 'flaky'
+        );
+
+        const seen = new Set<string>();
+        let queued = 0;
+        let skipped = 0;
+        let project: string | undefined;
+
+        const { detectFailureCategory } = await import('../lib/service/testManagement.js');
+
+        const findReuseSource = (
+          testId: string,
+          fileId: string,
+          proj: string,
+          errorSignature: string | undefined,
+          heuristicCategory: string,
+          currentReportId: string
+        ) => {
+          if (!errorSignature) return null;
+          return testAnalysisDb.findReuseSource(
+            testId,
+            fileId,
+            proj,
+            errorSignature,
+            heuristicCategory,
+            currentReportId
+          );
+        };
+
+        for (const run of failedRuns) {
+          const key = `${run.testId}:${run.fileId}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          project ??= run.project;
+
+          const existing = testAnalysisDb.getByTestAndReport(run.testId, id);
+          if (existing?.analysis && existing.analysis.trim() !== '') {
+            skipped++;
+            continue;
+          }
+
+          const heuristicCategory = run.failureDetails
+            ? detectFailureCategory(JSON.parse(run.failureDetails)?.message ?? '')
+            : detectFailureCategory('');
+          const reuseSource = findReuseSource(
+            run.testId,
+            run.fileId,
+            run.project,
+            run.errorSignature,
+            heuristicCategory,
+            id
+          );
+
+          if (reuseSource) {
+            skipped++;
+            testAnalysisDb.upsert(
+              run.testId,
+              run.fileId,
+              run.project,
+              id,
+              reuseSource.analysis,
+              reuseSource.category ?? undefined,
+              reuseSource.model ?? undefined,
+              1,
+              reuseSource.id
+            );
+            if (run.runId && reuseSource.category) {
+              testDb.updateFailureCategory(run.runId, reuseSource.category);
+            }
+            continue;
+          }
+
+          llmTasksDb.createTask('test_analysis', {
+            reportId: id,
+            testId: run.testId,
+            fileId: run.fileId,
+            project: run.project,
+          });
+          queued++;
+        }
+
+        if (queued > 0 || skipped > 0) {
+          llmTasksDb.createTask('report_summary', {
+            reportId: id,
+            project,
+            priority: -1,
+          });
+        }
+
+        return reply.send({ success: true, queued, skipped });
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({
+          success: false,
+          error: 'Failed to trigger report analysis',
+        });
       }
     });
   });
