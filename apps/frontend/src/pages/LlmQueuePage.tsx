@@ -10,17 +10,8 @@ import {
 } from '@/components/llm-queue/format-task';
 import { TaskTable } from '@/components/llm-queue/TaskTable';
 import { StatsBar, UsageCard } from '@/components/llm-queue/UsageCard';
+import PaginatedControls from '@/components/paginated-controls';
 import { Button } from '@/components/ui/button';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationFirst,
-  PaginationItem,
-  PaginationLast,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
 import {
   Select,
   SelectContent,
@@ -311,61 +302,12 @@ export default function LlmQueuePage() {
           <span className="text-sm text-muted-foreground">
             Showing {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, total)} of {total}
           </span>
-          <Pagination className="mx-0 w-auto">
-            <PaginationContent>
-              <PaginationItem>
-                <PaginationFirst
-                  onClick={() => page !== 1 && setPage(1)}
-                  className={page === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                />
-              </PaginationItem>
-              <PaginationItem>
-                <PaginationPrevious
-                  onClick={() => page > 1 && setPage(page - 1)}
-                  className={page === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                />
-              </PaginationItem>
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                let pageNum: number;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (page <= 3) {
-                  pageNum = i + 1;
-                } else if (page >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = page - 2 + i;
-                }
-                return (
-                  <PaginationItem key={pageNum}>
-                    <PaginationLink
-                      onClick={() => setPage(pageNum)}
-                      isActive={page === pageNum}
-                      className="cursor-pointer"
-                    >
-                      {pageNum}
-                    </PaginationLink>
-                  </PaginationItem>
-                );
-              })}
-              <PaginationItem>
-                <PaginationNext
-                  onClick={() => page < totalPages && setPage(page + 1)}
-                  className={
-                    page === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'
-                  }
-                />
-              </PaginationItem>
-              <PaginationItem>
-                <PaginationLast
-                  onClick={() => page !== totalPages && setPage(totalPages)}
-                  className={
-                    page === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'
-                  }
-                />
-              </PaginationItem>
-            </PaginationContent>
-          </Pagination>
+          <PaginatedControls
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            className="mx-0 w-auto"
+          />
         </div>
       )}
     </div>

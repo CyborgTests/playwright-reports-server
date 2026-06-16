@@ -6,16 +6,6 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationFirst,
-  PaginationItem,
-  PaginationLast,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Spinner } from '@/components/ui/spinner';
 import {
@@ -34,6 +24,7 @@ import FormattedDate from './date-format';
 import DeleteReportButton from './delete-report-button';
 import EditReportButton from './edit-report-button';
 import { BranchIcon, FolderIcon, LinkIcon } from './icons';
+import PaginatedControls from './paginated-controls';
 import PassRateBar from './pass-rate-bar';
 import TablePaginationOptions, { type PassRateFilter } from './table-pagination-options';
 
@@ -456,14 +447,6 @@ export default function ReportsTable({
     setPage(newPage);
   }, []);
 
-  const goToPrevPage = useCallback(() => {
-    setPage((p) => (p > 1 ? p - 1 : p));
-  }, []);
-
-  const goToNextPage = useCallback(() => {
-    setPage((p) => (pages && p < pages ? p + 1 : p));
-  }, [pages]);
-
   const onProjectChange = useCallback((project: string) => {
     setProject(project);
     setPage(1);
@@ -492,67 +475,6 @@ export default function ReportsTable({
   useEffect(() => {
     if (error) toast.error(error.message);
   }, [error]);
-
-  const renderPagination = () => {
-    if (pages <= 1) return null;
-
-    return (
-      <div className="flex w-full justify-center mt-4">
-        <Pagination>
-          <PaginationContent>
-            <PaginationItem>
-              <PaginationFirst
-                onClick={() => page !== 1 && onPageChange(1)}
-                className={page === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-              />
-            </PaginationItem>
-            <PaginationItem>
-              <PaginationPrevious
-                onClick={goToPrevPage}
-                className={page === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-              />
-            </PaginationItem>
-            {Array.from({ length: Math.min(pages, 5) }, (_, i) => {
-              let pageNum: number;
-              if (pages <= 5) {
-                pageNum = i + 1;
-              } else if (page <= 3) {
-                pageNum = i + 1;
-              } else if (page >= pages - 2) {
-                pageNum = pages - 4 + i;
-              } else {
-                pageNum = page - 2 + i;
-              }
-
-              return (
-                <PaginationItem key={pageNum}>
-                  <PaginationLink
-                    onClick={() => onPageChange(pageNum)}
-                    isActive={page === pageNum}
-                    className="cursor-pointer"
-                  >
-                    {pageNum}
-                  </PaginationLink>
-                </PaginationItem>
-              );
-            })}
-            <PaginationItem>
-              <PaginationNext
-                onClick={goToNextPage}
-                className={page === pages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-              />
-            </PaginationItem>
-            <PaginationItem>
-              <PaginationLast
-                onClick={() => page !== pages && onPageChange(pages)}
-                className={page === pages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-              />
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
-      </div>
-    );
-  };
 
   if (isPending && !reportResponse) {
     return (
@@ -626,7 +548,12 @@ export default function ReportsTable({
           </TableBody>
         </Table>
       </div>
-      {renderPagination()}
+      <PaginatedControls
+        page={page}
+        totalPages={pages}
+        onPageChange={onPageChange}
+        className="mt-4"
+      />
     </>
   );
 }

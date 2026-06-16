@@ -6,16 +6,6 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-  Pagination,
-  PaginationContent,
-  PaginationFirst,
-  PaginationItem,
-  PaginationLast,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -37,6 +27,7 @@ import { withQueryParams } from '@/lib/network';
 import { withBase } from '@/lib/url';
 import FormattedDate from './date-format';
 import DeleteResultsButton from './delete-results-button';
+import PaginatedControls from './paginated-controls';
 import TablePaginationOptions from './table-pagination-options';
 
 type UsageFilter = 'all' | 'used' | 'unused';
@@ -311,67 +302,6 @@ export default function ResultsTable({
     if (error) toast.error(error.message);
   }, [error]);
 
-  const renderPagination = () => {
-    if (pages <= 1) return null;
-
-    return (
-      <div className="flex w-full justify-center mt-4">
-        <Pagination>
-          <PaginationContent>
-            <PaginationItem>
-              <PaginationFirst
-                onClick={() => page !== 1 && onPageChange(1)}
-                className={page === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-              />
-            </PaginationItem>
-            <PaginationItem>
-              <PaginationPrevious
-                onClick={() => page > 1 && onPageChange(page - 1)}
-                className={page === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-              />
-            </PaginationItem>
-            {Array.from({ length: Math.min(pages, 5) }, (_, i) => {
-              let pageNum: number;
-              if (pages <= 5) {
-                pageNum = i + 1;
-              } else if (page <= 3) {
-                pageNum = i + 1;
-              } else if (page >= pages - 2) {
-                pageNum = pages - 4 + i;
-              } else {
-                pageNum = page - 2 + i;
-              }
-
-              return (
-                <PaginationItem key={pageNum}>
-                  <PaginationLink
-                    onClick={() => onPageChange(pageNum)}
-                    isActive={page === pageNum}
-                    className="cursor-pointer"
-                  >
-                    {pageNum}
-                  </PaginationLink>
-                </PaginationItem>
-              );
-            })}
-            <PaginationItem>
-              <PaginationNext
-                onClick={() => page < pages && onPageChange(page + 1)}
-                className={page === pages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-              />
-            </PaginationItem>
-            <PaginationItem>
-              <PaginationLast
-                onClick={() => page !== pages && onPageChange(pages)}
-                className={page === pages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-              />
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
-      </div>
-    );
-  };
-
   if (isPending && !resultsResponse) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -461,7 +391,12 @@ export default function ResultsTable({
           </TableBody>
         </Table>
       </div>
-      {renderPagination()}
+      <PaginatedControls
+        page={page}
+        totalPages={pages}
+        onPageChange={onPageChange}
+        className="mt-4"
+      />
     </>
   );
 }
