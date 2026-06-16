@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface TrendSparklinesProps {
-  metrics: TrendMetrics;
+  metrics?: TrendMetrics;
   isLoading?: boolean;
   onSlowClick?: () => void;
   onFlakyClick?: () => void;

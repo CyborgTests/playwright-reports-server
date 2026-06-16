@@ -78,11 +78,21 @@ type MetadataItem = {
   primary?: boolean;
 };
 
+type ReportMetadataFields = {
+  branch?: string;
+  environment?: string;
+  playwrightVersion?: string;
+  workingDir?: string;
+  metadata?: { actualWorkers?: number };
+  machines?: unknown[] | { count?: number };
+  [key: string]: unknown;
+};
+
 const getMetadataItems = (item: ReportHistory): MetadataItem[] => {
   const metadata: MetadataItem[] = [];
 
-  // Cast to any to access dynamic properties that come from resultDetails
-  const itemWithMetadata = item as any;
+  // Access dynamic properties that come from resultDetails
+  const itemWithMetadata = item as ReportHistory & ReportMetadataFields;
 
   // Primary fields — shown inline up to a small cap
   if (itemWithMetadata.branch) {
@@ -106,10 +116,11 @@ const getMetadataItems = (item: ReportHistory): MetadataItem[] => {
     });
   }
 
-  if (itemWithMetadata.metadata?.actualWorkers !== undefined) {
+  const actualWorkers = itemWithMetadata.metadata?.actualWorkers;
+  if (actualWorkers !== undefined) {
     metadata.push({
       key: 'workers',
-      value: itemWithMetadata.metadata.actualWorkers,
+      value: actualWorkers,
       primary: true,
     });
   }

@@ -132,17 +132,13 @@ export function TopFailuresWidget({ errors, isLoading }: Readonly<TopFailuresWid
         ) : (
           <div className="space-y-3">
             {topErrors.map((error, index) => (
-              <div
-                key={error.signature}
-                className="border rounded-lg p-3 hover:bg-muted/50 transition-colors cursor-pointer"
-                onClick={() => setExpandedIndex(expandedIndex === index ? null : index)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    setExpandedIndex(expandedIndex === index ? null : index);
-                  }
-                }}
-              >
-                <div className="flex items-center justify-between gap-2">
+              <div key={error.signature} className="border rounded-lg p-3">
+                <button
+                  type="button"
+                  aria-expanded={expandedIndex === index}
+                  className="flex w-full items-center justify-between gap-2 text-left rounded-md hover:bg-muted/50 transition-colors cursor-pointer"
+                  onClick={() => setExpandedIndex(expandedIndex === index ? null : index)}
+                >
                   <div className="flex items-center gap-2 min-w-0">
                     <Badge
                       variant={categoryVariant[error.category] ?? 'outline'}
@@ -167,7 +163,7 @@ export function TopFailuresWidget({ errors, isLoading }: Readonly<TopFailuresWid
                     )}
                     <Badge variant="secondary">{error.count}x</Badge>
                   </div>
-                </div>
+                </button>
                 {expandedIndex === index && (
                   <div className="mt-2 space-y-2">
                     <pre className="text-xs bg-muted p-3 rounded overflow-x-auto whitespace-pre-wrap break-words">

@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { parseMilliseconds } from '@/lib/time';
 
 interface OverviewStatsProps {
-  stats: OverviewStats;
+  stats?: OverviewStats;
   totalTests?: number;
   flakyCount?: number;
   totalRuns?: number;

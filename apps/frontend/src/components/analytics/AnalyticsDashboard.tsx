@@ -244,14 +244,14 @@ export default function AnalyticsDashboard() {
 
       <section id="stats" className="scroll-mt-40">
         <OverviewStatsCard
-          stats={overviewStats!}
+          stats={overviewStats}
           totalTests={testsSummary?.total}
           flakyCount={testsSummary?.flakyCount}
           totalRuns={runHealthMetrics.length}
           onFlakyClick={handleFlakyTileClick}
         />
         <TrendSparklines
-          metrics={trendMetrics!}
+          metrics={trendMetrics}
           isLoading={isLoading}
           onSlowClick={handleSlowSparklineClick}
           onFlakyClick={handleFlakyTileClick}

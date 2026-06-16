@@ -210,21 +210,22 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
               {categoryEntries.map(([category, count]) => {
                 const description =
                   FAILURE_CATEGORY_DESCRIPTIONS[category as FailureCategory] ?? null;
-                const chip = (
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-0.5 text-xs font-semibold cursor-help ${getCategoryColor(category)}`}
-                  >
-                    {category}
-                    <span className="font-bold">{count}</span>
-                  </span>
-                );
+                const chipClassName = `inline-flex items-center gap-1 rounded-md px-2.5 py-0.5 text-xs font-semibold cursor-help ${getCategoryColor(category)}`;
                 return description ? (
                   <Tooltip key={category}>
-                    <TooltipTrigger asChild>{chip}</TooltipTrigger>
+                    <TooltipTrigger asChild>
+                      <span className={chipClassName}>
+                        {category}
+                        <span className="font-bold">{count}</span>
+                      </span>
+                    </TooltipTrigger>
                     <TooltipContent className="max-w-xs text-xs">{description}</TooltipContent>
                   </Tooltip>
                 ) : (
-                  <span key={category}>{chip}</span>
+                  <span key={category} className={chipClassName}>
+                    {category}
+                    <span className="font-bold">{count}</span>
+                  </span>
                 );
               })}
             </div>
