@@ -2,6 +2,7 @@ import {
   type DateRange,
   FLAKINESS_THRESHOLDS,
   type FlakinessTier,
+  formatDuration,
   ReportTestOutcomeEnum,
   type TestFilters,
   type TestsSort,
@@ -36,7 +37,6 @@ import { Spinner } from '@/components/ui/spinner';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { parseMilliseconds } from '@/lib/time';
 import { useAuth } from '../../hooks/useAuth';
 import { useConfig } from '../../hooks/useConfig';
 import useMutation from '../../hooks/useMutation';
@@ -224,7 +224,7 @@ const TestRow = memo(
         <TableCell className="whitespace-nowrap w-px">
           <span className="flex items-center">
             <Clock className="h-4 w-4 mr-1" />
-            {parseMilliseconds(exponentialMovingAverageDuration(item.runs))}
+            {formatDuration(exponentialMovingAverageDuration(item.runs))}
           </span>
         </TableCell>
         <TableCell>

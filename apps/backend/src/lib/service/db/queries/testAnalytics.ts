@@ -5,7 +5,12 @@
 //   - dynamic ORDER BY clauses with several CASE/COALESCE switches
 //   - UNION ALL VALUES tuple lists for lane lookup
 import type Database from 'better-sqlite3';
-import type { DerivedPageRow, Test, TestRun, TestWithQuarantineInfo } from '../tests.sqlite.js';
+import type {
+  DerivedPageRow,
+  Test,
+  TestRunRow,
+  TestWithQuarantineInfoRow,
+} from '../tests.sqlite.js';
 import { convertDbRowToTestRun, type TestRunDbRow } from '../tests.sqlite.js';
 import { chunk } from '../utils.js';
 
@@ -304,10 +309,10 @@ export function getRunsForLanes(
   db: Database.Database,
   lanes: Array<{ testId: string; fileId: string; project: string }>,
   opts?: { from?: string; to?: string }
-): Map<string, TestRun[]> {
+): Map<string, TestRunRow[]> {
   if (lanes.length === 0) return new Map();
 
-  const map = new Map<string, TestRun[]>();
+  const map = new Map<string, TestRunRow[]>();
   for (const batch of chunk(lanes, LANE_CHUNK_SIZE)) {
     runsForLaneChunk(db, batch, opts, map);
   }
@@ -318,7 +323,7 @@ function runsForLaneChunk(
   db: Database.Database,
   lanes: Array<{ testId: string; fileId: string; project: string }>,
   opts: { from?: string; to?: string } | undefined,
-  out: Map<string, TestRun[]>
+  out: Map<string, TestRunRow[]>
 ): void {
   const windowed = !!(opts?.from || opts?.to);
   const laneRows = lanes
@@ -386,7 +391,7 @@ export function getTestsSummary(
   db: Database.Database,
   project: string | undefined,
   warningThreshold: number
-): { total: number; flakyTests: TestWithQuarantineInfo[] } {
+): { total: number; flakyTests: TestWithQuarantineInfoRow[] } {
   const scoped = !!project && project !== 'all';
   const projectClause = scoped ? 'WHERE project = ?' : '';
   const projectClauseAnd = scoped ? 'AND project = ?' : '';
@@ -406,7 +411,7 @@ export function getTestsSummary(
     Test & { flakinessScore: number; quarantined: number }
   >;
 
-  const flakyTests: TestWithQuarantineInfo[] = flakyRows.map((row) => ({
+  const flakyTests: TestWithQuarantineInfoRow[] = flakyRows.map((row) => ({
     testId: row.testId,
     fileId: row.fileId,
     filePath: row.filePath,
@@ -618,7 +623,7 @@ export function getTestRunsInWindow(
   project: string | undefined,
   from: string,
   to: string
-): TestRun[] {
+): TestRunRow[] {
   const conditions: string[] = ["tr.outcome != 'skipped'"];
   const params: string[] = [];
 

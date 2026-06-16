@@ -473,8 +473,7 @@ export async function buildReportBrief(
     displayNumber: report.displayNumber,
     title: report.title,
     project: report.project,
-    createdAt:
-      report.createdAt instanceof Date ? report.createdAt.toISOString() : String(report.createdAt),
+    createdAt: report.createdAt,
     reportUrl: report.reportUrl,
     stats: {
       total: report.stats?.total ?? 0,

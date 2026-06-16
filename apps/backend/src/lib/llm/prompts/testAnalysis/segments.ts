@@ -1,4 +1,4 @@
-import type { TestDetailRegression } from '@playwright-reports/shared';
+import { formatRelativeTime, type TestDetailRegression } from '@playwright-reports/shared';
 import type { FailureEvidence } from '../../../parser/failure-extraction.js';
 import type { PerFileStep } from '../../../parser/report-payload.js';
 import type { SegmentedPrompt } from '../../types/index.js';
@@ -62,17 +62,6 @@ interface CrossProjectEntry {
   updatedAt: string;
   errorSignatureMatchesCurrent: boolean;
   latestAnalysis?: { content: string; updatedAt: string; model?: string };
-}
-
-function relativeTime(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 60_000) return 'just now';
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
-  const days = Math.floor(ms / 86_400_000);
-  if (days < 30) return `${days}d ago`;
-  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
-  return `${Math.floor(days / 365)}y ago`;
 }
 
 const OUTCOME_LABELS: Record<string, string> = {
@@ -344,7 +333,7 @@ function buildPriorInProjectAnalysisBlock(
   const meta: string[] = [];
   if (prior.category) meta.push(prior.category);
   if (prior.model) meta.push(prior.model);
-  if (prior.updatedAt) meta.push(relativeTime(prior.updatedAt));
+  if (prior.updatedAt) meta.push(formatRelativeTime(prior.updatedAt));
   const header = meta.length > 0 ? ` (${meta.join(' · ')})` : '';
   const excerpt = extractRootCauseExcerpt(prior.analysis);
   if (!excerpt) return `## Prior Analysis${header}\n_(excerpt unavailable)_`;
@@ -514,7 +503,7 @@ export const buildFeedbackContext = (
   feedback: { comment: string; updatedAt: string } | null
 ): string => {
   if (!feedback) return '';
-  return `\n## User Feedback (high-priority; weight heavily, surface contradictions with evidence)\n\n> ${feedback.comment.replace(/\n/g, '\n> ')}\n\n(updated ${relativeTime(feedback.updatedAt)})\n`;
+  return `\n## User Feedback (high-priority; weight heavily, surface contradictions with evidence)\n\n> ${feedback.comment.replace(/\n/g, '\n> ')}\n\n(updated ${formatRelativeTime(feedback.updatedAt)})\n`;
 };
 
 export const buildPerTestFeedbackContext = (
@@ -523,7 +512,7 @@ export const buildPerTestFeedbackContext = (
   if (notes.length === 0) return '';
   let block = `\n## Per-Test Feedback Notes\n`;
   for (const n of notes) {
-    block += `- **${n.testTitle ?? 'test'}** (updated ${relativeTime(n.updatedAt)}): ${n.comment}\n`;
+    block += `- **${n.testTitle ?? 'test'}** (updated ${formatRelativeTime(n.updatedAt)}): ${n.comment}\n`;
   }
   return block;
 };
@@ -536,11 +525,11 @@ export const buildCrossProjectContext = (
   let block = `\n## Cross-Project (same test, other projects)\n`;
   for (const e of entries) {
     const sig = e.errorSignatureMatchesCurrent ? 'matching error' : 'different error';
-    block += `\n### ${e.project} (${sig}, updated ${relativeTime(e.updatedAt)})\n`;
+    block += `\n### ${e.project} (${sig}, updated ${formatRelativeTime(e.updatedAt)})\n`;
     block += `${e.comment}\n`;
     if (e.latestAnalysis) {
       const modelInfo = e.latestAnalysis.model ? ` · ${e.latestAnalysis.model}` : '';
-      block += `prior_analysis (${relativeTime(e.latestAnalysis.updatedAt)}${modelInfo}):\n${e.latestAnalysis.content}\n`;
+      block += `prior_analysis (${formatRelativeTime(e.latestAnalysis.updatedAt)}${modelInfo}):\n${e.latestAnalysis.content}\n`;
     }
   }
   if (totalCount > entries.length) {

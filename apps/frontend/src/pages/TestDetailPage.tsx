@@ -1,6 +1,7 @@
 'use client';
 
 import type { ApiResponse, TestDetail } from '@playwright-reports/shared';
+import { formatDuration } from '@playwright-reports/shared';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom';
@@ -29,7 +30,6 @@ import {
 } from '@/components/ui/table';
 import useQuery from '@/hooks/useQuery';
 import { defaultProjectName } from '@/lib/constants';
-import { parseMilliseconds } from '@/lib/time';
 
 export default function TestDetailPage() {
   const { testId = '' } = useParams<{ testId: string }>();
@@ -172,18 +172,18 @@ export default function TestDetailPage() {
         />
         <StatTile
           label="Mean Duration"
-          value={stats.duration ? parseMilliseconds(stats.duration.mean) : '—'}
+          value={stats.duration ? formatDuration(stats.duration.mean) : '—'}
           hint={
             stats.duration
-              ? `standard deviation ${parseMilliseconds(stats.duration.stdDev)}`
+              ? `standard deviation ${formatDuration(stats.duration.stdDev)}`
               : undefined
           }
           info="Mean is the average duration across all runs. Standard deviation shows how much individual run durations vary from that mean — a smaller value means more consistent timings, a larger value means runs are spread out."
         />
         <StatTile
           label="p95 Duration"
-          value={stats.duration ? parseMilliseconds(stats.duration.p95) : '—'}
-          hint={stats.duration ? `median ${parseMilliseconds(stats.duration.median)}` : undefined}
+          value={stats.duration ? formatDuration(stats.duration.p95) : '—'}
+          hint={stats.duration ? `median ${formatDuration(stats.duration.median)}` : undefined}
           info="p95 is the duration that 95% of runs finished within — useful for spotting worst-case outliers. The median is the middle value: half of runs were faster, half slower."
         />
       </div>
@@ -226,7 +226,7 @@ export default function TestDetailPage() {
                   </TableCell>
                   <TableCell>{outcomeBadge(run.outcome)}</TableCell>
                   <TableCell className="whitespace-nowrap">
-                    {typeof run.duration === 'number' ? parseMilliseconds(run.duration) : '—'}
+                    {typeof run.duration === 'number' ? formatDuration(run.duration) : '—'}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
                     <a

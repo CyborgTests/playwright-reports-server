@@ -39,8 +39,8 @@ import { safeZipEntryPath } from './streamUtils.js';
 import type {
   ReadFileResult,
   ReportHistory,
-  ReportMetadata,
   ReportPath,
+  ReportUploadMetadata,
   ServerDataInfo,
   Storage,
 } from './types.js';
@@ -468,7 +468,7 @@ export class S3 implements Storage {
 
   async generateReport(
     resultsIds: string[],
-    metadata?: ReportMetadata
+    metadata?: ReportUploadMetadata
   ): Promise<{ reportId: UUID; reportPath: string; report: ReportHistory }> {
     console.log(`[s3] generating report from ${resultsIds.length} result(s)`);
     const { error: mkdirReportsError } = await withError(
@@ -499,7 +499,7 @@ export class S3 implements Storage {
     reportId: UUID,
     resultsIds: string[],
     tempFolder: string,
-    metadata?: ReportMetadata
+    metadata?: ReportUploadMetadata
   ): Promise<{ reportId: UUID; reportPath: string; report: ReportHistory }> {
     for (const resultId of resultsIds) {
       const fileName = `${resultId}.zip`;
@@ -663,11 +663,11 @@ export class S3 implements Storage {
   private async parseReportMetadata(
     reportId: string,
     reportPath: string,
-    metadata?: ReportMetadata,
+    metadata?: ReportUploadMetadata,
     // Optionally provide the file's content directly (when it lives on S3, not on disk).
     htmlContent?: string,
     sizeBytes?: number
-  ): Promise<ReportMetadata> {
+  ): Promise<ReportUploadMetadata> {
     const html = htmlContent ?? (await fs.readFile(path.join(reportPath, 'index.html'), 'utf-8'));
 
     const info = await parse(html as string);
@@ -696,7 +696,7 @@ export class S3 implements Storage {
   async uploadReportFromZipFile(
     reportId: string,
     zipFilePath: string,
-    metadata?: ReportMetadata
+    metadata?: ReportUploadMetadata
   ): Promise<{ reportPath: string; report: ReportHistory }> {
     const remotePath = path.join(REPORTS_BUCKET, reportId);
 

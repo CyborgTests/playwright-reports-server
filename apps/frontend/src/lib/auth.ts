@@ -18,21 +18,6 @@ export interface AuthSession {
   ok?: boolean;
 }
 
-export interface AuthConfig {
-  authRequired: boolean;
-  database?: {
-    sizeOnDisk?: string;
-    estimatedRAM?: string;
-    results?: number;
-    reports?: number;
-  };
-  dataStorage?: string;
-  s3Endpoint?: string;
-  s3Bucket?: string;
-  azureAccountName?: string;
-  azureContainer?: string;
-}
-
 export const signIn = async (
   _provider: string,
   options?: { apiToken?: string; redirect?: boolean }

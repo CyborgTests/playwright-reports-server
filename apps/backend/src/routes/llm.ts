@@ -1,3 +1,4 @@
+import type { LlmDefaultPrompts, LlmUsageByModel, LlmUsageStats } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { llmService } from '../lib/llm/index.js';
 import {
@@ -86,20 +87,19 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
 
       const { totals, byType, reuse } = getUsageStats(fromDate);
 
-      return {
-        success: true,
-        data: {
-          days,
-          fromDate,
-          totals,
-          byType,
-          reuse: {
-            analyses: reuse.analyses ?? 0,
-            reused: reuse.reused ?? 0,
-            rate: reuse.analyses && reuse.analyses > 0 ? (reuse.reused ?? 0) / reuse.analyses : 0,
-          },
+      const data: LlmUsageStats = {
+        days,
+        fromDate,
+        totals,
+        byType,
+        reuse: {
+          analyses: reuse.analyses ?? 0,
+          reused: reuse.reused ?? 0,
+          rate: reuse.analyses && reuse.analyses > 0 ? (reuse.reused ?? 0) / reuse.analyses : 0,
         },
       };
+
+      return { success: true, data };
     } catch (error) {
       fastify.log.error(error);
       return reply.status(500).send({
@@ -124,10 +124,9 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
 
       const rows = getUsageByModel(fromDate);
 
-      return {
-        success: true,
-        data: { days, fromDate, rows },
-      };
+      const data: LlmUsageByModel = { days, fromDate, rows };
+
+      return { success: true, data };
     } catch (error) {
       fastify.log.error(error);
       return reply.status(500).send({
@@ -381,35 +380,34 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     const authResult = await authenticate(request as AuthRequest, reply);
     if (authResult) return;
 
-    return {
-      success: true,
-      data: {
-        systemPrompt: {
-          content: TEST_ANALYSIS_SYSTEM_PROMPT,
-          vars: [],
-        },
-        testAnalysisSystemPrompt: {
-          content: TEST_ANALYSIS_SYSTEM_PROMPT,
-          vars: [],
-        },
-        projectSummarySystemPrompt: {
-          content: PROJECT_SUMMARY_SYSTEM_PROMPT,
-          vars: [],
-        },
-        testAnalysisInstructions: {
-          content: TEST_ANALYSIS_TASK_INSTRUCTIONS,
-          vars: ['project', 'testTitle', 'filePath'],
-        },
-        reportSummaryPrompt: {
-          content: REPORT_SUMMARY_TASK_INSTRUCTIONS,
-          vars: ['reportId', 'project', 'totalFailures'],
-        },
-        projectSummaryInstructions: {
-          content: PROJECT_SUMMARY_TASK_INSTRUCTIONS,
-          vars: ['project', 'totalRuns', 'passingRuns'],
-        },
+    const data: LlmDefaultPrompts = {
+      systemPrompt: {
+        content: TEST_ANALYSIS_SYSTEM_PROMPT,
+        vars: [],
+      },
+      testAnalysisSystemPrompt: {
+        content: TEST_ANALYSIS_SYSTEM_PROMPT,
+        vars: [],
+      },
+      projectSummarySystemPrompt: {
+        content: PROJECT_SUMMARY_SYSTEM_PROMPT,
+        vars: [],
+      },
+      testAnalysisInstructions: {
+        content: TEST_ANALYSIS_TASK_INSTRUCTIONS,
+        vars: ['project', 'testTitle', 'filePath'],
+      },
+      reportSummaryPrompt: {
+        content: REPORT_SUMMARY_TASK_INSTRUCTIONS,
+        vars: ['reportId', 'project', 'totalFailures'],
+      },
+      projectSummaryInstructions: {
+        content: PROJECT_SUMMARY_TASK_INSTRUCTIONS,
+        vars: ['project', 'totalRuns', 'passingRuns'],
       },
     };
+
+    return { success: true, data };
   });
 
   fastify.get('/api/llm/available-models', async (request: FastifyRequest, reply: FastifyReply) => {

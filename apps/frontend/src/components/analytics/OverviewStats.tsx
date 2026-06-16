@@ -1,9 +1,9 @@
 'use client';
 
 import type { OverviewStats, StatDelta } from '@playwright-reports/shared';
+import { formatDuration } from '@playwright-reports/shared';
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { parseMilliseconds } from '@/lib/time';
 
 interface OverviewStatsProps {
   stats?: OverviewStats;
@@ -121,14 +121,14 @@ export function OverviewStatsCard({
     },
     {
       title: 'Avg Per-Test Duration',
-      value: parseMilliseconds(averageTestDuration),
+      value: formatDuration(averageTestDuration),
       subtitle: 'Mean per-test execution time',
       delta: deltas?.averageTestDuration,
       higherIsBetter: false,
     },
     {
       title: 'Avg Run Duration',
-      value: parseMilliseconds(averageTestRunDuration),
+      value: formatDuration(averageTestRunDuration),
       subtitle: 'Mean full-run duration',
       delta: deltas?.averageTestRunDuration,
       higherIsBetter: false,

@@ -1,4 +1,5 @@
 import type { TestRun } from '@playwright-reports/shared';
+import { formatDuration } from '@playwright-reports/shared';
 import { useMemo } from 'react';
 import {
   CartesianGrid,
@@ -12,7 +13,6 @@ import {
 } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { parseMilliseconds } from '@/lib/time';
 import { dotColor, outcomeBadge, servedReportUrl } from './test-detail-widgets';
 
 interface DurationPoint {
@@ -43,7 +43,7 @@ function DurationTooltip({
       <div className="text-muted-foreground">{new Date(p.createdAt).toLocaleString()}</div>
       <div>
         <span className="text-muted-foreground">Duration: </span>
-        <span className="font-medium">{parseMilliseconds(p.duration)}</span>
+        <span className="font-medium">{formatDuration(p.duration)}</span>
       </div>
     </div>
   );
@@ -151,7 +151,7 @@ export function DurationTrend({
                 tick={{ fontSize: 11 }}
                 tickFormatter={(v) => new Date(v).toLocaleDateString()}
               />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => parseMilliseconds(v)} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatDuration(v)} />
               <RechartsTooltip content={<DurationTooltip />} />
               {typeof mean === 'number' && (
                 <ReferenceLine y={mean} stroke="hsl(217, 91%, 60%)" strokeDasharray="4 4" />
@@ -223,7 +223,7 @@ export function DurationTrend({
               style={{ borderColor: 'hsl(217, 91%, 60%)' }}
               aria-hidden
             />
-            Mean {typeof mean === 'number' ? `· ${parseMilliseconds(mean)}` : ''}
+            Mean {typeof mean === 'number' ? `· ${formatDuration(mean)}` : ''}
           </span>
           <span className="flex items-center gap-2">
             <span
@@ -231,7 +231,7 @@ export function DurationTrend({
               style={{ borderColor: 'hsl(0, 84%, 60%)' }}
               aria-hidden
             />
-            p95 {typeof p95 === 'number' ? `· ${parseMilliseconds(p95)}` : ''}
+            p95 {typeof p95 === 'number' ? `· ${formatDuration(p95)}` : ''}
           </span>
         </div>
       </CardContent>

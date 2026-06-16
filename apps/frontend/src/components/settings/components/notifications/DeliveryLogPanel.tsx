@@ -1,6 +1,7 @@
 'use client';
 
 import type { NotificationChannel, NotificationLogEntry } from '@playwright-reports/shared';
+import { formatRelativeTime } from '@playwright-reports/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle2,
@@ -34,7 +35,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useNotificationLog } from '@/hooks/useNotificationLog';
 import { authHeaders } from '@/lib/auth';
-import { formatRelativeTime } from '@/lib/time';
 import { withBase } from '@/lib/url';
 
 interface DeliveryLogPanelProps {

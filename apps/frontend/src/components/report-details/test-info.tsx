@@ -4,6 +4,7 @@ import type {
   ReportTestOutcome,
   TestHistory,
 } from '@playwright-reports/shared';
+import { formatDuration } from '@playwright-reports/shared';
 import { ExternalLink } from 'lucide-react';
 import type { FC } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
@@ -20,7 +21,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { testStatusToColor } from '@/lib/tailwind';
-import { parseMilliseconds } from '@/lib/time';
 import { withBase } from '@/lib/url';
 
 interface TestInfoProps {
@@ -86,7 +86,7 @@ const TestInfo: FC<TestInfoProps> = ({ test, history, project }: TestInfoProps) 
           Location:{' '}
           {`${test.location?.file || 'unknown'}:${test.location?.line || 0}:${test.location?.column || 0}`}
         </p>
-        <p>Duration: {parseMilliseconds(test.duration || 0)}</p>
+        <p>Duration: {formatDuration(test.duration || 0)}</p>
         {test.annotations && test.annotations.length > 0 && (
           <p>Annotations: {test.annotations.map((a) => JSON.stringify(a)).join(', ')}</p>
         )}
@@ -128,7 +128,7 @@ const TestInfo: FC<TestInfoProps> = ({ test, history, project }: TestInfoProps) 
                     <TableCell className="w-2/8">
                       <span className={itemOutcome.color}>{itemOutcome.title}</span>
                     </TableCell>
-                    <TableCell className="w-2/8">{parseMilliseconds(item.duration || 0)}</TableCell>
+                    <TableCell className="w-2/8">{formatDuration(item.duration || 0)}</TableCell>
                     <TableCell className="w-1/8">
                       <RouterLink
                         to={`${withBase(item.reportUrl || '')}#?testId=${item.testId || ''}`}

@@ -1,8 +1,10 @@
 import {
   type EventCondition,
   eventVariableNames,
+  formatDuration as formatDurationMs,
   type ScheduleCondition,
   scheduleVariableNames,
+  sqliteTimestampToIso,
 } from '@playwright-reports/shared';
 
 export interface ReportLike {
@@ -68,15 +70,7 @@ function statCounts(report: ReportLike) {
 
 function formatDuration(ms: number | undefined): string {
   if (ms === undefined || ms === null || Number.isNaN(ms)) return '—';
-  if (ms < 1000) return `${ms}ms`;
-  const totalSec = Math.floor(ms / 1000);
-  const sec = totalSec % 60;
-  const totalMin = Math.floor(totalSec / 60);
-  const min = totalMin % 60;
-  const hr = Math.floor(totalMin / 60);
-  if (hr > 0) return `${hr}h ${String(min).padStart(2, '0')}m`;
-  if (min > 0) return `${min}m ${String(sec).padStart(2, '0')}s`;
-  return `${sec}s`;
+  return formatDurationMs(ms);
 }
 
 function formatPassRate(rate: number): string {
@@ -97,10 +91,7 @@ function reportUrl(serverUrl: string, reportId: string): string {
 
 function normalizeTimestamp(value: Date | string): string {
   if (value instanceof Date) return value.toISOString();
-  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(value)) {
-    return new Date(`${value.replace(' ', 'T')}Z`).toISOString();
-  }
-  return value;
+  return sqliteTimestampToIso(value) ?? value;
 }
 
 export function buildEventContext(args: {

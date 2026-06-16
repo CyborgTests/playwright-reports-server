@@ -1,10 +1,10 @@
-import type { TestRun } from '../service/db/index.js';
+import type { TestRunRow } from '../service/db/index.js';
 
 export type { FixturePhase } from '@playwright-reports/shared';
 
 export const FAILED_OUTCOMES = new Set(['unexpected', 'failed', 'flaky']);
 
-export type FailedTestRun = TestRun;
+export type FailedTestRun = TestRunRow;
 
 export interface TestMeta {
   testId: string;

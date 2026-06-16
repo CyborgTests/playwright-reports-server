@@ -19,7 +19,7 @@ export interface Test {
   flakinessResetAt?: string;
 }
 
-export interface TestRun {
+export interface TestRunRow {
   runId: string;
   testId: string;
   fileId: string;
@@ -45,7 +45,7 @@ export interface TestState {
   latestNonSkippedAt: string | null;
 }
 
-export interface TestWithQuarantineInfo extends Test {
+export interface TestWithQuarantineInfoRow extends Test {
   isQuarantined?: boolean;
   quarantinedAt?: string;
   quarantineReason?: string;
@@ -53,7 +53,7 @@ export interface TestWithQuarantineInfo extends Test {
   flakinessResetAt?: string;
   totalRuns?: number;
   lastRunAt?: string;
-  runs?: TestRun[];
+  runs?: TestRunRow[];
 }
 
 export interface DerivedPageRow {
@@ -93,7 +93,7 @@ export interface TestRunDbRow {
   reportDisplayNumber?: number | null;
 }
 
-export function convertDbRowToTestRun(row: TestRunDbRow): TestRun {
+export function convertDbRowToTestRun(row: TestRunDbRow): TestRunRow {
   return {
     runId: row.runId,
     testId: row.testId,
@@ -342,7 +342,7 @@ export class TestDatabase {
     this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
-  public createTestRun(testRun: Omit<TestRun, 'runId'> & { runId?: string }): TestRun {
+  public createTestRun(testRun: Omit<TestRunRow, 'runId'> & { runId?: string }): TestRunRow {
     const testRunWithId = {
       ...testRun,
       runId: testRun.runId || uuid(),
@@ -424,7 +424,7 @@ export class TestDatabase {
     return result.changes > 0;
   }
 
-  public getTestRuns(testId: string, fileId: string, project: string): TestRun[] {
+  public getTestRuns(testId: string, fileId: string, project: string): TestRunRow[] {
     const compiled = this.k
       .selectFrom('test_runs as tr')
       .leftJoin('reports as r', 'r.reportID', 'tr.reportId')
@@ -440,7 +440,7 @@ export class TestDatabase {
     return rows.map((row) => convertDbRowToTestRun(row));
   }
 
-  public getLatestTestRun(testId: string, fileId: string, project: string): TestRun | undefined {
+  public getLatestTestRun(testId: string, fileId: string, project: string): TestRunRow | undefined {
     const compiled = this.k
       .selectFrom('test_runs')
       .selectAll()
@@ -537,7 +537,7 @@ export class TestDatabase {
     testId: string,
     fileId: string,
     project: string
-  ): TestWithQuarantineInfo | undefined {
+  ): TestWithQuarantineInfoRow | undefined {
     const test = this.getTest(testId, fileId, project);
     if (!test) return undefined;
 
@@ -583,13 +583,13 @@ export class TestDatabase {
   public getRunsForLanes(
     lanes: Array<{ testId: string; fileId: string; project: string }>,
     opts?: { from?: string; to?: string }
-  ): Map<string, TestRun[]> {
+  ): Map<string, TestRunRow[]> {
     return testQueries.getRunsForLanes(this.db, lanes, opts);
   }
   public getTestsSummary(
     project: string | undefined,
     warningThreshold: number
-  ): { total: number; flakyTests: TestWithQuarantineInfo[] } {
+  ): { total: number; flakyTests: TestWithQuarantineInfoRow[] } {
     return testQueries.getTestsSummary(this.db, project, warningThreshold);
   }
   public getDurationAggregates(
@@ -623,7 +623,7 @@ export class TestDatabase {
   ): { total: number; flakyCount: number } {
     return testQueries.getFlakySummaryInWindow(this.db, project, from, to, warningThreshold);
   }
-  public getTestRunsInWindow(project: string | undefined, from: string, to: string): TestRun[] {
+  public getTestRunsInWindow(project: string | undefined, from: string, to: string): TestRunRow[] {
     return testQueries.getTestRunsInWindow(this.db, project, from, to);
   }
   public getTopFailingTestsInWindow(
@@ -672,7 +672,7 @@ export class TestDatabase {
     this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
-  public getTestRunsByReport(reportId: string): TestRun[] {
+  public getTestRunsByReport(reportId: string): TestRunRow[] {
     const compiled = this.k
       .selectFrom('test_runs')
       .selectAll()

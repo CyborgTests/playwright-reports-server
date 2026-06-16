@@ -1,4 +1,5 @@
 import type { DiffOutcome, DiffTestEntry, DurationDeltaEntry } from '@playwright-reports/shared';
+import { formatDuration } from '@playwright-reports/shared';
 import { ArrowRight, ExternalLink } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -10,7 +11,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { withBase } from '@/lib/url';
-import { formatDuration } from '@/lib/utils';
 
 interface Props {
   entries: Array<DiffTestEntry | DurationDeltaEntry>;

@@ -25,8 +25,8 @@ import { safeZipEntryPath } from './streamUtils.js';
 import type {
   ReadFileResult,
   ReportHistory,
-  ReportMetadata,
   ReportPath,
+  ReportUploadMetadata,
   ServerDataInfo,
   Storage,
 } from './types.js';
@@ -135,7 +135,7 @@ export async function saveResult(filename: string, stream: PassThrough) {
   }
 }
 
-export async function generateReport(resultsIds: string[], metadata?: ReportMetadata) {
+export async function generateReport(resultsIds: string[], metadata?: ReportUploadMetadata) {
   await createDirectoriesIfMissing();
 
   const reportId = randomUUID();
@@ -183,8 +183,8 @@ export async function generateReport(resultsIds: string[], metadata?: ReportMeta
 async function parseReportMetadata(
   reportID: string,
   reportPath: string,
-  metadata?: ReportMetadata
-): Promise<ReportMetadata> {
+  metadata?: ReportUploadMetadata
+): Promise<ReportUploadMetadata> {
   const html = await fs.readFile(path.join(reportPath, 'index.html'), 'utf-8');
   const info = await parse(html as string);
   const sizeBytes = await getFolderSize.loose(reportPath);
@@ -209,7 +209,7 @@ async function parseReportMetadata(
 async function uploadReportFromZipFile(
   reportId: string,
   zipFilePath: string,
-  metadata?: ReportMetadata
+  metadata?: ReportUploadMetadata
 ): Promise<{ reportPath: string; report: ReportHistory }> {
   await createDirectoriesIfMissing();
 

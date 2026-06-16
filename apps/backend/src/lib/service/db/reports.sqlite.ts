@@ -159,14 +159,7 @@ export class ReportDatabase {
       ...metadata
     } = report;
 
-    let createdAtStr: string;
-    if (createdAt instanceof Date) {
-      createdAtStr = createdAt.toISOString();
-    } else if (typeof createdAt === 'string') {
-      createdAtStr = createdAt;
-    } else {
-      createdAtStr = new Date(createdAt as number).toISOString();
-    }
+    const createdAtStr: string = createdAt;
 
     const reportDuration = (metadata as { duration?: unknown }).duration;
     const durationMs = typeof reportDuration === 'number' ? reportDuration : null;

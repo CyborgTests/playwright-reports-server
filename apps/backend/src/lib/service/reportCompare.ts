@@ -1,6 +1,6 @@
 import type { ReportStats } from '@playwright-reports/shared';
 import type { ReportHistory } from '../storage/types.js';
-import { regressionsDb, reportDb, type Test, type TestRun, testDb } from './db/index.js';
+import { regressionsDb, reportDb, type Test, type TestRunRow, testDb } from './db/index.js';
 
 const FAILURE_OUTCOMES = new Set(['failed', 'unexpected', 'timedOut']);
 const PASS_OUTCOMES = new Set(['passed', 'expected']);
@@ -86,27 +86,24 @@ const toReportRef = (report: ReportHistory): ReportRef => ({
   title: report.title,
   displayNumber: report.displayNumber,
   project: report.project,
-  createdAt:
-    report.createdAt instanceof Date
-      ? report.createdAt.toISOString()
-      : String(report.createdAt as unknown as string),
+  createdAt: report.createdAt,
   reportUrl: report.reportUrl,
   stats: report.stats,
 });
 
 const matchKeyOf = (
-  run: Pick<TestRun, 'testId' | 'fileId' | 'project'>,
+  run: Pick<TestRunRow, 'testId' | 'fileId' | 'project'>,
   matchByTestIdOnly: boolean
 ) => (matchByTestIdOnly ? run.testId : `${run.testId}::${run.fileId}::${run.project}`);
 
-const metaKeyOf = (run: Pick<TestRun, 'testId' | 'fileId' | 'project'>) =>
+const metaKeyOf = (run: Pick<TestRunRow, 'testId' | 'fileId' | 'project'>) =>
   `${run.testId}::${run.fileId}::${run.project}`;
 
 // One report can contain multiple runs for the same test (retries written as
 // separate rows historically, or future per-attempt logging). Pick the run
 // whose outcome best represents the final state: prefer non-skipped, then the
 // latest by createdAt.
-const pickRunForTest = (runs: TestRun[]): TestRun => {
+const pickRunForTest = (runs: TestRunRow[]): TestRunRow => {
   const nonSkipped = runs.filter((r) => r.outcome !== 'skipped');
   const pool = nonSkipped.length > 0 ? nonSkipped : runs;
   return pool.reduce((latest, r) =>
@@ -114,15 +111,18 @@ const pickRunForTest = (runs: TestRun[]): TestRun => {
   );
 };
 
-const groupRunsByKey = (runs: TestRun[], matchByTestIdOnly: boolean): Map<string, TestRun> => {
-  const byKey = new Map<string, TestRun[]>();
+const groupRunsByKey = (
+  runs: TestRunRow[],
+  matchByTestIdOnly: boolean
+): Map<string, TestRunRow> => {
+  const byKey = new Map<string, TestRunRow[]>();
   for (const run of runs) {
     const k = matchKeyOf(run, matchByTestIdOnly);
     const existing = byKey.get(k);
     if (existing) existing.push(run);
     else byKey.set(k, [run]);
   }
-  const result = new Map<string, TestRun>();
+  const result = new Map<string, TestRunRow>();
   for (const [k, group] of byKey) {
     result.set(k, pickRunForTest(group));
   }
@@ -130,8 +130,8 @@ const groupRunsByKey = (runs: TestRun[], matchByTestIdOnly: boolean): Map<string
 };
 
 const buildEntry = (
-  run: TestRun | undefined,
-  partner: TestRun | undefined,
+  run: TestRunRow | undefined,
+  partner: TestRunRow | undefined,
   meta: Test | undefined
 ): DiffTestEntry => {
   const source = run ?? partner;
@@ -171,7 +171,7 @@ export const compareReports = (
   const runsB = groupRunsByKey(testDb.getTestRunsByReport(reportBId), matchByTestIdOnly);
 
   const metaCache = new Map<string, Test | undefined>();
-  const getMeta = (run: TestRun): Test | undefined => {
+  const getMeta = (run: TestRunRow): Test | undefined => {
     const k = metaKeyOf(run);
     if (metaCache.has(k)) return metaCache.get(k);
     const meta = testDb.getTest(run.testId, run.fileId, run.project);
@@ -193,7 +193,7 @@ export const compareReports = (
   for (const key of allKeys) {
     const a = runsA.get(key);
     const b = runsB.get(key);
-    const meta = getMeta((a ?? b) as TestRun);
+    const meta = getMeta((a ?? b) as TestRunRow);
     const entry = buildEntry(a, b, meta);
 
     if (a && !b) {

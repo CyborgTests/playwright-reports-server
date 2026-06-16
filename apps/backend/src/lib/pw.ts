@@ -9,7 +9,7 @@ import { normalizeReporterPaths, validateReporterPaths } from './pw-reporters.js
 import { siteConfigDb } from './service/db/index.js';
 import { REPORTS_FOLDER, TMP_FOLDER } from './storage/constants.js';
 import { createDirectory } from './storage/folders.js';
-import type { ReportMetadata } from './storage/types.js';
+import type { ReportUploadMetadata } from './storage/types.js';
 
 const execFileAsync = util.promisify(execFile);
 
@@ -17,7 +17,7 @@ const MERGE_TIMEOUT_MS = 5 * 60 * 1000;
 
 export const generatePlaywrightReport = async (
   reportId: UUID,
-  metadata: ReportMetadata
+  metadata: ReportUploadMetadata
 ): Promise<{ reportPath: string }> => {
   const { playwrightVersion } = metadata;
 

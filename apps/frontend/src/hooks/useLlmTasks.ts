@@ -1,60 +1,31 @@
-import type { LlmTask, LlmTaskStats } from '@playwright-reports/shared';
+import type {
+  LlmDefaultPrompt,
+  LlmDefaultPrompts,
+  LlmTask,
+  LlmTaskStats,
+  LlmUsageByModel,
+  LlmUsageByModelRow,
+  LlmUsageStats,
+} from '@playwright-reports/shared';
 import { keepPreviousData } from '@tanstack/react-query';
 
 import useQuery from './useQuery';
 
-export type { LlmTask, LlmTaskStats };
+export type {
+  LlmTask,
+  LlmTaskStats,
+  LlmDefaultPrompt,
+  LlmDefaultPrompts,
+  LlmUsageByModel,
+  LlmUsageByModelRow,
+  LlmUsageStats,
+};
 
 export function useLlmTaskStats() {
   return useQuery<{ success: boolean } & LlmTaskStats>('/api/llm/tasks/stats', {
     staleTime: 5000,
     refetchInterval: 10_000,
   });
-}
-
-export interface LlmUsageStats {
-  days: number;
-  fromDate: string;
-  totals: {
-    tasks: number;
-    inputTokens: number;
-    outputTokens: number;
-    totalTokens: number;
-  };
-  byType: Record<
-    string,
-    {
-      type: string;
-      tasks: number;
-      inputTokens: number;
-      outputTokens: number;
-      totalTokens: number;
-    }
-  >;
-  reuse: {
-    analyses: number;
-    reused: number;
-    rate: number;
-  };
-}
-
-export interface LlmDefaultPrompt {
-  /** Default template for this slot. Contains {{var}} placeholders; rendered
-   *  through the same applyMustache path as user overrides, so the default
-   *  shown in the UI doubles as a canonical usage example. */
-  content: string;
-  vars: string[];
-}
-
-export interface LlmDefaultPrompts {
-  systemPrompt: LlmDefaultPrompt;
-  testAnalysisSystemPrompt: LlmDefaultPrompt;
-  projectSummarySystemPrompt: LlmDefaultPrompt;
-  testAnalysisInstructions: LlmDefaultPrompt;
-  /** Combined override slot for report-summary (replaces the two-field
-   *  system+instructions surface in earlier versions). */
-  reportSummaryPrompt: LlmDefaultPrompt;
-  projectSummaryInstructions: LlmDefaultPrompt;
 }
 
 export function useLlmDefaultPrompts(options: { enabled?: boolean } = {}) {
@@ -70,21 +41,6 @@ export function useLlmUsageStats(days: number) {
     dependencies: [days],
     staleTime: 30_000,
   });
-}
-
-export interface LlmUsageByModelRow {
-  baseUrl: string;
-  model: string;
-  tasks: number;
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-}
-
-export interface LlmUsageByModel {
-  days: number;
-  fromDate: string;
-  rows: LlmUsageByModelRow[];
 }
 
 export function useLlmUsageByModel(days: number, enabled: boolean) {

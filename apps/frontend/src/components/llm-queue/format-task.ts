@@ -1,3 +1,8 @@
+import {
+  formatDuration as formatDurationMs,
+  parseSqliteTimestamp,
+} from '@playwright-reports/shared';
+
 import { withBase } from '@/lib/url';
 
 export const TYPE_SHORT_LABEL: Record<string, string> = {
@@ -35,19 +40,10 @@ export function statusBadgeVariant(status: string) {
   }
 }
 
-function parseSqliteTs(ts: string): number {
-  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(ts)) {
-    return new Date(`${ts.replace(' ', 'T')}Z`).getTime();
-  }
-  return new Date(ts).getTime();
-}
-
 export function formatDuration(startedAt?: string, completedAt?: string): string {
   if (!startedAt || !completedAt) return '-';
-  const ms = Math.max(0, parseSqliteTs(completedAt) - parseSqliteTs(startedAt));
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${(ms / 60000).toFixed(1)}m`;
+  const ms = Math.max(0, parseSqliteTimestamp(completedAt) - parseSqliteTimestamp(startedAt));
+  return formatDurationMs(ms);
 }
 
 export const PAGE_SIZE = 25;

@@ -193,12 +193,7 @@ async function buildTrendContextForReport(
   const current = reportDb.getByID(reportId);
   if (!current) return undefined;
 
-  const createdAtISO =
-    current.createdAt instanceof Date
-      ? current.createdAt.toISOString()
-      : String(current.createdAt as unknown as string);
-
-  const previous = findPreviousReportInProject(current.project, createdAtISO, reportId);
+  const previous = findPreviousReportInProject(current.project, current.createdAt, reportId);
   if (!previous) return undefined;
 
   const { result, error } = compareReports(previous.reportID, reportId);

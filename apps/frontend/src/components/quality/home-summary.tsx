@@ -1,7 +1,6 @@
 import type { QualityDashboardSnapshot } from '@playwright-reports/shared';
+import { formatRelativeTime } from '@playwright-reports/shared';
 import { useEffect, useState } from 'react';
-
-import { formatRelativeTime } from '@/lib/time';
 import { cn } from '@/lib/utils';
 
 import { aggregateHome, type WorstStatus } from './status';

@@ -1,6 +1,6 @@
 'use client';
 
-import { API_ENDPOINTS, type ReportHistory } from '@playwright-reports/shared';
+import { API_ENDPOINTS, type ReadReportsOutput } from '@playwright-reports/shared';
 import { FileText, Search, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import FormattedDate from '@/components/date-format';
@@ -19,11 +19,6 @@ interface ReportPickerProps {
 }
 
 const LIMIT = 50;
-
-interface ListResponse {
-  reports: ReportHistory[];
-  total: number;
-}
 
 export default function ReportPicker({
   selectedReportId,
@@ -46,7 +41,7 @@ export default function ReportPicker({
     return buildUrl(API_ENDPOINTS.REPORTS_LIST, params);
   }, [defaultProject]);
 
-  const { data, isLoading } = useQuery<ListResponse>(queryUrl, {
+  const { data, isLoading } = useQuery<ReadReportsOutput>(queryUrl, {
     dependencies: [defaultProject],
     enabled: open,
     staleTime: 30_000,

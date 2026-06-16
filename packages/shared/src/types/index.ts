@@ -258,24 +258,12 @@ export interface ReportMetadata {
 
 export interface ReadResultsOutput {
   results: Result[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
   total: number;
 }
 
 export interface ReadReportsHistory {
   reports: ReportHistory[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-  total?: number;
+  total: number;
 }
 
 export interface ReportHistory {

@@ -1,6 +1,6 @@
 import { type Kysely, sql } from 'kysely';
 
-// Report counts out of the `stats` / `metadata` JSON blobs into columns 
+// Report counts out of the `stats` / `metadata` JSON blobs into columns
 // so analytics aggregates can `SUM` them directly instead of running `json_extract`
 // per column per row over
 const COLUMNS = ['statTotal', 'statExpected', 'statUnexpected', 'statFlaky', 'durationMs'] as const;

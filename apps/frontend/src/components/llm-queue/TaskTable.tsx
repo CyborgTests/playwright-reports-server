@@ -1,4 +1,5 @@
 import type { LlmTask } from '@playwright-reports/shared';
+import { formatRelativeTime } from '@playwright-reports/shared';
 import { memo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -16,7 +17,6 @@ import {
 } from '@/components/ui/table';
 import useMutation from '@/hooks/useMutation';
 import { formatCategoryName } from '@/lib/format';
-import { formatRelativeTime } from '@/lib/time';
 import {
   buildServedTestUrl,
   formatDuration,

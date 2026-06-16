@@ -15,8 +15,8 @@ import {
   llmTasksDb,
   regressionsDb,
   type Test,
-  type TestRun,
-  type TestWithQuarantineInfo,
+  type TestRunRow,
+  type TestWithQuarantineInfoRow,
   testDb,
   toRegressionContext,
 } from '../db/index.js';
@@ -31,7 +31,7 @@ function percentile(sortedAsc: number[], p: number): number {
   return sortedAsc[idx];
 }
 
-function buildDurationStats(runs: TestRun[]): TestDurationStats | undefined {
+function buildDurationStats(runs: TestRunRow[]): TestDurationStats | undefined {
   const durations = runs
     .map((r) => r.duration)
     .filter((d): d is number => typeof d === 'number' && d >= 0);
@@ -54,7 +54,7 @@ function buildDurationStats(runs: TestRun[]): TestDurationStats | undefined {
   };
 }
 
-function buildTestDetailStats(runs: TestRun[]): TestDetailStats {
+function buildTestDetailStats(runs: TestRunRow[]): TestDetailStats {
   let passed = 0;
   let failed = 0;
   let flaky = 0;
@@ -95,7 +95,7 @@ function buildTestDetailStats(runs: TestRun[]): TestDetailStats {
   };
 }
 
-function buildFailureGroups(runs: TestRun[]): TestFailureGroup[] {
+function buildFailureGroups(runs: TestRunRow[]): TestFailureGroup[] {
   const groups = new Map<
     string,
     {
@@ -103,7 +103,7 @@ function buildFailureGroups(runs: TestRun[]): TestFailureGroup[] {
       signatureGlobal?: string;
       category?: string;
       sampleMessage: string;
-      runs: TestRun[];
+      runs: TestRunRow[];
     }
   >();
   for (const run of runs) {
@@ -338,11 +338,7 @@ export class TestManagementService {
             duration: test.duration,
             createdAt:
               test.createdAt ??
-              (report.startTime
-                ? new Date(report.startTime).toISOString()
-                : report.createdAt instanceof Date
-                  ? report.createdAt.toISOString()
-                  : report.createdAt),
+              (report.startTime ? new Date(report.startTime).toISOString() : report.createdAt),
             failureDetails: failureDetails ?? undefined,
             failureCategory: classification?.category,
             failureCategorySource: classification?.source,
@@ -607,7 +603,7 @@ export class TestManagementService {
       resolvedSince?: string;
       slim?: boolean;
     }
-  ): Promise<{ data: TestWithQuarantineInfo[]; total: number }> {
+  ): Promise<{ data: TestWithQuarantineInfoRow[]; total: number }> {
     let tierOpt:
       | {
           warningThreshold: number;
@@ -650,7 +646,7 @@ export class TestManagementService {
           options?.from || options?.to ? { from: options?.from, to: options?.to } : undefined
         );
 
-    const data: TestWithQuarantineInfo[] = rows.map((row) => {
+    const data: TestWithQuarantineInfoRow[] = rows.map((row) => {
       const key = `${row.testId}::${row.fileId}::${row.project}`;
       const isQuarantined = Boolean(row.quarantined);
       return {
@@ -694,7 +690,7 @@ export class TestManagementService {
     testId: string,
     fileId: string,
     project: string
-  ): Promise<(Test & { runs: TestRun[] }) | null> {
+  ): Promise<(Test & { runs: TestRunRow[] }) | null> {
     const test = testDb.getTest(testId, fileId, project);
     if (!test) return null;
 
@@ -710,7 +706,7 @@ export class TestManagementService {
     testId: string,
     fileId: string,
     project: string
-  ): Promise<TestWithQuarantineInfo | null> {
+  ): Promise<TestWithQuarantineInfoRow | null> {
     return testDb.getTestWithDerivedData(testId, fileId, project) || null;
   }
 

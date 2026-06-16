@@ -1,5 +1,4 @@
 export interface StatDelta {
-  /** Percent change vs prior period. Null when prior period had no data. */
   percent: number | null;
   trend: 'up' | 'down' | 'stable';
 }
@@ -13,7 +12,6 @@ export interface OverviewStats {
   averageTestRunDuration: number;
   passRateTrend: 'up' | 'down' | 'stable';
   flakyTestsTrend: 'up' | 'down' | 'stable';
-  /** Per-stat percent deltas vs prior period. */
   deltas?: {
     passRate?: StatDelta;
     flakyTests?: StatDelta;
@@ -96,38 +94,26 @@ export interface RegressionsAggregate {
 export type ProjectAnalysisVerdict = 'healthy' | 'stabilizing' | 'degrading' | 'failing';
 
 export interface ProjectAnalysisCodeRef {
-  /** Discriminator: 'test' links to /test/:testId; 'file' opens the report viewer. */
   kind: 'test' | 'file';
-  /** Display label (e.g., test title or file path). */
   label: string;
-  /** Required when kind='test'. */
   testId?: string;
   fileId?: string;
-  /** Required when kind='file'. */
   filePath?: string;
-  /** Project the test/file belongs to. Injected server-side so the test
-   *  detail page can build its `?project=…` query. Not asked of the model. */
   project?: string;
-  /** Optional report ID the reference belongs to — lets the UI link to a specific report. */
   reportId?: string;
-  /** Optional 1-based line number. */
   line?: number;
 }
 
 export interface ProjectAnalysisSection {
   heading: string;
-  /** Markdown body. */
   body: string;
-  /** Code references mentioned in this section. */
   codeRefs?: ProjectAnalysisCodeRef[];
 }
 
 export interface ProjectAnalysisStructured {
   verdict: ProjectAnalysisVerdict;
-  /** 1–3 sentence executive summary shown above the fold. */
   summary: string;
   sections: ProjectAnalysisSection[];
-  /** Latest report ID — used to link code references when their reportId is unset. */
   latestReportId?: string;
 }
 
@@ -136,39 +122,26 @@ export type ReportAnalysisVerdict = 'isolated' | 'clustered' | 'widespread' | 's
 export type ReportAnalysisImpact = 'high' | 'medium' | 'low';
 
 export interface ReportAnalysisCodeRef {
-  /** Discriminator: 'test' links to /test/:testId; 'file' opens the report viewer. */
   kind: 'test' | 'file';
-  /** Display label (e.g., test title or file path). */
   label: string;
-  /** Required when kind='test'. */
   testId?: string;
   fileId?: string;
-  /** Required when kind='file'. */
   filePath?: string;
-  /** Project the test/file belongs to. Injected server-side from the report's
-   *  project so the UI can build the `?project=…` query the test detail page
-   *  uses to scope its lookup. Not asked of the model. */
   project?: string;
-  /** Optional 1-based line number. */
   line?: number;
 }
 
 export interface ReportAnalysisSection {
   heading: string;
-  /** Markdown body. */
   body: string;
-  /** Optional severity tag rendered as a pill next to the heading. */
   impact?: ReportAnalysisImpact;
-  /** Code references mentioned in this section. */
   codeRefs?: ReportAnalysisCodeRef[];
 }
 
 export interface ReportAnalysisStructured {
   verdict: ReportAnalysisVerdict;
-  /** 1–3 sentence executive summary shown above the fold. */
   summary: string;
   sections: ReportAnalysisSection[];
-  /** Report ID this analysis belongs to — used by the UI to scope codeRefs. */
   reportId?: string;
 }
 
@@ -209,6 +182,56 @@ export interface LlmTaskStats {
   completed: number;
   failed: number;
   cancelled: number;
+}
+
+export interface LlmUsageTotals {
+  tasks: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+export interface LlmUsageByTypeEntry extends LlmUsageTotals {
+  type: string;
+}
+
+export interface LlmUsageReuse {
+  analyses: number;
+  reused: number;
+  rate: number;
+}
+
+export interface LlmUsageStats {
+  days: number;
+  fromDate: string;
+  totals: LlmUsageTotals;
+  byType: Record<string, LlmUsageByTypeEntry>;
+  reuse: LlmUsageReuse;
+}
+
+export interface LlmUsageByModelRow extends LlmUsageTotals {
+  baseUrl: string;
+  model: string;
+}
+
+export interface LlmUsageByModel {
+  days: number;
+  fromDate: string;
+  rows: LlmUsageByModelRow[];
+}
+
+export interface LlmDefaultPrompt {
+  content: string;
+  vars: string[];
+}
+
+export interface LlmDefaultPrompts {
+  systemPrompt: LlmDefaultPrompt;
+  testAnalysisSystemPrompt: LlmDefaultPrompt;
+  projectSummarySystemPrompt: LlmDefaultPrompt;
+  testAnalysisInstructions: LlmDefaultPrompt;
+  reportSummaryPrompt: LlmDefaultPrompt;
+  projectSummaryInstructions: LlmDefaultPrompt;
 }
 
 export interface FailureDetails {

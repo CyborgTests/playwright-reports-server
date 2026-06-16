@@ -1,6 +1,8 @@
 import type { PassThrough, Readable } from 'node:stream';
-import type { ReportInfo, ReportTest, UUID } from '@playwright-reports/shared';
+import type { ReportInfo, ReportPath, ServerDataInfo, UUID } from '@playwright-reports/shared';
 import type { Pagination } from './pagination.js';
+
+export type { ReportPath, ServerDataInfo };
 
 export interface ReadFileResult {
   body: Readable;
@@ -15,22 +17,17 @@ export interface Storage {
   saveResult: (filename: string, stream: PassThrough) => Promise<void>;
   generateReport: (
     resultsIds: string[],
-    metadata?: ReportMetadata
+    metadata?: ReportUploadMetadata
   ) => Promise<{ reportId: UUID; reportPath: string; report: ReportHistory }>;
   uploadReportFromZipFile: (
     reportId: string,
     zipFilePath: string,
-    metadata?: ReportMetadata
+    metadata?: ReportUploadMetadata
   ) => Promise<{ reportPath: string; report: ReportHistory }>;
   cleanupGeneratedReport: (reportId: string) => Promise<void>;
   uploadBrandingAsset: (relativePath: string) => Promise<void>;
   ensureBrandingAsset: (relativePath: string) => Promise<void>;
   deleteBrandingAsset: (relativePath: string) => Promise<void>;
-}
-
-export interface ReportPath {
-  reportID: string;
-  project?: string;
 }
 
 export interface ReadResultsInput {
@@ -66,11 +63,6 @@ export interface ReadReportsOutput {
   total: number;
 }
 
-export interface ReadReportsHistory {
-  reports: ReportHistory[];
-  total: number;
-}
-
 // For custom user fields
 export interface ResultDetails {
   [key: string]: string;
@@ -91,7 +83,7 @@ export type Report = {
   displayNumber?: number;
   project: string;
   reportUrl: string;
-  createdAt: Date;
+  createdAt: string;
   size: string;
   sizeBytes: number;
   regressions?: {
@@ -120,21 +112,10 @@ export const isReportHistory = (
   report: Report | ReportHistory | undefined
 ): report is ReportHistory => !!report && typeof report === 'object' && 'stats' in report;
 
-export type TestHistory = Report & ReportTest;
-
-export type ReportMetadata = Partial<{
+export type ReportUploadMetadata = Partial<{
   title: string;
   project: string;
   playwrightVersion?: string;
   displayNumber?: number;
 }> &
   Record<string, string | number | undefined>;
-
-export interface ServerDataInfo {
-  dataFolderSizeinMB: string;
-  numOfResults: number;
-  resultsFolderSizeinMB: string;
-  numOfReports: number;
-  reportsFolderSizeinMB: string;
-  availableSizeinMB: string;
-}

@@ -9,8 +9,8 @@ import {
   type ReadReportsInput,
   type ReadResultsInput,
   type ReadResultsOutput,
-  type ReportMetadata,
   type ReportPath,
+  type ReportUploadMetadata,
   type Result,
   type ResultDetails,
   type ServerDataInfo,
@@ -100,11 +100,11 @@ class Service {
 
   public async generateReport(
     resultsIds: string[],
-    metadata?: ReportMetadata
+    metadata?: ReportUploadMetadata
   ): Promise<{
     reportId: string;
     reportUrl: string;
-    metadata: ReportMetadata;
+    metadata: ReportUploadMetadata;
   }> {
     const version = isValidPlaywrightVersion(metadata?.playwrightVersion)
       ? metadata?.playwrightVersion

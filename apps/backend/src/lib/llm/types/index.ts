@@ -1,4 +1,6 @@
-export type LLMProviderType = 'openai' | 'anthropic';
+import type { LLMMultimodalMode, LLMProviderType } from '@playwright-reports/shared';
+
+export type { LLMProviderType };
 
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
@@ -6,24 +8,13 @@ export interface LLMMessage {
 }
 
 export interface PromptImage {
-  /** Base64-encoded image data (no `data:` URI prefix). */
+  // base64, no "data:" prefix
   data: string;
-  /** MIME type, e.g. 'image/png' or 'image/jpeg'. */
+  // mime type
   mediaType: string;
-  /** Origin path or filename — kept for debug, not sent to the provider. */
   source?: string;
 }
 
-/**
- * A discrete chunk of prompt content. Builders emit segments in stability order
- * (most-stable first) so providers can place cache_control hints (Anthropic) and
- * the token prefix matches across calls (OpenAI / LM Studio KV cache).
- *
- * - `stable` — content that doesn't change across calls within the cache TTL
- *   (system prompt, schema, per-test history). Used for cache_control placement.
- * - `images` — multimodal attachments. Providers emit image content blocks
- *   before text in the same role's message.
- */
 export interface PromptSegment {
   id: string;
   role: 'system' | 'user';
@@ -33,7 +24,7 @@ export interface PromptSegment {
   images?: PromptImage[];
 }
 
-export type MultimodalMode = 'auto' | 'force' | 'disabled';
+export type MultimodalMode = LLMMultimodalMode;
 
 export interface SegmentedPrompt {
   segments: PromptSegment[];

@@ -1,7 +1,7 @@
 import {
   FAILURE_CATEGORY_DESCRIPTIONS,
   type FailureCategory,
-  type ReportAnalysisStructured,
+  type ReportFailureSummary as FailureSummary,
 } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Brain, RefreshCw } from 'lucide-react';
@@ -19,18 +19,6 @@ import { ReportAnalysisRenderer, ReportVerdictBadge } from './ReportAnalysisRend
 
 interface ReportFailureSummaryProps {
   reportId: string;
-}
-
-interface FailureSummary {
-  reportId: string;
-  project: string;
-  totalFailures: number;
-  categories: Record<string, number>;
-  llmSummary: string | null;
-  llmSummaryStructured: ReportAnalysisStructured | null;
-  llmModel: string | null;
-  createdAt: string;
-  updatedAt: string | null;
 }
 
 interface FailureSummaryResponse {

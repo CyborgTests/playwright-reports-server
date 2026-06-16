@@ -57,5 +57,5 @@ export { resultDb } from './results.sqlite.js';
 export { siteConfigDb } from './siteConfig.sqlite.js';
 export type { TestAnalysisExtras, TestAnalysisRow } from './testAnalysis.sqlite.js';
 export { testAnalysisDb } from './testAnalysis.sqlite.js';
-export type { Test, TestRun, TestWithQuarantineInfo } from './tests.sqlite.js';
+export type { Test, TestRunRow, TestWithQuarantineInfoRow } from './tests.sqlite.js';
 export { testDb } from './tests.sqlite.js';

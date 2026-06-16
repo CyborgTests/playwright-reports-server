@@ -414,7 +414,7 @@ export default function ReportsTable({
   });
 
   const { reports } = reportResponse ?? {};
-  const total = reportResponse?.pagination?.total || reportResponse?.total || 0;
+  const total = reportResponse?.total ?? 0;
   const pages = useMemo(() => (total ? Math.ceil(total / rowsPerPage) : 0), [total, rowsPerPage]);
 
   const sortedRows = useMemo(() => {
