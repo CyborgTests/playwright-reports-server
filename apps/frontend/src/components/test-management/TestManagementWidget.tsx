@@ -8,8 +8,9 @@ import {
   type TestWithQuarantineInfo,
 } from '@playwright-reports/shared';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { AlertTriangle, Clock, RotateCcw } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -32,14 +33,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { parseMilliseconds } from '@/lib/time';
@@ -146,137 +140,143 @@ interface TestRowProps {
   onDelete: (test: TestWithQuarantineInfo) => void;
 }
 
-const TestRow = memo(function TestRow({
-  item,
-  warningThreshold,
-  quarantineThreshold,
-  stale,
-  regressionFilterActive,
-  regressionHighlightMode,
-  onQuarantine,
-  onResetFlakiness,
-  onClearFlakinessReset,
-  onDelete,
-}: TestRowProps) {
-  const highlights =
-    regressionFilterActive && item.regressionHighlights
-      ? regressionHighlightMode === 'closed'
-        ? { resolvedAtReportId: item.regressionHighlights.resolvedAtReportId }
-        : { newAtReportId: item.regressionHighlights.newAtReportId }
-      : undefined;
+const TestRow = memo(
+  forwardRef<HTMLTableRowElement, TestRowProps & { dataIndex: number }>(function TestRow(
+    {
+      item,
+      warningThreshold,
+      quarantineThreshold,
+      stale,
+      regressionFilterActive,
+      regressionHighlightMode,
+      onQuarantine,
+      onResetFlakiness,
+      onClearFlakinessReset,
+      onDelete,
+      dataIndex,
+    },
+    ref
+  ) {
+    const highlights =
+      regressionFilterActive && item.regressionHighlights
+        ? regressionHighlightMode === 'closed'
+          ? { resolvedAtReportId: item.regressionHighlights.resolvedAtReportId }
+          : { newAtReportId: item.regressionHighlights.newAtReportId }
+        : undefined;
 
-  return (
-    <TableRow>
-      <TableCell className="break-words">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <RouterLink
-              to={`/test/${item.testId}?project=${encodeURIComponent(item.project)}`}
-              className="font-medium break-words hover:underline"
-            >
-              {item.title}
-            </RouterLink>
-            {item.regression && (
-              <Badge
-                variant="danger"
-                title={`Regression · opened ${new Date(item.regression.regressedAt).toLocaleString()} · ${item.regression.failureCount} failing run${item.regression.failureCount === 1 ? '' : 's'} since`}
-                className="gap-1 text-[10px] px-1.5 py-0"
+    return (
+      <TableRow ref={ref} data-index={dataIndex}>
+        <TableCell className="break-words">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <RouterLink
+                to={`/test/${item.testId}?project=${encodeURIComponent(item.project)}`}
+                className="font-medium break-words hover:underline"
               >
-                Regression · {formatRegressionAge(item.regression.daysOpen)}
-              </Badge>
-            )}
+                {item.title}
+              </RouterLink>
+              {item.regression && (
+                <Badge
+                  variant="danger"
+                  title={`Regression · opened ${new Date(item.regression.regressedAt).toLocaleString()} · ${item.regression.failureCount} failing run${item.regression.failureCount === 1 ? '' : 's'} since`}
+                  className="gap-1 text-[10px] px-1.5 py-0"
+                >
+                  Regression · {formatRegressionAge(item.regression.daysOpen)}
+                </Badge>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground break-words">{item.filePath}</p>
           </div>
-          <p className="text-sm text-muted-foreground break-words">{item.filePath}</p>
-        </div>
-      </TableCell>
-      <TableCell className="break-words">
-        <p className="text-sm break-words">{item.project}</p>
-      </TableCell>
-      <TableCell className="whitespace-nowrap w-px">
-        {getOutcomeBadge(item.runs?.at(0)?.outcome)}
-      </TableCell>
-      <TableCell className="whitespace-nowrap w-px">
-        {getStatusBadge(item, warningThreshold, quarantineThreshold)}
-      </TableCell>
-      <TableCell className="whitespace-nowrap w-px relative">
-        <div className="flex items-center gap-2">
-          <Progress value={item.flakinessScore || 0} className="max-w-[100px] h-2" />
-          <span className="text-sm">{item.flakinessScore?.toFixed(1)}%</span>
-        </div>
-        {item.flakinessResetAt && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <RotateCcw className="absolute top-7 right-0 h-3 w-3 text-muted-foreground" />
-              </TooltipTrigger>
-              <TooltipContent>
-                Flakiness reset on {new Date(item.flakinessResetAt).toLocaleString()}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
-      </TableCell>
-      <TableCell className="whitespace-nowrap w-px">
-        <Badge variant="outline">{item.totalRuns || 0}</Badge>
-      </TableCell>
-      <TableCell className="whitespace-nowrap w-px">
-        <TrendSparklineHistory runs={item.runs ?? []} highlights={highlights} />
-      </TableCell>
-      <TableCell className="whitespace-nowrap w-px">
-        <span className="flex items-center">
-          <Clock className="h-4 w-4 mr-1" />
-          {parseMilliseconds(exponentialMovingAverageDuration(item.runs))}
-        </span>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-1 break-words">
-          {item.lastRunAt ? new Date(item.lastRunAt).toLocaleString() : 'Never'}
-          {stale && (
+        </TableCell>
+        <TableCell className="break-words">
+          <p className="text-sm break-words">{item.project}</p>
+        </TableCell>
+        <TableCell className="whitespace-nowrap w-px">
+          {getOutcomeBadge(item.runs?.at(0)?.outcome)}
+        </TableCell>
+        <TableCell className="whitespace-nowrap w-px">
+          {getStatusBadge(item, warningThreshold, quarantineThreshold)}
+        </TableCell>
+        <TableCell className="whitespace-nowrap w-px relative">
+          <div className="flex items-center gap-2">
+            <Progress value={item.flakinessScore || 0} className="max-w-[100px] h-2" />
+            <span className="text-sm">{item.flakinessScore?.toFixed(1)}%</span>
+          </div>
+          {item.flakinessResetAt && (
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger>
-                  <AlertTriangle className="h-4 w-4 text-warning" />
+                <TooltipTrigger asChild>
+                  <RotateCcw className="absolute top-7 right-0 h-3 w-3 text-muted-foreground" />
                 </TooltipTrigger>
-                <TooltipContent>Not present in latest report — consider removing</TooltipContent>
+                <TooltipContent>
+                  Flakiness reset on {new Date(item.flakinessResetAt).toLocaleString()}
+                </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           )}
-        </div>
-      </TableCell>
-
-      <TableCell className="whitespace-nowrap w-px">
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm">
-              Actions
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem
-              onClick={() => onQuarantine(item)}
-              className={item.isQuarantined ? 'text-success' : 'text-danger'}
-            >
-              {item.isQuarantined ? 'Remove Quarantine' : 'Send Quarantine'}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onResetFlakiness(item)}>
-              Reset Flakiness Score
-            </DropdownMenuItem>
-            {item.flakinessResetAt && (
-              <DropdownMenuItem onClick={() => onClearFlakinessReset(item)}>
-                Remove Flakiness Reset
-              </DropdownMenuItem>
+        </TableCell>
+        <TableCell className="whitespace-nowrap w-px">
+          <Badge variant="outline">{item.totalRuns || 0}</Badge>
+        </TableCell>
+        <TableCell className="whitespace-nowrap w-px">
+          <TrendSparklineHistory runs={item.runs ?? []} highlights={highlights} />
+        </TableCell>
+        <TableCell className="whitespace-nowrap w-px">
+          <span className="flex items-center">
+            <Clock className="h-4 w-4 mr-1" />
+            {parseMilliseconds(exponentialMovingAverageDuration(item.runs))}
+          </span>
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-1 break-words">
+            {item.lastRunAt ? new Date(item.lastRunAt).toLocaleString() : 'Never'}
+            {stale && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <AlertTriangle className="h-4 w-4 text-warning" />
+                  </TooltipTrigger>
+                  <TooltipContent>Not present in latest report — consider removing</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onDelete(item)} className="text-danger">
-              Delete Test
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </TableCell>
-    </TableRow>
-  );
-});
+          </div>
+        </TableCell>
+
+        <TableCell className="whitespace-nowrap w-px">
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm">
+                Actions
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem
+                onClick={() => onQuarantine(item)}
+                className={item.isQuarantined ? 'text-success' : 'text-danger'}
+              >
+                {item.isQuarantined ? 'Remove Quarantine' : 'Send Quarantine'}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onResetFlakiness(item)}>
+                Reset Flakiness Score
+              </DropdownMenuItem>
+              {item.flakinessResetAt && (
+                <DropdownMenuItem onClick={() => onClearFlakinessReset(item)}>
+                  Remove Flakiness Reset
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onDelete(item)} className="text-danger">
+                Delete Test
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </TableCell>
+      </TableRow>
+    );
+  })
+);
 
 export default function TestManagementWidget({
   project,
@@ -449,24 +449,7 @@ export default function TestManagementWidget({
     enabled: isAuthReady,
   });
 
-  const sentinelRef = useRef<HTMLTableRowElement>(null);
-
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel || !hasNextPage) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
 
   const { mutate: updateQuarantineMutation, isPending: isUpdateQuarantinePending } = useMutation(
     '/api/test',
@@ -529,6 +512,30 @@ export default function TestManagementWidget({
   );
 
   const tests = useMemo(() => testsData?.pages.flatMap((page) => page.data) ?? [], [testsData]);
+
+  // virtualize the (unbounded, infinite-scrolled) rows: only the visible window
+  // is in the DOM. Rows are variable-height, so heights are measured live via
+  // measureElement; estimateSize is just the initial guess.
+  const rowVirtualizer = useVirtualizer({
+    count: tests.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 84,
+    overscan: 8,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const paddingBottom =
+    virtualRows.length > 0 ? totalSize - virtualRows[virtualRows.length - 1].end : 0;
+
+  // Load the next page once the last row is rendered (replaces the old
+  // IntersectionObserver sentinel, which can't exist outside the virtual window).
+  useEffect(() => {
+    const lastItem = virtualRows[virtualRows.length - 1];
+    if (lastItem && lastItem.index >= tests.length - 1 && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [virtualRows, tests.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const regressionFilterActive =
     !!filters.regressedOnly || !!filters.regressedSince || !!filters.resolvedSince;
@@ -632,9 +639,9 @@ export default function TestManagementWidget({
               <Spinner size="lg" />
             </div>
           ) : (
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
-                <TableHeader>
+            <div ref={tableContainerRef} className="rounded-md border overflow-auto max-h-[70vh]">
+              <table className="w-full caption-bottom text-sm">
+                <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-card">
                   <TableRow>
                     <TableHead className="min-w-[240px]">Test Name</TableHead>
                     <TableHead className="min-w-[120px]">Project</TableHead>
@@ -651,21 +658,36 @@ export default function TestManagementWidget({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {tests.map((item) => (
-                    <TestRow
-                      key={`${item.testId}-${item.fileId}-${item.project}`}
-                      item={item}
-                      warningThreshold={warningThreshold}
-                      quarantineThreshold={quarantineThreshold}
-                      stale={isStale(item)}
-                      regressionFilterActive={regressionFilterActive}
-                      regressionHighlightMode={regressionHighlightMode}
-                      onQuarantine={handleQuarantineAction}
-                      onResetFlakiness={handleResetFlakiness}
-                      onClearFlakinessReset={handleClearFlakinessReset}
-                      onDelete={handleDeleteAction}
-                    />
-                  ))}
+                  {paddingTop > 0 && (
+                    <tr>
+                      <td colSpan={10} style={{ height: paddingTop }} />
+                    </tr>
+                  )}
+                  {virtualRows.map((virtualRow) => {
+                    const item = tests[virtualRow.index];
+                    return (
+                      <TestRow
+                        key={`${item.testId}-${item.fileId}-${item.project}`}
+                        ref={rowVirtualizer.measureElement}
+                        dataIndex={virtualRow.index}
+                        item={item}
+                        warningThreshold={warningThreshold}
+                        quarantineThreshold={quarantineThreshold}
+                        stale={isStale(item)}
+                        regressionFilterActive={regressionFilterActive}
+                        regressionHighlightMode={regressionHighlightMode}
+                        onQuarantine={handleQuarantineAction}
+                        onResetFlakiness={handleResetFlakiness}
+                        onClearFlakinessReset={handleClearFlakinessReset}
+                        onDelete={handleDeleteAction}
+                      />
+                    );
+                  })}
+                  {paddingBottom > 0 && (
+                    <tr>
+                      <td colSpan={10} style={{ height: paddingBottom }} />
+                    </tr>
+                  )}
                   {tests.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
@@ -673,19 +695,15 @@ export default function TestManagementWidget({
                       </TableCell>
                     </TableRow>
                   )}
-                  {hasNextPage && (
-                    <TableRow ref={sentinelRef}>
+                  {isFetchingNextPage && (
+                    <TableRow>
                       <TableCell colSpan={10} className="text-center py-4">
-                        {isFetchingNextPage ? (
-                          <Spinner size="sm" />
-                        ) : (
-                          <span className="text-sm text-muted-foreground">Scroll for more</span>
-                        )}
+                        <Spinner size="sm" />
                       </TableCell>
                     </TableRow>
                   )}
                 </TableBody>
-              </Table>
+              </table>
             </div>
           )}
           <div className="mt-4 text-xs text-muted-foreground border-t pt-3 w-full">
