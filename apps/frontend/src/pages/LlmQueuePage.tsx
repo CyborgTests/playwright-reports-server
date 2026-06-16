@@ -21,13 +21,14 @@ import {
 } from '@/components/ui/select';
 import { useLlmTaskModels, useLlmTaskStats, useLlmTasks } from '@/hooks/useLlmTasks';
 import useMutation from '@/hooks/useMutation';
+import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
 import { authHeaders } from '@/lib/auth';
 import { formatCategoryName } from '@/lib/format';
 import { invalidateCache } from '@/lib/query-cache';
 
 export default function LlmQueuePage() {
   const queryClient = useQueryClient();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [statusFilter, setStatusFilter] = useState<string>(
     () => searchParams.get('status') ?? 'all'
   );
@@ -146,21 +147,12 @@ export default function LlmQueuePage() {
     setSelectedIds(new Set());
   }, [statusFilter, typeFilter, modelFilter]);
 
-  useEffect(() => {
-    const next = new URLSearchParams(searchParams);
-    const writeOrDrop = (key: string, value: string, defaultValue: string) => {
-      if (value === defaultValue) next.delete(key);
-      else next.set(key, value);
-    };
-    writeOrDrop('status', statusFilter, 'all');
-    writeOrDrop('type', typeFilter, 'all');
-    writeOrDrop('model', modelFilter, 'all');
-    if (page > 1) next.set('page', String(page));
-    else next.delete('page');
-    if (next.toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true });
-    }
-  }, [statusFilter, typeFilter, modelFilter, page, searchParams, setSearchParams]);
+  useSyncSearchParams({
+    status: statusFilter !== 'all' ? statusFilter : null,
+    type: typeFilter !== 'all' ? typeFilter : null,
+    model: modelFilter !== 'all' ? modelFilter : null,
+    page: page > 1 ? String(page) : null,
+  });
 
   return (
     <div className="space-y-6">

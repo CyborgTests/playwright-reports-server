@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useActiveSection } from '../../hooks/useActiveSection';
 import { useAnalyticsData } from '../../hooks/useAnalyticsData';
+import { useSyncSearchParams } from '../../hooks/useSyncSearchParams';
 import { defaultProjectName } from '../../lib/constants';
 import { cn } from '../../lib/utils';
 import DateRangeSelect, { readStoredDateRange } from '../date-range-select';
@@ -56,20 +57,12 @@ export default function AnalyticsDashboard() {
   );
 
   // Reflect filter state into URL search params so the view is shareable.
-  useEffect(() => {
-    const next = new URLSearchParams(searchParams);
-    if (project && project !== defaultProjectName) next.set('project', project);
-    else next.delete('project');
-    if (dateRange.from) next.set('from', dateRange.from);
-    else next.delete('from');
-    if (dateRange.to) next.set('to', dateRange.to);
-    else next.delete('to');
-    if (failedOnly) next.set('failedOnly', '1');
-    else next.delete('failedOnly');
-    if (next.toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true });
-    }
-  }, [project, dateRange, failedOnly, searchParams, setSearchParams]);
+  useSyncSearchParams({
+    project: project && project !== defaultProjectName ? project : null,
+    from: dateRange.from ?? null,
+    to: dateRange.to ?? null,
+    failedOnly: failedOnly ? '1' : null,
+  });
 
   const {
     data: analyticsData,

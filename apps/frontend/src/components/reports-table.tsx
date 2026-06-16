@@ -17,6 +17,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import useQuery from '@/hooks/useQuery';
+import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
 import { defaultProjectName } from '@/lib/constants';
 import { withQueryParams } from '@/lib/network';
 import { withBase } from '@/lib/url';
@@ -319,7 +320,7 @@ export default function ReportsTable({
   onChange,
 }: Readonly<ReportsTableProps>) {
   const reportListEndpoint = '/api/report/list';
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   const [project, setProject] = useState(() => searchParams.get('project') ?? defaultProjectName);
   const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
@@ -345,38 +346,16 @@ export default function ReportsTable({
   );
 
   // Reflect filter state into URL search params so the view is shareable.
-  useEffect(() => {
-    const next = new URLSearchParams(searchParams);
-    if (selectedTags.length > 0) next.set('tags', selectedTags.join(','));
-    else next.delete('tags');
-    if (dateRange.from) next.set('from', dateRange.from);
-    else next.delete('from');
-    if (dateRange.to) next.set('to', dateRange.to);
-    else next.delete('to');
-    if (passRate && passRate !== 'all') next.set('passRate', passRate);
-    else next.delete('passRate');
-    if (project && project !== defaultProjectName) next.set('project', project);
-    else next.delete('project');
-    if (search.trim()) next.set('search', search.trim());
-    else next.delete('search');
-    if (page > 1) next.set('page', String(page));
-    else next.delete('page');
-    if (rowsPerPage !== 10) next.set('perPage', String(rowsPerPage));
-    else next.delete('perPage');
-    if (next.toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true });
-    }
-  }, [
-    selectedTags,
-    dateRange,
-    passRate,
-    project,
-    search,
-    page,
-    rowsPerPage,
-    searchParams,
-    setSearchParams,
-  ]);
+  useSyncSearchParams({
+    tags: selectedTags.length > 0 ? selectedTags.join(',') : null,
+    from: dateRange.from ?? null,
+    to: dateRange.to ?? null,
+    passRate: passRate && passRate !== 'all' ? passRate : null,
+    project: project && project !== defaultProjectName ? project : null,
+    search: search.trim() || null,
+    page: page > 1 ? String(page) : null,
+    perPage: rowsPerPage !== 10 ? String(rowsPerPage) : null,
+  });
 
   const queryUrl = useMemo(
     () =>

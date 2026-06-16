@@ -22,6 +22,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import useQuery from '@/hooks/useQuery';
+import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
 import { defaultProjectName } from '@/lib/constants';
 import { withQueryParams } from '@/lib/network';
 import { withBase } from '@/lib/url';
@@ -156,7 +157,7 @@ export default function ResultsTable({
   selected,
 }: Readonly<ResultsTableProps>) {
   const resultListEndpoint = '/api/result/list';
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   const [project, setProject] = useState(defaultProjectName);
   const [selectedTags, setSelectedTags] = useState<string[]>(() => {
@@ -176,20 +177,12 @@ export default function ResultsTable({
   );
 
   // Reflect filter state into URL search params so the view is shareable.
-  useEffect(() => {
-    const next = new URLSearchParams(searchParams);
-    if (selectedTags.length > 0) next.set('tags', selectedTags.join(','));
-    else next.delete('tags');
-    if (dateRange.from) next.set('from', dateRange.from);
-    else next.delete('from');
-    if (dateRange.to) next.set('to', dateRange.to);
-    else next.delete('to');
-    if (usage && usage !== 'all') next.set('usage', usage);
-    else next.delete('usage');
-    if (next.toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true });
-    }
-  }, [selectedTags, dateRange, usage, searchParams, setSearchParams]);
+  useSyncSearchParams({
+    tags: selectedTags.length > 0 ? selectedTags.join(',') : null,
+    from: dateRange.from ?? null,
+    to: dateRange.to ?? null,
+    usage: usage !== 'all' ? usage : null,
+  });
 
   const getQueryParams = () => ({
     limit: rowsPerPage.toString(),
