@@ -1,14 +1,19 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import type { ThemeProviderProps } from 'next-themes';
 import { ThemeProvider as NextThemesProvider } from 'next-themes';
-import { type FC, useState } from 'react';
+import { type FC, lazy, Suspense, useState } from 'react';
 import { CONFIG_QUERY_KEY, fetchConfig } from '../hooks/useConfig';
 
 const THEME_VALUE_MAP = {
   'light-mode': 'light',
   'dark-mode': 'dark',
 };
+
+const ReactQueryDevtools = import.meta.env.DEV
+  ? lazy(() =>
+      import('@tanstack/react-query-devtools').then((m) => ({ default: m.ReactQueryDevtools }))
+    )
+  : null;
 
 export const Providers: FC<ThemeProviderProps> = ({ children, ...themeProps }) => {
   const [queryClient] = useState(() => {
@@ -31,7 +36,11 @@ export const Providers: FC<ThemeProviderProps> = ({ children, ...themeProps }) =
     <NextThemesProvider {...themeProps} attribute="class" value={THEME_VALUE_MAP}>
       <QueryClientProvider client={queryClient}>
         {children}
-        <ReactQueryDevtools initialIsOpen={false} />
+        {ReactQueryDevtools && (
+          <Suspense fallback={null}>
+            <ReactQueryDevtools initialIsOpen={false} />
+          </Suspense>
+        )}
       </QueryClientProvider>
     </NextThemesProvider>
   );
