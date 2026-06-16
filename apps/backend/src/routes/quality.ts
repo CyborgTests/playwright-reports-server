@@ -151,6 +151,11 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
           return reply.status(409).send({ success: false, error: err.message });
         }
         const message = err instanceof Error ? err.message : String(err);
+        if (message.includes('UNIQUE') && message.includes('slug')) {
+          return reply
+            .status(409)
+            .send({ success: false, error: 'A dashboard with that slug already exists' });
+        }
         request.log.error({ err: message }, 'update dashboard failed');
         return reply.status(500).send({ success: false, error: 'Failed to update dashboard' });
       }
