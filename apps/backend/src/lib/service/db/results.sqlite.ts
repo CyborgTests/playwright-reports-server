@@ -79,16 +79,6 @@ export class ResultDatabase {
     this.insertResult(result);
   }
 
-  public getAll(): Result[] {
-    const compiled = this.k
-      .selectFrom('results')
-      .selectAll()
-      .orderBy('createdAt', 'desc')
-      .compile();
-    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ResultRow[];
-    return rows.map(this.rowToResult);
-  }
-
   public getDistinctProjects(): string[] {
     const compiled = this.k
       .selectFrom('results')
@@ -149,17 +139,6 @@ export class ResultDatabase {
       for (const row of rows) out.push(this.rowToResult(row));
     }
     return out;
-  }
-
-  public getByProject(project: string): Result[] {
-    const compiled = this.k
-      .selectFrom('results')
-      .selectAll()
-      .where('project', '=', project)
-      .orderBy('createdAt', 'desc')
-      .compile();
-    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ResultRow[];
-    return rows.map(this.rowToResult);
   }
 
   public getCount(): number {

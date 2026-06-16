@@ -40,6 +40,24 @@ type ReportSummaryRow = Pick<
   'reportID' | 'project' | 'title' | 'displayNumber' | 'createdAt' | 'reportUrl'
 >;
 
+// every `reports` column except `files` - the full test-file tree. 
+// list/analytics paths that never read `.files` use this to avoid
+// transferring and JSON.parsing it per row.
+const REPORT_COLUMNS_WITHOUT_FILES = [
+  'reportID',
+  'project',
+  'title',
+  'displayNumber',
+  'createdAt',
+  'reportUrl',
+  'size',
+  'sizeBytes',
+  'stats',
+  'metadata',
+  'passRate',
+  'updatedAt',
+] as const satisfies ReadonlyArray<keyof ReportsRow>;
+
 // Cache parsed metadata/stats keyed by (reportID, updatedAt) so list endpoints
 // don't re-run JSON.parse on every row of every request.
 const PARSE_CACHE_MAX = 5000;
@@ -313,16 +331,6 @@ export class ReportDatabase {
     this.insertReport(reportWithDisplayNumber);
   }
 
-  public getAll(): ReportHistory[] {
-    const compiled = this.k
-      .selectFrom('reports')
-      .selectAll()
-      .orderBy('createdAt', 'desc')
-      .compile();
-    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportRow[];
-    return rows.map((row) => this.rowToReport(row));
-  }
-
   public getDistinctProjects(): string[] {
     const compiled = this.k
       .selectFrom('reports')
@@ -403,7 +411,10 @@ export class ReportDatabase {
 
   public getByProject(project?: string, opts?: { from?: string; to?: string }): ReportHistory[] {
     const hasProject = project && project !== defaultProjectName;
-    let q = this.k.selectFrom('reports').selectAll().orderBy('createdAt', 'desc');
+    let q = this.k
+      .selectFrom('reports')
+      .select(REPORT_COLUMNS_WITHOUT_FILES)
+      .orderBy('createdAt', 'desc');
     if (hasProject) q = q.where('project', '=', project ?? '');
     if (opts?.from) q = q.where('createdAt', '>=', opts.from);
     if (opts?.to) q = q.where('createdAt', '<', opts.to);
