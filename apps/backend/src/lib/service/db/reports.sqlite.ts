@@ -363,7 +363,7 @@ export class ReportDatabase {
         if (!remaining) projectSummaryDb.deleteByProject(project);
       }
 
-      // orphan-test cleanup: the report delete cascaded its test_runs away; 
+      // orphan-test cleanup: the report delete cascaded its test_runs away;
       // a test left with zero runs is removed
       // its' runs/analyses/feedback/regressions cascade via the tests FK
       for (const part of chunk(affectedTests, 300)) {
@@ -704,15 +704,19 @@ export class ReportDatabase {
       return q;
     };
 
-    const countCompiled = applyWhere(
-      this.k.selectFrom('reports').select((eb) => eb.fn.countAll<number>().as('count'))
-    ).compile();
-    const total = (
-      this.db.prepare(countCompiled.sql).get(...countCompiled.parameters) as { count: number }
-    ).count;
+    const runCount = (): number => {
+      const countCompiled = applyWhere(
+        this.k.selectFrom('reports').select((eb) => eb.fn.countAll<number>().as('count'))
+      ).compile();
+      return (
+        this.db.prepare(countCompiled.sql).get(...countCompiled.parameters) as { count: number }
+      ).count;
+    };
+
+    const hasScanFilter = !!input?.search?.trim() || (input?.tags?.length ?? 0) > 0;
 
     // skip the `files` column, only the detail by id query needs it.
-    let listQuery = applyWhere(
+    let listSelect = applyWhere(
       this.k
         .selectFrom('reports')
         .select([
@@ -729,16 +733,33 @@ export class ReportDatabase {
           'passRate',
           'updatedAt',
         ])
-        .orderBy('createdAt', 'desc')
     );
+    if (hasScanFilter) {
+      listSelect = listSelect.select(sql<number>`COUNT(*) OVER()`.as('__total'));
+    }
+    let listQuery = listSelect.orderBy('createdAt', 'desc');
     if (input?.pagination?.limit !== undefined) {
       listQuery = listQuery
         .limit(Math.max(0, Math.floor(input.pagination.limit)))
         .offset(Math.max(0, Math.floor(input.pagination.offset ?? 0)));
     }
     const listCompiled = listQuery.compile();
-    const rows = this.db.prepare(listCompiled.sql).all(...listCompiled.parameters) as ReportRow[];
+    const rawRows = this.db.prepare(listCompiled.sql).all(...listCompiled.parameters) as Array<
+      ReportRow & { __total?: number }
+    >;
 
+    let total: number;
+    if (hasScanFilter) {
+      if (rawRows.length > 0) {
+        total = rawRows[0].__total ?? 0;
+      } else {
+        total = (input?.pagination?.offset ?? 0) > 0 ? runCount() : 0;
+      }
+    } else {
+      total = runCount();
+    }
+
+    const rows = rawRows.map(({ __total, ...row }) => row as ReportRow);
     return { reports: rows.map((row) => this.rowToReport(row)), total };
   }
 

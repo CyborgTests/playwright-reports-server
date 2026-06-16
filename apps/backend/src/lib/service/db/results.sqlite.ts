@@ -1,4 +1,4 @@
-import type { ExpressionBuilder, SelectQueryBuilder } from 'kysely';
+import { type ExpressionBuilder, type SelectQueryBuilder, sql } from 'kysely';
 import { defaultProjectName } from '../../constants.js';
 import type { ReadResultsInput, ReadResultsOutput, Result } from '../../storage/types.js';
 import { getDatabase } from './db.js';
@@ -198,23 +198,44 @@ export class ResultDatabase {
       return q;
     };
 
-    const countCompiled = applyWhere(
-      this.k.selectFrom('results').select((eb) => eb.fn.countAll<number>().as('count'))
-    ).compile();
-    const total = (
-      this.db.prepare(countCompiled.sql).get(...countCompiled.parameters) as { count: number }
-    ).count;
+    const runCount = (): number => {
+      const countCompiled = applyWhere(
+        this.k.selectFrom('results').select((eb) => eb.fn.countAll<number>().as('count'))
+      ).compile();
+      return (
+        this.db.prepare(countCompiled.sql).get(...countCompiled.parameters) as { count: number }
+      ).count;
+    };
 
-    let listQuery = applyWhere(
-      this.k.selectFrom('results').selectAll().orderBy('createdAt', 'desc')
-    );
+    const hasScanFilter =
+      !!input?.search?.trim() || (input?.tags?.length ?? 0) > 0 || !!input?.testRun;
+
+    let listSelect = applyWhere(this.k.selectFrom('results').selectAll());
+    if (hasScanFilter) {
+      listSelect = listSelect.select(sql<number>`COUNT(*) OVER()`.as('__total'));
+    }
+    let listQuery = listSelect.orderBy('createdAt', 'desc');
     if (input?.pagination?.limit !== undefined) {
       listQuery = listQuery.limit(Math.max(0, Math.floor(input.pagination.limit)));
       listQuery = listQuery.offset(Math.max(0, Math.floor(input.pagination.offset ?? 0)));
     }
     const listCompiled = listQuery.compile();
-    const rows = this.db.prepare(listCompiled.sql).all(...listCompiled.parameters) as ResultRow[];
+    const rawRows = this.db.prepare(listCompiled.sql).all(...listCompiled.parameters) as Array<
+      ResultRow & { __total?: number }
+    >;
 
+    let total: number;
+    if (hasScanFilter) {
+      if (rawRows.length > 0) {
+        total = rawRows[0].__total ?? 0;
+      } else {
+        total = (input?.pagination?.offset ?? 0) > 0 ? runCount() : 0;
+      }
+    } else {
+      total = runCount();
+    }
+
+    const rows = rawRows.map(({ __total, ...row }) => row as ResultRow);
     return { results: rows.map((row) => this.rowToResult(row)), total };
   }
 
