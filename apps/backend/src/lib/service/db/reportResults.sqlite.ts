@@ -1,6 +1,9 @@
 import { getDatabase } from './db.js';
 import { getKysely } from './kysely.js';
 import { singletonOf } from './singleton.js';
+import { chunk } from './utils.js';
+
+const INSERT_CHUNK_SIZE = 300;
 
 export class ReportResultsDatabase {
   private readonly k = getKysely();
@@ -9,30 +12,17 @@ export class ReportResultsDatabase {
   public linkReportToResults(reportId: string, resultIds: string[]): void {
     if (!resultIds?.length) return;
     const now = new Date().toISOString();
-    const compiled = this.k
-      .insertInto('report_results')
-      .values(resultIds.map((resultId) => ({ reportId, resultId, createdAt: now })))
-      .onConflict((oc) => oc.doNothing())
-      .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
-  }
-
-  public deleteByReportIds(reportIds: string[]): void {
-    if (!reportIds?.length) return;
-    const compiled = this.k
-      .deleteFrom('report_results')
-      .where('reportId', 'in', reportIds)
-      .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
-  }
-
-  public deleteByResultIds(resultIds: string[]): void {
-    if (!resultIds?.length) return;
-    const compiled = this.k
-      .deleteFrom('report_results')
-      .where('resultId', 'in', resultIds)
-      .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
+    const tx = this.db.transaction((ids: string[]) => {
+      for (const batch of chunk(ids, INSERT_CHUNK_SIZE)) {
+        const compiled = this.k
+          .insertInto('report_results')
+          .values(batch.map((resultId) => ({ reportId, resultId, createdAt: now })))
+          .onConflict((oc) => oc.doNothing())
+          .compile();
+        this.db.prepare(compiled.sql).run(...compiled.parameters);
+      }
+    });
+    tx(resultIds);
   }
 
   public getReportsForResultIds(

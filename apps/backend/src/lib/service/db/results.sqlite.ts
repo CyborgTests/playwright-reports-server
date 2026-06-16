@@ -4,8 +4,11 @@ import type { ReadResultsInput, ReadResultsOutput, Result } from '../../storage/
 import { getDatabase } from './db.js';
 import { type Database, getKysely, type ResultsRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
+import { chunk } from './utils.js';
 
 type ResultRow = ResultsRow;
+
+const ID_CHUNK_SIZE = 300;
 
 export class ResultDatabase {
   public initialized = false;
@@ -63,8 +66,13 @@ export class ResultDatabase {
 
   public onDeleted(resultIds: string[]) {
     if (resultIds.length === 0) return;
-    const compiled = this.k.deleteFrom('results').where('resultID', 'in', resultIds).compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
+    const tx = this.db.transaction((ids: string[]) => {
+      for (const batch of chunk(ids, ID_CHUNK_SIZE)) {
+        const compiled = this.k.deleteFrom('results').where('resultID', 'in', batch).compile();
+        this.db.prepare(compiled.sql).run(...compiled.parameters);
+      }
+    });
+    tx(resultIds);
   }
 
   public onCreated(result: Result) {
@@ -130,13 +138,17 @@ export class ResultDatabase {
 
   public getByIDs(resultIDs: string[]): Result[] {
     if (resultIDs.length === 0) return [];
-    const compiled = this.k
-      .selectFrom('results')
-      .selectAll()
-      .where('resultID', 'in', resultIDs)
-      .compile();
-    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ResultRow[];
-    return rows.map((row) => this.rowToResult(row));
+    const out: Result[] = [];
+    for (const ids of chunk(resultIDs, ID_CHUNK_SIZE)) {
+      const compiled = this.k
+        .selectFrom('results')
+        .selectAll()
+        .where('resultID', 'in', ids)
+        .compile();
+      const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ResultRow[];
+      for (const row of rows) out.push(this.rowToResult(row));
+    }
+    return out;
   }
 
   public getByProject(project: string): Result[] {
