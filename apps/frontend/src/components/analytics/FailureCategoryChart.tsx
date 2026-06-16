@@ -133,6 +133,14 @@ function FailureCategoryChartImpl({
               layout="vertical"
               barSize={16}
               margin={{ left: 120, top: 8, bottom: 8 }}
+              className={onCategoryClick ? 'cursor-pointer' : undefined}
+              onClick={
+                onCategoryClick
+                  ? (state) => {
+                      if (state?.activeLabel) onCategoryClick(state.activeLabel);
+                    }
+                  : undefined
+              }
             >
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
               <XAxis type="number" />
@@ -143,15 +151,11 @@ function FailureCategoryChartImpl({
                 tickFormatter={formatCategoryName}
                 width={110}
               />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar
-                dataKey="count"
-                radius={[0, 4, 4, 0]}
-                cursor={onCategoryClick ? 'pointer' : undefined}
-                onClick={(data: { payload: CategoryData }) =>
-                  onCategoryClick?.(data.payload.category)
-                }
-              >
+              <Tooltip
+                content={<CustomTooltip />}
+                cursor={{ fill: 'hsl(var(--muted))', opacity: 0.4 }}
+              />
+              <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                 {chartData.map((entry) => (
                   <Cell
                     key={entry.category}
