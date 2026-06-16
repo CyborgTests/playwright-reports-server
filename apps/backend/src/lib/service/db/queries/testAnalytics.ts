@@ -65,47 +65,59 @@ export function getDerivedPage(
   const ctes: string[] = [];
   const cteParams: Array<string | number> = [];
   if (windowed) {
-    const winConds = ["outcome != 'skipped'"];
-    if (scoped) {
-      winConds.push('project = ?');
-      cteParams.push(project as string);
-    }
-    if (options.from) {
-      winConds.push('createdAt >= ?');
-      cteParams.push(options.from);
-    }
-    if (options.to) {
-      winConds.push('createdAt < ?');
-      cteParams.push(options.to);
-    }
+    // Build the window filter's SQL and its bind params together so the three
+    // reuses (agg_w / recent_w / cat_w) can't desync: each CTE appends exactly
+    // the params for the `?` placeholders it just emitted.
+    const windowFilter = (
+      failureCategory?: string
+    ): { sql: string; params: Array<string | number> } => {
+      const conds = ["outcome != 'skipped'"];
+      const params: Array<string | number> = [];
+      if (scoped) {
+        conds.push('project = ?');
+        params.push(project as string);
+      }
+      if (options.from) {
+        conds.push('createdAt >= ?');
+        params.push(options.from);
+      }
+      if (options.to) {
+        conds.push('createdAt < ?');
+        params.push(options.to);
+      }
+      if (failureCategory) {
+        conds.push('failure_category = ?');
+        params.push(failureCategory);
+      }
+      return { sql: conds.join(' AND '), params };
+    };
+
+    const aggFilter = windowFilter();
     ctes.push(`agg_w AS (
       SELECT testId, fileId, project, COUNT(*) AS totalRuns, MAX(createdAt) AS lastRunAt
-      FROM test_runs WHERE ${winConds.join(' AND ')}
+      FROM test_runs WHERE ${aggFilter.sql}
       GROUP BY testId, fileId, project
     )`);
-    // recent_w reuses the same filters as agg_w; duplicate the bind params
-    // in the same order to align with the second occurrence of winConds.
-    if (scoped) cteParams.push(project as string);
-    if (options.from) cteParams.push(options.from);
-    if (options.to) cteParams.push(options.to);
+    cteParams.push(...aggFilter.params);
+
+    const recentFilter = windowFilter();
     ctes.push(`recent_w AS (
       SELECT testId, fileId, project,
              CAST(SUM(CASE WHEN outcome IN ('expected', 'passed') THEN 1 ELSE 0 END) AS REAL)
                / NULLIF(COUNT(*), 0) AS recentPassRate,
              AVG(CASE WHEN duration >= 0 THEN duration END) AS avgDuration
-      FROM test_runs WHERE ${winConds.join(' AND ')}
+      FROM test_runs WHERE ${recentFilter.sql}
       GROUP BY testId, fileId, project
     )`);
+    cteParams.push(...recentFilter.params);
+
     if (options.failureCategory) {
-      const catConds = [...winConds, 'failure_category = ?'];
-      if (scoped) cteParams.push(project as string);
-      if (options.from) cteParams.push(options.from);
-      if (options.to) cteParams.push(options.to);
-      cteParams.push(options.failureCategory);
+      const catFilter = windowFilter(options.failureCategory);
       ctes.push(`cat_w AS (
         SELECT DISTINCT testId, fileId, project
-        FROM test_runs WHERE ${catConds.join(' AND ')}
+        FROM test_runs WHERE ${catFilter.sql}
       )`);
+      cteParams.push(...catFilter.params);
     }
   }
 
