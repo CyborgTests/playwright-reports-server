@@ -87,7 +87,7 @@ export class NotificationLogDatabase {
 
     const out = { success: 0, failed: 0, skipped: 0 };
     for (const row of rows) {
-      if (row.status in out) out[row.status] = row.count;
+      if (Object.hasOwn(out, row.status)) out[row.status] = row.count;
     }
     return out;
   }

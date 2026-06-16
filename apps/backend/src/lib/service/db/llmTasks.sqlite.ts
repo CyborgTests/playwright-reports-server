@@ -382,7 +382,7 @@ export class LlmTasksDatabase {
     }>;
     const stats = { queued: 0, processing: 0, completed: 0, failed: 0, cancelled: 0 };
     for (const row of rows) {
-      if (row.status in stats) {
+      if (Object.hasOwn(stats, row.status)) {
         stats[row.status as keyof typeof stats] = row.count;
       }
     }
