@@ -168,6 +168,9 @@ export class ReportDatabase {
       createdAtStr = new Date(createdAt as number).toISOString();
     }
 
+    const reportDuration = (metadata as { duration?: unknown }).duration;
+    const durationMs = typeof reportDuration === 'number' ? reportDuration : null;
+
     // kysely doesn't model INSERT OR REPLACE well; use ON CONFLICT REPLACE shape.
     const compiled = this.k
       .insertInto('reports')
@@ -184,6 +187,11 @@ export class ReportDatabase {
         metadata: JSON.stringify(metadata),
         files: files ? JSON.stringify(files) : null,
         passRate: computePassRateFromStats(stats),
+        statTotal: stats?.total ?? null,
+        statExpected: stats?.expected ?? null,
+        statUnexpected: stats?.unexpected ?? null,
+        statFlaky: stats?.flaky ?? null,
+        durationMs,
         updatedAt: undefined,
       })
       .onConflict((oc) =>
@@ -199,6 +207,11 @@ export class ReportDatabase {
           metadata: eb.ref('excluded.metadata'),
           files: eb.ref('excluded.files'),
           passRate: eb.ref('excluded.passRate'),
+          statTotal: eb.ref('excluded.statTotal'),
+          statExpected: eb.ref('excluded.statExpected'),
+          statUnexpected: eb.ref('excluded.statUnexpected'),
+          statFlaky: eb.ref('excluded.statFlaky'),
+          durationMs: eb.ref('excluded.durationMs'),
           updatedAt: new Date().toISOString(),
         }))
       )
@@ -507,7 +520,10 @@ export class ReportDatabase {
     return row ? this.rowToReport(row) : undefined;
   }
 
-  public getByProject(project?: string, opts?: { from?: string; to?: string }): ReportHistory[] {
+  public getByProject(
+    project?: string,
+    opts?: { from?: string; to?: string; failedOnly?: boolean }
+  ): ReportHistory[] {
     const hasProject = project && project !== defaultProjectName;
     let q = this.k
       .selectFrom('reports')
@@ -516,6 +532,9 @@ export class ReportDatabase {
     if (hasProject) q = q.where('project', '=', project ?? '');
     if (opts?.from) q = q.where('createdAt', '>=', opts.from);
     if (opts?.to) q = q.where('createdAt', '<', opts.to);
+    if (opts?.failedOnly) {
+      q = q.where(sql<boolean>`(COALESCE(statUnexpected, 0) > 0 OR COALESCE(statFlaky, 0) > 0)`);
+    }
     const compiled = q.compile();
     const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportRow[];
     return rows.map((row) => this.rowToReport(row));
@@ -618,10 +637,7 @@ export class ReportDatabase {
       if (from) q = q.where('createdAt', '>=', from);
       if (to) q = q.where('createdAt', '<', to);
       if (options.failedOnly) {
-        q = q.where(
-          sql<boolean>`(CAST(json_extract(stats, '$.unexpected') AS REAL) > 0
-            OR CAST(json_extract(stats, '$.flaky') AS REAL) > 0)`
-        );
+        q = q.where(sql<boolean>`(COALESCE(statUnexpected, 0) > 0 OR COALESCE(statFlaky, 0) > 0)`);
       }
       return q;
     };
@@ -631,21 +647,11 @@ export class ReportDatabase {
         .selectFrom('reports')
         .select((eb) => [
           eb.fn.countAll<number>().as('count'),
-          sql<number>`COALESCE(SUM(CAST(json_extract(stats, '$.total') AS REAL)), 0)`.as(
-            'totalTests'
-          ),
-          sql<number>`COALESCE(SUM(CAST(json_extract(stats, '$.expected') AS REAL)), 0)`.as(
-            'totalPassed'
-          ),
-          sql<number>`COALESCE(SUM(CAST(json_extract(stats, '$.unexpected') AS REAL)), 0)`.as(
-            'totalFailed'
-          ),
-          sql<number>`COALESCE(SUM(CAST(json_extract(stats, '$.flaky') AS REAL)), 0)`.as(
-            'totalFlaky'
-          ),
-          sql<number>`COALESCE(SUM(CAST(json_extract(metadata, '$.duration') AS REAL)), 0)`.as(
-            'sumDuration'
-          ),
+          sql<number>`COALESCE(SUM(statTotal), 0)`.as('totalTests'),
+          sql<number>`COALESCE(SUM(statExpected), 0)`.as('totalPassed'),
+          sql<number>`COALESCE(SUM(statUnexpected), 0)`.as('totalFailed'),
+          sql<number>`COALESCE(SUM(statFlaky), 0)`.as('totalFlaky'),
+          sql<number>`COALESCE(SUM(durationMs), 0)`.as('sumDuration'),
         ])
     ).compile();
 
@@ -841,7 +847,18 @@ export class ReportDatabase {
   }
 
   private rowToReportLite(
-    row: Omit<ReportRow, 'metadata' | 'updatedAt' | 'passRate' | 'files'>
+    row: Omit<
+      ReportRow,
+      | 'metadata'
+      | 'updatedAt'
+      | 'passRate'
+      | 'files'
+      | 'statTotal'
+      | 'statExpected'
+      | 'statUnexpected'
+      | 'statFlaky'
+      | 'durationMs'
+    >
   ): ReportHistoryLite {
     return {
       reportID: row.reportID,

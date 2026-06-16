@@ -76,6 +76,11 @@ export interface ReportsRow {
   metadata: string;
   files: string | null;
   passRate: number | null;
+  statTotal: number | null;
+  statExpected: number | null;
+  statUnexpected: number | null;
+  statFlaky: number | null;
+  durationMs: number | null;
   updatedAt: WithDefault<string | null>;
 }
 

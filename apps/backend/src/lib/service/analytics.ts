@@ -79,11 +79,14 @@ export class AnalyticsService {
     failedOnly = false
   ): Promise<AnalyticsData> {
     const fetchScope = await this.fetchReportsForScope(project, from, to, failedOnly);
-    const onlyFailures = (r: BackendReportHistory) =>
-      (r.stats?.unexpected ?? 0) > 0 || (r.stats?.flaky ?? 0) > 0;
-    const scoped = failedOnly ? fetchScope.reports.filter(onlyFailures) : fetchScope.reports;
     const { displayReports, recentForTrend, olderTrendAggregate, olderRange, isBounded } =
-      this.partitionReports(scoped, from, to, fetchScope.olderRange, fetchScope.olderAggregate);
+      this.partitionReports(
+        fetchScope.reports,
+        from,
+        to,
+        fetchScope.olderRange,
+        fetchScope.olderAggregate
+      );
 
     const config = await service.getConfig();
     const warningThreshold =
@@ -162,13 +165,13 @@ export class AnalyticsService {
   }> {
     if (!from && !to) {
       return {
-        reports: reportDb.getByProject(project),
+        reports: reportDb.getByProject(project, { failedOnly }),
         olderAggregate: null,
         olderRange: null,
       };
     }
 
-    const reports = reportDb.getByProject(project, { from, to });
+    const reports = reportDb.getByProject(project, { from, to, failedOnly });
 
     const fromMs = from ? new Date(from).getTime() : Number.NEGATIVE_INFINITY;
     const toMs = to ? new Date(to).getTime() : Number.POSITIVE_INFINITY;
