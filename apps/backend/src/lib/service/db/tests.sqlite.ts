@@ -329,23 +329,13 @@ export class TestDatabase {
   }
 
   public deleteTest(testId: string, fileId: string, project: string): void {
-    const transaction = this.db.transaction(() => {
-      const delRuns = this.k
-        .deleteFrom('test_runs')
-        .where('testId', '=', testId)
-        .where('fileId', '=', fileId)
-        .where('project', '=', project)
-        .compile();
-      this.db.prepare(delRuns.sql).run(...delRuns.parameters);
-      const delTest = this.k
-        .deleteFrom('tests')
-        .where('testId', '=', testId)
-        .where('fileId', '=', fileId)
-        .where('project', '=', project)
-        .compile();
-      this.db.prepare(delTest.sql).run(...delTest.parameters);
-    });
-    transaction();
+    const compiled = this.k
+      .deleteFrom('tests')
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public deleteTestRuns(testId: string, fileId: string, project: string): void {
@@ -356,76 +346,6 @@ export class TestDatabase {
       .where('project', '=', project)
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
-  }
-
-  public deleteTestRunsByReportId(reportId: string): number {
-    return this.deleteTestRunsByReportIds([reportId]);
-  }
-
-  public deleteTestRunsByReportIds(reportIds: string[]): number {
-    if (reportIds.length === 0) return 0;
-
-    const transaction = this.db.transaction(() => {
-      const affectedCompiled = this.k
-        .selectFrom('test_runs')
-        .select(['testId', 'fileId', 'project'])
-        .distinct()
-        .where('reportId', 'in', reportIds)
-        .compile();
-      const affectedTests = this.db
-        .prepare(affectedCompiled.sql)
-        .all(...affectedCompiled.parameters) as Array<{
-        testId: string;
-        fileId: string;
-        project: string;
-      }>;
-
-      const delRunsCompiled = this.k
-        .deleteFrom('test_runs')
-        .where('reportId', 'in', reportIds)
-        .compile();
-      const result = this.db.prepare(delRunsCompiled.sql).run(...delRunsCompiled.parameters);
-
-      if (affectedTests.length === 0) {
-        return result.changes;
-      }
-
-      // Orphan-test cleanup: the UNION ALL VALUES tuple lookup stays as raw SQL
-      // since SQLite syntax (tuple IN VALUES (...)) doesn't compose into the
-      // typed builder.
-      for (const batch of chunk(affectedTests, 300)) {
-        const laneSelect = batch
-          .map(() => 'SELECT ? AS testId, ? AS fileId, ? AS project')
-          .join(' UNION ALL ');
-        const laneParams = batch.flatMap((t) => [t.testId, t.fileId, t.project]);
-        const orphanRows = this.db
-          .prepare(
-            `SELECT lanes.testId, lanes.fileId, lanes.project
-             FROM (${laneSelect}) AS lanes
-             WHERE NOT EXISTS (
-               SELECT 1 FROM test_runs tr
-               WHERE tr.testId = lanes.testId
-                 AND tr.fileId = lanes.fileId
-                 AND tr.project = lanes.project
-             )`
-          )
-          .all(...laneParams) as Array<{ testId: string; fileId: string; project: string }>;
-
-        for (const orphan of orphanRows) {
-          const compiled = this.k
-            .deleteFrom('tests')
-            .where('testId', '=', orphan.testId)
-            .where('fileId', '=', orphan.fileId)
-            .where('project', '=', orphan.project)
-            .compile();
-          this.db.prepare(compiled.sql).run(...compiled.parameters);
-        }
-      }
-
-      return Number(result.changes ?? 0);
-    });
-
-    return Number(transaction() ?? 0);
   }
 
   public createTestRun(testRun: Omit<TestRun, 'runId'> & { runId?: string }): TestRun {

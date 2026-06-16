@@ -6,6 +6,7 @@ import { withError } from '../../withError.js';
 import { testManagementService } from '../test-management/index.js';
 import { getDatabase } from './db.js';
 import { type Database, getKysely, type ReportsRow } from './kysely.js';
+import { projectSummaryDb } from './projectSummary.sqlite.js';
 import { singletonOf } from './singleton.js';
 import { chunk, parseJsonColumn } from './utils.js';
 
@@ -40,7 +41,7 @@ type ReportSummaryRow = Pick<
   'reportID' | 'project' | 'title' | 'displayNumber' | 'createdAt' | 'reportUrl'
 >;
 
-// every `reports` column except `files` - the full test-file tree. 
+// every `reports` column except `files` - the full test-file tree.
 // list/analytics paths that never read `.files` use this to avoid
 // transferring and JSON.parsing it per row.
 const REPORT_COLUMNS_WITHOUT_FILES = [
@@ -309,12 +310,77 @@ export class ReportDatabase {
 
     const CHUNK_SIZE = 500;
     const deleteBatch = this.db.transaction((ids: string[]) => {
+      // capture the projects these reports belong to before deleting, so we can
+      // drop the summaries of any project whose last report is removed.
+      const projCompiled = this.k
+        .selectFrom('reports')
+        .select('project')
+        .distinct()
+        .where('reportID', 'in', ids)
+        .compile();
+      const affectedProjects = (
+        this.db.prepare(projCompiled.sql).all(...projCompiled.parameters) as Array<{
+          project: string;
+        }>
+      ).map((r) => r.project);
+
+      // capture the tests these reports' runs touched before deleting — the
+      // report delete cascades the runs away, after which we can't find them.
+      const testsCompiled = this.k
+        .selectFrom('test_runs')
+        .select(['testId', 'fileId', 'project'])
+        .distinct()
+        .where('reportId', 'in', ids)
+        .compile();
+      const affectedTests = this.db
+        .prepare(testsCompiled.sql)
+        .all(...testsCompiled.parameters) as Array<{
+        testId: string;
+        fileId: string;
+        project: string;
+      }>;
+
       const compiled = this.k.deleteFrom('reports').where('reportID', 'in', ids).compile();
       this.db.prepare(compiled.sql).run(...compiled.parameters);
       for (const id of ids) {
         for (const key of parseCache.keys()) {
           if (key.startsWith(`${id}|`)) parseCache.delete(key);
         }
+      }
+
+      // no FK can cascade reports -> project_llm_summaries
+      // when a project loses its last report, drop its summary.
+      for (const project of affectedProjects) {
+        const remainingCompiled = this.k
+          .selectFrom('reports')
+          .select('reportID')
+          .where('project', '=', project)
+          .limit(1)
+          .compile();
+        const remaining = this.db
+          .prepare(remainingCompiled.sql)
+          .get(...remainingCompiled.parameters);
+        if (!remaining) projectSummaryDb.deleteByProject(project);
+      }
+
+      // orphan-test cleanup: the report delete cascaded its test_runs away; 
+      // a test left with zero runs is removed
+      // its' runs/analyses/feedback/regressions cascade via the tests FK
+      for (const part of chunk(affectedTests, 300)) {
+        const tuples = part.map(() => '(?, ?, ?)').join(', ');
+        const params = part.flatMap((t) => [t.testId, t.fileId, t.project]);
+        this.db
+          .prepare(
+            `DELETE FROM tests
+             WHERE (testId, fileId, project) IN (VALUES ${tuples})
+               AND NOT EXISTS (
+                 SELECT 1 FROM test_runs tr
+                 WHERE tr.testId = tests.testId
+                   AND tr.fileId = tests.fileId
+                   AND tr.project = tests.project
+               )`
+          )
+          .run(...params);
       }
     });
 

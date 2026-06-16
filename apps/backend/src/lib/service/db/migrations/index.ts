@@ -4,6 +4,7 @@ import type { Database } from '../kysely.js';
 import * as baseline from './0001_baseline.js';
 import * as dropLegacyTables from './0002_drop_legacy_tables.js';
 import * as seedDefaultDashboard from './0003_seed_default_dashboard.js';
+import * as testFkCascade from './0004_test_fk_cascade.js';
 
 // Ordered, statically-imported migration set. The keys are the names Kysely
 // records in its `kysely_migration` table; their lexical order is the run order,
@@ -12,6 +13,7 @@ const MIGRATIONS: Record<string, Migration> = {
   '0001_baseline': { up: baseline.up, down: baseline.down },
   '0002_drop_legacy_tables': { up: dropLegacyTables.up, down: dropLegacyTables.down },
   '0003_seed_default_dashboard': { up: seedDefaultDashboard.up, down: seedDefaultDashboard.down },
+  '0004_test_fk_cascade': { up: testFkCascade.up, down: testFkCascade.down },
 };
 
 class StaticMigrationProvider implements MigrationProvider {
