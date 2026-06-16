@@ -142,7 +142,7 @@ export default function NotificationsConfiguration() {
 
   return (
     <Card id="notifications" className="mb-6 scroll-mt-20 p-4">
-      <CardHeader className="flex flex-row flex-wrap justify-between items-center gap-3">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Bell className="h-5 w-5 text-muted-foreground" />
           <h2 className="text-xl font-semibold">Notifications</h2>
@@ -150,7 +150,7 @@ export default function NotificationsConfiguration() {
             {config.enabled ? 'Enabled' : 'Disabled'}
           </Badge>
         </div>
-        <div className="flex items-center gap-6">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Enable</span>
             <Switch

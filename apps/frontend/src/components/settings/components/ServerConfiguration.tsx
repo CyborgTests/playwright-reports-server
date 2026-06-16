@@ -143,7 +143,7 @@ export default function ServerConfiguration({
   return (
     <Card id="server" className="mb-6 scroll-mt-20 p-4">
       <CardHeader
-        className={`flex flex-row flex-wrap justify-between items-center gap-3 ${editingSection === 'server' ? 'bg-primary/5 border-l-4 border-primary -mx-4 px-4' : ''}`}
+        className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${editingSection === 'server' ? 'bg-primary/5 border-l-4 border-primary -mx-4 px-4' : ''}`}
       >
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold">Server Configuration</h2>
@@ -154,7 +154,7 @@ export default function ServerConfiguration({
           )}
         </div>
         {editingSection === 'server' ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button disabled={isUpdating} onClick={onSave}>
               {isUpdating ? 'Saving...' : 'Save Changes'}
             </Button>
@@ -378,7 +378,7 @@ export default function ServerConfiguration({
                 </div>
               ))}
               {editingSection === 'server' && (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
                     onClick={() => {

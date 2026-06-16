@@ -373,7 +373,7 @@ export default function GithubSyncConfiguration() {
 
   return (
     <Card id="github" className="mb-6 scroll-mt-20 p-4">
-      <CardHeader className="flex flex-row flex-wrap justify-between items-center gap-3">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold">GitHub Sync</h2>
           <Badge variant="outline" className="text-xs">

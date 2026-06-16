@@ -143,7 +143,7 @@ export default function CronConfiguration({
     <Card id="cron" className="mb-6 scroll-mt-20 p-4">
       <CardHeader
         className={cn(
-          'flex flex-row flex-wrap justify-between items-center gap-3',
+          'flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between',
           isEditing && 'bg-primary/5 border-l-4 border-primary -mx-4 px-4'
         )}
       >
@@ -160,7 +160,7 @@ export default function CronConfiguration({
             {editingSection === 'none' ? 'Edit Configuration' : 'Editing other section'}
           </Button>
         ) : (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button disabled={isUpdating} onClick={onSave}>
               {isUpdating ? 'Saving...' : 'Save Changes'}
             </Button>
