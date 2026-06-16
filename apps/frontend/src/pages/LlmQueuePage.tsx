@@ -49,13 +49,17 @@ export default function LlmQueuePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data: stats } = useLlmTaskStats();
-  const { data: tasksData } = useLlmTasks({
-    status: statusFilter === 'all' ? undefined : statusFilter,
-    type: typeFilter === 'all' ? undefined : typeFilter,
-    model: modelFilter === 'all' ? undefined : modelFilter,
-    limit: PAGE_SIZE,
-    offset: (page - 1) * PAGE_SIZE,
-  });
+  const hasActiveWork = (stats?.queued ?? 0) + (stats?.processing ?? 0) > 0;
+  const { data: tasksData } = useLlmTasks(
+    {
+      status: statusFilter === 'all' ? undefined : statusFilter,
+      type: typeFilter === 'all' ? undefined : typeFilter,
+      model: modelFilter === 'all' ? undefined : modelFilter,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
+    },
+    { active: hasActiveWork }
+  );
   const { data: modelsData } = useLlmTaskModels(modelDropdownOpened);
 
   const tasks = tasksData?.data ?? [];

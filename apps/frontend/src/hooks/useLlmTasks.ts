@@ -8,7 +8,7 @@ export type { LlmTask, LlmTaskStats };
 export function useLlmTaskStats() {
   return useQuery<{ success: boolean } & LlmTaskStats>('/api/llm/tasks/stats', {
     staleTime: 5000,
-    refetchInterval: 5000,
+    refetchInterval: 10_000,
   });
 }
 
@@ -98,14 +98,19 @@ export function useLlmUsageByModel(days: number, enabled: boolean) {
   );
 }
 
-export function useLlmTasks(filters: {
-  status?: string;
-  type?: string;
-  reportId?: string;
-  model?: string;
-  limit?: number;
-  offset?: number;
-}) {
+export function useLlmTasks(
+  filters: {
+    status?: string;
+    type?: string;
+    reportId?: string;
+    model?: string;
+    limit?: number;
+    offset?: number;
+  },
+  options: {
+    active?: boolean;
+  } = {}
+) {
   const params = new URLSearchParams();
   if (filters.status) params.append('status', filters.status);
   if (filters.type) params.append('type', filters.type);
@@ -126,7 +131,7 @@ export function useLlmTasks(filters: {
         filters.offset,
       ],
       staleTime: 5000,
-      refetchInterval: 5000,
+      refetchInterval: options.active ? 5000 : false,
       placeholderData: keepPreviousData,
     }
   );
