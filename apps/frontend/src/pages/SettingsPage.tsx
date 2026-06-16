@@ -1,5 +1,5 @@
 import type { HeaderLink, ServerConfig } from '@playwright-reports/shared';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import AddLinkModal from '@/components/settings/components/AddLinkModal';
@@ -456,15 +456,28 @@ function SectionNav() {
 function MobileSectionNav() {
   const ids = SECTION_NAV.map((s) => s.id);
   const active = useActiveSection(ids);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    const el = container?.querySelector<HTMLElement>(`[data-section-id="${active}"]`);
+    if (!container || !el) return;
+    const cRect = container.getBoundingClientRect();
+    const eRect = el.getBoundingClientRect();
+    const current = eRect.left - cRect.left;
+    const desired = (container.clientWidth - el.offsetWidth) / 2;
+    container.scrollTo({ left: container.scrollLeft + (current - desired), behavior: 'smooth' });
+  }, [active]);
 
   return (
     <nav className="lg:hidden sticky top-14 z-30 -mx-4 px-4 mb-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border/40">
-      <div className="flex gap-1 overflow-x-auto py-2 text-sm">
+      <div ref={scrollRef} className="flex gap-1 overflow-x-auto py-2 text-sm">
         {SECTION_NAV.map((item) => {
           const isActive = active === item.id;
           return (
             <a
               key={item.id}
+              data-section-id={item.id}
               href={`#${item.id}`}
               aria-current={isActive ? 'true' : undefined}
               className={cn(

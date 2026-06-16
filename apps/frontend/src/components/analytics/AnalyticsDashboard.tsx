@@ -1,7 +1,7 @@
 'use client';
 
 import type { DateRange, RegressionsAggregate } from '@playwright-reports/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useActiveSection } from '../../hooks/useActiveSection';
@@ -318,16 +318,32 @@ function DashboardSectionNav({
 }: DashboardSectionNavProps) {
   const ids = DASHBOARD_SECTIONS.map((s) => s.id);
   const active = useActiveSection(ids);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    const el = container?.querySelector<HTMLElement>(`[data-section-id="${active}"]`);
+    if (!container || !el) return;
+    const cRect = container.getBoundingClientRect();
+    const eRect = el.getBoundingClientRect();
+    const current = eRect.left - cRect.left;
+    const desired = (container.clientWidth - el.offsetWidth) / 2;
+    container.scrollTo({ left: container.scrollLeft + (current - desired), behavior: 'smooth' });
+  }, [active]);
 
   return (
     <nav className="sticky top-14 z-30 -mx-4 px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border/40">
       <div className="flex flex-col gap-2 py-2 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-1 overflow-x-auto text-sm min-w-0 flex-1">
+        <div
+          ref={scrollRef}
+          className="flex items-center gap-1 overflow-x-auto text-sm min-w-0 flex-1"
+        >
           {DASHBOARD_SECTIONS.map((item) => {
             const isActive = active === item.id;
             return (
               <a
                 key={item.id}
+                data-section-id={item.id}
                 href={`#${item.id}`}
                 aria-current={isActive ? 'true' : undefined}
                 className={cn(
