@@ -664,13 +664,6 @@ export class TestDatabase {
   ): { total: number; flakyTests: TestWithQuarantineInfo[] } {
     return testQueries.getTestsSummary(this.db, project, warningThreshold);
   }
-  public getTestRunOutcomesInWindow(
-    project: string | undefined,
-    from: string,
-    to: string
-  ): Array<{ testId: string; fileId: string; project: string; outcome: ReportTestOutcomeEnum }> {
-    return testQueries.getTestRunOutcomesInWindow(this.db, project, from, to);
-  }
   public getDurationAggregates(
     project: string | undefined,
     from?: string,

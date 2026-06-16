@@ -107,34 +107,6 @@ export class AnalysisFeedbackDatabase {
     this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
-  public getPerTestForReport(reportId: string, limit = 10): AnalysisFeedbackRow[] {
-    const compiled = this.k
-      .selectFrom('analysis_feedback as af')
-      .innerJoin(
-        this.k
-          .selectFrom('test_runs')
-          .select(['testId', 'fileId', 'project'])
-          .distinct()
-          .where('reportId', '=', reportId)
-          .as('tr'),
-        (join) =>
-          join
-            .onRef('af.testId', '=', 'tr.testId')
-            .onRef('af.fileId', '=', 'tr.fileId')
-            .onRef('af.project', '=', 'tr.project')
-      )
-      .selectAll('af')
-      .orderBy('af.updatedAt', 'desc')
-      .limit(limit)
-      .compile();
-    return this.db.prepare(compiled.sql).all(...compiled.parameters) as AnalysisFeedbackRow[];
-  }
-
-  /**
-   * Phase 2: same-test feedback in other projects, optionally enriched with the latest
-   * persisted analysis for that test in that project. Caller computes the signature-match
-   * flag against the current test_run's errorSignature.
-   */
   public getRelatedByTest(
     testId: string,
     fileId: string,

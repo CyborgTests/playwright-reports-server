@@ -489,16 +489,6 @@ export class LlmTasksDatabase {
     return this.db.prepare(compiled.sql).all(...compiled.parameters) as LlmTaskRow[];
   }
 
-  public getTestAnalysisTasksForReport(reportId: string): LlmTaskRow[] {
-    const compiled = this.k
-      .selectFrom('llm_tasks')
-      .selectAll()
-      .where('reportId', '=', reportId)
-      .where('type', '=', 'test_analysis')
-      .compile();
-    return this.db.prepare(compiled.sql).all(...compiled.parameters) as LlmTaskRow[];
-  }
-
   public areAllTestTasksComplete(reportId: string): boolean {
     const compiled = this.k
       .selectFrom('llm_tasks')
@@ -509,17 +499,6 @@ export class LlmTasksDatabase {
       .compile();
     const result = this.db.prepare(compiled.sql).get(...compiled.parameters) as { count: number };
     return result.count === 0;
-  }
-
-  public deleteByReport(reportId: string): void {
-    const compiled = this.k.deleteFrom('llm_tasks').where('reportId', '=', reportId).compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
-  }
-
-  public deleteByReportIds(reportIds: string[]): void {
-    if (reportIds.length === 0) return;
-    const compiled = this.k.deleteFrom('llm_tasks').where('reportId', 'in', reportIds).compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public pruneCompletedOlderThan(cutoffISO: string): number {

@@ -4,7 +4,6 @@
 //   - window functions (ROW_NUMBER OVER PARTITION BY) inside subqueries
 //   - dynamic ORDER BY clauses with several CASE/COALESCE switches
 //   - UNION ALL VALUES tuple lists for lane lookup
-import type { ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import type { DerivedPageRow, Test, TestRun, TestWithQuarantineInfo } from '../tests.sqlite.js';
 import { convertDbRowToTestRun, type TestRunDbRow } from '../tests.sqlite.js';
@@ -408,34 +407,6 @@ export function getTestsSummary(
   }));
 
   return { total: totalRow?.total ?? 0, flakyTests };
-}
-
-export function getTestRunOutcomesInWindow(
-  db: Database.Database,
-  project: string | undefined,
-  from: string,
-  to: string
-): Array<{ testId: string; fileId: string; project: string; outcome: ReportTestOutcomeEnum }> {
-  const conditions: string[] = ["outcome != 'skipped'"];
-  const params: string[] = [];
-
-  conditions.push('createdAt >= ?');
-  params.push(from);
-  conditions.push('createdAt < ?');
-  params.push(to);
-
-  if (project && project !== 'all') {
-    conditions.push('project = ?');
-    params.push(project);
-  }
-
-  const sql = `SELECT testId, fileId, project, outcome FROM test_runs WHERE ${conditions.join(' AND ')} ORDER BY createdAt ASC`;
-  return db.prepare(sql).all(...params) as Array<{
-    testId: string;
-    fileId: string;
-    project: string;
-    outcome: ReportTestOutcomeEnum;
-  }>;
 }
 
 export function getDurationAggregates(

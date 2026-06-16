@@ -202,23 +202,6 @@ export class TestAnalysisDatabase {
     return this.db.prepare(compiled.sql).all(...compiled.parameters) as TestAnalysisRow[];
   }
 
-  public deleteByReport(reportId: string): void {
-    const compiled = this.k
-      .deleteFrom('test_llm_analyses')
-      .where('reportId', '=', reportId)
-      .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
-  }
-
-  public deleteByReportIds(reportIds: string[]): void {
-    if (reportIds.length === 0) return;
-    const compiled = this.k
-      .deleteFrom('test_llm_analyses')
-      .where('reportId', 'in', reportIds)
-      .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
-  }
-
   public deleteByTest(testId: string, fileId: string, project: string): void {
     const compiled = this.k
       .deleteFrom('test_llm_analyses')

@@ -171,23 +171,6 @@ export class FailureSummaryDatabase {
     return rows.map((row) => this.parseRow(row));
   }
 
-  public deleteSummary(reportId: string): void {
-    const compiled = this.k
-      .deleteFrom('report_failure_summaries')
-      .where('reportId', '=', reportId)
-      .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
-  }
-
-  public deleteSummariesByReportIds(reportIds: string[]): void {
-    if (reportIds.length === 0) return;
-    const compiled = this.k
-      .deleteFrom('report_failure_summaries')
-      .where('reportId', 'in', reportIds)
-      .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
-  }
-
   /**
    * Aggregate failure categories and top error groups directly from `test_runs`.
    */
