@@ -9,7 +9,7 @@ import {
 } from '@playwright-reports/shared';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Clock, RotateCcw } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -78,6 +78,205 @@ function formatRegressionAge(days: number): string {
   if (days < 1) return `${Math.round(days * 24)}h`;
   return `${Math.round(days * 10) / 10}d`;
 }
+
+function getOutcomeBadge(outcome?: string) {
+  if (!outcome) return <span className="text-sm text-muted-foreground">—</span>;
+  switch (outcome) {
+    case ReportTestOutcomeEnum.Expected:
+    case ReportTestOutcomeEnum.Passed:
+      return <Badge variant="success">Passed</Badge>;
+    case ReportTestOutcomeEnum.Flaky:
+      return <Badge variant="warning">Flaky</Badge>;
+    case ReportTestOutcomeEnum.Unexpected:
+    case ReportTestOutcomeEnum.Failed:
+      return <Badge variant="danger">Failed</Badge>;
+    case ReportTestOutcomeEnum.Skipped:
+      return <Badge variant="skipped">Skipped</Badge>;
+    default:
+      return <Badge variant="secondary">{outcome}</Badge>;
+  }
+}
+
+function getStatusBadge(
+  test: TestWithQuarantineInfo,
+  warningThreshold: number,
+  quarantineThreshold: number
+) {
+  if (test.isQuarantined) {
+    return (
+      <Badge variant="destructive" className="gap-1">
+        🔒 Quarantined
+      </Badge>
+    );
+  }
+  if (test.flakinessScore === undefined) {
+    return <Badge variant="secondary">No Data</Badge>;
+  }
+  if (test.flakinessScore < warningThreshold) {
+    return (
+      <Badge variant="success" className="gap-1">
+        Stable
+      </Badge>
+    );
+  }
+  if (test.flakinessScore < quarantineThreshold) {
+    return (
+      <Badge variant="warning" className="gap-1">
+        Flaky
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="danger" className="gap-1">
+      Critical
+    </Badge>
+  );
+}
+
+interface TestRowProps {
+  item: TestWithQuarantineInfo;
+  warningThreshold: number;
+  quarantineThreshold: number;
+  stale: boolean;
+  regressionFilterActive: boolean;
+  regressionHighlightMode: 'opened' | 'closed' | null;
+  onQuarantine: (test: TestWithQuarantineInfo) => void;
+  onResetFlakiness: (test: TestWithQuarantineInfo) => void;
+  onClearFlakinessReset: (test: TestWithQuarantineInfo) => void;
+  onDelete: (test: TestWithQuarantineInfo) => void;
+}
+
+const TestRow = memo(function TestRow({
+  item,
+  warningThreshold,
+  quarantineThreshold,
+  stale,
+  regressionFilterActive,
+  regressionHighlightMode,
+  onQuarantine,
+  onResetFlakiness,
+  onClearFlakinessReset,
+  onDelete,
+}: TestRowProps) {
+  const highlights =
+    regressionFilterActive && item.regressionHighlights
+      ? regressionHighlightMode === 'closed'
+        ? { resolvedAtReportId: item.regressionHighlights.resolvedAtReportId }
+        : { newAtReportId: item.regressionHighlights.newAtReportId }
+      : undefined;
+
+  return (
+    <TableRow>
+      <TableCell className="break-words">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <RouterLink
+              to={`/test/${item.testId}?project=${encodeURIComponent(item.project)}`}
+              className="font-medium break-words hover:underline"
+            >
+              {item.title}
+            </RouterLink>
+            {item.regression && (
+              <Badge
+                variant="danger"
+                title={`Regression · opened ${new Date(item.regression.regressedAt).toLocaleString()} · ${item.regression.failureCount} failing run${item.regression.failureCount === 1 ? '' : 's'} since`}
+                className="gap-1 text-[10px] px-1.5 py-0"
+              >
+                Regression · {formatRegressionAge(item.regression.daysOpen)}
+              </Badge>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground break-words">{item.filePath}</p>
+        </div>
+      </TableCell>
+      <TableCell className="break-words">
+        <p className="text-sm break-words">{item.project}</p>
+      </TableCell>
+      <TableCell className="whitespace-nowrap w-px">
+        {getOutcomeBadge(item.runs?.at(0)?.outcome)}
+      </TableCell>
+      <TableCell className="whitespace-nowrap w-px">
+        {getStatusBadge(item, warningThreshold, quarantineThreshold)}
+      </TableCell>
+      <TableCell className="whitespace-nowrap w-px relative">
+        <div className="flex items-center gap-2">
+          <Progress value={item.flakinessScore || 0} className="max-w-[100px] h-2" />
+          <span className="text-sm">{item.flakinessScore?.toFixed(1)}%</span>
+        </div>
+        {item.flakinessResetAt && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <RotateCcw className="absolute top-7 right-0 h-3 w-3 text-muted-foreground" />
+              </TooltipTrigger>
+              <TooltipContent>
+                Flakiness reset on {new Date(item.flakinessResetAt).toLocaleString()}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+      </TableCell>
+      <TableCell className="whitespace-nowrap w-px">
+        <Badge variant="outline">{item.totalRuns || 0}</Badge>
+      </TableCell>
+      <TableCell className="whitespace-nowrap w-px">
+        <TrendSparklineHistory runs={item.runs ?? []} highlights={highlights} />
+      </TableCell>
+      <TableCell className="whitespace-nowrap w-px">
+        <span className="flex items-center">
+          <Clock className="h-4 w-4 mr-1" />
+          {parseMilliseconds(exponentialMovingAverageDuration(item.runs))}
+        </span>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1 break-words">
+          {item.lastRunAt ? new Date(item.lastRunAt).toLocaleString() : 'Never'}
+          {stale && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <AlertTriangle className="h-4 w-4 text-warning" />
+                </TooltipTrigger>
+                <TooltipContent>Not present in latest report — consider removing</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
+      </TableCell>
+
+      <TableCell className="whitespace-nowrap w-px">
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm">
+              Actions
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem
+              onClick={() => onQuarantine(item)}
+              className={item.isQuarantined ? 'text-success' : 'text-danger'}
+            >
+              {item.isQuarantined ? 'Remove Quarantine' : 'Send Quarantine'}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onResetFlakiness(item)}>
+              Reset Flakiness Score
+            </DropdownMenuItem>
+            {item.flakinessResetAt && (
+              <DropdownMenuItem onClick={() => onClearFlakinessReset(item)}>
+                Remove Flakiness Reset
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onDelete(item)} className="text-danger">
+              Delete Test
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TableCell>
+    </TableRow>
+  );
+});
 
 export default function TestManagementWidget({
   project,
@@ -311,17 +510,23 @@ export default function TestManagementWidget({
     },
   });
 
-  const handleResetFlakiness = (test: TestWithQuarantineInfo) => {
-    resetFlakinessMutation({
-      path: `/api/test/${test.testId}/flakiness-reset?project=${encodeURIComponent(test.project)}`,
-    });
-  };
+  const handleResetFlakiness = useCallback(
+    (test: TestWithQuarantineInfo) => {
+      resetFlakinessMutation({
+        path: `/api/test/${test.testId}/flakiness-reset?project=${encodeURIComponent(test.project)}`,
+      });
+    },
+    [resetFlakinessMutation]
+  );
 
-  const handleClearFlakinessReset = (test: TestWithQuarantineInfo) => {
-    clearFlakinessResetMutation({
-      path: `/api/test/${test.testId}/flakiness-reset?project=${encodeURIComponent(test.project)}`,
-    });
-  };
+  const handleClearFlakinessReset = useCallback(
+    (test: TestWithQuarantineInfo) => {
+      clearFlakinessResetMutation({
+        path: `/api/test/${test.testId}/flakiness-reset?project=${encodeURIComponent(test.project)}`,
+      });
+    },
+    [clearFlakinessResetMutation]
+  );
 
   const tests = useMemo(() => testsData?.pages.flatMap((page) => page.data) ?? [], [testsData]);
 
@@ -335,63 +540,13 @@ export default function TestManagementWidget({
 
   const totalTests = testsData?.pages[0]?.total ?? 0;
 
-  const getOutcomeBadge = (outcome?: string) => {
-    if (!outcome) return <span className="text-sm text-muted-foreground">—</span>;
-    switch (outcome) {
-      case ReportTestOutcomeEnum.Expected:
-      case ReportTestOutcomeEnum.Passed:
-        return <Badge variant="success">Passed</Badge>;
-      case ReportTestOutcomeEnum.Flaky:
-        return <Badge variant="warning">Flaky</Badge>;
-      case ReportTestOutcomeEnum.Unexpected:
-      case ReportTestOutcomeEnum.Failed:
-        return <Badge variant="danger">Failed</Badge>;
-      case ReportTestOutcomeEnum.Skipped:
-        return <Badge variant="skipped">Skipped</Badge>;
-      default:
-        return <Badge variant="secondary">{outcome}</Badge>;
-    }
-  };
-
-  const getStatusBadge = (test: TestWithQuarantineInfo) => {
-    if (test.isQuarantined) {
-      return (
-        <Badge variant="destructive" className="gap-1">
-          🔒 Quarantined
-        </Badge>
-      );
-    }
-    if (test.flakinessScore === undefined) {
-      return <Badge variant="secondary">No Data</Badge>;
-    }
-    if (test.flakinessScore < warningThreshold) {
-      return (
-        <Badge variant="success" className="gap-1">
-          Stable
-        </Badge>
-      );
-    }
-    if (test.flakinessScore < quarantineThreshold) {
-      return (
-        <Badge variant="warning" className="gap-1">
-          Flaky
-        </Badge>
-      );
-    }
-    return (
-      <Badge variant="danger" className="gap-1">
-        Critical
-      </Badge>
-    );
-  };
-
-  const handleQuarantineAction = (test: TestWithQuarantineInfo) => {
+  const handleQuarantineAction = useCallback((test: TestWithQuarantineInfo) => {
     setQuarantineTest(test);
     if (!test.isQuarantined) {
       setQuarantineReason('');
     }
     setIsQuarantineModalOpen(true);
-  };
+  }, []);
 
   const latestReportByProject = useMemo(() => {
     const map = new Map<string, string>();
@@ -413,10 +568,10 @@ export default function TestManagementWidget({
     return latestReportId ? latestRun.reportId !== latestReportId : false;
   };
 
-  const handleDeleteAction = (test: TestWithQuarantineInfo) => {
+  const handleDeleteAction = useCallback((test: TestWithQuarantineInfo) => {
     setDeleteTest(test);
     setIsDeleteModalOpen(true);
-  };
+  }, []);
 
   const handleDeleteSubmit = () => {
     if (!deleteTest) return;
@@ -497,140 +652,19 @@ export default function TestManagementWidget({
                 </TableHeader>
                 <TableBody>
                   {tests.map((item) => (
-                    <TableRow key={`${item.testId}-${item.fileId}-${item.project}`}>
-                      <TableCell className="break-words">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <RouterLink
-                              to={`/test/${item.testId}?project=${encodeURIComponent(item.project)}`}
-                              className="font-medium break-words hover:underline"
-                            >
-                              {item.title}
-                            </RouterLink>
-                            {item.regression && (
-                              <Badge
-                                variant="danger"
-                                title={`Regression · opened ${new Date(item.regression.regressedAt).toLocaleString()} · ${item.regression.failureCount} failing run${item.regression.failureCount === 1 ? '' : 's'} since`}
-                                className="gap-1 text-[10px] px-1.5 py-0"
-                              >
-                                Regression · {formatRegressionAge(item.regression.daysOpen)}
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-sm text-muted-foreground break-words">
-                            {item.filePath}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell className="break-words">
-                        <p className="text-sm break-words">{item.project}</p>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap w-px">
-                        {getOutcomeBadge(item.runs?.at(0)?.outcome)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap w-px">
-                        {getStatusBadge(item)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap w-px relative">
-                        <div className="flex items-center gap-2">
-                          <Progress
-                            value={item.flakinessScore || 0}
-                            className="max-w-[100px] h-2"
-                          />
-                          <span className="text-sm">{item.flakinessScore?.toFixed(1)}%</span>
-                        </div>
-                        {item.flakinessResetAt && (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <RotateCcw className="absolute top-7 right-0 h-3 w-3 text-muted-foreground" />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                Flakiness reset on{' '}
-                                {new Date(item.flakinessResetAt).toLocaleString()}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap w-px">
-                        <Badge variant="outline">{item.totalRuns || 0}</Badge>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap w-px">
-                        <TrendSparklineHistory
-                          runs={item.runs ?? []}
-                          highlights={
-                            regressionFilterActive && item.regressionHighlights
-                              ? regressionHighlightMode === 'closed'
-                                ? {
-                                    resolvedAtReportId:
-                                      item.regressionHighlights.resolvedAtReportId,
-                                  }
-                                : {
-                                    newAtReportId: item.regressionHighlights.newAtReportId,
-                                  }
-                              : undefined
-                          }
-                        />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap w-px">
-                        <span className="flex items-center">
-                          <Clock className="h-4 w-4 mr-1" />
-                          {parseMilliseconds(exponentialMovingAverageDuration(item.runs))}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1 break-words">
-                          {item.lastRunAt ? new Date(item.lastRunAt).toLocaleString() : 'Never'}
-                          {isStale(item) && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <AlertTriangle className="h-4 w-4 text-warning" />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  Not present in latest report — consider removing
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          )}
-                        </div>
-                      </TableCell>
-
-                      <TableCell className="whitespace-nowrap w-px">
-                        <DropdownMenu modal={false}>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              Actions
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent>
-                            <DropdownMenuItem
-                              onClick={() => handleQuarantineAction(item)}
-                              className={item.isQuarantined ? 'text-success' : 'text-danger'}
-                            >
-                              {item.isQuarantined ? 'Remove Quarantine' : 'Send Quarantine'}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => handleResetFlakiness(item)}>
-                              Reset Flakiness Score
-                            </DropdownMenuItem>
-                            {item.flakinessResetAt && (
-                              <DropdownMenuItem onClick={() => handleClearFlakinessReset(item)}>
-                                Remove Flakiness Reset
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => handleDeleteAction(item)}
-                              className="text-danger"
-                            >
-                              Delete Test
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
+                    <TestRow
+                      key={`${item.testId}-${item.fileId}-${item.project}`}
+                      item={item}
+                      warningThreshold={warningThreshold}
+                      quarantineThreshold={quarantineThreshold}
+                      stale={isStale(item)}
+                      regressionFilterActive={regressionFilterActive}
+                      regressionHighlightMode={regressionHighlightMode}
+                      onQuarantine={handleQuarantineAction}
+                      onResetFlakiness={handleResetFlakiness}
+                      onClearFlakinessReset={handleClearFlakinessReset}
+                      onDelete={handleDeleteAction}
+                    />
                   ))}
                   {tests.length === 0 && (
                     <TableRow>

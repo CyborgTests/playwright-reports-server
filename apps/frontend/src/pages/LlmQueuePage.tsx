@@ -132,15 +132,15 @@ export default function LlmQueuePage() {
 
   const allSelected = tasks.length > 0 && tasks.every((t) => selectedIds.has(t.id));
 
-  const toggleSelectAll = () => {
+  const toggleSelectAll = useCallback(() => {
     if (allSelected) {
       setSelectedIds(new Set());
     } else {
       setSelectedIds(new Set(tasks.map((t) => t.id)));
     }
-  };
+  }, [allSelected, tasks]);
 
-  const toggleSelect = (id: string) => {
+  const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -150,7 +150,7 @@ export default function LlmQueuePage() {
       }
       return next;
     });
-  };
+  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: trigger-only deps
   useEffect(() => {

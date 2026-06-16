@@ -1,6 +1,6 @@
 import type { DateRange, ReadResultsOutput, Result } from '@playwright-reports/shared';
 import { keepPreviousData } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -70,6 +70,88 @@ const notMetadataKeys = new Set([
 const getTags = (item: Result) => {
   return Object.entries(item).filter(([key]) => !notMetadataKeys.has(key));
 };
+
+interface ResultRowProps {
+  item: Result;
+  tags: ReturnType<typeof getTags>;
+  isSelected: boolean;
+  onToggle: (resultId: string, checked: boolean) => void;
+  onDeleted: () => void;
+}
+
+const ResultRow = memo(function ResultRow({
+  item,
+  tags,
+  isSelected,
+  onToggle,
+  onDeleted,
+}: ResultRowProps) {
+  const handleCheck = useCallback(
+    (checked: boolean | string) => onToggle(item.resultID, checked === true),
+    [item.resultID, onToggle]
+  );
+
+  return (
+    <TableRow>
+      <TableCell>
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={handleCheck}
+          aria-label={`Select ${item.title ?? item.resultID}`}
+        />
+      </TableCell>
+      <TableCell className="w-1/4">{item.title ?? item.resultID}</TableCell>
+      <TableCell className="w-1/12">{item.project}</TableCell>
+      <TableCell className="w-1/12">
+        <FormattedDate date={new Date(item.createdAt)} />
+      </TableCell>
+      <TableCell className="w-1/6">
+        {item.linkedReports && item.linkedReports.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {item.linkedReports.slice(0, 3).map((ref) => (
+              <Link
+                key={ref.reportID}
+                to={withBase(`/report/${ref.reportID}`)}
+                className="text-xs hover:underline text-primary"
+                title={`Open report ${ref.displayNumber ?? ref.reportID}`}
+              >
+                {ref.displayNumber ? `#${ref.displayNumber}` : ref.reportID.slice(0, 6)}
+              </Link>
+            ))}
+            {item.linkedReports.length > 3 && (
+              <span
+                className="text-xs text-muted-foreground"
+                title={item.linkedReports
+                  .slice(3)
+                  .map((r) => `#${r.displayNumber ?? r.reportID.slice(0, 6)}`)
+                  .join(', ')}
+              >
+                +{item.linkedReports.length - 3}
+              </span>
+            )}
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="w-1/4">
+        <div className="flex flex-wrap gap-1">
+          {tags.map(([key, value]) => (
+            <Badge key={`${item.resultID}-${key}`} variant="secondary" className="text-xs">
+              {`${key}: ${value}`}
+            </Badge>
+          ))}
+        </div>
+      </TableCell>
+      <TableCell className="w-1/12">{item.size}</TableCell>
+      <TableCell className="w-1/12">
+        <div className="flex justify-center">
+          <DeleteResultsButton resultIds={[item.resultID]} onDeletedResult={onDeleted} />
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+});
 
 interface ResultsTableProps {
   selected?: string[];
@@ -159,10 +241,10 @@ export default function ResultsTable({
     [results]
   );
 
-  const shouldRefetch = () => {
+  const shouldRefetch = useCallback(() => {
     onDeleted?.();
     refetch();
-  };
+  }, [onDeleted, refetch]);
 
   const onPageChange = useCallback((newPage: number) => {
     setPage(newPage);
@@ -197,26 +279,31 @@ export default function ResultsTable({
     return total ? Math.ceil(total / rowsPerPage) : 0;
   }, [total, rowsPerPage]);
 
-  const handleSelectAll = (checked: boolean | string) => {
-    const isChecked = checked === true;
-    const newSelectedIds = isChecked
-      ? new Set(results?.map((r) => r.resultID) ?? [])
-      : new Set<string>();
-    const selectedResults = results?.filter((r) => newSelectedIds.has(r.resultID)) ?? [];
-    onSelect?.(selectedResults);
-  };
+  const handleSelectAll = useCallback(
+    (checked: boolean | string) => {
+      const isChecked = checked === true;
+      const newSelectedIds = isChecked
+        ? new Set(results?.map((r) => r.resultID) ?? [])
+        : new Set<string>();
+      const selectedResults = results?.filter((r) => newSelectedIds.has(r.resultID)) ?? [];
+      onSelect?.(selectedResults);
+    },
+    [results, onSelect]
+  );
 
-  const handleSelectRow = (resultId: string, checked: boolean | string) => {
-    const isChecked = checked === true;
-    const newSelectedIds = new Set(selectedIds);
-    if (isChecked) {
-      newSelectedIds.add(resultId);
-    } else {
-      newSelectedIds.delete(resultId);
-    }
-    const selectedResults = results?.filter((r) => newSelectedIds.has(r.resultID)) ?? [];
-    onSelect?.(selectedResults);
-  };
+  const handleSelectRow = useCallback(
+    (resultId: string, checked: boolean) => {
+      const newSelectedIds = new Set(selectedIds);
+      if (checked) {
+        newSelectedIds.add(resultId);
+      } else {
+        newSelectedIds.delete(resultId);
+      }
+      const selectedResults = results?.filter((r) => newSelectedIds.has(r.resultID)) ?? [];
+      onSelect?.(selectedResults);
+    },
+    [selectedIds, results, onSelect]
+  );
 
   const isAllSelected = results?.length > 0 && results.every((r) => selectedIds.has(r.resultID));
 
@@ -347,71 +434,14 @@ export default function ResultsTable({
           </TableHeader>
           <TableBody>
             {rowsWithTags.map(({ item, tags }) => (
-              <TableRow key={item.resultID}>
-                <TableCell>
-                  <Checkbox
-                    checked={selectedIds.has(item.resultID)}
-                    onCheckedChange={(checked) => handleSelectRow(item.resultID, checked === true)}
-                    aria-label={`Select ${item.title ?? item.resultID}`}
-                  />
-                </TableCell>
-                <TableCell className="w-1/4">{item.title ?? item.resultID}</TableCell>
-                <TableCell className="w-1/12">{item.project}</TableCell>
-                <TableCell className="w-1/12">
-                  <FormattedDate date={new Date(item.createdAt)} />
-                </TableCell>
-                <TableCell className="w-1/6">
-                  {item.linkedReports && item.linkedReports.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {item.linkedReports.slice(0, 3).map((ref) => (
-                        <Link
-                          key={ref.reportID}
-                          to={withBase(`/report/${ref.reportID}`)}
-                          className="text-xs hover:underline text-primary"
-                          title={`Open report ${ref.displayNumber ?? ref.reportID}`}
-                        >
-                          {ref.displayNumber ? `#${ref.displayNumber}` : ref.reportID.slice(0, 6)}
-                        </Link>
-                      ))}
-                      {item.linkedReports.length > 3 && (
-                        <span
-                          className="text-xs text-muted-foreground"
-                          title={item.linkedReports
-                            .slice(3)
-                            .map((r) => `#${r.displayNumber ?? r.reportID.slice(0, 6)}`)
-                            .join(', ')}
-                        >
-                          +{item.linkedReports.length - 3}
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-                <TableCell className="w-1/4">
-                  <div className="flex flex-wrap gap-1">
-                    {tags.map(([key, value]) => (
-                      <Badge
-                        key={`${item.resultID}-${key}`}
-                        variant="secondary"
-                        className="text-xs"
-                      >
-                        {`${key}: ${value}`}
-                      </Badge>
-                    ))}
-                  </div>
-                </TableCell>
-                <TableCell className="w-1/12">{item.size}</TableCell>
-                <TableCell className="w-1/12">
-                  <div className="flex justify-center">
-                    <DeleteResultsButton
-                      resultIds={[item.resultID]}
-                      onDeletedResult={shouldRefetch}
-                    />
-                  </div>
-                </TableCell>
-              </TableRow>
+              <ResultRow
+                key={item.resultID}
+                item={item}
+                tags={tags}
+                isSelected={selectedIds.has(item.resultID)}
+                onToggle={handleSelectRow}
+                onDeleted={shouldRefetch}
+              />
             ))}
             {(!results || results.length === 0) && (
               <TableRow>

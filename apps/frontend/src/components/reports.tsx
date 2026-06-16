@@ -1,5 +1,5 @@
 import type { ReportHistory } from '@playwright-reports/shared';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import DeleteReportButton from './delete-report-button';
 import EditReportButton from './edit-report-button';
 import { title } from './primitives';
@@ -13,7 +13,10 @@ interface ReportsProps {
 export default function Reports({ onChange }: Readonly<ReportsProps>) {
   const [selectedReports, setSelectedReports] = useState<ReportHistory[]>([]);
 
-  const selectedReportIds = selectedReports.map((r) => r.reportID);
+  const selectedReportIds = useMemo(
+    () => selectedReports.map((r) => r.reportID),
+    [selectedReports]
+  );
 
   const onListUpdate = () => {
     setSelectedReports([]);

@@ -1,4 +1,5 @@
 import type { LlmTask } from '@playwright-reports/shared';
+import { memo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -87,6 +88,158 @@ function TaskTokensCell({
   );
 }
 
+interface TaskRowProps {
+  task: LlmTask;
+  isSelected: boolean;
+  onToggleSelect: (id: string) => void;
+  onCancel: (id: string) => void;
+  onRetry: (id: string) => void;
+  onDelete: (id: string) => void;
+  cancelPending: boolean;
+  retryPending: boolean;
+  deletePending: boolean;
+}
+
+const TaskRow = memo(function TaskRow({
+  task,
+  isSelected,
+  onToggleSelect,
+  onCancel,
+  onRetry,
+  onDelete,
+  cancelPending,
+  retryPending,
+  deletePending,
+}: TaskRowProps) {
+  const handleSelect = useCallback(() => onToggleSelect(task.id), [task.id, onToggleSelect]);
+  const handleCancel = useCallback(() => onCancel(task.id), [task.id, onCancel]);
+  const handleRetry = useCallback(() => onRetry(task.id), [task.id, onRetry]);
+  const handleDelete = useCallback(() => onDelete(task.id), [task.id, onDelete]);
+
+  return (
+    <TableRow>
+      <TableCell>
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={handleSelect}
+          aria-label={`Select task ${task.id}`}
+        />
+      </TableCell>
+      <TableCell>
+        <div className="flex flex-col gap-1">
+          <Badge variant={statusBadgeVariant(task.status)}>{task.status}</Badge>
+          {task.status === 'completed' &&
+            task.type === 'test_analysis' &&
+            task.inputTokens === 0 &&
+            task.outputTokens === 0 && (
+              <Badge
+                variant="secondary"
+                className="text-xs"
+                title="Analysis was reused from a prior signature match — no LLM call was made."
+              >
+                ♻ Reused
+              </Badge>
+            )}
+          {task.status === 'processing' && task.result && task.result.length > 0 && (
+            <Badge
+              variant="outline"
+              className="text-xs"
+              title="Streaming in progress — partial content is already persisted."
+            >
+              Streaming
+            </Badge>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="text-sm">
+        {TYPE_SHORT_LABEL[task.type] ?? formatCategoryName(task.type)}
+      </TableCell>
+      <TableCell>
+        {task.reportId ? (
+          <Link
+            to={`/report/${task.reportId}`}
+            className="text-sm text-primary hover:underline"
+            title={task.reportId}
+          >
+            {task.reportDisplayNumber != null
+              ? `#${task.reportDisplayNumber}`
+              : `${task.reportId.slice(0, 8)}...`}
+          </Link>
+        ) : (
+          <span className="text-sm text-muted-foreground">-</span>
+        )}
+      </TableCell>
+      <TableCell>
+        {task.testId && task.reportId ? (
+          <a
+            href={buildServedTestUrl(task.reportId, task.testId)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-primary hover:underline break-words whitespace-normal"
+            title={task.testId}
+          >
+            {task.testTitle ?? task.testId}
+          </a>
+        ) : task.testId ? (
+          <span className="text-sm break-words whitespace-normal" title={task.testId}>
+            {task.testTitle ?? task.testId}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">-</span>
+        )}
+      </TableCell>
+      <TableCell className="text-sm break-all whitespace-normal">
+        {task.model ?? <span className="text-muted-foreground">-</span>}
+      </TableCell>
+      <TableCell className="text-sm font-mono whitespace-nowrap">
+        <TaskTokensCell
+          input={task.inputTokens}
+          output={task.outputTokens}
+          status={task.status}
+          prompt={task.prompt}
+          result={task.result}
+        />
+      </TableCell>
+      <TableCell className="text-sm text-muted-foreground">
+        {formatRelativeTime(task.createdAt)}
+      </TableCell>
+      <TableCell className="text-sm">{formatDuration(task.startedAt, task.completedAt)}</TableCell>
+      <TableCell>
+        {task.status === 'failed' && task.error ? (
+          <span className="text-sm text-destructive cursor-help" title={task.error}>
+            {task.error.length > 40 ? `${task.error.slice(0, 40)}...` : task.error}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">-</span>
+        )}
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex justify-end gap-1">
+          {task.status === 'queued' && (
+            <Button variant="ghost" size="sm" disabled={cancelPending} onClick={handleCancel}>
+              Cancel
+            </Button>
+          )}
+          {task.status === 'failed' && (
+            <Button variant="ghost" size="sm" disabled={retryPending} onClick={handleRetry}>
+              Retry
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            disabled={deletePending}
+            onClick={handleDelete}
+          >
+            Delete
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+});
+
 export function TaskTable({
   tasks,
   selectedIds,
@@ -126,6 +279,23 @@ export function TaskTable({
     },
   });
 
+  const { mutate: cancelMutate } = cancelTaskMutation;
+  const { mutate: retryMutate } = retryTaskMutation;
+  const { mutate: deleteMutate } = deleteTaskMutation;
+
+  const handleCancel = useCallback(
+    (id: string) => cancelMutate({ path: `/api/llm/tasks/${id}/cancel` }),
+    [cancelMutate]
+  );
+  const handleRetry = useCallback(
+    (id: string) => retryMutate({ path: `/api/llm/tasks/${id}/retry` }),
+    [retryMutate]
+  );
+  const handleDelete = useCallback(
+    (id: string) => deleteMutate({ path: `/api/llm/tasks/${id}` }),
+    [deleteMutate]
+  );
+
   return (
     <Card>
       <Table>
@@ -159,150 +329,18 @@ export function TaskTable({
             </TableRow>
           ) : (
             tasks.map((task) => (
-              <TableRow key={task.id}>
-                <TableCell>
-                  <Checkbox
-                    checked={selectedIds.has(task.id)}
-                    onCheckedChange={() => onToggleSelect(task.id)}
-                    aria-label={`Select task ${task.id}`}
-                  />
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-col gap-1">
-                    <Badge variant={statusBadgeVariant(task.status)}>{task.status}</Badge>
-                    {task.status === 'completed' &&
-                      task.type === 'test_analysis' &&
-                      task.inputTokens === 0 &&
-                      task.outputTokens === 0 && (
-                        <Badge
-                          variant="secondary"
-                          className="text-xs"
-                          title="Analysis was reused from a prior signature match — no LLM call was made."
-                        >
-                          ♻ Reused
-                        </Badge>
-                      )}
-                    {task.status === 'processing' && task.result && task.result.length > 0 && (
-                      <Badge
-                        variant="outline"
-                        className="text-xs"
-                        title="Streaming in progress — partial content is already persisted."
-                      >
-                        Streaming
-                      </Badge>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell className="text-sm">
-                  {TYPE_SHORT_LABEL[task.type] ?? formatCategoryName(task.type)}
-                </TableCell>
-                <TableCell>
-                  {task.reportId ? (
-                    <Link
-                      to={`/report/${task.reportId}`}
-                      className="text-sm text-primary hover:underline"
-                      title={task.reportId}
-                    >
-                      {task.reportDisplayNumber != null
-                        ? `#${task.reportDisplayNumber}`
-                        : `${task.reportId.slice(0, 8)}...`}
-                    </Link>
-                  ) : (
-                    <span className="text-sm text-muted-foreground">-</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {task.testId && task.reportId ? (
-                    <a
-                      href={buildServedTestUrl(task.reportId, task.testId)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-primary hover:underline break-words whitespace-normal"
-                      title={task.testId}
-                    >
-                      {task.testTitle ?? task.testId}
-                    </a>
-                  ) : task.testId ? (
-                    <span className="text-sm break-words whitespace-normal" title={task.testId}>
-                      {task.testTitle ?? task.testId}
-                    </span>
-                  ) : (
-                    <span className="text-sm text-muted-foreground">-</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-sm break-all whitespace-normal">
-                  {task.model ?? <span className="text-muted-foreground">-</span>}
-                </TableCell>
-                <TableCell className="text-sm font-mono whitespace-nowrap">
-                  <TaskTokensCell
-                    input={task.inputTokens}
-                    output={task.outputTokens}
-                    status={task.status}
-                    prompt={task.prompt}
-                    result={task.result}
-                  />
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {formatRelativeTime(task.createdAt)}
-                </TableCell>
-                <TableCell className="text-sm">
-                  {formatDuration(task.startedAt, task.completedAt)}
-                </TableCell>
-                <TableCell>
-                  {task.status === 'failed' && task.error ? (
-                    <span className="text-sm text-destructive cursor-help" title={task.error}>
-                      {task.error.length > 40 ? `${task.error.slice(0, 40)}...` : task.error}
-                    </span>
-                  ) : (
-                    <span className="text-sm text-muted-foreground">-</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    {task.status === 'queued' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={cancelTaskMutation.isPending}
-                        onClick={() =>
-                          cancelTaskMutation.mutate({
-                            path: `/api/llm/tasks/${task.id}/cancel`,
-                          })
-                        }
-                      >
-                        Cancel
-                      </Button>
-                    )}
-                    {task.status === 'failed' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={retryTaskMutation.isPending}
-                        onClick={() =>
-                          retryTaskMutation.mutate({
-                            path: `/api/llm/tasks/${task.id}/retry`,
-                          })
-                        }
-                      >
-                        Retry
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      disabled={deleteTaskMutation.isPending}
-                      onClick={() =>
-                        deleteTaskMutation.mutate({
-                          path: `/api/llm/tasks/${task.id}`,
-                        })
-                      }
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
+              <TaskRow
+                key={task.id}
+                task={task}
+                isSelected={selectedIds.has(task.id)}
+                onToggleSelect={onToggleSelect}
+                onCancel={handleCancel}
+                onRetry={handleRetry}
+                onDelete={handleDelete}
+                cancelPending={cancelTaskMutation.isPending}
+                retryPending={retryTaskMutation.isPending}
+                deletePending={deleteTaskMutation.isPending}
+              />
             ))
           )}
         </TableBody>

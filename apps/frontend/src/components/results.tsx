@@ -1,5 +1,5 @@
 import { getUniqueProjectsList, type Result } from '@playwright-reports/shared';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import DeleteResultsButton from './delete-results-button';
 import GenerateReportButton from './generate-report-button';
 import { title } from './primitives';
@@ -13,9 +13,12 @@ interface ResultsProps {
 export default function Results({ onChange }: Readonly<ResultsProps>) {
   const [selectedResults, setSelectedResults] = useState<Result[]>([]);
 
-  const selectedResultIds = selectedResults.map((r) => r.resultID);
+  const selectedResultIds = useMemo(
+    () => selectedResults.map((r) => r.resultID),
+    [selectedResults]
+  );
 
-  const projects = getUniqueProjectsList(selectedResults);
+  const projects = useMemo(() => getUniqueProjectsList(selectedResults), [selectedResults]);
 
   const onListUpdate = () => {
     setSelectedResults([]);
