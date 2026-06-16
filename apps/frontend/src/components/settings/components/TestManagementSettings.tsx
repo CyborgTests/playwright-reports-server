@@ -1,13 +1,13 @@
 import { FLAKINESS_THRESHOLDS, type ServerConfig } from '@playwright-reports/shared';
 import { Alert } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
+import SettingsSectionHeader from './SettingsSectionHeader';
 
 interface TestManagementSettingsProps {
   config: ServerConfig;
@@ -93,32 +93,15 @@ export default function TestManagementSettings({
 
   return (
     <Card id="testManagement" className="mb-6 scroll-mt-20 p-4">
-      <CardHeader
-        className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${editingSection === 'testManagement' ? 'bg-primary/5 border-l-4 border-primary -mx-4 px-4' : ''}`}
-      >
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold">Test Management</h2>
-          {editingSection === 'testManagement' && (
-            <Badge variant="secondary" className="text-xs">
-              Editing
-            </Badge>
-          )}
-        </div>
-        {editingSection === 'testManagement' ? (
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={isUpdating} onClick={onSave}>
-              {isUpdating ? 'Saving...' : 'Save Changes'}
-            </Button>
-            <Button variant="outline" onClick={onCancel}>
-              Cancel
-            </Button>
-          </div>
-        ) : (
-          <Button disabled={editingSection !== 'none'} onClick={onEdit}>
-            {editingSection === 'none' ? 'Edit Configuration' : 'Editing other section'}
-          </Button>
-        )}
-      </CardHeader>
+      <SettingsSectionHeader
+        title="Test Management"
+        isEditing={editingSection === 'testManagement'}
+        canEdit={editingSection === 'none'}
+        isUpdating={isUpdating}
+        onEdit={onEdit}
+        onSave={onSave}
+        onCancel={onCancel}
+      />
       <CardContent>
         <div className="space-y-6">
           <Alert>

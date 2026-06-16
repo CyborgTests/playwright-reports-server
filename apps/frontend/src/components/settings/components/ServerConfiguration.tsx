@@ -2,9 +2,8 @@ import type { HeaderLink, ServerConfig } from '@playwright-reports/shared';
 import { useRef, useState } from 'react';
 import { HEADER_LINK_ICON_CATALOG } from '@/components/header-link-icons';
 import { LinkIcon } from '@/components/icons';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,6 +17,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { withBase } from '@/lib/url';
+import SettingsSectionHeader from './SettingsSectionHeader';
 
 const CUSTOM_VALUE = '__custom__';
 const NONE_VALUE = '__none__';
@@ -140,32 +140,15 @@ export default function ServerConfiguration({
 
   return (
     <Card id="server" className="mb-6 scroll-mt-20 p-4">
-      <CardHeader
-        className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${editingSection === 'server' ? 'bg-primary/5 border-l-4 border-primary -mx-4 px-4' : ''}`}
-      >
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold">Server Configuration</h2>
-          {editingSection === 'server' && (
-            <Badge variant="secondary" className="text-xs">
-              Editing
-            </Badge>
-          )}
-        </div>
-        {editingSection === 'server' ? (
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={isUpdating} onClick={onSave}>
-              {isUpdating ? 'Saving...' : 'Save Changes'}
-            </Button>
-            <Button variant="outline" onClick={onCancel}>
-              Cancel
-            </Button>
-          </div>
-        ) : (
-          <Button disabled={editingSection !== 'none'} onClick={onEdit}>
-            {editingSection === 'none' ? 'Edit Configuration' : 'Editing other section'}
-          </Button>
-        )}
-      </CardHeader>
+      <SettingsSectionHeader
+        title="Server Configuration"
+        isEditing={editingSection === 'server'}
+        canEdit={editingSection === 'none'}
+        isUpdating={isUpdating}
+        onEdit={onEdit}
+        onSave={onSave}
+        onCancel={onCancel}
+      />
       <CardContent>
         <div className="space-y-4">
           <div className="space-y-2">

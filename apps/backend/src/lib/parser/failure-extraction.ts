@@ -1,8 +1,8 @@
 /**
- * Single entry point for extracting Playwright failure context. Source routing:
- *   - report payload (`report-payload.ts`): error, codeframe, steps, stdio, meta
+ * Single entry point for extracting Playwright failure context. Sources:
+ *   - report payload: error, codeframe, steps, stdio, meta
  *   - trace ZIP: console, network, action log, environment
- *   - `error-context` attachment: ARIA page snapshot (read whole)
+ *   - `error-context` attachment: ARIA page snapshot
  */
 import * as fsSync from 'node:fs';
 import * as fs from 'node:fs/promises';
@@ -19,27 +19,18 @@ import {
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI escape sequences requires the ESC control char
 const ANSI_ESCAPE_RE = /\x1b\[[0-9;]*m/g;
 
-/** Per-message text cap. Console output is often huge (stringified objects,
- *  stack traces). 500 chars is enough to identify the error shape without
- *  drowning the prompt. */
+// Per-message text cap.
 const CONSOLE_MAX_TEXT_CHARS = 500;
-/** How many trailing log/info/debug messages to keep alongside ALL
- *  error/warning messages. Anything older than the last 5 is dropped. */
 const CONSOLE_RECENT_LOGS_KEEP = 5;
-/** Hard cap on total console events surfaced to the prompt — guards against
- *  pages that log thousands of warnings per run. */
+// Hard cap on total console events
 const CONSOLE_MAX_TOTAL = 25;
-
-/** Per-request body cap (chars). Bigger bodies are truncated with a marker. */
+// Per-request body cap (chars).
 const NETWORK_BODY_MAX_CHARS = 1024;
-/** How many "context" requests to keep around the failure: the last-N
- *  successful requests immediately before the failure point. */
+// How many "context" requests to keep around the failure
 const NETWORK_PRE_FAILURE_KEEP = 5;
-/** Hard cap on network events surfaced to the prompt. Failed/non-2xx always
- *  win the budget; successful "context" requests fill remaining slots. */
+// Hard cap on network events
 const NETWORK_MAX_TOTAL = 20;
-
-/** Last N actions before the error point. */
+// Last N actions before the error point.
 const ACTION_LOG_KEEP = 10;
 
 /** Header names whose values must be replaced with `[redacted]` before the
@@ -64,10 +55,8 @@ interface AttachmentLike {
 }
 
 interface ConsoleEvent {
-  /** Normalized level — Playwright emits `messageType` like 'error'|'warning'|'log'|'info'|'debug'|'trace'. */
   level: 'error' | 'warning' | 'log' | 'info' | 'debug' | 'trace';
   text: string;
-  /** Monotonic trace timestamp. Order-only meaning; not wall-clock. */
   timestamp?: number;
   location?: { url?: string; lineNumber?: number };
 }
@@ -75,58 +64,37 @@ interface ConsoleEvent {
 interface NetworkEvent {
   method: string;
   url: string;
-  /** HTTP status code when a response was received. Absent on failed/aborted requests. */
   status?: number;
-  /** Sanitized request headers (Authorization/Cookie/etc. replaced with `[redacted]`). */
   requestHeaders?: Record<string, string>;
-  /** Sanitized response headers. */
   responseHeaders?: Record<string, string>;
-  /** Truncated request body. */
   requestBody?: string;
-  /** Truncated response body. */
   responseBody?: string;
-  /** Error text from the transport layer (DNS, TLS, abort). */
   failureText?: string;
   timestamp?: number;
 }
 
 interface ActionEvent {
-  /** Action label — prefers the trace's human-readable `title` (e.g.
-   *  "Click getByRole('button', { name: 'Insert' })") and falls back to the
-   *  raw `method`/`apiName` (e.g. 'click', 'goto', 'hook'). */
   action: string;
-  /** Namespace hint from the trace's `class` field — e.g. 'Locator', 'Page',
-   *  'Test'. Helps the prompt distinguish a real user action from a framework
-   *  marker (hook / fixture / test.step). */
   namespace?: string;
-  /** Selector, URL, or other primary parameter — kept compact for the prompt. */
   target?: string;
   startTime?: number;
   endTime?: number;
-  /** Error text when the action itself failed (vs. an assertion later). */
   error?: string;
 }
 
 interface EnvironmentContext {
-  /** Engine name: 'chromium' | 'firefox' | 'webkit'. */
   browserName?: string;
-  /** Browser channel ('chrome', 'msedge', etc.) when distinct from the engine. */
   browserChannel?: string;
   viewport?: { width: number; height: number };
   baseURL?: string;
   userAgent?: string;
-  /** Locale of the browser context, e.g. 'en-US'. */
   locale?: string;
-  /** Time zone of the browser context, e.g. 'Europe/Berlin'. */
   timezone?: string;
-  /** Playwright SDK language: 'javascript' | 'python' | 'java' | 'csharp'. */
   sdkLanguage?: string;
-  /** Playwright version from the report metadata, not the trace. */
   playwrightVersion?: string;
 }
 
 interface TestMeta {
-  /** Suite hierarchy from `test.path` — e.g. `["Text styles", "Callout"]`. */
   titlePath?: string[];
   tags?: string[];
   annotations?: Array<{ type?: string; description?: string }>;
@@ -146,51 +114,23 @@ interface CiBuildInfo {
 }
 
 export interface FailureEvidence {
-  /** Canonical error message. Prefers the report payload's richest error,
-   *  falls back to result.message, finally to a synthetic "Test {outcome}: {title}". */
   errorMessage: string;
   stackTrace?: string;
-  /** Page ARIA snapshot from the `error-context` attachment. Read whole — no
-   *  truncation, since input budgets are not the bottleneck and snapshots for
-   *  complex pages routinely exceed 4 KB. */
   pageSnapshot?: string;
-  /** ±100-line code frame around the failing line, from the report payload's
-   *  `errors[].codeframe`. ANSI-stripped, line numbers and `>` marker preserved. */
   testSourceFrame?: string;
-  /** Full nested `result.steps[]` tree from the report payload. The errored
-   *  step carries `error` + `snippet`; the prompt builder walks the tree to
-   *  render the indented step list. */
   stepTree?: PerFileStep[];
-  /** Joined `result.stdout` array from the report payload. ANSI-stripped. */
   stdout?: string;
-  /** Joined `result.stderr` array from the report payload. ANSI-stripped. */
   stderr?: string;
-  /** Suite path, tags, and annotations from the per-file test entry. */
   testMeta?: TestMeta;
-  /** Git commit metadata from `report.metadata.gitCommit`. */
   gitCommit?: GitCommitInfo;
-  /** CI build / commit links from `report.metadata.ci`. */
   ciBuild?: CiBuildInfo;
-  /** `report.metadata.gitDiff` — present when Playwright captured a diff. */
   gitDiff?: string;
-  /** Console events ordered by timestamp — all errors/warnings + last N logs. */
   consoleEvents: ConsoleEvent[];
-  /** Network events — all failed/non-2xx + a few successful ones immediately before the failure. */
   networkEvents: NetworkEvent[];
-  /** Last actions Playwright executed before the error point. */
   actionLog: ActionEvent[];
-  /** Browser / page environment captured from the trace's `context-options`
-   *  entry. `playwrightVersion` is filled in by the caller from the report
-   *  metadata since traces don't carry it. */
   environment?: EnvironmentContext;
 }
 
-/**
- * Synchronously read the `error-context` attachment file in full. Returns ''
- * when no such attachment exists or the file is missing/unreadable. Note: not
- * truncated — observed prompts run 4–8 k input tokens, well within budget, and
- * complex-page ARIA snapshots routinely exceed 4 KB.
- */
 function readErrorContextSync(reportId: string, attachments?: AttachmentLike[]): string {
   if (!attachments) return '';
   for (const att of attachments) {
@@ -260,18 +200,12 @@ function normalizeConsoleLevel(raw: unknown): ConsoleEvent['level'] {
 }
 
 /**
- * Parse a single JSONL line from a trace file and dispatch into the right
- * collector. Returns false for unrecognized shapes so the caller can skip.
- *
- * Trace versions vary across Playwright releases; we recognize multiple
- * shapes for each event type rather than locking onto one schema.
+ * Parse a single JSONL line from a trace file
  */
 interface RawCollectors {
   console: ConsoleEvent[];
   network: Map<string, NetworkEvent>;
   actions: ActionEvent[];
-  /** Highest action endTime seen — used as the "failure time" anchor when no
-   *  explicit error timestamp is available. */
   lastActionEndTime?: number;
   environment?: EnvironmentContext;
 }
@@ -281,7 +215,7 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
   const e = entry as Record<string, unknown>;
   const type = typeof e.type === 'string' ? e.type : undefined;
 
-  // 0. Browser / page context — emitted once near the top of `0-trace.trace`.
+  // Browser / page context — emitted once near the top of `0-trace.trace`.
   //    Carries browserName + page options (viewport, locale, baseURL, ...).
   if (type === 'context-options') {
     const opts = (e.options as Record<string, unknown> | undefined) ?? {};
@@ -304,7 +238,7 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
     return;
   }
 
-  // 1. Console messages. Modern traces emit `type:'console'`; older ones wrap
+  // Console messages. Modern traces emit `type:'console'`; older ones wrap
   //    them in `type:'event'` with `method:'console.message'`.
   if (
     type === 'console' ||
@@ -334,7 +268,7 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
     return;
   }
 
-  // 2. Resource (network) events. Modern shape: a single entry with method/url/status.
+  // Resource (network) events. Modern shape: a single entry with method/url/status.
   //    `type:'resource-snapshot'` is a DOM-resource entry and is NOT a network call —
   //    skip it. The dedicated `*.network` file uses `type:'resource'` with a
   //    `_monotonicTime` (or `timestamp`) ordering field.
@@ -370,17 +304,12 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
     return;
   }
 
-  // 3. Action entries — `before` (start) + `after` (end, sometimes with error).
+  // Action entries — `before` (start) + `after` (end, sometimes with error).
   //    Modern shape: a single `type:'action'` entry. We carry the latest
   //    end-time-of-an-action so prioritization can use it as the failure anchor.
   //    Error message + stack are NOT pulled from the trace — those live in
   //    the report payload (`result.errors[]`), which is the canonical source.
   if (type === 'before' || type === 'action') {
-    // Prefer the human-readable `title` (Playwright trace UI label, e.g.
-    // "Click getByRole('button', { name: 'Insert' })") over raw `method`/
-    // `apiName` (which often resolve to opaque categories like "hook" or
-    // "pw:api"). `class` (Locator / Page / Test) is captured separately as a
-    // namespace hint for the renderer.
     const title = typeof e.title === 'string' && e.title.trim() ? e.title.trim() : undefined;
     const method =
       typeof e.method === 'string'
@@ -412,8 +341,6 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
     return;
   }
   if (type === 'after') {
-    // Attach an error to the most recent action when present — used to mark
-    // the errored entry in `actionLog`, not as the canonical error source.
     const errorMsg =
       typeof (e.error as { message?: string } | undefined)?.message === 'string'
         ? (e.error as { message: string }).message
@@ -428,9 +355,7 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
 }
 
 /**
- * Read every `*.trace` and `*.network` JSONL entry in the trace ZIP. Trace
- * versions split events across files differently across Playwright releases,
- * so we walk all of them and dispatch by entry type.
+ * Read every `*.trace` and `*.network` JSONL entry in the trace ZIP.
  */
 async function collectFromTraceZip(
   directory: Awaited<ReturnType<typeof Open.buffer>>
@@ -462,16 +387,13 @@ async function collectFromTraceZip(
 
 function prioritizeConsole(events: ConsoleEvent[]): ConsoleEvent[] {
   if (events.length === 0) return events;
-  // Sort by timestamp (when present); entries without a timestamp keep insertion order.
   const sorted = [...events].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
   const errorsAndWarnings: ConsoleEvent[] = [];
   const others: ConsoleEvent[] = [];
   for (const ev of sorted) {
     (ev.level === 'error' || ev.level === 'warning' ? errorsAndWarnings : others).push(ev);
   }
-  // Keep ALL errors+warnings; trim others to the last N.
   const kept = [...errorsAndWarnings, ...others.slice(-CONSOLE_RECENT_LOGS_KEEP)];
-  // Apply per-message truncation + global cap (latest-error wins on overflow).
   const truncated = kept.map((ev) => ({
     ...ev,
     text:
@@ -480,7 +402,6 @@ function prioritizeConsole(events: ConsoleEvent[]): ConsoleEvent[] {
         : ev.text,
   }));
   if (truncated.length <= CONSOLE_MAX_TOTAL) return truncated;
-  // Overflow: keep the most recent errors/warnings + tail of others. Errors win.
   const errs = truncated.filter((e) => e.level === 'error' || e.level === 'warning');
   const oth = truncated.filter((e) => e.level !== 'error' && e.level !== 'warning');
   const errBudget = Math.min(errs.length, CONSOLE_MAX_TOTAL - Math.min(oth.length, 5));
@@ -493,9 +414,6 @@ function prioritizeNetwork(events: NetworkEvent[], anchorTime?: number): Network
   const isFailed = (ev: NetworkEvent) =>
     !!ev.failureText || (typeof ev.status === 'number' && ev.status >= 400);
   const failed = sorted.filter(isFailed);
-  // Successful requests just before the failure anchor (or the tail of the timeline
-  // when no anchor is known) are useful context — they show what page state
-  // existed at the moment of failure.
   const successes = sorted.filter((ev) => !isFailed(ev));
   const beforeAnchor =
     anchorTime !== undefined
@@ -506,7 +424,6 @@ function prioritizeNetwork(events: NetworkEvent[], anchorTime?: number): Network
     (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
   );
   if (merged.length <= NETWORK_MAX_TOTAL) return merged;
-  // Overflow: failed wins; trim trailing successes.
   const failedKeep = Math.min(failed.length, NETWORK_MAX_TOTAL);
   return [
     ...failed.slice(-failedKeep),
@@ -514,10 +431,7 @@ function prioritizeNetwork(events: NetworkEvent[], anchorTime?: number): Network
   ].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
 }
 
-/** Framework-marker action names that carry no actionable detail. The step
- *  tree (rendered separately from the report payload) already shows the
- *  hook/fixture/step hierarchy with proper titles; the trace-derived action
- *  log doesn't need to repeat them noisily. */
+// Framework-marker action names that carry no actionable detail.
 const ACTION_FRAMEWORK_MARKERS = new Set(['hook', 'fixture', 'test.step']);
 
 function isNoiseAction(a: ActionEvent): boolean {
@@ -529,13 +443,9 @@ function isNoiseAction(a: ActionEvent): boolean {
 function prioritizeActions(actions: ActionEvent[]): ActionEvent[] {
   if (actions.length === 0) return actions;
   // Drop framework-marker entries (`hook`/`fixture`/`test.step` with no
-  // target and no error) — the step tree already covers them and they add
-  // no diagnostic signal to the action log. Keep them when they DO carry an
-  // error (the errored entry stays so the renderer can mark the failure
-  // point).
+  // target and no error)
   const filtered = actions.filter((a) => !isNoiseAction(a));
   if (filtered.length === 0) return filtered;
-  // The action that errored (if any) plus the last N actions before it.
   const erroredIdx = filtered.findIndex((a) => !!a.error);
   if (erroredIdx === -1) return filtered.slice(-ACTION_LOG_KEEP);
   const start = Math.max(0, erroredIdx - ACTION_LOG_KEEP + 1);
@@ -544,9 +454,7 @@ function prioritizeActions(actions: ActionEvent[]): ActionEvent[] {
 
 /**
  * Read console + network + action + environment context from a Playwright
- * trace ZIP. Heavyweight (decompresses + walks JSONL); call only for failed
- * attempts. The trace ZIP no longer owns error message / stack — those come
- * from the report payload.
+ * trace ZIP.
  */
 async function extractEvidenceFromTrace(
   reportId: string,
@@ -628,18 +536,12 @@ function buildTestMeta(slice: {
 }
 
 /**
- * Best-effort full-evidence extraction for one failed test attempt. Source
- * routing:
+ * Best-effort full-evidence extraction for one failed test attempt. Source:
  *   - Error message, stack, code frame, step tree, stdout/stderr, test meta,
  *     git commit, git diff, CI build links → embedded report payload
  *     (`script#playwrightReportBase64`).
  *   - Console events, network events, action log, environment → trace ZIP.
  *   - Page snapshot → `error-context` attachment.
- *
- * `testId` enables the report-payload lookup; when absent (or the payload is
- * malformed / missing), all payload-derived fields stay `undefined` and the
- * builder omits the corresponding segments. `errorMessage` still falls back
- * to `result.message` → synthetic so signature grouping keeps working.
  */
 export async function extractFailureEvidence(
   reportId: string,
@@ -659,7 +561,7 @@ export async function extractFailureEvidence(
   let ciBuild: CiBuildInfo | undefined;
   let gitDiff: string | undefined;
 
-  // 1. Payload-derived fields. The richest error here wins for message/stack
+  // Payload-derived fields. The richest error here wins for message/stack
   //    because the trace no longer owns the canonical error path.
   let payloadMessage: string | undefined;
   let payloadStack: string | undefined;
@@ -684,7 +586,7 @@ export async function extractFailureEvidence(
     }
   }
 
-  // 2. Error message / stack: payload wins; fall back to result.message
+  // Error message / stack: payload wins; fall back to result.message
   //    (split into message + stack when concatenated), finally synthetic.
   let message = payloadMessage ?? '';
   let stackTrace = payloadStack;
@@ -694,7 +596,7 @@ export async function extractFailureEvidence(
     if (!stackTrace) stackTrace = split.stack;
   }
 
-  // 3. Trace ZIP — console + network + action + environment only.
+  // Trace ZIP — console + network + action + environment only.
   let consoleEvents: ConsoleEvent[] = [];
   let networkEvents: NetworkEvent[] = [];
   let actionLog: ActionEvent[] = [];

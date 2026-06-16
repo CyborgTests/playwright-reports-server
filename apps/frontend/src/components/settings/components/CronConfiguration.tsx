@@ -1,10 +1,11 @@
 import type { ServerConfig } from '@playwright-reports/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import SettingsSectionHeader from './SettingsSectionHeader';
 
 interface CronConfigurationProps {
   config: ServerConfig;
@@ -139,35 +140,15 @@ export default function CronConfiguration({
 
   return (
     <Card id="cron" className="mb-6 scroll-mt-20 p-4">
-      <CardHeader
-        className={cn(
-          'flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between',
-          isEditing && 'bg-primary/5 border-l-4 border-primary -mx-4 px-4'
-        )}
-      >
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold">Cron Settings</h2>
-          {isEditing && (
-            <Badge variant="secondary" className="text-xs">
-              Editing
-            </Badge>
-          )}
-        </div>
-        {!isEditing ? (
-          <Button disabled={editingSection !== 'none'} onClick={onEdit}>
-            {editingSection === 'none' ? 'Edit Configuration' : 'Editing other section'}
-          </Button>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={isUpdating} onClick={onSave}>
-              {isUpdating ? 'Saving...' : 'Save Changes'}
-            </Button>
-            <Button variant="outline" onClick={onCancel}>
-              Cancel
-            </Button>
-          </div>
-        )}
-      </CardHeader>
+      <SettingsSectionHeader
+        title="Cron Settings"
+        isEditing={isEditing}
+        canEdit={editingSection === 'none'}
+        isUpdating={isUpdating}
+        onEdit={onEdit}
+        onSave={onSave}
+        onCancel={onCancel}
+      />
       <CardContent>
         <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
