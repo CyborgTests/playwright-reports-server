@@ -200,7 +200,7 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
         return reply.send({ success: true, data: { nodes } });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (message.includes('Cyclic')) {
+        if (message.includes('Cyclic') || message.includes('parentNodeId')) {
           return reply.status(400).send({ success: false, error: message });
         }
         if (message.includes('not found')) {

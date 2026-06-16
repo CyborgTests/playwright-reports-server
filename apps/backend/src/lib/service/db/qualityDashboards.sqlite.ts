@@ -339,7 +339,14 @@ export class QualityDashboardsDatabase {
 
     const remapped: NodeRow[] = nodes.map((n, idx) => {
       const newId = freshIds[idx];
-      const newParent = n.parentNodeId ? (idRemap.get(n.parentNodeId) ?? null) : null;
+      let newParent: string | null = null;
+      if (n.parentNodeId) {
+        const mapped = idRemap.get(n.parentNodeId);
+        if (mapped === undefined) {
+          throw new Error(`Unknown parentNodeId "${n.parentNodeId}" in tree payload`);
+        }
+        newParent = mapped;
+      }
       const now = new Date().toISOString();
       return {
         id: newId,
