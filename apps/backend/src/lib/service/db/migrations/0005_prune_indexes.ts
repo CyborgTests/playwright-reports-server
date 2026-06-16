@@ -8,9 +8,9 @@ const DROP = [
   'idx_github_sync_configs_enabled',
   'idx_quality_nodes_project',
   'idx_cluster_resolutions_project',
-  'idx_reports_project', 
+  'idx_reports_project',
   'idx_report_results_report',
-  'idx_af_test_lookup', 
+  'idx_af_test_lookup',
   'idx_results_project',
 ];
 
