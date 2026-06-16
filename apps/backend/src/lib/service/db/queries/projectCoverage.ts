@@ -37,37 +37,30 @@ export function computeProjectCoverageScope(
     db.prepare(addedCompiled.sql).get(...addedCompiled.parameters) as { c: number }
   ).c;
 
-  // currently-quarantined: count distinct (test, file, project) whose latest run
-  // (per group) has quarantined=1. Expressed as a self-join on the per-test MAX(createdAt).
   const quarantinedCompiled = (() => {
-    const latestSub = k
-      .selectFrom('test_runs')
-      .select((eb) => ['testId', 'fileId', 'project', eb.fn.max('createdAt').as('latest_at')])
-      .groupBy(['testId', 'fileId', 'project'])
-      .$if(!allProjects, (qb) => qb.where('project', '=', project));
-    return k
-      .selectFrom(latestSub.as('latest'))
-      .innerJoin('test_runs as tr', (join) =>
-        join
-          .onRef('tr.testId', '=', 'latest.testId')
-          .onRef('tr.fileId', '=', 'latest.fileId')
-          .onRef('tr.project', '=', 'latest.project')
-          .onRef('tr.createdAt', '=', 'latest.latest_at')
-      )
+    let q = k
+      .selectFrom('tests')
       .select((eb) => eb.fn.countAll<number>().as('c'))
-      .where('tr.quarantined', '=', 1)
-      .compile();
+      .where('quarantined', '=', 1);
+    if (!allProjects) q = q.where('project', '=', project);
+    return q.compile();
   })();
   const currentlyQuarantined = (
     db.prepare(quarantinedCompiled.sql).get(...quarantinedCompiled.parameters) as { c: number }
   ).c;
 
   const qFailCompiled = k
-    .selectFrom('test_runs')
+    .selectFrom('test_runs as tr')
+    .innerJoin('tests as t', (join) =>
+      join
+        .onRef('t.testId', '=', 'tr.testId')
+        .onRef('t.fileId', '=', 'tr.fileId')
+        .onRef('t.project', '=', 'tr.project')
+    )
     .select((eb) => eb.fn.countAll<number>().as('c'))
-    .where('quarantined', '=', 1)
-    .where('outcome', 'in', ['unexpected', 'flaky', 'failed'])
-    .where('reportId', 'in', reportIds)
+    .where('t.quarantined', '=', 1)
+    .where('tr.outcome', 'in', ['unexpected', 'flaky', 'failed'])
+    .where('tr.reportId', 'in', reportIds)
     .compile();
   const quarantineFailuresInWindow = (
     db.prepare(qFailCompiled.sql).get(...qFailCompiled.parameters) as { c: number }

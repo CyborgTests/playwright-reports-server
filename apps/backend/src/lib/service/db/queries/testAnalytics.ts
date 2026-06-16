@@ -351,7 +351,6 @@ function runsForLaneChunk(
     sql = `
       WITH lanes(testId, fileId, project) AS (${laneRows})
       SELECT testId, fileId, project, runId, outcome, duration, createdAt,
-             flakinessScore, quarantineReason, quarantined, fixedAt,
              failure_details, failure_category, failure_category_source,
              error_signature, error_signature_global,
              reportId, reportTitle, reportDisplayNumber

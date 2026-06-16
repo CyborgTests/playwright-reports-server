@@ -28,10 +28,6 @@ export interface TestRun {
   outcome: string;
   duration?: number;
   createdAt: string;
-  flakinessScore?: number;
-  quarantineReason?: string;
-  quarantined?: boolean;
-  fixedAt?: string;
   failureDetails?: string;
   failureCategory?: string;
   failureCategorySource?: FailureCategorySource;
@@ -39,6 +35,14 @@ export interface TestRun {
   errorSignatureGlobal?: string;
   reportTitle?: string;
   reportDisplayNumber?: number;
+}
+
+export interface TestState {
+  flakinessScore: number | null;
+  quarantined: number;
+  quarantineReason: string | null;
+  quarantineFixedAt: string | null;
+  latestNonSkippedAt: string | null;
 }
 
 export interface TestWithQuarantineInfo extends Test {
@@ -80,10 +84,6 @@ export interface TestRunDbRow {
   outcome: string;
   duration: number | null;
   createdAt: string;
-  flakinessScore: number | null;
-  quarantineReason: string | null;
-  quarantined: number;
-  fixedAt?: string | null;
   failure_details: Buffer | string | null;
   failure_category: string | null;
   failure_category_source: string | null;
@@ -103,10 +103,6 @@ export function convertDbRowToTestRun(row: TestRunDbRow): TestRun {
     outcome: row.outcome,
     duration: row.duration ?? undefined,
     createdAt: row.createdAt,
-    flakinessScore: row.flakinessScore ?? undefined,
-    quarantineReason: row.quarantineReason ?? undefined,
-    quarantined: Boolean(row.quarantined),
-    fixedAt: row.fixedAt ?? undefined,
     failureDetails: decodeFailureDetails(row.failure_details) || undefined,
     failureCategory: row.failure_category || undefined,
     failureCategorySource: (row.failure_category_source as FailureCategorySource) || undefined,
@@ -126,7 +122,7 @@ const REFRESH_TEST_STAT_SQL = `
     LIMIT 50
   ),
   latest_ns AS (
-    SELECT flakinessScore, quarantined, quarantineReason, createdAt, failure_category
+    SELECT createdAt, failure_category
     FROM test_runs
     WHERE testId=:testId AND fileId=:fileId AND project=:project
       AND outcome != 'skipped'
@@ -151,9 +147,6 @@ const REFRESH_TEST_STAT_SQL = `
     latestRunAt = (SELECT latestRunAt FROM totals),
     latestOutcome = (SELECT latestOutcome FROM recent_agg),
     latestNonSkippedAt = (SELECT createdAt FROM latest_ns),
-    flakinessScore = (SELECT flakinessScore FROM latest_ns),
-    quarantined = COALESCE((SELECT quarantined FROM latest_ns), 0),
-    quarantineReason = (SELECT quarantineReason FROM latest_ns),
     latestFailureCategory = (SELECT failure_category FROM latest_ns),
     recentPassRate = (SELECT recentPassRate FROM recent_agg),
     avgDuration = (SELECT avgDuration FROM recent_agg)
@@ -194,6 +187,7 @@ export class TestDatabase {
         avgDuration: null,
         latestFailureCategory: null,
         flakinessResetAt: null,
+        quarantineFixedAt: null,
       })
       .onConflict((oc) => oc.doNothing())
       .compile();
@@ -352,7 +346,6 @@ export class TestDatabase {
     const testRunWithId = {
       ...testRun,
       runId: testRun.runId || uuid(),
-      quarantined: testRun.quarantined || false,
     };
 
     const compiled = this.k
@@ -369,10 +362,6 @@ export class TestDatabase {
             ? Number(testRunWithId.duration)
             : null,
         createdAt: String(testRunWithId.createdAt),
-        flakinessScore: testRunWithId.flakinessScore ?? 0,
-        quarantineReason: testRunWithId.quarantineReason || null,
-        quarantined: testRunWithId.quarantined ? 1 : 0,
-        fixedAt: null,
         failure_details: encodeFailureDetails(testRunWithId.failureDetails),
         failure_category: testRunWithId.failureCategory || null,
         failure_category_source: testRunWithId.failureCategorySource || null,
@@ -385,34 +374,52 @@ export class TestDatabase {
     return testRunWithId;
   }
 
-  public updateLatestTestRun(
+  public getTestState(testId: string, fileId: string, project: string): TestState | undefined {
+    const compiled = this.k
+      .selectFrom('tests')
+      .select([
+        'flakinessScore',
+        'quarantined',
+        'quarantineReason',
+        'quarantineFixedAt',
+        'latestNonSkippedAt',
+      ])
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .compile();
+    return this.db.prepare(compiled.sql).get(...compiled.parameters) as TestState | undefined;
+  }
+
+  public setFlakinessScore(testId: string, fileId: string, project: string, score: number): void {
+    const compiled = this.k
+      .updateTable('tests')
+      .set({ flakinessScore: score })
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
+  }
+
+  public setQuarantineState(
     testId: string,
     fileId: string,
     project: string,
     isQuarantined: boolean,
     quarantineReason?: string
   ): boolean {
-    const quarantinedInt = isQuarantined ? 1 : 0;
-    const latestRun = this.getLatestTestRun(testId, fileId, project);
-    if (!latestRun) {
-      throw new Error('No test run found for the specified test');
-    }
-
-    const compiled = isQuarantined
-      ? this.k
-          .updateTable('test_runs')
-          .set({
-            quarantined: quarantinedInt,
-            quarantineReason: quarantineReason || null,
-            fixedAt: null,
-          })
-          .where('runId', '=', latestRun.runId)
-          .compile()
-      : this.k
-          .updateTable('test_runs')
-          .set({ quarantined: quarantinedInt, fixedAt: new Date().toISOString() })
-          .where('runId', '=', latestRun.runId)
-          .compile();
+    const compiled = this.k
+      .updateTable('tests')
+      .set(
+        isQuarantined
+          ? { quarantined: 1, quarantineReason: quarantineReason || null, quarantineFixedAt: null }
+          : { quarantined: 0, quarantineReason: null, quarantineFixedAt: new Date().toISOString() }
+      )
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .compile();
     const result = this.db.prepare(compiled.sql).run(...compiled.parameters);
     return result.changes > 0;
   }
@@ -551,17 +558,18 @@ export class TestDatabase {
       flakyCount: number;
     };
 
-    const latestRun = this.getLatestTestRun(testId, fileId, project);
+    const state = this.getTestState(testId, fileId, project);
+    const isQuarantined = Boolean(state?.quarantined);
 
     return {
       ...test,
       totalRuns: stats.totalRuns || 0,
       lastRunAt: stats.lastRunAt || undefined,
-      flakinessScore: latestRun?.flakinessScore,
+      flakinessScore: state?.flakinessScore ?? undefined,
       flakinessResetAt: test.flakinessResetAt ?? undefined,
-      isQuarantined: latestRun?.quarantined || false,
-      quarantinedAt: latestRun?.quarantined ? latestRun.createdAt : undefined,
-      quarantineReason: latestRun?.quarantined ? latestRun?.quarantineReason : undefined,
+      isQuarantined,
+      quarantinedAt: isQuarantined ? (state?.latestNonSkippedAt ?? undefined) : undefined,
+      quarantineReason: isQuarantined ? (state?.quarantineReason ?? undefined) : undefined,
     };
   }
 
@@ -646,15 +654,6 @@ export class TestDatabase {
     flakinessScore: number;
   }> {
     return testQueries.getFlakiestTestsInWindow(this.db, project, from, to, limit, minScore);
-  }
-
-  public updateFlakinessScore(runId: string, score: number): void {
-    const compiled = this.k
-      .updateTable('test_runs')
-      .set({ flakinessScore: score })
-      .where('runId', '=', runId)
-      .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public setFlakinessResetAt(

@@ -145,7 +145,8 @@ async function buildTestAnalysisPrompt(
   const config = await service.getConfig();
   const warningThreshold =
     config.testManagement?.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
-  const flakinessScore = ctx.failedRun?.flakinessScore ?? 0;
+  const flakinessScore =
+    testDb.getTestState(ctx.testId, ctx.fileId, ctx.project)?.flakinessScore ?? 0;
   const llmCfg = config.llm ?? {};
 
   const promptOverrides = {

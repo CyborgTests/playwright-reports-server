@@ -7,6 +7,7 @@ import * as seedDefaultDashboard from './0003_seed_default_dashboard.js';
 import * as testFkCascade from './0004_test_fk_cascade.js';
 import * as pruneIndexes from './0005_prune_indexes.js';
 import * as promoteReportStats from './0006_promote_report_stats.js';
+import * as testStateToTestLevel from './0007_test_state_to_test_level.js';
 
 // Ordered, statically-imported migration set. The keys are the names Kysely
 // records in its `kysely_migration` table; their lexical order is the run order,
@@ -18,6 +19,10 @@ const MIGRATIONS: Record<string, Migration> = {
   '0004_test_fk_cascade': { up: testFkCascade.up, down: testFkCascade.down },
   '0005_prune_indexes': { up: pruneIndexes.up, down: pruneIndexes.down },
   '0006_promote_report_stats': { up: promoteReportStats.up, down: promoteReportStats.down },
+  '0007_test_state_to_test_level': {
+    up: testStateToTestLevel.up,
+    down: testStateToTestLevel.down,
+  },
 };
 
 class StaticMigrationProvider implements MigrationProvider {

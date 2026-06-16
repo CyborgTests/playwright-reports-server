@@ -31,9 +31,6 @@ export interface TestRun {
   outcome: string;
   duration?: number;
   createdAt: string;
-  quarantineReason?: string;
-  quarantined?: boolean;
-  flakinessScore?: number;
   failureDetails?: string; // JSON string of FailureDetails
   failureCategory?: string;
   failureCategorySource?: FailureCategorySource;
@@ -163,7 +160,7 @@ export interface QuarantineHistory {
   }>;
 }
 
-export interface TestManagementApiResponse<T = any> {
+export interface TestManagementApiResponse<T = unknown> {
   success: boolean;
   data: T;
   error?: string;

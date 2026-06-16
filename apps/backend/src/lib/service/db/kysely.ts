@@ -210,6 +210,7 @@ export interface TestsRow {
   avgDuration: number | null;
   latestFailureCategory: string | null;
   flakinessResetAt: string | null;
+  quarantineFixedAt: string | null;
 }
 
 export interface TestRunsRow {
@@ -221,10 +222,6 @@ export interface TestRunsRow {
   outcome: string;
   duration: number | null;
   createdAt: string;
-  flakinessScore: number;
-  quarantineReason: string | null;
-  quarantined: number;
-  fixedAt: string | null;
   failure_details: Buffer | Uint8Array | string | null;
   failure_category: string | null;
   failure_category_source: string | null;

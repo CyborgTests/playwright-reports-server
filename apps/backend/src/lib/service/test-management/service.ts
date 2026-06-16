@@ -310,11 +310,17 @@ export class TestManagementService {
             title: test.title || 'Unknown Test',
           });
 
-          const latestTestRun = testDb.getLatestTestRun(testId, fileId, report.project);
-
-          const shouldQuarantineNextRun = latestTestRun
-            ? latestTestRun?.quarantined && !latestTestRun?.fixedAt
+          const state = testDb.getTestState(testId, fileId, report.project);
+          const stayQuarantined = state
+            ? state.quarantined === 1 && !state.quarantineFixedAt
             : false;
+
+          const flakinessScore = this.calculateFlakinessSync(
+            testId,
+            fileId,
+            report.project,
+            config
+          );
 
           const prepared = preparedByKey.get(`${testId}::${fileId}`);
           const failureDetails = prepared?.details ?? null;
@@ -337,9 +343,6 @@ export class TestManagementService {
                 : report.createdAt instanceof Date
                   ? report.createdAt.toISOString()
                   : report.createdAt),
-            quarantined: shouldQuarantineNextRun,
-            quarantineReason: latestTestRun?.quarantineReason ?? '',
-            flakinessScore: this.calculateFlakinessSync(testId, fileId, report.project, config),
             failureDetails: failureDetails ?? undefined,
             failureCategory: classification?.category,
             failureCategorySource: classification?.source,
@@ -347,22 +350,28 @@ export class TestManagementService {
             errorSignatureGlobal: errorSignatureGlobal ?? undefined,
           };
 
+          testDb.createTestRun(testRun);
+          testDb.refreshTestStatCols(testId, fileId, report.project);
+          testDb.setFlakinessScore(testId, fileId, report.project, flakinessScore);
+
           const quarantineThreshold =
             config.quarantineThresholdPercentage ?? FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE;
           if (
             config.autoQuarantineEnabled &&
-            !testRun.quarantined &&
-            testRun.flakinessScore >= quarantineThreshold
+            !stayQuarantined &&
+            flakinessScore >= quarantineThreshold
           ) {
             console.log(
-              `[testManagement] Auto-quarantining testId=${testId} due to flakinessScore=${testRun.flakinessScore.toFixed(1)}%`
+              `[testManagement] Auto-quarantining testId=${testId} due to flakinessScore=${flakinessScore.toFixed(1)}%`
             );
-            testRun.quarantined = true;
-            testRun.quarantineReason = `Auto-quarantined due to ${testRun.flakinessScore.toFixed(1)}% flakiness over threshold ${quarantineThreshold}%`;
+            testDb.setQuarantineState(
+              testId,
+              fileId,
+              report.project,
+              true,
+              `Auto-quarantined due to ${flakinessScore.toFixed(1)}% flakiness over threshold ${quarantineThreshold}%`
+            );
           }
-
-          testDb.createTestRun(testRun);
-          testDb.refreshTestStatCols(testId, fileId, report.project);
         }
       }
       regressionsDb.detectForReport(report.reportID, currentReportCommit);
@@ -520,8 +529,7 @@ export class TestManagementService {
       const latestRun = testDb.getLatestTestRun(testId, fileId, project);
       if (latestRun) {
         const newScore = this.calculateFlakinessSync(testId, fileId, project, config);
-        testDb.updateFlakinessScore(latestRun.runId, newScore);
-        testDb.refreshTestStatCols(testId, fileId, project);
+        testDb.setFlakinessScore(testId, fileId, project, newScore);
       }
     });
   }
@@ -540,8 +548,7 @@ export class TestManagementService {
       const latestRun = testDb.getLatestTestRun(testId, fileId, project);
       if (latestRun) {
         const newScore = this.calculateFlakinessSync(testId, fileId, project, config);
-        testDb.updateFlakinessScore(latestRun.runId, newScore);
-        testDb.refreshTestStatCols(testId, fileId, project);
+        testDb.setFlakinessScore(testId, fileId, project, newScore);
       }
     });
   }
@@ -559,7 +566,7 @@ export class TestManagementService {
       throw new Error('No test run found for the specified test');
     }
 
-    const updated = testDb.updateLatestTestRun(
+    const updated = testDb.setQuarantineState(
       testId,
       fileId,
       project,
@@ -568,10 +575,8 @@ export class TestManagementService {
     );
 
     if (!updated) {
-      throw new Error('Failed to update test run quarantine status');
+      throw new Error('Failed to update test quarantine status');
     }
-
-    testDb.refreshTestStatCols(testId, fileId, project);
 
     if (isQuarantined && regressionsDb.hasOpenForTest(testId, fileId, project)) {
       regressionsDb.closeOpenForTest({
@@ -759,8 +764,8 @@ export class TestManagementService {
 
     const transaction = () => {
       for (const test of tests) {
-        const latestRun = testDb.getLatestTestRun(test.testId, test.fileId, test.project);
-        if (!latestRun) continue;
+        const state = testDb.getTestState(test.testId, test.fileId, test.project);
+        if (!state) continue;
 
         const newScore = this.calculateFlakinessSync(
           test.testId,
@@ -769,9 +774,8 @@ export class TestManagementService {
           config
         );
 
-        if (latestRun.flakinessScore !== newScore) {
-          testDb.updateFlakinessScore(latestRun.runId, newScore);
-          testDb.refreshTestStatCols(test.testId, test.fileId, test.project);
+        if (state.flakinessScore !== newScore) {
+          testDb.setFlakinessScore(test.testId, test.fileId, test.project, newScore);
           updated++;
         }
       }
