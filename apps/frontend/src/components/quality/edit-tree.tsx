@@ -94,38 +94,50 @@ function resolve(parent: Inheritance, node: EditorNode): Inheritance {
   };
 }
 
-function previewFor(
-  node: EditorNode,
-  parent: Inheritance,
+const EMPTY_PREVIEW: PreviewSummary = { passRate: 0, grade: 'F', isOk: false };
+
+function computeAllPreviews(
   childrenMap: Map<string | null, EditorNode[]>,
+  rootInheritance: Inheritance,
   projectStats: Record<string, PreviewStats | undefined>
-): PreviewSummary {
-  const resolved = resolve(parent, node);
+): Map<string, PreviewSummary> {
+  const previews = new Map<string, PreviewSummary>();
 
-  if (node.kind === 'project') {
-    const stats = node.projectName ? projectStats[node.projectName] : undefined;
-    if (!stats) {
-      return { passRate: 0, grade: 'F', isOk: false };
+  const visit = (node: EditorNode, parent: Inheritance): PreviewSummary => {
+    const resolved = resolve(parent, node);
+
+    let summary: PreviewSummary;
+    if (node.kind === 'project') {
+      const stats = node.projectName ? projectStats[node.projectName] : undefined;
+      if (!stats) {
+        summary = EMPTY_PREVIEW;
+      } else {
+        const passRate = computePassRate(
+          normalizeStats({ passed: stats.passed, failed: stats.failed, flaky: stats.flaky }),
+          resolved.formula
+        );
+        const grade = gradeFor(passRate, resolved.bands);
+        summary = { passRate, grade, isOk: isVerdictOk(grade, resolved.minOk) };
+      }
+    } else {
+      const children = childrenMap.get(node.id) ?? [];
+      const childSummaries = children.map((c) => ({ node: c, preview: visit(c, resolved) }));
+      const passRate = weightedAverage(
+        childSummaries.map((c) => ({ value: c.preview.passRate, weight: c.node.weight }))
+      );
+      const grade = gradeFor(passRate, resolved.bands);
+      const isOk = childSummaries.every((c) => c.node.weight <= 0 || c.preview.isOk);
+      summary = { passRate, grade, isOk };
     }
-    const passRate = computePassRate(
-      normalizeStats({ passed: stats.passed, failed: stats.failed, flaky: stats.flaky }),
-      resolved.formula
-    );
-    const grade = gradeFor(passRate, resolved.bands);
-    return { passRate, grade, isOk: isVerdictOk(grade, resolved.minOk) };
-  }
 
-  const children = childrenMap.get(node.id) ?? [];
-  const childSummaries = children.map((c) => ({
-    node: c,
-    preview: previewFor(c, resolved, childrenMap, projectStats),
-  }));
-  const passRate = weightedAverage(
-    childSummaries.map((c) => ({ value: c.preview.passRate, weight: c.node.weight }))
-  );
-  const grade = gradeFor(passRate, resolved.bands);
-  const isOk = childSummaries.every((c) => c.node.weight <= 0 || c.preview.isOk);
-  return { passRate, grade, isOk };
+    previews.set(node.id, summary);
+    return summary;
+  };
+
+  for (const root of childrenMap.get(null) ?? []) {
+    visit(root, rootInheritance);
+  }
+  return previews;
 }
 
 export function newId(): string {
@@ -154,6 +166,11 @@ export function EditTree({
 
   const childrenMap = useMemo(() => buildChildrenMap(nodes), [nodes]);
   const rootChildren = childrenMap.get(null) ?? [];
+
+  const previews = useMemo(
+    () => computeAllPreviews(childrenMap, rootInheritance, projectStats),
+    [childrenMap, rootInheritance, projectStats]
+  );
 
   const update = (next: EditorNode[]) => onChange(next);
 
@@ -254,9 +271,8 @@ export function EditTree({
               key={node.id}
               node={node}
               depth={0}
-              parent={rootInheritance}
               childrenMap={childrenMap}
-              projectStats={projectStats}
+              previews={previews}
               selectedNodeId={selectedNodeId}
               onSelect={onSelectNode}
               onAdd={addNode}
@@ -275,9 +291,8 @@ export function EditTree({
 interface EditNodeProps {
   node: EditorNode;
   depth: number;
-  parent: Inheritance;
   childrenMap: Map<string | null, EditorNode[]>;
-  projectStats: Record<string, PreviewStats | undefined>;
+  previews: Map<string, PreviewSummary>;
   selectedNodeId: string | null;
   onSelect: (id: string | null) => void;
   onAdd: (parentNodeId: string | null, kind: 'group' | 'project') => void;
@@ -290,9 +305,8 @@ interface EditNodeProps {
 function EditNode({
   node,
   depth,
-  parent,
   childrenMap,
-  projectStats,
+  previews,
   selectedNodeId,
   onSelect,
   onAdd,
@@ -303,7 +317,7 @@ function EditNode({
 }: EditNodeProps) {
   const isGroup = node.kind === 'group';
   const children = childrenMap.get(node.id) ?? [];
-  const preview = previewFor(node, parent, childrenMap, projectStats);
+  const preview = previews.get(node.id) ?? EMPTY_PREVIEW;
   const isSelected = selectedNodeId === node.id;
   const isCollapsed = collapsed.has(node.id);
 
@@ -398,9 +412,8 @@ function EditNode({
               key={child.id}
               node={child}
               depth={depth + 1}
-              parent={resolve(parent, node)}
               childrenMap={childrenMap}
-              projectStats={projectStats}
+              previews={previews}
               selectedNodeId={selectedNodeId}
               onSelect={onSelect}
               onAdd={onAdd}

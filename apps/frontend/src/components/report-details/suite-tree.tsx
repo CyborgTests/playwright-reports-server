@@ -163,13 +163,14 @@ const SuiteNodeComponent = ({
             </AccordionItem>
           );
         }),
-        ...suite.tests.map((test) => {
+        ...suite.tests.map((test, testIdx) => {
           const status = testStatusToColor(test.outcome || 'passed');
           const isNewRegression = !!test.testId && newRegressionTestIds?.has(test.testId);
           const isResolvedRegression = !!test.testId && resolvedRegressionTestIds?.has(test.testId);
+          const itemValue = test.testId || `test-${testIdx}`;
 
           return (
-            <AccordionItem key={test.testId || 'unknown'} value={test.testId || 'unknown'}>
+            <AccordionItem key={itemValue} value={itemValue}>
               <AccordionTrigger className="hover:no-underline">
                 <span className="flex flex-row gap-4 flex-wrap items-center w-full justify-between pr-4">
                   <span className="flex items-center gap-2">
