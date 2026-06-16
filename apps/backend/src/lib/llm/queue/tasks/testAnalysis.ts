@@ -155,6 +155,7 @@ async function buildTestAnalysisPrompt(
     testAnalysisInstructions: llmCfg.customTestAnalysisInstructions,
     reportSummaryPrompt: llmCfg.customReportSummaryPrompt,
     projectSummaryInstructions: llmCfg.customProjectSummaryInstructions,
+    generalContext: llmCfg.generalContext,
     project: ctx.project,
   };
 

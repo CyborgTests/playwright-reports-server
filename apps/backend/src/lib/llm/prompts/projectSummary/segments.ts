@@ -8,6 +8,7 @@ import type { SegmentedPrompt } from '../../types/index.js';
 import {
   applyMustache,
   assembleSegments,
+  buildGeneralContextSegment,
   buildSegment,
   resolveSystemPrompt,
   splitTaskInstructions,
@@ -469,6 +470,7 @@ export const buildProjectSummarySegments = (args: {
         args.overrides?.projectSummarySystemPrompt
       )
     ),
+    buildGeneralContextSegment(args.overrides?.generalContext),
     buildSegment('task_contract', 'user', !contractSub.substituted, contractSub.rendered),
     buildSegment('task_request', 'user', !requestSub.substituted, requestSub.rendered),
     buildSegment('project_data_open', 'user', false, '<project_data>'),

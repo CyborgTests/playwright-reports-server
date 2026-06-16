@@ -299,6 +299,7 @@ export async function processReportSummary(task: LlmTaskRow): Promise<void> {
     overrides: {
       systemPrompt: reportLlmCfg.customSystemPrompt,
       reportSummaryPrompt: reportLlmCfg.customReportSummaryPrompt,
+      generalContext: reportLlmCfg.generalContext,
       project: project ?? undefined,
     },
   });

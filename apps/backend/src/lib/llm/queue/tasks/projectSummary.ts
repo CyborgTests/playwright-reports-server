@@ -396,6 +396,7 @@ export async function processProjectSummary(task: LlmTaskRow): Promise<void> {
       systemPrompt: projectLlmCfg.customSystemPrompt,
       projectSummarySystemPrompt: projectLlmCfg.customProjectSummarySystemPrompt,
       projectSummaryInstructions: projectLlmCfg.customProjectSummaryInstructions,
+      generalContext: projectLlmCfg.generalContext,
     },
   });
 

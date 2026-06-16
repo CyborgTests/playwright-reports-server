@@ -5,6 +5,7 @@ import type { SegmentedPrompt } from '../../types/index.js';
 import {
   applyMustache,
   assembleSegments,
+  buildGeneralContextSegment,
   buildSegment,
   resolveSystemPrompt,
   splitTaskInstructions,
@@ -598,6 +599,7 @@ export const buildTestFailureSegments = (args: {
         args.overrides?.testAnalysisSystemPrompt
       )
     ),
+    buildGeneralContextSegment(args.overrides?.generalContext),
     buildSegment('task_contract', 'user', !contractSub.substituted, contractSub.rendered),
     buildSegment('task_request', 'user', !requestSub.substituted, requestSub.rendered),
     buildSegment('evidence_open', 'user', false, '<evidence>'),

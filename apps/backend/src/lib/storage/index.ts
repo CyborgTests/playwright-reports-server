@@ -2,20 +2,23 @@ export type { Storage } from './types.js';
 export * from './types.js';
 
 import { env } from '../../config/env.js';
-import { AzureBlob } from './azure.js';
-import { FS } from './fs.js';
-import { S3 } from './s3.js';
 import type { Storage } from './types.js';
 
-const pickStorage = (): Storage => {
+// Dynamically import only the selected backend so the unused storage SDK
+// (@aws-sdk/* or @azure/storage-blob) never runs its module-init code.
+export let storage: Storage;
+
+export const initStorage = async (): Promise<Storage> => {
   switch (env.DATA_STORAGE) {
     case 's3':
-      return S3.getInstance();
+      storage = (await import('./s3.js')).S3.getInstance();
+      break;
     case 'azure':
-      return AzureBlob.getInstance();
+      storage = (await import('./azure.js')).AzureBlob.getInstance();
+      break;
     default:
-      return FS;
+      storage = (await import('./fs.js')).FS;
+      break;
   }
+  return storage;
 };
-
-export const storage: Storage = pickStorage();

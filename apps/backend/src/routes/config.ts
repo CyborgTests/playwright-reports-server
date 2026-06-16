@@ -118,6 +118,7 @@ interface ConfigFormData {
   llmMaxTokens?: string;
   llmContextWindow?: string;
   llmMultimodalMode?: string;
+  llmGeneralContext?: string;
   llmCustomSystemPrompt?: string;
   llmCustomTestAnalysisSystemPrompt?: string;
   llmCustomProjectSummarySystemPrompt?: string;
@@ -160,6 +161,7 @@ const ALLOWED_CONFIG_FIELDS: ReadonlySet<keyof ConfigFormData> = new Set<keyof C
   'llmMaxTokens',
   'llmContextWindow',
   'llmMultimodalMode',
+  'llmGeneralContext',
   'llmCustomSystemPrompt',
   'llmCustomTestAnalysisSystemPrompt',
   'llmCustomProjectSummarySystemPrompt',
@@ -232,6 +234,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       maxTokens: config.llm?.maxTokens,
       contextWindow: config.llm?.contextWindow,
       multimodalMode: config.llm?.multimodalMode,
+      generalContext: config.llm?.generalContext,
       // Custom prompt overrides — surfaced so the Settings UI can pre-fill
       // textareas with what's actually saved instead of just the default.
       customSystemPrompt: config.llm?.customSystemPrompt,
@@ -567,6 +570,16 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
               .send({ error: 'LLM multimodal mode must be auto, force, or disabled' });
           }
           config.llm.multimodalMode = (v || undefined) as 'auto' | 'force' | 'disabled' | undefined;
+        }
+
+        if (formData.llmGeneralContext !== undefined) {
+          const trimmed = formData.llmGeneralContext.trim();
+          if (trimmed.length > 500) {
+            return reply
+              .status(400)
+              .send({ error: 'LLM general context must be 500 characters or fewer' });
+          }
+          config.llm.generalContext = trimmed || undefined;
         }
 
         // Custom prompt overrides — empty string clears the override (falls back to default).

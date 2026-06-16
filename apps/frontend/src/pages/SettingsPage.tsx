@@ -191,6 +191,7 @@ export default function SettingsPage() {
               : ''
           );
           formData.append('llmMultimodalMode', tempConfig.llm.multimodalMode ?? '');
+          formData.append('llmGeneralContext', tempConfig.llm.generalContext ?? '');
           // Custom prompts — same "send always to allow clearing" pattern.
           // Legacy single field kept for back-compat; per-task fields below win.
           formData.append('llmCustomSystemPrompt', tempConfig.llm.customSystemPrompt ?? '');

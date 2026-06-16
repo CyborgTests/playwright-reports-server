@@ -13,6 +13,7 @@ export interface CustomPromptOverrides {
   projectSummaryInstructions?: string;
   reportSummaryPrompt?: string;
   project?: string;
+  generalContext?: string;
 }
 
 export interface RunContext {

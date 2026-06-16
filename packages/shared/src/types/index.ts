@@ -37,6 +37,7 @@ export interface LLMConfig {
   maxTokens?: number;
   contextWindow?: number;
   multimodalMode?: LLMMultimodalMode;
+  generalContext?: string;
   /** Legacy single system prompt — kept as a fallback for all three tasks so
    *  pre-Phase-3 configs keep working. Per-task overrides below win when set. */
   customSystemPrompt?: string;

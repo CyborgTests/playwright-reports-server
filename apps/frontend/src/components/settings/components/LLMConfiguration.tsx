@@ -72,6 +72,7 @@ export default function LLMConfiguration({
   const [availableModels, setAvailableModels] = useState<string[] | null>(null);
   const [refreshingModels, setRefreshingModels] = useState(false);
 
+  const [contextAccordionValue, setContextAccordionValue] = useState<string>('');
   const [promptsAccordionValue, setPromptsAccordionValue] = useState<string>('');
   const promptsAccordionOpen = promptsAccordionValue === 'custom-prompts';
   const { data: defaultPromptsData } = useLlmDefaultPrompts({
@@ -710,6 +711,44 @@ export default function LLMConfiguration({
               />
             </div>
           </section>
+
+          <Accordion
+            type="single"
+            collapsible
+            value={contextAccordionValue}
+            onValueChange={setContextAccordionValue}
+          >
+            <AccordionItem value="project-context" className="border rounded-md px-3">
+              <AccordionTrigger className="text-sm font-medium">Project context</AccordionTrigger>
+              <AccordionContent className="space-y-2">
+                <Label htmlFor="llm-general-context">General context (optional)</Label>
+                <Textarea
+                  id="llm-general-context"
+                  disabled={editingSection !== 'llm'}
+                  rows={4}
+                  maxLength={500}
+                  placeholder="Describe the project, its stack, environment specifics, or anything that would help interpret failures."
+                  value={
+                    editingSection === 'llm'
+                      ? (tempConfig.llm?.generalContext ?? '')
+                      : (config.llm?.generalContext ?? '')
+                  }
+                  onChange={(e) =>
+                    editingSection === 'llm' &&
+                    onUpdateTempConfig({
+                      llm: { ...tempConfig.llm, generalContext: e.target.value },
+                    })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Shared with every LLM analysis. Max 500 characters
+                  {editingSection === 'llm'
+                    ? ` (${(tempConfig.llm?.generalContext ?? '').length}/500).`
+                    : '.'}
+                </p>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
 
           {/* Custom prompts — each textarea is pre-populated with the resolved
               prompt (saved override OR built-in default) so users can edit
