@@ -8,6 +8,7 @@ import * as testFkCascade from './0004_test_fk_cascade.js';
 import * as pruneIndexes from './0005_prune_indexes.js';
 import * as promoteReportStats from './0006_promote_report_stats.js';
 import * as testStateToTestLevel from './0007_test_state_to_test_level.js';
+import * as pruneRedundantIndexes from './0008_prune_redundant_indexes.js';
 
 // Ordered, statically-imported migration set. The keys are the names Kysely
 // records in its `kysely_migration` table; their lexical order is the run order,
@@ -22,6 +23,10 @@ const MIGRATIONS: Record<string, Migration> = {
   '0007_test_state_to_test_level': {
     up: testStateToTestLevel.up,
     down: testStateToTestLevel.down,
+  },
+  '0008_prune_redundant_indexes': {
+    up: pruneRedundantIndexes.up,
+    down: pruneRedundantIndexes.down,
   },
 };
 
