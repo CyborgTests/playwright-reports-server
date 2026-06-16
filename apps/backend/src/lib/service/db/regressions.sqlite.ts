@@ -693,10 +693,8 @@ export class RegressionsDatabase {
       thisCreatedAt: string;
       thisFailureCategory: string | null;
       thisSignature: string | null;
-      priorOutcome: string | null;
-      lastGreenReportId: string | null;
-      lastGreenCreatedAt: string | null;
-      lastGreenCommit: string | null;
+      // JSON {reportId, createdAt, commit} of the most recent prior green run
+      lastGreen: string | null;
       openRegressionId: string | null;
       mostRecentClosedRegressionId: string | null;
       mostRecentClosedSignature: string | null;
@@ -713,26 +711,17 @@ export class RegressionsDatabase {
            rr.createdAt AS thisCreatedAt,
            rr.failure_category AS thisFailureCategory,
            rr.error_signature AS thisSignature,
-           (SELECT outcome FROM test_runs t
-            WHERE t.testId = rr.testId AND t.fileId = rr.fileId AND t.project = rr.project
-              AND t.createdAt < rr.createdAt
-            ORDER BY t.createdAt DESC LIMIT 1) AS priorOutcome,
-           (SELECT reportId FROM test_runs t
-            WHERE t.testId = rr.testId AND t.fileId = rr.fileId AND t.project = rr.project
-              AND t.createdAt < rr.createdAt
-              AND t.outcome IN ('passed','expected')
-            ORDER BY t.createdAt DESC LIMIT 1) AS lastGreenReportId,
-           (SELECT createdAt FROM test_runs t
+           (SELECT json_object(
+              'reportId', t.reportId,
+              'createdAt', t.createdAt,
+              'commit', json_extract(rep.metadata, '$.gitCommit.hash')
+            )
+            FROM test_runs t
+            LEFT JOIN reports rep ON rep.reportID = t.reportId
             WHERE t.testId = rr.testId AND t.fileId = rr.fileId AND t.project = rr.project
               AND t.createdAt < rr.createdAt
               AND t.outcome IN ('passed','expected')
-            ORDER BY t.createdAt DESC LIMIT 1) AS lastGreenCreatedAt,
-           (SELECT json_extract(reports.metadata, '$.gitCommit.hash') FROM test_runs t
-            LEFT JOIN reports ON reports.reportID = t.reportId
-            WHERE t.testId = rr.testId AND t.fileId = rr.fileId AND t.project = rr.project
-              AND t.createdAt < rr.createdAt
-              AND t.outcome IN ('passed','expected')
-            ORDER BY t.createdAt DESC LIMIT 1) AS lastGreenCommit,
+            ORDER BY t.createdAt DESC LIMIT 1) AS lastGreen,
            (SELECT id FROM regressions reg
             WHERE reg.testId = rr.testId AND reg.fileId = rr.fileId AND reg.project = rr.project
               AND reg.recoveredAtReportId IS NULL
@@ -832,7 +821,14 @@ export class RegressionsDatabase {
         bumpFailureStmt.run(lane.mostRecentClosedRegressionId);
         continue;
       }
-      if (!lane.lastGreenReportId) continue;
+      const lastGreen = lane.lastGreen
+        ? (JSON.parse(lane.lastGreen) as {
+            reportId: string | null;
+            createdAt: string | null;
+            commit: string | null;
+          })
+        : null;
+      if (!lastGreen?.reportId) continue;
       openStmt.run(
         randomUUID(),
         lane.testId,
@@ -842,9 +838,9 @@ export class RegressionsDatabase {
         lane.thisCreatedAt,
         currentCommit,
         lane.thisFailureCategory,
-        lane.lastGreenReportId,
-        lane.lastGreenCreatedAt,
-        lane.lastGreenCommit
+        lastGreen.reportId,
+        lastGreen.createdAt,
+        lastGreen.commit
       );
     }
   }
