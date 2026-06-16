@@ -110,7 +110,7 @@ function enrichClustersWithLifecycle(clusters: FailureCluster[]): void {
   }
   const openMap = regressionsDb.getOpenForTests(keys);
   const everSet = regressionsDb.hasAnyForTests(keys);
-  const overrides = clusterResolutionsDb.getAllOverrides();
+  const overrides = clusterResolutionsDb.getOverridesByClusterIds(clusters.map((c) => c.id));
 
   const openMapKey = (t: { testId: string; fileId: string; project: string }) =>
     `${t.testId}::${t.fileId}::${t.project}`;

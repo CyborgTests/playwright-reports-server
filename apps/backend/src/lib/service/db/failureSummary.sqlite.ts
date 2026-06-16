@@ -35,6 +35,7 @@ interface FailureSummaryDbRow {
 }
 
 const AGGREGATED_CATEGORIES_TTL_MS = 60_000;
+const AGGREGATED_CATEGORIES_CACHE_MAX = 100;
 
 type AggregatedCategoriesResult = ReturnType<FailureSummaryDatabase['getAggregatedCategories']>;
 
@@ -416,11 +417,26 @@ export class FailureSummaryDatabase {
         };
       }),
     };
+    this.pruneAggregatedCategoriesCache();
     this.aggregatedCategoriesCache.set(cacheKey, {
       value: result,
       expiresAt: Date.now() + AGGREGATED_CATEGORIES_TTL_MS,
     });
     return result;
+  }
+
+  private pruneAggregatedCategoriesCache(): void {
+    const cache = this.aggregatedCategoriesCache;
+    if (cache.size < AGGREGATED_CATEGORIES_CACHE_MAX) return;
+    const now = Date.now();
+    for (const [key, entry] of cache) {
+      if (entry.expiresAt <= now) cache.delete(key);
+    }
+    while (cache.size >= AGGREGATED_CATEGORIES_CACHE_MAX) {
+      const oldest = cache.keys().next().value;
+      if (oldest === undefined) break;
+      cache.delete(oldest);
+    }
   }
 
   public deleteAll(): void {

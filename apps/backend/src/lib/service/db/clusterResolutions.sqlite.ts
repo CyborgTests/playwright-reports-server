@@ -1,6 +1,7 @@
 import { getDatabase } from './db.js';
 import { type ClusterResolutionsRow, getKysely } from './kysely.js';
 import { singletonOf } from './singleton.js';
+import { chunk } from './utils.js';
 
 export type ClusterOverrideState = 'resolved' | 'active';
 
@@ -36,17 +37,24 @@ export class ClusterResolutionsDatabase {
     this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
-  // Single-pass load used by the cluster enrichment. Keyed by clusterId so the
-  // caller can look up by cluster.id without an extra round-trip per cluster.
-  public getAllOverrides(): Map<string, ClusterResolutionRow> {
-    const compiled = this.k
-      .selectFrom('cluster_resolutions')
-      .select(['clusterId', 'project', 'resolvedAt', 'state', 'note'])
-      .compile();
-    const rows = this.db
-      .prepare(compiled.sql)
-      .all(...compiled.parameters) as ClusterResolutionRow[];
-    return new Map(rows.map((r) => [r.clusterId, r]));
+  // Loads overrides for just the clusters being enriched (keyed by clusterId so
+  // the caller looks up by cluster.id without a per-cluster round-trip). Bounded
+  // by the number of clusters in play rather than the whole resolutions table.
+  public getOverridesByClusterIds(clusterIds: string[]): Map<string, ClusterResolutionRow> {
+    const out = new Map<string, ClusterResolutionRow>();
+    if (clusterIds.length === 0) return out;
+    for (const batch of chunk(clusterIds, 300)) {
+      const compiled = this.k
+        .selectFrom('cluster_resolutions')
+        .select(['clusterId', 'project', 'resolvedAt', 'state', 'note'])
+        .where('clusterId', 'in', batch)
+        .compile();
+      const rows = this.db
+        .prepare(compiled.sql)
+        .all(...compiled.parameters) as ClusterResolutionRow[];
+      for (const r of rows) out.set(r.clusterId, r);
+    }
+    return out;
   }
 }
 
