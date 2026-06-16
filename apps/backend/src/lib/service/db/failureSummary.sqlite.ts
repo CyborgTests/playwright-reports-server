@@ -230,7 +230,7 @@ export class FailureSummaryDatabase {
     if (opts?.from) q = q.where('createdAt', '>=', opts.from);
     if (opts?.to) q = q.where('createdAt', '<', opts.to);
     const compiled = q.compile();
-    const rawRows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
       testId: string;
       fileId: string;
       project: string;
@@ -242,15 +242,6 @@ export class FailureSummaryDatabase {
       failure_details: Buffer | string | null;
       createdAt: string;
     }>;
-
-    const isHardFailure = (outcome: string): boolean =>
-      outcome === 'unexpected' || outcome === 'failed';
-    const rows = rawRows.slice().sort((a, b) => {
-      const aHard = isHardFailure(a.outcome) ? 0 : 1;
-      const bHard = isHardFailure(b.outcome) ? 0 : 1;
-      if (aHard !== bHard) return aHard - bHard;
-      return a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0;
-    });
 
     const categoryCounts: Record<string, number> = {};
     const errorMap = new Map<
