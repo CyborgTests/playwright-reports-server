@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select';
 import { useLlmTaskModels, useLlmTaskStats, useLlmTasks } from '@/hooks/useLlmTasks';
 import useMutation from '@/hooks/useMutation';
+import { authHeaders } from '@/lib/auth';
 import { formatCategoryName } from '@/lib/format';
 import { invalidateCache } from '@/lib/query-cache';
 
@@ -107,11 +108,7 @@ export default function LlmQueuePage() {
     setIsBulkCancelling(true);
     try {
       const ids = Array.from(selectedIds);
-      const jwtToken = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (jwtToken) {
-        headers.Authorization = `Bearer ${jwtToken}`;
-      }
+      const headers: HeadersInit = { 'Content-Type': 'application/json', ...authHeaders() };
       const results = await Promise.allSettled(
         ids.map((id) => fetch(`/api/llm/tasks/${id}/cancel`, { method: 'PATCH', headers }))
       );

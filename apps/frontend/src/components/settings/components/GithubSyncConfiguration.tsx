@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { useAuth } from '@/hooks/useAuth';
+import { authHeaders } from '@/lib/auth';
 
 type GithubSyncConfigWithStatus = GithubSyncConfig & { status?: GithubSyncStatus };
 
@@ -106,11 +107,6 @@ function statusBadge(cfg: GithubSyncConfigWithStatus) {
   if (last === 'cancelled') return <Badge variant="secondary">Cancelled</Badge>;
   if (last === 'success') return <Badge variant="success">OK</Badge>;
   return <Badge variant="outline">Idle</Badge>;
-}
-
-function authHeader(): HeadersInit {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;
-  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 interface RegexInfo {
@@ -209,7 +205,7 @@ function renderTemplate(template: string, ctx: Record<string, string>, matches: 
 
 async function api<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  const auth = authHeader() as Record<string, string>;
+  const auth = authHeaders() as Record<string, string>;
   for (const [k, v] of Object.entries(auth)) headers.set(k, v);
   const hasBody = options.body !== undefined && options.body !== null;
   if (hasBody && !headers.has('Content-Type')) {
