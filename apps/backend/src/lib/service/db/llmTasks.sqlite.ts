@@ -201,18 +201,23 @@ export class LlmTasksDatabase {
       const rows = this.db.prepare(SELECT_QUEUED_SQL).all(count) as LlmTaskRow[];
       const now = new Date().toISOString();
 
+      const claimed: LlmTaskRow[] = [];
       for (const row of rows) {
         const claimCompiled = this.k
           .updateTable('llm_tasks')
           .set({ status: 'processing', startedAt: now })
           .where('id', '=', row.id)
+          .where('status', '=', 'queued')
           .compile();
-        this.db.prepare(claimCompiled.sql).run(...claimCompiled.parameters);
-        row.status = 'processing';
-        row.startedAt = now;
+        const result = this.db.prepare(claimCompiled.sql).run(...claimCompiled.parameters);
+        if (result.changes === 1) {
+          row.status = 'processing';
+          row.startedAt = now;
+          claimed.push(row);
+        }
       }
 
-      return rows;
+      return claimed;
     });
 
     const claimed = transaction();
