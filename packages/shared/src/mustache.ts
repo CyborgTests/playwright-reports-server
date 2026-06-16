@@ -1,22 +1,16 @@
 /**
- * Section-aware Mustache renderer — shared between the notification
- * backend dispatcher and the rule-editor live preview.
+ * Section-aware Mustache renderer for chat-message templates, shared by the
+ * notification dispatcher and the rule-editor live preview. Supported subset:
  *
- * Supports the Mustache subset that's useful for chat-message templates:
+ *   {{var}}            — substitution (allowlist-aware)
+ *   {{.}}              — current section value (when iterating)
+ *   {{#var}}…{{/var}}  — section: truthy primitive renders body once with the
+ *                        value on the stack; object pushes it; array iterates.
+ *   {{^var}}…{{/var}}  — inverted: render when falsy / empty array / missing.
+ *   {{!comment}}       — ignored.
  *
- *   {{var}}              — substitution (allowlist-aware)
- *   {{.}}                — the current section value (when iterating)
- *   {{#var}}…{{/var}}    — section: truthy primitive renders body once with
- *                          the value pushed onto the stack (so `{{.}}` works);
- *                          object pushes the object; array iterates once
- *                          per element.
- *   {{^var}}…{{/var}}    — inverted section: render only when value is
- *                          falsy / empty array / missing.
- *   {{!comment}}         — ignored.
- *
- * Deliberately excluded: partials, unescaped (`{{{ }}}`), delimiter changes,
- * lambdas. Provider-specific escaping (Slack mrkdwn, JSON) lives in the
- * caller via the `transform` option.
+ * Excluded: partials, unescaped `{{{ }}}`, delimiter changes, lambdas.
+ * Provider-specific escaping (Slack mrkdwn, JSON) lives in the `transform` option.
  */
 
 type Node =

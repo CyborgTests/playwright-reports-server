@@ -28,20 +28,12 @@ function isImpact(value: string): value is ReportAnalysisImpact {
   return (IMPACTS as readonly string[]).includes(value);
 }
 
-/** Markdown the model is asked to emit:
- *
- *   **Verdict:** clustered
- *
- *   <executive summary paragraph>
- *
- *   ## Failure Patterns _(high impact)_
- *   ...with [label](pwrs:test/TID) and [label](pwrs:file/PATH:42) refs.
- *
- *   ## Recommendations
- *   ...
- *
- * The parser recovers the verdict, summary, sections, per-section impact tag,
- * and per-section code refs. Returns null only when the response is empty.
+/**
+ * Parse the model's report analysis: a `**Verdict:** clustered` line, an
+ * executive-summary paragraph, then `## Section _(impact tag)_` blocks carrying
+ * `[label](pwrs:test/TID)` / `[label](pwrs:file/PATH:42)` refs. Recovers the
+ * verdict, summary, sections, per-section impact tag, and code refs; returns
+ * null only when the response is empty.
  */
 export function parseReportAnalysisFromText(text: string): ReportAnalysisStructured | null {
   const trimmed = text.trim();

@@ -21,20 +21,10 @@ function isVerdict(value: string): value is ProjectAnalysisVerdict {
   return (VERDICTS as readonly string[]).includes(value);
 }
 
-/** Markdown the model is asked to emit:
- *
- *   **Verdict:** stabilizing
- *
- *   Project is stabilizing. <one-line headline>.
- *
- *   ## Health Assessment
- *   ...with [label](pwrs:test/TID), [label](pwrs:file/PATH:42), and
- *   [label](pwrs:report/RID) refs.
- *
- *   ## Recommendations
- *   ...
- *
- * Returns null only when the response is empty.
+/**
+ * Parse the model's project analysis: a `**Verdict:** stabilizing` line, a
+ * one-line headline, then `## Section` blocks carrying `pwrs:test/`,
+ * `pwrs:file/`, and `pwrs:report/` refs. Returns null only when empty.
  */
 export function parseProjectAnalysisFromText(text: string): ProjectAnalysisStructured | null {
   const trimmed = text.trim();

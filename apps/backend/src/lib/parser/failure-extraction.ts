@@ -199,9 +199,7 @@ function normalizeConsoleLevel(raw: unknown): ConsoleEvent['level'] {
   }
 }
 
-/**
- * Parse a single JSONL line from a trace file
- */
+/** Accumulators a single trace-line parse appends into. */
 interface RawCollectors {
   console: ConsoleEvent[];
   network: Map<string, NetworkEvent>;
@@ -354,9 +352,7 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
   }
 }
 
-/**
- * Read every `*.trace` and `*.network` JSONL entry in the trace ZIP.
- */
+/** Read every `*.trace` and `*.network` JSONL entry in the trace ZIP. */
 async function collectFromTraceZip(
   directory: Awaited<ReturnType<typeof Open.buffer>>
 ): Promise<RawCollectors> {
@@ -452,10 +448,7 @@ function prioritizeActions(actions: ActionEvent[]): ActionEvent[] {
   return filtered.slice(start, erroredIdx + 1);
 }
 
-/**
- * Read console + network + action + environment context from a Playwright
- * trace ZIP.
- */
+/** Read console + network + action + environment context from a Playwright trace ZIP. */
 async function extractEvidenceFromTrace(
   reportId: string,
   tracePath: string

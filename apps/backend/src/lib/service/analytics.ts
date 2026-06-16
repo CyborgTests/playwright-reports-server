@@ -192,17 +192,12 @@ export class AnalyticsService {
   }
 
   /**
-   * Split reports into:
-   *   - `displayReports` — what the dashboard cards display (visible aggregates).
-   *   - `recentForTrend` / `olderForTrend` — what the trend arrows compare against each other.
-   *
-   * For a bounded window [from, to]:
-   *   display & recentForTrend are the reports inside the window.
-   *   olderForTrend is the equivalent prior period (same duration, immediately preceding).
-   *
-   * For "all time":
-   *   display is all reports.
-   *   recentForTrend / olderForTrend = newer-half / older-half by date midpoint.
+   * Split reports into `displayReports` (dashboard aggregates) and the
+   * `recentForTrend`/`olderForTrend` pair the trend arrows compare.
+   * Bounded window [from, to]: display & recent are the in-window reports;
+   * older is the equal-duration period immediately before it.
+   * All-time: display is everything; recent/older are the newer/older halves
+   * split at the date midpoint.
    */
   private partitionReports(
     allReports: BackendReportHistory[],

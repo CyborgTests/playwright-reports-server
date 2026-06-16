@@ -61,15 +61,12 @@ export class AnthropicProvider extends LLMProvider {
   }
 
   /**
-   * Build the Anthropic body from a segmented prompt. Joins same-role segments
-   * (system/user) into single fields, then applies cache_control:ephemeral on
-   * the last stable system block and on BOTH the first and last stable user
-   * blocks. The two user breakpoints nest: the first (the task contract, which is
-   * identical across every call of a task type) is reused across the whole queue
-   * batch; the last (e.g. cross-project context, which varies per test) is reused
-   * on regenerate of the same request. Up to three breakpoints — within
-   * Anthropic's 4-block limit — capturing the stable prefix while leaving the
-   * varying tail uncached.
+   * Build the Anthropic body from a segmented prompt: joins same-role segments,
+   * then sets cache_control:ephemeral on the last stable system block and the
+   * first + last stable user blocks. The user breakpoints nest — the first (task
+   * contract, identical per task type) caches across the queue batch; the last
+   * (per-test context) caches across regenerates. ≤3 breakpoints (Anthropic's
+   * limit is 4), caching the stable prefix and leaving the varying tail uncached.
    */
   private buildBodyFromSegments(segments: PromptSegment[], request: LLMRequest): AnthropicRequest {
     const systemBlocks: AnthropicTextBlock[] = [];

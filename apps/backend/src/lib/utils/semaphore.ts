@@ -1,6 +1,4 @@
-/**
- * Simple semaphore for limiting concurrent async operations.
- */
+/** Caps in-flight async work at `max`; waiters resume FIFO as slots free. */
 export class Semaphore {
   private running = 0;
   private queue: Array<() => void> = [];
@@ -23,9 +21,7 @@ export class Semaphore {
   }
 }
 
-/**
- * Process items with bounded concurrency.
- */
+/** Maps `fn` over `items`, ≤`concurrency` in flight. Preserves input order; rejects on first failure. */
 export async function processWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
