@@ -16,6 +16,7 @@ import {
   type ReportJsonMetadata,
 } from './report-payload.js';
 
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI escape sequences requires the ESC control char
 const ANSI_ESCAPE_RE = /\x1b\[[0-9;]*m/g;
 
 /** Per-message text cap. Console output is often huge (stringified objects,

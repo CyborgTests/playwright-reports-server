@@ -99,7 +99,7 @@ export async function deleteResults(resultsIds: string[]) {
 export async function deleteResult(resultId: string) {
   const resultPath = path.join(RESULTS_FOLDER, resultId);
 
-  await fs.unlink(`${resultPath}.zip`).catch(() => {});
+  await withError(fs.unlink(`${resultPath}.zip`));
 }
 
 export async function deleteReports(reports: ReportPath[]) {
