@@ -8,6 +8,7 @@ import { getDatabase } from './db.js';
 import { type Database, getKysely, type ReportsRow } from './kysely.js';
 import { projectSummaryDb } from './projectSummary.sqlite.js';
 import { singletonOf } from './singleton.js';
+import { testDb } from './tests.sqlite.js';
 import { chunk, parseJsonColumn } from './utils.js';
 
 function computePassRateFromStats(stats: ReportStats | undefined): number | null {
@@ -261,9 +262,8 @@ export class ReportDatabase {
         this.db.prepare(compiled.sql).run(...compiled.parameters);
 
         if (setProject && nextProject !== row.project) {
-          this.db
-            .prepare('UPDATE test_runs SET project = ? WHERE reportId = ?')
-            .run(nextProject, id);
+          const oldProject = row.project;
+          const movedAt = new Date().toISOString();
           this.db
             .prepare(
               `INSERT OR IGNORE INTO tests (
@@ -280,17 +280,49 @@ export class ReportDatabase {
                FROM tests t
                WHERE t.project = ?
                  AND (t.testId, t.fileId) IN (
-                   SELECT testId, fileId FROM regressions
-                   WHERE regressedAtReportId = ? OR recoveredAtReportId = ?
+                   SELECT DISTINCT testId, fileId FROM test_runs WHERE reportId = ?
                  )`
             )
-            .run(nextProject, new Date().toISOString(), row.project, id, id);
+            .run(nextProject, movedAt, oldProject, id);
+
+          const affectedLanes = this.db
+            .prepare('SELECT DISTINCT testId, fileId FROM test_runs WHERE reportId = ?')
+            .all(id) as Array<{ testId: string; fileId: string }>;
+
+          this.db
+            .prepare('UPDATE test_runs SET project = ? WHERE reportId = ?')
+            .run(nextProject, id);
+          this.db
+            .prepare('UPDATE test_llm_analyses SET project = ? WHERE reportId = ?')
+            .run(nextProject, id);
+          this.db
+            .prepare(
+              `UPDATE OR IGNORE analysis_feedback SET project = ?
+               WHERE reportId = ? AND project = ?`
+            )
+            .run(nextProject, id, oldProject);
           this.db
             .prepare(
               `UPDATE regressions SET project = ?
                WHERE regressedAtReportId = ? OR recoveredAtReportId = ?`
             )
             .run(nextProject, id, id);
+
+          for (const lane of affectedLanes) {
+            testDb.refreshTestStatCols(lane.testId, lane.fileId, nextProject);
+            const stillUsed = this.db
+              .prepare(
+                'SELECT 1 FROM test_runs WHERE testId = ? AND fileId = ? AND project = ? LIMIT 1'
+              )
+              .get(lane.testId, lane.fileId, oldProject);
+            if (stillUsed) {
+              testDb.refreshTestStatCols(lane.testId, lane.fileId, oldProject);
+            } else {
+              this.db
+                .prepare('DELETE FROM tests WHERE testId = ? AND fileId = ? AND project = ?')
+                .run(lane.testId, lane.fileId, oldProject);
+            }
+          }
         }
       }
     });
