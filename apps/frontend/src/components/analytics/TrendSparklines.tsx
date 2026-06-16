@@ -17,6 +17,42 @@ const durationColor = 'hsl(217, 91%, 60%)'; // blue
 const flakyColor = 'hsl(38, 92%, 50%)'; // orange
 const slowColor = 'hsl(0, 84%, 60%)'; // red
 
+function formatDuration(ms: number) {
+  if (ms < 1000) return `${ms}ms`;
+  const totalSeconds = Math.floor(ms / 1000);
+  const seconds = totalSeconds % 60;
+  const minutes = Math.floor(totalSeconds / 60) % 60;
+  const hours = Math.floor(totalSeconds / 3600);
+
+  if (hours > 0)
+    return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
+  if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+  return `${seconds}s`;
+}
+
+function CustomTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ name: string; value: number; dataKey: string }>;
+  label?: string;
+}) {
+  if (active && payload?.length) {
+    return (
+      <div className="bg-popover text-popover-foreground p-2 rounded shadow-lg border text-xs">
+        <p className="font-medium">{new Date(label ?? '').toLocaleDateString()}</p>
+        <p>
+          {payload[0].name}:{' '}
+          {payload[0].dataKey === 'duration' ? formatDuration(payload[0].value) : payload[0].value}
+        </p>
+      </div>
+    );
+  }
+  return null;
+}
+
 function SparklineCard({
   title,
   subtitle,
@@ -64,45 +100,7 @@ function TrendSparklinesImpl({
     );
   }
 
-  const formatDuration = (ms: number) => {
-    if (ms < 1000) return `${ms}ms`;
-    const totalSeconds = Math.floor(ms / 1000);
-    const seconds = totalSeconds % 60;
-    const minutes = Math.floor(totalSeconds / 60) % 60;
-    const hours = Math.floor(totalSeconds / 3600);
-
-    if (hours > 0)
-      return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
-    if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
-    return `${seconds}s`;
-  };
-
   const { durationTrend = [], flakyCountTrend = [], slowCountTrend = [] } = metrics;
-
-  const CustomTooltip = ({
-    active,
-    payload,
-    label,
-  }: {
-    active?: boolean;
-    payload?: Array<{ name: string; value: number; dataKey: string }>;
-    label?: string;
-  }) => {
-    if (active && payload?.length) {
-      return (
-        <div className="bg-popover text-popover-foreground p-2 rounded shadow-lg border text-xs">
-          <p className="font-medium">{new Date(label ?? '').toLocaleDateString()}</p>
-          <p>
-            {payload[0].name}:{' '}
-            {payload[0].dataKey === 'duration'
-              ? formatDuration(payload[0].value)
-              : payload[0].value}
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">

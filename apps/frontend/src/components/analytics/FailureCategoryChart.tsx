@@ -51,6 +51,27 @@ const categoryColors: Record<string, string> = {
   unknown: 'hsl(220, 10%, 60%)',
 };
 
+function CustomTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: CategoryData }>;
+}) {
+  if (active && payload?.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-popover text-popover-foreground p-3 rounded-lg shadow-lg border">
+        <p className="font-medium">{formatCategoryName(data.category)}</p>
+        <p className="text-sm text-muted-foreground">
+          {data.count} failures ({data.percentage.toFixed(1)}%)
+        </p>
+      </div>
+    );
+  }
+  return null;
+}
+
 function FailureCategoryChartImpl({
   categories,
   totalFailures,
@@ -61,27 +82,6 @@ function FailureCategoryChartImpl({
     () => (categories ?? []).filter((c) => c.count > 0).sort((a, b) => b.count - a.count),
     [categories]
   );
-
-  const CustomTooltip = ({
-    active,
-    payload,
-  }: {
-    active?: boolean;
-    payload?: Array<{ payload: CategoryData }>;
-  }) => {
-    if (active && payload?.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-popover text-popover-foreground p-3 rounded-lg shadow-lg border">
-          <p className="font-medium">{formatCategoryName(data.category)}</p>
-          <p className="text-sm text-muted-foreground">
-            {data.count} failures ({data.percentage.toFixed(1)}%)
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
 
   return (
     <Card>
