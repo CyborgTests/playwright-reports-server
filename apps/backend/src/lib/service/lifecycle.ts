@@ -5,7 +5,7 @@ import { githubSyncCron } from '../githubSync/cronManager.js';
 import { llmService } from '../llm/index.js';
 import type { LLMProviderConfig } from '../llm/types/index.js';
 import { TMP_FOLDER } from '../storage/constants.js';
-import { storage } from '../storage/index.js';
+import { initStorage, storage } from '../storage/index.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
 import { cronService } from './cron.js';
@@ -42,6 +42,10 @@ export class Lifecycle {
     console.log('[lifecycle] Starting application initialization');
 
     try {
+      // resolve the storage backend first - this lazily loads only the selected
+      // SDK and must complete before any storage consumer runs.
+      await initStorage();
+
       await litestreamService.preflight();
       const restored = await litestreamService.restoreIfNeeded();
 

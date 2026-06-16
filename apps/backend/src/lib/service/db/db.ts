@@ -31,7 +31,7 @@ export function createDatabase(): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
   db.pragma('cache_size = -8000');
-  db.pragma('mmap_size = 134217728');
+  db.pragma('mmap_size = 33554432');
   db.pragma('temp_store = MEMORY');
   db.pragma('foreign_keys = ON');
   db.pragma('auto_vacuum = INCREMENTAL');
