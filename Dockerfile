@@ -84,6 +84,14 @@ RUN find node_modules \
         -o -name 'example' -o -name 'examples' -o -name 'docs' \
         -o -name '.github' \
       \) -prune -exec rm -rf {} + 2>/dev/null || true
+# strip better-sqlite3 down to the runtime essentials: the prebuilt .node binding
+# and its JS wrapper. Drops the bundled SQLite C source (deps/) and build
+# intermediates (object files, makefiles).
+RUN find node_modules/better-sqlite3 -mindepth 1 -maxdepth 1 \
+      ! -name lib ! -name build ! -name package.json -exec rm -rf {} + && \
+    find node_modules/better-sqlite3/build -mindepth 1 -maxdepth 1 \
+      ! -name Release -exec rm -rf {} + && \
+    find node_modules/better-sqlite3/build/Release -type f ! -name '*.node' -delete
 
 # Production image
 FROM runner-base AS runner
