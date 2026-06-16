@@ -1,5 +1,3 @@
-'use client';
-
 import { Code2 } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';

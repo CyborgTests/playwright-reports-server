@@ -1,5 +1,3 @@
-'use client';
-
 import type { SlackBlock } from '@playwright-reports/shared';
 import {
   ArrowDown,

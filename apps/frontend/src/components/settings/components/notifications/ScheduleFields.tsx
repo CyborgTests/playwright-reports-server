@@ -1,5 +1,3 @@
-'use client';
-
 import type { ScheduleCondition, ScheduleRule, ScheduleWindow } from '@playwright-reports/shared';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

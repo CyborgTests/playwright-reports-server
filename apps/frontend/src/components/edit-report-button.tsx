@@ -1,5 +1,3 @@
-'use client';
-
 import { RESERVED_REPORT_FIELDS, type ReportHistory } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, X } from 'lucide-react';

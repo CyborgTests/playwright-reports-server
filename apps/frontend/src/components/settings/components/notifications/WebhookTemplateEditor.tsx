@@ -1,5 +1,3 @@
-'use client';
-
 import { jsonValueEscape } from '@playwright-reports/shared';
 import { useMemo } from 'react';
 import { Textarea } from '@/components/ui/textarea';

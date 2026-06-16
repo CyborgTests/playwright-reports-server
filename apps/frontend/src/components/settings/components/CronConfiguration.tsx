@@ -1,5 +1,3 @@
-'use client';
-
 import type { ServerConfig } from '@playwright-reports/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

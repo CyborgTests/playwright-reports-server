@@ -1,5 +1,3 @@
-'use client';
-
 import type { DateRange, ReadReportsHistory, ReportHistory } from '@playwright-reports/shared';
 import { keepPreviousData } from '@tanstack/react-query';
 import { MoreHorizontal } from 'lucide-react';

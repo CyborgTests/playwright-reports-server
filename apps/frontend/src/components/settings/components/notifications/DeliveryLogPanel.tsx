@@ -1,5 +1,3 @@
-'use client';
-
 import type { NotificationChannel, NotificationLogEntry } from '@playwright-reports/shared';
 import { formatRelativeTime } from '@playwright-reports/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';

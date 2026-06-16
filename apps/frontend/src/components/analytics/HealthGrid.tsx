@@ -1,5 +1,3 @@
-'use client';
-
 import type { RunHealthMetric } from '@playwright-reports/shared';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';

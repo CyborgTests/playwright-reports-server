@@ -1,5 +1,3 @@
-'use client';
-
 import type { ServerDataInfo } from '@playwright-reports/shared';
 import {
   Activity,

@@ -1,5 +1,3 @@
-'use client';
-
 import { API_ENDPOINTS, type ReadReportsOutput } from '@playwright-reports/shared';
 import { FileText, Search, X } from 'lucide-react';
 import { useMemo, useState } from 'react';

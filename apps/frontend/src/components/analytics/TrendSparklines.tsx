@@ -1,5 +1,3 @@
-'use client';
-
 import { formatDuration, type TrendMetrics } from '@playwright-reports/shared';
 import { memo } from 'react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';

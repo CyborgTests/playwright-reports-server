@@ -1,5 +1,3 @@
-'use client';
-
 import type { DateRange } from '@playwright-reports/shared';
 import { Search, X } from 'lucide-react';
 import { type ReactNode, useCallback } from 'react';

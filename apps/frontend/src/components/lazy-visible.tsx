@@ -1,5 +1,3 @@
-'use client';
-
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 interface LazyVisibleProps {

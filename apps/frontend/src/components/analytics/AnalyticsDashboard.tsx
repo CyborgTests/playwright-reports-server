@@ -1,5 +1,3 @@
-'use client';
-
 import type { DateRange, RegressionsAggregate } from '@playwright-reports/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';

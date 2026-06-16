@@ -1,5 +1,3 @@
-'use client';
-
 import type { ProjectAnalysisStructured } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Brain, RefreshCw } from 'lucide-react';

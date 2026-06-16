@@ -1,5 +1,3 @@
-'use client';
-
 import type { ApiResponse, TestDetail } from '@playwright-reports/shared';
 import { formatDuration } from '@playwright-reports/shared';
 import { ArrowLeft, ExternalLink } from 'lucide-react';

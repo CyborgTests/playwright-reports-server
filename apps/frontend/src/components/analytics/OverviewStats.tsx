@@ -1,5 +1,3 @@
-'use client';
-
 import type { OverviewStats, StatDelta } from '@playwright-reports/shared';
 import { formatDuration } from '@playwright-reports/shared';
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react';

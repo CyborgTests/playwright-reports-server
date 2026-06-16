@@ -1,5 +1,3 @@
-'use client';
-
 import { Check, ChevronsUpDown, Globe, Regex, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';

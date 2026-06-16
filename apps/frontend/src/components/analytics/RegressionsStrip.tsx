@@ -1,5 +1,3 @@
-'use client';
-
 import type { RegressionsAggregate } from '@playwright-reports/shared';
 import { AlertOctagon, CheckCircle2 } from 'lucide-react';
 

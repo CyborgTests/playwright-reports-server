@@ -1,5 +1,3 @@
-'use client';
-
 import type { HeaderLink, ServerConfig } from '@playwright-reports/shared';
 import { useRef, useState } from 'react';
 import { HEADER_LINK_ICON_CATALOG } from '@/components/header-link-icons';

@@ -1,5 +1,3 @@
-'use client';
-
 import type { DateRange as SharedDateRange } from '@playwright-reports/shared';
 import {
   endOfDay,

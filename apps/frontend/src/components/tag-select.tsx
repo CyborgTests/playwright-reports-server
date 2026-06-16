@@ -1,5 +1,3 @@
-'use client';
-
 import { toast } from 'sonner';
 import useQuery from '../hooks/useQuery';
 import { buildUrl } from '../lib/url';

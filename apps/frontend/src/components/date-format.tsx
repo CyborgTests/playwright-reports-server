@@ -1,4 +1,3 @@
-'use client';
 import { memo, useMemo } from 'react';
 
 function FormattedDateImpl({ date }: Readonly<{ date: Date | string }>) {

@@ -1,5 +1,3 @@
-'use client';
-
 import type { ReadReportsHistory, ReportHistory } from '@playwright-reports/shared';
 import { ChevronsUpDown, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';

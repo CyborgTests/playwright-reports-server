@@ -1,5 +1,3 @@
-'use client';
-
 import type { NotificationRule } from '@playwright-reports/shared';
 import { CheckCircle2, Loader2, Send, XCircle } from 'lucide-react';
 import { useState } from 'react';

@@ -1,5 +1,3 @@
-'use client';
-
 import { isValidElement, memo, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link as RouterLink } from 'react-router-dom';

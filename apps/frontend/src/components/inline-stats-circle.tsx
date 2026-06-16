@@ -1,5 +1,3 @@
-'use client';
-
 import type { ReportStats } from '@playwright-reports/shared';
 import type { FC } from 'react';
 import { passRateVariant } from '@/lib/pass-rate';

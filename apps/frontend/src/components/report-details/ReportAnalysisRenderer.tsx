@@ -1,5 +1,3 @@
-'use client';
-
 import type { ReportAnalysisStructured, ReportAnalysisVerdict } from '@playwright-reports/shared';
 import { REPORT_VERDICT_DESCRIPTIONS } from '@playwright-reports/shared';
 import {

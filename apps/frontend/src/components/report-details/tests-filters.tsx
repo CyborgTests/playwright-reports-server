@@ -1,5 +1,3 @@
-'use client';
-
 import type { ReportHistory, ReportTestOutcome } from '@playwright-reports/shared';
 import { type FC, useEffect, useMemo, useState } from 'react';
 import {

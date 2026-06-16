@@ -1,5 +1,3 @@
-'use client';
-
 import { useQueryClient } from '@tanstack/react-query';
 import { Upload } from 'lucide-react';
 import { useRef, useState } from 'react';

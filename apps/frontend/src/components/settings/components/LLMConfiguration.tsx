@@ -1,5 +1,3 @@
-'use client';
-
 import type { LLMProviderType, PromptVariable, ServerConfig } from '@playwright-reports/shared';
 import { PROMPT_VARIABLES } from '@playwright-reports/shared';
 import { CheckCircle2, ListTodo, Plug, RefreshCw, X, XCircle } from 'lucide-react';

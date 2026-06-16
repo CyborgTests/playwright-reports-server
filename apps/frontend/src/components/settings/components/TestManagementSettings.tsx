@@ -1,5 +1,3 @@
-'use client';
-
 import { FLAKINESS_THRESHOLDS, type ServerConfig } from '@playwright-reports/shared';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
