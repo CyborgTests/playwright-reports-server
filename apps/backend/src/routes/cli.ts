@@ -590,10 +590,10 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
           summary: body.summary,
           structured: body.structured ? JSON.stringify(body.structured) : null,
           model: body.model,
-          lastReportId: body.lastReportId ?? existing?.lastReportId ?? undefined,
-          reportCount: body.reportCount ?? existing?.reportCount ?? undefined,
-          firstReportAt: body.firstReportAt ?? existing?.firstReportAt ?? undefined,
-          lastReportAt: body.lastReportAt ?? existing?.lastReportAt ?? undefined,
+          lastReportId: body.lastReportId,
+          reportCount: body.reportCount,
+          firstReportAt: body.firstReportAt,
+          lastReportAt: body.lastReportAt,
         });
         const after = projectSummaryDb.get(project);
         return reply.send({

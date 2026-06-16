@@ -85,12 +85,14 @@ export class FailureSummaryDatabase {
         updatedAt: null,
       })
       .onConflict((oc) =>
-        oc.column('reportId').doUpdateSet((eb) => ({
-          project: eb.ref('excluded.project'),
-          totalFailures: eb.ref('excluded.totalFailures'),
-          categories: eb.ref('excluded.categories'),
-          createdAt: eb.ref('excluded.createdAt'),
-        }))
+        oc
+          .column('reportId')
+          .doUpdateSet((eb) => ({
+            project: eb.ref('excluded.project'),
+            totalFailures: eb.ref('excluded.totalFailures'),
+            categories: eb.ref('excluded.categories'),
+            updatedAt: now,
+          }))
       )
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);

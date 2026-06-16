@@ -75,16 +75,30 @@ export class ProjectSummaryDatabase {
         updatedAt: now,
       })
       .onConflict((oc) =>
-        oc.column('project').doUpdateSet((eb) => ({
-          summary: eb.ref('excluded.summary'),
-          structured: eb.ref('excluded.structured'),
-          model: eb.ref('excluded.model'),
-          lastReportId: eb.ref('excluded.lastReportId'),
-          reportCount: eb.ref('excluded.reportCount'),
-          firstReportAt: eb.ref('excluded.firstReportAt'),
-          lastReportAt: eb.ref('excluded.lastReportAt'),
-          updatedAt: eb.ref('excluded.updatedAt'),
-        }))
+        oc
+          .column('project')
+          .doUpdateSet((eb) => ({
+            summary: eb.ref('excluded.summary'),
+            structured: eb.ref('excluded.structured'),
+            model: eb.fn.coalesce(eb.ref('excluded.model'), eb.ref('project_llm_summaries.model')),
+            lastReportId: eb.fn.coalesce(
+              eb.ref('excluded.lastReportId'),
+              eb.ref('project_llm_summaries.lastReportId')
+            ),
+            reportCount: eb.fn.coalesce(
+              eb.ref('excluded.reportCount'),
+              eb.ref('project_llm_summaries.reportCount')
+            ),
+            firstReportAt: eb.fn.coalesce(
+              eb.ref('excluded.firstReportAt'),
+              eb.ref('project_llm_summaries.firstReportAt')
+            ),
+            lastReportAt: eb.fn.coalesce(
+              eb.ref('excluded.lastReportAt'),
+              eb.ref('project_llm_summaries.lastReportAt')
+            ),
+            updatedAt: eb.ref('excluded.updatedAt'),
+          }))
       )
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
