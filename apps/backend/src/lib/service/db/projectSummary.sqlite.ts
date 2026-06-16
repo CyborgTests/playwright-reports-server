@@ -7,6 +7,7 @@ import { getDatabase } from './db.js';
 import { getKysely, type ProjectLlmSummariesRow } from './kysely.js';
 
 import { singletonOf } from './singleton.js';
+import { parseJsonColumn } from './utils.js';
 
 export type ProjectSummaryRow = ProjectLlmSummariesRow;
 
@@ -55,9 +56,9 @@ export class ProjectSummaryDatabase {
     if (opts.structured) {
       const obj =
         typeof opts.structured === 'string'
-          ? (JSON.parse(opts.structured) as ProjectAnalysisStructured)
+          ? parseJsonColumn<ProjectAnalysisStructured | null>(opts.structured, null)
           : opts.structured;
-      structuredJson = JSON.stringify(linkifyProjectAnalysisStructured(obj, ctx));
+      if (obj) structuredJson = JSON.stringify(linkifyProjectAnalysisStructured(obj, ctx));
     }
     const compiled = this.k
       .insertInto('project_llm_summaries')

@@ -423,7 +423,7 @@ export class ReportDatabase {
 
     const allTags = new Set<string>();
     for (const row of rows) {
-      const parsed = JSON.parse(row.metadata || '{}') as Record<string, unknown>;
+      const parsed = parseJsonColumn<Record<string, unknown>>(row.metadata, {});
       for (const [key, value] of Object.entries(parsed)) {
         if (RESERVED_REPORT_FIELDS.has(key)) continue;
         if (value === undefined || value === null) continue;
@@ -781,8 +781,8 @@ export class ReportDatabase {
     if (cached) {
       baseDecoded = cached;
     } else {
-      const metadata = JSON.parse(row.metadata || '{}');
-      const stats = row.stats ? JSON.parse(row.stats) : undefined;
+      const metadata = parseJsonColumn<Record<string, unknown>>(row.metadata, {});
+      const stats = parseJsonColumn<ReportStats | undefined>(row.stats, undefined);
       baseDecoded = {
         reportID: row.reportID,
         project: row.project,
@@ -794,7 +794,7 @@ export class ReportDatabase {
         sizeBytes: row.sizeBytes,
         stats,
         ...metadata,
-      } as ReportHistory;
+      } as unknown as ReportHistory;
       if (parseCache.size >= PARSE_CACHE_MAX) {
         const firstKey = parseCache.keys().next().value;
         if (firstKey !== undefined) parseCache.delete(firstKey);
@@ -803,7 +803,7 @@ export class ReportDatabase {
     }
 
     if (row.files != null) {
-      return { ...baseDecoded, files: JSON.parse(row.files) };
+      return { ...baseDecoded, files: parseJsonColumn<ReportHistory['files']>(row.files, []) };
     }
     return baseDecoded;
   }
@@ -820,7 +820,7 @@ export class ReportDatabase {
       reportUrl: row.reportUrl,
       size: row.size ?? undefined,
       sizeBytes: row.sizeBytes,
-      stats: row.stats ? (JSON.parse(row.stats) as ReportStats) : undefined,
+      stats: parseJsonColumn<ReportStats | undefined>(row.stats, undefined),
     };
   }
 

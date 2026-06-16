@@ -4,7 +4,7 @@ import type { ReadResultsInput, ReadResultsOutput, Result } from '../../storage/
 import { getDatabase } from './db.js';
 import { type Database, getKysely, type ResultsRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
-import { chunk } from './utils.js';
+import { chunk, parseJsonColumn } from './utils.js';
 
 type ResultRow = ResultsRow;
 
@@ -105,7 +105,7 @@ export class ResultDatabase {
 
     const allTags = new Set<string>();
     for (const row of rows) {
-      const parsed = JSON.parse(row.metadata || '{}') as Record<string, unknown>;
+      const parsed = parseJsonColumn<Record<string, unknown>>(row.metadata, {});
       for (const [key, value] of Object.entries(parsed)) {
         if (value === undefined || value === null) continue;
         if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')
@@ -240,7 +240,7 @@ export class ResultDatabase {
   }
 
   private rowToResult(row: ResultRow): Result {
-    const metadata = JSON.parse(row.metadata || '{}');
+    const metadata = parseJsonColumn<Record<string, unknown>>(row.metadata, {});
     return {
       resultID: row.resultID,
       project: row.project,
@@ -249,7 +249,7 @@ export class ResultDatabase {
       size: row.size || undefined,
       sizeBytes: row.sizeBytes,
       ...metadata,
-    };
+    } as unknown as Result;
   }
 }
 
