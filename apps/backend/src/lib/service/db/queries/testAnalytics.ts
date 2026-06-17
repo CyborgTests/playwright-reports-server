@@ -344,11 +344,11 @@ function runsForLaneChunk(
     }
     sql = `
       WITH lanes(testId, fileId, project) AS (${laneRows})
-      SELECT tr.*, r.title AS reportTitle, r.displayNumber AS reportDisplayNumber
+      SELECT tr.testId, tr.fileId, tr.project, tr.runId, tr.outcome,
+             tr.duration, tr.createdAt, tr.failure_category, tr.reportId
       FROM test_runs tr
       JOIN lanes l
         ON l.testId = tr.testId AND l.fileId = tr.fileId AND l.project = tr.project
-      LEFT JOIN reports r ON r.reportID = tr.reportId
       WHERE ${winConds.join(' AND ')}
       ORDER BY tr.testId, tr.fileId, tr.project, tr.createdAt DESC
     `;
@@ -356,11 +356,10 @@ function runsForLaneChunk(
     sql = `
       WITH lanes(testId, fileId, project) AS (${laneRows})
       SELECT testId, fileId, project, runId, outcome, duration, createdAt,
-             failure_details, failure_category, failure_category_source,
-             error_signature, error_signature_global,
-             reportId, reportTitle, reportDisplayNumber
+             failure_category, reportId
       FROM (
-        SELECT tr.*, r.title AS reportTitle, r.displayNumber AS reportDisplayNumber,
+        SELECT tr.testId, tr.fileId, tr.project, tr.runId, tr.outcome,
+               tr.duration, tr.createdAt, tr.failure_category, tr.reportId,
                ROW_NUMBER() OVER (
                  PARTITION BY tr.testId, tr.fileId, tr.project
                  ORDER BY tr.createdAt DESC
@@ -368,14 +367,17 @@ function runsForLaneChunk(
         FROM test_runs tr
         JOIN lanes l
           ON l.testId = tr.testId AND l.fileId = tr.fileId AND l.project = tr.project
-        LEFT JOIN reports r ON r.reportID = tr.reportId
       )
       WHERE rn <= 50
       ORDER BY testId, fileId, project, createdAt DESC
     `;
   }
 
-  const runRows = db.prepare(sql).all(...params) as TestRunDbRow[];
+  type LaneRunRow = Pick<
+    TestRunDbRow,
+    'testId' | 'fileId' | 'project' | 'runId' | 'outcome' | 'duration' | 'createdAt' | 'reportId'
+  > & { failure_category: string | null };
+  const runRows = db.prepare(sql).all(...params) as LaneRunRow[];
   for (const row of runRows) {
     const key = `${row.testId}::${row.fileId}::${row.project}`;
     let bucket = out.get(key);
@@ -383,7 +385,17 @@ function runsForLaneChunk(
       bucket = [];
       out.set(key, bucket);
     }
-    bucket.push(convertDbRowToTestRun(row));
+    bucket.push({
+      runId: row.runId,
+      testId: row.testId,
+      fileId: row.fileId,
+      project: row.project,
+      reportId: row.reportId,
+      outcome: row.outcome,
+      duration: row.duration ?? undefined,
+      createdAt: row.createdAt,
+      failureCategory: row.failure_category || undefined,
+    });
   }
 }
 

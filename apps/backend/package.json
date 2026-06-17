@@ -12,7 +12,7 @@
 		"dev": "NODE_ENV=development tsx watch --clear-screen=false src/index.ts",
 		"build": "tsc && cp src/lib/report-injection/inject.js src/lib/report-injection/inject.css dist/lib/report-injection/",
 		"bundle": "node scripts/bundle.mjs",
-		"start": "node dist/index.js",
+		"start": "NODE_ENV=production node dist/index.js",
 		"typecheck": "tsc --noEmit",
 		"test": "echo 'No tests configured for backend'",
 		"lint": "biome check src/",

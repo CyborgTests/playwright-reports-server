@@ -51,9 +51,10 @@ export function Navbar() {
             <>
               <img
                 alt="Logo"
+                {...(isCustomLogo ? {} : { width: 174, height: 32 })}
                 className={cn(
                   'h-8 shrink-0',
-                  isCustomLogo ? 'w-auto' : 'w-[174px]',
+                  isCustomLogo ? 'w-auto max-w-[240px] object-contain object-left' : 'w-[174px]',
                   invertLogoOnDark && 'dark:invert'
                 )}
                 src={withBase(`/api/static${config?.logoPath ?? defaultConfig.logoPath}`)}

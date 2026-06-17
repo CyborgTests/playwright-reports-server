@@ -1,5 +1,5 @@
 import type { DateRange, RegressionsAggregate } from '@playwright-reports/shared';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import DateRangeSelect, { readStoredDateRange } from '@/components/date-range-select';
@@ -12,13 +12,16 @@ import { useAnalyticsData } from '@/hooks/useAnalyticsData';
 import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
 import { defaultProjectName } from '@/lib/constants';
 import { cn } from '@/lib/utils';
-import { FailureAnalysisSummary } from './FailureAnalysisSummary';
 import { FailureCategoryChart } from './FailureCategoryChart';
 import { HealthGrid } from './HealthGrid';
 import { OverviewStatsCard } from './OverviewStats';
 import { RegressionsStrip } from './RegressionsStrip';
 import { TopFailuresWidget } from './TopFailuresWidget';
 import { TrendSparklines } from './TrendSparklines';
+
+const FailureAnalysisSummary = lazy(() =>
+  import('./FailureAnalysisSummary').then((m) => ({ default: m.FailureAnalysisSummary }))
+);
 
 const DASHBOARD_SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'stats', label: 'Stats' },
@@ -264,11 +267,13 @@ export default function AnalyticsDashboard() {
         )}
 
         <LazyVisible rootMargin="200px 0px">
-          <FailureAnalysisSummary
-            project={project}
-            reportIds={runHealthMetrics.map((m) => m.runId)}
-            totalFailures={totalFailures}
-          />
+          <Suspense fallback={null}>
+            <FailureAnalysisSummary
+              project={project}
+              reportIds={runHealthMetrics.map((m) => m.runId)}
+              totalFailures={totalFailures}
+            />
+          </Suspense>
         </LazyVisible>
       </section>
 

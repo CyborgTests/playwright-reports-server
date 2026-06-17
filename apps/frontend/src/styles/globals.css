@@ -2,6 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial");
+  ascent-override: 90.44%;
+  descent-override: 22.52%;
+  line-gap-override: 0.00%;
+  size-adjust: 107.12%;
+}
+@font-face {
+  font-family: "JetBrains Mono Fallback";
+  src: local("Courier New");
+  ascent-override: 102.02%;
+  descent-override: 30.00%;
+  line-gap-override: 0.00%;
+  size-adjust: 99.98%;
+}
+@font-face {
+  font-family: "Space Grotesk Fallback";
+  src: local("Arial");
+  ascent-override: 89.71%;
+  descent-override: 26.62%;
+  line-gap-override: 0.00%;
+  size-adjust: 109.69%;
+}
+
 @layer base {
   :root {
     /* Base colors - Light mode */
@@ -91,9 +116,9 @@
     --chart-5: 217 91% 60%; /* Blue - Running */
 
     /* Fonts */
-    --font-inter: "Inter", system-ui, sans-serif;
-    --font-mono: "JetBrains Mono", "Fira Code", monospace;
-    --font-display: "Space Grotesk", system-ui, sans-serif;
+    --font-inter: "Inter Variable", "Inter Fallback", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", "JetBrains Mono Fallback", "Fira Code", monospace;
+    --font-display: "Space Grotesk", "Space Grotesk Fallback", system-ui, sans-serif;
   }
 
   .dark {
