@@ -153,10 +153,65 @@ const REFRESH_TEST_STAT_SQL = `
   WHERE testId=:testId AND fileId=:fileId AND project=:project
 `;
 
+export interface TestDetailStatsAggregate {
+  totalRuns: number;
+  passed: number | null;
+  flaky: number | null;
+  skipped: number | null;
+  firstRunAt: string | null;
+  lastRunAt: string | null;
+  durCount: number;
+  mean: number | null;
+  minD: number | null;
+  maxD: number | null;
+  variance: number | null;
+  p95: number | null;
+  median: number | null;
+}
+
+const TEST_DETAIL_STATS_SQL = `
+  WITH base AS (
+    SELECT outcome, duration, createdAt
+    FROM test_runs
+    WHERE testId = :testId AND fileId = :fileId AND project = :project
+  ),
+  dur AS (
+    SELECT duration, ROW_NUMBER() OVER (ORDER BY duration ASC) AS rn
+    FROM base
+    WHERE duration IS NOT NULL AND duration >= 0
+  ),
+  dagg AS (
+    SELECT
+      COUNT(*) AS durCount,
+      AVG(duration) AS mean,
+      MIN(duration) AS minD,
+      MAX(duration) AS maxD,
+      AVG(CAST(duration AS REAL) * duration) - AVG(duration) * AVG(duration) AS variance
+    FROM base
+    WHERE duration IS NOT NULL AND duration >= 0
+  )
+  SELECT
+    (SELECT COUNT(*) FROM base) AS totalRuns,
+    (SELECT COALESCE(SUM(CASE WHEN outcome IN ('expected', 'passed') THEN 1 ELSE 0 END), 0) FROM base) AS passed,
+    (SELECT COALESCE(SUM(CASE WHEN outcome = 'flaky' THEN 1 ELSE 0 END), 0) FROM base) AS flaky,
+    (SELECT COALESCE(SUM(CASE WHEN outcome = 'skipped' THEN 1 ELSE 0 END), 0) FROM base) AS skipped,
+    (SELECT MIN(createdAt) FROM base) AS firstRunAt,
+    (SELECT MAX(createdAt) FROM base) AS lastRunAt,
+    dagg.durCount AS durCount,
+    dagg.mean AS mean,
+    dagg.minD AS minD,
+    dagg.maxD AS maxD,
+    dagg.variance AS variance,
+    (SELECT duration FROM dur WHERE rn = CAST((dagg.durCount - 1) * 0.95 AS INTEGER) + 1) AS p95,
+    (SELECT AVG(duration) FROM dur WHERE rn IN ((dagg.durCount + 1) / 2, (dagg.durCount + 2) / 2)) AS median
+  FROM dagg
+`;
+
 export class TestDatabase {
   private readonly k = getKysely();
   private readonly db = getDatabase();
   private readonly refreshTestStatStmt = this.db.prepare(REFRESH_TEST_STAT_SQL);
+  private readonly testDetailStatsStmt = this.db.prepare(TEST_DETAIL_STATS_SQL);
 
   public refreshTestStatCols(testId: string, fileId: string, project: string): void {
     this.refreshTestStatStmt.run({ testId, fileId, project });
@@ -247,6 +302,33 @@ export class TestDatabase {
       .limit(1)
       .compile();
     return this.db.prepare(compiled.sql).get(...compiled.parameters) as Test | undefined;
+  }
+
+  public getTestDetailStatsAggregate(
+    testId: string,
+    fileId: string,
+    project: string
+  ): TestDetailStatsAggregate {
+    const row = this.testDetailStatsStmt.get({ testId, fileId, project }) as
+      | TestDetailStatsAggregate
+      | undefined;
+    return (
+      row ?? {
+        totalRuns: 0,
+        passed: 0,
+        flaky: 0,
+        skipped: 0,
+        firstRunAt: null,
+        lastRunAt: null,
+        durCount: 0,
+        mean: null,
+        minD: null,
+        maxD: null,
+        variance: null,
+        p95: null,
+        median: null,
+      }
+    );
   }
 
   public getDurationTrend(
@@ -438,6 +520,63 @@ export class TestDatabase {
       .compile();
     const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as TestRunDbRow[];
     return rows.map((row) => convertDbRowToTestRun(row));
+  }
+
+  public getTestRunPointsPage(
+    testId: string,
+    fileId: string,
+    project: string,
+    opts: { before?: string; limit?: number } = {}
+  ): TestRunRow[] {
+    const limit = opts.limit && opts.limit > 0 ? Math.min(opts.limit, 500) : 100;
+    let q = this.k
+      .selectFrom('test_runs as tr')
+      .leftJoin('reports as r', 'r.reportID', 'tr.reportId')
+      .select([
+        'tr.runId',
+        'tr.testId',
+        'tr.fileId',
+        'tr.project',
+        'tr.reportId',
+        'tr.outcome',
+        'tr.duration',
+        'tr.createdAt',
+        'tr.failure_category as failureCategory',
+        'r.title as reportTitle',
+        'r.displayNumber as reportDisplayNumber',
+      ])
+      .where('tr.testId', '=', testId)
+      .where('tr.fileId', '=', fileId)
+      .where('tr.project', '=', project)
+      .orderBy('tr.createdAt', 'desc');
+    if (opts.before) q = q.where('tr.createdAt', '<', opts.before);
+    const compiled = q.limit(limit).compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      runId: string;
+      testId: string;
+      fileId: string;
+      project: string;
+      reportId: string;
+      outcome: string;
+      duration: number | null;
+      createdAt: string;
+      failureCategory: string | null;
+      reportTitle: string | null;
+      reportDisplayNumber: number | null;
+    }>;
+    return rows.map((row) => ({
+      runId: row.runId,
+      testId: row.testId,
+      fileId: row.fileId,
+      project: row.project,
+      reportId: row.reportId,
+      outcome: row.outcome,
+      duration: row.duration ?? undefined,
+      createdAt: row.createdAt,
+      failureCategory: row.failureCategory || undefined,
+      reportTitle: row.reportTitle ?? undefined,
+      reportDisplayNumber: row.reportDisplayNumber ?? undefined,
+    }));
   }
 
   public getLatestTestRun(testId: string, fileId: string, project: string): TestRunRow | undefined {

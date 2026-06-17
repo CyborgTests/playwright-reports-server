@@ -153,6 +153,29 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
       return reply.send({ success: true, data: test });
     });
 
+    fastify.get('/api/test/:testId/runs', async (request: FastifyRequest, reply: FastifyReply) => {
+      const { testId } = request.params as { testId: string };
+      const {
+        project = 'all',
+        before,
+        limit,
+      } = request.query as { project?: string; before?: string; limit?: string };
+      const parsedLimit = limit ? Number.parseInt(limit, 10) : 100;
+      const pageLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 100;
+
+      const { result: runs, error } = await withError(
+        testManagementService.getTestRunsPage(testId, project, { before, limit: pageLimit })
+      );
+      if (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({ success: false, error: 'Failed to fetch test runs' });
+      }
+      if (!runs) {
+        return reply.status(404).send({ success: false, error: 'Test not found' });
+      }
+      return reply.send({ success: true, data: { runs, hasMore: runs.length >= pageLimit } });
+    });
+
     fastify.delete('/api/test/:testId', async (request: FastifyRequest, reply: FastifyReply) => {
       const { testId } = request.params as { testId: string };
       const { project } = request.query as { project: string };

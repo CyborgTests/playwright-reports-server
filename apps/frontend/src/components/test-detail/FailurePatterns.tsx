@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardTitle } from '@/components/ui/card';
+import { Card, CardTitle } from '@/components/ui/card';
 import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 import { buildUrl, withBase } from '@/lib/url';
@@ -56,63 +56,115 @@ function CrossTestClusterCard({
   );
   return (
     <Card className={resolved ? 'opacity-70 border-success/30' : undefined}>
-      <CardContent className="py-4 flex flex-wrap items-center gap-3 justify-between">
-        <div className="flex flex-col gap-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className="gap-1">
-              <GitMerge className="h-3 w-3" />
-              {cluster.anchor.kind}
-            </Badge>
-            {resolved && (
-              <Badge variant="outline" className="border-success/40 text-success">
-                resolved
-              </Badge>
-            )}
-            <span className="text-xs text-muted-foreground">
-              {cluster.testCount} test{cluster.testCount === 1 ? '' : 's'} · {cluster.failureCount}{' '}
-              failure{cluster.failureCount === 1 ? '' : 's'}
-            </span>
-          </div>
-          <CardTitle className="text-sm font-medium leading-snug break-words">
-            {cluster.name}
-          </CardTitle>
-          {resolved && cluster.resolution?.note && (
-            <div className="text-xs text-muted-foreground italic mt-1">
-              &ldquo;{cluster.resolution.note}&rdquo;
+      <Accordion type="single" collapsible>
+        <AccordionItem value={cluster.id} className="border-b-0">
+          <AccordionTrigger className="px-6 hover:no-underline">
+            <div className="flex flex-1 items-start justify-between gap-2 text-left">
+              <div className="flex flex-col items-start gap-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="gap-1">
+                    <GitMerge className="h-3 w-3" />
+                    {cluster.anchor.kind}
+                  </Badge>
+                  {resolved && (
+                    <Badge variant="outline" className="border-success/40 text-success">
+                      resolved
+                    </Badge>
+                  )}
+                  <span className="text-xs text-muted-foreground">
+                    {cluster.testCount} test{cluster.testCount === 1 ? '' : 's'} ·{' '}
+                    {cluster.failureCount} failure{cluster.failureCount === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <CardTitle className="text-sm font-medium leading-snug break-words">
+                  {cluster.name}
+                </CardTitle>
+                {resolved && cluster.resolution?.note && (
+                  <div className="text-xs text-muted-foreground italic mt-1">
+                    &ldquo;{cluster.resolution.note}&rdquo;
+                  </div>
+                )}
+              </div>
+              <div
+                role="toolbar"
+                className="flex items-center gap-2 shrink-0"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+                }}
+              >
+                <RouterLink
+                  to={withBase(
+                    `/failures/clusters?clusterId=${cluster.id}&project=${encodeURIComponent(project)}`
+                  )}
+                >
+                  <Button variant="ghost" size="sm">
+                    View
+                  </Button>
+                </RouterLink>
+                {resolved ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => reopenMutation.mutate({ body: { project } })}
+                    disabled={reopenMutation.isPending}
+                  >
+                    Re-open
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setResolveDialogOpen(true)}
+                    disabled={markMutation.isPending}
+                  >
+                    Mark resolved
+                  </Button>
+                )}
+              </div>
             </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <RouterLink
-            to={withBase(
-              `/failures/clusters?clusterId=${cluster.id}&project=${encodeURIComponent(project)}`
-            )}
-          >
-            <Button variant="ghost" size="sm">
-              View
-            </Button>
-          </RouterLink>
-          {resolved ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => reopenMutation.mutate({ body: { project } })}
-              disabled={reopenMutation.isPending}
-            >
-              Re-open
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setResolveDialogOpen(true)}
-              disabled={markMutation.isPending}
-            >
-              Mark resolved
-            </Button>
-          )}
-        </div>
-      </CardContent>
+          </AccordionTrigger>
+          <AccordionContent className="px-6 pb-6">
+            <div className="space-y-4">
+              {cluster.sampleMessage && (
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                    Sample error
+                  </div>
+                  <pre className="bg-muted rounded p-3 text-xs whitespace-pre-wrap break-words font-mono">
+                    {cluster.sampleMessage}
+                  </pre>
+                </div>
+              )}
+              {cluster.tests.length > 0 && (
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
+                    Tests in this cluster
+                  </div>
+                  <ul className="space-y-1">
+                    {cluster.tests.map((t) => (
+                      <li key={`${t.project}-${t.fileId}-${t.testId}`} className="text-sm">
+                        <RouterLink
+                          to={withBase(
+                            `/test/${encodeURIComponent(t.testId)}?project=${encodeURIComponent(t.project)}`
+                          )}
+                          className="hover:underline"
+                        >
+                          {t.title}
+                        </RouterLink>
+                        <span className="text-muted-foreground">
+                          {' · '}
+                          {t.occurrences} occ · last <FormattedDate date={t.lastSeen} />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
       <MarkClusterResolvedDialog
         open={resolveDialogOpen}
         onOpenChange={setResolveDialogOpen}

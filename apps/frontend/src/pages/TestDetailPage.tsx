@@ -1,18 +1,15 @@
 import type { ApiResponse, TestDetail } from '@playwright-reports/shared';
 import { formatDuration } from '@playwright-reports/shared';
-import { ArrowLeft, ExternalLink } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import FormattedDate from '@/components/date-format';
 import { DurationTrend } from '@/components/test-detail/DurationTrend';
 import { FailurePatternsWithClusters } from '@/components/test-detail/FailurePatterns';
 import {
   CollapsibleSection,
   formatDaysOpen,
-  outcomeBadge,
   StatTile,
-  servedReportUrl,
 } from '@/components/test-detail/test-detail-widgets';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import useQuery from '@/hooks/useQuery';
+import { useTestRunsLazy } from '@/hooks/useTestRunsLazy';
 import { defaultProjectName } from '@/lib/constants';
 
 export default function TestDetailPage() {
@@ -37,7 +35,7 @@ export default function TestDetailPage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: trigger-only deps
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, [testId]);
+  }, [testId, project]);
 
   const detailUrl = `/api/test/${testId}/detail?project=${encodeURIComponent(project)}`;
   const { data, isLoading, error } = useQuery<ApiResponse<TestDetail>>(detailUrl, {
@@ -49,15 +47,8 @@ export default function TestDetailPage() {
   }, [error]);
 
   const detail = data?.data;
-  const recentRuns = useMemo(
-    () =>
-      detail
-        ? [...detail.runs]
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-            .slice(0, 50)
-        : [],
-    [detail]
-  );
+  const initialRuns = useMemo(() => detail?.runs ?? [], [detail]);
+  const durationRuns = useTestRunsLazy(testId, project, initialRuns, detail?.stats.totalRuns ?? 0);
 
   if (isLoading) {
     return (
@@ -81,7 +72,7 @@ export default function TestDetailPage() {
     );
   }
 
-  const { stats, runs, failureGroups, crossProject } = detail;
+  const { stats, failureGroups, crossProject } = detail;
 
   return (
     <div className="space-y-6">
@@ -187,11 +178,15 @@ export default function TestDetailPage() {
       </div>
 
       <DurationTrend
-        runs={runs}
+        runs={durationRuns.runs}
         mean={stats.duration?.mean}
         p95={stats.duration?.p95}
         stdDev={stats.duration?.stdDev}
         testId={testId}
+        totalRuns={stats.totalRuns}
+        onLoadPrevious={durationRuns.loadPrevious}
+        hasMorePrevious={durationRuns.hasMore}
+        isLoadingPrevious={durationRuns.isLoadingPrevious}
       />
 
       <FailurePatternsWithClusters
@@ -200,61 +195,6 @@ export default function TestDetailPage() {
         fileId={detail.fileId}
         project={project}
       />
-
-      <CollapsibleSection
-        title="Run History"
-        meta={`Showing ${recentRuns.length} of ${runs.length}`}
-      >
-        <div className="rounded-md border overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Outcome</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Report</TableHead>
-                <TableHead>Failure Category</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recentRuns.map((run) => (
-                <TableRow key={run.runId}>
-                  <TableCell className="whitespace-nowrap">
-                    <FormattedDate date={run.createdAt} />
-                  </TableCell>
-                  <TableCell>{outcomeBadge(run.outcome)}</TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {typeof run.duration === 'number' ? formatDuration(run.duration) : '—'}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    <a
-                      href={servedReportUrl(run.reportId, testId)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 underline text-sm"
-                    >
-                      {run.reportDisplayNumber
-                        ? `#${run.reportDisplayNumber}`
-                        : run.reportId.slice(0, 8)}
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {run.failureCategory ?? '—'}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {recentRuns.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
-                    No runs recorded
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </CollapsibleSection>
 
       {crossProject.length > 0 && (
         <CollapsibleSection
@@ -272,13 +212,20 @@ export default function TestDetailPage() {
                   <TableHead>Flakiness</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Last Run</TableHead>
-                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {crossProject.map((row) => (
                   <TableRow key={`${row.project}-${row.fileId}`}>
-                    <TableCell className="font-medium">{row.project}</TableCell>
+                    <TableCell className="font-medium">
+                      <RouterLink
+                        to={`/test/${testId}?project=${encodeURIComponent(row.project)}`}
+                        className="text-primary hover:underline"
+                        title={`Open this test in ${row.project}`}
+                      >
+                        {row.project}
+                      </RouterLink>
+                    </TableCell>
                     <TableCell>{row.totalRuns}</TableCell>
                     <TableCell>
                       {typeof row.flakinessScore === 'number'
@@ -294,13 +241,6 @@ export default function TestDetailPage() {
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-sm">
                       {row.lastRunAt ? new Date(row.lastRunAt).toLocaleDateString() : '—'}
-                    </TableCell>
-                    <TableCell>
-                      <RouterLink to={`/test/${testId}?project=${encodeURIComponent(row.project)}`}>
-                        <Button variant="ghost" size="sm">
-                          View
-                        </Button>
-                      </RouterLink>
                     </TableCell>
                   </TableRow>
                 ))}

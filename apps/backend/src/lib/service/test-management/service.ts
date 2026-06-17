@@ -15,6 +15,7 @@ import {
   llmTasksDb,
   regressionsDb,
   type Test,
+  type TestDetailStatsAggregate,
   type TestRunRow,
   type TestWithQuarantineInfoRow,
   testDb,
@@ -25,73 +26,38 @@ import { computeErrorSignature } from './error-signature.js';
 import { classifyFailure } from './failure-classifier.js';
 import { computeFlakinessFromOutcomes } from './flakiness.js';
 
-function percentile(sortedAsc: number[], p: number): number {
-  if (sortedAsc.length === 0) return 0;
-  const idx = Math.min(sortedAsc.length - 1, Math.floor((sortedAsc.length - 1) * p));
-  return sortedAsc[idx];
-}
-
-function buildDurationStats(runs: TestRunRow[]): TestDurationStats | undefined {
-  const durations = runs
-    .map((r) => r.duration)
-    .filter((d): d is number => typeof d === 'number' && d >= 0);
-  if (durations.length === 0) return undefined;
-
-  const sorted = [...durations].sort((a, b) => a - b);
-  const mean = sorted.reduce((s, d) => s + d, 0) / sorted.length;
-  const median =
-    sorted.length % 2 === 0
-      ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
-      : sorted[Math.floor(sorted.length / 2)];
-  const variance = sorted.reduce((s, d) => s + (d - mean) ** 2, 0) / sorted.length;
-  return {
-    mean: Math.round(mean),
-    median: Math.round(median),
-    p95: Math.round(percentile(sorted, 0.95)),
-    stdDev: Math.round(Math.sqrt(variance)),
-    min: sorted[0],
-    max: sorted[sorted.length - 1],
-  };
-}
-
-function buildTestDetailStats(runs: TestRunRow[]): TestDetailStats {
-  let passed = 0;
-  let failed = 0;
-  let flaky = 0;
-  let skipped = 0;
-  for (const run of runs) {
-    switch (run.outcome) {
-      case ReportTestOutcomeEnum.Expected:
-      case 'passed':
-        passed++;
-        break;
-      case ReportTestOutcomeEnum.Flaky:
-        flaky++;
-        break;
-      case ReportTestOutcomeEnum.Skipped:
-      case 'skipped':
-        skipped++;
-        break;
-      default:
-        failed++;
-        break;
-    }
-  }
+function toTestDetailStats(row: TestDetailStatsAggregate): TestDetailStats {
+  const totalRuns = row.totalRuns ?? 0;
+  const passed = row.passed ?? 0;
+  const flaky = row.flaky ?? 0;
+  const skipped = row.skipped ?? 0;
+  const failed = Math.max(0, totalRuns - passed - flaky - skipped);
   const executed = passed + failed + flaky;
   const passRate = executed > 0 ? Math.round(((passed + flaky) / executed) * 10000) / 100 : 0;
-  const sortedByDateAsc = [...runs].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
+
+  let duration: TestDurationStats | undefined;
+  if (row.durCount > 0 && row.mean != null) {
+    const variance = Math.max(0, row.variance ?? 0);
+    duration = {
+      mean: Math.round(row.mean),
+      median: Math.round(row.median ?? row.mean),
+      p95: Math.round(row.p95 ?? row.maxD ?? 0),
+      stdDev: Math.round(Math.sqrt(variance)),
+      min: row.minD ?? 0,
+      max: row.maxD ?? 0,
+    };
+  }
+
   return {
-    totalRuns: runs.length,
+    totalRuns,
     passed,
     failed,
     flaky,
     skipped,
     passRate,
-    firstRunAt: sortedByDateAsc.at(0)?.createdAt,
-    lastRunAt: sortedByDateAsc.at(-1)?.createdAt,
-    duration: buildDurationStats(runs),
+    firstRunAt: row.firstRunAt ?? undefined,
+    lastRunAt: row.lastRunAt ?? undefined,
+    duration,
   };
 }
 
@@ -722,7 +688,9 @@ export class TestManagementService {
     if (!test) return null;
 
     const runs = testDb.getTestRuns(testId, fileId, resolvedProject);
-    const stats = buildTestDetailStats(runs);
+    const stats = toTestDetailStats(
+      testDb.getTestDetailStatsAggregate(testId, fileId, resolvedProject)
+    );
     const failureGroups = buildFailureGroups(runs);
     const crossProject = buildCrossProjectOccurrences(testId, resolvedProject);
     const openRegression = regressionsDb.getOpenForTest(testId, fileId, resolvedProject);
@@ -745,6 +713,16 @@ export class TestManagementService {
       crossProject,
       regression: openRegression ? toRegressionContext(openRegression) : undefined,
     };
+  }
+
+  async getTestRunsPage(
+    testId: string,
+    project: string,
+    opts: { before?: string; limit?: number }
+  ): Promise<TestRunRow[] | null> {
+    const lane = testDb.findByTestId(testId, project && project !== 'all' ? project : undefined);
+    if (!lane) return null;
+    return testDb.getTestRunPointsPage(lane.testId, lane.fileId, lane.project, opts);
   }
 
   async deleteTest(testId: string, fileId: string, project: string): Promise<void> {
