@@ -43,6 +43,49 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     return { success: true, data: analyticsData };
   });
 
+  fastify.get('/api/analytics/run-health', async (request, reply) => {
+    const authResult = await authenticate(request as AuthRequest, reply);
+    if (authResult) return;
+
+    const {
+      project = 'all',
+      from,
+      to,
+      failedOnly,
+      before,
+      limit,
+    } = request.query as {
+      project?: string;
+      from?: string;
+      to?: string;
+      failedOnly?: string;
+      before?: string;
+      limit?: string;
+    };
+    const failedOnlyFlag = failedOnly === 'true' || failedOnly === '1';
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : 100;
+    const pageLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 100;
+
+    const { result: metrics, error } = await withError(
+      analyticsService.getRunHealthPage(project, {
+        from,
+        to,
+        failedOnly: failedOnlyFlag,
+        before,
+        limit: pageLimit,
+      })
+    );
+
+    if (error) {
+      return reply.status(500).send({
+        success: false,
+        error: `Failed to fetch run health: ${error.message}`,
+      });
+    }
+
+    return { success: true, data: { metrics, hasMore: (metrics?.length ?? 0) >= pageLimit } };
+  });
+
   fastify.get(
     '/api/analytics/project-summary',
     async (request: FastifyRequest, reply: FastifyReply) => {

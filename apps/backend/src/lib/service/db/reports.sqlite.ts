@@ -515,7 +515,7 @@ export class ReportDatabase {
 
   public getByProject(
     project?: string,
-    opts?: { from?: string; to?: string; failedOnly?: boolean }
+    opts?: { from?: string; to?: string; failedOnly?: boolean; before?: string; limit?: number }
   ): ReportHistory[] {
     const hasProject = project && project !== defaultProjectName;
     let q = this.k
@@ -525,9 +525,11 @@ export class ReportDatabase {
     if (hasProject) q = q.where('project', '=', project ?? '');
     if (opts?.from) q = q.where('createdAt', '>=', opts.from);
     if (opts?.to) q = q.where('createdAt', '<', opts.to);
+    if (opts?.before) q = q.where('createdAt', '<', opts.before);
     if (opts?.failedOnly) {
       q = q.where(sql<boolean>`(COALESCE(statUnexpected, 0) > 0 OR COALESCE(statFlaky, 0) > 0)`);
     }
+    if (opts?.limit && opts.limit > 0) q = q.limit(opts.limit);
     const compiled = q.compile();
     const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportRow[];
     return rows.map((row) => this.rowToReport(row));

@@ -9,6 +9,7 @@ import TestManagementWidget from '@/components/test-management/TestManagementWid
 import { Switch } from '@/components/ui/switch';
 import { useActiveSection } from '@/hooks/useActiveSection';
 import { useAnalyticsData } from '@/hooks/useAnalyticsData';
+import { useRunHealthLazy } from '@/hooks/useRunHealthLazy';
 import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
 import { defaultProjectName } from '@/lib/constants';
 import { cn } from '@/lib/utils';
@@ -72,6 +73,16 @@ export default function AnalyticsDashboard() {
     error,
     isPending,
   } = useAnalyticsData(project, dateRange, failedOnly);
+
+  const initialRunHealth = analyticsData?.runHealthMetrics ?? [];
+  const totalRunsCount = analyticsData?.overviewStats?.totalRuns ?? initialRunHealth.length;
+  const runHealth = useRunHealthLazy(
+    project,
+    dateRange,
+    failedOnly,
+    initialRunHealth,
+    totalRunsCount
+  );
 
   const onProjectChange = useCallback((project: string) => {
     setProject(project);
@@ -241,7 +252,7 @@ export default function AnalyticsDashboard() {
           stats={overviewStats}
           totalTests={testsSummary?.total}
           flakyCount={testsSummary?.flakyCount}
-          totalRuns={runHealthMetrics.length}
+          totalRuns={overviewStats?.totalRuns}
           onFlakyClick={handleFlakyTileClick}
         />
         <TrendSparklines
@@ -250,7 +261,14 @@ export default function AnalyticsDashboard() {
           onSlowClick={handleSlowSparklineClick}
           onFlakyClick={handleFlakyTileClick}
         />
-        <HealthGrid metrics={runHealthMetrics} isLoading={isLoading} />
+        <HealthGrid
+          metrics={runHealth.metrics}
+          isLoading={isLoading}
+          totalRuns={overviewStats?.totalRuns}
+          onLoadPrevious={runHealth.loadPrevious}
+          hasMorePrevious={runHealth.hasMore}
+          isLoadingPrevious={runHealth.isLoadingPrevious}
+        />
       </section>
 
       <section id="failures" className="scroll-mt-32 space-y-6">

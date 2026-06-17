@@ -7,6 +7,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 interface HealthGridProps {
   metrics: RunHealthMetric[];
   isLoading?: boolean;
+  totalRuns?: number;
+  onLoadPrevious?: () => void;
+  hasMorePrevious?: boolean;
+  isLoadingPrevious?: boolean;
 }
 
 const chartColors = {
@@ -16,6 +20,7 @@ const chartColors = {
 };
 
 const BAR_PX = 36;
+const PREVIOUS_LOAD_THRESHOLD_PX = 400;
 const CHART_HEIGHT = 300;
 const CHART_MARGIN_TOP = 40;
 const XAXIS_HEIGHT = 80;
@@ -282,7 +287,14 @@ function StickyYAxis({ axisMax }: { axisMax: number }) {
   );
 }
 
-function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
+function HealthGridImpl({
+  metrics,
+  isLoading,
+  totalRuns,
+  onLoadPrevious,
+  hasMorePrevious = false,
+  isLoadingPrevious = false,
+}: Readonly<HealthGridProps>) {
   const chartData = useMemo<ChartDatum[]>(
     () =>
       metrics
@@ -341,14 +353,20 @@ function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
     return () => observer.disconnect();
   }, [scrollContainer]);
 
-  const onScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const left = e.currentTarget.scrollLeft;
-    if (rafRef.current) return;
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = 0;
-      setScrollLeft(left);
-    });
-  }, []);
+  const onScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const left = e.currentTarget.scrollLeft;
+      if (left < PREVIOUS_LOAD_THRESHOLD_PX && hasMorePrevious && !isLoadingPrevious) {
+        onLoadPrevious?.();
+      }
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        setScrollLeft(left);
+      });
+    },
+    [hasMorePrevious, isLoadingPrevious, onLoadPrevious]
+  );
 
   const totalWidth = chartData.length * BAR_PX;
   const overflow = containerWidth > 0 && totalWidth > containerWidth;
@@ -363,11 +381,20 @@ function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
   const windowWidth = overflow ? windowData.length * BAR_PX : Math.max(containerWidth, totalWidth);
   const offsetX = overflow ? start * BAR_PX : 0;
 
-  // Auto-scroll to the most recent (rightmost) run whenever the dataset changes.
+  const scrollSyncRef = useRef<{ newestRunId?: string; length: number }>({ length: 0 });
   useLayoutEffect(() => {
     if (!scrollContainer || isLoading || chartData.length === 0) return;
-    scrollContainer.scrollLeft = scrollContainer.scrollWidth;
-    setScrollLeft(scrollContainer.scrollLeft);
+    const newestRunId = chartData[chartData.length - 1]?.runId;
+    const prev = scrollSyncRef.current;
+    if (prev.newestRunId !== newestRunId) {
+      scrollContainer.scrollLeft = scrollContainer.scrollWidth;
+      setScrollLeft(scrollContainer.scrollLeft);
+    } else if (chartData.length > prev.length) {
+      const added = chartData.length - prev.length;
+      scrollContainer.scrollLeft += added * BAR_PX;
+      setScrollLeft(scrollContainer.scrollLeft);
+    }
+    scrollSyncRef.current = { newestRunId, length: chartData.length };
   }, [scrollContainer, chartData, isLoading]);
 
   return (
@@ -375,8 +402,12 @@ function HealthGridImpl({ metrics, isLoading }: Readonly<HealthGridProps>) {
       <CardHeader>
         <h3 className="text-lg font-semibold">Test Health Grid</h3>
         <p className="text-sm text-muted-foreground">
-          Stacked bar chart showing pass/fail breakdown across {metrics.length}{' '}
-          {metrics.length === 1 ? 'run' : 'runs'} in the selected period
+          Stacked bar chart for{' '}
+          {totalRuns && totalRuns > metrics.length
+            ? `${metrics.length}/${totalRuns}`
+            : metrics.length}{' '}
+          {(totalRuns ?? metrics.length) === 1 ? 'run' : 'runs'} in the selected period
+          {isLoadingPrevious ? ' · loading previous…' : ''}
         </p>
       </CardHeader>
       <CardContent>

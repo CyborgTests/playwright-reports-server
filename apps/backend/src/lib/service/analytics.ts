@@ -12,7 +12,8 @@ import { failureSummaryDb, regressionsDb, reportDb, testDb } from './db/index.js
 import { service } from './index.js';
 import { testManagementService } from './test-management/index.js';
 
-const HEALTH_GRID_UNBOUNDED_CAP = 200;
+const RUN_HEALTH_PAGE_SIZE = 100;
+const RUN_HEALTH_MAX_PAGE_SIZE = 500;
 
 type Window = { from?: string; to?: string };
 
@@ -115,7 +116,7 @@ export class AnalyticsService {
         recentRange,
         previousRange
       ),
-      this.calculateRunHealthMetrics(displayReports, isBounded),
+      this.calculateRunHealthMetrics(displayReports),
       this.calculateTrendMetrics(displayReports, projectKey, recentRange),
       testManagementService.getTestsSummary(projectKey, warningThreshold, { from, to }),
       olderRange
@@ -338,17 +339,36 @@ export class AnalyticsService {
   }
 
   private async calculateRunHealthMetrics(
-    reports: BackendReportHistory[],
-    isBounded: boolean
+    reports: BackendReportHistory[]
   ): Promise<RunHealthMetric[]> {
-    const limited = isBounded ? reports : reports.slice(0, HEALTH_GRID_UNBOUNDED_CAP);
-    const regressionCounts = regressionsDb.countsForReports(limited.map((r) => r.reportID));
-    return limited.map((report) => {
+    return this.reportsToRunHealth(reports.slice(0, RUN_HEALTH_PAGE_SIZE));
+  }
+
+  async getRunHealthPage(
+    project: string | undefined,
+    opts: {
+      from?: string;
+      to?: string;
+      failedOnly?: boolean;
+      before?: string;
+      limit?: number;
+    }
+  ): Promise<RunHealthMetric[]> {
+    const limit = Math.min(Math.max(opts.limit ?? RUN_HEALTH_PAGE_SIZE, 1), RUN_HEALTH_MAX_PAGE_SIZE);
+    const reports = reportDb.getByProject(project, {
+      from: opts.from,
+      to: opts.to,
+      failedOnly: opts.failedOnly ?? false,
+      before: opts.before,
+      limit,
+    });
+    return this.reportsToRunHealth(reports);
+  }
+
+  private reportsToRunHealth(reports: BackendReportHistory[]): RunHealthMetric[] {
+    const regressionCounts = regressionsDb.countsForReports(reports.map((r) => r.reportID));
+    return reports.map((report) => {
       const stats = report.stats;
-      const totalTests = stats?.total || 0;
-      const passed = stats?.expected || 0;
-      const failed = stats?.unexpected || 0;
-      const flaky = stats?.flaky || 0;
       const counts = regressionCounts.get(report.reportID);
       const newRegressions = counts?.newHere ?? 0;
       const resolvedRegressions = counts?.resolvedHere ?? 0;
@@ -356,10 +376,10 @@ export class AnalyticsService {
       return {
         runId: report.reportID,
         timestamp: new Date(report.createdAt),
-        totalTests,
-        passed,
-        failed,
-        flaky,
+        totalTests: stats?.total || 0,
+        passed: stats?.expected || 0,
+        failed: stats?.unexpected || 0,
+        flaky: stats?.flaky || 0,
         duration: report.duration || 0,
         title: report.title,
         displayNumber: report.displayNumber,
