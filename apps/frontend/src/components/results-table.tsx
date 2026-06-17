@@ -184,33 +184,27 @@ export default function ResultsTable({
     usage: usage !== 'all' ? usage : null,
   });
 
-  const getQueryParams = () => ({
-    limit: rowsPerPage.toString(),
-    offset: ((page - 1) * rowsPerPage).toString(),
-    project,
-    ...(selectedTags.length > 0 && { tags: selectedTags.join(',') }),
-    ...(search.trim() && { search: search.trim() }),
-    ...(dateRange.from && { from: dateRange.from }),
-    ...(dateRange.to && { to: dateRange.to }),
-    ...(usage && usage !== 'all' && { usage }),
-  });
+  const queryUrl = useMemo(
+    () =>
+      withQueryParams(resultListEndpoint, {
+        limit: rowsPerPage.toString(),
+        offset: ((page - 1) * rowsPerPage).toString(),
+        project,
+        ...(selectedTags.length > 0 && { tags: selectedTags.join(',') }),
+        ...(search.trim() && { search: search.trim() }),
+        ...(dateRange.from && { from: dateRange.from }),
+        ...(dateRange.to && { to: dateRange.to }),
+        ...(usage && usage !== 'all' && { usage }),
+      }),
+    [rowsPerPage, page, project, selectedTags, search, dateRange.from, dateRange.to, usage]
+  );
 
   const {
     data: resultsResponse,
     isPending,
     error,
     refetch,
-  } = useQuery<ReadResultsOutput>(withQueryParams(resultListEndpoint, getQueryParams()), {
-    dependencies: [
-      project,
-      selectedTags,
-      search,
-      rowsPerPage,
-      page,
-      dateRange.from,
-      dateRange.to,
-      usage,
-    ],
+  } = useQuery<ReadResultsOutput>(queryUrl, {
     placeholderData: keepPreviousData,
   });
 
