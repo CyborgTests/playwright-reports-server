@@ -3,7 +3,6 @@ import {
   FLAKINESS_THRESHOLDS,
   type FlakinessTier,
   formatDuration,
-  ReportTestOutcomeEnum,
   type TestFilters,
   type TestsSort,
   type TestWithQuarantineInfo,
@@ -37,13 +36,14 @@ import { Spinner } from '@/components/ui/spinner';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { authHeadersForSession, useAuth } from '../../hooks/useAuth';
-import { useConfig } from '../../hooks/useConfig';
-import useMutation from '../../hooks/useMutation';
-import { defaultProjectName } from '../../lib/constants';
-import { invalidateCache } from '../../lib/query-cache';
-import { withBase } from '../../lib/url';
-import { TrendSparklineHistory } from '../analytics/TrendSparklineHistory';
+import { authHeadersForSession, useAuth } from '@/hooks/useAuth';
+import { useConfig } from '@/hooks/useConfig';
+import useMutation from '@/hooks/useMutation';
+import { defaultProjectName } from '@/lib/constants';
+import { invalidateCache } from '@/lib/query-cache';
+import { withBase } from '@/lib/url';
+import { TrendSparklineHistory } from '@/components/analytics/TrendSparklineHistory';
+import { outcomeBadge } from '@/components/outcome-badge';
 import { exponentialMovingAverageDuration } from './calculations/ema';
 import { TestFilters as TestFiltersComponent } from './TestFilters';
 
@@ -71,24 +71,6 @@ function parseSortParam(raw: string | null): TestsSort | undefined {
 function formatRegressionAge(days: number): string {
   if (days < 1) return `${Math.round(days * 24)}h`;
   return `${Math.round(days * 10) / 10}d`;
-}
-
-function getOutcomeBadge(outcome?: string) {
-  if (!outcome) return <span className="text-sm text-muted-foreground">—</span>;
-  switch (outcome) {
-    case ReportTestOutcomeEnum.Expected:
-    case ReportTestOutcomeEnum.Passed:
-      return <Badge variant="success">Passed</Badge>;
-    case ReportTestOutcomeEnum.Flaky:
-      return <Badge variant="warning">Flaky</Badge>;
-    case ReportTestOutcomeEnum.Unexpected:
-    case ReportTestOutcomeEnum.Failed:
-      return <Badge variant="danger">Failed</Badge>;
-    case ReportTestOutcomeEnum.Skipped:
-      return <Badge variant="skipped">Skipped</Badge>;
-    default:
-      return <Badge variant="secondary">{outcome}</Badge>;
-  }
 }
 
 function getStatusBadge(
@@ -192,7 +174,7 @@ const TestRow = memo(
           <p className="text-sm break-words">{item.project}</p>
         </TableCell>
         <TableCell className="whitespace-nowrap w-px">
-          {getOutcomeBadge(item.runs?.at(0)?.outcome)}
+          {outcomeBadge(item.runs?.at(0)?.outcome)}
         </TableCell>
         <TableCell className="whitespace-nowrap w-px">
           {getStatusBadge(item, warningThreshold, quarantineThreshold)}

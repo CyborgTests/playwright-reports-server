@@ -5,7 +5,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { withBase } from '@/lib/url';
@@ -19,22 +18,7 @@ export function servedReportUrl(reportId: string, testId: string): string {
   return `${withBase(`/api/serve/${reportId}/index.html`)}#?testId=${testId}`;
 }
 
-export function outcomeBadge(outcome: string) {
-  switch (outcome) {
-    case 'expected':
-    case 'passed':
-      return <Badge variant="success">Passed</Badge>;
-    case 'flaky':
-      return <Badge variant="warning">Flaky</Badge>;
-    case 'unexpected':
-    case 'failed':
-      return <Badge variant="danger">Failed</Badge>;
-    case 'skipped':
-      return <Badge variant="skipped">Skipped</Badge>;
-    default:
-      return <Badge variant="secondary">{outcome}</Badge>;
-  }
-}
+export { outcomeBadge } from '../outcome-badge';
 
 const OUTCOME_COLOR: Record<string, string> = {
   expected: 'hsl(var(--success))',
