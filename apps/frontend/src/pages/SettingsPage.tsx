@@ -10,6 +10,7 @@ import LLMConfiguration from '@/components/settings/components/LLMConfiguration'
 import NotificationsConfiguration from '@/components/settings/components/NotificationsConfiguration';
 import ServerConfiguration from '@/components/settings/components/ServerConfiguration';
 import TestManagementSettings from '@/components/settings/components/TestManagementSettings';
+import type { EditableSettingsSection } from '@/components/settings/types';
 import { Spinner } from '@/components/ui/spinner';
 import { useActiveSection } from '@/hooks/useActiveSection';
 import { useAuth } from '@/hooks/useAuth';
@@ -30,9 +31,7 @@ const SECTION_NAV: Array<{ id: string; label: string }> = [
 export default function SettingsPage() {
   const session = useAuth();
   const [config, setConfig] = useState<ServerConfig>({});
-  const [editingSection, setEditingSection] = useState<
-    'none' | 'server' | 'cron' | 'llm' | 'testManagement'
-  >('none');
+  const [editingSection, setEditingSection] = useState<EditableSettingsSection>('none');
   const [tempConfig, setTempConfig] = useState<ServerConfig>({});
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [faviconFile, setFaviconFile] = useState<File | null>(null);

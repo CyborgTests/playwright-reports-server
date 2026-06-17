@@ -13,6 +13,8 @@ import { AlertTriangle, Clock, RotateCcw } from 'lucide-react';
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { TrendSparklineHistory } from '@/components/analytics/TrendSparklineHistory';
+import { outcomeBadge } from '@/components/outcome-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -42,8 +44,6 @@ import useMutation from '@/hooks/useMutation';
 import { defaultProjectName } from '@/lib/constants';
 import { invalidateCache } from '@/lib/query-cache';
 import { withBase } from '@/lib/url';
-import { TrendSparklineHistory } from '@/components/analytics/TrendSparklineHistory';
-import { outcomeBadge } from '@/components/outcome-badge';
 import { exponentialMovingAverageDuration } from './calculations/ema';
 import { TestFilters as TestFiltersComponent } from './TestFilters';
 

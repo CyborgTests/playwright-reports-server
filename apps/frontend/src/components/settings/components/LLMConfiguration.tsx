@@ -28,11 +28,12 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useLlmDefaultPrompts } from '@/hooks/useLlmTasks';
 import { authHeaders } from '@/lib/auth';
+import type { EditableSettingsSection } from '../types';
 
 interface LLMConfigurationProps {
   config: ServerConfig;
   tempConfig: ServerConfig;
-  editingSection: string;
+  editingSection: EditableSettingsSection;
   isUpdating: boolean;
   onEdit: () => void;
   onSave: () => void;

@@ -7,12 +7,13 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
+import type { EditableSettingsSection } from '../types';
 import SettingsSectionHeader from './SettingsSectionHeader';
 
 interface TestManagementSettingsProps {
   config: ServerConfig;
   tempConfig: ServerConfig;
-  editingSection: string;
+  editingSection: EditableSettingsSection;
   isUpdating: boolean;
   onEdit: () => void;
   onSave: () => void;

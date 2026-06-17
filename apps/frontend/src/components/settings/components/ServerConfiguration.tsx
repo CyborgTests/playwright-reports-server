@@ -17,6 +17,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { withBase } from '@/lib/url';
+import type { EditableSettingsSection } from '../types';
 import SettingsSectionHeader from './SettingsSectionHeader';
 
 const CUSTOM_VALUE = '__custom__';
@@ -34,7 +35,7 @@ function iconChoiceFor(icon: string | undefined): string {
 interface ServerConfigurationProps {
   config: ServerConfig;
   tempConfig: ServerConfig;
-  editingSection: string;
+  editingSection: EditableSettingsSection;
   isUpdating: boolean;
   logoFile: File | null;
   faviconFile: File | null;

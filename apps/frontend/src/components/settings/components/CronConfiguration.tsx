@@ -5,13 +5,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import type { SettingsSection } from '../types';
+import type { EditableSettingsSection } from '../types';
 import SettingsSectionHeader from './SettingsSectionHeader';
 
 interface CronConfigurationProps {
   config: ServerConfig;
   tempConfig: ServerConfig;
-  editingSection: SettingsSection;
+  editingSection: EditableSettingsSection;
   isUpdating: boolean;
   onEdit: () => void;
   onSave: () => void;
