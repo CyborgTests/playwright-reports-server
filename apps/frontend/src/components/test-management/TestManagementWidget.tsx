@@ -37,7 +37,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { useAuth } from '../../hooks/useAuth';
+import { authHeadersForSession, useAuth } from '../../hooks/useAuth';
 import { useConfig } from '../../hooks/useConfig';
 import useMutation from '../../hooks/useMutation';
 import { defaultProjectName } from '../../lib/constants';
@@ -430,13 +430,8 @@ export default function TestManagementWidget({
   } = useInfiniteQuery<{ data: TestWithQuarantineInfo[]; total: number }>({
     queryKey: ['/api/tests', filters, dateRange?.from, dateRange?.to],
     queryFn: async ({ pageParam }) => {
-      const headers: HeadersInit = {};
-      const jwtToken = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;
-      if (jwtToken && session.status === 'authenticated' && session.data !== null) {
-        headers.Authorization = `Bearer ${jwtToken}`;
-      }
       const res = await fetch(withBase(`/api/tests?${buildQueryParams(pageParam as number)}`), {
-        headers,
+        headers: authHeadersForSession(session),
       });
       if (!res.ok) throw new Error('Failed to fetch tests');
       return res.json();

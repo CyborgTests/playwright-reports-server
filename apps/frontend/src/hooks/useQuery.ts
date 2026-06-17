@@ -2,7 +2,7 @@ import { type UseQueryOptions, useQuery as useTanStackQuery } from '@tanstack/re
 import { toast } from 'sonner';
 
 import { withBase } from '../lib/url';
-import { useAuth } from './useAuth';
+import { authHeadersForSession, useAuth } from './useAuth';
 
 const UNAUTHORIZED_ERROR = 'Unauthorized';
 
@@ -25,12 +25,7 @@ const useQuery = <ReturnType>(
   return useTanStackQuery<ReturnType, Error>({
     queryKey: [path, ...(options?.dependencies ?? [])],
     queryFn: async () => {
-      const headers: HeadersInit = {};
-
-      const jwtToken = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;
-      if (jwtToken && session.status === 'authenticated' && session.data !== null) {
-        headers.Authorization = `Bearer ${jwtToken}`;
-      }
+      const headers = authHeadersForSession(session);
 
       const fullPath = withBase(path);
       const response = await fetch(fullPath, {

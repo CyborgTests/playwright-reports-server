@@ -23,6 +23,14 @@ export interface AuthSession {
   data: { user: AuthUser } | null;
 }
 
+export function authHeadersForSession(session: AuthSession): HeadersInit {
+  const jwt = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;
+  if (jwt && session.status === 'authenticated' && session.data !== null) {
+    return { Authorization: `Bearer ${jwt}` };
+  }
+  return {};
+}
+
 export function useAuth(): AuthSession {
   const { data, isLoading, error } = useQuery<{
     user?: AuthUser;

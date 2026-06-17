@@ -2,7 +2,7 @@ import { type UseMutationOptions, useMutation as useTanStackMutation } from '@ta
 import { toast } from 'sonner';
 
 import { withBase } from '../lib/url';
-import { useAuth } from './useAuth';
+import { authHeadersForSession, useAuth } from './useAuth';
 
 type MutationFnParams<TVariables> = {
   body?: TVariables;
@@ -21,12 +21,8 @@ const useMutation = <TData = unknown, TVariables = unknown>(
     mutationFn: async ({ body, path }: MutationFnParams<TVariables>) => {
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
+        ...authHeadersForSession(session),
       };
-
-      const jwtToken = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;
-      if (jwtToken && session.status === 'authenticated') {
-        headers.Authorization = `Bearer ${jwtToken}`;
-      }
 
       const fullPath = withBase(path ?? url);
       const response = await fetch(fullPath, {

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Spinner } from '@/components/ui/spinner';
-import { useAuth } from '@/hooks/useAuth';
+import { authHeadersForSession, useAuth } from '@/hooks/useAuth';
 import { withQueryParams } from '@/lib/network';
 import { withBase } from '@/lib/url';
 
@@ -57,18 +57,13 @@ export function CompareToPicker({
       enabled: open && isAuthReady,
       initialPageParam: 0,
       queryFn: async ({ pageParam }) => {
-        const headers: HeadersInit = {};
-        const jwtToken = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;
-        if (jwtToken && session.status === 'authenticated' && session.data !== null) {
-          headers.Authorization = `Bearer ${jwtToken}`;
-        }
         const params = {
           limit: PAGE_SIZE.toString(),
           offset: String(pageParam ?? 0),
           ...(scopeToProject && defaultProject ? { project: defaultProject } : {}),
         };
         const url = withBase(withQueryParams(API_ENDPOINTS.REPORTS_LIST, params));
-        const res = await fetch(url, { headers });
+        const res = await fetch(url, { headers: authHeadersForSession(session) });
         if (!res.ok) throw new Error('Failed to load reports');
         return res.json();
       },
