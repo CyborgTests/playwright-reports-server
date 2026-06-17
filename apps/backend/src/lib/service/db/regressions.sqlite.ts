@@ -381,6 +381,32 @@ export class RegressionsDatabase {
       );
   }
 
+  public manuallyCloseForTests(
+    keys: Array<{ testId: string; fileId: string; project: string }>,
+    resolvedAtIso: string
+  ): number {
+    if (keys.length === 0) return 0;
+    const stmt = this.db.prepare(
+      `UPDATE regressions
+       SET recoveredAtReportId = regressedAtReportId,
+           recoveredAtCreatedAt = ?,
+           recoveredAtCommit = NULL,
+           daysOpen = julianday(?) - julianday(regressedAtCreatedAt)
+       WHERE testId = ? AND fileId = ? AND project = ?
+         AND recoveredAtReportId IS NULL`
+    );
+    const tx = this.db.transaction(
+      (rows: Array<{ testId: string; fileId: string; project: string }>) => {
+        let closed = 0;
+        for (const k of rows) {
+          closed += stmt.run(resolvedAtIso, resolvedAtIso, k.testId, k.fileId, k.project).changes;
+        }
+        return closed;
+      }
+    );
+    return tx(keys);
+  }
+
   public hasOpenForTest(testId: string, fileId: string, project: string): boolean {
     const row = this.db
       .prepare(
