@@ -187,7 +187,7 @@ export default function ServerConfiguration({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="logo-upload">Logo</Label>
+            <Label>Logo</Label>
             <div className="space-y-3">
               {/* Current logo display */}
               {config.logoPath && (
@@ -268,7 +268,7 @@ export default function ServerConfiguration({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="favicon-upload">Favicon</Label>
+            <Label>Favicon</Label>
             <div className="space-y-3">
               {config.faviconPath && (
                 <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
