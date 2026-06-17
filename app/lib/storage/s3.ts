@@ -255,7 +255,12 @@ export class S3 implements Storage {
 
     const { start, end, contentLength } = resolveFileRange(totalSize, range);
 
-    const stream = await this.client.getPartialObject(this.bucket, remotePath, start, contentLength);
+    // Unsatisfiable range (e.g. start past EOF): return an empty stream so the caller
+    // can respond 416 rather than issuing an invalid partial request.
+    const stream =
+      contentLength <= 0
+        ? Readable.from([])
+        : await this.client.getPartialObject(this.bucket, remotePath, start, contentLength);
 
     return { stream, totalSize, start, end, contentLength };
   }

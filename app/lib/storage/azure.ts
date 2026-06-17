@@ -89,6 +89,7 @@ export class AzureBlob implements Storage {
 
   private constructor() {
     const { serviceClient, credential } = createClient();
+
     this.containerName = env.AZURE_CONTAINER;
     this.batchSize = env.AZURE_BATCH_SIZE;
     this.container = serviceClient.getContainerClient(this.containerName);
@@ -240,6 +241,12 @@ export class AzureBlob implements Storage {
     const totalSize = properties.contentLength ?? 0;
 
     const { start, end, contentLength } = resolveFileRange(totalSize, range);
+
+    // Unsatisfiable range (e.g. start past EOF): return an empty stream so the caller
+    // can respond 416 rather than issuing an invalid download request.
+    if (contentLength <= 0) {
+      return { stream: Readable.from([]), totalSize, start, end, contentLength };
+    }
 
     const downloadResponse = await blobClient.download(start, contentLength);
 

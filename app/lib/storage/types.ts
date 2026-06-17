@@ -19,6 +19,30 @@ export interface FileRange {
   suffixLength?: number;
 }
 
+/**
+ * Parse an HTTP Range header (e.g. "bytes=0-1023", "bytes=512-", "bytes=-256")
+ * into a {@link FileRange}. The backend resolves open-ended and suffix ranges
+ * against the file size. Returns null for a malformed / non-bytes range.
+ */
+export function parseRangeHeader(rangeHeader: string): FileRange | null {
+  const match = rangeHeader.match(/^bytes=(\d*)-(\d*)$/);
+
+  if (!match) return null;
+
+  const [, rawStart, rawEnd] = match;
+
+  if (rawStart === '' && rawEnd === '') return null;
+
+  if (rawStart === '') {
+    return { suffixLength: parseInt(rawEnd, 10) };
+  }
+
+  return {
+    start: parseInt(rawStart, 10),
+    end: rawEnd === '' ? undefined : parseInt(rawEnd, 10),
+  };
+}
+
 /** Resolve a (possibly partial or suffix) range request against a known file size. */
 export function resolveFileRange(
   totalSize: number,
@@ -54,7 +78,11 @@ export interface FileStreamResult {
 export interface Storage {
   getServerDataInfo: () => Promise<ServerDataInfo>;
   readFile: (targetPath: string, contentType: string | null) => Promise<string | Buffer>;
-  /** Stream a byte range of a report asset. When `range` is omitted, stream the whole file. */
+  /**
+   * Stream a byte range of a report asset. When `range` is omitted, stream the whole file.
+   * For an unsatisfiable range (e.g. `start` past EOF) the returned `stream` is empty and
+   * `contentLength` is `<= 0`, so the caller can respond 416 instead of crashing.
+   */
   readFileStream: (targetPath: string, range?: FileRange) => Promise<FileStreamResult>;
   readResults: (input?: ReadResultsInput) => Promise<ReadResultsOutput>;
   readReports: (input?: ReadReportsInput) => Promise<ReadReportsOutput>;

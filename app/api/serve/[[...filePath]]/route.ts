@@ -6,7 +6,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { redirect } from 'next/navigation';
 
 import { withError } from '@/app/lib/withError';
-import { storage, type FileRange, type FileStreamResult } from '@/app/lib/storage';
+import { storage, parseRangeHeader, type FileStreamResult } from '@/app/lib/storage';
 import { auth } from '@/app/auth';
 import { env } from '@/app/config/env';
 import { withBase } from '@/app/lib/url';
@@ -14,30 +14,6 @@ import { withBase } from '@/app/lib/url';
 interface ReportParams {
   reportId: string;
   filePath?: string[];
-}
-
-/**
- * Parse an HTTP Range header (e.g. "bytes=0-1023", "bytes=512-", "bytes=-256")
- * into a {@link FileRange}. The backend resolves open-ended and suffix ranges
- * against the file size. Returns null for a malformed / non-bytes range.
- */
-function parseRangeHeader(rangeHeader: string): FileRange | null {
-  const match = rangeHeader.match(/^bytes=(\d*)-(\d*)$/);
-
-  if (!match) return null;
-
-  const [, rawStart, rawEnd] = match;
-
-  if (rawStart === '' && rawEnd === '') return null;
-
-  if (rawStart === '') {
-    return { suffixLength: parseInt(rawEnd, 10) };
-  }
-
-  return {
-    start: parseInt(rawStart, 10),
-    end: rawEnd === '' ? undefined : parseInt(rawEnd, 10),
-  };
 }
 
 /** Build a 200 (full) or 206 (partial) streaming response from a backend stream result. */

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream, type Dirent, type Stats } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
-import { PassThrough } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 
 import getFolderSize from 'get-folder-size';
 
@@ -93,7 +93,9 @@ export async function readFileStream(targetPath: string, range?: FileRange): Pro
   const totalSize = stat.size;
 
   const { start, end, contentLength } = resolveFileRange(totalSize, range);
-  const stream = createReadStream(fullPath, { start, end });
+  // Unsatisfiable range (e.g. start past EOF): return an empty stream so the caller
+  // can respond 416 rather than crashing on an invalid stream request.
+  const stream = contentLength <= 0 ? Readable.from([]) : createReadStream(fullPath, { start, end });
 
   return { stream, totalSize, start, end, contentLength };
 }
