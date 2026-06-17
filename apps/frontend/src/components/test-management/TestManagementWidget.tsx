@@ -7,7 +7,6 @@ import {
   type TestsSort,
   type TestWithQuarantineInfo,
 } from '@playwright-reports/shared';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { AlertTriangle, Clock, RotateCcw } from 'lucide-react';
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -29,16 +28,13 @@ import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { authHeadersForSession, useAuth } from '@/hooks/useAuth';
 import { useConfig } from '@/hooks/useConfig';
-import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import useMutation from '@/hooks/useMutation';
 import { defaultProjectName } from '@/lib/constants';
-import { invalidateCache } from '@/lib/query-cache';
-import { withBase } from '@/lib/url';
+import { formatRegressionAge, getStatusBadge } from './badges';
 import { exponentialMovingAverageDuration } from './calculations/ema';
 import { TestFilters as TestFiltersComponent } from './TestFilters';
 import { DeleteTestDialog, QuarantineDialog } from './TestManagementDialogs';
+import { useTestMutations, useTestsQuery } from './useTestManagement';
 
 interface TestManagementWidgetProps {
   project?: string;
@@ -59,47 +55,6 @@ function parseTiersParam(raw: string | null): FlakinessTier[] | undefined {
 function parseSortParam(raw: string | null): TestsSort | undefined {
   if (raw === 'slowest' || raw === 'stale' || raw === 'regression-age') return raw;
   return undefined;
-}
-
-function formatRegressionAge(days: number): string {
-  if (days < 1) return `${Math.round(days * 24)}h`;
-  return `${Math.round(days * 10) / 10}d`;
-}
-
-function getStatusBadge(
-  test: TestWithQuarantineInfo,
-  warningThreshold: number,
-  quarantineThreshold: number
-) {
-  if (test.isQuarantined) {
-    return (
-      <Badge variant="destructive" className="gap-1">
-        🔒 Quarantined
-      </Badge>
-    );
-  }
-  if (test.flakinessScore === undefined) {
-    return <Badge variant="secondary">No Data</Badge>;
-  }
-  if (test.flakinessScore < warningThreshold) {
-    return (
-      <Badge variant="success" className="gap-1">
-        Stable
-      </Badge>
-    );
-  }
-  if (test.flakinessScore < quarantineThreshold) {
-    return (
-      <Badge variant="warning" className="gap-1">
-        Flaky
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="danger" className="gap-1">
-      Critical
-    </Badge>
-  );
 }
 
 interface TestRowProps {
@@ -259,66 +214,28 @@ export default function TestManagementWidget({
 }: Readonly<TestManagementWidgetProps>) {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [filters, setFilters] = useState<TestFilters>(() => ({
-    project: project ?? defaultProjectName,
-    status: 'all',
-    tiers: parseTiersParam(searchParams.get('tiers')),
-    sort: parseSortParam(searchParams.get('sort')),
-    failureCategory: searchParams.get('failureCategory') || undefined,
-    search: searchParams.get('search') || undefined,
-    regressedOnly: searchParams.get('regressedOnly') === '1',
-    regressedSince: searchParams.get('regressedSince') || undefined,
-    resolvedSince: searchParams.get('resolvedSince') || undefined,
-  }));
+  const filters = useMemo<TestFilters>(
+    () => ({
+      project: project ?? defaultProjectName,
+      status: 'all',
+      tiers: parseTiersParam(searchParams.get('tiers')),
+      sort: parseSortParam(searchParams.get('sort')),
+      failureCategory: searchParams.get('failureCategory') || undefined,
+      search: searchParams.get('search') || undefined,
+      regressedOnly: searchParams.get('regressedOnly') === '1',
+      regressedSince: searchParams.get('regressedSince') || undefined,
+      resolvedSince: searchParams.get('resolvedSince') || undefined,
+    }),
+    [project, searchParams]
+  );
   const [quarantineTest, setQuarantineTest] = useState<TestWithQuarantineInfo | null>(null);
   const [quarantineReason, setQuarantineReason] = useState('');
   const [isQuarantineModalOpen, setIsQuarantineModalOpen] = useState(false);
   const [deleteTest, setDeleteTest] = useState<TestWithQuarantineInfo | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
-  useEffect(() => {
-    setFilters((prev) => ({ ...prev, project: project ?? defaultProjectName }));
-  }, [project]);
-
-  useEffect(() => {
-    const urlTiers = parseTiersParam(searchParams.get('tiers'));
-    const urlSort = parseSortParam(searchParams.get('sort'));
-    const urlFailureCategory = searchParams.get('failureCategory') || undefined;
-    const urlSearch = searchParams.get('search') || undefined;
-    const urlRegressedOnly = searchParams.get('regressedOnly') === '1';
-    const urlRegressedSince = searchParams.get('regressedSince') || undefined;
-    const urlResolvedSince = searchParams.get('resolvedSince') || undefined;
-    setFilters((prev) => {
-      const sameTiers =
-        (prev.tiers?.length ?? 0) === (urlTiers?.length ?? 0) &&
-        (prev.tiers ?? []).every((t) => urlTiers?.includes(t));
-      if (
-        sameTiers &&
-        prev.sort === urlSort &&
-        prev.failureCategory === urlFailureCategory &&
-        prev.search === urlSearch &&
-        (prev.regressedOnly ?? false) === urlRegressedOnly &&
-        prev.regressedSince === urlRegressedSince &&
-        prev.resolvedSince === urlResolvedSince
-      ) {
-        return prev;
-      }
-      return {
-        ...prev,
-        tiers: urlTiers,
-        sort: urlSort,
-        failureCategory: urlFailureCategory,
-        search: urlSearch,
-        regressedOnly: urlRegressedOnly,
-        regressedSince: urlRegressedSince,
-        resolvedSince: urlResolvedSince,
-      };
-    });
-  }, [searchParams]);
-
   const handleFiltersChange = useCallback(
     (next: TestFilters) => {
-      setFilters(next);
       const params = new URLSearchParams(searchParams);
       if (next.tiers && next.tiers.length > 0) params.set('tiers', next.tiers.join(','));
       else params.delete('tiers');
@@ -341,10 +258,7 @@ export default function TestManagementWidget({
     [searchParams, setSearchParams]
   );
 
-  const queryClient = useQueryClient();
-
   const { data: config } = useConfig();
-  const session = useAuth();
 
   const warningThreshold =
     config?.testManagement?.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
@@ -352,121 +266,26 @@ export default function TestManagementWidget({
     config?.testManagement?.quarantineThresholdPercentage ??
     FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE;
 
-  const PAGE_SIZE = 25;
-
-  const debouncedSearch = useDebouncedValue(filters.search, 300);
-
-  const buildQueryParams = useCallback(
-    (offset: number) => {
-      const params = new URLSearchParams();
-      if (filters.project && filters.project !== defaultProjectName) {
-        params.append('project', filters.project);
-      }
-      if (filters.status && filters.status !== 'all') {
-        params.append('status', filters.status);
-      }
-      if (filters.tiers && filters.tiers.length > 0) {
-        params.append('tiers', filters.tiers.join(','));
-      }
-      if (filters.sort && filters.sort !== 'default') {
-        params.append('sort', filters.sort);
-      }
-      if (filters.failureCategory) {
-        params.append('failureCategory', filters.failureCategory);
-      }
-      if (debouncedSearch) {
-        params.append('search', debouncedSearch);
-      }
-      if (filters.regressedOnly) {
-        params.append('regressedOnly', 'true');
-      }
-      if (filters.regressedSince) {
-        params.append('regressedSince', filters.regressedSince);
-      }
-      if (filters.resolvedSince) {
-        params.append('resolvedSince', filters.resolvedSince);
-      }
-      if (dateRange?.from) params.append('from', dateRange.from);
-      if (dateRange?.to) params.append('to', dateRange.to);
-      params.append('limit', PAGE_SIZE.toString());
-      params.append('offset', offset.toString());
-      return params.toString();
-    },
-    [filters, debouncedSearch, dateRange?.from, dateRange?.to]
-  );
-
-  const isAuthDisabled = session.status === 'authenticated' && session.data === null;
-  const isAuthReady = isAuthDisabled || session.status === 'authenticated';
-
-  const {
-    data: testsData,
-    isLoading: isLoadingTests,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = useInfiniteQuery<{ data: TestWithQuarantineInfo[]; total: number }>({
-    queryKey: [
-      '/api/tests',
-      { ...filters, search: debouncedSearch },
-      dateRange?.from,
-      dateRange?.to,
-    ],
-    queryFn: async ({ pageParam }) => {
-      const res = await fetch(withBase(`/api/tests?${buildQueryParams(pageParam as number)}`), {
-        headers: authHeadersForSession(session),
-      });
-      if (!res.ok) throw new Error('Failed to fetch tests');
-      return res.json();
-    },
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) => {
-      const loaded = allPages.reduce((sum, p) => sum + p.data.length, 0);
-      return loaded < lastPage.total ? loaded : undefined;
-    },
-    enabled: isAuthReady,
-  });
+  const { tests, totalTests, isLoadingTests, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useTestsQuery({ filters, dateRange });
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
-  const { mutate: updateQuarantineMutation, isPending: isUpdateQuarantinePending } = useMutation(
-    '/api/test',
-    {
-      method: 'PATCH',
-      onSuccess: (_, variables) => {
-        invalidateCache(queryClient, { predicate: '/api/tests' });
-        setIsQuarantineModalOpen(false);
-        setQuarantineReason('');
-        const test = (variables as { body: { test: TestWithQuarantineInfo } }).body.test;
-        toast.success(
-          test.isQuarantined ? 'Test removed from quarantine' : 'Test quarantined successfully'
-        );
-      },
-    }
-  );
-
-  const { mutate: deleteTestMutation, isPending: isDeletePending } = useMutation('/api/test', {
-    method: 'DELETE',
-    onSuccess: () => {
-      invalidateCache(queryClient, { predicate: '/api/tests' });
+  const {
+    updateQuarantineMutation,
+    isUpdateQuarantinePending,
+    deleteTestMutation,
+    isDeletePending,
+    resetFlakinessMutation,
+    clearFlakinessResetMutation,
+  } = useTestMutations({
+    onQuarantineSuccess: () => {
+      setIsQuarantineModalOpen(false);
+      setQuarantineReason('');
+    },
+    onDeleteSuccess: () => {
       setIsDeleteModalOpen(false);
       setDeleteTest(null);
-      toast.success('Test deleted successfully');
-    },
-  });
-
-  const { mutate: resetFlakinessMutation } = useMutation('/api/test', {
-    method: 'POST',
-    onSuccess: () => {
-      invalidateCache(queryClient, { predicate: '/api/tests' });
-      toast.success('Flakiness score reset — new flakiness will be tracked from now');
-    },
-  });
-
-  const { mutate: clearFlakinessResetMutation } = useMutation('/api/test', {
-    method: 'DELETE',
-    onSuccess: () => {
-      invalidateCache(queryClient, { predicate: '/api/tests' });
-      toast.success('Flakiness reset removed — score recomputed over full window');
     },
   });
 
@@ -487,8 +306,6 @@ export default function TestManagementWidget({
     },
     [clearFlakinessResetMutation]
   );
-
-  const tests = useMemo(() => testsData?.pages.flatMap((page) => page.data) ?? [], [testsData]);
 
   // virtualize the (unbounded, infinite-scrolled) rows: only the visible window
   // is in the DOM. Rows are variable-height, so heights are measured live via
@@ -521,8 +338,6 @@ export default function TestManagementWidget({
     : filters.regressedOnly || filters.regressedSince
       ? 'opened'
       : null;
-
-  const totalTests = testsData?.pages[0]?.total ?? 0;
 
   const handleQuarantineAction = useCallback((test: TestWithQuarantineInfo) => {
     setQuarantineTest(test);

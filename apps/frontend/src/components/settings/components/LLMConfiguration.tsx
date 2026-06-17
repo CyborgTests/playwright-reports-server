@@ -1,9 +1,8 @@
-import type { LLMProviderType, ServerConfig } from '@playwright-reports/shared';
+import type { LLMConfig, LLMProviderType, ServerConfig } from '@playwright-reports/shared';
 import { PROMPT_VARIABLES } from '@playwright-reports/shared';
 import { CheckCircle2, ListTodo, Plug, RefreshCw, X, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
 import {
   Accordion,
   AccordionContent,
@@ -26,8 +25,8 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { useLlmAvailableModels, useLlmConnectionTest } from '@/hooks/useLlmConnection';
 import { useLlmDefaultPrompts } from '@/hooks/useLlmTasks';
-import { authHeaders } from '@/lib/auth';
 import type { EditableSettingsSection } from '../types';
 import { CustomPromptField } from './CustomPromptField';
 
@@ -42,6 +41,38 @@ interface LLMConfigurationProps {
   onUpdateTempConfig: (updates: Partial<ServerConfig>) => void;
 }
 
+const PROVIDERS: ReadonlyArray<{ key: LLMProviderType; label: string }> = [
+  { key: 'openai', label: 'OpenAI' },
+  { key: 'anthropic', label: 'Anthropic' },
+];
+
+const TEMPERATURE_FIELDS = [
+  { id: 'llm-temp-test', label: 'Test analysis', key: 'testAnalysisTemperature' },
+  { id: 'llm-temp-report', label: 'Report summary', key: 'reportSummaryTemperature' },
+  { id: 'llm-temp-project', label: 'Project summary', key: 'projectSummaryTemperature' },
+] as const;
+
+const AUTOMATION_TOGGLES = [
+  {
+    key: 'autoAnalyzeNewReports',
+    title: 'Auto-analyze new reports',
+    description:
+      'When enabled, every failed test in a newly ingested report is queued for LLM analysis automatically.',
+  },
+  {
+    key: 'autoProjectSummaryOnReportComplete',
+    title: 'Auto-generate project summary',
+    description:
+      'When enabled, completing a report\'s failure analysis automatically queues a project-level summary for that project and for "all" projects.',
+  },
+  {
+    key: 'analyzeGreenWindows',
+    title: 'Analyze all-green windows',
+    description:
+      'When enabled, "Generate Analysis" runs the LLM even when no failures were observed — surfaces duration creep, near-flakes, quarantine churn, and suite shrinkage. Off by default to keep LLM spend predictable.',
+  },
+] as const;
+
 export default function LLMConfiguration({
   config,
   tempConfig,
@@ -53,24 +84,24 @@ export default function LLMConfiguration({
   onUpdateTempConfig,
 }: Readonly<LLMConfigurationProps>) {
   const navigate = useNavigate();
-  const providers = [
-    { key: 'openai', label: 'OpenAI' },
-    { key: 'anthropic', label: 'Anthropic' },
-  ];
 
   const isConfigured = !!config.llm?.baseUrl;
   const isEditing = editingSection === 'llm';
 
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<
-    { ok: true; models?: string[] } | { ok: false; error: string } | null
-  >(null);
+  const draft = isEditing ? tempConfig.llm : config.llm;
+  const updateLlm = (updates: Partial<LLMConfig>) => {
+    if (isEditing) onUpdateTempConfig({ llm: { ...tempConfig.llm, ...updates } });
+  };
+  const setLlmField = <K extends keyof LLMConfig>(key: K, value: LLMConfig[K]) => {
+    if (isEditing) onUpdateTempConfig({ llm: { ...tempConfig.llm, [key]: value } });
+  };
 
-  // Available models from /api/llm/available-models — fetched on demand via
-  // the "Refresh available models" button. Lets the user click-to-fill the
-  // Model input rather than typing the name from memory.
-  const [availableModels, setAvailableModels] = useState<string[] | null>(null);
-  const [refreshingModels, setRefreshingModels] = useState(false);
+  const { testing, testResult, test, clearResult } = useLlmConnectionTest();
+  const {
+    availableModels,
+    refreshing: refreshingModels,
+    refresh: handleRefreshModels,
+  } = useLlmAvailableModels();
 
   const [contextAccordionValue, setContextAccordionValue] = useState<string>('');
   const [promptsAccordionValue, setPromptsAccordionValue] = useState<string>('');
@@ -79,78 +110,9 @@ export default function LLMConfiguration({
     enabled: promptsAccordionOpen,
   });
   const defaultPrompts = defaultPromptsData?.data;
-  // Per-task numeric defaults come back on the saved config response. Used
-  // as input placeholders so users see active defaults at a glance.
   const llmTemperatureDefaults = config.llm?.defaults;
 
-  const handleRefreshModels = async () => {
-    setRefreshingModels(true);
-    try {
-      const res = await fetch('/api/llm/available-models?refresh=1', { headers: authHeaders() });
-      const data = await res.json();
-      if (data?.success && Array.isArray(data.models)) {
-        setAvailableModels(data.models);
-        if (data.models.length === 0) {
-          toast.info('Provider returned no models');
-        }
-      } else {
-        toast.error(data?.error || 'Failed to fetch models');
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to fetch models');
-    } finally {
-      setRefreshingModels(false);
-    }
-  };
-
-  const handleTestConnection = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const source = isEditing ? tempConfig.llm : config.llm;
-      const body: Record<string, unknown> = {};
-      if (source?.provider) body.provider = source.provider;
-      if (isEditing) {
-        body.baseUrl = source?.baseUrl ?? '';
-        body.model = source?.model ?? '';
-        const apiKey = source?.apiKey ?? '';
-        if (!/^\*+$/.test(apiKey)) body.apiKey = apiKey;
-      } else {
-        if (source?.baseUrl) body.baseUrl = source.baseUrl;
-        if (source?.apiKey && !/^\*+$/.test(source.apiKey)) body.apiKey = source.apiKey;
-        if (source?.model) body.model = source.model;
-      }
-
-      const res = await fetch('/api/llm/test-connection', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeaders(),
-        },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (data?.success) {
-        setTestResult({ ok: true, models: data.models });
-        toast.success('LLM connection successful');
-      } else {
-        const error = data?.error || 'Connection test failed';
-        setTestResult({ ok: false, error });
-        toast.error(error);
-      }
-    } catch (err) {
-      const error = err instanceof Error ? err.message : 'Connection test failed';
-      setTestResult({ ok: false, error });
-      toast.error(error);
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const canTest = (() => {
-    const source = isEditing ? tempConfig.llm : config.llm;
-    return !!source?.baseUrl;
-  })();
+  const canTest = !!draft?.baseUrl;
 
   const llmStatus: 'error' | 'connected' | 'not-configured' =
     testResult && !testResult.ok ? 'error' : isConfigured ? 'connected' : 'not-configured';
@@ -165,41 +127,38 @@ export default function LLMConfiguration({
     'not-configured': 'outline',
   }[llmStatus] as 'destructive' | 'success' | 'outline';
 
-  // Read the override for a prompt field: tempConfig while editing, saved
-  // config otherwise. Keyed by the LLMConfig field name.
   type PromptKey =
     | 'customTestAnalysisSystemPrompt'
     | 'customTestAnalysisInstructions'
     | 'customReportSummaryPrompt'
     | 'customProjectSummarySystemPrompt'
     | 'customProjectSummaryInstructions';
-  const getPromptOverride = (key: PromptKey) =>
-    isEditing ? tempConfig.llm?.[key] : config.llm?.[key];
+  const getPromptOverride = (key: PromptKey) => draft?.[key];
   const setPromptOverride = (key: PromptKey) => (next: string | undefined) =>
-    onUpdateTempConfig({ llm: { ...tempConfig.llm, [key]: next } });
+    setLlmField(key, next);
 
   return (
     <Card id="llm" className="mb-6 scroll-mt-20 p-4">
       <CardHeader
-        className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${editingSection === 'llm' ? 'bg-primary/5 border-l-4 border-primary -mx-4 px-4' : ''}`}
+        className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${isEditing ? 'bg-primary/5 border-l-4 border-primary -mx-4 px-4' : ''}`}
       >
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold">LLM Configuration</h2>
           <Badge variant={llmStatusVariant} aria-label={`LLM status: ${llmStatusLabel}`}>
             {llmStatusLabel}
           </Badge>
-          {editingSection === 'llm' && (
+          {isEditing && (
             <Badge variant="secondary" className="text-xs">
               Editing
             </Badge>
           )}
         </div>
-        {editingSection === 'llm' ? (
+        {isEditing ? (
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               disabled={!canTest || testing || isUpdating}
-              onClick={handleTestConnection}
+              onClick={() => test(draft, isEditing)}
             >
               {testing ? <Spinner size="sm" /> : <Plug className="h-4 w-4 mr-1" />}
               {testing ? 'Testing…' : 'Test Connection'}
@@ -217,7 +176,7 @@ export default function LLMConfiguration({
               <Button
                 variant="outline"
                 disabled={!canTest || testing}
-                onClick={handleTestConnection}
+                onClick={() => test(draft, isEditing)}
               >
                 {testing ? <Spinner size="sm" /> : <Plug className="h-4 w-4 mr-1" />}
                 {testing ? 'Testing…' : 'Test Connection'}
@@ -268,7 +227,7 @@ export default function LLMConfiguration({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setTestResult(null)}
+                  onClick={clearResult}
                   aria-label="Dismiss connection test result"
                   className="text-muted-foreground hover:text-foreground transition-colors -mt-0.5 -mr-1 p-1 rounded"
                 >
@@ -292,25 +251,15 @@ export default function LLMConfiguration({
             <div className="space-y-2">
               <Label htmlFor="llm-provider">LLM Provider</Label>
               <Select
-                disabled={editingSection !== 'llm'}
-                value={
-                  editingSection === 'llm'
-                    ? tempConfig.llm?.provider || ''
-                    : config.llm?.provider || ''
-                }
-                onValueChange={(value) => {
-                  if (editingSection === 'llm') {
-                    onUpdateTempConfig({
-                      llm: { ...tempConfig.llm, provider: value as LLMProviderType },
-                    });
-                  }
-                }}
+                disabled={!isEditing}
+                value={draft?.provider || ''}
+                onValueChange={(value) => updateLlm({ provider: value as LLMProviderType })}
               >
-                <SelectTrigger>
+                <SelectTrigger id="llm-provider">
                   <SelectValue placeholder="Select LLM provider" />
                 </SelectTrigger>
                 <SelectContent>
-                  {providers.map((provider) => (
+                  {PROVIDERS.map((provider) => (
                     <SelectItem key={provider.key} value={provider.key}>
                       {provider.label}
                     </SelectItem>
@@ -323,19 +272,10 @@ export default function LLMConfiguration({
               <Label htmlFor="llm-base-url">Base URL</Label>
               <Input
                 id="llm-base-url"
-                disabled={editingSection !== 'llm'}
+                disabled={!isEditing}
                 placeholder="https://api.openai.com/v1"
-                value={
-                  editingSection === 'llm'
-                    ? tempConfig.llm?.baseUrl || ''
-                    : config.llm?.baseUrl || ''
-                }
-                onChange={(e) =>
-                  editingSection === 'llm' &&
-                  onUpdateTempConfig({
-                    llm: { ...tempConfig.llm, baseUrl: e.target.value },
-                  })
-                }
+                value={draft?.baseUrl || ''}
+                onChange={(e) => updateLlm({ baseUrl: e.target.value })}
               />
             </div>
 
@@ -343,18 +283,11 @@ export default function LLMConfiguration({
               <Label htmlFor="llm-api-key">API Key</Label>
               <Input
                 id="llm-api-key"
-                disabled={editingSection !== 'llm'}
+                disabled={!isEditing}
                 placeholder="Leave blank for local servers (LM Studio, Ollama, vLLM…)"
                 type="password"
-                value={
-                  editingSection === 'llm' ? tempConfig.llm?.apiKey || '' : config.llm?.apiKey || ''
-                }
-                onChange={(e) =>
-                  editingSection === 'llm' &&
-                  onUpdateTempConfig({
-                    llm: { ...tempConfig.llm, apiKey: e.target.value },
-                  })
-                }
+                value={draft?.apiKey || ''}
+                onChange={(e) => updateLlm({ apiKey: e.target.value })}
               />
               <p className="text-xs text-muted-foreground">
                 Required for hosted providers (OpenAI, Anthropic, OpenRouter). Local OpenAI-
@@ -371,17 +304,10 @@ export default function LLMConfiguration({
               <Label htmlFor="llm-model">Model (Optional)</Label>
               <Input
                 id="llm-model"
-                disabled={editingSection !== 'llm'}
+                disabled={!isEditing}
                 placeholder="gpt-4, claude-3-sonnet, etc."
-                value={
-                  editingSection === 'llm' ? tempConfig.llm?.model || '' : config.llm?.model || ''
-                }
-                onChange={(e) =>
-                  editingSection === 'llm' &&
-                  onUpdateTempConfig({
-                    llm: { ...tempConfig.llm, model: e.target.value },
-                  })
-                }
+                value={draft?.model || ''}
+                onChange={(e) => updateLlm({ model: e.target.value })}
               />
               <div className="flex items-start gap-2 flex-wrap">
                 <Button
@@ -404,17 +330,9 @@ export default function LLMConfiguration({
                       <Badge
                         key={m}
                         variant="outline"
-                        className={`text-xs font-mono cursor-pointer hover:bg-accent ${editingSection !== 'llm' ? 'opacity-60 cursor-not-allowed' : ''}`}
-                        onClick={() => {
-                          if (editingSection === 'llm') {
-                            onUpdateTempConfig({ llm: { ...tempConfig.llm, model: m } });
-                          }
-                        }}
-                        title={
-                          editingSection === 'llm'
-                            ? 'Click to use this model'
-                            : 'Enter edit mode to pick'
-                        }
+                        className={`text-xs font-mono cursor-pointer hover:bg-accent ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        onClick={() => updateLlm({ model: m })}
+                        title={isEditing ? 'Click to use this model' : 'Enter edit mode to pick'}
                       >
                         {m}
                       </Badge>
@@ -432,30 +350,11 @@ export default function LLMConfiguration({
             <div className="space-y-2">
               <Label className="text-sm font-medium">Temperature per task (0–2)</Label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {(
-                  [
-                    {
-                      id: 'llm-temp-test',
-                      label: 'Test analysis',
-                      key: 'testAnalysisTemperature' as const,
-                    },
-                    {
-                      id: 'llm-temp-report',
-                      label: 'Report summary',
-                      key: 'reportSummaryTemperature' as const,
-                    },
-                    {
-                      id: 'llm-temp-project',
-                      label: 'Project summary',
-                      key: 'projectSummaryTemperature' as const,
-                    },
-                  ] as const
-                ).map(({ id, label, key }) => {
+                {TEMPERATURE_FIELDS.map(({ id, label, key }) => {
                   // Resolved value = explicit override if set, otherwise the
                   // server-side default. Showing the resolved number (not the
                   // word "default") tells the user what's actually in effect.
-                  const explicit =
-                    editingSection === 'llm' ? tempConfig.llm?.[key] : config.llm?.[key];
+                  const explicit = draft?.[key];
                   const fallback = llmTemperatureDefaults?.[key];
                   const resolved = explicit ?? fallback;
                   const isUsingDefault = explicit === undefined;
@@ -466,20 +365,17 @@ export default function LLMConfiguration({
                       </Label>
                       <Input
                         id={id}
-                        disabled={editingSection !== 'llm'}
+                        disabled={!isEditing}
                         type="number"
                         min="0"
                         max="2"
                         step="0.1"
                         value={resolved?.toString() ?? ''}
                         onChange={(e) =>
-                          editingSection === 'llm' &&
-                          onUpdateTempConfig({
-                            llm: {
-                              ...tempConfig.llm,
-                              [key]: e.target.value ? Number.parseFloat(e.target.value) : undefined,
-                            },
-                          })
+                          setLlmField(
+                            key,
+                            e.target.value ? Number.parseFloat(e.target.value) : undefined
+                          )
                         }
                       />
                       {isUsingDefault && (
@@ -506,26 +402,18 @@ export default function LLMConfiguration({
               <Label htmlFor="llm-parallel-requests">Parallel Requests (1-10)</Label>
               <Input
                 id="llm-parallel-requests"
-                disabled={editingSection !== 'llm'}
+                disabled={!isEditing}
                 placeholder="1"
                 type="number"
                 min="1"
                 max="10"
                 step="1"
-                value={
-                  editingSection === 'llm'
-                    ? tempConfig.llm?.parallelRequests?.toString() || ''
-                    : config.llm?.parallelRequests?.toString() || ''
-                }
+                value={draft?.parallelRequests?.toString() || ''}
                 onChange={(e) =>
-                  editingSection === 'llm' &&
-                  onUpdateTempConfig({
-                    llm: {
-                      ...tempConfig.llm,
-                      parallelRequests: e.target.value
-                        ? Number.parseInt(e.target.value, 10)
-                        : undefined,
-                    },
+                  updateLlm({
+                    parallelRequests: e.target.value
+                      ? Number.parseInt(e.target.value, 10)
+                      : undefined,
                   })
                 }
               />
@@ -536,23 +424,15 @@ export default function LLMConfiguration({
                 <Label htmlFor="llm-max-tokens">Max output tokens (optional)</Label>
                 <Input
                   id="llm-max-tokens"
-                  disabled={editingSection !== 'llm'}
+                  disabled={!isEditing}
                   placeholder="leave blank for model default"
                   type="number"
                   min="1"
                   step="1"
-                  value={
-                    editingSection === 'llm'
-                      ? (tempConfig.llm?.maxTokens?.toString() ?? '')
-                      : (config.llm?.maxTokens?.toString() ?? '')
-                  }
+                  value={draft?.maxTokens?.toString() ?? ''}
                   onChange={(e) =>
-                    editingSection === 'llm' &&
-                    onUpdateTempConfig({
-                      llm: {
-                        ...tempConfig.llm,
-                        maxTokens: e.target.value ? Number.parseInt(e.target.value, 10) : undefined,
-                      },
+                    updateLlm({
+                      maxTokens: e.target.value ? Number.parseInt(e.target.value, 10) : undefined,
                     })
                   }
                 />
@@ -567,25 +447,17 @@ export default function LLMConfiguration({
                 <Label htmlFor="llm-context-window">Context window override (optional)</Label>
                 <Input
                   id="llm-context-window"
-                  disabled={editingSection !== 'llm'}
+                  disabled={!isEditing}
                   placeholder="auto-detect via /models"
                   type="number"
                   min="1024"
                   step="1024"
-                  value={
-                    editingSection === 'llm'
-                      ? (tempConfig.llm?.contextWindow?.toString() ?? '')
-                      : (config.llm?.contextWindow?.toString() ?? '')
-                  }
+                  value={draft?.contextWindow?.toString() ?? ''}
                   onChange={(e) =>
-                    editingSection === 'llm' &&
-                    onUpdateTempConfig({
-                      llm: {
-                        ...tempConfig.llm,
-                        contextWindow: e.target.value
-                          ? Number.parseInt(e.target.value, 10)
-                          : undefined,
-                      },
+                    updateLlm({
+                      contextWindow: e.target.value
+                        ? Number.parseInt(e.target.value, 10)
+                        : undefined,
                     })
                   }
                 />
@@ -598,20 +470,10 @@ export default function LLMConfiguration({
               <div className="space-y-2">
                 <Label htmlFor="llm-multimodal-mode">Multimodal mode</Label>
                 <Select
-                  disabled={editingSection !== 'llm'}
-                  value={
-                    editingSection === 'llm'
-                      ? (tempConfig.llm?.multimodalMode ?? 'auto')
-                      : (config.llm?.multimodalMode ?? 'auto')
-                  }
+                  disabled={!isEditing}
+                  value={draft?.multimodalMode ?? 'auto'}
                   onValueChange={(value) =>
-                    editingSection === 'llm' &&
-                    onUpdateTempConfig({
-                      llm: {
-                        ...tempConfig.llm,
-                        multimodalMode: value as 'auto' | 'force' | 'disabled',
-                      },
-                    })
+                    updateLlm({ multimodalMode: value as 'auto' | 'force' | 'disabled' })
                   }
                 >
                   <SelectTrigger id="llm-multimodal-mode">
@@ -637,79 +499,19 @@ export default function LLMConfiguration({
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Automation
             </h3>
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-medium">Auto-analyze new reports</h4>
-                <p className="text-xs text-muted-foreground mt-1">
-                  When enabled, every failed test in a newly ingested report is queued for LLM
-                  analysis automatically.
-                </p>
+            {AUTOMATION_TOGGLES.map(({ key, title, description }) => (
+              <div key={key} className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-medium">{title}</h4>
+                  <p className="text-xs text-muted-foreground mt-1">{description}</p>
+                </div>
+                <Switch
+                  disabled={!isEditing}
+                  checked={!!draft?.[key]}
+                  onCheckedChange={(checked) => setLlmField(key, checked)}
+                />
               </div>
-              <Switch
-                disabled={editingSection !== 'llm'}
-                checked={
-                  editingSection === 'llm'
-                    ? !!tempConfig.llm?.autoAnalyzeNewReports
-                    : !!config.llm?.autoAnalyzeNewReports
-                }
-                onCheckedChange={(checked) => {
-                  if (editingSection === 'llm') {
-                    onUpdateTempConfig({
-                      llm: { ...tempConfig.llm, autoAnalyzeNewReports: checked },
-                    });
-                  }
-                }}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-medium">Auto-generate project summary</h4>
-                <p className="text-xs text-muted-foreground mt-1">
-                  When enabled, completing a report's failure analysis automatically queues a
-                  project-level summary for that project and for "all" projects.
-                </p>
-              </div>
-              <Switch
-                disabled={editingSection !== 'llm'}
-                checked={
-                  editingSection === 'llm'
-                    ? !!tempConfig.llm?.autoProjectSummaryOnReportComplete
-                    : !!config.llm?.autoProjectSummaryOnReportComplete
-                }
-                onCheckedChange={(checked) => {
-                  if (editingSection === 'llm') {
-                    onUpdateTempConfig({
-                      llm: { ...tempConfig.llm, autoProjectSummaryOnReportComplete: checked },
-                    });
-                  }
-                }}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-medium">Analyze all-green windows</h4>
-                <p className="text-xs text-muted-foreground mt-1">
-                  When enabled, "Generate Analysis" runs the LLM even when no failures were observed
-                  — surfaces duration creep, near-flakes, quarantine churn, and suite shrinkage. Off
-                  by default to keep LLM spend predictable.
-                </p>
-              </div>
-              <Switch
-                disabled={editingSection !== 'llm'}
-                checked={
-                  editingSection === 'llm'
-                    ? !!tempConfig.llm?.analyzeGreenWindows
-                    : !!config.llm?.analyzeGreenWindows
-                }
-                onCheckedChange={(checked) => {
-                  if (editingSection === 'llm') {
-                    onUpdateTempConfig({
-                      llm: { ...tempConfig.llm, analyzeGreenWindows: checked },
-                    });
-                  }
-                }}
-              />
-            </div>
+            ))}
           </section>
 
           <Accordion
@@ -724,27 +526,16 @@ export default function LLMConfiguration({
                 <Label htmlFor="llm-general-context">General context (optional)</Label>
                 <Textarea
                   id="llm-general-context"
-                  disabled={editingSection !== 'llm'}
+                  disabled={!isEditing}
                   rows={4}
                   maxLength={500}
                   placeholder="Describe the project, its stack, environment specifics, or anything that would help interpret failures."
-                  value={
-                    editingSection === 'llm'
-                      ? (tempConfig.llm?.generalContext ?? '')
-                      : (config.llm?.generalContext ?? '')
-                  }
-                  onChange={(e) =>
-                    editingSection === 'llm' &&
-                    onUpdateTempConfig({
-                      llm: { ...tempConfig.llm, generalContext: e.target.value },
-                    })
-                  }
+                  value={draft?.generalContext ?? ''}
+                  onChange={(e) => updateLlm({ generalContext: e.target.value })}
                 />
                 <p className="text-xs text-muted-foreground">
                   Shared with every LLM analysis. Max 500 characters
-                  {editingSection === 'llm'
-                    ? ` (${(tempConfig.llm?.generalContext ?? '').length}/500).`
-                    : '.'}
+                  {isEditing ? ` (${(tempConfig.llm?.generalContext ?? '').length}/500).` : '.'}
                 </p>
               </AccordionContent>
             </AccordionItem>

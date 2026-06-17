@@ -323,7 +323,7 @@ export default function ServerConfiguration({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="reporter-paths">Custom Reporter Paths</Label>
+            <Label>Custom Reporter Paths</Label>
             <div className="space-y-2">
               {(editingSection === 'server'
                 ? tempConfig.reporterPaths || []

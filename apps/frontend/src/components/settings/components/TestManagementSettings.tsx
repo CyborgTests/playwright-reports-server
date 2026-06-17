@@ -139,7 +139,7 @@ export default function TestManagementSettings({
                   }}
                 />
                 <Input
-                  aria-label="Warning threshold input"
+                  id="warning-threshold"
                   className="w-20"
                   disabled={editingSection !== 'testManagement'}
                   type="number"
@@ -177,7 +177,7 @@ export default function TestManagementSettings({
                   }}
                 />
                 <Input
-                  aria-label="Quarantine threshold input"
+                  id="quarantine-threshold"
                   className="w-20"
                   disabled={editingSection !== 'testManagement'}
                   type="number"
