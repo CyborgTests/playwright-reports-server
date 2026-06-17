@@ -40,6 +40,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { authHeadersForSession, useAuth } from '@/hooks/useAuth';
 import { useConfig } from '@/hooks/useConfig';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import useMutation from '@/hooks/useMutation';
 import { defaultProjectName } from '@/lib/constants';
 import { invalidateCache } from '@/lib/query-cache';
@@ -361,6 +362,8 @@ export default function TestManagementWidget({
 
   const PAGE_SIZE = 25;
 
+  const debouncedSearch = useDebouncedValue(filters.search, 300);
+
   const buildQueryParams = useCallback(
     (offset: number) => {
       const params = new URLSearchParams();
@@ -379,8 +382,8 @@ export default function TestManagementWidget({
       if (filters.failureCategory) {
         params.append('failureCategory', filters.failureCategory);
       }
-      if (filters.search) {
-        params.append('search', filters.search);
+      if (debouncedSearch) {
+        params.append('search', debouncedSearch);
       }
       if (filters.regressedOnly) {
         params.append('regressedOnly', 'true');
@@ -397,7 +400,7 @@ export default function TestManagementWidget({
       params.append('offset', offset.toString());
       return params.toString();
     },
-    [filters, dateRange?.from, dateRange?.to]
+    [filters, debouncedSearch, dateRange?.from, dateRange?.to]
   );
 
   const isAuthDisabled = session.status === 'authenticated' && session.data === null;
@@ -410,7 +413,12 @@ export default function TestManagementWidget({
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<{ data: TestWithQuarantineInfo[]; total: number }>({
-    queryKey: ['/api/tests', filters, dateRange?.from, dateRange?.to],
+    queryKey: [
+      '/api/tests',
+      { ...filters, search: debouncedSearch },
+      dateRange?.from,
+      dateRange?.to,
+    ],
     queryFn: async ({ pageParam }) => {
       const res = await fetch(withBase(`/api/tests?${buildQueryParams(pageParam as number)}`), {
         headers: authHeadersForSession(session),

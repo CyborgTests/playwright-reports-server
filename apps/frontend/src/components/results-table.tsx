@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import useQuery from '@/hooks/useQuery';
 import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
 import { defaultProjectName } from '@/lib/constants';
@@ -184,6 +185,7 @@ export default function ResultsTable({
     usage: usage !== 'all' ? usage : null,
   });
 
+  const debouncedSearch = useDebouncedValue(search, 300);
   const queryUrl = useMemo(
     () =>
       withQueryParams(resultListEndpoint, {
@@ -191,12 +193,12 @@ export default function ResultsTable({
         offset: ((page - 1) * rowsPerPage).toString(),
         project,
         ...(selectedTags.length > 0 && { tags: selectedTags.join(',') }),
-        ...(search.trim() && { search: search.trim() }),
+        ...(debouncedSearch.trim() && { search: debouncedSearch.trim() }),
         ...(dateRange.from && { from: dateRange.from }),
         ...(dateRange.to && { to: dateRange.to }),
         ...(usage && usage !== 'all' && { usage }),
       }),
-    [rowsPerPage, page, project, selectedTags, search, dateRange.from, dateRange.to, usage]
+    [rowsPerPage, page, project, selectedTags, debouncedSearch, dateRange.from, dateRange.to, usage]
   );
 
   const {

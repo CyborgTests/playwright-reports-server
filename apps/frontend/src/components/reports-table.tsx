@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import useQuery from '@/hooks/useQuery';
 import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
 import { defaultProjectName } from '@/lib/constants';
@@ -357,19 +358,29 @@ export default function ReportsTable({
     perPage: rowsPerPage !== 10 ? String(rowsPerPage) : null,
   });
 
+  const debouncedSearch = useDebouncedValue(search, 300);
   const queryUrl = useMemo(
     () =>
       withQueryParams(reportListEndpoint, {
         limit: rowsPerPage.toString(),
         offset: ((page - 1) * rowsPerPage).toString(),
         project,
-        ...(search.trim() && { search: search.trim() }),
+        ...(debouncedSearch.trim() && { search: debouncedSearch.trim() }),
         ...(selectedTags.length > 0 && { tags: selectedTags.join(',') }),
         ...(dateRange.from && { from: dateRange.from }),
         ...(dateRange.to && { to: dateRange.to }),
         ...(passRate && passRate !== 'all' && { passRate }),
       }),
-    [rowsPerPage, page, project, search, selectedTags, dateRange.from, dateRange.to, passRate]
+    [
+      rowsPerPage,
+      page,
+      project,
+      debouncedSearch,
+      selectedTags,
+      dateRange.from,
+      dateRange.to,
+      passRate,
+    ]
   );
 
   const {
