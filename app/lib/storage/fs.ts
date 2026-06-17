@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { createWriteStream, type Dirent, type Stats } from 'node:fs';
+import { createReadStream, createWriteStream, type Dirent, type Stats } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { PassThrough } from 'node:stream';
 
@@ -34,6 +34,9 @@ import {
   type ServerDataInfo,
   type ResultDetails,
   type ReportFile,
+  type FileRange,
+  type FileStreamResult,
+  resolveFileRange,
   ReadReportsOutput,
   ReadReportsInput,
   ReadResultsInput,
@@ -82,6 +85,17 @@ export async function readFile(targetPath: string, contentType: string | null) {
   return await fs.readFile(path.join(REPORTS_FOLDER, targetPath), {
     encoding: contentType === 'text/html' ? 'utf-8' : null,
   });
+}
+
+export async function readFileStream(targetPath: string, range?: FileRange): Promise<FileStreamResult> {
+  const fullPath = path.join(REPORTS_FOLDER, targetPath);
+  const stat = await fs.stat(fullPath);
+  const totalSize = stat.size;
+
+  const { start, end, contentLength } = resolveFileRange(totalSize, range);
+  const stream = createReadStream(fullPath, { start, end });
+
+  return { stream, totalSize, start, end, contentLength };
 }
 
 async function getResultsCount() {
@@ -523,6 +537,7 @@ export async function listReportFiles(reportId: string, project: string): Promis
 export const FS: Storage = {
   getServerDataInfo,
   readFile,
+  readFileStream,
   readResults,
   readReports,
   deleteResults,

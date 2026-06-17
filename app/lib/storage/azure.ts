@@ -25,6 +25,9 @@ import {
   ReportFile,
   ReportMetadata,
   Storage,
+  type FileRange,
+  type FileStreamResult,
+  resolveFileRange,
 } from './types';
 import { bytesToString } from './format';
 import {
@@ -39,7 +42,7 @@ import {
   DATA_FOLDER,
 } from './constants';
 import { handlePagination } from './pagination';
-import { getFileReportID } from './file';
+import { getFileReportID, getRemotePath } from './file';
 import { compareReports, compareResults } from './sort';
 
 import { parse } from '@/app/lib/parser';
@@ -132,7 +135,7 @@ export class AzureBlob implements Storage {
     await this.ensureContainerExists();
     console.log(`[azure] read ${targetPath}`);
 
-    const remotePath = targetPath.includes(REPORTS_BUCKET) ? targetPath : `${REPORTS_BUCKET}/${targetPath}`;
+    const remotePath = getRemotePath(targetPath);
 
     console.log(`[azure] reading from remote path: ${remotePath}`);
 
@@ -226,6 +229,27 @@ export class AzureBlob implements Storage {
     }
 
     return result!;
+  }
+
+  async readFileStream(targetPath: string, range?: FileRange): Promise<FileStreamResult> {
+    await this.ensureContainerExists();
+    const remotePath = getRemotePath(targetPath);
+
+    const blobClient = this.container.getBlobClient(remotePath);
+    const properties = await blobClient.getProperties();
+    const totalSize = properties.contentLength ?? 0;
+
+    const { start, end, contentLength } = resolveFileRange(totalSize, range);
+
+    const downloadResponse = await blobClient.download(start, contentLength);
+
+    if (!downloadResponse.readableStreamBody) {
+      throw new Error(`[azure] readFileStream: no readable stream body for ${remotePath}`);
+    }
+
+    const stream = downloadResponse.readableStreamBody as Readable;
+
+    return { stream, totalSize, start, end, contentLength };
   }
 
   async readResults(input?: ReadResultsInput): Promise<ReadResultsOutput> {

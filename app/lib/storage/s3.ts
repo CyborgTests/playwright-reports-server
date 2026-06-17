@@ -20,6 +20,9 @@ import {
   ReportMetadata,
   ReportFile,
   Storage,
+  type FileRange,
+  type FileStreamResult,
+  resolveFileRange,
 } from './types';
 import { bytesToString } from './format';
 import {
@@ -34,7 +37,7 @@ import {
   DATA_FOLDER,
 } from './constants';
 import { handlePagination } from './pagination';
-import { getFileReportID } from './file';
+import { getFileReportID, getRemotePath } from './file';
 import { compareReports, compareResults } from './sort';
 
 import { parse } from '@/app/lib/parser';
@@ -136,7 +139,7 @@ export class S3 implements Storage {
     await this.ensureBucketExist();
     console.log(`[s3] read ${targetPath}`);
 
-    const remotePath = targetPath.includes(REPORTS_BUCKET) ? targetPath : `${REPORTS_BUCKET}/${targetPath}`;
+    const remotePath = getRemotePath(targetPath);
 
     console.log(`[s3] reading from remote path: ${remotePath}`);
 
@@ -241,6 +244,20 @@ export class S3 implements Storage {
     }
 
     return result!;
+  }
+
+  async readFileStream(targetPath: string, range?: FileRange): Promise<FileStreamResult> {
+    await this.ensureBucketExist();
+    const remotePath = getRemotePath(targetPath);
+
+    const stat = await this.client.statObject(this.bucket, remotePath);
+    const totalSize = stat.size;
+
+    const { start, end, contentLength } = resolveFileRange(totalSize, range);
+
+    const stream = await this.client.getPartialObject(this.bucket, remotePath, start, contentLength);
+
+    return { stream, totalSize, start, end, contentLength };
   }
 
   async readResults(input?: ReadResultsInput): Promise<ReadResultsOutput> {

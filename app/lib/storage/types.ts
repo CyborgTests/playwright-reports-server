@@ -1,4 +1,4 @@
-import { PassThrough } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 
 import { type Pagination } from './pagination';
 
@@ -10,9 +10,52 @@ export interface ReportFile {
   storagePath: string;
 }
 
+export interface FileRange {
+  /** First byte offset to serve (defaults to 0) */
+  start?: number;
+  /** Inclusive end byte offset (defaults to the last byte) */
+  end?: number;
+  /** Serve the last N bytes; resolved against the file size by the backend */
+  suffixLength?: number;
+}
+
+/** Resolve a (possibly partial or suffix) range request against a known file size. */
+export function resolveFileRange(
+  totalSize: number,
+  range?: FileRange,
+): { start: number; end: number; contentLength: number } {
+  let start = range?.start ?? 0;
+  let end = range?.end ?? totalSize - 1;
+
+  if (range?.suffixLength !== undefined) {
+    start = totalSize - range.suffixLength;
+    end = totalSize - 1;
+  }
+
+  start = Math.max(0, start);
+  end = Math.min(end, totalSize - 1);
+
+  return { start, end, contentLength: end - start + 1 };
+}
+
+export interface FileStreamResult {
+  /** Node.js Readable stream for the requested byte range */
+  stream: Readable;
+  /** Total size of the file in bytes */
+  totalSize: number;
+  /** Actual start byte served (may differ when clamped) */
+  start: number;
+  /** Actual end byte served, inclusive */
+  end: number;
+  /** Number of bytes in the stream (end - start + 1) */
+  contentLength: number;
+}
+
 export interface Storage {
   getServerDataInfo: () => Promise<ServerDataInfo>;
   readFile: (targetPath: string, contentType: string | null) => Promise<string | Buffer>;
+  /** Stream a byte range of a report asset. When `range` is omitted, stream the whole file. */
+  readFileStream: (targetPath: string, range?: FileRange) => Promise<FileStreamResult>;
   readResults: (input?: ReadResultsInput) => Promise<ReadResultsOutput>;
   readReports: (input?: ReadReportsInput) => Promise<ReadReportsOutput>;
   deleteResults: (resultIDs: string[]) => Promise<void>;
