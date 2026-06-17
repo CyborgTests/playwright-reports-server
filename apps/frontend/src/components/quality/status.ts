@@ -19,6 +19,26 @@ export function worstStatus(snapshot: QualityNodeSnapshot): WorstStatus {
   return status;
 }
 
+export const CARD_BORDER_CLASS: Record<WorstStatus, string> = {
+  ok: 'border-l-emerald-500',
+  stale: 'border-l-amber-500',
+  notOk: 'border-l-red-500',
+  empty: 'border-l-muted-foreground/40',
+};
+
+export const STATUS_LABEL: Record<WorstStatus, string> = {
+  ok: 'OK',
+  stale: 'Stale',
+  notOk: 'Not OK',
+  empty: 'No data',
+};
+
+export function dotForCard(status: WorstStatus): 'ok' | 'warn' | undefined {
+  if (status === 'ok') return 'ok';
+  if (status === 'stale') return 'warn';
+  return undefined;
+}
+
 export interface HomeAggregate {
   dashboards: number;
   projects: number;

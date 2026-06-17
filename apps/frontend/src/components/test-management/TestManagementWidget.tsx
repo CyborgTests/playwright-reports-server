@@ -19,14 +19,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -36,7 +28,6 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { authHeadersForSession, useAuth } from '@/hooks/useAuth';
 import { useConfig } from '@/hooks/useConfig';
@@ -47,6 +38,7 @@ import { invalidateCache } from '@/lib/query-cache';
 import { withBase } from '@/lib/url';
 import { exponentialMovingAverageDuration } from './calculations/ema';
 import { TestFilters as TestFiltersComponent } from './TestFilters';
+import { DeleteTestDialog, QuarantineDialog } from './TestManagementDialogs';
 
 interface TestManagementWidgetProps {
   project?: string;
@@ -706,96 +698,23 @@ export default function TestManagementWidget({
         </CardContent>
       </Card>
 
-      <Dialog open={isQuarantineModalOpen} onOpenChange={setIsQuarantineModalOpen}>
-        <DialogContent onCloseAutoFocus={(e) => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>
-              {quarantineTest?.isQuarantined ? 'Remove from Quarantine' : 'Quarantine Test'}
-            </DialogTitle>
-            <DialogDescription>
-              {quarantineTest?.isQuarantined
-                ? 'This test will be removed from quarantine and allowed to run again.'
-                : 'This test will be quarantined and skipped in future runs.'}
-            </DialogDescription>
-          </DialogHeader>
-          {quarantineTest && (
-            <div className="space-y-4">
-              <div>
-                <p className="mb-4">
-                  <strong>Test:</strong> {quarantineTest.title}
-                </p>
-                {!quarantineTest.isQuarantined && (
-                  <Textarea
-                    placeholder="Enter reason for quarantine..."
-                    value={quarantineReason}
-                    onChange={(e) => setQuarantineReason(e.target.value)}
-                    required
-                    rows={3}
-                  />
-                )}
-                {quarantineTest.isQuarantined && quarantineTest.quarantineReason && (
-                  <div className="bg-muted p-3 rounded-lg">
-                    <p className="text-sm font-semibold mb-1">Current Reason:</p>
-                    <p className="text-sm">{quarantineTest.quarantineReason}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsQuarantineModalOpen(false)}
-              disabled={isUpdateQuarantinePending}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant={quarantineTest?.isQuarantined ? 'default' : 'destructive'}
-              onClick={handleQuarantineSubmit}
-              disabled={isUpdateQuarantinePending}
-            >
-              {isUpdateQuarantinePending
-                ? 'Saving...'
-                : quarantineTest?.isQuarantined
-                  ? 'Remove Quarantine'
-                  : 'Quarantine Test'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <QuarantineDialog
+        open={isQuarantineModalOpen}
+        onOpenChange={setIsQuarantineModalOpen}
+        test={quarantineTest}
+        reason={quarantineReason}
+        onReasonChange={setQuarantineReason}
+        onSubmit={handleQuarantineSubmit}
+        isPending={isUpdateQuarantinePending}
+      />
 
-      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
-        <DialogContent onCloseAutoFocus={(e) => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>Delete Test</DialogTitle>
-            <DialogDescription>
-              This will permanently delete the test and all its run history. This action cannot be
-              undone.
-            </DialogDescription>
-          </DialogHeader>
-          {deleteTest && (
-            <div>
-              <p>
-                <strong>Test:</strong> {deleteTest.title}
-              </p>
-              <p className="text-sm text-muted-foreground">{deleteTest.filePath}</p>
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsDeleteModalOpen(false)}
-              disabled={isDeletePending}
-            >
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteSubmit} disabled={isDeletePending}>
-              {isDeletePending ? 'Deleting...' : 'Delete Test'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteTestDialog
+        open={isDeleteModalOpen}
+        onOpenChange={setIsDeleteModalOpen}
+        test={deleteTest}
+        onSubmit={handleDeleteSubmit}
+        isPending={isDeletePending}
+      />
     </div>
   );
 }
