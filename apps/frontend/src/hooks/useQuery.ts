@@ -39,9 +39,16 @@ const useQuery = <ReturnType>(
       }
 
       if (!response.ok) {
-        const errorBody = await response.text();
-        toast.error(`Network response was not ok: ${errorBody}`);
-        throw new Error(`Network response was not ok: ${errorBody}`);
+        const text = await response.text();
+        let message = `Request failed (${response.status})`;
+        try {
+          const envelope = text ? (JSON.parse(text) as { error?: string }) : undefined;
+          if (envelope?.error) message = envelope.error;
+        } catch {
+          // non-JSON body - keep the generic status message.
+        }
+        toast.error(message);
+        throw new Error(message);
       }
 
       return response.json();

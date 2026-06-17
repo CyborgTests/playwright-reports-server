@@ -26,7 +26,7 @@ const isPrimitive = (v: unknown): v is string | number | boolean =>
 
 function extractTags(report: ReportHistory): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(report as unknown as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(report as ReportHistory & Record<string, unknown>)) {
     if (RESERVED_REPORT_FIELDS.has(key)) continue;
     if (!isPrimitive(value)) continue;
     out[key] = String(value);
