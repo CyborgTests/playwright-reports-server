@@ -5,6 +5,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import { toast } from 'sonner';
 import FormattedDate from '@/components/date-format';
 import { MarkClusterResolvedDialog } from '@/components/failure-clusters/MarkClusterResolvedDialog';
+import type { ClusterResolutionRequest } from '@/components/failure-clusters/types';
 import {
   Accordion,
   AccordionContent,
@@ -32,7 +33,7 @@ function CrossTestClusterCard({
 }: Readonly<{ cluster: FailureCluster; project: string; onChange: () => void }>) {
   const resolved = cluster.lifecycle === 'resolved';
   const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
-  const markMutation = useMutation<{ success: boolean }, Record<string, unknown>>(
+  const markMutation = useMutation<{ success: boolean }, ClusterResolutionRequest>(
     `/api/analytics/failure-clusters/${cluster.id}/resolve`,
     {
       method: 'POST',
@@ -43,7 +44,7 @@ function CrossTestClusterCard({
       },
     }
   );
-  const reopenMutation = useMutation<{ success: boolean }, Record<string, unknown>>(
+  const reopenMutation = useMutation<{ success: boolean }, ClusterResolutionRequest>(
     `/api/analytics/failure-clusters/${cluster.id}/reopen`,
     {
       method: 'POST',
@@ -118,7 +119,7 @@ function CrossTestClusterCard({
         clusterName={cluster.name}
         isPending={markMutation.isPending}
         onSubmit={(input) => {
-          const body: Record<string, unknown> = { project };
+          const body: ClusterResolutionRequest = { project };
           if (input.note) body.note = input.note;
           markMutation.mutate({ body });
         }}
@@ -194,7 +195,7 @@ function FailureGroupCard({
   const resolved = cluster?.lifecycle === 'resolved';
   const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
   const clusterId = cluster?.id ?? '_';
-  const markMutation = useMutation<{ success: boolean }, Record<string, unknown>>(
+  const markMutation = useMutation<{ success: boolean }, ClusterResolutionRequest>(
     `/api/analytics/failure-clusters/${clusterId}/resolve`,
     {
       method: 'POST',
@@ -205,7 +206,7 @@ function FailureGroupCard({
       },
     }
   );
-  const reopenMutation = useMutation<{ success: boolean }, Record<string, unknown>>(
+  const reopenMutation = useMutation<{ success: boolean }, ClusterResolutionRequest>(
     `/api/analytics/failure-clusters/${clusterId}/reopen`,
     {
       method: 'POST',
@@ -324,7 +325,7 @@ function FailureGroupCard({
           clusterName={cluster.name}
           isPending={markMutation.isPending}
           onSubmit={(input) => {
-            const body: Record<string, unknown> = { project };
+            const body: ClusterResolutionRequest = { project };
             if (input.note) body.note = input.note;
             markMutation.mutate({ body });
           }}

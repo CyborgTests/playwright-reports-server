@@ -15,6 +15,7 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import DateRangeSelect from '@/components/date-range-select';
 import { MarkClusterResolvedDialog } from '@/components/failure-clusters/MarkClusterResolvedDialog';
+import type { ClusterResolutionRequest } from '@/components/failure-clusters/types';
 import { subtitle, title } from '@/components/primitives';
 import ProjectSelect from '@/components/project-select';
 import ReportPicker from '@/components/report-picker';
@@ -308,7 +309,7 @@ function ClusterCard({
   const manualResolution = cluster.resolution?.manual === true;
   const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
 
-  const markMutation = useMutation<{ success: boolean }, Record<string, unknown>>(
+  const markMutation = useMutation<{ success: boolean }, ClusterResolutionRequest>(
     `/api/analytics/failure-clusters/${cluster.id}/resolve`,
     {
       method: 'POST',
@@ -319,7 +320,7 @@ function ClusterCard({
       },
     }
   );
-  const reopenMutation = useMutation<{ success: boolean }, Record<string, unknown>>(
+  const reopenMutation = useMutation<{ success: boolean }, ClusterResolutionRequest>(
     `/api/analytics/failure-clusters/${cluster.id}/reopen`,
     {
       method: 'POST',
@@ -331,7 +332,7 @@ function ClusterCard({
   );
 
   const handleResolveSubmit = (input: { note?: string }) => {
-    const body: Record<string, unknown> = { project };
+    const body: ClusterResolutionRequest = { project };
     if (input.note) body.note = input.note;
     markMutation.mutate({ body });
   };
