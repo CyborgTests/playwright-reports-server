@@ -362,7 +362,7 @@ export class ReportDatabase {
         }>
       ).map((r) => r.project);
 
-      // capture the tests these reports' runs touched before deleting — the
+      // capture the tests these reports' runs touched before deleting - the
       // report delete cascades the runs away, after which we can't find them.
       const testsCompiled = this.k
         .selectFrom('test_runs')
@@ -564,7 +564,7 @@ export class ReportDatabase {
     const out = new Map<string, ReportHistoryLite[]>();
     if (projects.length === 0 || limit <= 0) return out;
 
-    // ROW_NUMBER() OVER PARTITION BY in a subquery — Kysely can express this
+    // ROW_NUMBER() OVER PARTITION BY in a subquery - Kysely can express this
     // via .with()/window functions, but the typed builder gets verbose. Raw sql``
     // here keeps the query readable while still going through Kysely.
     const placeholders = projects.map(() => '?').join(',');

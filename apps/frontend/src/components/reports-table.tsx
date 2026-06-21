@@ -85,7 +85,7 @@ const getMetadataItems = (item: ReportHistory): MetadataItem[] => {
   // Access dynamic properties that come from resultDetails
   const itemWithMetadata = item as ReportHistory & ReportMetadataFields;
 
-  // Primary fields — shown inline up to a small cap
+  // Primary fields - shown inline up to a small cap
   if (itemWithMetadata.branch) {
     metadata.push({
       key: 'branch',
@@ -116,7 +116,7 @@ const getMetadataItems = (item: ReportHistory): MetadataItem[] => {
     });
   }
 
-  // Secondary fields — collapsed into popover
+  // Secondary fields - collapsed into popover
   if (itemWithMetadata.workingDir) {
     const dirName = itemWithMetadata.workingDir.split('/').pop() || itemWithMetadata.workingDir;
 
@@ -137,7 +137,7 @@ const getMetadataItems = (item: ReportHistory): MetadataItem[] => {
     metadata.push({ key: 'machines', value: itemWithMetadata.machines.count });
   }
 
-  // Add any other metadata fields — skip null/undefined/objects/arrays to avoid `[object Object]`
+  // Add any other metadata fields - skip null/undefined/objects/arrays to avoid `[object Object]`
   Object.entries(itemWithMetadata).forEach(([key, value]) => {
     if (coreFields.includes(key)) return;
     if (['environment', 'workingDir', 'branch', 'machines'].includes(key)) return;

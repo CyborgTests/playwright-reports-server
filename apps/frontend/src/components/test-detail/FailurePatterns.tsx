@@ -26,8 +26,8 @@ function firstLine(message: string): string {
   return newlineIdx === -1 ? trimmed : trimmed.slice(0, newlineIdx);
 }
 
- // Normalized signature of a message's first significant line
- // links a failure group to its cluster by sample-message shape.
+// Normalized signature of a message's first significant line
+// links a failure group to its cluster by sample-message shape.
 function normalizeMessageSignature(message: string | undefined): string {
   const line =
     (message ?? '')

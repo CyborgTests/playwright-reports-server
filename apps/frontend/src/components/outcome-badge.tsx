@@ -2,7 +2,7 @@ import { ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import { Badge } from '@/components/ui/badge';
 
 export function outcomeBadge(outcome?: string) {
-  if (!outcome) return <span className="text-sm text-muted-foreground">—</span>;
+  if (!outcome) return <span className="text-sm text-muted-foreground">-</span>;
   switch (outcome) {
     case ReportTestOutcomeEnum.Expected:
     case ReportTestOutcomeEnum.Passed:

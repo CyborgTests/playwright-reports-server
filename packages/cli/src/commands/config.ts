@@ -39,7 +39,7 @@ export async function runConfigCommand(args: string[]): Promise<void> {
     if (!isKey(key)) {
       throw new Error(`Unknown key: ${key}. Valid keys: ${KEYS.join(', ')}`);
     }
-    // Single-key get also masks the token — the raw value lives on disk if
+    // Single-key get also masks the token - the raw value lives on disk if
     // the user genuinely needs it.
     const value = key === 'token' ? maskToken(current.token) : (current[key] ?? null);
     emitJson({ [key]: value });
@@ -57,7 +57,7 @@ function maskToken(token: string | undefined): string | null {
 function showHelp(): void {
   process.stdout.write(
     [
-      'pwrs-cli config — manage CLI configuration',
+      'pwrs-cli config - manage CLI configuration',
       '',
       'Usage:',
       '  pwrs-cli config set server <url>     Save the Playwright Reports Server URL',

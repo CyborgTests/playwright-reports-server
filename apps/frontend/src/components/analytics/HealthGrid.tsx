@@ -37,7 +37,7 @@ const formatReportHeading = (
 ): string => {
   const parts: string[] = [];
   if (typeof displayNumber === 'number') parts.push(`#${displayNumber}`);
-  if (title) parts.push(parts.length ? `— ${title}` : title);
+  if (title) parts.push(parts.length ? `- ${title}` : title);
   return parts.length ? `${parts.join(' ')} (${date})` : date;
 };
 

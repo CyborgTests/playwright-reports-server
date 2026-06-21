@@ -68,7 +68,7 @@ export function Navbar() {
           )}
         </Link>
 
-        {/* Desktop navigation — hidden below md */}
+        {/* Desktop navigation - hidden below md */}
         <nav className="hidden md:flex items-center space-x-1 text-sm font-medium">
           {navItems.map((item) => {
             const isActive = location.pathname === item.href;
@@ -101,7 +101,7 @@ export function Navbar() {
           ) : null}
           <ThemeSwitch />
 
-          {/* Mobile hamburger — shown below md */}
+          {/* Mobile hamburger - shown below md */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild className="md:hidden">
               <Button

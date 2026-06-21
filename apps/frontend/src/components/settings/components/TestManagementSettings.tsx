@@ -77,7 +77,7 @@ export default function TestManagementSettings({
     currentTestManagement.flakinessEvaluationWindowDays ??
     DEFAULT_FLAKINESS_EVALUATION_WINDOW_DAYS;
 
-  // Render-time validation. Errors surface inline beneath each input — backend
+  // Render-time validation. Errors surface inline beneath each input - backend
   // also validates on save, so it's OK if the user temporarily holds an
   // invalid value.
   const validateThreshold = (n: number, label: string): string | null => {
@@ -117,7 +117,7 @@ export default function TestManagementSettings({
           <Separator />
 
           {/* Thresholds laid out side by side. Inputs accept any value while
-              the user is typing — validation runs at render time and shows an
+              the user is typing - validation runs at render time and shows an
               inline error so the user can fix it before saving rather than
               having the keystroke rejected. */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

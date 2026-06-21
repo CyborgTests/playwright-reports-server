@@ -30,7 +30,7 @@ const CONFIG: Record<StatusBadgeKind, StatusConfig> = {
     variant: 'outline',
     icon: FileX2,
     label: 'No data',
-    tooltip: 'No projects configured yet — add some in Edit mode.',
+    tooltip: 'No projects configured yet - add some in Edit mode.',
   },
   noReports: {
     variant: 'outline',

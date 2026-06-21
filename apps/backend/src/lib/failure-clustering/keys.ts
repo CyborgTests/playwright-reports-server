@@ -4,7 +4,7 @@
  *   local  -> "frame:<file:line>" and/or "loc:<normalizedLocator>"
  *            ("fixture:<phase>:<file>" for hooks, "msg:<sig>" as fallback)
  *   global -> "global:<errorClass>:<sig>"  (location ignored)
- * Verb is not part of any key — same frame -> same cluster regardless of verb.
+ * Verb is not part of any key - same frame -> same cluster regardless of verb.
  */
 import type { ParsedFailureDetails } from './extractors/failure-details.js';
 import { detectFixturePhase } from './extractors/fixture-context.js';
@@ -65,9 +65,9 @@ export function keysFor(parsed: ParsedFailureDetails, routed: Route): string[] {
   return keys;
 }
 
-// Priority for choosing a component's identity key. 
+// Priority for choosing a component's identity key.
 // The locator is main unifier - if a set is held together,
-// that locator IS its identity and is stable across frame. 
+// that locator IS its identity and is stable across frame.
 // A pure-frame set is identified by its frame.
 const KEY_PRIORITY: ReadonlyArray<string> = [
   FIXTURE_PREFIX,

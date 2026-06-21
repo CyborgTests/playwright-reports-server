@@ -100,7 +100,7 @@ export function CreateDashboardDialog({ open, onClose, onCreate }: CreateDashboa
                 Show on home page
               </Label>
               <p className="text-xs text-muted-foreground">
-                Multiple dashboards can be pinned to `/` — reorder them later from the home page.
+                Multiple dashboards can be pinned to `/` - reorder them later from the home page.
               </p>
             </div>
           </div>

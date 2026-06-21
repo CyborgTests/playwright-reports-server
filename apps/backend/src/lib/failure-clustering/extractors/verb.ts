@@ -11,7 +11,7 @@ const KNOWN_VERBS = new Set<string>(PLAYWRIGHT_VERBS);
 export function extractVerb(message: string | undefined): PlaywrightVerb {
   if (!message) return 'unknown';
 
-  // Strict-mode violation wins over verb detection — the assertion verb
+  // Strict-mode violation wins over verb detection - the assertion verb
   // (toBeVisible / toBe / …) is incidental; the real mechanism is that the
   // selector is ambiguous, and that's a single fix anchor regardless of the
   // verb that exposed it.

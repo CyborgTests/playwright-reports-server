@@ -15,7 +15,7 @@ function analyzeRegex(pattern: string): RegexInfo {
   }
   try {
     const re = new RegExp(pattern);
-    // Count capture groups via the source — RegExp doesn't expose it directly.
+    // Count capture groups via the source - RegExp doesn't expose it directly.
     // Subtract non-capturing `(?:` and lookarounds `(?=`, `(?!`, `(?<=`, `(?<!`.
     const all = (pattern.match(/\((?!\?)/g) ?? []).length;
     const sample = sampleArtifactFor(pattern, re);
@@ -109,7 +109,7 @@ export function GithubSyncTemplateFields({
         />
         <p className="text-xs text-muted-foreground">
           Filters which workflow artifacts get uploaded. Use parentheses to capture parts of the
-          artifact name — those captures become <span className="font-mono">{`$\{match1}`}</span>,{' '}
+          artifact name - those captures become <span className="font-mono">{`$\{match1}`}</span>,{' '}
           <span className="font-mono">{`$\{match2}`}</span>, … in the templates below.
         </p>
         {artifactPattern && !regexInfo.ok && (
@@ -118,7 +118,7 @@ export function GithubSyncTemplateFields({
         {regexInfo.ok && (
           <p className="text-xs text-muted-foreground">
             {regexInfo.captureCount === 0 ? (
-              <>No capture groups detected — add parentheses to capture parts of the name.</>
+              <>No capture groups detected - add parentheses to capture parts of the name.</>
             ) : (
               <>
                 {regexInfo.captureCount} capture group
@@ -175,22 +175,22 @@ export function GithubSyncTemplateFields({
           <ul className="text-xs text-muted-foreground space-y-0.5 list-disc pl-4">
             <li>
               <span className="font-mono">{`$\{match1}`}</span>,{' '}
-              <span className="font-mono">{`$\{match2}`}</span>, … — capture groups from the regex
+              <span className="font-mono">{`$\{match2}`}</span>, … - capture groups from the regex
               above (e.g. the part in parentheses)
             </li>
             <li>
-              <span className="font-mono">{`$\{branch}`}</span> — git branch the workflow ran on
+              <span className="font-mono">{`$\{branch}`}</span> - git branch the workflow ran on
             </li>
             <li>
-              <span className="font-mono">{`$\{runDate}`}</span> — date the workflow ran
+              <span className="font-mono">{`$\{runDate}`}</span> - date the workflow ran
               (YYYY-MM-DD)
             </li>
             <li>
-              <span className="font-mono">{`$\{workflowName}`}</span> — display name of the workflow
+              <span className="font-mono">{`$\{workflowName}`}</span> - display name of the workflow
               (e.g. "Playwright Tests")
             </li>
             <li>
-              <span className="font-mono">{`$\{workflowFile}`}</span> — workflow file name (e.g.
+              <span className="font-mono">{`$\{workflowFile}`}</span> - workflow file name (e.g.
               "playwright.yml")
             </li>
             <li>

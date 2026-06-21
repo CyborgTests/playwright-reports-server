@@ -7,7 +7,7 @@ RUN npm install -g pnpm@10
 RUN apk add --no-cache python3 make g++ libc6-compat
 
 # CI=true prevents pnpm from prompting; PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD keeps
-# @playwright/test from pulling chromium/firefox/webkit — we only run
+# @playwright/test from pulling chromium/firefox/webkit - we only run
 # `playwright merge-reports`, not browsers.
 ENV CI=true \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
@@ -58,7 +58,7 @@ RUN mkdir -p /app/apps/frontend/packages && \
 ENV DOCKER_BUILD=true
 RUN pnpm --filter @playwright-reports/frontend build:vite
 
-# Bundle backend with esbuild — produces dist/index.js + inject.js + inject.css.
+# Bundle backend with esbuild - produces dist/index.js + inject.js + inject.css.
 # All prod deps except externals get folded and tree-shaken.
 FROM build-base AS backend-bundler
 WORKDIR /app
@@ -66,7 +66,7 @@ COPY --from=deps /app/ ./
 COPY --from=shared-builder /app/packages/shared/dist ./packages/shared/dist
 RUN pnpm --filter @playwright-reports/backend bundle
 
-# Runtime deps stage — fresh install of ONLY the externals into a flat node_modules tree.
+# Runtime deps stage - fresh install of ONLY the externals into a flat node_modules tree.
 FROM build-base AS runtime-deps
 WORKDIR /runtime
 COPY apps/backend/package.json ./backend-package.json
@@ -108,7 +108,7 @@ COPY --from=backend-bundler --chown=appuser:nodejs /app/apps/backend/package.jso
 # The bundle layout resolves these at apps/backend/public (dist/../public).
 COPY --from=backend-bundler --chown=appuser:nodejs /app/apps/backend/public ./apps/backend/public
 
-# Runtime externals — better-sqlite3 native binding + playwright CLI.
+# Runtime externals - better-sqlite3 native binding + playwright CLI.
 COPY --from=runtime-deps --chown=appuser:nodejs /runtime/node_modules ./apps/backend/node_modules
 
 # Frontend static assets served by @fastify/static.

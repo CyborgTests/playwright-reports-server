@@ -52,7 +52,7 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
       if (!resolved) {
         return reply.status(404).send({
           success: false,
-          error: 'Test not found — pass --project, or ensure the testId has a run',
+          error: 'Test not found - pass --project, or ensure the testId has a run',
         });
       }
       const { result: brief, error } = await withError(
@@ -77,7 +77,7 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
         if (!resolved) {
           return reply.status(404).send({
             success: false,
-            error: 'Test not found — pass --project, or ensure the testId has a run',
+            error: 'Test not found - pass --project, or ensure the testId has a run',
           });
         }
         const { result: analysis, error } = await withError(
@@ -105,7 +105,7 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
         if (!resolved) {
           return reply.status(404).send({
             success: false,
-            error: 'Test not found — pass --project, or ensure the testId has a run',
+            error: 'Test not found - pass --project, or ensure the testId has a run',
           });
         }
         const { result: built, error } = await withError(
@@ -227,7 +227,7 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
         if (!resolved) {
           return reply.status(404).send({
             success: false,
-            error: 'Test not found — pass --project, or ensure the testId has a run',
+            error: 'Test not found - pass --project, or ensure the testId has a run',
           });
         }
         const requestedLimit = limit ? Number.parseInt(limit, 10) : DEFAULT_HISTORY_LIMIT;

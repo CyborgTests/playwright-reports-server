@@ -163,7 +163,7 @@ export default function CronConfiguration({
               daysValue={source?.resultExpireDays?.toString() ?? ''}
               scheduleId="result-expire-cron-schedule"
               scheduleLabel="Cleanup schedule"
-              scheduleHelp={'Cron expression — e.g. "0 2 * * *" runs daily at 02:00.'}
+              scheduleHelp={'Cron expression - e.g. "0 2 * * *" runs daily at 02:00.'}
               schedulePlaceholder="0 2 * * *"
               scheduleValue={source?.resultExpireCronSchedule ?? ''}
               disabled={!isEditing}
@@ -191,7 +191,7 @@ export default function CronConfiguration({
               daysValue={source?.reportExpireDays?.toString() ?? ''}
               scheduleId="report-expire-cron-schedule"
               scheduleLabel="Cleanup schedule"
-              scheduleHelp={'Cron expression — e.g. "0 3 * * *" runs daily at 03:00.'}
+              scheduleHelp={'Cron expression - e.g. "0 3 * * *" runs daily at 03:00.'}
               schedulePlaceholder="0 3 * * *"
               scheduleValue={source?.reportExpireCronSchedule ?? ''}
               disabled={!isEditing}

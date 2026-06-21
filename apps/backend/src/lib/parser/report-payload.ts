@@ -2,7 +2,7 @@
  * Reads the embedded Playwright report payload (base64 ZIP under
  * `<script id="playwrightReportBase64">` in the merged `index.html`). The
  * per-file JSONs inside carry `errors[].codeframe`, the step tree, stdout/
- * stderr, tags, annotations, and git/CI metadata — richer than the top-level
+ * stderr, tags, annotations, and git/CI metadata - richer than the top-level
  * `report.json`. Cached per reportId so prompt builds unzip once.
  */
 import * as fs from 'node:fs/promises';
@@ -197,7 +197,7 @@ async function loadReportPayloadUncached(reportId: string): Promise<ReportPayloa
 
 /**
  * Returns `null` on any failure (missing index.html, malformed base64,
- * unparseable JSON) — callers fall back to DB rows / trace ZIPs. Cache is
+ * unparseable JSON) - callers fall back to DB rows / trace ZIPs. Cache is
  * best-effort (60s TTL, 16-entry cap); concurrent callers may race the
  * initial load.
  */

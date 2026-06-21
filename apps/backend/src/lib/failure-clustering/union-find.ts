@@ -1,6 +1,6 @@
 /**
- * Disjoint-set over string nodes (path compression + union-by-rank). 
- * Merges failure-cluster keys; 
+ * Disjoint-set over string nodes (path compression + union-by-rank).
+ * Merges failure-cluster keys;
  * Cluster identity is derived from the set's keys.
  */
 export class UnionFind {

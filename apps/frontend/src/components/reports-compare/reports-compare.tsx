@@ -100,7 +100,7 @@ export default function ReportsCompare() {
 
       <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr] items-stretch">
         <ReportSummaryCard
-          label="A — Baseline"
+          label="A - Baseline"
           report={reportA}
           footer={
             <CompareToPicker
@@ -126,7 +126,7 @@ export default function ReportsCompare() {
           </Button>
         </div>
         <ReportSummaryCard
-          label="B — Target"
+          label="B - Target"
           report={reportB}
           footer={
             <CompareToPicker

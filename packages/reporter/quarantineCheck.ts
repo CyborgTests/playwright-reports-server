@@ -20,7 +20,7 @@ export const test = base.extend<{ checkQuarantine: void }>({
           return false;
         }
 
-        // Heuristic for "this is our reporter" — anything that opts into quarantine skipping.
+        // Heuristic for "this is our reporter" - anything that opts into quarantine skipping.
         return reporterOptions.enabled && reporterOptions.skipQuarantinedTests;
       });
 

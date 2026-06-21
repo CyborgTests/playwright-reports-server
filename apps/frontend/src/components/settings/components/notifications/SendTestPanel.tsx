@@ -79,7 +79,7 @@ export function SendTestPanel({ channelId, draft }: Readonly<SendTestPanelProps>
       <ReportSearchInput
         value={reportId}
         onChange={setReportId}
-        placeholder={requiresReport ? 'Pick a report…' : 'Optional — pick a report'}
+        placeholder={requiresReport ? 'Pick a report…' : 'Optional - pick a report'}
       />
       <div className="flex items-center gap-2 pt-1">
         <Button type="button" size="sm" onClick={run} disabled={!canSend}>

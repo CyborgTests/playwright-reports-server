@@ -33,7 +33,7 @@ const outcomeVariant: Record<
   unknown: 'secondary',
 };
 
-const outcomeLabel = (raw?: string, classified?: DiffOutcome): string => raw ?? classified ?? '—';
+const outcomeLabel = (raw?: string, classified?: DiffOutcome): string => raw ?? classified ?? '-';
 
 function OutcomeCell({
   outcome,
@@ -47,7 +47,7 @@ function OutcomeCell({
   testId: string;
 }) {
   if (!outcome) {
-    return <span className="text-muted-foreground text-xs">—</span>;
+    return <span className="text-muted-foreground text-xs">-</span>;
   }
   return (
     <div className="inline-flex items-center gap-1.5">
@@ -72,13 +72,13 @@ const isDurationEntry = (entry: DiffTestEntry | DurationDeltaEntry): entry is Du
 function DurationCell({ entry }: { entry: DiffTestEntry | DurationDeltaEntry }) {
   const { durationA, durationB } = entry;
   if (durationA === undefined && durationB === undefined) {
-    return <span className="text-muted-foreground text-xs">—</span>;
+    return <span className="text-muted-foreground text-xs">-</span>;
   }
   return (
     <span className="text-xs font-mono whitespace-nowrap">
-      {durationA !== undefined ? formatDuration(durationA) : '—'}
+      {durationA !== undefined ? formatDuration(durationA) : '-'}
       <ArrowRight className="inline-block mx-1 h-3 w-3 text-muted-foreground" />
-      {durationB !== undefined ? formatDuration(durationB) : '—'}
+      {durationB !== undefined ? formatDuration(durationB) : '-'}
     </span>
   );
 }
@@ -89,7 +89,7 @@ function DeltaCell({ entry }: { entry: DiffTestEntry | DurationDeltaEntry }) {
       const deltaMs = entry.durationB - entry.durationA;
       return <DeltaDisplay deltaMs={deltaMs} deltaPct={deltaMs / Math.max(entry.durationA, 1)} />;
     }
-    return <span className="text-muted-foreground text-xs">—</span>;
+    return <span className="text-muted-foreground text-xs">-</span>;
   }
   return <DeltaDisplay deltaMs={entry.deltaMs} deltaPct={entry.deltaPct} />;
 }

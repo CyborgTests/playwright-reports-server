@@ -124,7 +124,7 @@ export class TestAnalysisDatabase {
   }
 
   /**
-   * Find analysis by testId + reportId — precise lookup for a specific test run.
+   * Find analysis by testId + reportId - precise lookup for a specific test run.
    * Returns the most recently updated row (latest attempt wins on ties).
    */
   public getByTestAndReport(testId: string, reportId: string): TestAnalysisRow | null {

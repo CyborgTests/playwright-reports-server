@@ -360,7 +360,7 @@ export class CronService {
     const cacheDir = path.join(TMP_FOLDER, 'results');
     const { result: entries, error: readError } = await withError(fs.readdir(cacheDir));
     if (readError || !entries) {
-      // Dir may not exist yet on a fresh deploy that hasn't received an upload — non-fatal.
+      // Dir may not exist yet on a fresh deploy that hasn't received an upload - non-fatal.
       return;
     }
 

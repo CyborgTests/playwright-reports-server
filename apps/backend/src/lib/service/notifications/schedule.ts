@@ -6,7 +6,7 @@ import {
 } from '@playwright-reports/shared';
 import type { ReportHistory } from '../../storage/types.js';
 import { configCache } from '../cache/config.js';
-import { failureSummaryDb, notificationStateDb, reportDb, testDb } from '../db/index.js';
+import { failureSummaryDb, notificationStateDb, reportDb, testAnalyticsDb } from '../db/index.js';
 import { projectFilterMatches } from './filters.js';
 import type { ScheduleSummary } from './variables.js';
 
@@ -142,11 +142,11 @@ export function buildSummaryForProject(args: {
     .slice(0, TOP_FAILURE_CATEGORIES_LIMIT)
     .map((c) => ({ name: c.category, count: c.count, percentage: c.percentage }));
 
-  const topFailingTests = testDb
+  const topFailingTests = testAnalyticsDb
     .getTopFailingTestsInWindow(scopedProject, fromISO, toISO, TOP_FAILING_TESTS_LIMIT)
     .map((t) => ({ title: t.title, failureCount: t.failureCount, project: t.project }));
 
-  const flakiestTests = testDb
+  const flakiestTests = testAnalyticsDb
     .getFlakiestTestsInWindow(scopedProject, fromISO, toISO, FLAKIEST_TESTS_LIMIT, warningThreshold)
     .map((t) => ({ title: t.title, flakinessScore: t.flakinessScore, project: t.project }));
 

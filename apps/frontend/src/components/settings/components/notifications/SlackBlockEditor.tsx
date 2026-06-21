@@ -201,7 +201,7 @@ function BlockForm({ block, variables, onChange }: Readonly<BlockFormProps>) {
         onChange={(v) => onChange({ ...block, text: v })}
         variables={variables}
         maxLength={150}
-        helper="Max 150 characters. Plain text — no formatting."
+        helper="Max 150 characters. Plain text - no formatting."
       />
     );
   }
@@ -236,7 +236,7 @@ function BlockForm({ block, variables, onChange }: Readonly<BlockFormProps>) {
         multiline
         rows={2}
         maxLength={3000}
-        helper="Small muted line — usually a timestamp or report number."
+        helper="Small muted line - usually a timestamp or report number."
       />
     );
   }
@@ -250,7 +250,7 @@ function BlockForm({ block, variables, onChange }: Readonly<BlockFormProps>) {
           onChange={(v) => onChange({ ...block, url: v })}
           variables={urlVariablesOnly(variables)}
           maxLength={3000}
-          helper="Must be a publicly fetchable URL — Slack downloads it from your image host."
+          helper="Must be a publicly fetchable URL - Slack downloads it from your image host."
         />
         <MustacheTextField
           label="Alt text (optional)"

@@ -7,7 +7,7 @@ import type { FixturePhase } from '../types.js';
  * field on `test.results[]`, so we derive it heuristically from the error
  * message. The same heuristic feeds the `setup_teardown` failure category
  * upstream (see `detectFailureCategory`). When no hook marker appears in
- * the message, we return undefined — fixture-strategy clustering then
+ * the message, we return undefined - fixture-strategy clustering then
  * skips that run.
  */
 

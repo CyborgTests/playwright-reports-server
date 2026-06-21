@@ -289,7 +289,7 @@ export const ErrorResponseSchema = z.object({
 
 // Feedback is always test-level. Identity: testId + (fileId+project) OR (reportId).
 // Server resolves missing fileId/project from test_runs when only reportId is provided
-// — used by the injected Playwright panel which only knows what's in the URL.
+// - used by the injected Playwright panel which only knows what's in the URL.
 const testKeyShape = {
   testId: z.string().min(1),
   fileId: z.string().optional(),
@@ -321,8 +321,8 @@ export const DeleteFeedbackRequestSchema = z
   .object(testKeyShape)
   .refine(testKeysRefinement, { message: testKeysMessage });
 
-// Phase 2: cross-project related feedback. Either (fileId+excludeProject) — full identity —
-// or (reportId) — let the server resolve fileId+project from test_runs.
+// Phase 2: cross-project related feedback. Either (fileId+excludeProject) - full identity -
+// or (reportId) - let the server resolve fileId+project from test_runs.
 export const GetRelatedFeedbackQuerySchema = z
   .object({
     testId: z.string().min(1),

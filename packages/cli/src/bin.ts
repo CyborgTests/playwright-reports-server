@@ -43,7 +43,7 @@ const requireFromHere = createRequire(import.meta.url);
 const pkg = requireFromHere('../package.json') as { version: string };
 
 const HELP = [
-  'pwrs-cli — Playwright Reports Server access for coding agents',
+  'pwrs-cli - Playwright Reports Server access for coding agents',
   '',
   'Usage:',
   '  pwrs-cli <command> [args] [options]',
@@ -81,7 +81,7 @@ const HELP = [
   '  cluster reopen <clusterId>             Re-open a resolved cluster (write)',
   '  attachment <url>                       Fetch screenshot/error-context with Bearer auth',
   '',
-  'Authoring & feedback (write — only when the user explicitly asks):',
+  'Authoring & feedback (write - only when the user explicitly asks):',
   '  test analysis-submit <testId> --report-id <id> --analysis-file <path|-> --model <name>',
   '                                          POST a fresh analysis (refused with 409 when one exists)',
   '  test feedback <testId> --comment "..." [--report-id <id>]',
@@ -126,7 +126,7 @@ const HELP = [
 
 const GROUP_HELP: Record<string, string> = {
   test: [
-    'pwrs-cli test — test-level drill-down',
+    'pwrs-cli test - test-level drill-down',
     '',
     'Subcommands:',
     '  test find <query> [--project <p>] [--limit N]',
@@ -135,7 +135,7 @@ const GROUP_HELP: Record<string, string> = {
     '      Resolve a spec file → testIds. With :line, sorts by proximity to that line.',
     '  test brief <testId> [--project <p>]',
     '      One-shot brief (signals, latest failure, LLM analysis, feedback, cluster).',
-    '      --project optional — server resolves from latest test_runs row.',
+    '      --project optional - server resolves from latest test_runs row.',
     '  test analysis <testId> [--project <p>]',
     '      Full persisted LLM analysis markdown (unmodified, no regex split).',
     '  test failure-context <testId> --report-id <id> [--project <p>]',
@@ -153,7 +153,7 @@ const GROUP_HELP: Record<string, string> = {
     '      --search, --from/--to, --limit (default 20, max 100), --offset.',
     '  test analysis-submit <testId> --report-id <id> --analysis-file <path|-> --model <name> [--category <c>] [--force]',
     '      POST a fresh analysis (use `-` to read from stdin). Refused with 409 when an',
-    '      analysis already exists for (testId, reportId) — route to `test feedback` instead.',
+    '      analysis already exists for (testId, reportId) - route to `test feedback` instead.',
     '      --force overwrites; only use after explicit user confirmation.',
     '  test feedback <testId> --comment "..." [--report-id <id> | --file-id <id> --project <p>]',
     '      Upsert a dissent/correction note on an existing analysis. The server requires either',
@@ -163,7 +163,7 @@ const GROUP_HELP: Record<string, string> = {
     '',
   ].join('\n'),
   report: [
-    'pwrs-cli report — report-level drill-down',
+    'pwrs-cli report - report-level drill-down',
     '',
     'Subcommands:',
     '  report list [filters]',
@@ -178,7 +178,7 @@ const GROUP_HELP: Record<string, string> = {
     '  report resolve <displayNumber> [--project <p>]',
     '      Resolve a `#479`-style displayNumber to UUID reportId(s).',
     '  report compare <reportIdA|latest|prev> <reportIdB|latest|prev> [--project <p>] [--limit N]',
-    '      Diff two reports — buckets: newlyFailed, fixed, stillFailing, flakyToPass, etc.',
+    '      Diff two reports - buckets: newlyFailed, fixed, stillFailing, flakyToPass, etc.',
     '      Accepts UUID reportIds and the keywords `latest` / `prev`.',
     '  report summary-submit <reportId> --summary-file <path|-> --model <name> [--structured-file <path|->] [--force]',
     '      POST a report-level failure summary authored by an external agent.',
@@ -187,7 +187,7 @@ const GROUP_HELP: Record<string, string> = {
     '',
   ].join('\n'),
   cluster: [
-    'pwrs-cli cluster — failure-cluster drill-down & lifecycle',
+    'pwrs-cli cluster - failure-cluster drill-down & lifecycle',
     '',
     'Subcommands:',
     '  cluster list [--project <p>] [--from/--to] [--limit N] [--include-resolved]',
@@ -205,7 +205,7 @@ const GROUP_HELP: Record<string, string> = {
     '',
   ].join('\n'),
   project: [
-    'pwrs-cli project — project-level info',
+    'pwrs-cli project - project-level info',
     '',
     'Subcommands:',
     '  project list',
@@ -220,23 +220,23 @@ const GROUP_HELP: Record<string, string> = {
     '',
   ].join('\n'),
   tag: [
-    'pwrs-cli tag — report tags',
+    'pwrs-cli tag - report tags',
     '',
     'Subcommands:',
     '  tag list [--project <p>]    List report tags (pairs with `report list --tags <a,b>`).',
     '',
   ].join('\n'),
   category: [
-    'pwrs-cli category — failure categories',
+    'pwrs-cli category - failure categories',
     '',
     'Subcommands:',
     '  category list [--project <p>]',
     '      Enumerate categories the heuristic has emitted (for --failure-category).',
-    '      Pass --project to scope — categories may differ across projects.',
+    '      Pass --project to scope - categories may differ across projects.',
     '',
   ].join('\n'),
   stats: [
-    'pwrs-cli stats — aggregate health digest',
+    'pwrs-cli stats - aggregate health digest',
     '',
     'Usage:',
     '  pwrs-cli stats [--project <p>] [--from/--to] [--failed-only]',
@@ -244,7 +244,7 @@ const GROUP_HELP: Record<string, string> = {
     '',
   ].join('\n'),
   config: [
-    'pwrs-cli config — local CLI configuration',
+    'pwrs-cli config - local CLI configuration',
     '',
     'Subcommands:',
     '  config set server <url>     Save the Playwright Reports Server URL.',
@@ -256,14 +256,14 @@ const GROUP_HELP: Record<string, string> = {
     '',
   ].join('\n'),
   ping: [
-    'pwrs-cli ping — sanity-check the server',
+    'pwrs-cli ping - sanity-check the server',
     '',
     'Usage:',
     '  pwrs-cli ping    Returns { ok, server, tokenConfigured, latencyMs, status, timestamp }.',
     '',
   ].join('\n'),
   attachment: [
-    'pwrs-cli attachment — fetch a server resource with Bearer auth',
+    'pwrs-cli attachment - fetch a server resource with Bearer auth',
     '',
     'Usage:',
     '  pwrs-cli attachment <url|/api/serve/...>            Metadata only (default).',
@@ -367,7 +367,7 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
     return Number.isFinite(n) && n > 0 ? n : undefined;
   };
   const str = (raw: unknown): string | undefined => (typeof raw === 'string' ? raw : undefined);
-  // PWRS_PROJECT is the default project for single-project agent setups —
+  // PWRS_PROJECT is the default project for single-project agent setups -
   // explicit --project still wins.
   const project = str(v.project) ?? process.env.PWRS_PROJECT ?? undefined;
   return {

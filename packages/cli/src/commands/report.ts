@@ -42,7 +42,7 @@ interface ReportBriefOpts {
 /**
  * Default mode returns a compact payload: stats + clusterSummary (with the
  * first few failed tests sampled per cluster) + a few unclustered sample
- * failures. Pass `--with-failures` to get every failed test's full brief —
+ * failures. Pass `--with-failures` to get every failed test's full brief -
  * use sparingly, a 50-failure report in full mode is ~100 KB.
  */
 export async function runReportBrief(reportId: string, opts: ReportBriefOpts): Promise<void> {
@@ -222,7 +222,7 @@ interface ReportResolveOpts {
 /**
  * Resolve a `#479`-style displayNumber to the UUID reportId(s) that
  * `report compare` / `report brief` accept. Multiple matches when the same
- * displayNumber exists across projects — pass `--project` to scope.
+ * displayNumber exists across projects - pass `--project` to scope.
  */
 export async function runReportResolve(
   displayNumber: string,

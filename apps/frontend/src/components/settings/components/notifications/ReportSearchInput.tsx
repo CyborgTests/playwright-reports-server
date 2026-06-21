@@ -137,5 +137,5 @@ function formatSummary(r: ReportHistory): string {
   const passed = stats?.expected ?? 0;
   const failed = stats?.unexpected ?? 0;
   const flaky = stats?.flaky ?? 0;
-  return `${head}${title} — ${r.project} (${passed}✓ / ${failed}✗ / ${flaky}~)`;
+  return `${head}${title} - ${r.project} (${passed}✓ / ${failed}✗ / ${flaky}~)`;
 }

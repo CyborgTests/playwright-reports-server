@@ -203,7 +203,7 @@ export const compareReports = (
     if (!a && b) {
       newTests.push(entry);
       // A newly added test that fails on first run is also "newly failing"
-      // — surface it under both buckets so triagers don't miss it.
+      // - surface it under both buckets so triagers don't miss it.
       if (entry.outcomeB === 'fail') {
         newlyFailed.push(entry);
       }

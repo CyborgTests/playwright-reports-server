@@ -335,7 +335,7 @@ function buildName(
     case 'signature': {
       what = categoryLabel ?? firstSignificantLine(sampleMessage) ?? verbLabel(anchor.verb);
       what = truncate(what, 70);
-      // global signatures intentionally span files — no single location.
+      // global signatures intentionally span files - no single location.
       location = scope === 'global' ? undefined : sharedLocation(members);
       break;
     }

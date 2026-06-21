@@ -7,7 +7,13 @@ import {
   GetRelatedFeedbackQuerySchema,
   UpsertFeedbackRequestSchema,
 } from '../lib/schemas/index.js';
-import { analysisFeedbackDb, llmTasksDb, reportDb, testDb } from '../lib/service/db/index.js';
+import {
+  analysisFeedbackDb,
+  llmTasksDb,
+  reportDb,
+  testAnalyticsDb,
+  testDb,
+} from '../lib/service/db/index.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
 function feedbackRowToShared(
@@ -362,7 +368,7 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const history = testDb.getFailureHistory(
+    const history = testAnalyticsDb.getFailureHistory(
       testId,
       resolvedFileId,
       resolvedSignature,

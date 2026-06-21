@@ -7,7 +7,7 @@ const TAG_LEN = 16;
 const CIPHER_PREFIX = 'enc:v1:';
 
 function getKey(): Buffer {
-  // AES-256 wants exactly 32 bytes — derive from AUTH_SECRET with SHA-256.
+  // AES-256 wants exactly 32 bytes - derive from AUTH_SECRET with SHA-256.
   // If AUTH_SECRET isn't set we use a fixed development key so the feature
   // still works locally; tokens stored that way are only as safe as the DB file.
   const secret = env.AUTH_SECRET ?? 'playwright-reports-server-default-dev-key';

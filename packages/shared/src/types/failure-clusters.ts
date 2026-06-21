@@ -4,7 +4,7 @@
  * Each failed Playwright test_run is assigned to exactly one cluster via a
  * deterministic anchor. Two failures share a cluster iff their anchors are
  * equal. There is no merging, no precedence resolution, no temporal/signature
- * grouping — the anchor IS the cluster. This produces:
+ * grouping - the anchor IS the cluster. This produces:
  *  - Stable cluster IDs across calls (id = hash(anchor)).
  *  - "One cluster = one fix" semantics by construction.
  *  - A small, named set of cluster kinds the LLM/UI can branch on.
@@ -69,7 +69,7 @@ export type PlaywrightVerb =
   | 'strictModeViolation'
   // Bare `Test timeout of Nms exceeded.` with no verb context.
   | 'testTimeout'
-  // Couldn't classify — anchor falls back to test identity.
+  // Couldn't classify - anchor falls back to test identity.
   | 'unknown';
 
 /**
@@ -110,7 +110,7 @@ export const CLUSTER_KIND_DESCRIPTIONS: Record<ClusterAnchorKind, string> = {
   signature:
     "Tests share a normalized error signature but no extractable fixture/selector/frame anchor. Either a global (server/network/browser-infra) failure clustered across files, or a deep-stack pattern (timeouts, framework errors) the extractors can't pin to a single line.",
   unmatched:
-    'No extractable fix mechanism — the failure shape is unique to the test. Anchored to test identity so repeated failures of the same test still group together.',
+    'No extractable fix mechanism - the failure shape is unique to the test. Anchored to test identity so repeated failures of the same test still group together.',
 };
 
 export const CLUSTER_CONFIDENCE_LABELS: Record<ClusterConfidence, string> = {

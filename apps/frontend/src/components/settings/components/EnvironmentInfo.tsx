@@ -72,7 +72,7 @@ export default function EnvironmentInfo() {
   const storage = envInfo?.dataStorage ?? 'fs';
 
   // Groups: Database, Reports, Results, Storage. Chips render only when their
-  // value is meaningful — empty groups stay hidden instead of showing a header
+  // value is meaningful - empty groups stay hidden instead of showing a header
   // with no facts under it.
   const dbChips: ReactNode[] = [];
   if (dbStats?.sizeOnDisk)

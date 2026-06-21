@@ -4,6 +4,7 @@ import {
   type RegressionSummary,
   regressionsDb,
   reportDb,
+  testAnalyticsDb,
   testDb,
 } from '../service/db/index.js';
 import { buildClusters, type ReportUrlLookup } from './cluster.js';
@@ -186,7 +187,7 @@ function loadFailedRuns(opts: ClusterOptions): FailedTestRun[] {
   const to = opts.to ?? new Date(Date.now() + 60_000).toISOString();
   const projectKey = opts.project && opts.project !== 'all' ? opts.project : undefined;
 
-  const runs = testDb.getTestRunsInWindow(projectKey, from, to);
+  const runs = testAnalyticsDb.getTestRunsInWindow(projectKey, from, to);
   const result: FailedTestRun[] = [];
   for (const run of runs) {
     if (FAILED_OUTCOMES.has(run.outcome)) result.push(run as FailedTestRun);

@@ -140,7 +140,7 @@ function readErrorContextSync(reportId: string, attachments?: AttachmentLike[]):
       const raw = fsSync.readFileSync(full, 'utf-8');
       if (raw) return raw;
     } catch {
-      // file may not exist or be unreadable — keep looking
+      // file may not exist or be unreadable - keep looking
     }
   }
   return '';
@@ -213,7 +213,7 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
   const e = entry as Record<string, unknown>;
   const type = typeof e.type === 'string' ? e.type : undefined;
 
-  // Browser / page context — emitted once near the top of `0-trace.trace`.
+  // Browser / page context - emitted once near the top of `0-trace.trace`.
   //    Carries browserName + page options (viewport, locale, baseURL, ...).
   if (type === 'context-options') {
     const opts = (e.options as Record<string, unknown> | undefined) ?? {};
@@ -267,7 +267,7 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
   }
 
   // Resource (network) events. Modern shape: a single entry with method/url/status.
-  //    `type:'resource-snapshot'` is a DOM-resource entry and is NOT a network call —
+  //    `type:'resource-snapshot'` is a DOM-resource entry and is NOT a network call -
   //    skip it. The dedicated `*.network` file uses `type:'resource'` with a
   //    `_monotonicTime` (or `timestamp`) ordering field.
   if (type === 'resource' || type === 'resourceSnapshot' || type === 'resourceFinished') {
@@ -302,10 +302,10 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
     return;
   }
 
-  // Action entries — `before` (start) + `after` (end, sometimes with error).
+  // Action entries - `before` (start) + `after` (end, sometimes with error).
   //    Modern shape: a single `type:'action'` entry. We carry the latest
   //    end-time-of-an-action so prioritization can use it as the failure anchor.
-  //    Error message + stack are NOT pulled from the trace — those live in
+  //    Error message + stack are NOT pulled from the trace - those live in
   //    the report payload (`result.errors[]`), which is the canonical source.
   if (type === 'before' || type === 'action') {
     const title = typeof e.title === 'string' && e.title.trim() ? e.title.trim() : undefined;
@@ -374,7 +374,7 @@ async function collectFromTraceZip(
       try {
         collectFromTraceEntry(JSON.parse(trimmed), collectors);
       } catch {
-        // skip unparseable lines — trace files are best-effort JSONL
+        // skip unparseable lines - trace files are best-effort JSONL
       }
     }
   }
@@ -589,7 +589,7 @@ export async function extractFailureEvidence(
     if (!stackTrace) stackTrace = split.stack;
   }
 
-  // Trace ZIP — console + network + action + environment only.
+  // Trace ZIP - console + network + action + environment only.
   let consoleEvents: ConsoleEvent[] = [];
   let networkEvents: NetworkEvent[] = [];
   let actionLog: ActionEvent[] = [];

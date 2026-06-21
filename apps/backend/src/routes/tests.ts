@@ -401,7 +401,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
           // retry-flagged task for this (testId, reportId) is still in flight,
           // surface it as pending so the viewer renders "regenerating…" instead
           // of the about-to-be-replaced analysis. Auto-queued (isRetry=0) tasks
-          // do NOT preempt — those run as background fill-in and shouldn't hide
+          // do NOT preempt - those run as background fill-in and shouldn't hide
           // an existing analysis from the user.
           const retryPending = llmTasksDb.findInflightTestAnalysis(testId, reportId, {
             retryOnly: true,
@@ -423,14 +423,14 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
             return reply.send({ success: true, data: analysis });
           }
 
-          // Fall back to llm_tasks table — the SSE endpoint saves results there
+          // Fall back to llm_tasks table - the SSE endpoint saves results there
           const taskRow = llmTasksDb.getLatestCompletedTestAnalysisResult(testId, reportId);
 
           if (taskRow) {
             return reply.send({ success: true, data: taskRow });
           }
 
-          // No completed analysis yet — surface in-flight tasks so the report viewer
+          // No completed analysis yet - surface in-flight tasks so the report viewer
           // can render a loading state instead of nothing while the queue catches up.
           const pending = llmTasksDb.findInflightTestAnalysis(testId, reportId);
 
@@ -468,7 +468,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         // `refresh=1` forces a fresh build, bypassing the stored task. Used by
         // the "Copy prompt (full)" button so the user always sees the prompt
         // the queue would build right now (with the latest evidence shape,
-        // the latest history, etc.) — distinct from the verbatim historical
+        // the latest history, etc.) - distinct from the verbatim historical
         // prompt the in-analysis Copy prompt button returns.
         const forceFresh = refresh === '1' || refresh === 'true';
         const task = forceFresh
@@ -487,7 +487,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
           });
         }
 
-        // No completed task — build a fresh would-be prompt. Resolve
+        // No completed task - build a fresh would-be prompt. Resolve
         // (fileId, project) from `test_runs` so the shared builder has
         // everything it needs.
         const row = testDb.findRunLaneByReport(testId, reportId);

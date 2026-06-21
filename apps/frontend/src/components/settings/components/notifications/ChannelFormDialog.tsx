@@ -306,7 +306,7 @@ export function ChannelFormDialog({
                 onChange={(e) => updateConfig({ webhookUrl: e.target.value })}
                 placeholder={
                   storedFlags.webhookUrl
-                    ? 'Stored — leave blank to keep'
+                    ? 'Stored - leave blank to keep'
                     : 'https://hooks.slack.com/services/...'
                 }
                 maxLength={2000}
@@ -328,7 +328,7 @@ export function ChannelFormDialog({
                   value={webhookConfig.url}
                   onChange={(e) => updateConfig({ url: e.target.value })}
                   placeholder={
-                    storedFlags.url ? 'Stored — leave blank to keep' : 'https://example.com/notify'
+                    storedFlags.url ? 'Stored - leave blank to keep' : 'https://example.com/notify'
                   }
                   maxLength={2000}
                 />
@@ -351,7 +351,7 @@ export function ChannelFormDialog({
                   value={webhookConfig.secretHmacKey ?? ''}
                   onChange={(e) => updateConfig({ secretHmacKey: e.target.value || undefined })}
                   placeholder={
-                    storedFlags.hmacKey ? 'Stored — leave blank to keep' : 'Shared secret'
+                    storedFlags.hmacKey ? 'Stored - leave blank to keep' : 'Shared secret'
                   }
                   maxLength={512}
                 />
@@ -411,7 +411,7 @@ function HeaderEditor({ rows, storedHeaderKeys, onChange }: Readonly<HeaderEdito
               value={row.value}
               type={stored ? 'password' : 'text'}
               onChange={(e) => updateRow(idx, { value: e.target.value })}
-              placeholder={stored ? 'Stored — leave blank to keep' : 'Value'}
+              placeholder={stored ? 'Stored - leave blank to keep' : 'Value'}
               maxLength={1000}
             />
             <Button variant="ghost" size="sm" onClick={() => removeRow(idx)}>

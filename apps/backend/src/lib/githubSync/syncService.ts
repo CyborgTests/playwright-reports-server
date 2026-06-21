@@ -216,7 +216,7 @@ export async function runSync(
     handle.progress.current = 0;
 
     if (earlyExit) {
-      console.log(`[github-sync] ${cfg.name}: early exit — ${earlyExit}`);
+      console.log(`[github-sync] ${cfg.name}: early exit - ${earlyExit}`);
     }
 
     let pendingUpload: Promise<{ ok: boolean; artifactId: number; error?: Error }> | null = null;
@@ -353,7 +353,7 @@ export async function runSync(
       message,
     });
     console.log(
-      `[github-sync] ${cfg.name}: ${outcome} — uploaded=${uploaded} skipped=${
+      `[github-sync] ${cfg.name}: ${outcome} - uploaded=${uploaded} skipped=${
         skippedSynced + skippedExpired
       } failed=${failed}`
     );

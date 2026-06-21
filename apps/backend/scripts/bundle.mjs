@@ -9,7 +9,7 @@ const entry = resolve(backendRoot, 'src/index.ts');
 const outdir = resolve(backendRoot, 'dist');
 const outfile = resolve(outdir, 'index.js');
 
-// Externals: bundling skips these and emits bare require()/import — they must
+// Externals: bundling skips these and emits bare require()/import - they must
 // exist in node_modules at runtime.
 const external = ['better-sqlite3', '@playwright/test', 'pino-pretty', 'fsevents'];
 
@@ -41,7 +41,7 @@ await build({
 });
 
 // html-injector reads inject.js/inject.css relative to import.meta.url.
-// After bundling, that URL resolves to dist/ — copy both files there.
+// After bundling, that URL resolves to dist/ - copy both files there.
 await copyFile(
   resolve(backendRoot, 'src/lib/report-injection/inject.js'),
   resolve(outdir, 'inject.js')

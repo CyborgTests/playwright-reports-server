@@ -45,7 +45,7 @@ Equivalent env vars (override the saved config):
 - `PWRS_SERVER_URL`
 - `PWRS_API_TOKEN`
 
-Saved to `~/.config/pwrs-cli/config.json`. Tokens are masked in `config get` output. The CLI sends `Authorization: Bearer <token>` — the same scheme the reporter package uses.
+Saved to `~/.config/pwrs-cli/config.json`. Tokens are masked in `config get` output. The CLI sends `Authorization: Bearer <token>` - the same scheme the reporter package uses.
 
 ## Commands
 
@@ -125,17 +125,17 @@ PWRS_PROJECT       Default --project for every command (explicit --project still
 All commands return JSON on stdout. Errors are JSON on stderr in the shape
 `{"success":false,"error":"…","kind":"http|config|unknown",…}` with a non-zero
 exit code. Date filters use `--from YYYY-MM-DD` and `--to YYYY-MM-DD` (or full
-ISO timestamps) — there is no `--since` flag.
+ISO timestamps) - there is no `--since` flag.
 
 ## The two "brief" payloads
 
 `test brief` and `report brief` are the main entry points. Each is one HTTP call that the backend composes server-side from:
 
 - Test detail (quarantine state, flakiness, recent runs)
-- LLM analysis (`/api/test/.../analysis`) — pre-computed root cause + fix
-- Team feedback (`/api/llm/feedback`) — human notes pinned to a test
-- Failure history (`/api/llm/test-history`) — when this signature first appeared
-- Failure clusters (`/api/analytics/failure-clusters`) — which tests share a root cause
+- LLM analysis (`/api/test/.../analysis`) - pre-computed root cause + fix
+- Team feedback (`/api/llm/feedback`) - human notes pinned to a test
+- Failure history (`/api/llm/test-history`) - when this signature first appeared
+- Failure clusters (`/api/analytics/failure-clusters`) - which tests share a root cause
 
 ### `test brief` shape
 
@@ -169,7 +169,7 @@ ISO timestamps) — there is no `--since` flag.
     "model": "claude-…"
   },
   "feedback": {                      // null if no team note
-    "comment": "Flaky in CI — see #INC-1234",
+    "comment": "Flaky in CI - see #INC-1234",
     "updatedAt": "…"
   },
   "regression": {                    // null if not currently regressed
@@ -200,7 +200,7 @@ ISO timestamps) — there is no `--since` flag.
 50-failure report and includes a `TestBrief` per failure.
 
 ```jsonc
-// Summary mode (default) — has `sampleUnclusteredFailures`, no `failedTests`
+// Summary mode (default) - has `sampleUnclusteredFailures`, no `failedTests`
 {
   "mode": "summary",
   "reportId": "…", "displayNumber": 479, "title": "…", "project": "…",
@@ -224,7 +224,7 @@ ISO timestamps) — there is no `--since` flag.
   "failedTestsTruncated": false            // true when more than 50 failed
 }
 
-// Full mode (--with-failures) — has `failedTests`, no `sampleUnclusteredFailures`
+// Full mode (--with-failures) - has `failedTests`, no `sampleUnclusteredFailures`
 // `clusterSummary[].sampleFailedTests` is still present (cheap skim view).
 {
   "mode": "full",
@@ -291,14 +291,14 @@ pwrs-cli report compare <reportIdA> <reportIdB>
 
 ## Context discipline
 
-Briefs pass through error messages, LLM analysis, and cluster members verbatim — debugging is the use case, so the agent sees the full context the server has.
+Briefs pass through error messages, LLM analysis, and cluster members verbatim - debugging is the use case, so the agent sees the full context the server has.
 
 The one hard cap is the per-report failed-test list:
 
 - `report brief` caps at 50 failed tests with a `failedTestsTruncated` flag so a 500-failure run can't pull the entire report into the agent.
 - `test find` / `test from-file` default to `--limit 10` / `--limit 5` (override with `--limit N`).
 
-`latestFailure.appFrame` is the first non-Playwright stack frame, normalized to `"path:line"` — Playwright internals and `node_modules` are filtered server-side, so no `--with-stack` flag is needed.
+`latestFailure.appFrame` is the first non-Playwright stack frame, normalized to `"path:line"` - Playwright internals and `node_modules` are filtered server-side, so no `--with-stack` flag is needed.
 
 ## Claude Code skill
 

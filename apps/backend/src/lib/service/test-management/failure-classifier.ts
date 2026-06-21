@@ -4,7 +4,7 @@ import {
   ROOT_CAUSE_CATEGORIES,
   type RootCauseCategory,
 } from '@playwright-reports/shared';
-import { testDb } from '../db/index.js';
+import { testAnalyticsDb } from '../db/index.js';
 
 const KNOWN_CATEGORIES = new Set<string>(FAILURE_CATEGORIES);
 const KNOWN_ROOT_CAUSE_CATEGORIES = new Set<string>(ROOT_CAUSE_CATEGORIES);
@@ -139,7 +139,7 @@ export function classifyFailure(
   errorSignature: string | null
 ): { category: FailureCategory; source: 'heuristic' | 'consensus' } {
   if (errorSignature) {
-    const consensus = testDb.getCategoryConsensus(errorSignature);
+    const consensus = testAnalyticsDb.getCategoryConsensus(errorSignature);
     if (
       consensus &&
       isKnownCategory(consensus.category) &&

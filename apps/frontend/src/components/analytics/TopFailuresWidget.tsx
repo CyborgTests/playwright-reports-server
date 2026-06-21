@@ -154,7 +154,7 @@ export function TopFailuresWidget({ errors, isLoading }: Readonly<TopFailuresWid
                       <Badge
                         variant="danger"
                         className="whitespace-nowrap"
-                        title={`${error.regressedTestCount} of the affected tests have an open regression — likely a real recent breakage rather than a chronic flake`}
+                        title={`${error.regressedTestCount} of the affected tests have an open regression - likely a real recent breakage rather than a chronic flake`}
                       >
                         {error.regressedTestCount} regressed
                       </Badge>

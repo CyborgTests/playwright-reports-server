@@ -69,7 +69,7 @@ function statCounts(report: ReportLike) {
 }
 
 function formatDuration(ms: number | undefined): string {
-  if (ms === undefined || ms === null || Number.isNaN(ms)) return '—';
+  if (ms === undefined || ms === null || Number.isNaN(ms)) return '-';
   return formatDurationMs(ms);
 }
 
@@ -310,7 +310,7 @@ export function buildScheduleContext(args: {
 
 /**
  * For schedule rules, the "condition" is evaluated against the aggregated
- * window summary — per-project after fan-out.
+ * window summary - per-project after fan-out.
  */
 export function scheduleConditionMatches(
   condition: ScheduleCondition,

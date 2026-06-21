@@ -52,9 +52,9 @@ export function PinnedDashboardCard({
         {root.empty ? (
           <span
             className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-muted text-base font-bold text-muted-foreground ring-1 ring-muted-foreground/20"
-            title="No data — add projects or upload reports."
+            title="No data - add projects or upload reports."
           >
-            —
+            -
           </span>
         ) : (
           <GradeBadge

@@ -91,7 +91,7 @@ async function zipDirectory(sourceDir: string, outputPath: string): Promise<numb
 }
 
 function printHelp(): void {
-  console.log(`playwright-reporter-cli — upload a pre-built Playwright HTML report
+  console.log(`playwright-reporter-cli - upload a pre-built Playwright HTML report
 
 Usage:
   playwright-reporter-cli upload <reportDir> --url <serverUrl> [options]

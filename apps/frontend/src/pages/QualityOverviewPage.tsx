@@ -301,9 +301,9 @@ function SingleDashboardView({
         {root.empty ? (
           <span
             className="inline-flex h-12 w-12 items-center justify-center rounded-md bg-muted text-lg font-bold text-muted-foreground ring-1 ring-muted-foreground/20"
-            title="No data — add projects or upload reports."
+            title="No data - add projects or upload reports."
           >
-            —
+            -
           </span>
         ) : (
           <GradeBadge

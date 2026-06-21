@@ -11,7 +11,7 @@ interface RegressionsStripProps {
 }
 
 function formatMttr(days: number | null): string {
-  if (days === null) return '—';
+  if (days === null) return '-';
   if (days < 1) return `${Math.round(days * 24)}h`;
   return `${Math.round(days * 10) / 10}d`;
 }
@@ -66,7 +66,7 @@ export function RegressionsStrip({
           selected={activeFilter === 'active'}
           title={
             activeFilter === 'active'
-              ? 'Filter applied — click to clear.'
+              ? 'Filter applied - click to clear.'
               : 'Unresolved regression in the selected window - click to filter Tests.'
           }
         />

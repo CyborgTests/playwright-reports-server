@@ -132,10 +132,10 @@ export const FAILURE_CATEGORIES = [
 
 export type FailureCategory = (typeof FAILURE_CATEGORIES)[number];
 
-/** One-sentence tooltip per category — surfaced in the report failure summary
+/** One-sentence tooltip per category - surfaced in the report failure summary
  *  chips so new users don't have to guess what each label covers. */
 export const FAILURE_CATEGORY_DESCRIPTIONS: Record<FailureCategory, string> = {
-  timeout: 'A Playwright timeout fired — the operation took longer than the configured budget.',
+  timeout: 'A Playwright timeout fired - the operation took longer than the configured budget.',
   element_not_visible:
     'The target element existed in the DOM but was not visible when interacted with.',
   element_not_found: 'The locator did not resolve to any element on the page.',
@@ -146,7 +146,7 @@ export const FAILURE_CATEGORY_DESCRIPTIONS: Record<FailureCategory, string> = {
   authentication_error: 'Sign-in flow rejected the credentials or session token.',
   navigation_error: 'page.goto / waitForNavigation failed to reach the expected URL.',
   browser_crash: 'The browser process crashed or disconnected mid-test.',
-  setup_teardown: 'Failure in a beforeAll / afterAll / fixture — the test body never ran.',
+  setup_teardown: 'Failure in a beforeAll / afterAll / fixture - the test body never ran.',
   javascript_error: 'An uncaught JavaScript error was logged in the page during the test.',
   unknown: 'Could not be confidently classified by the heuristic or LLM.',
 };
@@ -163,25 +163,25 @@ export const ROOT_CAUSE_CATEGORIES = [
 export type RootCauseCategory = (typeof ROOT_CAUSE_CATEGORIES)[number];
 
 export const ROOT_CAUSE_CATEGORY_DESCRIPTIONS: Record<RootCauseCategory, string> = {
-  app_bug: 'The application under test misbehaved — the test likely caught a defect.',
+  app_bug: 'The application under test misbehaved - the test likely caught a defect.',
   test_bug: 'The test code is wrong (bad selector, missing wait, wrong assumption).',
   infrastructure: 'Runner, browser, or network outage; not related to application or test logic.',
   environment:
     'Test environment is in a bad state (missing data, stale fixtures, dependency unavailable).',
-  slow_path: 'The operation finished, but past the timeout — likely a perf issue.',
+  slow_path: 'The operation finished, but past the timeout - likely a perf issue.',
   unknown: 'The LLM could not confidently decide from the evidence.',
 };
 
 /** Report-level verdicts emitted by the LLM summary. Mirrors
- *  ReportAnalysisVerdict in shared/types — keep in sync. */
+ *  ReportAnalysisVerdict in shared/types - keep in sync. */
 export const REPORT_VERDICT_DESCRIPTIONS: Record<
   'isolated' | 'clustered' | 'widespread' | 'systemic',
   string
 > = {
   isolated:
-    'A small number of independent failures with no common cause — likely flakes or one-off bugs.',
+    'A small number of independent failures with no common cause - likely flakes or one-off bugs.',
   clustered: 'Multiple failures share the same error shape and likely have one root cause.',
-  widespread: 'Failures span many tests and surfaces — investigate environment or shared infra.',
+  widespread: 'Failures span many tests and surfaces - investigate environment or shared infra.',
   systemic: 'Pervasive failure pattern; the test suite or system under test is in a broken state.',
 };
 

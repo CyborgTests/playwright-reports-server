@@ -379,7 +379,7 @@ export class AzureBlob implements Storage {
       const fileName = `${resultId}.zip`;
 
       // Reuse a local copy if one is already on disk to skip the round trip.
-      // Only trust the cache once the result is registered in SQLite — that
+      // Only trust the cache once the result is registered in SQLite - that
       // happens after blob upload completes, so this rules out partial copies
       // and stale files for results that have since been deleted.
       const temporaryPath = path.join(TMP_FOLDER, 'results', fileName);

@@ -46,9 +46,9 @@ export interface GradeBadgeProps {
 
 export function GradeBadge({ grade, size = 'md', dot, statusLabel, className }: GradeBadgeProps) {
   const tooltip = statusLabel
-    ? `Grade ${grade} — ${statusLabel}`
+    ? `Grade ${grade} - ${statusLabel}`
     : dot
-      ? `Grade ${grade} — ${DOT_LABEL[dot]}`
+      ? `Grade ${grade} - ${DOT_LABEL[dot]}`
       : `Grade ${grade}`;
 
   return (

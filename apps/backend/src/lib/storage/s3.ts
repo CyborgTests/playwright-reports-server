@@ -505,7 +505,7 @@ export class S3 implements Storage {
       const fileName = `${resultId}.zip`;
 
       // Reuse a local copy if one is already on disk to skip the round trip.
-      // Only trust the cache once the result is registered in SQLite — that
+      // Only trust the cache once the result is registered in SQLite - that
       // happens after S3 upload completes, so this rules out partial copies
       // and stale files for results that have since been deleted.
       const temporaryPath = path.join(TMP_FOLDER, 'results', fileName);
@@ -525,7 +525,7 @@ export class S3 implements Storage {
           break;
         }
 
-        // Cache entry served its purpose — drop it now instead of waiting for the cron sweep.
+        // Cache entry served its purpose - drop it now instead of waiting for the cron sweep.
         const { error: unlinkError } = await withError(fs.unlink(temporaryPath));
         if (unlinkError) {
           console.warn(`[s3] failed to clear cache entry for ${resultId}: ${unlinkError.message}`);

@@ -1,7 +1,7 @@
 /**
  * Single entry point for reading a `test_runs.failure_details` JSON column.
- * Strategies need overlapping subsets of the payload — message, stack trace,
- * file path — and each one parsed the JSON on its own, sometimes multiple
+ * Strategies need overlapping subsets of the payload - message, stack trace,
+ * file path - and each one parsed the JSON on its own, sometimes multiple
  * times per run. This helper parses once and tolerates malformed rows.
  */
 
@@ -53,7 +53,7 @@ export function parseFailureDetails(details: string | undefined): ParsedFailureD
       attachments: Array.isArray(raw.attachments) ? raw.attachments : undefined,
     };
   } catch {
-    // Tolerate unparseable failure_details — older rows or schema drift.
+    // Tolerate unparseable failure_details - older rows or schema drift.
     return undefined;
   }
 }

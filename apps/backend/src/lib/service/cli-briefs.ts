@@ -11,6 +11,7 @@ import {
   regressionsDb,
   reportDb,
   testAnalysisDb,
+  testAnalyticsDb,
   testDb,
 } from './db/index.js';
 import { service } from './index.js';
@@ -287,7 +288,7 @@ export async function buildTestBrief(
 
   const history =
     latestFailedRun?.errorSignature && latestFailedRun.errorSignature.length > 0
-      ? testDb.getFailureHistory(
+      ? testAnalyticsDb.getFailureHistory(
           testId,
           fileId,
           latestFailedRun.errorSignature,
@@ -752,7 +753,7 @@ export async function buildReportResolve(displayNumber: number, project?: string
 }
 
 export async function buildFailureCategories(project?: string) {
-  return testDb.getFailureCategoryCounts(project);
+  return testAnalyticsDb.getFailureCategoryCounts(project);
 }
 
 export function buildAttachmentUrls(

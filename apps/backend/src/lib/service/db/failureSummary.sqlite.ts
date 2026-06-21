@@ -450,7 +450,7 @@ const PAGE_CONTEXT_HEADER = '\n\n# Page Context';
 /**
  * Pull the human-readable error text out of a stored `failure_details` value.
  * Accepts the raw column (gzip BLOB or plaintext) and strips the
- * appended Page Context (DOM snapshot) — useful for LLM analysis but noise
+ * appended Page Context (DOM snapshot) - useful for LLM analysis but noise
  * for the dashboard widget.
  */
 function extractDisplayMessage(failureDetailsRaw: Buffer | string | null): string {

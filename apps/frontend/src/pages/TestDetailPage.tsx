@@ -149,7 +149,7 @@ export default function TestDetailPage() {
         />
         <StatTile
           label="Last Run"
-          value={stats.lastRunAt ? new Date(stats.lastRunAt).toLocaleDateString() : '—'}
+          value={stats.lastRunAt ? new Date(stats.lastRunAt).toLocaleDateString() : '-'}
           hint={
             stats.lastRunAt
               ? new Date(stats.lastRunAt).toLocaleTimeString([], {
@@ -161,19 +161,19 @@ export default function TestDetailPage() {
         />
         <StatTile
           label="Mean Duration"
-          value={stats.duration ? formatDuration(stats.duration.mean) : '—'}
+          value={stats.duration ? formatDuration(stats.duration.mean) : '-'}
           hint={
             stats.duration
               ? `standard deviation ${formatDuration(stats.duration.stdDev)}`
               : undefined
           }
-          info="Mean is the average duration across all runs. Standard deviation shows how much individual run durations vary from that mean — a smaller value means more consistent timings, a larger value means runs are spread out."
+          info="Mean is the average duration across all runs. Standard deviation shows how much individual run durations vary from that mean - a smaller value means more consistent timings, a larger value means runs are spread out."
         />
         <StatTile
           label="p95 Duration"
-          value={stats.duration ? formatDuration(stats.duration.p95) : '—'}
+          value={stats.duration ? formatDuration(stats.duration.p95) : '-'}
           hint={stats.duration ? `median ${formatDuration(stats.duration.median)}` : undefined}
-          info="p95 is the duration that 95% of runs finished within — useful for spotting worst-case outliers. The median is the middle value: half of runs were faster, half slower."
+          info="p95 is the duration that 95% of runs finished within - useful for spotting worst-case outliers. The median is the middle value: half of runs were faster, half slower."
         />
       </div>
 
@@ -230,7 +230,7 @@ export default function TestDetailPage() {
                     <TableCell>
                       {typeof row.flakinessScore === 'number'
                         ? `${row.flakinessScore.toFixed(1)}%`
-                        : '—'}
+                        : '-'}
                     </TableCell>
                     <TableCell>
                       {row.isQuarantined ? (
@@ -240,7 +240,7 @@ export default function TestDetailPage() {
                       )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-sm">
-                      {row.lastRunAt ? new Date(row.lastRunAt).toLocaleDateString() : '—'}
+                      {row.lastRunAt ? new Date(row.lastRunAt).toLocaleDateString() : '-'}
                     </TableCell>
                   </TableRow>
                 ))}

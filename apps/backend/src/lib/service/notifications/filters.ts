@@ -11,7 +11,7 @@ export function projectFilterMatches(filter: ProjectFilter, project: string): bo
         return new RegExp(filter.pattern).test(project);
       } catch (err) {
         console.warn(
-          `[notifications] invalid regex "${filter.pattern}" — skipping rule: ${
+          `[notifications] invalid regex "${filter.pattern}" - skipping rule: ${
             err instanceof Error ? err.message : String(err)
           }`
         );

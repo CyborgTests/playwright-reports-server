@@ -2,12 +2,12 @@
  * Section-aware Mustache renderer for chat-message templates, shared by the
  * notification dispatcher and the rule-editor live preview. Supported subset:
  *
- *   {{var}}            — substitution (allowlist-aware)
- *   {{.}}              — current section value (when iterating)
- *   {{#var}}…{{/var}}  — section: truthy primitive renders body once with the
+ *   {{var}}            - substitution (allowlist-aware)
+ *   {{.}}              - current section value (when iterating)
+ *   {{#var}}…{{/var}}  - section: truthy primitive renders body once with the
  *                        value on the stack; object pushes it; array iterates.
- *   {{^var}}…{{/var}}  — inverted: render when falsy / empty array / missing.
- *   {{!comment}}       — ignored.
+ *   {{^var}}…{{/var}}  - inverted: render when falsy / empty array / missing.
+ *   {{!comment}}       - ignored.
  *
  * Excluded: partials, unescaped `{{{ }}}`, delimiter changes, lambdas.
  * Provider-specific escaping (Slack mrkdwn, JSON) lives in the `transform` option.
@@ -55,7 +55,7 @@ export function parseTemplate(template: string): Node[] {
       if (!name) throw new MustacheParseError('Empty section name', match.index);
       if (frames.length > MAX_SECTION_DEPTH) {
         throw new MustacheParseError(
-          `Section nesting exceeds ${MAX_SECTION_DEPTH} — refusing to parse`,
+          `Section nesting exceeds ${MAX_SECTION_DEPTH} - refusing to parse`,
           match.index
         );
       }
@@ -68,7 +68,7 @@ export function parseTemplate(template: string): Node[] {
       const open = frames[frames.length - 1];
       if (frames.length === 1) {
         throw new MustacheParseError(
-          `Unexpected closing tag "{{/${name}}}" — no matching open`,
+          `Unexpected closing tag "{{/${name}}}" - no matching open`,
           match.index
         );
       }

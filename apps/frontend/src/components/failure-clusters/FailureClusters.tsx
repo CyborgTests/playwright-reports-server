@@ -269,7 +269,7 @@ function ClusterList({
       {unmatched.length > 0 && (
         <>
           <div className="text-xs uppercase tracking-wide text-muted-foreground pt-4 mb-2 px-1">
-            Unmatched failures ({unmatched.length}) — no extractable mechanism
+            Unmatched failures ({unmatched.length}) - no extractable mechanism
           </div>
           <Accordion
             type="multiple"
@@ -355,7 +355,7 @@ function ClusterCard({
                   className="border-success/40 text-success gap-1"
                   title={
                     manualResolution
-                      ? `Marked resolved${cluster.resolution?.note ? ` — ${cluster.resolution.note}` : ''}`
+                      ? `Marked resolved${cluster.resolution?.note ? ` - ${cluster.resolution.note}` : ''}`
                       : 'All member regressions resolved'
                   }
                 >

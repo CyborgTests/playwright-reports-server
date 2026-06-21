@@ -139,7 +139,7 @@ export function useTestMutations({
       method: 'POST',
       onSuccess: () => {
         invalidateCache(queryClient, { predicate: '/api/tests' });
-        toast.success('Flakiness score reset — new flakiness will be tracked from now');
+        toast.success('Flakiness score reset - new flakiness will be tracked from now');
       },
     }
   );
@@ -149,7 +149,7 @@ export function useTestMutations({
       method: 'DELETE',
       onSuccess: () => {
         invalidateCache(queryClient, { predicate: '/api/tests' });
-        toast.success('Flakiness reset removed — score recomputed over full window');
+        toast.success('Flakiness reset removed - score recomputed over full window');
       },
     });
 

@@ -37,7 +37,7 @@ export function TrendArrow({
   return (
     <span
       className={cn('inline-flex items-center gap-0.5 text-xs', color, className)}
-      title={`Previous: ${formatPassRate(previousPassRate)} — ${label}`}
+      title={`Previous: ${formatPassRate(previousPassRate)} - ${label}`}
     >
       <Arrow className="h-3 w-3" />
       {trend !== 'flat' && (

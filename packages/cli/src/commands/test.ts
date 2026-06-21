@@ -77,7 +77,7 @@ export async function runTestBrief(testId: string, opts: BriefOpts): Promise<voi
 
 /**
  * Full persisted LLM analysis markdown for a test. `test brief` returns a
- * regex-split `rootCause` / `fix` view that may miss sections — use this when
+ * regex-split `rootCause` / `fix` view that may miss sections - use this when
  * you want the unmodified document. `--project` optional, same server-side
  * resolution as `test brief`.
  */
@@ -178,7 +178,7 @@ export async function runTestFromFile(spec: string, opts: FromFileOpts): Promise
     throw new Error('Usage: pwrs-cli test from-file <path>[:line] [--project <p>] [--limit N]');
   }
   // `<path>:<line>` narrows by proximity to the failure location reported by
-  // a previous run — useful when an agent has a CI stack frame like
+  // a previous run - useful when an agent has a CI stack frame like
   // `tests/checkout.spec.ts:200`. Without `:line`, every test in the file matches.
   const [pathPart, linePart] = spec.split(':');
   const filePath = pathPart ?? spec;
@@ -309,7 +309,7 @@ const SEARCH_MAX_LIMIT = 100;
  * Open-ended test discovery. Wraps /api/tests with its full filter surface so
  * the agent can answer "what's flaky this week", "what's quarantined",
  * "what's failing with timeouts", "what's the slowest test". Returns a
- * compact roster (no per-run history) — drill into `test brief` once a
+ * compact roster (no per-run history) - drill into `test brief` once a
  * candidate is identified.
  */
 export async function runTestSearch(opts: SearchOpts): Promise<void> {

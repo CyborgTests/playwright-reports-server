@@ -78,7 +78,7 @@ export default function AddLinkModal({ isOpen, onAddLink, onCancel }: Readonly<A
         id,
         label: trimmedLabel || fallbackLabel,
         url: url.trim(),
-        // For custom uploads we leave `icon` blank — the parent will receive
+        // For custom uploads we leave `icon` blank - the parent will receive
         // the File and the backend will fill in the saved path on save.
         icon: isCustom || isNone ? undefined : iconChoice,
         showLabel: showLabel || undefined,

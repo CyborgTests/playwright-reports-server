@@ -53,7 +53,7 @@ function resolveCompareKeywords(
   if (latest.length === 0) {
     return {
       resolved: ids,
-      error: `Cannot resolve 'latest'/'prev' — no reports found${project ? ` for project '${project}'` : ''}.`,
+      error: `Cannot resolve 'latest'/'prev' - no reports found${project ? ` for project '${project}'` : ''}.`,
     };
   }
   const resolve = (raw: string): string | { error: string } => {
@@ -62,7 +62,7 @@ function resolveCompareKeywords(
     if (key === 'prev' || key === 'previous') {
       if (latest.length < 2) {
         return {
-          error: `Cannot resolve 'prev' — only one report found${project ? ` for project '${project}'` : ''}.`,
+          error: `Cannot resolve 'prev' - only one report found${project ? ` for project '${project}'` : ''}.`,
         };
       }
       return latest[1].reportID;

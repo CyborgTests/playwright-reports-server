@@ -12,7 +12,7 @@ const remarkPlugins = [remarkGfm];
 
 /** Resolve a `pwrs:` URL (emitted by the LLM analyses for inline test/report
  *  refs) into a React Router path. Returns null for refs without an SPA
- *  navigation target — those render as styled labels instead of links so the
+ *  navigation target - those render as styled labels instead of links so the
  *  user still sees the citation.
  *
  *  Test links carry the test's project in `?project=…`; the parser reads it
@@ -27,7 +27,7 @@ function resolvePwrsHref(href: string, fallbackProject?: string): string | null 
     const qIdx = target.indexOf('?');
     const pathPart = qIdx === -1 ? target : target.slice(0, qIdx);
     const queryStr = qIdx === -1 ? '' : target.slice(qIdx + 1);
-    // /test/:testId — single URL-safe segment.
+    // /test/:testId - single URL-safe segment.
     if (!pathPart || pathPart.includes('/')) return null;
     let project: string | undefined;
     if (queryStr) {
@@ -156,7 +156,7 @@ function MarkdownRendererImpl({
                   </RouterLink>
                 );
               }
-              // Unknown pwrs: subscheme — render the label as plain muted
+              // Unknown pwrs: subscheme - render the label as plain muted
               // text so a stale or fabricated ref doesn't show a broken link.
               return <span className="text-muted-foreground">{children}</span>;
             }

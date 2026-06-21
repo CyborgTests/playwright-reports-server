@@ -1,7 +1,7 @@
 /**
  * Wire-format types for the subset of API responses the CLI consumes.
  * Kept here rather than imported from `@playwright-reports/shared` so the CLI
- * has no workspace dependency — it speaks HTTP, not types.
+ * has no workspace dependency - it speaks HTTP, not types.
  */
 
 export interface TestSummary {
@@ -131,7 +131,7 @@ interface ReportBriefBase {
   };
 }
 
-/** Discriminated by `mode` — agents can statically pick the right arm. */
+/** Discriminated by `mode` - agents can statically pick the right arm. */
 export type ReportBrief =
   | (ReportBriefBase & {
       mode: 'summary';

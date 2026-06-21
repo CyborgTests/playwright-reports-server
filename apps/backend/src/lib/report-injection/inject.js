@@ -135,7 +135,7 @@ function markdownToHtml(text) {
             const raw = new URLSearchParams(queryStr).get('project');
             if (raw) project = `?project=${encodeURIComponent(raw)}`;
           } catch {
-            /* malformed query — drop it */
+            /* malformed query - drop it */
           }
         }
         return `<a href="/test/${testId}${project}" style="${linkStyle}">${label}</a>`;
@@ -623,7 +623,7 @@ function renderInlineAnalysis(analysisData, anchor, askBtn, testIdOverride) {
       ? `<span class="llm-category-badge">${analysisData.category}</span>`
       : '';
     const reusedBadge = analysisData.reusedFromAnalysisId
-      ? `<span class="llm-reused-badge" title="Same error signature as a previous run — analysis was reused without calling the LLM. Click Retry to force a fresh analysis.">♻ Reused</span>`
+      ? `<span class="llm-reused-badge" title="Same error signature as a previous run - analysis was reused without calling the LLM. Click Retry to force a fresh analysis.">♻ Reused</span>`
       : '';
 
     const retryBtnHtml = llmEnabled ? '<button class="llm-retry-btn">Retry</button>' : '';
@@ -761,7 +761,7 @@ function renderFeedbackPanel({
       ? `<div class="llm-feedback-origin">
           First attached in
           <a href="/report/${feedback.reportId}" target="_blank" rel="noopener">${reportLinkLabel(feedback.reportId, feedback.reportDisplayNumber, feedback.reportTitle)}</a>
-          — ${relativeTimeShort(feedback.createdAt)}
+          - ${relativeTimeShort(feedback.createdAt)}
         </div>`
       : '';
 
@@ -771,7 +771,7 @@ function renderFeedbackPanel({
       ? `<span class="llm-feedback-firstfound">
           First found in
           <a href="/report/${historyData.firstOccurrence.reportId}" target="_blank" rel="noopener">${reportLinkLabel(historyData.firstOccurrence.reportId, historyData.firstOccurrence.displayNumber, historyData.firstOccurrence.title)}</a>
-          — ${relativeTimeShort(historyData.firstOccurrence.createdAt)}
+          - ${relativeTimeShort(historyData.firstOccurrence.createdAt)}
         </span>`
       : '';
 
@@ -787,7 +787,7 @@ function renderFeedbackPanel({
       : '';
 
   const reusedChip = status.reused
-    ? `<span class="llm-feedback-reused-chip" title="The analysis shown for this test was reused from a previous run with the same error signature — it wasn't generated for this specific failure. Click Retry on the analysis to force a fresh one.">♻ Reused</span>`
+    ? `<span class="llm-feedback-reused-chip" title="The analysis shown for this test was reused from a previous run with the same error signature - it wasn't generated for this specific failure. Click Retry on the analysis to force a fresh one.">♻ Reused</span>`
     : '';
   const relatedSection =
     relatedCount > 0

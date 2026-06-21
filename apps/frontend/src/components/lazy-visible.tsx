@@ -8,7 +8,7 @@ interface LazyVisibleProps {
 
 /**
  * Render `children` only after the placeholder enters (or nears) the viewport.
- * Once shown, stays mounted — we don't unmount when the user scrolls back up,
+ * Once shown, stays mounted - we don't unmount when the user scrolls back up,
  * so child queries can stay warm in the query cache.
  */
 export default function LazyVisible({

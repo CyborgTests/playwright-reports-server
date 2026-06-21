@@ -18,7 +18,9 @@ import {
   type TestDetailStatsAggregate,
   type TestRunRow,
   type TestWithQuarantineInfoRow,
+  testAnalyticsDb,
   testDb,
+  testQueriesDb,
   toRegressionContext,
 } from '../db/index.js';
 import { service } from '../index.js';
@@ -132,7 +134,7 @@ function buildCrossProjectOccurrences(
 
   const occurrences: TestCrossProjectOccurrence[] = [];
   for (const { project, fileId } of rows) {
-    const derived = testDb.getTestWithDerivedData(testId, fileId, project);
+    const derived = testQueriesDb.getTestWithDerivedData(testId, fileId, project);
     if (!derived) continue;
     occurrences.push({
       project,
@@ -342,7 +344,7 @@ export class TestManagementService {
 
     if (llmService.isConfigured()) {
       const cfg = await service.getConfig();
-      if (cfg.llm?.autoAnalyzeNewReports) {
+      if (cfg.llm?.featureEnabled !== false && cfg.llm?.autoAnalyzeNewReports) {
         this.queueLlmAnalysis(report.reportID, report.project);
       }
     }
@@ -579,7 +581,7 @@ export class TestManagementService {
       };
     }
 
-    const { rows, total } = testDb.getDerivedPage(project, {
+    const { rows, total } = testQueriesDb.getDerivedPage(project, {
       status: options?.status,
       sort: options?.sort,
       tier: tierOpt,
@@ -599,7 +601,7 @@ export class TestManagementService {
     const skipRuns = options?.slim === true;
     const runsByKey = skipRuns
       ? undefined
-      : testDb.getRunsForLanes(
+      : testQueriesDb.getRunsForLanes(
           rows.map((r) => ({ testId: r.testId, fileId: r.fileId, project: r.project })),
           options?.from || options?.to ? { from: options?.from, to: options?.to } : undefined
         );
@@ -636,10 +638,10 @@ export class TestManagementService {
     if (opts?.from || opts?.to) {
       const from = opts.from ?? '0001-01-01T00:00:00Z';
       const to = opts.to ?? new Date(Date.now() + 60_000).toISOString();
-      return testDb.getFlakySummaryInWindow(project, from, to, warningThreshold);
+      return testAnalyticsDb.getFlakySummaryInWindow(project, from, to, warningThreshold);
     }
 
-    const { total, flakyTests } = testDb.getTestsSummary(project, warningThreshold);
+    const { total, flakyTests } = testQueriesDb.getTestsSummary(project, warningThreshold);
     const flakyTestIds = new Set<string>(flakyTests.map((t) => t.testId));
     return { total, flakyCount: flakyTestIds.size };
   }
@@ -665,7 +667,7 @@ export class TestManagementService {
     fileId: string,
     project: string
   ): Promise<TestWithQuarantineInfoRow | null> {
-    return testDb.getTestWithDerivedData(testId, fileId, project) || null;
+    return testQueriesDb.getTestWithDerivedData(testId, fileId, project) || null;
   }
 
   async getTestDetail(testId: string, fileId: string, project: string): Promise<TestDetail | null> {
@@ -676,12 +678,12 @@ export class TestManagementService {
       resolvedProject = canonical.project;
     }
 
-    const test = testDb.getTestWithDerivedData(testId, fileId, resolvedProject);
+    const test = testQueriesDb.getTestWithDerivedData(testId, fileId, resolvedProject);
     if (!test) return null;
 
     const runs = testDb.getTestRuns(testId, fileId, resolvedProject);
     const stats = toTestDetailStats(
-      testDb.getTestDetailStatsAggregate(testId, fileId, resolvedProject)
+      testQueriesDb.getTestDetailStatsAggregate(testId, fileId, resolvedProject)
     );
     const failureGroups = buildFailureGroups(runs);
     const crossProject = buildCrossProjectOccurrences(testId, resolvedProject);
@@ -714,7 +716,7 @@ export class TestManagementService {
   ): Promise<TestRunRow[] | null> {
     const lane = testDb.findByTestId(testId, project && project !== 'all' ? project : undefined);
     if (!lane) return null;
-    return testDb.getTestRunPointsPage(lane.testId, lane.fileId, lane.project, opts);
+    return testQueriesDb.getTestRunPointsPage(lane.testId, lane.fileId, lane.project, opts);
   }
 
   async deleteTest(testId: string, fileId: string, project: string): Promise<void> {

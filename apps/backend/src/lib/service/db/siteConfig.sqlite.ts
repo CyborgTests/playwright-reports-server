@@ -27,7 +27,7 @@ export class SiteConfigDatabase {
           headerLinks: normalizeHeaderLinks(parsed.headerLinks),
         };
       }
-      console.warn('[siteConfig] stored config failed validation — falling back to defaults');
+      console.warn('[siteConfig] stored config failed validation - falling back to defaults');
     } catch (e) {
       console.warn(
         `[siteConfig] failed to parse stored config: ${e instanceof Error ? e.message : e}`

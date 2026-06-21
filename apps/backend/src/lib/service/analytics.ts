@@ -8,7 +8,14 @@ import type {
 } from '@playwright-reports/shared';
 import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import type { ReportHistory as BackendReportHistory } from '../storage/types.js';
-import { failureSummaryDb, regressionsDb, reportDb, testDb } from './db/index.js';
+import {
+  failureSummaryDb,
+  regressionsDb,
+  reportDb,
+  testAnalyticsDb,
+  testDb,
+  testQueriesDb,
+} from './db/index.js';
 import { service } from './index.js';
 import { testManagementService } from './test-management/index.js';
 
@@ -259,7 +266,7 @@ export class AnalyticsService {
       (sum, report) => sum + (report.stats?.expected || 0),
       0
     );
-    // Skipped tests are excluded from pass rate — they aren't pass/fail outcomes.
+    // Skipped tests are excluded from pass rate - they aren't pass/fail outcomes.
     const totalExecuted = displayReports.reduce(
       (sum, report) =>
         sum +
@@ -270,9 +277,22 @@ export class AnalyticsService {
     );
     const passRate = totalExecuted > 0 ? (totalPassed / totalExecuted) * 100 : 0;
 
-    const recentAgg = testDb.getDurationAggregates(project, recentRange.from, recentRange.to);
-    const olderAgg = testDb.getDurationAggregates(project, previousRange.from, previousRange.to);
-    const slowestSteps = testDb.getSlowestTests(project, recentRange.from, recentRange.to, 10);
+    const recentAgg = testAnalyticsDb.getDurationAggregates(
+      project,
+      recentRange.from,
+      recentRange.to
+    );
+    const olderAgg = testAnalyticsDb.getDurationAggregates(
+      project,
+      previousRange.from,
+      previousRange.to
+    );
+    const slowestSteps = testAnalyticsDb.getSlowestTests(
+      project,
+      recentRange.from,
+      recentRange.to,
+      10
+    );
     const averageTestDuration = recentAgg.avgDuration;
     const olderAverageTestDuration = olderAgg.avgDuration;
 
@@ -407,9 +427,13 @@ export class AnalyticsService {
       count: report.stats?.flaky || 0,
     }));
 
-    const { p95Duration } = testDb.getDurationAggregates(project, recentRange.from, recentRange.to);
+    const { p95Duration } = testAnalyticsDb.getDurationAggregates(
+      project,
+      recentRange.from,
+      recentRange.to
+    );
     const slowThreshold = p95Duration > 0 ? p95Duration : 1000;
-    const slowCountsByReport = testDb.getSlowCountsByReport(
+    const slowCountsByReport = testAnalyticsDb.getSlowCountsByReport(
       project,
       recentRange.from,
       recentRange.to,
@@ -457,7 +481,7 @@ export class AnalyticsService {
   }
 
   async getTestTrends(testId: string, projectName?: string): Promise<StepTimingTrend | null> {
-    const trendRuns = testDb.getDurationTrend(testId, projectName);
+    const trendRuns = testQueriesDb.getDurationTrend(testId, projectName);
 
     if (trendRuns.length === 0) {
       return null;

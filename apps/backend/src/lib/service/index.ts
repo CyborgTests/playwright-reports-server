@@ -157,7 +157,7 @@ class Service {
       );
     });
 
-    // Failure clusters are derived from test_runs across the window — a new
+    // Failure clusters are derived from test_runs across the window - a new
     // report can add tests, change occurrence counts, and form new clusters,
     // so drop the cache rather than wait for the 60s TTL.
     invalidateFailureClustersCache();

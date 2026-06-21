@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 
 const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 
-// Resolved once at module load — the @playwright/test shipped with the backend.
+// Resolved once at module load - the @playwright/test shipped with the backend.
 const BUNDLED_PW_CLI = require.resolve('@playwright/test/cli');
 
 const inflightInstalls = new Map<string, Promise<string>>();

@@ -74,7 +74,7 @@ function SnapshotNode({ node, depth }: SnapshotNodeProps) {
           dot={dotForRow(status)}
           statusLabel={
             status === 'stale'
-              ? `Stale — ${staleDetail(node) ?? 'latest report past staleness threshold'}`
+              ? `Stale - ${staleDetail(node) ?? 'latest report past staleness threshold'}`
               : statusLabelFor(status)
           }
         />

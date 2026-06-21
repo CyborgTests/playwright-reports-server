@@ -1,8 +1,8 @@
 /**
  * Route a failure by error class, deciding how it's keyed:
- *   global — infra (server 5xx / network / browser); keyed by error message,
+ *   global - infra (server 5xx / network / browser); keyed by error message,
  *            location ignored, so it collapses across files.
- *   local  — assertions/selectors/timeouts; keyed by frame ∪ locator.
+ *   local  - assertions/selectors/timeouts; keyed by frame ∪ locator.
  */
 
 export type RouteScope = 'global' | 'local';
@@ -44,7 +44,7 @@ const RULES: Rule[] = [
     pattern:
       /target (?:page|frame|context)?\s*closed|browser has been closed|crashed|Protocol error|websocket (?:error|closed)/i,
   },
-  // local classes — kept for display/category; all key the same way (frame ∪ locator).
+  // local classes - kept for display/category; all key the same way (frame ∪ locator).
   { errorClass: 'timeout', scope: 'local', pattern: /test timeout of \d+ms exceeded/i },
   {
     errorClass: 'assertion',

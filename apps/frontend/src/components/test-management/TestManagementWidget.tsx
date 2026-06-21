@@ -170,7 +170,7 @@ const TestRow = memo(
                   <TooltipTrigger>
                     <AlertTriangle className="h-4 w-4 text-warning" />
                   </TooltipTrigger>
-                  <TooltipContent>Not present in latest report — consider removing</TooltipContent>
+                  <TooltipContent>Not present in latest report - consider removing</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}

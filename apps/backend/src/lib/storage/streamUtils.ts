@@ -8,7 +8,7 @@ import { type Readable, Transform, type Writable } from 'node:stream';
  *  sink's buffer grow unbounded when the other is fast.
  *
  *  Use case: forking a multipart upload into a local cache write + a remote
- *  upload — without this, slow S3 + fast disk lets the disk drain ahead and
+ *  upload - without this, slow S3 + fast disk lets the disk drain ahead and
  *  the remote upload backs up in memory (or vice versa).
  */
 export class CoordinatedTee extends Transform {

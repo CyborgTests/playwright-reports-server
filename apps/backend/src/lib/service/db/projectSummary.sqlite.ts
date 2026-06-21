@@ -13,7 +13,7 @@ export type ProjectSummaryRow = ProjectLlmSummariesRow;
 
 /**
  * Persists per-project LLM failure summaries so they survive page refreshes.
- * Cached by `project` only — date range is intentionally not part of the key
+ * Cached by `project` only - date range is intentionally not part of the key
  * because relative ranges ("today", "last 7 days") shift daily and would
  * invalidate the cache on calendar rollover. The cache is invalidated when a
  * new report for the project is ingested.

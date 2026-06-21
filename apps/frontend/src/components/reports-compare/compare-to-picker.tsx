@@ -12,7 +12,7 @@ import { withQueryParams } from '@/lib/network';
 import { withBase } from '@/lib/url';
 
 interface Props {
-  // ids that should be hidden from the picker's results — typically
+  // ids that should be hidden from the picker's results - typically
   excludeReportIds: string[];
   defaultProject?: string;
   buildHref: (otherReportId: string) => string;
@@ -170,7 +170,7 @@ export function CompareToPicker({
             <div className="px-4 py-6 text-center text-sm text-muted-foreground">
               {trimmedSearch
                 ? hasNextPage
-                  ? 'No matches in loaded reports — keep typing or scroll to load more.'
+                  ? 'No matches in loaded reports - keep typing or scroll to load more.'
                   : 'No matches.'
                 : 'No reports to compare with.'}
             </div>
