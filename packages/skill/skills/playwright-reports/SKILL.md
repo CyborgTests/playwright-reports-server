@@ -1,6 +1,6 @@
 ---
 name: playwright-reports
-description: Pull Playwright Reports Server context — failing tests, flakiness, run history, failure clusters, and LLM-written analyses. Trigger on mentions of a failing test, flaky run, `.spec.ts` file under suspicion, a CI reportId, "what failed in the last run", "why is X failing", or aggregate questions like "what's flaky this week" / "compare last two reports".
+description: Pull Playwright Reports Server context - failing tests, flakiness, run history, failure clusters, and LLM-written analyses. Trigger on mentions of a failing test, flaky run, `.spec.ts` file under suspicion, a CI reportId, "what failed in the last run", "why is X failing", or aggregate questions like "what's flaky this week" / "compare last two reports".
 allowed-tools: Bash(pwrs-cli test:*), Bash(pwrs-cli report:*), Bash(pwrs-cli cluster:*), Bash(pwrs-cli project:*), Bash(pwrs-cli tag:*), Bash(pwrs-cli category:*), Bash(pwrs-cli stats:*), Bash(pwrs-cli ping:*), Bash(pwrs-cli attachment:*), Bash(pwrs-cli regression:*), Bash(pwrs-cli help:*), Bash(pwrs-cli --help), Bash(pwrs-cli --version)
 ---
 
@@ -48,13 +48,13 @@ All list-returning commands carry `total` + `hasMore`. Defaults: `report list`/`
 
 ## Project identification
 
-Most commands accept `--project` to scope data. If the user's query doesn't name a project, **identify the project first** — don't guess or omit it silently.
+Most commands accept `--project` to scope data. If the user's query doesn't name a project, **identify the project first** - don't guess or omit it silently.
 
 ```bash
 pwrs-cli project list    # → { "projects": ["head:main", "staging:main", "e2e:local:sh"] }
 ```
 
-`project list` returns all known project names — use exact string values from this list in `--project`. Projects are named by the reporter config, not by you.
+`project list` returns all known project names - use exact string values from this list in `--project`. Projects are named by the reporter config, not by you.
 
 **When to pass `--project`:**
 - **User names a project** ("how's staging?") → use the matching string from `project list` (e.g. `staging:main`).
@@ -63,7 +63,7 @@ pwrs-cli project list    # → { "projects": ["head:main", "staging:main", "e2e:
 - **`PWRS_PROJECT` env var is set** → it serves as the default; explicit `--project` still wins. You can check if it's set via `pwrs-cli config get`.
 
 **Cross-project (`--project` omitted or `all`):**
-- `test find` / `test search` return results from all projects — the `project` field on each row tells you which project it belongs to.
+- `test find` / `test search` return results from all projects - the `project` field on each row tells you which project it belongs to.
 - `project summary` without `--project` produces a cross-project digest. Per-project summaries are more specific; prefer them when the user asks about one area.
 - `report list` / `stats` / `cluster list` aggregate across projects when `--project` is omitted.
 
@@ -88,7 +88,7 @@ pwrs-cli report list --project "staging:main" --from 2026-06-08 --to 2026-06-08
 pwrs-cli report brief <reportId>        # compact: 5 KB even on a 50-failure report
 pwrs-cli report summary <reportId>      # → verdict ('isolated' | 'clustered' | 'widespread' | 'systemic')
 ```
-Read `summary.llmSummaryStructured.verdict` first — `widespread`/`systemic` means the run is broken at a layer above any single test (infra, fixtures, deploy); don't drill into individual tests in that case.
+Read `summary.llmSummaryStructured.verdict` first - `widespread`/`systemic` means the run is broken at a layer above any single test (infra, fixtures, deploy); don't drill into individual tests in that case.
 
 ## Workflows
 
@@ -137,7 +137,7 @@ pwrs-cli report compare <reportIdA> <reportIdB>             # diff buckets (acce
 pwrs-cli cluster brief <clusterId>                          # full member roster + per-member brief
 ```
 
-`--project` is optional for `test brief` / `test history` / `test analysis*` — the server resolves the canonical `(fileId, project)` lane from the test's most recent run. Pass it only when auto-resolution picks the wrong lane (e.g. an obsolete project sharing a testId).
+`--project` is optional for `test brief` / `test history` / `test analysis*` - the server resolves the canonical `(fileId, project)` lane from the test's most recent run. Pass it only when auto-resolution picks the wrong lane (e.g. an obsolete project sharing a testId).
 
 ### From a file path or stack frame
 
@@ -156,7 +156,7 @@ Use this when you want to reason from raw signals (faster + cheaper than the LLM
 
 ## Interpreting signals
 
-Decision rules — apply top-to-bottom. Field shapes live in the workflow section above.
+Decision rules - apply top-to-bottom. Field shapes live in the workflow section above.
 
 1. **`feedback` present** → trust the team's note, override everything else.
 2. **`signals.quarantined: true`** → skip; the team already marked it broken.
@@ -173,13 +173,13 @@ Decision rules — apply top-to-bottom. Field shapes live in the workflow sectio
 
 `cluster.anchor` is the deterministic fix target, discriminated by `anchor.kind`:
 
-- `fixture` → `{verb, phase, filePath}` — a `beforeAll`/`beforeEach`/`afterAll`/`afterEach` hook failed and cascaded. Fix the hook once.
-- `selector` → `{verb, selector}` — N tests share a failing Playwright locator. Usually one UI drift breaking many tests; fix the selector or the element.
-- `frame` → `{verb, frame}` — N tests crash at the same `file:line` of app code. The frame is the literal fix location.
+- `fixture` → `{verb, phase, filePath}` - a `beforeAll`/`beforeEach`/`afterAll`/`afterEach` hook failed and cascaded. Fix the hook once.
+- `selector` → `{verb, selector}` - N tests share a failing Playwright locator. Usually one UI drift breaking many tests; fix the selector or the element.
+- `frame` → `{verb, frame}` - N tests crash at the same `file:line` of app code. The frame is the literal fix location.
 - `signature` → `{verb, signature}` - N tests share a normalized error signature but no extractable fixture/selector/frame. Usually a deep-stack pattern (timeouts, framework errors) the extractors can't pin to one line. No single fix location - start from `sampleError` + the per-member `failure-context`, and look for a common cause (shared timeout budget, flaky dependency, infra).
-- `unmatched` → `{testId, fileId, project}` — no extractable shared mechanism. Treat as a single-test failure; the cluster only groups repeated occurrences of the same test.
+- `unmatched` → `{testId, fileId, project}` - no extractable shared mechanism. Treat as a single-test failure; the cluster only groups repeated occurrences of the same test.
 
-Each cluster carries `confidence: 'high' | 'medium' | 'low'`. `cluster list` returns anchor + counts only — drill into `cluster brief <id>` for the full membership. In `test brief`, `cluster.otherTests` is capped at 5; when `cluster.otherTestsTruncated: true`, use `cluster brief` for the full roster (`cluster.otherTestsTotal` is the true size).
+Each cluster carries `confidence: 'high' | 'medium' | 'low'`. `cluster list` returns anchor + counts only - drill into `cluster brief <id>` for the full membership. In `test brief`, `cluster.otherTests` is capped at 5; when `cluster.otherTestsTruncated: true`, use `cluster brief` for the full roster (`cluster.otherTestsTotal` is the true size).
 
 ### Cluster lifecycle
 
@@ -192,11 +192,11 @@ Each cluster carries `confidence: 'high' | 'medium' | 'low'`. `cluster list` ret
 | `report summary` | `summary.llmSummaryStructured.verdict` | `isolated` / `clustered` / `widespread` / `systemic` |
 | `project summary` | `summary.structured.verdict` | `healthy` / `stabilizing` / `degrading` / `failing` |
 
-`structured.sections[].codeRefs[]` carry pre-resolved `{ kind, testId?, fileId?, filePath?, line? }` pointers — jump straight to the implicated tests/files.
+`structured.sections[].codeRefs[]` carry pre-resolved `{ kind, testId?, fileId?, filePath?, line? }` pointers - jump straight to the implicated tests/files.
 
 ### Regressions
 
-A **regression** is a tracked green → red state transition for one test — different from a chronic flake. The server records it on the failing run, closes it on the next passing run, and attributes the breakage to the commit that landed in between (when git metadata is available).
+A **regression** is a tracked green → red state transition for one test - different from a chronic flake. The server records it on the failing run, closes it on the next passing run, and attributes the breakage to the commit that landed in between (when git metadata is available).
 
 #### When to reach for it
 
@@ -213,13 +213,13 @@ A **regression** is a tracked green → red state transition for one test — di
 
 #### Cross-command surfacing
 
-The same regression signal threads through every brief — you usually don't need a separate `regression list` call:
+The same regression signal threads through every brief - you usually don't need a separate `regression list` call:
 
-- `test brief.regression` — `null` when the test isn't currently regressed. When set: `{ regressedAtCommit, lastGreenCommit, daysOpen, failureCount, flakyCount, regressedAtReportId, lastGreenReportId }`. The commit pair is your bisect window.
-- `cluster brief.regressionContext` — `null` when no cluster member is regressed. When set: `{ membersInRegression, totalMembers, sharedRegressionCommit, earliestRegression }`. `sharedRegressionCommit` is set when ≥80% of members regressed at the same commit → that's a deploy-induced cluster, fix once at the commit, not per-test.
-- `report brief.regressions` — `null` when this report neither opened nor resolved any regressions. When set: `{ newHere, resolvedHere }`. Lets you ask "did this CI run introduce/fix breakage?" without diffing against the previous run.
-- `report compare.summary.regressionsOpenedBetween` / `regressionsResolvedBetween` — drop-in deploy-window counts.
-- `stats.regressions` — project-wide rollup, scoped to the `--from` / `--to` window.
+- `test brief.regression` - `null` when the test isn't currently regressed. When set: `{ regressedAtCommit, lastGreenCommit, daysOpen, failureCount, flakyCount, regressedAtReportId, lastGreenReportId }`. The commit pair is your bisect window.
+- `cluster brief.regressionContext` - `null` when no cluster member is regressed. When set: `{ membersInRegression, totalMembers, sharedRegressionCommit, earliestRegression }`. `sharedRegressionCommit` is set when ≥80% of members regressed at the same commit → that's a deploy-induced cluster, fix once at the commit, not per-test.
+- `report brief.regressions` - `null` when this report neither opened nor resolved any regressions. When set: `{ newHere, resolvedHere }`. Lets you ask "did this CI run introduce/fix breakage?" without diffing against the previous run.
+- `report compare.summary.regressionsOpenedBetween` / `regressionsResolvedBetween` - drop-in deploy-window counts.
+- `stats.regressions` - project-wide rollup, scoped to the `--from` / `--to` window.
 
 #### Filtering the test roster by regression state
 
@@ -234,16 +234,16 @@ Combine with `--tier`, `--project`, `--failure-category` like any other test fil
 
 #### Decision rule (use this when interpreting `test brief`)
 
-If `regression` is non-null, the test is in an active green→red state — frame the analysis as **"what landed between `lastGreenCommit` and `regressedAtCommit`"**, not as "this test has been flaky." If `regression` is null but `signals.signatureOccurrenceCount > 1`, you're looking at a *recurring* signature on a test that never had a regression event — likely a chronic flake or a never-was-green test. Different fix.
+If `regression` is non-null, the test is in an active green→red state - frame the analysis as **"what landed between `lastGreenCommit` and `regressedAtCommit`"**, not as "this test has been flaky." If `regression` is null but `signals.signatureOccurrenceCount > 1`, you're looking at a *recurring* signature on a test that never had a regression event - likely a chronic flake or a never-was-green test. Different fix.
 
 Excluded automatically from `regression list --active`, the `Active` widget tile, and `test search --regressed-only`: quarantined tests and tests whose latest outcome is `skipped`. If you need those, drop the `--active` filter and check `isActive` per row.
 
 #### Investigating an active regression
 
 1. **Check existing work.** `test brief.llmAnalysis` → hypothesis to verify. `feedback` set → trust the team note.
-2. **Pull evidence.** `pwrs-cli test failure-context <testId> --report-id <regression.regressedAtReportId>` — returns errorMessage, stackTrace, testSourceFrame, pageSnapshot, consoleEvents, networkEvents, gitCommit, gitDiff, ciBuild, environment, actionLog.
+2. **Pull evidence.** `pwrs-cli test failure-context <testId> --report-id <regression.regressedAtReportId>` - returns errorMessage, stackTrace, testSourceFrame, pageSnapshot, consoleEvents, networkEvents, gitCommit, gitDiff, ciBuild, environment, actionLog.
 3. **Classify.** `appFrame` in test tree → **test bug**. `appFrame` in app tree → **app bug**. No `appFrame` / framework-only → **infra**. HTTP errors in networkEvents → **app bug** at API layer.
-4. **Determine repo for `regressedAtCommit`.** Check `evidence.gitDiff` (test files → test repo, app files → app repo, both → monorepo), `gitCommit.branch`, `runContext.appCommit`/`deployedSha`, `ciBuild.buildHref`. If ambiguous, ask the user — don't guess.
+4. **Determine repo for `regressedAtCommit`.** Check `evidence.gitDiff` (test files → test repo, app files → app repo, both → monorepo), `gitCommit.branch`, `runContext.appCommit`/`deployedSha`, `ciBuild.buildHref`. If ambiguous, ask the user - don't guess.
 5. **Bisect.** `git log --oneline <lastGreen>..<regressed>` + `git diff <lastGreen>..<regressed> -- <suspect-file>` in the correct repo. If the suspect file isn't in the available repo, say so explicitly.
 6. **Cross-check.** `cluster.regressionContext.sharedRegressionCommit` → that commit broke ≥80% of the cluster. `signatureFirstSeen` recent → narrow bisect. Same failure cross-project → likely infra. `flakyTier=critical` + regression → don't declare fixed on one green.
 7. **Caveats to flag.** Force-push → SHAs unreachable. Squash merge → diff the PR branch. No git context → fall back to CI timestamps. `lastGreenCommit=null` → verify via `test history`. `flaky` outcome doesn't open/close regressions; confirm recovery with two consecutive greens.
@@ -251,18 +251,18 @@ Excluded automatically from `regression list --active`, the `Active` widget tile
 
 ## Common gotchas
 
-- **`flakinessScore` is a percent (0–100), not a fraction.** Defaults flag at ≥ 2% (warning) / ≥ 5% (quarantine). Prefer `signals.flakyTier` — the server already classifies using the active config.
+- **`flakinessScore` is a percent (0–100), not a fraction.** Defaults flag at ≥ 2% (warning) / ≥ 5% (quarantine). Prefer `signals.flakyTier` - the server already classifies using the active config.
 - **`report compare` and `report brief` take UUID `reportId`s, not `#479`-style displayNumbers.** Use `report resolve 479` to convert. `compare` also accepts the keywords `latest` / `prev`.
-- **`report brief` is discriminated by `mode`.** `mode: 'summary'` carries `sampleUnclusteredFailures`; `mode: 'full'` (from `--with-failures`) carries `failedTests` instead. Full mode on a 50-failure report is ~100 KB — use sparingly.
+- **`report brief` is discriminated by `mode`.** `mode: 'summary'` carries `sampleUnclusteredFailures`; `mode: 'full'` (from `--with-failures`) carries `failedTests` instead. Full mode on a 50-failure report is ~100 KB - use sparingly.
 - **`--failure-category` values are heuristic-emitted strings.** Run `category list` first for exact spellings. The same vocabulary appears as `latestFailure.category`, `cluster.category`, and the `failureCategory` query param.
-- **`pwrs-cli attachment <url>` is HEAD-by-default.** It returns `{ url, status, contentType, bytes }` only. The URL is the answer in ~95% of cases — don't fetch the body unless the agent must read it. Pass `--inline` to add `encoding: "utf8" | "base64"` and `content`.
+- **`pwrs-cli attachment <url>` is HEAD-by-default.** It returns `{ url, status, contentType, bytes }` only. The URL is the answer in ~95% of cases - don't fetch the body unless the agent must read it. Pass `--inline` to add `encoding: "utf8" | "base64"` and `content`.
 - **`outcome` vocabulary**: `test history` runs and `report brief.stats` use the normalized values `passed | failed | flaky | skipped`. (Raw `expected` / `unexpected` are mapped server-side.)
 - **Pagination**: every list-returning command carries `total` + `hasMore`. When `hasMore: true`, pass `--offset` (where supported) or raise `--limit`.
 - **Errors are JSON on stderr**: failed calls emit `{"success": false, "error": "…", "kind": "http|config|unknown", …}` and exit non-zero. Parse both stdout and stderr.
 
 ## Date filters
 
-All time-windowed commands take `--from` / `--to` as ISO dates (`YYYY-MM-DD` or full ISO timestamp). For relative ranges, compute the dates yourself — **there is no `--since` flag**.
+All time-windowed commands take `--from` / `--to` as ISO dates (`YYYY-MM-DD` or full ISO timestamp). For relative ranges, compute the dates yourself - **there is no `--since` flag**.
 
 ## Sanity check
 
@@ -273,5 +273,5 @@ Returns `{ ok, server, tokenConfigured, latencyMs, … }`. Use this when a comma
 
 ## Loading the other docs
 
-- **`setup.md`** — one-time setup (server URL, API token, default project). Load only if the user asks about configuring `pwrs-cli`.
-- **`authoring.md`** — write commands (`analysis-submit`, `summary-submit`, `feedback`). Load only when the user explicitly asks you to author an analysis, submit a summary, or dissent on an existing one. Never overwrite a persisted analysis without that explicit ask.
+- **`setup.md`** - one-time setup (server URL, API token, default project). Load only if the user asks about configuring `pwrs-cli`.
+- **`authoring.md`** - write commands (`analysis-submit`, `summary-submit`, `feedback`). Load only when the user explicitly asks you to author an analysis, submit a summary, or dissent on an existing one. Never overwrite a persisted analysis without that explicit ask.

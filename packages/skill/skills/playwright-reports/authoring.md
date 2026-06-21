@@ -1,6 +1,6 @@
 <!-- cspell:words pwrs unclustered quarantineable magistral -->
 
-# pwrs-cli — authoring & dissent (load on explicit ask only)
+# pwrs-cli - authoring & dissent (load on explicit ask only)
 
 This file is loaded **only** when the user explicitly asks you to author or submit an analysis/summary, or to dissent on an existing one. The default skill behavior is read-only; do not invoke any of these write commands proactively.
 
@@ -9,14 +9,14 @@ This file is loaded **only** when the user explicitly asks you to author or subm
 - **`409 Conflict` on submit** → an analysis/summary already exists. Ask the user before passing `--force`; never overwrite silently.
 - **You haven't read the evidence first.** Authoring without running `failure-context` / `report brief` / `stats` is worse than no analysis.
 - **You're below "medium" confidence** in the root cause. Submit `--category investigate` + a one-line "needs human review" comment instead of a speculative full analysis.
-- **The user hasn't approved a dissent.** Always ask before posting `test feedback` — feedback is permanent and visible on the dashboard.
+- **The user hasn't approved a dissent.** Always ask before posting `test feedback` - feedback is permanent and visible on the dashboard.
 
 ## Decision rule
 
 | Existing state | What to do |
 | --- | --- |
 | `llmAnalysis: null` on a failing run | **Author**: pull `failure-context`, reason from evidence, write markdown, submit via `analysis-submit`. |
-| `llmAnalysis` present, you agree | Do nothing — that's the read-only happy path. |
+| `llmAnalysis` present, you agree | Do nothing - that's the read-only happy path. |
 | `llmAnalysis` present, you believe it's wrong | **Dissent via feedback**: ask the user, then on `yes` run `test feedback`. Never overwrite the persisted analysis. |
 | Report/project summary missing | **Author** via `report summary-submit` / `project summary-submit`. |
 | Report/project summary present, you disagree | Ask the user; on `yes` re-submit with `--force`. There is no separate feedback channel at these levels. |
@@ -34,10 +34,10 @@ Reason from the `evidence` envelope (codeframe, step tree, ARIA snapshot, consol
 <one paragraph>
 
 ## Fix
-<concrete change — file path + what to edit, or "investigate X" if uncertain>
+<concrete change - file path + what to edit, or "investigate X" if uncertain>
 
 ## Confidence
-high | medium | low — with one sentence of why
+high | medium | low - with one sentence of why
 ```
 
 Submit:
@@ -52,7 +52,7 @@ pwrs-cli test analysis-submit <testId> \
 
 Pass `--analysis-file -` to read from stdin instead of a file.
 
-On `409 Conflict`, an analysis already exists — switch to the dissent flow. Do not pass `--force` unless the user has explicitly approved overwriting.
+On `409 Conflict`, an analysis already exists - switch to the dissent flow. Do not pass `--force` unless the user has explicitly approved overwriting.
 
 ## 2. Dissenting on an existing analysis
 
@@ -70,7 +70,7 @@ On `yes`:
 
 ```bash
 pwrs-cli test feedback <testId> \
-    --comment "Disagree — <terse dissent + corrected hypothesis>" \
+    --comment "Disagree - <terse dissent + corrected hypothesis>" \
     --report-id <reportId>
 ```
 
@@ -151,17 +151,17 @@ Structured JSON shape (`ProjectAnalysisStructured`):
 
 ## 5. Managing cluster lifecycle
 
-Clusters can be marked as resolved (fixed) or re-opened (regression returned). These are write operations — ask the user before invoking.
+Clusters can be marked as resolved (fixed) or re-opened (regression returned). These are write operations - ask the user before invoking.
 
 ### Marking a cluster resolved
 
 When the user confirms a cluster's root cause is fixed:
 
 ```bash
-pwrs-cli cluster resolve <clusterId> --note "Fixed in PR #421 — selector updated"
+pwrs-cli cluster resolve <clusterId> --note "Fixed in PR #421 - selector updated"
 ```
 
-The `--note` is optional but strongly encouraged — it creates a paper trail for future investigators. Good notes reference a PR, commit, or deploy.
+The `--note` is optional but strongly encouraged - it creates a paper trail for future investigators. Good notes reference a PR, commit, or deploy.
 
 ### Re-opening a resolved cluster
 
@@ -190,6 +190,6 @@ Check `lifecycle` and `resolution` fields in the output to distinguish active fr
 ## Guardrails
 
 - **Always read before authoring.** `failure-context` for tests; `report brief` for reports; `stats` + `project summary` for projects.
-- **Never silently overwrite.** `409` is the system telling you "a human or another LLM already decided" — escalate to the user, never to `--force`.
+- **Never silently overwrite.** `409` is the system telling you "a human or another LLM already decided" - escalate to the user, never to `--force`.
 - **`--model` is the model that wrote the analysis** (e.g. `magistral-small`), not a project label. The dashboard surfaces this so reviewers know what authored each cell.
 - **Feedback is dissent, not retry.** If the user wants a fresh LLM-authored analysis, point them at "Re-analyze" in the dashboard. Author only when no LLM analysis exists.

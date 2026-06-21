@@ -37,11 +37,11 @@ const srcMtime = latestMtime(srcDir);
 const distMtime = latestMtime(distDir);
 
 if (distMtime === 0) {
-  console.log("[shared] no build found — building…");
+  console.log("[shared] no build found - building…");
 } else if (srcMtime > distMtime) {
-  console.log("[shared] sources changed since last build — rebuilding…");
+  console.log("[shared] sources changed since last build - rebuilding…");
 } else {
-  console.log("[shared] up to date — skipping build");
+  console.log("[shared] up to date - skipping build");
   process.exit(0);
 }
 

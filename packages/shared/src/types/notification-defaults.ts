@@ -80,7 +80,7 @@ const slackEventRecoveredNoHardFailures: SlackBlock[] = [
 ];
 
 const slackEventAlways: SlackBlock[] = [
-  { type: 'header', text: '📤 New report — {{project}}' },
+  { type: 'header', text: '📤 New report - {{project}}' },
   {
     type: 'section',
     text:
@@ -95,7 +95,7 @@ const slackEventAlways: SlackBlock[] = [
 ];
 
 const slackEventNewRegressions: SlackBlock[] = [
-  { type: 'header', text: '🔻 New regressions — {{project}}' },
+  { type: 'header', text: '🔻 New regressions - {{project}}' },
   {
     type: 'section',
     text: '*{{newRegressions}}* tests regressed in report #{{displayNumber}}.',
@@ -108,7 +108,7 @@ const slackEventNewRegressions: SlackBlock[] = [
 ];
 
 const slackEventResolvedRegressions: SlackBlock[] = [
-  { type: 'header', text: '✅ Regressions resolved — {{project}}' },
+  { type: 'header', text: '✅ Regressions resolved - {{project}}' },
   {
     type: 'section',
     text: '*{{resolvedRegressions}}* tests recovered in report #{{displayNumber}}.',
@@ -121,7 +121,7 @@ const slackEventResolvedRegressions: SlackBlock[] = [
 ];
 
 const slackScheduleAllClean: SlackBlock[] = [
-  { type: 'header', text: '✅ Daily QA — {{project}}' },
+  { type: 'header', text: '✅ Daily QA - {{project}}' },
   {
     type: 'section',
     text: '*{{reportCount}}* clean reports · *100%* pass rate\n' + '*Total tests:* {{totalPassed}}',
@@ -134,7 +134,7 @@ const slackScheduleAllClean: SlackBlock[] = [
 ];
 
 const slackScheduleNoHardFailures: SlackBlock[] = [
-  { type: 'header', text: '🟡 Daily QA — {{project}}' },
+  { type: 'header', text: '🟡 Daily QA - {{project}}' },
   {
     type: 'section',
     text:
@@ -149,7 +149,7 @@ const slackScheduleNoHardFailures: SlackBlock[] = [
 ];
 
 const slackScheduleAlways: SlackBlock[] = [
-  { type: 'header', text: '📊 Daily QA — {{project}}' },
+  { type: 'header', text: '📊 Daily QA - {{project}}' },
   {
     type: 'section',
     text:
@@ -166,7 +166,7 @@ const slackScheduleAlways: SlackBlock[] = [
     type: 'section',
     text:
       '*Top failing tests:*\n' +
-      '{{#topFailingTests}}• `{{title}}` — {{failureCount}}× ({{project}})\n{{/topFailingTests}}' +
+      '{{#topFailingTests}}• `{{title}}` - {{failureCount}}× ({{project}})\n{{/topFailingTests}}' +
       '{{^topFailingTests}}_No failing tests in this window._{{/topFailingTests}}',
   },
   { type: 'context', text: '{{windowStart}} → {{windowEnd}}' },

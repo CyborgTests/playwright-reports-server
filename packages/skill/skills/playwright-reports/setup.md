@@ -1,6 +1,6 @@
 <!-- cspell:words pwrs -->
 
-# pwrs-cli — setup reference
+# pwrs-cli - setup reference
 
 One-time setup, performed by the user. The model should not need this during normal invocations.
 
