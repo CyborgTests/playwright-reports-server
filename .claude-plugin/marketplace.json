@@ -7,7 +7,7 @@
     {
       "name": "playwright-reports",
       "source": "./packages/skill",
-      "description": "Access Playwright Reports Server data (failures, flakiness, Failure clusters) via the pwrs-cli read-only CLI."
+      "description": "Access Playwright Reports Server data (failures, flakiness, Failure clusters) via the pwrs-cli."
     }
   ]
 }

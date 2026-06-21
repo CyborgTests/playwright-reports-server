@@ -8,7 +8,7 @@ allowed-tools: Bash(pwrs-cli test:*), Bash(pwrs-cli report:*), Bash(pwrs-cli clu
 
 # Playwright Reports
 
-Read-only access to the Playwright Reports Server. Every command returns JSON; error messages, LLM analyses, and cluster members pass through verbatim.
+Access to the Playwright Reports Server. Every command returns JSON; error messages, LLM analyses, and cluster members pass through verbatim.
 
 **Use this skill when** the user asks why a test is failing, what's flaky, what changed between runs, or any aggregate question over a time window.
 
