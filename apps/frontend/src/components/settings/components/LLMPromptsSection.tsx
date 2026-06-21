@@ -1,6 +1,7 @@
-import type { LLMConfig, PromptVariable } from '@playwright-reports/shared';
+import type { PromptVariable } from '@playwright-reports/shared';
 import { PROMPT_VARIABLES } from '@playwright-reports/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Accordion,
@@ -11,9 +12,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useAuth } from '@/hooks/useAuth';
 import { useLlmDefaultPrompts } from '@/hooks/useLlmTasks';
-import { apiFetch, errMessage } from '@/lib/api';
+import useMutation from '@/hooks/useMutation';
+import { SERVER_CONFIG_KEY, useServerConfig } from '@/hooks/useServerConfig';
 import { CustomPromptField } from './CustomPromptField';
 
 type PromptKey =
@@ -55,36 +56,29 @@ function snapshotKey(s: PromptState): string {
 }
 
 export default function LLMPromptsSection() {
-  const session = useAuth();
+  const queryClient = useQueryClient();
+  const { data: config } = useServerConfig();
   const [state, setState] = useState<PromptState>({ generalContext: '', overrides: {} });
   const [saved, setSaved] = useState<PromptState>({ generalContext: '', overrides: {} });
-  const [saving, setSaving] = useState(false);
   const { data: defaultPromptsData } = useLlmDefaultPrompts({ enabled: true });
   const defaults = defaultPromptsData?.data;
 
   const dirty = snapshotKey(state) !== snapshotKey(saved);
 
-  const load = useCallback(async () => {
-    try {
-      const cfg = await apiFetch<{ llm?: LLMConfig }>('/api/config');
-      const llm = cfg.llm ?? {};
-      const overrides: Overrides = {};
-      for (const key of PROMPT_KEYS) {
-        const v = llm[key];
-        if (typeof v === 'string' && v.length > 0) overrides[key] = v;
-      }
-      const next: PromptState = { generalContext: llm.generalContext ?? '', overrides };
-      setState(next);
-      setSaved(next);
-    } catch {
-      // non-fatal
-    }
-  }, []);
-
+  const seeded = useRef(false);
   useEffect(() => {
-    if (session.status !== 'authenticated') return;
-    load();
-  }, [session.status, load]);
+    const llm = config?.llm;
+    if (seeded.current || !llm) return;
+    seeded.current = true;
+    const overrides: Overrides = {};
+    for (const key of PROMPT_KEYS) {
+      const v = llm[key];
+      if (typeof v === 'string' && v.length > 0) overrides[key] = v;
+    }
+    const next: PromptState = { generalContext: llm.generalContext ?? '', overrides };
+    setState(next);
+    setSaved(next);
+  }, [config]);
 
   const setOverride = (key: PromptKey) => (next: string | undefined) =>
     setState((prev) => {
@@ -94,20 +88,20 @@ export default function LLMPromptsSection() {
       return { ...prev, overrides };
     });
 
-  const save = async () => {
-    setSaving(true);
-    try {
-      const fd = new FormData();
-      fd.append('llmGeneralContext', state.generalContext);
-      for (const key of PROMPT_KEYS) fd.append(FIELD_NAME[key], state.overrides[key] ?? '');
-      await apiFetch('/api/config', { method: 'PATCH', body: fd });
+  const mutation = useMutation('/api/config', {
+    method: 'PATCH',
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [SERVER_CONFIG_KEY] });
       toast.success('Prompts saved');
       setSaved(state);
-    } catch (err) {
-      toast.error(`Save failed: ${errMessage(err)}`);
-    } finally {
-      setSaving(false);
-    }
+    },
+  });
+
+  const save = () => {
+    const fd = new FormData();
+    fd.append('llmGeneralContext', state.generalContext);
+    for (const key of PROMPT_KEYS) fd.append(FIELD_NAME[key], state.overrides[key] ?? '');
+    mutation.mutate({ body: fd });
   };
 
   const field = (
@@ -137,8 +131,8 @@ export default function LLMPromptsSection() {
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-lg font-semibold">Prompts</h3>
         {dirty && (
-          <Button onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : 'Save prompts'}
+          <Button onClick={save} disabled={mutation.isPending}>
+            {mutation.isPending ? 'Saving…' : 'Save prompts'}
           </Button>
         )}
       </div>

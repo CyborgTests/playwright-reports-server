@@ -1,6 +1,6 @@
 import type { LlmModel } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,9 +15,10 @@ import {
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
-import { useAuth } from '@/hooks/useAuth';
-import { LLM_MODELS_PATH } from '@/hooks/useLlmModels';
-import { apiFetch as api, errMessage } from '@/lib/api';
+import { LLM_MODELS_PATH, useLlmModels } from '@/hooks/useLlmModels';
+import useMutation from '@/hooks/useMutation';
+import { SERVER_CONFIG_KEY, useServerConfig } from '@/hooks/useServerConfig';
+import { errMessage } from '@/lib/api';
 import { LLMModelFormDialog } from './LLMModelFormDialog';
 import { LLMModelRow } from './LLMModelRow';
 import {
@@ -31,10 +32,11 @@ import {
 export default function LLMModelsConfiguration({
   featureEnabled,
 }: Readonly<{ featureEnabled: boolean }>) {
-  const session = useAuth();
   const queryClient = useQueryClient();
-  const [models, setModels] = useState<LlmModel[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: modelsData, isLoading } = useLlmModels();
+  const models = modelsData ?? [];
+  const { data: config } = useServerConfig();
+
   const [useFallbackChain, setUseFallbackChain] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<FormState>(blankForm);
@@ -44,27 +46,50 @@ export default function LLMModelsConfiguration({
   const [deleteTarget, setDeleteTarget] = useState<LlmModel | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const refresh = useCallback(async () => {
-    try {
-      const data = await api<LlmModel[]>(LLM_MODELS_PATH);
-      setModels(data);
-      queryClient.setQueryData([LLM_MODELS_PATH], data);
-    } catch (err) {
-      toast.error(`Failed to load models: ${errMessage(err)}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [queryClient]);
-
   useEffect(() => {
-    if (session.status !== 'authenticated') return;
-    refresh();
-    api<{ llm?: { useFallbackChain?: boolean } }>('/api/config')
-      .then((cfg) => setUseFallbackChain(!!cfg.llm?.useFallbackChain))
-      .catch(() => {
-        // non-fatal: toggle defaults to a safe value if config can't be read
-      });
-  }, [session.status, refresh]);
+    if (config?.llm) setUseFallbackChain(!!config.llm.useFallbackChain);
+  }, [config]);
+
+  const invalidateModels = () => queryClient.invalidateQueries({ queryKey: [LLM_MODELS_PATH] });
+  const createModel = useMutation<LlmModel, Record<string, unknown>>(LLM_MODELS_PATH, {
+    method: 'POST',
+    silent: true,
+    onSuccess: invalidateModels,
+  });
+  const updateModel = useMutation<LlmModel, Record<string, unknown>>(LLM_MODELS_PATH, {
+    method: 'PATCH',
+    silent: true,
+    onSuccess: invalidateModels,
+  });
+  const deleteModel = useMutation(LLM_MODELS_PATH, {
+    method: 'DELETE',
+    silent: true,
+    onSuccess: invalidateModels,
+  });
+  const testConn = useMutation<{ success: boolean; error?: string; models?: string[] }>(
+    LLM_MODELS_PATH,
+    { method: 'POST', silent: true, onSuccess: invalidateModels }
+  );
+  const setPrimaryMut = useMutation(LLM_MODELS_PATH, {
+    method: 'PATCH',
+    silent: true,
+    onSuccess: invalidateModels,
+  });
+  const duplicateMut = useMutation<LlmModel>(LLM_MODELS_PATH, {
+    method: 'POST',
+    silent: true,
+    onSuccess: invalidateModels,
+  });
+  const reorderMut = useMutation<LlmModel[], { orderedIds: string[] }>(`${LLM_MODELS_PATH}/order`, {
+    method: 'PUT',
+    silent: true,
+    onSuccess: invalidateModels,
+  });
+  const fallbackMut = useMutation('/api/config', {
+    method: 'PATCH',
+    silent: true,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [SERVER_CONFIG_KEY] }),
+  });
 
   const openCreate = () => {
     setEditingId(null);
@@ -121,17 +146,13 @@ export default function LLMModelsConfiguration({
       if (form.apiKey !== '') payload.apiKey = form.apiKey;
 
       if (editingId) {
-        await api(`/api/config/llm-models/${editingId}`, {
-          method: 'PATCH',
-          body: JSON.stringify(payload),
-        });
+        await updateModel.mutateAsync({ path: `${LLM_MODELS_PATH}/${editingId}`, body: payload });
         toast.success('Model updated');
       } else {
-        await api('/api/config/llm-models', { method: 'POST', body: JSON.stringify(payload) });
+        await createModel.mutateAsync({ body: payload });
         toast.success('Model created - test the connection, then enable it');
       }
       setFormOpen(false);
-      await refresh();
     } catch (err) {
       toast.error(`Save failed: ${errMessage(err)}`);
     } finally {
@@ -142,13 +163,11 @@ export default function LLMModelsConfiguration({
   const testConnection = async (m: LlmModel) => {
     setBusyId(m.id);
     try {
-      const result = await api<{ success: boolean; error?: string; models?: string[] }>(
-        `/api/config/llm-models/${m.id}/test-connection`,
-        { method: 'POST' }
-      );
+      const result = await testConn.mutateAsync({
+        path: `${LLM_MODELS_PATH}/${m.id}/test-connection`,
+      });
       if (result.success) toast.success(`"${m.label}" connected`);
       else toast.error(`Connection failed: ${result.error ?? 'unknown error'}`);
-      await refresh();
     } catch (err) {
       toast.error(`Test failed: ${errMessage(err)}`);
     } finally {
@@ -157,26 +176,21 @@ export default function LLMModelsConfiguration({
   };
 
   const toggleEnabled = async (m: LlmModel) => {
-    const next = !m.enabled;
-    setModels((prev) => prev.map((x) => (x.id === m.id ? { ...x, enabled: next } : x)));
     try {
-      const updated = await api<LlmModel>(`/api/config/llm-models/${m.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ enabled: next }),
+      await updateModel.mutateAsync({
+        path: `${LLM_MODELS_PATH}/${m.id}`,
+        body: { enabled: !m.enabled },
       });
-      setModels((prev) => prev.map((x) => (x.id === m.id ? updated : x)));
     } catch (err) {
       toast.error(`Failed: ${errMessage(err)}`);
-      setModels((prev) => prev.map((x) => (x.id === m.id ? { ...x, enabled: m.enabled } : x)));
     }
   };
 
   const setPrimary = async (m: LlmModel) => {
     setBusyId(m.id);
     try {
-      await api(`/api/config/llm-models/${m.id}/primary`, { method: 'PATCH' });
+      await setPrimaryMut.mutateAsync({ path: `${LLM_MODELS_PATH}/${m.id}/primary` });
       toast.success(`"${m.label}" is now the primary model`);
-      await refresh();
     } catch (err) {
       toast.error(`Failed: ${errMessage(err)}`);
     } finally {
@@ -187,10 +201,7 @@ export default function LLMModelsConfiguration({
   const duplicate = async (m: LlmModel) => {
     setBusyId(m.id);
     try {
-      const copy = await api<LlmModel>(`/api/config/llm-models/${m.id}/duplicate`, {
-        method: 'POST',
-      });
-      await refresh();
+      const copy = await duplicateMut.mutateAsync({ path: `${LLM_MODELS_PATH}/${m.id}/duplicate` });
       openEdit(copy);
     } catch (err) {
       toast.error(`Duplicate failed: ${errMessage(err)}`);
@@ -204,24 +215,19 @@ export default function LLMModelsConfiguration({
     if (target < 0 || target >= models.length) return;
     const reordered = [...models];
     [reordered[idx], reordered[target]] = [reordered[target], reordered[idx]];
-    setModels(reordered);
     try {
-      await api('/api/config/llm-models/order', {
-        method: 'PUT',
-        body: JSON.stringify({ orderedIds: reordered.map((m) => m.id) }),
-      });
+      await reorderMut.mutateAsync({ body: { orderedIds: reordered.map((m) => m.id) } });
     } catch (err) {
       toast.error(`Reorder failed: ${errMessage(err)}`);
-      await refresh(); // rollback to server
     }
   };
 
   const toggleFallback = async (next: boolean) => {
-    setUseFallbackChain(next);
+    setUseFallbackChain(next); // optimistic
+    const fd = new FormData();
+    fd.append('llmUseFallbackChain', String(next));
     try {
-      const fd = new FormData();
-      fd.append('llmUseFallbackChain', String(next));
-      await api('/api/config', { method: 'PATCH', body: fd });
+      await fallbackMut.mutateAsync({ body: fd });
     } catch (err) {
       setUseFallbackChain(!next);
       toast.error(`Failed to update fallback setting: ${errMessage(err)}`);
@@ -232,10 +238,9 @@ export default function LLMModelsConfiguration({
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await api(`/api/config/llm-models/${deleteTarget.id}`, { method: 'DELETE' });
+      await deleteModel.mutateAsync({ path: `${LLM_MODELS_PATH}/${deleteTarget.id}` });
       toast.success('Model deleted');
       setDeleteTarget(null);
-      await refresh();
     } catch (err) {
       toast.error(`Delete failed: ${errMessage(err)}`);
     } finally {
@@ -270,7 +275,7 @@ export default function LLMModelsConfiguration({
           <Switch id="llm-fallback" checked={useFallbackChain} onCheckedChange={toggleFallback} />
         </div>
 
-        {loading ? (
+        {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : models.length === 0 ? (
           <p className="text-sm text-muted-foreground">

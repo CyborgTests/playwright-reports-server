@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { Switch } from '@/components/ui/switch';
-import { useAuth } from '@/hooks/useAuth';
-import { apiFetch, errMessage } from '@/lib/api';
+import useMutation from '@/hooks/useMutation';
+import { SERVER_CONFIG_KEY, useServerConfig } from '@/hooks/useServerConfig';
 
 type ToggleKey =
   | 'autoAnalyzeNewReports'
@@ -22,7 +22,7 @@ const TOGGLES: { key: ToggleKey; field: string; title: string; description: stri
     field: 'llmAutoProjectSummaryOnReportComplete',
     title: 'Auto-generate project summary',
     description:
-      'When enabled, completing a report failure analysis automatically queues a project-level summary for that project.',
+      "When enabled, completing a report failure analysis automatically queues a project-level summary for that report's project.",
   },
   {
     key: 'analyzeGreenWindows',
@@ -34,41 +34,36 @@ const TOGGLES: { key: ToggleKey; field: string; title: string; description: stri
 ];
 
 export default function LLMAutomationSection() {
-  const session = useAuth();
+  const queryClient = useQueryClient();
+  const { data: config } = useServerConfig();
   const [values, setValues] = useState<Record<ToggleKey, boolean>>({
     autoAnalyzeNewReports: false,
     autoProjectSummaryOnReportComplete: false,
     analyzeGreenWindows: false,
   });
 
-  const load = useCallback(async () => {
-    try {
-      const cfg = await apiFetch<{ llm?: Partial<Record<ToggleKey, boolean>> }>('/api/config');
-      setValues({
-        autoAnalyzeNewReports: !!cfg.llm?.autoAnalyzeNewReports,
-        autoProjectSummaryOnReportComplete: !!cfg.llm?.autoProjectSummaryOnReportComplete,
-        analyzeGreenWindows: !!cfg.llm?.analyzeGreenWindows,
-      });
-    } catch {
-      // non-fatal
-    }
-  }, []);
-
   useEffect(() => {
-    if (session.status !== 'authenticated') return;
-    load();
-  }, [session.status, load]);
+    if (!config?.llm) return;
+    setValues({
+      autoAnalyzeNewReports: !!config.llm.autoAnalyzeNewReports,
+      autoProjectSummaryOnReportComplete: !!config.llm.autoProjectSummaryOnReportComplete,
+      analyzeGreenWindows: !!config.llm.analyzeGreenWindows,
+    });
+  }, [config]);
 
-  const toggle = async (key: ToggleKey, field: string, next: boolean) => {
+  const mutation = useMutation('/api/config', {
+    method: 'PATCH',
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [SERVER_CONFIG_KEY] }),
+  });
+
+  const toggle = (key: ToggleKey, field: string, next: boolean) => {
     setValues((prev) => ({ ...prev, [key]: next })); // optimistic
-    try {
-      const fd = new FormData();
-      fd.append(field, String(next));
-      await apiFetch('/api/config', { method: 'PATCH', body: fd });
-    } catch (err) {
-      setValues((prev) => ({ ...prev, [key]: !next }));
-      toast.error(`Failed to update setting: ${errMessage(err)}`);
-    }
+    const fd = new FormData();
+    fd.append(field, String(next));
+    mutation.mutate(
+      { body: fd },
+      { onError: () => setValues((prev) => ({ ...prev, [key]: !next })) }
+    );
   };
 
   return (

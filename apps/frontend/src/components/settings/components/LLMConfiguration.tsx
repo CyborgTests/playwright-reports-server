@@ -1,47 +1,39 @@
-import { useCallback, useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { useAuth } from '@/hooks/useAuth';
 import { useLlmModels } from '@/hooks/useLlmModels';
-import { apiFetch, errMessage } from '@/lib/api';
+import useMutation from '@/hooks/useMutation';
+import { SERVER_CONFIG_KEY, useServerConfig } from '@/hooks/useServerConfig';
 import LLMAutomationSection from './LLMAutomationSection';
 import LLMModelsConfiguration from './LLMModelsConfiguration';
 import LLMPromptsSection from './LLMPromptsSection';
 import LLMRoutingConfiguration from './LLMRoutingConfiguration';
 
 export default function LLMConfiguration() {
-  const session = useAuth();
+  const queryClient = useQueryClient();
+  const { data: config } = useServerConfig();
   const { data: models } = useLlmModels();
   const hasPrimary = (models ?? []).some((m) => m.isPrimary);
   const [featureEnabled, setFeatureEnabled] = useState(false);
 
   useEffect(() => {
-    if (session.status !== 'authenticated') return;
-    apiFetch<{ llm?: { enabled?: boolean } }>('/api/config')
-      .then((cfg) => setFeatureEnabled(cfg.llm?.enabled !== false))
-      .catch(() => {
-        // non-fatal: stays disabled until config loads
-      });
-  }, [session.status]);
+    if (config?.llm) setFeatureEnabled(config.llm.enabled !== false);
+  }, [config]);
 
-  const toggleFeature = useCallback(
-    async (next: boolean) => {
-      if (next && !hasPrimary) return; // guarded by the disabled checkbox; defensive
-      setFeatureEnabled(next);
-      try {
-        const fd = new FormData();
-        fd.append('llmFeatureEnabled', String(next));
-        await apiFetch('/api/config', { method: 'PATCH', body: fd });
-        toast.success(next ? 'LLM features enabled' : 'LLM features disabled');
-      } catch (err) {
-        setFeatureEnabled(!next);
-        toast.error(`Failed to update LLM setting: ${errMessage(err)}`);
-      }
-    },
-    [hasPrimary]
-  );
+  const mutation = useMutation('/api/config', {
+    method: 'PATCH',
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [SERVER_CONFIG_KEY] }),
+  });
+
+  const toggleFeature = (next: boolean) => {
+    if (next && !hasPrimary) return; // guarded by the disabled checkbox; defensive
+    setFeatureEnabled(next); // optimistic
+    const fd = new FormData();
+    fd.append('llmFeatureEnabled', String(next));
+    mutation.mutate({ body: fd }, { onError: () => setFeatureEnabled(!next) });
+  };
 
   return (
     <Card id="llm" className="mb-6 scroll-mt-20 p-4">

@@ -7,7 +7,8 @@ import {
   type LlmTaskType,
   STRATEGY_LABELS,
 } from '@playwright-reports/shared';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,9 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useAuth } from '@/hooks/useAuth';
 import { useLlmModels } from '@/hooks/useLlmModels';
-import { apiFetch, errMessage } from '@/lib/api';
+import useMutation from '@/hooks/useMutation';
+import { SERVER_CONFIG_KEY, useServerConfig } from '@/hooks/useServerConfig';
 import { ModelRowList, ModelSelect, NumberField, PRIMARY } from './routing-role-pickers';
 
 const TASKS: { key: LlmTaskType; label: string }[] = [
@@ -124,7 +125,8 @@ function cleanRouting(routing: RoutingMap, modelIds?: Set<string>): RoutingMap {
 export default function LLMRoutingConfiguration({
   featureEnabled,
 }: Readonly<{ featureEnabled: boolean }>) {
-  const session = useAuth();
+  const queryClient = useQueryClient();
+  const { data: config } = useServerConfig();
   const { data: allModels } = useLlmModels();
   const models = useMemo(() => (allModels ?? []).filter((m) => m.enabled), [allModels]);
   const modelIds = useMemo(
@@ -134,27 +136,19 @@ export default function LLMRoutingConfiguration({
   const primaryId = useMemo(() => (allModels ?? []).find((m) => m.isPrimary)?.id, [allModels]);
   const [routing, setRouting] = useState<RoutingMap>({});
   const [savedRouting, setSavedRouting] = useState<RoutingMap>({});
-  const [saving, setSaving] = useState(false);
 
   const dirty =
     JSON.stringify(cleanRouting(routing, modelIds)) !==
     JSON.stringify(cleanRouting(savedRouting, modelIds));
 
-  const load = useCallback(async () => {
-    try {
-      const config = await apiFetch<{ llm?: { routing?: RoutingMap } }>('/api/config');
-      const loaded = config.llm?.routing ?? {};
-      setRouting(loaded);
-      setSavedRouting(loaded);
-    } catch (err) {
-      toast.error(`Failed to load routing: ${errMessage(err)}`);
-    }
-  }, []);
-
+  const seeded = useRef(false);
   useEffect(() => {
-    if (session.status !== 'authenticated') return;
-    load();
-  }, [session.status, load]);
+    if (seeded.current || !config) return;
+    seeded.current = true;
+    const loaded = config.llm?.routing ?? {};
+    setRouting(loaded);
+    setSavedRouting(loaded);
+  }, [config]);
 
   const taskRouting = (task: LlmTaskType): LlmTaskRouting =>
     routing[task] ?? { strategy: 'one_shot' };
@@ -197,19 +191,19 @@ export default function LLMRoutingConfiguration({
     return modelIds ? list.filter((r) => r.modelId !== undefined && modelIds.has(r.modelId)) : list;
   };
 
-  const save = async () => {
-    setSaving(true);
-    try {
-      const fd = new FormData();
-      fd.append('llmRouting', JSON.stringify(cleanRouting(routing, modelIds)));
-      await apiFetch('/api/config', { method: 'PATCH', body: fd });
+  const mutation = useMutation('/api/config', {
+    method: 'PATCH',
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [SERVER_CONFIG_KEY] });
+      setSavedRouting(routing);
       toast.success('Routing configuration saved');
-      await load();
-    } catch (err) {
-      toast.error(`Save failed: ${errMessage(err)}`);
-    } finally {
-      setSaving(false);
-    }
+    },
+  });
+
+  const save = () => {
+    const fd = new FormData();
+    fd.append('llmRouting', JSON.stringify(cleanRouting(routing, modelIds)));
+    mutation.mutate({ body: fd });
   };
 
   return (
@@ -218,11 +212,15 @@ export default function LLMRoutingConfiguration({
         <h3 className="text-lg font-semibold">Routing</h3>
         {dirty && (
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setRouting(savedRouting)} disabled={saving}>
+            <Button
+              variant="outline"
+              onClick={() => setRouting(savedRouting)}
+              disabled={mutation.isPending}
+            >
               Cancel
             </Button>
-            <Button onClick={save} disabled={saving}>
-              {saving ? 'Saving…' : 'Save routing'}
+            <Button onClick={save} disabled={mutation.isPending}>
+              {mutation.isPending ? 'Saving…' : 'Save routing'}
             </Button>
           </div>
         )}

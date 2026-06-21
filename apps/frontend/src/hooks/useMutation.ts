@@ -13,39 +13,38 @@ const useMutation = <TData = unknown, TVariables = unknown>(
   url: string,
   options?: Omit<UseMutationOptions<TData, Error, MutationFnParams<TVariables>>, 'mutationFn'> & {
     method?: string;
+    silent?: boolean;
   }
 ) => {
   const session = useAuth();
+  const { method, silent, ...mutationOptions } = options ?? {};
 
   return useTanStackMutation<TData, Error, MutationFnParams<TVariables>>({
     mutationFn: async ({ body, path }: MutationFnParams<TVariables>) => {
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        ...authHeadersForSession(session),
-      };
+      const auth = authHeadersForSession(session);
+      const isForm = body instanceof FormData;
+      const hasJsonBody =
+        !isForm && body != null && (typeof body !== 'object' || Object.keys(body).length > 0);
+      const headers: HeadersInit = isForm
+        ? auth
+        : { 'Content-Type': hasJsonBody ? 'application/json' : 'text/plain', ...auth };
 
-      const fullPath = withBase(path ?? url);
-      const response = await fetch(fullPath, {
-        headers:
-          body && Object.keys(body).length > 0
-            ? headers
-            : {
-                ...headers,
-                'Content-Type': 'text/plain',
-              },
-        body: body && Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
-        method: options?.method ?? 'POST',
+      const response = await fetch(withBase(path ?? url), {
+        headers,
+        body: isForm ? (body as FormData) : hasJsonBody ? JSON.stringify(body) : undefined,
+        method: method ?? 'POST',
       });
       const respText = await response.text();
 
       if (!response.ok) {
-        toast.error(`Network response was not ok: ${respText}`);
-        throw new Error(`Network response was not ok: ${respText}`);
+        const message = respText || `Request failed (${response.status})`;
+        if (!silent) toast.error(message);
+        throw new Error(message);
       }
 
-      return JSON.parse(respText);
+      return respText ? (JSON.parse(respText) as TData) : (undefined as TData);
     },
-    ...options,
+    ...mutationOptions,
   });
 };
 

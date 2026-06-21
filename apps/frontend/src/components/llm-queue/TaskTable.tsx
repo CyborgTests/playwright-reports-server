@@ -13,7 +13,6 @@ import {
 } from '@/components/ui/table';
 import { useLlmModels } from '@/hooks/useLlmModels';
 import useMutation from '@/hooks/useMutation';
-import { apiFetch } from '@/lib/api';
 import { buildRateMap } from './format-task';
 import { TaskRow, TOTAL_COLUMNS } from './TaskRow';
 
@@ -38,14 +37,22 @@ export function TaskTable({
   const { data: models } = useLlmModels();
   const rates = useMemo(() => buildRateMap(models ?? []), [models]);
 
-  const fetchChildren = useCallback(async (id: string) => {
-    try {
-      const json = await apiFetch<{ data?: LlmTask[] }>(`/api/llm/tasks/${id}/roles`);
-      setChildrenById((p) => ({ ...p, [id]: json.data ?? [] }));
-    } catch {
-      setChildrenById((p) => ({ ...p, [id]: p[id] && p[id] !== 'loading' ? p[id] : [] }));
-    }
-  }, []);
+  const { mutateAsync: fetchRoles } = useMutation<{ data?: LlmTask[] }>('/api/llm/tasks', {
+    method: 'GET',
+    silent: true,
+  });
+
+  const fetchChildren = useCallback(
+    async (id: string) => {
+      try {
+        const json = await fetchRoles({ path: `/api/llm/tasks/${id}/roles` });
+        setChildrenById((p) => ({ ...p, [id]: json.data ?? [] }));
+      } catch {
+        setChildrenById((p) => ({ ...p, [id]: p[id] && p[id] !== 'loading' ? p[id] : [] }));
+      }
+    },
+    [fetchRoles]
+  );
 
   const toggleExpand = useCallback(
     (id: string) => {
