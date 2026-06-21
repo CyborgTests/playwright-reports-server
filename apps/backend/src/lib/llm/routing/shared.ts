@@ -79,22 +79,20 @@ export function sumUsage(usages: Usage[]): Usage {
 }
 
 export async function callRole(
-  taskId: string | null,
+  taskId: string,
   taskType: LlmTaskType,
   roleName: string,
   role: ResolvedRole,
   prompt: SegmentedPrompt
 ): Promise<LLMResponse> {
   const opts: SegmentedSendOptions = { temperature: role.temperature };
-  const childId = taskId
-    ? llmTasksDb.startRoleExecution({
-        parentTaskId: taskId,
-        type: taskType,
-        role: roleName,
-        model: role.row.model,
-        baseUrl: role.row.baseUrl,
-      })
-    : null;
+  const childId = llmTasksDb.startRoleExecution({
+    parentTaskId: taskId,
+    type: taskType,
+    role: roleName,
+    model: role.row.model,
+    baseUrl: role.row.baseUrl,
+  });
   try {
     const resp = await runOnModel(
       role.row,
@@ -102,32 +100,26 @@ export async function callRole(
         role.isPrimary
           ? llmService.sendSegmentedMessage(prompt, opts)
           : llmService.sendViaModel(modelRowToProviderConfig(role.row), prompt, opts),
-      () => {
-        if (childId) llmTasksDb.markRoleProcessing(childId);
-      }
+      () => llmTasksDb.markRoleProcessing(childId)
     );
     if (role.row.lastError) llmModelsDb.setLastError(role.row.id, null);
-    if (childId) {
-      llmTasksDb.finishRoleExecution(childId, {
-        status: 'completed',
-        model: resp.model,
-        baseUrl: role.row.baseUrl,
-        usage: resp.usage,
-        result: VERDICT_ROLES.has(roleName) ? resp.content : null,
-      });
-    }
+    llmTasksDb.finishRoleExecution(childId, {
+      status: 'completed',
+      model: resp.model,
+      baseUrl: role.row.baseUrl,
+      usage: resp.usage,
+      result: VERDICT_ROLES.has(roleName) ? resp.content : null,
+    });
     return resp;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     llmModelsDb.setLastError(role.row.id, msg);
-    if (childId) {
-      llmTasksDb.finishRoleExecution(childId, {
-        status: 'failed',
-        model: role.row.model,
-        baseUrl: role.row.baseUrl,
-        error: msg,
-      });
-    }
+    llmTasksDb.finishRoleExecution(childId, {
+      status: 'failed',
+      model: role.row.model,
+      baseUrl: role.row.baseUrl,
+      error: msg,
+    });
     throw err;
   }
 }
@@ -176,7 +168,7 @@ export function coerceVerdicts(parsed: unknown): JudgeVerdict[] {
 }
 
 export async function runAuthors(
-  taskId: string | null,
+  taskId: string,
   taskType: LlmTaskType,
   prompt: SegmentedPrompt,
   authors: ResolvedRole[]

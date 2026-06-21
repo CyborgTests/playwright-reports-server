@@ -131,7 +131,7 @@ const BASE_SCHEDULE_SAMPLE: AnyContext = {
   topFailureCategories: [
     { name: 'app_bug', count: 9, percentage: '52.9' },
     { name: 'test_bug', count: 5, percentage: '29.4' },
-    { name: 'infrastructure', count: 3, percentage: '17.6' },
+    { name: 'environment', count: 3, percentage: '17.6' },
   ],
   topFailingTests: [
     { title: 'checkout > pay with stored card', failureCount: 6, project: 'main:e2e' },

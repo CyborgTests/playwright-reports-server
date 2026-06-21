@@ -31,16 +31,22 @@ A concrete fix - code edit, config change, or infra action (short snippet welcom
 Close with one footer line, on its own line:
 
 Category: <one of: ${ROOT_CAUSE_CATEGORY_LIST}>
+
+The label must match the Root Cause you wrote above. If your Root Cause points to auth,
+session, fixtures, or missing data, the label is environment - not app_bug.
 </output_format>
 
 <category_rubric>
-Pick the label matching the root cause; choose a concrete one whenever the evidence supports it, and reserve "unknown" for when none does. Emit the line even when uncertain.
-- app_bug - the application under test misbehaved; the test caught a real defect.
-- test_bug - the test code is wrong: bad selector, missing wait, wrong assumption, or a race in the test.
-- infrastructure - runner, browser, or network outage, unrelated to application or test logic.
-- environment - the test environment is in a bad state: missing data, stale fixtures, an unavailable dependency, or misconfigured auth.
-- slow_path - the operation progressed normally but exceeded the timeout budget; a genuine performance regression, not a hang or deadlock. It would have passed given more time.
+Every label answers one question: what has to change to make this test pass? Pick the one
+the evidence supports; reserve "unknown" only when none does. Emit the line even when uncertain.
+- app_bug - fix the application code: it returned a wrong result for a VALID request. An app correctly rejecting a bad request - a 401/403, a redirect to sign-in, a validation error on bad input - is NOT app_bug.
+- test_bug - fix the test code: bad selector, missing wait, wrong assumption, or a race in the test.
+- environment - fix the environment: missing data, stale fixtures, expired or misconfigured auth (an invalid stored session, 401/403 from auth endpoints, a redirect to a login page), an unavailable dependency, or a runner/browser/network outage.
+- slow_path - change nothing: the operation progressed normally but exceeded the timeout budget; a genuine performance regression, not a hang or deadlock. It would have passed given more time.
 - unknown - the evidence is genuinely insufficient to decide.
+
+Before choosing app_bug, ask: did the app return a wrong result for a valid request, or the
+right result for a broken precondition (no/expired auth, missing data)? The latter is environment.
 </category_rubric>
 
 <reading_attempt_history>

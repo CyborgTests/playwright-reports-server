@@ -36,7 +36,7 @@ function shuffleIndices(n: number): number[] {
 }
 
 export async function runFusion(
-  taskId: string | null,
+  taskId: string,
   taskType: LlmTaskType,
   prompt: SegmentedPrompt,
   routing: LlmTaskRouting
@@ -66,7 +66,7 @@ export async function runFusion(
 }
 
 export async function runCouncil(
-  taskId: string | null,
+  taskId: string,
   taskType: LlmTaskType,
   prompt: SegmentedPrompt,
   routing: LlmTaskRouting
@@ -160,7 +160,7 @@ export async function runCouncil(
 }
 
 export async function runCascade(
-  taskId: string | null,
+  taskId: string,
   taskType: LlmTaskType,
   prompt: SegmentedPrompt,
   routing: LlmTaskRouting
@@ -237,7 +237,7 @@ export async function runCascade(
 }
 
 export async function runSelfRefine(
-  taskId: string | null,
+  taskId: string,
   taskType: LlmTaskType,
   prompt: SegmentedPrompt,
   routing: LlmTaskRouting,

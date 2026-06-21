@@ -83,7 +83,7 @@ export function validateRouting(parsed: unknown, enabledModelIds: Set<string>): 
 }
 
 async function executeStrategy(
-  taskId: string | null,
+  taskId: string,
   taskType: LlmTaskType,
   prompt: SegmentedPrompt,
   options: SegmentedSendOptions,
@@ -107,7 +107,7 @@ async function executeStrategy(
     console.warn(
       `[llm-routing] ${routing.strategy} failed for ${taskType}: ${msg}; falling back to one_shot`
     );
-    if (taskId) llmTasksDb.markStrategy(taskId, 'one_shot');
+    llmTasksDb.markStrategy(taskId, 'one_shot');
     return sendWithFallback(prompt, options);
   }
 }

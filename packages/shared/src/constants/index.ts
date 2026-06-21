@@ -154,7 +154,6 @@ export const FAILURE_CATEGORY_DESCRIPTIONS: Record<FailureCategory, string> = {
 export const ROOT_CAUSE_CATEGORIES = [
   'app_bug',
   'test_bug',
-  'infrastructure',
   'environment',
   'slow_path',
   'unknown',
@@ -163,13 +162,12 @@ export const ROOT_CAUSE_CATEGORIES = [
 export type RootCauseCategory = (typeof ROOT_CAUSE_CATEGORIES)[number];
 
 export const ROOT_CAUSE_CATEGORY_DESCRIPTIONS: Record<RootCauseCategory, string> = {
-  app_bug: 'The application under test misbehaved - the test likely caught a defect.',
-  test_bug: 'The test code is wrong (bad selector, missing wait, wrong assumption).',
-  infrastructure: 'Runner, browser, or network outage; not related to application or test logic.',
+  app_bug: 'Fix the application code - it produced a wrong result for a valid request.',
+  test_bug: 'Fix the test code - bad selector, missing wait, wrong assumption, or a race.',
   environment:
-    'Test environment is in a bad state (missing data, stale fixtures, dependency unavailable).',
-  slow_path: 'The operation finished, but past the timeout - likely a perf issue.',
-  unknown: 'The LLM could not confidently decide from the evidence.',
+    'Fix the environment - missing data, stale fixtures, expired or misconfigured auth, an unavailable dependency, or a runner/browser/network outage.',
+  slow_path: 'Change nothing - the operation finished correctly but past the timeout (performance).',
+  unknown: 'Cannot tell from the evidence which of the above must change.',
 };
 
 /** Report-level verdicts emitted by the LLM summary. Mirrors
