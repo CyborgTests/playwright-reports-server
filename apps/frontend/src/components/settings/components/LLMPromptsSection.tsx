@@ -164,9 +164,7 @@ export default function LLMPromptsSection() {
         </AccordionItem>
 
         <AccordionItem value="task-prompts" className="border rounded-md px-3 mt-2">
-          <AccordionTrigger className="text-sm font-medium">
-            Task prompts (advanced)
-          </AccordionTrigger>
+          <AccordionTrigger className="text-sm font-medium">Task prompts</AccordionTrigger>
           <AccordionContent className="space-y-6">
             <p className="text-xs text-muted-foreground">
               Override the built-in templates per task. Each field is pre-filled with the prompt in
@@ -220,9 +218,7 @@ export default function LLMPromptsSection() {
         </AccordionItem>
 
         <AccordionItem value="strategy-prompts" className="border rounded-md px-3 mt-2">
-          <AccordionTrigger className="text-sm font-medium">
-            Strategy prompts (advanced)
-          </AccordionTrigger>
+          <AccordionTrigger className="text-sm font-medium">Routing role prompts</AccordionTrigger>
           <AccordionContent className="space-y-6">
             <p className="text-xs text-muted-foreground">
               Directives used by the multi-model routing strategies. They're appended to the task's

@@ -121,7 +121,9 @@ function cleanRouting(routing: RoutingMap, modelIds?: Set<string>): RoutingMap {
   return clean;
 }
 
-export default function LLMRoutingConfiguration() {
+export default function LLMRoutingConfiguration({
+  featureEnabled,
+}: Readonly<{ featureEnabled: boolean }>) {
   const session = useAuth();
   const { data: allModels } = useLlmModels();
   const models = useMemo(() => (allModels ?? []).filter((m) => m.enabled), [allModels]);
@@ -130,7 +132,6 @@ export default function LLMRoutingConfiguration() {
     [allModels, models]
   );
   const primaryId = useMemo(() => (allModels ?? []).find((m) => m.isPrimary)?.id, [allModels]);
-  const [featureEnabled, setFeatureEnabled] = useState(true);
   const [routing, setRouting] = useState<RoutingMap>({});
   const [savedRouting, setSavedRouting] = useState<RoutingMap>({});
   const [saving, setSaving] = useState(false);
@@ -141,13 +142,10 @@ export default function LLMRoutingConfiguration() {
 
   const load = useCallback(async () => {
     try {
-      const config = await apiFetch<{ llm?: { routing?: RoutingMap; enabled?: boolean } }>(
-        '/api/config'
-      );
+      const config = await apiFetch<{ llm?: { routing?: RoutingMap } }>('/api/config');
       const loaded = config.llm?.routing ?? {};
       setRouting(loaded);
       setSavedRouting(loaded);
-      setFeatureEnabled(config.llm?.enabled !== false);
     } catch (err) {
       toast.error(`Failed to load routing: ${errMessage(err)}`);
     }
@@ -219,15 +217,20 @@ export default function LLMRoutingConfiguration() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h3 className="text-lg font-semibold">Routing</h3>
         {dirty && (
-          <Button onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : 'Save routing'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setRouting(savedRouting)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? 'Saving…' : 'Save routing'}
+            </Button>
+          </div>
         )}
       </div>
       <div className={featureEnabled ? '' : 'opacity-50'}>
         <p className="text-sm text-muted-foreground mb-4">
-          Choose how each task is produced. Various strategies can allow orchestrate
-          several models. They only pay off with genuinely <span className="font-medium">different</span>
+          Choose how each task is produced. Various strategies can allow orchestrate several models.
+          They only pay off with genuinely <span className="font-medium">different</span>
           (or stronger) models, not the same model repeated.
         </p>
 

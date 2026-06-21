@@ -28,13 +28,14 @@ import {
   parseTemperature,
 } from './llm-model-form';
 
-export default function LLMModelsConfiguration() {
+export default function LLMModelsConfiguration({
+  featureEnabled,
+}: Readonly<{ featureEnabled: boolean }>) {
   const session = useAuth();
   const queryClient = useQueryClient();
   const [models, setModels] = useState<LlmModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [useFallbackChain, setUseFallbackChain] = useState(false);
-  const [featureEnabled, setFeatureEnabled] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<FormState>(blankForm);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -58,13 +59,10 @@ export default function LLMModelsConfiguration() {
   useEffect(() => {
     if (session.status !== 'authenticated') return;
     refresh();
-    api<{ llm?: { useFallbackChain?: boolean; enabled?: boolean } }>('/api/config')
-      .then((cfg) => {
-        setUseFallbackChain(!!cfg.llm?.useFallbackChain);
-        setFeatureEnabled(cfg.llm?.enabled !== false);
-      })
+    api<{ llm?: { useFallbackChain?: boolean } }>('/api/config')
+      .then((cfg) => setUseFallbackChain(!!cfg.llm?.useFallbackChain))
       .catch(() => {
-        // non-fatal: toggles default to safe values if config can't be read
+        // non-fatal: toggle defaults to a safe value if config can't be read
       });
   }, [session.status, refresh]);
 
@@ -230,19 +228,6 @@ export default function LLMModelsConfiguration() {
     }
   };
 
-  const toggleFeatureEnabled = async (next: boolean) => {
-    setFeatureEnabled(next);
-    try {
-      const fd = new FormData();
-      fd.append('llmFeatureEnabled', String(next));
-      await api('/api/config', { method: 'PATCH', body: fd });
-      toast.success(next ? 'LLM features enabled' : 'LLM features disabled');
-    } catch (err) {
-      setFeatureEnabled(!next);
-      toast.error(`Failed to update LLM setting: ${errMessage(err)}`);
-    }
-  };
-
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -270,22 +255,6 @@ export default function LLMModelsConfiguration() {
         <Button onClick={openCreate}>Add model</Button>
       </div>
       <div className="space-y-4">
-        <div className="mb-4 flex items-start justify-between gap-4 rounded-md border bg-primary/5 p-3">
-          <div>
-            <Label htmlFor="llm-feature-enabled" className="cursor-pointer text-sm font-medium">
-              Enable LLM features
-            </Label>
-            <p className="text-xs text-muted-foreground mt-1">
-              Master switch. When off, no LLM calls are made - failure analysis, summaries and the
-              queue are all paused, regardless of the primary model.
-            </p>
-          </div>
-          <Switch
-            id="llm-feature-enabled"
-            checked={featureEnabled}
-            onCheckedChange={toggleFeatureEnabled}
-          />
-        </div>
         <div
           className={`mb-4 flex items-start justify-between gap-4 rounded-md border bg-muted/30 p-3 ${featureEnabled ? '' : 'opacity-50'}`}
         >

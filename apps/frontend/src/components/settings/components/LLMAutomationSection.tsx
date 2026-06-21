@@ -22,7 +22,7 @@ const TOGGLES: { key: ToggleKey; field: string; title: string; description: stri
     field: 'llmAutoProjectSummaryOnReportComplete',
     title: 'Auto-generate project summary',
     description:
-      'When enabled, completing a report failure analysis automatically queues a project-level summary for specific project and for "all" projects.',
+      'When enabled, completing a report failure analysis automatically queues a project-level summary for that project.',
   },
   {
     key: 'analyzeGreenWindows',

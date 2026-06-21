@@ -442,8 +442,14 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         config.llm ??= {};
 
         if (formData.llmFeatureEnabled !== undefined) {
+          const enable = formData.llmFeatureEnabled === 'true';
+          if (enable && !llmModelsDb.getPrimary()) {
+            return reply.status(409).send({
+              error: 'Set a primary model before enabling LLM features',
+            });
+          }
           config.llm ??= {};
-          config.llm.featureEnabled = formData.llmFeatureEnabled === 'true';
+          config.llm.featureEnabled = enable;
         }
 
         if (formData.llmUseFallbackChain !== undefined) {
