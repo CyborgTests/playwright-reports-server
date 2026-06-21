@@ -32,11 +32,18 @@ export interface GithubSyncRun {
 
 export type SyncPhase = 'scanning' | 'downloading' | 'uploading';
 
+export interface SyncTransfer {
+  artifact: string;
+  done: number;
+  total: number;
+}
+
 export interface SyncProgress {
   phase: SyncPhase;
   total: number;
   current: number;
-  currentArtifact?: string;
+  download?: SyncTransfer;
+  upload?: SyncTransfer;
   uploaded: number;
   failed: number;
   skipped: number;

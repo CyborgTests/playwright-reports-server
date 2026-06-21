@@ -1,4 +1,4 @@
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 export interface GhWorkflowRun {
@@ -105,7 +105,8 @@ export class GithubApiClient {
   public async downloadArtifactZip(
     artifactId: number | string,
     writable: NodeJS.WritableStream,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onProgress?: (downloaded: number, total: number) => void
   ): Promise<void> {
     const url = `${API_BASE}/repos/${this.repo}/actions/artifacts/${artifactId}/zip`;
     const res = await fetch(url, {
@@ -119,6 +120,16 @@ export class GithubApiClient {
     }
     if (!res.body) throw new Error('GitHub artifact download: empty body');
 
-    await pipeline(Readable.fromWeb(res.body as never), writable);
+    const total = Number(res.headers.get('content-length') ?? '0') || 0;
+    let downloaded = 0;
+    const counter = new Transform({
+      transform(chunk, _enc, cb) {
+        downloaded += chunk.length;
+        onProgress?.(downloaded, total);
+        cb(null, chunk);
+      },
+    });
+
+    await pipeline(Readable.fromWeb(res.body as never), counter, writable);
   }
 }

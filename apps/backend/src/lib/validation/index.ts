@@ -4,7 +4,7 @@ import type { z } from 'zod';
 export class ValidationError extends Error {
   constructor(
     message: string,
-    public details?: any
+    public details?: unknown
   ) {
     super(message);
     this.name = 'ValidationError';
@@ -14,7 +14,7 @@ export class ValidationError extends Error {
 export function validateSchema<T extends z.ZodType>(schema: T, data: unknown): z.infer<T> {
   const result = schema.safeParse(data);
   if (!result.success) {
-    const errorMessages = result.error.issues.map((err: any) => ({
+    const errorMessages = result.error.issues.map((err) => ({
       field: err.path.join('.'),
       message: err.message,
     }));
@@ -75,6 +75,6 @@ export function createJsonSchema(zodSchema: z.ZodType) {
   return zodTypeToJsonSchema(zodSchema);
 }
 
-function zodTypeToJsonSchema(_zodType: any): any {
+function zodTypeToJsonSchema(_zodType: z.ZodType): Record<string, unknown> {
   return { type: 'any' };
 }

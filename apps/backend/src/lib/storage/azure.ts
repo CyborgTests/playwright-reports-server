@@ -520,7 +520,8 @@ export class AzureBlob implements Storage {
   async uploadReportFromZipFile(
     reportId: string,
     zipFilePath: string,
-    metadata?: ReportUploadMetadata
+    metadata?: ReportUploadMetadata,
+    onProgress?: (completed: number, total: number) => void
   ): Promise<{ reportPath: string; report: ReportHistory }> {
     await this.ensureContainerExists();
 
@@ -536,6 +537,10 @@ export class AzureBlob implements Storage {
     if (!indexFile) {
       throw new Error('index.html not found at root of uploaded report ZIP');
     }
+
+    const totalFiles = fileEntries.length;
+    let completedFiles = 0;
+    onProgress?.(0, totalFiles);
 
     const uploadResults = await Promise.all(
       fileEntries.map(({ file, safePath }) =>
@@ -559,6 +564,8 @@ export class AzureBlob implements Storage {
             },
           });
 
+          completedFiles++;
+          onProgress?.(completedFiles, totalFiles);
           return { size: entrySize };
         })
       )

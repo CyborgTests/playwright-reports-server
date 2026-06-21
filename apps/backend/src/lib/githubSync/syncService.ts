@@ -14,6 +14,27 @@ import { type GhArtifact, type GhWorkflowRun, GithubApiClient } from './githubAp
 
 const MAX_RUNS_PER_SCAN = 200;
 
+const TMP_DIR_PREFIX = 'gh-sync-';
+
+export async function cleanupOrphanedTempDirs(): Promise<number> {
+  const tmpRoot = os.tmpdir();
+  const { result: entries, error } = await withError(fs.readdir(tmpRoot, { withFileTypes: true }));
+  if (error || !entries) return 0;
+
+  let removed = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith(TMP_DIR_PREFIX)) continue;
+    const { error: rmErr } = await withError(
+      fs.rm(path.join(tmpRoot, entry.name), { recursive: true, force: true })
+    );
+    if (!rmErr) removed++;
+  }
+  if (removed > 0) {
+    console.log(`[github-sync] cleaned up ${removed} orphaned temp dir(s)`);
+  }
+  return removed;
+}
+
 interface ToUpload {
   artifact: GhArtifact;
   run: GhWorkflowRun;
@@ -140,6 +161,7 @@ export async function runSync(
   let earlyExit: string | undefined;
   let outcome: 'success' | 'failed' | 'cancelled' = 'success';
   let message: string | undefined;
+  let prefetched: { tmpDir: string; zipPath: string } | null = null;
 
   try {
     console.log(`[github-sync] ${cfg.name} (${cfg.repo}/${cfg.workflow}) starting [${trigger}]`);
@@ -192,19 +214,63 @@ export async function runSync(
     handle.progress.phase = 'downloading';
     handle.progress.total = toUpload.length;
     handle.progress.current = 0;
-    handle.progress.currentArtifact = undefined;
 
     if (earlyExit) {
       console.log(`[github-sync] ${cfg.name}: early exit — ${earlyExit}`);
     }
 
+    let pendingUpload: Promise<{ ok: boolean; artifactId: number; error?: Error }> | null = null;
+
+    const finishUpload = async (): Promise<void> => {
+      if (!pendingUpload) return;
+      const { ok, artifactId, error } = await pendingUpload;
+      pendingUpload = null;
+      handle.progress.upload = undefined;
+      if (ok) {
+        uploaded++;
+        handle.progress.uploaded = uploaded;
+        return;
+      }
+      if (handle.cancelled || error?.name === 'AbortError') throw new CancelledError();
+      failed++;
+      handle.progress.failed = failed;
+      console.error(`[github-sync] ${cfg.name}: artifact ${artifactId} failed: ${error?.message}`);
+    };
+
     for (let i = 0; i < toUpload.length; i++) {
       const item = toUpload[i];
       if (handle.cancelled) throw new CancelledError();
 
-      handle.progress.current = i + 1;
-      handle.progress.currentArtifact = item.artifact.name;
-      handle.progress.phase = 'downloading';
+      handle.progress.download = {
+        artifact: item.artifact.name,
+        done: 0,
+        total: item.artifact.size_in_bytes || 0,
+      };
+      const dl = await withError(
+        downloadArtifactToTmp(api, item.artifact, signal, (downloaded, total) => {
+          handle.progress.download = {
+            artifact: item.artifact.name,
+            done: downloaded,
+            total: total > 0 ? total : item.artifact.size_in_bytes || 0,
+          };
+        })
+      );
+      handle.progress.download = undefined;
+      if (dl.result) prefetched = dl.result;
+
+      await finishUpload();
+
+      if (dl.error || !prefetched) {
+        if (dl.error && (handle.cancelled || dl.error.name === 'AbortError')) {
+          throw new CancelledError();
+        }
+        failed++;
+        handle.progress.failed = failed;
+        console.error(
+          `[github-sync] ${cfg.name}: artifact ${item.artifact.id} download failed: ${dl.error?.message}`
+        );
+        continue;
+      }
 
       const matchArr = item.artifact.name.match(pattern) ?? [];
       const ctx = {
@@ -220,38 +286,37 @@ export async function runSync(
       const project = renderTemplate(cfg.projectTemplate, ctx, Array.from(matchArr));
       const title = renderTemplate(cfg.titleTemplate, ctx, Array.from(matchArr));
 
-      const { error: uploadErr } = await withError(
-        uploadOneArtifact({
-          api,
-          artifact: item.artifact,
-          signal,
+      const downloaded = prefetched;
+      prefetched = null;
+      const uploadItem = item;
+      handle.progress.current = i + 1;
+      handle.progress.phase = 'uploading';
+      handle.progress.upload = { artifact: uploadItem.artifact.name, done: 0, total: 0 };
+      pendingUpload = withError(
+        uploadArtifactFromTmp({
+          tmpDir: downloaded.tmpDir,
+          zipPath: downloaded.zipPath,
+          artifact: uploadItem.artifact,
           syncConfigId: cfg.id,
-          runId: String(item.run.id),
-          envMatch: item.envMatch,
-          runDate: item.runDate,
+          runId: String(uploadItem.run.id),
+          envMatch: uploadItem.envMatch,
+          runDate: uploadItem.runDate,
           project,
           title,
-          onUploadStart: () => {
-            handle.progress.phase = 'uploading';
+          onUploadProgress: (completed, total) => {
+            handle.progress.upload = { artifact: uploadItem.artifact.name, done: completed, total };
           },
         })
-      );
-
-      if (uploadErr) {
-        if (handle.cancelled || uploadErr.name === 'AbortError') {
-          throw new CancelledError();
-        }
-        failed++;
-        handle.progress.failed = failed;
-        console.error(
-          `[github-sync] ${cfg.name}: artifact ${item.artifact.id} failed: ${uploadErr.message}`
-        );
-      } else {
-        uploaded++;
-        handle.progress.uploaded = uploaded;
-      }
+      ).then(({ error }) => ({
+        ok: !error,
+        artifactId: uploadItem.artifact.id,
+        error: error ?? undefined,
+      }));
     }
-    handle.progress.currentArtifact = undefined;
+
+    await finishUpload();
+    handle.progress.download = undefined;
+    handle.progress.upload = undefined;
 
     if (failed > 0 && uploaded === 0) {
       outcome = 'failed';
@@ -274,6 +339,9 @@ export async function runSync(
       console.error(`[github-sync] ${cfg.name}: ${message}`);
     }
   } finally {
+    if (prefetched) {
+      await fs.rm(prefetched.tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    }
     running.delete(cfg.id);
     githubSyncDb.finishRun({
       id: runId,
@@ -300,34 +368,49 @@ export async function runSync(
   };
 }
 
-async function uploadOneArtifact(args: {
-  api: GithubApiClient;
+async function downloadArtifactToTmp(
+  api: GithubApiClient,
+  artifact: GhArtifact,
+  signal: AbortSignal,
+  onProgress?: (downloaded: number, total: number) => void
+): Promise<{ tmpDir: string; zipPath: string }> {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), TMP_DIR_PREFIX));
+  const zipPath = path.join(tmpDir, `${artifact.id}.zip`);
+  try {
+    const writeStream = createWriteStream(zipPath);
+    await api.downloadArtifactZip(artifact.id, writeStream, signal, onProgress);
+    return { tmpDir, zipPath };
+  } catch (err) {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    throw err;
+  }
+}
+
+async function uploadArtifactFromTmp(args: {
+  tmpDir: string;
+  zipPath: string;
   artifact: GhArtifact;
-  signal: AbortSignal;
   syncConfigId: string;
   runId: string;
   envMatch: string;
   runDate: string;
   project: string;
   title: string;
-  onUploadStart?: () => void;
+  onUploadProgress?: (completed: number, total: number) => void;
 }): Promise<void> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gh-sync-'));
-  const zipPath = path.join(tmpDir, `${args.artifact.id}.zip`);
-
   try {
-    const writeStream = createWriteStream(zipPath);
-    await args.api.downloadArtifactZip(args.artifact.id, writeStream, args.signal);
-
-    args.onUploadStart?.();
-
     const reportId = randomUUID();
     const metadata = {
       project: args.project,
       title: args.title,
     };
 
-    const { report } = await storage.uploadReportFromZipFile(reportId, zipPath, metadata);
+    const { report } = await storage.uploadReportFromZipFile(
+      reportId,
+      args.zipPath,
+      metadata,
+      args.onUploadProgress
+    );
     reportDb.onCreated(report);
 
     const { error: testsErr } = await withError(testManagementService.processReport(report));
@@ -350,6 +433,6 @@ async function uploadOneArtifact(args: {
     const reportUrl = `${serveReportRoute}/${reportId}/index.html`;
     console.log(`[github-sync] uploaded artifact ${args.artifact.id} → ${reportUrl}`);
   } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    await fs.rm(args.tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
 }

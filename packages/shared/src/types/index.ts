@@ -87,7 +87,7 @@ export type IconSvgProps = {
   width?: number;
   height?: number;
   className?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 };
 
 export interface SiteWhiteLabelConfig {
@@ -253,7 +253,7 @@ export interface ReportInfo {
 export interface ReportMetadata {
   actualWorkers: number;
   playwrightVersion?: string;
-  [key: string]: any; // Allow additional custom fields
+  [key: string]: unknown; // Allow additional custom fields
 }
 
 export interface ReadResultsOutput {

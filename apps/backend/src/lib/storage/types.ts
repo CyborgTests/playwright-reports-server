@@ -22,7 +22,8 @@ export interface Storage {
   uploadReportFromZipFile: (
     reportId: string,
     zipFilePath: string,
-    metadata?: ReportUploadMetadata
+    metadata?: ReportUploadMetadata,
+    onProgress?: (completed: number, total: number) => void
   ) => Promise<{ reportPath: string; report: ReportHistory }>;
   cleanupGeneratedReport: (reportId: string) => Promise<void>;
   uploadBrandingAsset: (relativePath: string) => Promise<void>;

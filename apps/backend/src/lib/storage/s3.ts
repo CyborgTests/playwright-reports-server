@@ -696,7 +696,8 @@ export class S3 implements Storage {
   async uploadReportFromZipFile(
     reportId: string,
     zipFilePath: string,
-    metadata?: ReportUploadMetadata
+    metadata?: ReportUploadMetadata,
+    onProgress?: (completed: number, total: number) => void
   ): Promise<{ reportPath: string; report: ReportHistory }> {
     const remotePath = path.join(REPORTS_BUCKET, reportId);
 
@@ -710,6 +711,10 @@ export class S3 implements Storage {
     if (!indexFile) {
       throw new Error('index.html not found at root of uploaded report ZIP');
     }
+
+    const totalFiles = fileEntries.length;
+    let completedFiles = 0;
+    onProgress?.(0, totalFiles);
 
     const uploadResults = await Promise.all(
       fileEntries.map(({ file, safePath }) =>
@@ -740,6 +745,8 @@ export class S3 implements Storage {
             throw uploadResult;
           }
 
+          completedFiles++;
+          onProgress?.(completedFiles, totalFiles);
           return { size: entrySize };
         })
       )

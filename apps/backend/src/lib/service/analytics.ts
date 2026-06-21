@@ -354,7 +354,10 @@ export class AnalyticsService {
       limit?: number;
     }
   ): Promise<RunHealthMetric[]> {
-    const limit = Math.min(Math.max(opts.limit ?? RUN_HEALTH_PAGE_SIZE, 1), RUN_HEALTH_MAX_PAGE_SIZE);
+    const limit = Math.min(
+      Math.max(opts.limit ?? RUN_HEALTH_PAGE_SIZE, 1),
+      RUN_HEALTH_MAX_PAGE_SIZE
+    );
     const reports = reportDb.getByProject(project, {
       from: opts.from,
       to: opts.to,

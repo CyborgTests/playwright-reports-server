@@ -209,7 +209,8 @@ async function parseReportMetadata(
 async function uploadReportFromZipFile(
   reportId: string,
   zipFilePath: string,
-  metadata?: ReportUploadMetadata
+  metadata?: ReportUploadMetadata,
+  onProgress?: (completed: number, total: number) => void
 ): Promise<{ reportPath: string; report: ReportHistory }> {
   await createDirectoriesIfMissing();
 
@@ -229,12 +230,18 @@ async function uploadReportFromZipFile(
     throw new Error('index.html not found at root of uploaded report ZIP');
   }
 
+  const totalFiles = fileEntries.length;
+  let completedFiles = 0;
+  onProgress?.(0, totalFiles);
+
   await Promise.all(
     fileEntries.map(({ file, safePath }) =>
       semaphore.run(async () => {
         const targetPath = path.join(reportPath, safePath);
         await fs.mkdir(path.dirname(targetPath), { recursive: true });
         await pipeline(file.stream(), createWriteStream(targetPath));
+        completedFiles++;
+        onProgress?.(completedFiles, totalFiles);
       })
     )
   );

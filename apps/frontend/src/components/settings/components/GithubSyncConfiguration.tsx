@@ -1,9 +1,11 @@
-import type {
-  GithubSyncConfig,
-  GithubSyncConfigInput,
-  GithubSyncStatus,
-  SyncPhase,
-  SyncProgress,
+import {
+  formatBytes,
+  type GithubSyncConfig,
+  type GithubSyncConfigInput,
+  type GithubSyncStatus,
+  type SyncPhase,
+  type SyncProgress,
+  type SyncTransfer,
 } from '@playwright-reports/shared';
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -66,12 +68,24 @@ const SYNC_STEPS: { key: SyncPhase; label: string }[] = [
   { key: 'uploading', label: 'Upload to app' },
 ];
 
-function SyncStepper({ phase }: { phase: SyncPhase }) {
-  const activeIndex = SYNC_STEPS.findIndex((s) => s.key === phase);
+type StepState = 'pending' | 'active' | 'done';
+
+function stepStates(progress: SyncProgress): Record<SyncPhase, StepState> {
+  const scanning = progress.phase === 'scanning';
+  const uploadingStarted = progress.uploaded + progress.failed > 0 || !!progress.upload;
+  return {
+    scanning: scanning ? 'active' : 'done',
+    downloading: progress.download ? 'active' : scanning ? 'pending' : 'done',
+    uploading: progress.upload ? 'active' : !scanning && uploadingStarted ? 'done' : 'pending',
+  };
+}
+
+function SyncStepper({ progress }: { progress: SyncProgress }) {
+  const states = stepStates(progress);
   return (
     <div className="flex items-center gap-1 text-[11px] leading-none">
       {SYNC_STEPS.map((step, i) => {
-        const state = i < activeIndex ? 'done' : i === activeIndex ? 'active' : 'pending';
+        const state = states[step.key];
         return (
           <Fragment key={step.key}>
             {i > 0 && <span className="text-muted-foreground/40">›</span>}
@@ -102,6 +116,39 @@ function SyncStepper({ phase }: { phase: SyncPhase }) {
   );
 }
 
+function TransferRow({
+  transfer,
+  unit,
+  arrow,
+}: {
+  transfer: SyncTransfer;
+  unit: 'bytes' | 'files';
+  arrow: '↓' | '↑';
+}) {
+  const pct =
+    transfer.total > 0
+      ? Math.min(100, Math.round((transfer.done / transfer.total) * 100))
+      : undefined;
+  const amount =
+    unit === 'bytes'
+      ? formatBytes(transfer.done) + (transfer.total ? ` / ${formatBytes(transfer.total)}` : '')
+      : `${transfer.done}${transfer.total ? `/${transfer.total}` : ''} file${transfer.total === 1 ? '' : 's'}`;
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground font-mono">
+        <span className="truncate" title={transfer.artifact}>
+          {arrow} {transfer.artifact}
+        </span>
+        <span className="shrink-0 tabular-nums">
+          {amount}
+          {pct !== undefined ? ` · ${pct}%` : ''}
+        </span>
+      </div>
+      <Progress value={pct} className={cn('h-1', pct === undefined && 'animate-pulse')} />
+    </div>
+  );
+}
+
 function SyncProgressPanel({ progress }: { progress: SyncProgress }) {
   const scanning = progress.phase === 'scanning';
   const pct =
@@ -116,7 +163,7 @@ function SyncProgressPanel({ progress }: { progress: SyncProgress }) {
 
   return (
     <div className="rounded-md border bg-muted/30 p-2 space-y-2">
-      <SyncStepper phase={progress.phase} />
+      <SyncStepper progress={progress} />
       <div className="flex items-center justify-between text-xs">
         {scanning ? (
           <span className="font-medium">
@@ -133,14 +180,8 @@ function SyncProgressPanel({ progress }: { progress: SyncProgress }) {
         value={scanning ? undefined : pct}
         className={cn('h-1.5', scanning && 'animate-pulse')}
       />
-      {!scanning && progress.currentArtifact && (
-        <div
-          className="text-xs text-muted-foreground font-mono truncate"
-          title={progress.currentArtifact}
-        >
-          {progress.phase === 'downloading' ? '↓' : '↑'} {progress.currentArtifact}
-        </div>
-      )}
+      {progress.download && <TransferRow transfer={progress.download} unit="bytes" arrow="↓" />}
+      {progress.upload && <TransferRow transfer={progress.upload} unit="files" arrow="↑" />}
     </div>
   );
 }
