@@ -214,18 +214,39 @@ function findErrorsChipBody() {
   return null;
 }
 
+function findNativeCopyPromptButton(errorsBody) {
+  for (const btn of errorsBody.querySelectorAll('button.button')) {
+    if (btn.closest('.llm-btn-wrapper')) continue; // skip our own buttons
+    const text = btn.textContent?.trim();
+    if (text === 'Copy prompt' || text === 'Copied') return btn;
+  }
+  return null;
+}
+
+function positionAnchorClearOfNative(wrapper, errorsBody) {
+  const nativeContainer = findNativeCopyPromptButton(errorsBody)?.parentElement;
+  if (nativeContainer && nativeContainer !== wrapper) {
+    const width = Math.ceil(nativeContainer.getBoundingClientRect().width);
+    wrapper.style.right = `${width > 0 ? 16 + width + 8 : 140}px`;
+  } else {
+    wrapper.style.right = '16px';
+  }
+}
+
 function getOrCreateAnchor() {
-  const existing = document.querySelector('.llm-btn-wrapper');
-  if (existing) return existing;
-
   const errorsBody = findErrorsChipBody();
-  if (!errorsBody) return null;
 
-  const wrapper = document.createElement('div');
-  wrapper.style.cssText = 'position: absolute; right: 16px; padding: 10px; z-index: 1;';
-  wrapper.className = 'llm-btn-wrapper';
-  errorsBody.style.position = 'relative';
-  errorsBody.insertBefore(wrapper, errorsBody.firstChild);
+  let wrapper = document.querySelector('.llm-btn-wrapper');
+  if (!wrapper) {
+    if (!errorsBody) return null;
+    wrapper = document.createElement('div');
+    wrapper.style.cssText = 'position: absolute; right: 16px; padding: 10px; z-index: 1;';
+    wrapper.className = 'llm-btn-wrapper';
+    errorsBody.style.position = 'relative';
+    errorsBody.insertBefore(wrapper, errorsBody.firstChild);
+  }
+
+  if (errorsBody) positionAnchorClearOfNative(wrapper, errorsBody);
   return wrapper;
 }
 
