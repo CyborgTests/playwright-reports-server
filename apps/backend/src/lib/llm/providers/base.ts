@@ -26,7 +26,7 @@ export abstract class LLMProvider extends BaseProvider {
    * Resolved context window (in tokens) for the active model. Order:
    * 1. Manual override on config.contextWindow (always wins).
    * 2. Provider-specific detection (Anthropic registry / OpenAI /models probe).
-   * 3. null if undetectable — callers should fall back to a safe default.
+   * 3. null if undetectable - callers should fall back to a safe default.
    * Cached for 5 min to avoid hammering /models on every preflight.
    */
   async getContextWindow(): Promise<number | null> {
@@ -77,7 +77,7 @@ export abstract class LLMProvider extends BaseProvider {
 
   /** Concatenate all segment content for counting; matches what the provider
    *  will send in spirit (not exact bytes, since each provider serializes
-   *  differently — but close enough for budget gating). */
+   *  differently - but close enough for budget gating). */
   protected serializeSegmentsForCounting(prompt: SegmentedPrompt): string {
     return prompt.segments.map((s) => s.content).join('\n\n');
   }

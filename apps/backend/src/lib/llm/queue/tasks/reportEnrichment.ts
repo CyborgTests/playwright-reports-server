@@ -77,7 +77,7 @@ export async function enrichEnvironmentFromReport(
       };
     }
   } catch {
-    // ignore — environment is best-effort
+    // ignore - environment is best-effort
   }
 }
 

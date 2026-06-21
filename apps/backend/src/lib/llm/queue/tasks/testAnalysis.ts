@@ -17,13 +17,13 @@ import {
 import { llmService } from '../../index.js';
 import type { FailureDetailsForPrompt } from '../../prompts/index.js';
 import { buildTestFailureSegments, renderSegmentsForDebug } from '../../prompts/index.js';
+import { runRoutedTask } from '../../routing/index.js';
 import { extractTestAnalysisFromMarkdown } from '../../testAnalysis.js';
 import type { SegmentedPrompt } from '../../types/index.js';
 import {
   attachScreenshotIfAny,
   fitToContextWindow,
   OUTPUT_RESERVE_TOKENS_BY_TASK,
-  TASK_TEMPERATURE_DEFAULTS,
 } from './promptFitting.js';
 import {
   areAttemptsStale,
@@ -102,7 +102,7 @@ async function resolveTestFailureContext(
   } else {
     const extracted = await extractDetailsFromReport(reportId, testId);
     if (!extracted) {
-      return { error: `No failure details found — test ${testId} not found in report ${reportId}` };
+      return { error: `No failure details found - test ${testId} not found in report ${reportId}` };
     }
     details = extracted;
   }
@@ -331,15 +331,15 @@ export async function processTestAnalysis(task: LlmTaskRow): Promise<void> {
 
       if (ttlExpired) {
         console.log(
-          `[llmQueue] Task ${task.id}: source analysis older than ${REUSE_TTL_DAYS}d — forcing fresh analysis for test ${testId}`
+          `[llmQueue] Task ${task.id}: source analysis older than ${REUSE_TTL_DAYS}d - forcing fresh analysis for test ${testId}`
         );
       } else if (recurrenceExceeded) {
         console.log(
-          `[llmQueue] Task ${task.id}: signature recurred >${REUSE_RECURRENCE_LIMIT} times since source analysis — forcing fresh analysis for test ${testId}`
+          `[llmQueue] Task ${task.id}: signature recurred >${REUSE_RECURRENCE_LIMIT} times since source analysis - forcing fresh analysis for test ${testId}`
         );
       } else if (feedbackIsNewer) {
         console.log(
-          `[llmQueue] Task ${task.id}: feedback newer than source analysis — forcing fresh analysis for test ${testId}`
+          `[llmQueue] Task ${task.id}: feedback newer than source analysis - forcing fresh analysis for test ${testId}`
         );
       } else {
         console.log(
@@ -386,22 +386,16 @@ export async function processTestAnalysis(task: LlmTaskRow): Promise<void> {
     `[llmQueue] Task ${task.id}`
   );
 
-  llmTasksDb.updatePrompt(
-    task.id,
-    debugPrompt,
-    llmService.estimateLocalInputTokens(segmentedPrompt)
-  );
-
   console.log(
     `[llmQueue] Task ${task.id}: segments=${segmentedPrompt.segments.length} chars=${debugPrompt.length} for test ${testId}${fitLog ? ` ${fitLog}` : ''}`
   );
 
-  const config = await service.getConfig();
-  const llmCfg = config.llm ?? {};
-  const testAnalysisTemp = llmCfg.testAnalysisTemperature ?? TASK_TEMPERATURE_DEFAULTS.testAnalysis;
-  const response = await llmService.sendSegmentedMessage(segmentedPrompt, {
-    temperature: testAnalysisTemp,
-  });
+  const { response, baseUrl } = await runRoutedTask(
+    'test_analysis',
+    task.id,
+    segmentedPrompt,
+    debugPrompt
+  );
 
   const { analysis: analysisText, category: llmCategory } = extractTestAnalysisFromMarkdown(
     response.content
@@ -429,7 +423,7 @@ export async function processTestAnalysis(task: LlmTaskRow): Promise<void> {
   const attempt = resolved.details.attempt ?? 1;
   const completionExtras = {
     usage: response.usage,
-    baseUrl: llmService.getBaseUrl(),
+    baseUrl,
   };
   llmTasksDb.complete(task.id, analysisText, category, response.model, completionExtras);
   testAnalysisDb.upsert(

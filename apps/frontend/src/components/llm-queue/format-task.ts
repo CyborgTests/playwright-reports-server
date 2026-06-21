@@ -1,6 +1,7 @@
 import {
   formatDuration as formatDurationMs,
   parseSqliteTimestamp,
+  STRATEGY_LABELS,
 } from '@playwright-reports/shared';
 
 import { withBase } from '@/lib/url';
@@ -58,3 +59,63 @@ export const STATUS_OPTIONS = [
 ] as const;
 
 export const TYPE_OPTIONS = ['all', 'test_analysis', 'report_summary', 'project_summary'] as const;
+
+export const STRATEGY_LABEL: Record<string, string> = STRATEGY_LABELS;
+
+export const ROLE_LABEL: Record<string, string> = {
+  author: 'Author',
+  synthesizer: 'Synthesizer',
+  judge: 'Judge',
+  critic: 'Critic',
+  reviser: 'Reviser',
+  tier: 'Tier',
+  scorer: 'Scorer',
+};
+
+export function isMultiRoleStrategy(strategy?: string | null): boolean {
+  return !!strategy && strategy !== 'one_shot';
+}
+
+export interface ModelRate {
+  inputCostPerMTok?: number;
+  outputCostPerMTok?: number;
+}
+
+const rateKey = (baseUrl?: string | null, model?: string | null) =>
+  `${baseUrl ?? ''}|${model ?? ''}`;
+
+export function buildRateMap(
+  models: Array<{ baseUrl: string; model: string } & ModelRate>
+): Map<string, ModelRate> {
+  const map = new Map<string, ModelRate>();
+  for (const m of models) {
+    if (m.inputCostPerMTok != null || m.outputCostPerMTok != null) {
+      map.set(rateKey(m.baseUrl, m.model), {
+        inputCostPerMTok: m.inputCostPerMTok,
+        outputCostPerMTok: m.outputCostPerMTok,
+      });
+    }
+  }
+  return map;
+}
+
+export function computeCost(
+  inputTokens: number | null | undefined,
+  outputTokens: number | null | undefined,
+  baseUrl: string | null | undefined,
+  model: string | null | undefined,
+  rates: Map<string, ModelRate>
+): number | null {
+  const r = rates.get(rateKey(baseUrl, model));
+  if (!r) return null;
+  const inCost = ((inputTokens ?? 0) / 1_000_000) * (r.inputCostPerMTok ?? 0);
+  const outCost = ((outputTokens ?? 0) / 1_000_000) * (r.outputCostPerMTok ?? 0);
+  return inCost + outCost;
+}
+
+export function formatCost(value: number | null): string {
+  if (value == null) return '-';
+  if (value === 0) return '$0';
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  return `$${value.toFixed(2)}`;
+}

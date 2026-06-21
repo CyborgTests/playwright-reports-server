@@ -4,14 +4,14 @@ import { mkdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import type { LlmTaskRouting, LlmTaskType } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
 import { defaultConfig } from '../lib/config.js';
-import { llmService } from '../lib/llm/index.js';
-import { TASK_TEMPERATURE_DEFAULTS } from '../lib/llm/queue/index.js';
+import { validateRouting } from '../lib/llm/routing/index.js';
 import { normalizeReporterPaths, validateReporterPaths } from '../lib/pw-reporters.js';
 import { CronService, cronService } from '../lib/service/cron.js';
-import { getDatabaseStats } from '../lib/service/db/index.js';
+import { getDatabaseStats, llmModelsDb } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { testManagementService } from '../lib/service/test-management/index.js';
 import { DATA_FOLDER } from '../lib/storage/constants.js';
@@ -104,20 +104,12 @@ interface ConfigFormData {
   resultExpireCronSchedule?: string;
   reportExpireDays?: string;
   reportExpireCronSchedule?: string;
-  llmProvider?: string;
-  llmBaseUrl?: string;
-  llmApiKey?: string;
-  llmModel?: string;
-  llmTestAnalysisTemperature?: string;
-  llmReportSummaryTemperature?: string;
-  llmProjectSummaryTemperature?: string;
-  llmParallelRequests?: string;
+  llmFeatureEnabled?: string;
+  llmUseFallbackChain?: string;
+  llmRouting?: string;
   llmAutoAnalyzeNewReports?: string;
   llmAutoProjectSummaryOnReportComplete?: string;
   llmAnalyzeGreenWindows?: string;
-  llmMaxTokens?: string;
-  llmContextWindow?: string;
-  llmMultimodalMode?: string;
   llmGeneralContext?: string;
   llmCustomSystemPrompt?: string;
   llmCustomTestAnalysisSystemPrompt?: string;
@@ -125,6 +117,11 @@ interface ConfigFormData {
   llmCustomTestAnalysisInstructions?: string;
   llmCustomReportSummaryPrompt?: string;
   llmCustomProjectSummaryInstructions?: string;
+  llmCustomSynthesizerPrompt?: string;
+  llmCustomJudgePrompt?: string;
+  llmCustomCritiquePrompt?: string;
+  llmCustomRevisePrompt?: string;
+  llmCustomScorerPrompt?: string;
   testManagementQuarantineThresholdPercentage?: string;
   testManagementWarningThresholdPercentage?: string;
   testManagementAutoQuarantineEnabled?: string;
@@ -147,20 +144,12 @@ const ALLOWED_CONFIG_FIELDS: ReadonlySet<keyof ConfigFormData> = new Set<keyof C
   'resultExpireCronSchedule',
   'reportExpireDays',
   'reportExpireCronSchedule',
-  'llmProvider',
-  'llmBaseUrl',
-  'llmApiKey',
-  'llmModel',
-  'llmTestAnalysisTemperature',
-  'llmReportSummaryTemperature',
-  'llmProjectSummaryTemperature',
-  'llmParallelRequests',
+  'llmFeatureEnabled',
+  'llmUseFallbackChain',
+  'llmRouting',
   'llmAutoAnalyzeNewReports',
   'llmAutoProjectSummaryOnReportComplete',
   'llmAnalyzeGreenWindows',
-  'llmMaxTokens',
-  'llmContextWindow',
-  'llmMultimodalMode',
   'llmGeneralContext',
   'llmCustomSystemPrompt',
   'llmCustomTestAnalysisSystemPrompt',
@@ -168,6 +157,11 @@ const ALLOWED_CONFIG_FIELDS: ReadonlySet<keyof ConfigFormData> = new Set<keyof C
   'llmCustomTestAnalysisInstructions',
   'llmCustomReportSummaryPrompt',
   'llmCustomProjectSummaryInstructions',
+  'llmCustomSynthesizerPrompt',
+  'llmCustomJudgePrompt',
+  'llmCustomCritiquePrompt',
+  'llmCustomRevisePrompt',
+  'llmCustomScorerPrompt',
   'testManagementQuarantineThresholdPercentage',
   'testManagementWarningThresholdPercentage',
   'testManagementAutoQuarantineEnabled',
@@ -204,11 +198,6 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       return publicConfig;
     }
 
-    const maskString = (str: string | undefined) => {
-      if (!str) return undefined;
-      return '*'.repeat(str.length);
-    };
-
     const envInfo = {
       authRequired: !!env.API_TOKEN,
       database: getDatabaseStats(),
@@ -219,37 +208,36 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       azureContainer: env.AZURE_CONTAINER,
     };
 
+    const primaryModel = llmModelsDb.getPrimary();
+    const featureEnabled = config.llm?.featureEnabled !== false;
     const llmInfo = {
-      provider: config.llm?.provider,
-      baseUrl: config.llm?.baseUrl,
-      apiKey: maskString(config.llm?.apiKey),
-      model: config.llm?.model,
-      testAnalysisTemperature: config.llm?.testAnalysisTemperature,
-      reportSummaryTemperature: config.llm?.reportSummaryTemperature,
-      projectSummaryTemperature: config.llm?.projectSummaryTemperature,
-      parallelRequests: config.llm?.parallelRequests || 1,
+      enabled: featureEnabled,
+      configured: featureEnabled && !!primaryModel,
+      primaryModel: primaryModel
+        ? {
+            id: primaryModel.id,
+            label: primaryModel.label,
+            provider: primaryModel.provider,
+            model: primaryModel.model,
+          }
+        : null,
+      useFallbackChain: !!config.llm?.useFallbackChain,
+      routing: config.llm?.routing ?? {},
       autoAnalyzeNewReports: !!config.llm?.autoAnalyzeNewReports,
       autoProjectSummaryOnReportComplete: !!config.llm?.autoProjectSummaryOnReportComplete,
       analyzeGreenWindows: !!config.llm?.analyzeGreenWindows,
-      maxTokens: config.llm?.maxTokens,
-      contextWindow: config.llm?.contextWindow,
-      multimodalMode: config.llm?.multimodalMode,
       generalContext: config.llm?.generalContext,
-      // Custom prompt overrides — surfaced so the Settings UI can pre-fill
-      // textareas with what's actually saved instead of just the default.
       customSystemPrompt: config.llm?.customSystemPrompt,
       customTestAnalysisSystemPrompt: config.llm?.customTestAnalysisSystemPrompt,
       customTestAnalysisInstructions: config.llm?.customTestAnalysisInstructions,
       customReportSummaryPrompt: config.llm?.customReportSummaryPrompt,
       customProjectSummarySystemPrompt: config.llm?.customProjectSummarySystemPrompt,
       customProjectSummaryInstructions: config.llm?.customProjectSummaryInstructions,
-      // Server-side per-task defaults — read-only, used by the UI to show
-      // active defaults next to the override inputs.
-      defaults: {
-        testAnalysisTemperature: TASK_TEMPERATURE_DEFAULTS.testAnalysis,
-        reportSummaryTemperature: TASK_TEMPERATURE_DEFAULTS.reportSummary,
-        projectSummaryTemperature: TASK_TEMPERATURE_DEFAULTS.projectSummary,
-      },
+      customSynthesizerPrompt: config.llm?.customSynthesizerPrompt,
+      customJudgePrompt: config.llm?.customJudgePrompt,
+      customCritiquePrompt: config.llm?.customCritiquePrompt,
+      customRevisePrompt: config.llm?.customRevisePrompt,
+      customScorerPrompt: config.llm?.customScorerPrompt,
     };
 
     return { ...config, ...envInfo, llm: llmInfo };
@@ -261,7 +249,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         // Bumped from 2 to allow logo + favicon + one icon per header link.
-        // 32 is plenty — anyone with that many header links has bigger problems.
+        // 32 is plenty - anyone with that many header links has bigger problems.
         const parts = request.parts({
           limits: { files: 32, fileSize: BRANDING_FILE_SIZE_LIMIT },
         });
@@ -453,71 +441,33 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
         config.llm ??= {};
 
-        if (formData.llmProvider !== undefined) {
-          const provider = formData.llmProvider.trim();
-          if (!provider) {
-            config.llm.provider = undefined;
-          } else if (provider === 'openai' || provider === 'anthropic') {
-            config.llm.provider = provider;
-          } else {
-            return reply.status(400).send({
-              error: `Invalid LLM provider type "${provider}". Must be "openai" or "anthropic".`,
-            });
-          }
-        }
-        if (formData.llmBaseUrl !== undefined) {
-          config.llm.baseUrl = formData.llmBaseUrl.trim() || undefined;
-        }
-        if (formData.llmApiKey !== undefined && !/^\*+$/.test(formData.llmApiKey)) {
-          config.llm.apiKey = formData.llmApiKey || undefined;
-        }
-        if (formData.llmModel !== undefined) {
-          config.llm.model = formData.llmModel.trim() || undefined;
-        }
-        // Per-task temperature overrides. Empty string clears (provider falls
-        // back to the hardcoded default). Range is 0–2 (same as model APIs accept).
-        const parseTaskTemp = (
-          raw: string | undefined,
-          label: string
-        ): number | undefined | { error: string } => {
-          if (raw === undefined) return undefined;
-          const trimmed = raw.trim();
-          if (trimmed === '') return undefined; // explicit clear
-          const n = Number.parseFloat(trimmed);
-          if (Number.isNaN(n) || n < 0 || n > 2) {
-            return { error: `${label} must be a number between 0 and 2` };
-          }
-          return n;
-        };
-        for (const [key, label] of [
-          ['llmTestAnalysisTemperature', 'Test analysis temperature'],
-          ['llmReportSummaryTemperature', 'Report summary temperature'],
-          ['llmProjectSummaryTemperature', 'Project summary temperature'],
-        ] as const) {
-          const raw = formData[key as keyof typeof formData];
-          if (raw === undefined) continue;
-          const parsed = parseTaskTemp(raw, label);
-          if (parsed && typeof parsed === 'object' && 'error' in parsed) {
-            return reply.status(400).send({ error: parsed.error });
-          }
-          const cfgKey =
-            key === 'llmTestAnalysisTemperature'
-              ? 'testAnalysisTemperature'
-              : key === 'llmReportSummaryTemperature'
-                ? 'reportSummaryTemperature'
-                : 'projectSummaryTemperature';
-          config.llm[cfgKey] = parsed as number | undefined;
+        if (formData.llmFeatureEnabled !== undefined) {
+          config.llm ??= {};
+          config.llm.featureEnabled = formData.llmFeatureEnabled === 'true';
         }
 
-        if (formData.llmParallelRequests !== undefined) {
-          const parallelRequests = Number.parseInt(formData.llmParallelRequests, 10);
-          if (Number.isNaN(parallelRequests) || parallelRequests < 1 || parallelRequests > 10) {
-            return reply
-              .status(400)
-              .send({ error: 'LLM parallel requests must be between 1 and 10' });
-          }
+        if (formData.llmUseFallbackChain !== undefined) {
           config.llm ??= {};
-          config.llm.parallelRequests = parallelRequests;
+          config.llm.useFallbackChain = formData.llmUseFallbackChain === 'true';
+        }
+
+        if (formData.llmRouting !== undefined) {
+          let parsedRouting: unknown;
+          try {
+            parsedRouting = JSON.parse(formData.llmRouting);
+          } catch {
+            return reply.status(400).send({ error: 'llmRouting must be valid JSON' });
+          }
+          const enabledIds = new Set(
+            llmModelsDb
+              .list()
+              .filter((m) => m.enabled === 1)
+              .map((m) => m.id)
+          );
+          const routingError = validateRouting(parsedRouting, enabledIds);
+          if (routingError) return reply.status(400).send({ error: routingError });
+          config.llm ??= {};
+          config.llm.routing = parsedRouting as Partial<Record<LlmTaskType, LlmTaskRouting>>;
         }
 
         if (formData.llmAutoAnalyzeNewReports !== undefined) {
@@ -533,45 +483,6 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           config.llm.analyzeGreenWindows = formData.llmAnalyzeGreenWindows === 'true';
         }
 
-        // Max output tokens — blank/0 clears the override (provider falls back to env or default).
-        if (formData.llmMaxTokens !== undefined) {
-          const trimmed = formData.llmMaxTokens.trim();
-          if (trimmed === '') {
-            config.llm.maxTokens = undefined;
-          } else {
-            const n = Number.parseInt(trimmed, 10);
-            if (Number.isNaN(n) || n < 1) {
-              return reply.status(400).send({ error: 'LLM max tokens must be a positive integer' });
-            }
-            config.llm.maxTokens = n;
-          }
-        }
-
-        if (formData.llmContextWindow !== undefined) {
-          const trimmed = formData.llmContextWindow.trim();
-          if (trimmed === '') {
-            config.llm.contextWindow = undefined;
-          } else {
-            const n = Number.parseInt(trimmed, 10);
-            if (Number.isNaN(n) || n < 1024) {
-              return reply
-                .status(400)
-                .send({ error: 'LLM context window must be at least 1024 tokens' });
-            }
-            config.llm.contextWindow = n;
-          }
-        }
-
-        if (formData.llmMultimodalMode !== undefined) {
-          const v = formData.llmMultimodalMode;
-          if (v && !['auto', 'force', 'disabled'].includes(v)) {
-            return reply
-              .status(400)
-              .send({ error: 'LLM multimodal mode must be auto, force, or disabled' });
-          }
-          config.llm.multimodalMode = (v || undefined) as 'auto' | 'force' | 'disabled' | undefined;
-        }
-
         if (formData.llmGeneralContext !== undefined) {
           const trimmed = formData.llmGeneralContext.trim();
           if (trimmed.length > 500) {
@@ -582,8 +493,6 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           config.llm.generalContext = trimmed || undefined;
         }
 
-        // Custom prompt overrides — empty string clears the override (falls back to default).
-        // Legacy single field stays for back-compat; per-task fields below win when set.
         if (formData.llmCustomSystemPrompt !== undefined) {
           config.llm.customSystemPrompt = formData.llmCustomSystemPrompt || undefined;
         }
@@ -606,21 +515,20 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           config.llm.customProjectSummaryInstructions =
             formData.llmCustomProjectSummaryInstructions || undefined;
         }
-
-        const llmConfigChanged =
-          formData.llmProvider !== undefined ||
-          formData.llmBaseUrl !== undefined ||
-          (formData.llmApiKey !== undefined && !/^\*+$/.test(formData.llmApiKey)) ||
-          formData.llmModel !== undefined ||
-          formData.llmTestAnalysisTemperature !== undefined ||
-          formData.llmReportSummaryTemperature !== undefined ||
-          formData.llmProjectSummaryTemperature !== undefined ||
-          formData.llmMaxTokens !== undefined ||
-          formData.llmContextWindow !== undefined ||
-          formData.llmMultimodalMode !== undefined;
-
-        if (llmConfigChanged) {
-          await llmService.restart(config.llm);
+        if (formData.llmCustomSynthesizerPrompt !== undefined) {
+          config.llm.customSynthesizerPrompt = formData.llmCustomSynthesizerPrompt || undefined;
+        }
+        if (formData.llmCustomJudgePrompt !== undefined) {
+          config.llm.customJudgePrompt = formData.llmCustomJudgePrompt || undefined;
+        }
+        if (formData.llmCustomCritiquePrompt !== undefined) {
+          config.llm.customCritiquePrompt = formData.llmCustomCritiquePrompt || undefined;
+        }
+        if (formData.llmCustomRevisePrompt !== undefined) {
+          config.llm.customRevisePrompt = formData.llmCustomRevisePrompt || undefined;
+        }
+        if (formData.llmCustomScorerPrompt !== undefined) {
+          config.llm.customScorerPrompt = formData.llmCustomScorerPrompt || undefined;
         }
 
         config.cron ??= {};

@@ -174,6 +174,18 @@ export interface LlmTask {
   reportDisplayNumber?: number | null;
   reportTitle?: string | null;
   testTitle?: string | null;
+  strategy?: string | null;
+  role?: string | null;
+  parentTaskId?: string | null;
+  childCount?: number;
+  childUsage?: LlmTaskChildUsage[];
+}
+
+export interface LlmTaskChildUsage {
+  baseUrl?: string | null;
+  model?: string | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
 }
 
 export interface LlmTaskStats {
@@ -232,6 +244,11 @@ export interface LlmDefaultPrompts {
   testAnalysisInstructions: LlmDefaultPrompt;
   reportSummaryPrompt: LlmDefaultPrompt;
   projectSummaryInstructions: LlmDefaultPrompt;
+  synthesizerDirective: LlmDefaultPrompt;
+  judgeDirective: LlmDefaultPrompt;
+  critiqueDirective: LlmDefaultPrompt;
+  reviseDirective: LlmDefaultPrompt;
+  scorerDirective: LlmDefaultPrompt;
 }
 
 export interface FailureDetails {
@@ -261,7 +278,7 @@ export interface ReportFailureSummary {
   llmSummary?: string;
   /** Structured LLM analysis (verdict + sections + codeRefs). Null when the
    *  text-parse fallback couldn't recover structure from a plain-markdown
-   *  response — the UI falls back to rendering `llmSummary` as markdown. */
+   *  response - the UI falls back to rendering `llmSummary` as markdown. */
   llmSummaryStructured?: ReportAnalysisStructured | null;
   llmModel?: string | null;
   createdAt: string;

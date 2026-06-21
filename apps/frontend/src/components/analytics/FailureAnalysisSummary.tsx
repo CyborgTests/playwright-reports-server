@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Brain, RefreshCw } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
+import { StrategyBadge } from '@/components/StrategyBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -17,20 +18,14 @@ import { LlmAnalysisRenderer, VerdictBadge } from './LlmAnalysisRenderer';
 interface CachedProjectSummary {
   project: string;
   summary: string;
-  /** Parsed structured payload — null for legacy rows generated before 5.1. */
   structured: ProjectAnalysisStructured | null;
   model: string | null;
   updatedAt: string;
   reportCount: number | null;
   firstReportAt: string | null;
   lastReportAt: string | null;
-  /** True when newer reports have been ingested since the analysis ran. */
   isStale?: boolean;
-  /** True when the analysis trails the latest report by ≥7 days — UI hides
-   *  the verdict and prompts a re-generate. */
   isTooStale?: boolean;
-  /** Server's view of the current newest report's createdAt — used for the
-   *  "X days behind" hint in the stale badge. */
   currentLatestReportAt?: string;
 }
 
@@ -59,7 +54,7 @@ export function FailureAnalysisSummary({
 }: Readonly<FailureAnalysisSummaryProps>) {
   const queryClient = useQueryClient();
   const { data: config } = useConfig();
-  const llmConfigured = !!config?.llm?.baseUrl;
+  const llmConfigured = !!config?.llm?.configured;
 
   const cacheParams = new URLSearchParams();
   if (project && project !== defaultProjectName) cacheParams.append('project', project);
@@ -121,7 +116,7 @@ export function FailureAnalysisSummary({
           </span>
         </TooltipTrigger>
         <TooltipContent>
-          Analysis ongoing — check the{' '}
+          Analysis ongoing - check the{' '}
           <RouterLink to="/llm-queue" className="underline">
             LLM queue
           </RouterLink>
@@ -159,6 +154,7 @@ export function FailureAnalysisSummary({
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-lg font-semibold">LLM Failure Analysis</h3>
               {showVerdict && structured && <VerdictBadge verdict={structured.verdict} />}
+              <StrategyBadge taskType="project_summary" className="font-normal" />
               {showStaleBadge && (
                 <Badge variant="warning" title={`Newer reports ingested since this analysis ran`}>
                   Stale{daysBehind > 0 ? ` · ${daysBehind}d behind` : ''}
@@ -195,7 +191,7 @@ export function FailureAnalysisSummary({
           <div className="flex items-center justify-center py-8 gap-2">
             <Spinner size="sm" />
             <span className="text-muted-foreground">
-              LLM is analyzing latest runs — track progress on the{' '}
+              LLM is analyzing latest runs - track progress on the{' '}
               <RouterLink to="/llm-queue" className="underline">
                 LLM queue
               </RouterLink>
@@ -219,7 +215,7 @@ export function FailureAnalysisSummary({
                   summary.lastReportAt && (
                     <span>
                       {summary.reportCount} {summary.reportCount === 1 ? 'report' : 'reports'}{' '}
-                      analyzed · {new Date(summary.firstReportAt).toLocaleDateString()} —{' '}
+                      analyzed · {new Date(summary.firstReportAt).toLocaleDateString()} -{' '}
                       {new Date(summary.lastReportAt).toLocaleDateString()}
                     </span>
                   )}

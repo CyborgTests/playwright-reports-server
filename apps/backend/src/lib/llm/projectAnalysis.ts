@@ -196,7 +196,7 @@ export function linkifyDataBlockTags(
  *
  * Models occasionally fabricate testIds/reportIds when they pattern-match the
  * shape; without validation those render as 404 links. Returns a new
- * structured payload — the input is left untouched.
+ * structured payload - the input is left untouched.
  */
 export function pruneInvalidCodeRefs(
   s: ProjectAnalysisStructured,

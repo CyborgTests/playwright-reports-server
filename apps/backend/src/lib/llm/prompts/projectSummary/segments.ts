@@ -300,13 +300,13 @@ function buildProjectOverviewBlock(
       const list = c.nearFlakes
         .map(
           (nf) =>
-            `\`${nf.title}\` (${nf.filePath}) [testId: ${nf.testId}] — ${nf.flakyOccurrences}×`
+            `\`${nf.title}\` (${nf.filePath}) [testId: ${nf.testId}] - ${nf.flakyOccurrences}×`
         )
         .join('; ');
       block += `**Near-flakes (passed on retry):** ${list}\n`;
     }
   }
-  block += `**Latest run status:** ${latestStatus}${latestRun ? ` (${formatRunLabel(latestRun.reportId, latestRun.displayNumber)})` : ''} — use this to anchor the verdict.\n`;
+  block += `**Latest run status:** ${latestStatus}${latestRun ? ` (${formatRunLabel(latestRun.reportId, latestRun.displayNumber)})` : ''} - use this to anchor the verdict.\n`;
 
   return block;
 }
@@ -325,17 +325,17 @@ function buildCrossProjectPreambleBlock(
     .sort()
     .map((p) => `\`${p}\``)
     .join(', ');
-  return `**Cross-project aggregate:** this window spans ${distinctProjects.size} distinct projects (${list}). Each project represents a separate area or test suite — a failure cluster in one project does NOT imply the same regression in another. When summarizing health, prefer per-project framing ("X is degrading, Y is healthy") over a single blended verdict; tie recommendations to the specific project of each cited test.\n`;
+  return `**Cross-project aggregate:** this window spans ${distinctProjects.size} distinct projects (${list}). Each project represents a separate area or test suite - a failure cluster in one project does NOT imply the same regression in another. When summarizing health, prefer per-project framing ("X is degrading, Y is healthy") over a single blended verdict; tie recommendations to the specific project of each cited test.\n`;
 }
 
 function buildActiveClustersBlock(clusters: ProjectCluster[]): string {
   if (clusters.length === 0) return '';
-  let block = `## Active Failure Patterns (present in latest run or within last 2 runs — drive Recommendations)\n`;
+  let block = `## Active Failure Patterns (present in latest run or within last 2 runs - drive Recommendations)\n`;
   for (let i = 0; i < clusters.length; i++) {
     const c = clusters[i];
     const anchorLine = renderAnchorInline(c.anchor);
     const kindLabel = describeGroupKind(c.kind);
-    block += `\n### ${i + 1}. ${kindLabel} — \`${c.category}\` — ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'} (${c.affectedTests.length} test${c.affectedTests.length === 1 ? '' : 's'})\n`;
+    block += `\n### ${i + 1}. ${kindLabel} - \`${c.category}\` - ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'} (${c.affectedTests.length} test${c.affectedTests.length === 1 ? '' : 's'})\n`;
     if (anchorLine) {
       block += `- **Fix target:** ${anchorLine}\n`;
     }
@@ -371,7 +371,7 @@ function buildActiveClustersBlock(clusters: ProjectCluster[]): string {
 
 function buildResolvedClustersBlock(clusters: ProjectCluster[]): string {
   if (clusters.length === 0) return '';
-  let block = `## Recently Resolved Patterns (NOT for Recommendations — cite only as recovery evidence in Health Assessment)\n`;
+  let block = `## Recently Resolved Patterns (NOT for Recommendations - cite only as recovery evidence in Health Assessment)\n`;
   for (const c of clusters) {
     const lastSeenRef = formatRunRef(c.lastSeenReportId, c.lastSeenDisplayNumber);
     const titles = c.affectedTests
@@ -380,7 +380,7 @@ function buildResolvedClustersBlock(clusters: ProjectCluster[]): string {
       .join(', ');
     const more = c.affectedTests.length > 2 ? ` +${c.affectedTests.length - 2} more` : '';
     const kindLabel = describeGroupKind(c.kind);
-    block += `- ${kindLabel} (\`${c.category}\`) — ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'}; last seen ${lastSeenRef} (${c.runsSinceLastSeen} runs ago); tests: ${titles}${more}\n`;
+    block += `- ${kindLabel} (\`${c.category}\`) - ${c.occurrences}× across ${c.reportsAffected} run${c.reportsAffected === 1 ? '' : 's'}; last seen ${lastSeenRef} (${c.runsSinceLastSeen} runs ago); tests: ${titles}${more}\n`;
   }
   block += '\n';
   return block;
@@ -391,7 +391,7 @@ function buildRunListBlock(runs: ProjectRun[]): string {
   for (const run of runs) {
     const status = runHasFailures(run) ? 'FAILURES' : 'PASS';
     const runLabel = formatRunLabel(run.reportId, run.displayNumber);
-    block += `### Run ${runLabel} (${run.createdAt}) — ${status}\n`;
+    block += `### Run ${runLabel} (${run.createdAt}) - ${status}\n`;
     block += `- Tests: ${run.stats.total} total, ${run.stats.expected} passed, ${run.stats.unexpected} failed, ${run.stats.flaky} flaky, ${run.stats.skipped} skipped\n`;
     if (run.runContext) {
       const ctxLine = renderRunContextInline(run.runContext);

@@ -1,6 +1,5 @@
 import type { LlmDefaultPrompts, LlmUsageByModel, LlmUsageStats } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { llmService } from '../lib/llm/index.js';
 import {
   PROJECT_SUMMARY_SYSTEM_PROMPT,
   PROJECT_SUMMARY_TASK_INSTRUCTIONS,
@@ -8,6 +7,14 @@ import {
   TEST_ANALYSIS_SYSTEM_PROMPT,
   TEST_ANALYSIS_TASK_INSTRUCTIONS,
 } from '../lib/llm/prompts/index.js';
+import {
+  DEFAULT_CRITIQUE_DIRECTIVE,
+  DEFAULT_JUDGE_DIRECTIVE,
+  DEFAULT_REVISE_DIRECTIVE,
+  DEFAULT_SCORER_DIRECTIVE,
+  DEFAULT_SYNTHESIZER_DIRECTIVE,
+} from '../lib/llm/prompts/routing.js';
+import { isLlmFeatureEnabled } from '../lib/llm/registry.js';
 import {
   failureSummaryDb,
   getDatabase,
@@ -18,7 +25,7 @@ import {
   type LlmTaskType,
   llmTasksDb,
   testAnalysisDb,
-  testDb,
+  testAnalyticsDb,
 } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { llmTaskEvents } from '../lib/service/llmTaskEvents.js';
@@ -28,10 +35,7 @@ const TERMINAL_STATUSES: ReadonlySet<LlmTaskStatus> = new Set(['completed', 'fai
 
 const BULK_REQUEUE_LIMIT = 5000;
 
-const AVAILABLE_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
-let availableModelsCache: { key: string; models: string[]; expiresAt: number } | null = null;
-
-const getFailedTestsWithoutAnalysis = () => testDb.getFailedTestsWithoutAnalysis();
+const getFailedTestsWithoutAnalysis = () => testAnalyticsDb.getFailedTestsWithoutAnalysis();
 
 export async function registerLlmRoutes(fastify: FastifyInstance) {
   fastify.get('/api/llm/tasks', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -165,6 +169,21 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     }
   });
 
+  fastify.get<{ Params: { id: string } }>(
+    '/api/llm/tasks/:id/roles',
+    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const authResult = await authenticate(request as AuthRequest, reply);
+      if (authResult) return;
+      try {
+        const rows = llmTasksDb.getRoleChildren(request.params.id);
+        return { success: true, data: rows };
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({ success: false, error: 'Failed to fetch task roles' });
+      }
+    }
+  );
+
   fastify.get('/api/llm/tasks/stats', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
     if (authResult) return;
@@ -281,6 +300,9 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const authResult = await authenticate(request as AuthRequest, reply);
       if (authResult) return;
+      if (!isLlmFeatureEnabled()) {
+        return reply.status(403).send({ success: false, error: 'LLM features are disabled' });
+      }
 
       try {
         const rows = getFailedTestsWithoutAnalysis();
@@ -405,76 +427,22 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
         content: PROJECT_SUMMARY_TASK_INSTRUCTIONS,
         vars: ['project', 'totalRuns', 'passingRuns'],
       },
+      synthesizerDirective: { content: DEFAULT_SYNTHESIZER_DIRECTIVE, vars: [] },
+      judgeDirective: { content: DEFAULT_JUDGE_DIRECTIVE, vars: [] },
+      critiqueDirective: { content: DEFAULT_CRITIQUE_DIRECTIVE, vars: [] },
+      reviseDirective: { content: DEFAULT_REVISE_DIRECTIVE, vars: [] },
+      scorerDirective: { content: DEFAULT_SCORER_DIRECTIVE, vars: [] },
     };
 
     return { success: true, data };
   });
 
-  fastify.get('/api/llm/available-models', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return;
-
-    try {
-      if (!llmService.isConfigured()) {
-        return reply.status(400).send({ success: false, error: 'LLM service is not configured' });
-      }
-
-      const { refresh } = request.query as { refresh?: string };
-      const now = Date.now();
-      const currentKey = llmService.getProviderKey();
-      if (
-        !refresh &&
-        availableModelsCache &&
-        availableModelsCache.key === currentKey &&
-        availableModelsCache.expiresAt > now
-      ) {
-        return { success: true, models: availableModelsCache.models, cached: true };
-      }
-
-      await llmService.initialize();
-      const models = await llmService.getAvailableModels();
-      availableModelsCache = {
-        key: currentKey,
-        models,
-        expiresAt: now + AVAILABLE_MODELS_CACHE_TTL_MS,
-      };
-
-      return { success: true, models, cached: false };
-    } catch (error) {
-      fastify.log.error(error);
-      return reply.status(500).send({
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to fetch available models',
-      });
-    }
-  });
-
-  fastify.post('/api/llm/test-connection', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return;
-
-    const body = (request.body ?? {}) as {
-      provider?: 'openai' | 'anthropic';
-      baseUrl?: string;
-      apiKey?: string;
-      model?: string;
-      temperature?: number;
-    };
-
-    const result = await llmService.testConnection({
-      provider: body.provider,
-      baseUrl: body.baseUrl,
-      apiKey: body.apiKey,
-      model: body.model,
-      temperature: body.temperature,
-    });
-
-    return reply.send(result);
-  });
-
   fastify.post('/api/llm/rerun-all', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
     if (authResult) return;
+    if (!isLlmFeatureEnabled()) {
+      return reply.status(403).send({ success: false, error: 'LLM features are disabled' });
+    }
 
     try {
       const tx = getDatabase().transaction(() => {

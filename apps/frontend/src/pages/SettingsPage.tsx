@@ -24,7 +24,7 @@ const SECTION_NAV: Array<{ id: string; label: string }> = [
   { id: 'server', label: 'General' },
   { id: 'cron', label: 'Schedules' },
   { id: 'github', label: 'GitHub Sync' },
-  { id: 'llm', label: 'LLM' },
+  { id: 'llm', label: 'LLM Configuration' },
   { id: 'testManagement', label: 'Test Management' },
   { id: 'notifications', label: 'Notifications' },
 ];
@@ -202,16 +202,7 @@ export default function SettingsPage() {
 
           <GithubSyncConfiguration />
 
-          <LLMConfiguration
-            config={config}
-            editingSection={editingSection}
-            isUpdating={isUpdating}
-            tempConfig={tempConfig}
-            onCancel={handleCancel}
-            onEdit={() => setEditingSection('llm')}
-            onSave={() => handleSave('llm')}
-            onUpdateTempConfig={updateTempConfig}
-          />
+          <LLMConfiguration />
 
           <TestManagementSettings
             config={config}

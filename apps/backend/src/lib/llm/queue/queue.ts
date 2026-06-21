@@ -1,6 +1,8 @@
-import { type LlmTaskRow, llmTasksDb } from '../../service/db/index.js';
-import { service } from '../../service/index.js';
+import { type LlmTaskRow, llmModelsDb, llmTasksDb } from '../../service/db/index.js';
 import { llmService } from '../index.js';
+import { type GateReservation, modelGate, reservationStore } from '../modelGate.js';
+import { isFallbackChainEnabled, isLlmFeatureEnabled } from '../registry.js';
+import { resolveRouting } from '../routing/index.js';
 import { LLMProviderError } from '../types/index.js';
 import { processProjectSummary } from './tasks/projectSummary.js';
 import { processReportSummary } from './tasks/reportSummary.js';
@@ -23,13 +25,10 @@ class LlmAnalysisQueue {
     return LlmAnalysisQueue.instance;
   }
 
-  private async getParallelRequests(): Promise<number> {
-    try {
-      const config = await service.getConfig();
-      return config.llm?.parallelRequests ?? 1;
-    } catch {
-      return 1;
-    }
+  private getParallelRequests(): number {
+    const enabled = llmModelsDb.list().filter((m) => m.enabled === 1);
+    const total = enabled.reduce((sum, m) => sum + Math.max(1, m.parallelRequests), 0);
+    return Math.max(1, total);
   }
 
   start(): void {
@@ -52,8 +51,9 @@ class LlmAnalysisQueue {
     if (!this.running) return;
 
     try {
-      if (llmService.isConfigured() && !llmService.isCircuitOpen()) {
-        this.maxParallel = await this.getParallelRequests();
+      const circuitOk = !llmService.isCircuitOpen() || isFallbackChainEnabled();
+      if (isLlmFeatureEnabled() && llmService.isConfigured() && circuitOk) {
+        this.maxParallel = this.getParallelRequests();
         while (this.running && this.activeTasks < this.maxParallel) {
           if (!this.fillSlot()) break;
         }
@@ -72,19 +72,37 @@ class LlmAnalysisQueue {
 
   private fillSlot(): boolean {
     if (!this.running) return false;
-    const [task] = llmTasksDb.claimNext(1);
-    if (!task) return false;
+    const claim = llmTasksDb.claimNextRunnable((task) => this.decideStart(task));
+    if (!claim) return false;
     this.activeTasks++;
-    this.dispatch(task);
+    this.dispatch(claim.task, claim.reservation);
     return true;
   }
 
-  private dispatch(task: LlmTaskRow): void {
-    void this.processTask(task)
+  private decideStart(task: LlmTaskRow): {
+    run: boolean;
+    reservation?: { modelId: string; release: () => void };
+  } {
+    if (resolveRouting(task.type).strategy !== 'one_shot') return { run: true };
+    const primary = llmModelsDb.getPrimary();
+    if (!primary) return { run: true };
+    const release = modelGate.tryAcquire(primary.id, primary.parallelRequests);
+    return release ? { run: true, reservation: { modelId: primary.id, release } } : { run: false };
+  }
+
+  private dispatch(task: LlmTaskRow, reservation?: { modelId: string; release: () => void }): void {
+    const ctx: GateReservation | null = reservation
+      ? { modelId: reservation.modelId, consumed: false }
+      : null;
+    const run = ctx
+      ? () => reservationStore.run(ctx, () => this.processTask(task))
+      : () => this.processTask(task);
+    void run()
       .catch((error) => {
         console.error(`[llmQueue] Unhandled error in task ${task.id}:`, error);
       })
       .finally(() => {
+        reservation?.release();
         this.activeTasks--;
         if (this.running && this.activeTasks < this.maxParallel) {
           this.fillSlot();
@@ -115,7 +133,7 @@ class LlmAnalysisQueue {
       ) {
         llmTasksDb.requeueWithRetryIncrement(task.id);
         console.warn(
-          `[llmQueue] Task ${task.id} requeued — LLM circuit open (${task.retryCount + 1}/${CIRCUIT_OPEN_MAX_REQUEUES})`
+          `[llmQueue] Task ${task.id} requeued - LLM circuit open (${task.retryCount + 1}/${CIRCUIT_OPEN_MAX_REQUEUES})`
         );
         return;
       }

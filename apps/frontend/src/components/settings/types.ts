@@ -1,1 +1,1 @@
-export type EditableSettingsSection = 'none' | 'server' | 'cron' | 'llm' | 'testManagement';
+export type EditableSettingsSection = 'none' | 'server' | 'cron' | 'testManagement';

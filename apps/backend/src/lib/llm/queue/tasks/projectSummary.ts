@@ -28,11 +28,8 @@ import {
   extractRootCauseParagraph,
   renderSegmentsForDebug,
 } from '../../prompts/index.js';
-import {
-  fitToContextWindow,
-  OUTPUT_RESERVE_TOKENS_BY_TASK,
-  TASK_TEMPERATURE_DEFAULTS,
-} from './promptFitting.js';
+import { runRoutedTask } from '../../routing/index.js';
+import { fitToContextWindow, OUTPUT_RESERVE_TOKENS_BY_TASK } from './promptFitting.js';
 import { buildRunContextFromReport } from './reportEnrichment.js';
 
 export const PROJECT_SUMMARY_REPORT_LIMIT = 20;
@@ -407,18 +404,14 @@ export async function processProjectSummary(task: LlmTaskRow): Promise<void> {
   );
 
   const debugPrompt = renderSegmentsForDebug(segmentedPrompt);
-  llmTasksDb.updatePrompt(
-    task.id,
-    debugPrompt,
-    llmService.estimateLocalInputTokens(segmentedPrompt)
-  );
   if (fitLog) console.log(`[llmQueue] Task ${task.id}: ${fitLog}`);
 
-  const projectTemp =
-    projectLlmCfg.projectSummaryTemperature ?? TASK_TEMPERATURE_DEFAULTS.projectSummary;
-  const response = await llmService.sendSegmentedMessage(segmentedPrompt, {
-    temperature: projectTemp,
-  });
+  const { response, baseUrl } = await runRoutedTask(
+    'project_summary',
+    task.id,
+    segmentedPrompt,
+    debugPrompt
+  );
 
   const validReportIds = new Set(latestReports.map((r) => r.reportID));
   const validTestIds = new Set<string>();
@@ -461,7 +454,7 @@ export async function processProjectSummary(task: LlmTaskRow): Promise<void> {
 
   llmTasksDb.complete(task.id, summaryText, null, response.model, {
     usage: response.usage,
-    baseUrl: llmService.getBaseUrl(),
+    baseUrl,
   });
 
   const reportTimes = latestReports

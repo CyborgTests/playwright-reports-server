@@ -165,6 +165,31 @@ export interface GithubSyncRunsRow {
   message: string | null;
 }
 
+export interface LlmModelsRow {
+  id: string;
+  label: string;
+  provider: string;
+  baseUrl: string;
+  apiKeyCipher: string | null;
+  model: string;
+  parallelRequests: number;
+  maxTokens: number | null;
+  contextWindow: number | null;
+  multimodalMode: string;
+  testAnalysisTemperature: number | null;
+  reportSummaryTemperature: number | null;
+  projectSummaryTemperature: number | null;
+  inputCostPerMTok: number | null;
+  outputCostPerMTok: number | null;
+  sortOrder: number;
+  isPrimary: number;
+  enabled: number;
+  lastTestedAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LlmTasksRow {
   id: string;
   type: string;
@@ -190,6 +215,9 @@ export interface LlmTasksRow {
   isRetry: number;
   reportIds: string | null;
   baseUrl: string | null;
+  parentTaskId: string | null;
+  role: string | null;
+  strategy: string | null;
 }
 
 export interface TestsRow {
@@ -303,6 +331,7 @@ export interface Database {
   github_sync_configs: GithubSyncConfigsRow;
   github_sync_runs: GithubSyncRunsRow;
   github_sync_state: GithubSyncStateRow;
+  llm_models: LlmModelsRow;
   llm_tasks: LlmTasksRow;
   notification_log: NotificationLogRow;
   notification_state: NotificationStateRow;

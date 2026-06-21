@@ -17,11 +17,8 @@ import {
   parseReportAnalysisFromText,
   renderReportAnalysisAsMarkdown,
 } from '../../reportAnalysis.js';
-import {
-  fitToContextWindow,
-  OUTPUT_RESERVE_TOKENS_BY_TASK,
-  TASK_TEMPERATURE_DEFAULTS,
-} from './promptFitting.js';
+import { runRoutedTask } from '../../routing/index.js';
+import { fitToContextWindow, OUTPUT_RESERVE_TOKENS_BY_TASK } from './promptFitting.js';
 import { buildRunContextFromReport } from './reportEnrichment.js';
 
 const MAX_TREND_LIST_ITEMS = 25;
@@ -76,7 +73,7 @@ function partitionFailingRunsByOutcome(reportId: string): {
         const parsed = JSON.parse(run.failureDetails);
         message = String(parsed?.message ?? '');
       } catch {
-        // ignore — empty message
+        // ignore - empty message
       }
     }
     const key = `${run.testId}::${run.fileId}::${run.project}`;
@@ -254,7 +251,7 @@ export async function processReportSummary(task: LlmTaskRow): Promise<void> {
     }
     llmTasksDb.requeueWithRetryIncrement(task.id);
     console.log(
-      `[llmQueue] Report summary ${task.id} requeued (${task.retryCount + 1}/20) — waiting for test analyses`
+      `[llmQueue] Report summary ${task.id} requeued (${task.retryCount + 1}/20) - waiting for test analyses`
     );
     return;
   }
@@ -306,18 +303,14 @@ export async function processReportSummary(task: LlmTaskRow): Promise<void> {
   );
 
   const debugPrompt = renderSegmentsForDebug(segmentedPrompt);
-  llmTasksDb.updatePrompt(
-    task.id,
-    debugPrompt,
-    llmService.estimateLocalInputTokens(segmentedPrompt)
-  );
   if (fitLog) console.log(`[llmQueue] Task ${task.id}: ${fitLog}`);
 
-  const reportTemp =
-    reportLlmCfg.reportSummaryTemperature ?? TASK_TEMPERATURE_DEFAULTS.reportSummary;
-  const response = await llmService.sendSegmentedMessage(segmentedPrompt, {
-    temperature: reportTemp,
-  });
+  const { response, baseUrl } = await runRoutedTask(
+    'report_summary',
+    task.id,
+    segmentedPrompt,
+    debugPrompt
+  );
 
   let structured = parseReportAnalysisFromText(response.content);
 
@@ -339,7 +332,7 @@ export async function processReportSummary(task: LlmTaskRow): Promise<void> {
 
   llmTasksDb.complete(task.id, summaryText, null, response.model, {
     usage: response.usage,
-    baseUrl: llmService.getBaseUrl(),
+    baseUrl,
   });
 
   const totalFailures = Object.values(categories).reduce((s, c) => s + c, 0);
@@ -361,7 +354,7 @@ async function maybeEnqueueAutoProjectSummary(
   const analyzeGreen = reportLlmCfg.analyzeGreenWindows === true;
   if (!hasFailures && !analyzeGreen) {
     console.log(
-      `[llmQueue] Auto project_summary skipped for report ${reportId} — all-green and analyzeGreenWindows is off`
+      `[llmQueue] Auto project_summary skipped for report ${reportId} - all-green and analyzeGreenWindows is off`
     );
     return;
   }
@@ -384,6 +377,6 @@ async function maybeEnqueueAutoProjectSummary(
     queued.push(projectKey);
   }
   console.log(
-    `[llmQueue] Auto project_summary after report ${reportId} — queued: ${queued.join(', ') || 'none'}; skipped (in-flight): ${skipped.join(', ') || 'none'}`
+    `[llmQueue] Auto project_summary after report ${reportId} - queued: ${queued.join(', ') || 'none'}; skipped (in-flight): ${skipped.join(', ') || 'none'}`
   );
 }

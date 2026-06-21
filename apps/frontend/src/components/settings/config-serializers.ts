@@ -71,60 +71,6 @@ function serializeCron(fd: FormData, temp: ServerConfig): void {
   fd.append('reportExpireCronSchedule', cron.reportExpireCronSchedule ?? '');
 }
 
-function serializeLlm(fd: FormData, temp: ServerConfig): void {
-  const llm = temp.llm;
-  if (!llm) return;
-  if (llm.provider) {
-    fd.append('llmProvider', llm.provider);
-  }
-  fd.append('llmBaseUrl', llm.baseUrl ?? '');
-  const apiKey = llm.apiKey ?? '';
-  if (!/^\*+$/.test(apiKey)) {
-    fd.append('llmApiKey', apiKey);
-  }
-  fd.append('llmModel', llm.model ?? '');
-  fd.append(
-    'llmTestAnalysisTemperature',
-    llm.testAnalysisTemperature !== undefined ? llm.testAnalysisTemperature.toString() : ''
-  );
-  fd.append(
-    'llmReportSummaryTemperature',
-    llm.reportSummaryTemperature !== undefined ? llm.reportSummaryTemperature.toString() : ''
-  );
-  fd.append(
-    'llmProjectSummaryTemperature',
-    llm.projectSummaryTemperature !== undefined ? llm.projectSummaryTemperature.toString() : ''
-  );
-  if (llm.parallelRequests !== undefined) {
-    fd.append('llmParallelRequests', llm.parallelRequests.toString());
-  }
-  if (llm.autoAnalyzeNewReports !== undefined) {
-    fd.append('llmAutoAnalyzeNewReports', llm.autoAnalyzeNewReports.toString());
-  }
-  if (llm.autoProjectSummaryOnReportComplete !== undefined) {
-    fd.append(
-      'llmAutoProjectSummaryOnReportComplete',
-      llm.autoProjectSummaryOnReportComplete.toString()
-    );
-  }
-  if (llm.analyzeGreenWindows !== undefined) {
-    fd.append('llmAnalyzeGreenWindows', llm.analyzeGreenWindows.toString());
-  }
-  fd.append('llmMaxTokens', llm.maxTokens !== undefined ? llm.maxTokens.toString() : '');
-  fd.append(
-    'llmContextWindow',
-    llm.contextWindow !== undefined ? llm.contextWindow.toString() : ''
-  );
-  fd.append('llmMultimodalMode', llm.multimodalMode ?? '');
-  fd.append('llmGeneralContext', llm.generalContext ?? '');
-  fd.append('llmCustomSystemPrompt', llm.customSystemPrompt ?? '');
-  fd.append('llmCustomTestAnalysisSystemPrompt', llm.customTestAnalysisSystemPrompt ?? '');
-  fd.append('llmCustomProjectSummarySystemPrompt', llm.customProjectSummarySystemPrompt ?? '');
-  fd.append('llmCustomTestAnalysisInstructions', llm.customTestAnalysisInstructions ?? '');
-  fd.append('llmCustomReportSummaryPrompt', llm.customReportSummaryPrompt ?? '');
-  fd.append('llmCustomProjectSummaryInstructions', llm.customProjectSummaryInstructions ?? '');
-}
-
 function serializeTestManagement(fd: FormData, temp: ServerConfig): void {
   const tm = temp.testManagement;
   if (!tm) return;
@@ -164,9 +110,6 @@ export function buildConfigFormData(
       break;
     case 'cron':
       serializeCron(fd, tempConfig);
-      break;
-    case 'llm':
-      serializeLlm(fd, tempConfig);
       break;
     case 'testManagement':
       serializeTestManagement(fd, tempConfig);

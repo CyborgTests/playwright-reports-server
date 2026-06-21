@@ -21,6 +21,8 @@ export type {
   GithubSyncStateRow,
 } from './githubSync.sqlite.js';
 export { githubSyncDb } from './githubSync.sqlite.js';
+export type { LlmModelRow, LlmModelWrite } from './llmModels.sqlite.js';
+export { llmModelsDb } from './llmModels.sqlite.js';
 export type {
   LlmTaskRow,
   LlmTaskRowEnriched,
@@ -63,4 +65,4 @@ export type {
   TestRunRow,
   TestWithQuarantineInfoRow,
 } from './tests.sqlite.js';
-export { testDb } from './tests.sqlite.js';
+export { testAnalyticsDb, testDb, testQueriesDb } from './tests.sqlite.js';

@@ -24,7 +24,7 @@ export class OpenAIProvider extends LLMProvider {
 
   /**
    * Build OpenAI/LM Studio messages from segments. Same-role consecutive
-   * segments are joined with double-newlines into a single message — keeps
+   * segments are joined with double-newlines into a single message - keeps
    * the request shape simple and ensures byte-stable token prefixes for
    * llama.cpp / vLLM KV cache reuse, since stable segments are emitted before
    * varying ones by the prompt builders.
@@ -118,7 +118,7 @@ export class OpenAIProvider extends LLMProvider {
 
   /**
    * Probe the /models endpoint for a context-window field. Different
-   * OpenAI-compatible servers expose this under different names — we accept
+   * OpenAI-compatible servers expose this under different names - we accept
    * the common ones. LM Studio reports `loaded_context_length`; vLLM reports
    * `max_model_len`; some servers report `context_length` or `n_ctx`. Returns
    * null if the model is not found or no field is present.

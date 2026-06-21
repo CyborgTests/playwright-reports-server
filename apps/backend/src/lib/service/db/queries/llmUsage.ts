@@ -41,6 +41,7 @@ export function getUsageStats(fromDate: string): {
     ])
     .where('status', '=', 'completed')
     .where('completedAt', '>=', fromDate)
+    .where('parentTaskId', 'is', null)
     .compile();
   const totals = db.prepare(totalsCompiled.sql).get(...totalsCompiled.parameters) as UsageTotals;
 
@@ -55,6 +56,7 @@ export function getUsageStats(fromDate: string): {
     ])
     .where('status', '=', 'completed')
     .where('completedAt', '>=', fromDate)
+    .where('parentTaskId', 'is', null)
     .groupBy('type')
     .compile();
   const byTypeRows = db
@@ -92,6 +94,16 @@ export function getUsageByModel(fromDate: string): UsageByModel[] {
     ])
     .where('status', '=', 'completed')
     .where('completedAt', '>=', fromDate)
+    .where((eb) =>
+      eb.not(
+        eb.exists(
+          eb
+            .selectFrom('llm_tasks as c')
+            .select('c.id')
+            .whereRef('c.parentTaskId', '=', 'llm_tasks.id')
+        )
+      )
+    )
     .groupBy(sql`COALESCE(baseUrl, ''), COALESCE(model, '')`)
     .orderBy('totalTokens', 'desc')
     .compile();

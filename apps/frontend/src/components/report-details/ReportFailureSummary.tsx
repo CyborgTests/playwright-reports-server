@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Brain, RefreshCw } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
+import { StrategyBadge } from '@/components/StrategyBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -81,7 +82,7 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
     }
   );
 
-  const llmConfigured = !!config?.llm?.baseUrl;
+  const llmConfigured = !!config?.llm?.configured;
 
   if (isLoading) {
     return null;
@@ -121,7 +122,7 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  Analysis ongoing — check the{' '}
+                  Analysis ongoing - check the{' '}
                   <RouterLink to="/llm-queue" className="underline">
                     LLM queue
                   </RouterLink>
@@ -155,6 +156,7 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
             {summary.llmSummaryStructured && (
               <ReportVerdictBadge verdict={summary.llmSummaryStructured.verdict} />
             )}
+            <StrategyBadge taskType="report_summary" className="ml-1 font-normal" />
           </CardTitle>
           {hasOngoingAnalysis ? (
             <TooltipProvider>
@@ -230,9 +232,6 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
                 fallbackProject={summary.project}
               />
             ) : (
-              // Fallback: structured parse failed (rare — empty or unparseable
-              // LLM response). Render the raw markdown so the user still sees
-              // whatever the model produced.
               <div className="prose prose-sm max-w-none">
                 <MarkdownRenderer content={summary.llmSummary ?? ''} />
               </div>

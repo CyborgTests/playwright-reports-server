@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,13 +19,30 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useLlmModels } from '@/hooks/useLlmModels';
 import { type LlmUsageByModelRow, useLlmUsageByModel, useLlmUsageStats } from '@/hooks/useLlmTasks';
 import useMutation from '@/hooks/useMutation';
-import { formatCount, TYPE_SHORT_LABEL } from './format-task';
+import {
+  buildRateMap,
+  computeCost,
+  formatCost,
+  formatCount,
+  TYPE_SHORT_LABEL,
+} from './format-task';
 
 function UsageByModelBreakdown({ days }: { days: number }) {
   const { data, isLoading, isError } = useLlmUsageByModel(days, true);
   const rows: LlmUsageByModelRow[] = data?.data.rows ?? [];
+  const { data: models } = useLlmModels();
+  const rates = useMemo(() => buildRateMap(models ?? []), [models]);
+
+  const totalCost = rows.reduce(
+    (s, r) => s + (computeCost(r.inputTokens, r.outputTokens, r.baseUrl, r.model, rates) ?? 0),
+    0
+  );
+  const anyCost = rows.some(
+    (r) => computeCost(r.inputTokens, r.outputTokens, r.baseUrl, r.model, rates) != null
+  );
 
   if (isLoading) {
     return (
@@ -65,6 +82,7 @@ function UsageByModelBreakdown({ days }: { days: number }) {
             <TableHead className="text-right">Input</TableHead>
             <TableHead className="text-right">Output</TableHead>
             <TableHead className="text-right">Total</TableHead>
+            <TableHead className="text-right">Est. cost</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -86,10 +104,28 @@ function UsageByModelBreakdown({ days }: { days: number }) {
               <TableCell className="text-xs font-mono text-right">
                 {formatCount(r.totalTokens)}
               </TableCell>
+              <TableCell className="text-xs font-mono text-right">
+                {formatCost(computeCost(r.inputTokens, r.outputTokens, r.baseUrl, r.model, rates))}
+              </TableCell>
             </TableRow>
           ))}
+          {anyCost && (
+            <TableRow className="border-t-2">
+              <TableCell className="text-xs font-medium" colSpan={6}>
+                Total estimated cost
+              </TableCell>
+              <TableCell className="text-xs font-mono font-medium text-right">
+                {formatCost(totalCost)}
+              </TableCell>
+            </TableRow>
+          )}
         </TableBody>
       </Table>
+      {!anyCost && (
+        <p className="px-3 py-2 text-xs text-muted-foreground">
+          Set per-model input/output costs in the LLM model settings to see cost estimates.
+        </p>
+      )}
     </div>
   );
 }
@@ -197,7 +233,7 @@ export function UsageCard({ usageDays: initialDays }: Readonly<{ usageDays?: 7 |
           </div>
           <div>
             <div className="text-2xl font-bold">
-              {usage ? `${Math.round(usage.reuse.rate * 100)}%` : '—'}
+              {usage ? `${Math.round(usage.reuse.rate * 100)}%` : '-'}
             </div>
             <div
               className="text-xs text-muted-foreground"

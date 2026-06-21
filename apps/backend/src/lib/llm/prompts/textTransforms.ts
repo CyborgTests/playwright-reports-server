@@ -19,6 +19,32 @@ export function unescapeLiteralNewlines(text: string): string {
     .replace(/\\+"/g, '"');
 }
 
+// ANSI/CSI escape sequences (terminal colors, cursor moves).
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching the ANSI ESC (U+001B) is the intent
+const ANSI_RE = /\u001b\[[0-9;:?]*[ -/]*[@-~]/g;
+
+// Minimum length of an identical-line run before we collapse it.
+const REPEAT_RUN_MIN = 3;
+
+export function stripLogNoise(text: string): string {
+  if (!text) return text;
+  const lines = text.replace(ANSI_RE, '').split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; ) {
+    const line = lines[i];
+    let run = 1;
+    while (i + run < lines.length && lines[i + run] === line) run++;
+    out.push(line);
+    if (run >= REPEAT_RUN_MIN) {
+      out.push(`[… previous line repeated ${run}× …]`);
+    } else {
+      for (let k = 1; k < run; k++) out.push(line);
+    }
+    i += run;
+  }
+  return out.join('\n');
+}
+
 export function truncateMiddle(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   const marker = (omitted: number) => `\n[… ${omitted} chars omitted …]\n`;

@@ -1,5 +1,5 @@
 import { randomUUID as uuid } from 'node:crypto';
-import type { LlmTaskStatus, LlmTaskType } from '@playwright-reports/shared';
+import type { LlmTaskChildUsage, LlmTaskStatus, LlmTaskType } from '@playwright-reports/shared';
 import { sql } from 'kysely';
 import { linkifyReportRefs } from '../../llm/linkifyReportRefs.js';
 import { llmTaskEvents } from '../llmTaskEvents.js';
@@ -18,6 +18,18 @@ export interface LlmTaskRowEnriched extends LlmTaskRow {
   reportDisplayNumber: number | null;
   reportTitle: string | null;
   testTitle: string | null;
+  childUsage?: LlmTaskChildUsage[];
+}
+
+function parseChildUsage(json: string | null | undefined): LlmTaskChildUsage[] | undefined {
+  if (!json) return undefined;
+  try {
+    const parsed = JSON.parse(json);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed as LlmTaskChildUsage[];
+  } catch {
+    // malformed rollup -> fall back to lazy /roles fetch
+  }
+  return undefined;
 }
 
 export interface LlmTaskUsage {
@@ -60,6 +72,8 @@ const SELECT_QUEUED_SQL = `
   ORDER BY t.priority DESC, t.createdAt ASC
   LIMIT ?
 `;
+
+const CLAIM_SCAN_LIMIT = 200;
 
 export class LlmTasksDatabase {
   private readonly k = getKysely();
@@ -111,6 +125,9 @@ export class LlmTasksDatabase {
         isRetry,
         reportIds: reportIdsJson,
         baseUrl: null,
+        parentTaskId: null,
+        role: null,
+        strategy: null,
       })
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
@@ -140,7 +157,116 @@ export class LlmTasksDatabase {
       isRetry,
       reportIds: reportIdsJson,
       baseUrl: null,
+      parentTaskId: null,
+      role: null,
+      strategy: null,
     };
+  }
+
+  public startRoleExecution(opts: {
+    parentTaskId: string;
+    type: LlmTaskType;
+    role: string;
+    model?: string | null;
+    baseUrl?: string | null;
+  }): string {
+    const id = uuid();
+    const now = new Date().toISOString();
+    const compiled = this.k
+      .insertInto('llm_tasks')
+      .values({
+        id,
+        type: opts.type,
+        status: 'queued',
+        priority: 0,
+        reportId: null,
+        testId: null,
+        fileId: null,
+        project: null,
+        prompt: null,
+        result: null,
+        category: null,
+        model: opts.model ?? null,
+        error: null,
+        createdAt: now,
+        startedAt: null,
+        completedAt: null,
+        retryCount: 0,
+        maxRetries: 0,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        isRetry: 0,
+        reportIds: null,
+        baseUrl: opts.baseUrl ?? null,
+        parentTaskId: opts.parentTaskId,
+        role: opts.role,
+        strategy: null,
+      })
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
+    return id;
+  }
+
+  public markRoleProcessing(id: string): void {
+    const compiled = this.k
+      .updateTable('llm_tasks')
+      .set({ status: 'processing', startedAt: new Date().toISOString() })
+      .where('id', '=', id)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
+  }
+
+  public finishRoleExecution(
+    id: string,
+    opts: {
+      status: 'completed' | 'failed';
+      model?: string | null;
+      baseUrl?: string | null;
+      usage?: LlmTaskUsage;
+      error?: string | null;
+      result?: string | null;
+    }
+  ): void {
+    const input = opts.usage?.inputTokens ?? null;
+    const output = opts.usage?.outputTokens ?? null;
+    const total =
+      opts.usage?.totalTokens ?? (input != null && output != null ? input + output : null);
+    const compiled = this.k
+      .updateTable('llm_tasks')
+      .set({
+        status: opts.status,
+        completedAt: new Date().toISOString(),
+        model: opts.model ?? null,
+        baseUrl: opts.baseUrl ?? null,
+        inputTokens: input,
+        outputTokens: output,
+        totalTokens: total,
+        error: opts.error ?? null,
+        result: opts.result ?? null,
+      })
+      .where('id', '=', id)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
+  }
+
+  public getRoleChildren(parentId: string): LlmTaskRow[] {
+    const compiled = this.k
+      .selectFrom('llm_tasks')
+      .selectAll()
+      .where('parentTaskId', '=', parentId)
+      .orderBy('createdAt', 'asc')
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as LlmTaskRow[];
+  }
+
+  public markStrategy(id: string, strategy: string): void {
+    const compiled = this.k
+      .updateTable('llm_tasks')
+      .set({ strategy })
+      .where('id', '=', id)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public bulkCreateTestAnalysis(
@@ -185,6 +311,50 @@ export class LlmTasksDatabase {
       .where('status', 'in', ['queued', 'processing'])
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
+  }
+
+  public claimNextRunnable(
+    decide: (task: LlmTaskRow) => {
+      run: boolean;
+      reservation?: { modelId: string; release: () => void };
+    }
+  ): { task: LlmTaskRow; reservation?: { modelId: string; release: () => void } } | null {
+    const hasQueuedCompiled = this.k
+      .selectFrom('llm_tasks')
+      .select('id')
+      .where('status', '=', 'queued')
+      .limit(1)
+      .compile();
+    const hasQueued = this.db.prepare(hasQueuedCompiled.sql).get(...hasQueuedCompiled.parameters);
+    if (!hasQueued) return null;
+
+    const transaction = this.db.transaction(() => {
+      const rows = this.db.prepare(SELECT_QUEUED_SQL).all(CLAIM_SCAN_LIMIT) as LlmTaskRow[];
+      const now = new Date().toISOString();
+      for (const row of rows) {
+        const decision = decide(row);
+        if (!decision.run) continue;
+        const claimCompiled = this.k
+          .updateTable('llm_tasks')
+          .set({ status: 'processing', startedAt: now })
+          .where('id', '=', row.id)
+          .where('status', '=', 'queued')
+          .compile();
+        const result = this.db.prepare(claimCompiled.sql).run(...claimCompiled.parameters);
+        if (result.changes === 1) {
+          row.status = 'processing';
+          row.startedAt = now;
+          return { task: row, reservation: decision.reservation };
+        }
+        // Lost the row to a concurrent claim - undo any reservation and keep scanning.
+        decision.reservation?.release();
+      }
+      return null;
+    });
+
+    const result = transaction();
+    if (result) this.fireUpdateEvent(result.task.id);
+    return result;
   }
 
   public claimNext(count: number): LlmTaskRow[] {
@@ -426,7 +596,8 @@ export class LlmTasksDatabase {
   }): { data: LlmTaskRowEnriched[]; total: number } {
     let countQuery = this.k
       .selectFrom('llm_tasks as t')
-      .select((eb) => eb.fn.countAll<number>().as('total'));
+      .select((eb) => eb.fn.countAll<number>().as('total'))
+      .where('t.parentTaskId', 'is', null);
     if (opts.status) countQuery = countQuery.where('t.status', '=', opts.status);
     if (opts.type) countQuery = countQuery.where('t.type', '=', opts.type);
     if (opts.reportId) countQuery = countQuery.where('t.reportId', '=', opts.reportId);
@@ -451,6 +622,26 @@ export class LlmTasksDatabase {
         'r.title as reportTitle',
         'te.title as testTitle',
       ])
+      .select((eb) =>
+        eb
+          .selectFrom('llm_tasks as ch')
+          .select((e) => e.fn.countAll<number>().as('c'))
+          .whereRef('ch.parentTaskId', '=', 't.id')
+          .as('childCount')
+      )
+      .select((eb) =>
+        eb
+          .selectFrom('llm_tasks as cu')
+          .select(
+            sql<string>`json_group_array(json_object('baseUrl', cu.baseUrl, 'model', cu.model, 'inputTokens', cu.inputTokens, 'outputTokens', cu.outputTokens))`.as(
+              'u'
+            )
+          )
+          .whereRef('cu.parentTaskId', '=', 't.id')
+          .where('cu.status', '=', 'completed')
+          .as('childUsageJson')
+      )
+      .where('t.parentTaskId', 'is', null)
       .orderBy('t.createdAt', 'desc')
       .limit(opts.limit)
       .offset(opts.offset);
@@ -459,9 +650,14 @@ export class LlmTasksDatabase {
     if (opts.reportId) dataQuery = dataQuery.where('t.reportId', '=', opts.reportId);
     if (opts.model) dataQuery = dataQuery.where('t.model', '=', opts.model);
     const dataCompiled = dataQuery.compile();
-    const data = this.db
-      .prepare(dataCompiled.sql)
-      .all(...dataCompiled.parameters) as Array<LlmTaskRowEnriched>;
+    const rows = this.db.prepare(dataCompiled.sql).all(...dataCompiled.parameters) as Array<
+      LlmTaskRowEnriched & { childUsageJson?: string }
+    >;
+
+    const data: LlmTaskRowEnriched[] = rows.map(({ childUsageJson, ...row }) => ({
+      ...row,
+      childUsage: parseChildUsage(childUsageJson),
+    }));
 
     return { data, total };
   }

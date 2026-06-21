@@ -28,14 +28,14 @@ export function renderAnchorInline(anchor: ClusterAnchor): string | null {
     case 'signature':
       return `shared error signature (verb=${anchor.verb})`;
     case 'unmatched':
-      return `no shared fix target — failure is specific to test \`${anchor.testId}\``;
+      return `no shared fix target - failure is specific to test \`${anchor.testId}\``;
   }
 }
 
 export function renderTrendLabel(
   trend: 'newlyFailed' | 'stillFailing' | 'unknown' | undefined
 ): string {
-  if (trend === 'newlyFailed') return ' — **newly failed since previous report**';
-  if (trend === 'stillFailing') return ' — still failing from previous report';
+  if (trend === 'newlyFailed') return ' - **newly failed since previous report**';
+  if (trend === 'stillFailing') return ' - still failing from previous report';
   return '';
 }

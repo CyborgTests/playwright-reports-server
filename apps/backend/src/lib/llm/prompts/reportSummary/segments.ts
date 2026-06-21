@@ -10,7 +10,7 @@ import {
 } from '../assembleSegments.js';
 import { describeGroupKind, renderAnchorInline, renderTrendLabel } from '../clusterRendering.js';
 import type { CustomPromptOverrides, RunContext } from '../promptTypes.js';
-import { extractRootCauseParagraph, truncateMiddle } from '../textTransforms.js';
+import { extractRootCauseParagraph, stripLogNoise, truncateMiddle } from '../textTransforms.js';
 import {
   REPORT_SUMMARY_SYSTEM_PROMPT,
   REPORT_SUMMARY_TASK_INSTRUCTIONS,
@@ -19,6 +19,7 @@ import {
 
 const MEMBER_MESSAGE_MAX_CHARS = 600;
 const SAMPLE_MESSAGE_MAX_CHARS = 800;
+const CLUSTER_DETAIL_MEMBERS = 4;
 
 export type ReportSummaryTrendStatus = 'newlyFailed' | 'stillFailing' | 'unknown';
 export type ReportSummaryClusterKind = ClusterAnchorKind;
@@ -138,7 +139,7 @@ function computeTrendInsights(
   const [topDir, topDirCount] = [...dirCounts.entries()].sort((a, b) => b[1] - a[1])[0];
   if (topDirCount / total >= 0.5 && topDirCount >= 2) {
     out.push(
-      `- **${topDirCount} of ${total}** new failures are in \`${topDir}/\` — likely shared root cause in that area.`
+      `- **${topDirCount} of ${total}** new failures are in \`${topDir}/\` - likely shared root cause in that area.`
     );
   }
 
@@ -158,7 +159,7 @@ function computeTrendInsights(
     const [topCat, topCatCount] = [...catCounts.entries()].sort((a, b) => b[1] - a[1])[0];
     if (topCatCount / lookedUp >= 0.5 && topCatCount >= 2) {
       out.push(
-        `- **${topCatCount} of ${lookedUp}** new failures share category \`${topCat}\` — likely one regression surfacing across multiple tests.`
+        `- **${topCatCount} of ${lookedUp}** new failures share category \`${topCat}\` - likely one regression surfacing across multiple tests.`
       );
     }
   }
@@ -214,24 +215,30 @@ function buildFailureGroupsBlock(clusters: ReportSummaryCluster[]): string {
     const anchorLine = renderAnchorInline(cluster.anchor);
     if (anchorLine) block += `- Fix target: ${anchorLine}\n`;
     if (cluster.sampleMessage) {
-      block += `- Sample error:\n\`\`\`\n${truncateMiddle(cluster.sampleMessage, SAMPLE_MESSAGE_MAX_CHARS)}\n\`\`\`\n`;
+      block += `- Sample error:\n\`\`\`\n${truncateMiddle(stripLogNoise(cluster.sampleMessage), SAMPLE_MESSAGE_MAX_CHARS)}\n\`\`\`\n`;
     }
     const membersInRun = cluster.members.filter((m) => m.inThisReport);
     const membersHistorical = cluster.members.filter((m) => !m.inThisReport);
+    // newly-failed members first so the most relevant ones get the detailed slots.
+    const orderedInRun = [...membersInRun].sort(
+      (a, b) => (a.trend === 'newlyFailed' ? 0 : 1) - (b.trend === 'newlyFailed' ? 0 : 1)
+    );
+    const detailed = orderedInRun.slice(0, CLUSTER_DETAIL_MEMBERS);
+    const compact = orderedInRun.slice(CLUSTER_DETAIL_MEMBERS);
     block += `\n#### Tests in this group that failed in this report (${membersInRun.length})\n`;
     if (membersInRun.length === 0) {
       block += `_None of this group's tests failed in this report._\n`;
     }
-    for (const m of membersInRun) {
+    for (const m of detailed) {
       const fileSuffix = m.filePath ? ` (${m.filePath})` : '';
       const catLabel = m.category ? ` [${m.category}]` : '';
       const trendLabel = renderTrendLabel(m.trend);
       block += `- **${m.title}** [testId: ${m.testId}]${catLabel}${fileSuffix}${trendLabel}\n`;
       if (m.message) {
-        const indentedMessage = truncateMiddle(m.message, MEMBER_MESSAGE_MAX_CHARS).replace(
-          /\n/g,
-          '\n    '
-        );
+        const indentedMessage = truncateMiddle(
+          stripLogNoise(m.message),
+          MEMBER_MESSAGE_MAX_CHARS
+        ).replace(/\n/g, '\n    ');
         block += `    Error: ${indentedMessage}\n`;
       }
       if (m.analysis) {
@@ -240,8 +247,17 @@ function buildFailureGroupsBlock(clusters: ReportSummaryCluster[]): string {
         block += `    Per-test analysis:\n    ${indented}\n`;
       }
     }
+    if (compact.length > 0) {
+      block += `\n_${compact.length} more test${compact.length === 1 ? '' : 's'} in this group failed in this report; they share the sample error and root cause above:_\n`;
+      for (const m of compact) {
+        const fileSuffix = m.filePath ? ` (${m.filePath})` : '';
+        const catLabel = m.category ? ` [${m.category}]` : '';
+        const trendLabel = renderTrendLabel(m.trend);
+        block += `- ${m.title} [testId: ${m.testId}]${catLabel}${fileSuffix}${trendLabel}\n`;
+      }
+    }
     if (membersHistorical.length > 0) {
-      block += `\n#### Other tests in this group (${membersHistorical.length}) — failed previously but not in this report\n`;
+      block += `\n#### Other tests in this group (${membersHistorical.length}) - failed previously but not in this report\n`;
       for (const m of membersHistorical) {
         const fileSuffix = m.filePath ? ` (${m.filePath})` : '';
         block += `- ${m.title} [testId: ${m.testId}]${fileSuffix} (${m.occurrences} occurrences)\n`;
@@ -264,7 +280,7 @@ function buildIsolatedFailuresBlock(unclustered: ReportSummaryUnclusteredFailure
       block += `- Signature: \`${f.errorSignature}\`\n`;
     }
     if (f.message) {
-      block += `- Error:\n\`\`\`\n${truncateMiddle(f.message, MEMBER_MESSAGE_MAX_CHARS)}\n\`\`\`\n`;
+      block += `- Error:\n\`\`\`\n${truncateMiddle(stripLogNoise(f.message), MEMBER_MESSAGE_MAX_CHARS)}\n\`\`\`\n`;
     }
     if (f.analysis) {
       const rootCause = extractRootCauseParagraph(f.analysis);
@@ -278,7 +294,7 @@ function buildIsolatedFailuresBlock(unclustered: ReportSummaryUnclusteredFailure
 
 function buildFlakyTestsBlock(flaky: ReportSummaryFlakyTest[] | undefined): string {
   if (!flaky || flaky.length === 0) return '';
-  let block = `## Flaky Tests (${flaky.length}) — passed on retry; not failures\n\n`;
+  let block = `## Flaky Tests (${flaky.length}) - passed on retry; not failures\n\n`;
   for (const f of flaky) {
     const fileSuffix = f.filePath ? ` (${f.filePath})` : '';
     block += `### ${f.title} [testId: ${f.testId}] [${f.category}]${fileSuffix}\n`;
@@ -286,7 +302,7 @@ function buildFlakyTestsBlock(flaky: ReportSummaryFlakyTest[] | undefined): stri
       block += `- Signature: \`${f.errorSignature}\`\n`;
     }
     if (f.message) {
-      block += `- Error (from the failing attempt):\n\`\`\`\n${truncateMiddle(f.message, MEMBER_MESSAGE_MAX_CHARS)}\n\`\`\`\n`;
+      block += `- Error (from the failing attempt):\n\`\`\`\n${truncateMiddle(stripLogNoise(f.message), MEMBER_MESSAGE_MAX_CHARS)}\n\`\`\`\n`;
     }
     if (f.analysis) {
       const rootCause = extractRootCauseParagraph(f.analysis);

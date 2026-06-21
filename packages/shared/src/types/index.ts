@@ -9,48 +9,79 @@ export type LLMProviderType = 'openai' | 'anthropic';
 
 export type LLMMultimodalMode = 'auto' | 'force' | 'disabled';
 
+export type LlmTaskType = 'test_analysis' | 'report_summary' | 'project_summary';
+
+export type LlmStrategy = 'one_shot' | 'fusion' | 'council' | 'cascade' | 'self_refine';
+
+export type CascadeGate = 'checks' | 'scorer' | 'checks_and_scorer';
+
+export interface LlmRoleRef {
+  modelId?: string;
+  temperature?: number;
+}
+
+export interface LlmTaskRouting {
+  strategy: LlmStrategy;
+  authors?: LlmRoleRef[];
+  synthesizer?: LlmRoleRef;
+  judges?: LlmRoleRef[];
+  minPassVotes?: number;
+  critic?: LlmRoleRef;
+  reviser?: LlmRoleRef;
+  maxRounds?: number;
+  tiers?: LlmRoleRef[];
+  scorer?: LlmRoleRef;
+  escalateBelowScore?: number;
+  cascadeGate?: CascadeGate;
+}
+
 export interface LLMConfig {
-  provider?: LLMProviderType;
-  baseUrl?: string;
-  apiKey?: string;
-  model?: string;
-  /** Per-task temperature. Undefined → fall back to the corresponding entry
-   *  in `defaults` (server-side constant). Each task type is set independently. */
-  testAnalysisTemperature?: number;
-  reportSummaryTemperature?: number;
-  projectSummaryTemperature?: number;
-  /** Read-only — populated by GET /api/config so the UI can show the active
-   *  defaults as input placeholders. Ignored on PATCH (server constants). */
-  defaults?: {
-    testAnalysisTemperature: number;
-    reportSummaryTemperature: number;
-    projectSummaryTemperature: number;
-  };
-  parallelRequests?: number;
+  featureEnabled?: boolean;
+  configured?: boolean;
+  enabled?: boolean;
+  primaryModel?: { id: string; label: string; provider: LLMProviderType; model: string } | null;
+  useFallbackChain?: boolean;
+  routing?: Partial<Record<LlmTaskType, LlmTaskRouting>>;
   autoAnalyzeNewReports?: boolean;
   autoProjectSummaryOnReportComplete?: boolean;
-  /** When true, "Generate Analysis" runs the LLM even for all-green windows
-   *  (no failures across the latest N runs) so duration creep / near-flakes /
-   *  quarantine churn still get surfaced. When false (default), all-green
-   *  windows skip the LLM and return a canned response. */
   analyzeGreenWindows?: boolean;
-  maxTokens?: number;
-  contextWindow?: number;
-  multimodalMode?: LLMMultimodalMode;
   generalContext?: string;
-  /** Legacy single system prompt — kept as a fallback for all three tasks so
-   *  pre-Phase-3 configs keep working. Per-task overrides below win when set. */
   customSystemPrompt?: string;
-  /** Task-specific system prompt overrides. Each falls back to
-   *  `customSystemPrompt`, then to the built-in default for its task. */
   customTestAnalysisSystemPrompt?: string;
   customProjectSummarySystemPrompt?: string;
   customTestAnalysisInstructions?: string;
   customProjectSummaryInstructions?: string;
-  /** Single override for the report-summary task — combines what used to be
-   *  the system prompt + task instructions for this task. The system message
-   *  for report-summary is now built-in and not user-overridable. */
   customReportSummaryPrompt?: string;
+  customSynthesizerPrompt?: string;
+  customJudgePrompt?: string;
+  customCritiquePrompt?: string;
+  customRevisePrompt?: string;
+  customScorerPrompt?: string;
+}
+
+export interface LlmModel {
+  id: string;
+  label: string;
+  provider: LLMProviderType;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  parallelRequests: number;
+  maxTokens?: number;
+  contextWindow?: number;
+  multimodalMode: LLMMultimodalMode;
+  testAnalysisTemperature?: number;
+  reportSummaryTemperature?: number;
+  projectSummaryTemperature?: number;
+  inputCostPerMTok?: number;
+  outputCostPerMTok?: number;
+  sortOrder: number;
+  isPrimary: boolean;
+  enabled: boolean;
+  lastTestedAt?: string;
+  lastError?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TestManagementConfig {
@@ -114,10 +145,6 @@ export interface SiteWhiteLabelConfig {
   llm?: LLMConfig;
   testManagement?: TestManagementConfig;
   notifications?: NotificationsConfig;
-  /** ISO timestamp marking the start of the current LLM usage accounting
-   *  window. Set by the "Reset counters" button on the LLM queue page; the
-   *  usage-stats queries clamp their lower bound to this value so the user
-   *  sees zero immediately while historical rows stay in the database. */
   llmUsageResetAt?: string;
 }
 

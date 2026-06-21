@@ -5,3 +5,4 @@ export * from './types/index.js';
 export * from './types/quality.js';
 export * from './utils/grading.js';
 export * from './utils/index.js';
+export * from './utils/strategy.js';

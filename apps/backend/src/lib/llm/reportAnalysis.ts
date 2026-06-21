@@ -69,7 +69,7 @@ function inferVerdictFromText(text: string): ReportAnalysisVerdict {
   return 'clustered';
 }
 
-// `**Verdict:** clustered` — anywhere from the first 5 non-empty lines.
+// `**Verdict:** clustered` - anywhere from the first 5 non-empty lines.
 // Tolerates `Verdict: clustered`, `**Verdict:** "clustered"`, surrounding
 // backticks, and a leading blank/whitespace.
 const VERDICT_LINE_RE =

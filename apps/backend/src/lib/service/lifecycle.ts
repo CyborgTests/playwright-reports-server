@@ -3,8 +3,7 @@ import path from 'node:path';
 import { env } from '../../config/env.js';
 import { githubSyncCron } from '../githubSync/cronManager.js';
 import { cleanupOrphanedTempDirs } from '../githubSync/syncService.js';
-import { llmService } from '../llm/index.js';
-import type { LLMProviderConfig } from '../llm/types/index.js';
+import { applyPrimaryModel } from '../llm/registry.js';
 import { TMP_FOLDER } from '../storage/constants.js';
 import { initStorage, storage } from '../storage/index.js';
 import { withError } from '../withError.js';
@@ -60,7 +59,7 @@ export class Lifecycle {
       }
       console.log('[lifecycle] Databases initialized successfully');
 
-      llmService.applyConfig(configCache.config?.llm as Partial<LLMProviderConfig> | undefined);
+      await applyPrimaryModel();
 
       if (env.DATA_STORAGE === 's3' || env.DATA_STORAGE === 'azure') {
         const cachePath = path.join(TMP_FOLDER, 'results');

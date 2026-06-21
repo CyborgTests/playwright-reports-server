@@ -58,12 +58,12 @@ export function applyMustache(
   let substituted = false;
   const rendered = template.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g, (match, name) => {
     if (!allowlist.has(name)) {
-      console.warn(`[llm.prompts] mustache var "${name}" not in allowlist — left as-is`);
+      console.warn(`[llm.prompts] mustache var "${name}" not in allowlist - left as-is`);
       return match;
     }
     const value = bindings[name];
     if (value === undefined || value === null) {
-      console.warn(`[llm.prompts] mustache var "${name}" has no binding — left as-is`);
+      console.warn(`[llm.prompts] mustache var "${name}" has no binding - left as-is`);
       return match;
     }
     substituted = true;

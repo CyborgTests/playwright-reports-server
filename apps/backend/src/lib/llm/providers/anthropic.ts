@@ -16,7 +16,7 @@ const DEFAULT_ANTHROPIC_MAX_TOKENS = 8000;
  * by model-family prefix. Returns null for unknown models (caller falls back
  * to a safe default or to manual config override).
  *
- * Source: https://docs.anthropic.com/en/docs/about-claude/models — keep this
+ * Source: https://docs.anthropic.com/en/docs/about-claude/models - keep this
  * roughly in sync. All Claude 3.x and 4.x models documented at writing
  * support 200k context.
  */
@@ -63,7 +63,7 @@ export class AnthropicProvider extends LLMProvider {
   /**
    * Build the Anthropic body from a segmented prompt: joins same-role segments,
    * then sets cache_control:ephemeral on the last stable system block and the
-   * first + last stable user blocks. The user breakpoints nest — the first (task
+   * first + last stable user blocks. The user breakpoints nest - the first (task
    * contract, identical per task type) caches across the queue batch; the last
    * (per-test context) caches across regenerates. ≤3 breakpoints (Anthropic's
    * limit is 4), caching the stable prefix and leaving the varying tail uncached.
@@ -73,7 +73,7 @@ export class AnthropicProvider extends LLMProvider {
     const userBlocks: AnthropicContentBlock[] = [];
     // Track the index of each segment's first text block so we can place
     // cache_control on the right one (Anthropic caches the prefix up to and
-    // including the marked block — must be a stable segment's text block).
+    // including the marked block - must be a stable segment's text block).
     let lastStableSystemTextIdx = -1;
     let firstStableUserTextIdx = -1;
     let lastStableUserTextIdx = -1;

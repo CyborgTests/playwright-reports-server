@@ -28,7 +28,7 @@ export function firstSentence(text: string): string {
 }
 
 /**
- * Halve every run of 2+ consecutive backslashes — undoes one layer of
+ * Halve every run of 2+ consecutive backslashes - undoes one layer of
  * over-escaping from local models that emit multi-level JSON (e.g.
  * `\\\\\\\\n` where standard JSON would use `\\n` for an escaped newline).
  * Returns the input unchanged when no such runs are present, which callers
@@ -43,7 +43,7 @@ export function halveEscapedBackslashes(text: string): string {
  * Tries fenced JSON (```json … ```) first, then the raw text. Each candidate
  * is handed to `parseStructured`; the first successful coercion wins.
  *
- * Some local models emit multi-level-escaped JSON — e.g. `\\\\\\\\`
+ * Some local models emit multi-level-escaped JSON - e.g. `\\\\\\\\`
  * where standard JSON would use `\\` for a single backslash. We iteratively
  * halve runs of 2+ consecutive backslashes and retry `JSON.parse`
  * so those payloads recover instead of landing in the markdown-fallback path

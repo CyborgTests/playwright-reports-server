@@ -37,7 +37,7 @@ function shrinkFencedBlocks(content: string, blockMax: number): string {
   });
 }
 
-/** Drop the recent-categories line — least informative when budget tight.
+/** Drop the recent-categories line - least informative when budget tight.
  *  Must match the line emitted by buildHistoricalContextBlock:
  *  `- recent_categories (newest first): …`. */
 function shrinkHistoricalContext(content: string): string {
@@ -55,7 +55,7 @@ function truncateTail(content: string, maxChars: number): string {
 /**
  * Fit a SegmentedPrompt to `charsBudget` by applying shrink steps in priority
  * order until size <= budget or all steps are exhausted. Stable segments
- * (system_prompt, task_contract) are never touched — they're the cacheable
+ * (system_prompt, task_contract) are never touched - they're the cacheable
  * prefix and dropping them would defeat caching for marginal char savings.
  */
 export function fitPromptToBudget(prompt: SegmentedPrompt, charsBudget: number): PromptFitResult {
@@ -79,7 +79,7 @@ export function fitPromptToBudget(prompt: SegmentedPrompt, charsBudget: number):
     return segmentChars(p) <= charsBudget;
   };
 
-  // Evidence segments — tail-truncate before dropping anything. Each block's
+  // Evidence segments - tail-truncate before dropping anything. Each block's
   // most-informative entries are at the top (failed network requests first,
   // error console messages first, errored action last) so head-preserving
   // truncation keeps the highest-signal content.
@@ -123,7 +123,7 @@ export function fitPromptToBudget(prompt: SegmentedPrompt, charsBudget: number):
   }
 
   // Cross-project context drops only after every other shrink option is
-  // exhausted — a validated prior analysis on the same signature is the
+  // exhausted - a validated prior analysis on the same signature is the
   // single strongest predictor of the right diagnosis.
   if (
     tryStep('dropped cross-project context', (cur) => dropSegment(cur, 'cross_project_context'))

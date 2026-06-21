@@ -11,7 +11,7 @@ import {
   splitTaskInstructions,
 } from '../assembleSegments.js';
 import type { CustomPromptOverrides } from '../promptTypes.js';
-import { extractRootCauseParagraph } from '../textTransforms.js';
+import { extractRootCauseParagraph, stripLogNoise } from '../textTransforms.js';
 import {
   TEST_ANALYSIS_SYSTEM_PROMPT,
   TEST_ANALYSIS_TASK_INSTRUCTIONS,
@@ -87,7 +87,7 @@ function buildRunContextBlock(evidence: FailureEvidence | undefined): string {
   const lines: string[] = [];
   if (git?.branch) lines.push(`- branch: \`${git.branch}\``);
   if (git?.shortHash || git?.hash) {
-    const sub = git.subject ? ` — ${git.subject.replace(/\s+/g, ' ').trim().slice(0, 200)}` : '';
+    const sub = git.subject ? ` - ${git.subject.replace(/\s+/g, ' ').trim().slice(0, 200)}` : '';
     lines.push(`- commit: \`${git.shortHash ?? git.hash}\`${sub}`);
   } else if (git?.subject) {
     lines.push(`- subject: ${git.subject.replace(/\s+/g, ' ').trim().slice(0, 200)}`);
@@ -490,10 +490,10 @@ function buildFailureDetailsBlock(failureDetails: FailureDetailsForPrompt): stri
     block += '\n';
   }
 
-  block += `## Error\n\`\`\`\n${failureDetails.message}\n\`\`\`\n`;
+  block += `## Error\n\`\`\`\n${stripLogNoise(failureDetails.message)}\n\`\`\`\n`;
 
   if (failureDetails.stackTrace) {
-    block += `\n## Stack\n\`\`\`\n${failureDetails.stackTrace}\n\`\`\`\n`;
+    block += `\n## Stack\n\`\`\`\n${stripLogNoise(failureDetails.stackTrace)}\n\`\`\`\n`;
   }
 
   return block.trimEnd();
@@ -640,13 +640,13 @@ export const buildTestFailureSegments = (args: {
       'stdout',
       'user',
       false,
-      evidence?.stdout ? `## Stdout\n\`\`\`\n${evidence.stdout}\n\`\`\`` : undefined
+      evidence?.stdout ? `## Stdout\n\`\`\`\n${stripLogNoise(evidence.stdout)}\n\`\`\`` : undefined
     ),
     buildSegment(
       'stderr',
       'user',
       false,
-      evidence?.stderr ? `## Stderr\n\`\`\`\n${evidence.stderr}\n\`\`\`` : undefined
+      evidence?.stderr ? `## Stderr\n\`\`\`\n${stripLogNoise(evidence.stderr)}\n\`\`\`` : undefined
     ),
     buildSegment(
       'git_diff',

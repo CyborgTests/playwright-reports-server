@@ -141,14 +141,6 @@ export class LLMService {
     }
   }
 
-  async getAvailableModels(): Promise<string[]> {
-    if (!this.provider) {
-      throw new Error('LLM provider not initialized');
-    }
-
-    return this.provider.getAvailableModels();
-  }
-
   /** Resolve the effective image-attachment shape for a segmented call. */
   private resolveCallShape(prompt: SegmentedPrompt): {
     imagesMode: MultimodalMode;
@@ -174,14 +166,14 @@ export class LLMService {
 
     if (!this.circuit.shouldAttempt()) {
       throw new LLMProviderError(
-        `LLM provider circuit open — provider has been failing; retrying in ${Math.ceil(
+        `LLM provider circuit open - provider has been failing; retrying in ${Math.ceil(
           this.circuit.msUntilRetry() / 1000
         )}s`,
         'circuit_open'
       );
     }
 
-    // Determine whether images get attached before sending — the multimodal
+    // Determine whether images get attached before sending - the multimodal
     // blocklist auto-disables them after a prior unsupported-by-provider error.
     const initial = this.resolveCallShape(prompt);
     const { imagesMode } = initial;
@@ -200,7 +192,7 @@ export class LLMService {
         if (useImages && imagesMode !== 'force' && this.isMultimodalUnsupportedError(err)) {
           this.markMultimodalBlocked();
           console.warn(
-            `[llm] multimodal unsupported by ${this.providerKey()} — retrying without images`
+            `[llm] multimodal unsupported by ${this.providerKey()} - retrying without images`
           );
           useImages = false;
           continue;
@@ -213,6 +205,32 @@ export class LLMService {
     throw lastErr ?? new Error('sendSegmentedMessage exhausted retries');
   }
 
+  async sendViaModel(
+    connection: Pick<
+      LLMProviderConfig,
+      'provider' | 'baseUrl' | 'apiKey' | 'model' | 'maxTokens' | 'contextWindow' | 'multimodalMode'
+    >,
+    prompt: SegmentedPrompt,
+    options: SegmentedSendOptions = {}
+  ): Promise<LLMResponse> {
+    const merged: LLMProviderConfig = {
+      provider: connection.provider,
+      baseUrl: connection.baseUrl,
+      apiKey: connection.apiKey,
+      model: connection.model,
+      maxTokens: connection.maxTokens,
+      contextWindow: connection.contextWindow,
+      multimodalMode: connection.multimodalMode,
+      requestTimeoutMs: this.config?.requestTimeoutMs ?? 5 * 60 * 1000,
+      maxRetries: this.config?.maxRetries ?? 3,
+      retryDelayMs: this.config?.retryDelayMs ?? 1000,
+    };
+    const provider =
+      merged.provider === 'anthropic' ? new AnthropicProvider(merged) : new OpenAIProvider(merged);
+    const finalPrompt = merged.multimodalMode === 'disabled' ? this.stripImages(prompt) : prompt;
+    return provider.sendSegmentedMessage(finalPrompt, options);
+  }
+
   private promptHasImages(prompt: SegmentedPrompt): boolean {
     return prompt.segments.some((s) => s.images && s.images.length > 0);
   }
@@ -221,10 +239,6 @@ export class LLMService {
     return this.getProviderKey();
   }
 
-  /** Public stable identifier for the active (provider+baseUrl+model) tuple.
-   *  Used by route-level caches so they auto-invalidate when the config
-   *  changes (which calls `restart()` and produces a
-   *  different key). */
   public getProviderKey(): string {
     const c = this.config;
     return `${c?.provider}:${c?.baseUrl}:${c?.model || '<auto>'}`;
@@ -248,10 +262,6 @@ export class LLMService {
     this.multimodalBlocklist.set(this.providerKey(), Date.now() + MULTIMODAL_BLOCKLIST_TTL_MS);
   }
 
-  /** Heuristic: model rejected images. Requires both a feature mention
-   *  AND an explicit "not supported" / "does not support" signal — bare
-   *  "image" or "vision" alone trips on size-limit / content-policy / field-
-   *  malformed errors that have nothing to do with model capability. */
   private isMultimodalUnsupportedError(err: unknown): boolean {
     if (!(err instanceof LLMProviderError)) return false;
     if (err.code !== 'invalid_request') return false;
@@ -271,7 +281,6 @@ export class LLMService {
     );
   }
 
-  /** Active model context window in tokens, or null if unknown. */
   async getContextWindow(): Promise<number | null> {
     if (!this.provider) {
       throw new Error('LLM provider not initialized');
@@ -279,7 +288,6 @@ export class LLMService {
     return this.provider.getContextWindow();
   }
 
-  /** Token count for a segmented prompt — exact for Anthropic, estimated otherwise. */
   async countTokens(prompt: SegmentedPrompt): Promise<number> {
     if (!this.provider) {
       throw new Error('LLM provider not initialized');
@@ -321,6 +329,10 @@ export class LLMService {
     this.circuit.reset();
   }
 
+  clearConfig(): void {
+    this.applyConfig({ provider: 'openai', baseUrl: '', apiKey: '', model: '' });
+  }
+
   async restart(config?: Partial<LLMProviderConfig>): Promise<void> {
     this.applyConfig(config);
     if (this.isConfigured()) {
@@ -328,12 +340,6 @@ export class LLMService {
     }
   }
 
-  /**
-   * Test the connection without mutating the active provider. Builds a one-off
-   * provider from the merged config (current + overrides), calls validateConfig
-   * (hits the models endpoint), and returns a structured result. Used by the
-   * Settings UI's "Test Connection" button.
-   */
   async testConnection(
     overrides?: Partial<LLMProviderConfig>
   ): Promise<{ success: boolean; error?: string; models?: string[] }> {

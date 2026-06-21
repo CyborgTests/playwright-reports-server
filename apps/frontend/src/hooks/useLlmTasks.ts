@@ -30,7 +30,6 @@ export function useLlmTaskStats() {
 
 export function useLlmDefaultPrompts(options: { enabled?: boolean } = {}) {
   return useQuery<{ success: boolean; data: LlmDefaultPrompts }>('/api/llm/default-prompts', {
-    // Defaults change only when the codebase changes — long stale time.
     staleTime: 60 * 60 * 1000,
     enabled: options.enabled,
   });
@@ -87,7 +86,11 @@ export function useLlmTasks(
         filters.offset,
       ],
       staleTime: 5000,
-      refetchInterval: options.active ? 5000 : false,
+      refetchInterval: (query) => {
+        if (options.active) return 5000;
+        const rows = query.state.data?.data ?? [];
+        return rows.some((t) => t.status === 'queued' || t.status === 'processing') ? 5000 : false;
+      },
       placeholderData: keepPreviousData,
     }
   );
