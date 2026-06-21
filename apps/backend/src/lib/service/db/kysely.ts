@@ -226,7 +226,6 @@ export interface TestRunsRow {
   failure_category: string | null;
   failure_category_source: string | null;
   error_signature: string | null;
-  error_signature_global: string | null;
 }
 
 export interface QualityDashboardsRow {

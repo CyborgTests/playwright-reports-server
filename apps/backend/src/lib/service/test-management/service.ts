@@ -66,7 +66,6 @@ function buildFailureGroups(runs: TestRunRow[]): TestFailureGroup[] {
     string,
     {
       signature: string;
-      signatureGlobal?: string;
       category?: string;
       sampleMessage: string;
       runs: TestRunRow[];
@@ -93,7 +92,6 @@ function buildFailureGroups(runs: TestRunRow[]): TestFailureGroup[] {
       }
       bucket = {
         signature: sig,
-        signatureGlobal: run.errorSignatureGlobal,
         category: run.failureCategory,
         sampleMessage,
         runs: [],
@@ -111,7 +109,6 @@ function buildFailureGroups(runs: TestRunRow[]): TestFailureGroup[] {
       const sortedDesc = [...sortedAsc].reverse();
       return {
         signature: g.signature,
-        signatureGlobal: g.signatureGlobal,
         category: g.category,
         count: g.runs.length,
         sampleMessage: g.sampleMessage,
@@ -199,7 +196,6 @@ export class TestManagementService {
       details: string;
       message: string;
       signature: string;
-      signatureGlobal: string;
       classification: {
         category: import('@playwright-reports/shared').FailureCategory;
         source: 'heuristic' | 'consensus';
@@ -243,13 +239,11 @@ export class TestManagementService {
           /* ignore */
         }
         const signature = computeErrorSignature(message, job.filePath);
-        const signatureGlobal = computeErrorSignature(message);
         const classification = classifyFailure(message, signature);
         preparedByKey.set(job.key, {
           details,
           message,
           signature,
-          signatureGlobal,
           classification,
         });
       }
@@ -291,7 +285,6 @@ export class TestManagementService {
           const prepared = preparedByKey.get(`${testId}::${fileId}`);
           const failureDetails = prepared?.details ?? null;
           const errorSignature = prepared?.signature ?? null;
-          const errorSignatureGlobal = prepared?.signatureGlobal ?? null;
           const classification = prepared?.classification ?? null;
 
           const testRun = {
@@ -309,7 +302,6 @@ export class TestManagementService {
             failureCategory: classification?.category,
             failureCategorySource: classification?.source,
             errorSignature: errorSignature ?? undefined,
-            errorSignatureGlobal: errorSignatureGlobal ?? undefined,
           };
 
           testDb.createTestRun(testRun);

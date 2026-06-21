@@ -50,8 +50,15 @@ export function extractAppCodeFrame(stack: string | undefined): string | undefin
 export function extractFrameFromFailure(parsed: {
   stackTrace?: string;
   message?: string;
+  location?: { file: string; line: number };
 }): string | undefined {
-  return extractAppCodeFrame(parsed.stackTrace) ?? extractAppCodeFrame(parsed.message);
+  const fromStack = extractAppCodeFrame(parsed.stackTrace) ?? extractAppCodeFrame(parsed.message);
+  if (fromStack) return fromStack;
+  const loc = parsed.location;
+  if (loc?.file && Number.isFinite(loc.line)) {
+    return `${normalizePath(loc.file)}:${loc.line}`;
+  }
+  return undefined;
 }
 
 function normalizePath(filePath: string): string {

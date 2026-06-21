@@ -32,7 +32,6 @@ export interface TestRunRow {
   failureCategory?: string;
   failureCategorySource?: FailureCategorySource;
   errorSignature?: string;
-  errorSignatureGlobal?: string;
   reportTitle?: string;
   reportDisplayNumber?: number;
 }
@@ -88,7 +87,6 @@ export interface TestRunDbRow {
   failure_category: string | null;
   failure_category_source: string | null;
   error_signature: string | null;
-  error_signature_global: string | null;
   reportTitle?: string | null;
   reportDisplayNumber?: number | null;
 }
@@ -107,7 +105,6 @@ export function convertDbRowToTestRun(row: TestRunDbRow): TestRunRow {
     failureCategory: row.failure_category || undefined,
     failureCategorySource: (row.failure_category_source as FailureCategorySource) || undefined,
     errorSignature: row.error_signature || undefined,
-    errorSignatureGlobal: row.error_signature_global || undefined,
     reportTitle: row.reportTitle ?? undefined,
     reportDisplayNumber: row.reportDisplayNumber ?? undefined,
   };
@@ -448,7 +445,6 @@ export class TestDatabase {
         failure_category: testRunWithId.failureCategory || null,
         failure_category_source: testRunWithId.failureCategorySource || null,
         error_signature: testRunWithId.errorSignature || null,
-        error_signature_global: testRunWithId.errorSignatureGlobal || null,
       })
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);

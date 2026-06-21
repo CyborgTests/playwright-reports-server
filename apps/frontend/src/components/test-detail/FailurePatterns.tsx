@@ -26,6 +26,23 @@ function firstLine(message: string): string {
   return newlineIdx === -1 ? trimmed : trimmed.slice(0, newlineIdx);
 }
 
+ // Normalized signature of a message's first significant line
+ // links a failure group to its cluster by sample-message shape.
+function normalizeMessageSignature(message: string | undefined): string {
+  const line =
+    (message ?? '')
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l.length > 0) ?? '';
+  return line
+    .replace(/0x[0-9a-fA-F]+/g, 'H')
+    .replace(/['"][^'"]*['"]/g, 'S')
+    .replace(/\d+/g, 'N')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
 function CrossTestClusterCard({
   cluster,
   project,
@@ -547,21 +564,18 @@ export function FailurePatternsWithClusters({
     const map = new Map<string, FailureCluster>();
     const matchedIds = new Set<string>();
 
-    const sigGlobalIndex = new Map<string, FailureCluster>();
+    const byMsgSig = new Map<string, FailureCluster>();
     for (const c of clusters) {
-      if (c.anchor.kind === 'signature') sigGlobalIndex.set(c.anchor.signature, c);
-      for (const sig of c.signatureGlobals ?? []) {
-        if (!sigGlobalIndex.has(sig)) sigGlobalIndex.set(sig, c);
-      }
+      const key = normalizeMessageSignature(c.sampleMessage);
+      if (key && !byMsgSig.has(key)) byMsgSig.set(key, c);
     }
 
     for (const g of groups) {
-      if (g.signatureGlobal) {
-        const c = sigGlobalIndex.get(g.signatureGlobal);
-        if (c && !matchedIds.has(c.id)) {
-          map.set(g.signature, c);
-          matchedIds.add(c.id);
-        }
+      const key = normalizeMessageSignature(g.sampleMessage);
+      const c = key ? byMsgSig.get(key) : undefined;
+      if (c && !matchedIds.has(c.id)) {
+        map.set(g.signature, c);
+        matchedIds.add(c.id);
       }
     }
 

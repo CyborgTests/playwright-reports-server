@@ -4,54 +4,82 @@ import type {
   ClusterConfidence,
   ClusterTest,
   FailureCluster,
+  FixturePhase,
+  PlaywrightVerb,
 } from '@playwright-reports/shared';
-import { anchorKey, classify } from './classify.js';
 import { type ParsedFailureDetails, parseFailureDetails } from './extractors/failure-details.js';
+import { extractVerb } from './extractors/verb.js';
+import {
+  canonicalKey,
+  FIXTURE_PREFIX,
+  FRAME_PREFIX,
+  GLOBAL_PREFIX,
+  keysFor,
+  LOCATOR_PREFIX,
+  MESSAGE_PREFIX,
+} from './keys.js';
+import { type RouteScope, route } from './route.js';
 import type { FailedTestRun, TestMeta } from './types.js';
 import { testKey } from './types.js';
+import { UnionFind } from './union-find.js';
 
 export type ReportUrlLookup = (reportId: string) => string | undefined;
 
 interface AnnotatedRun {
   run: FailedTestRun;
   parsed: ParsedFailureDetails;
-  anchor: ClusterAnchor;
+  keys: string[];
 }
+
+const ADJACENT_FRAME_LINE_GAP = 10;
 
 export function buildClusters(
   failedRuns: FailedTestRun[],
   metaByKey: Map<string, TestMeta>,
   resolveReportUrl: ReportUrlLookup
 ): FailureCluster[] {
-  // 1. Annotate every run with its parsed failure_details and anchor.
+  // Annotate every run with parsed details and its clustering keys; feed
+  //    keys into a union-find, linking all keys of a single run.
   const annotated: AnnotatedRun[] = [];
+  const uf = new UnionFind();
   for (const run of failedRuns) {
     const parsed = parseFailureDetails(run.failureDetails);
     if (!parsed) continue;
-    annotated.push({ run, parsed, anchor: classify(run, parsed) });
+    const keys = keysFor(parsed, route(parsed.message));
+    for (const key of keys) uf.add(key);
+    for (let i = 1; i < keys.length; i++) uf.union(keys[0], keys[i]);
+    annotated.push({ run, parsed, keys });
   }
 
-  // 2. Bucket by anchor key.
-  const buckets = new Map<string, AnnotatedRun[]>();
+  // Adjacency: union frame keys in the same file within a short line gap, so
+  //    multiple assertions on adjacent lines form one cluster (verb-agnostic).
+  unionAdjacentFrames(uf);
+
+  // Group runs by their component, collecting the component's full key set.
+  interface Component {
+    members: AnnotatedRun[];
+    keys: Set<string>;
+  }
+  const components = new Map<string, Component>();
   for (const a of annotated) {
-    const key = anchorKey(a.anchor);
-    const list = buckets.get(key);
-    if (list) list.push(a);
-    else buckets.set(key, [a]);
+    const root = uf.find(a.keys[0]);
+    let comp = components.get(root);
+    if (!comp) {
+      comp = { members: [], keys: new Set() };
+      components.set(root, comp);
+    }
+    comp.members.push(a);
+    for (const key of a.keys) comp.keys.add(key);
   }
 
-  // 3. Coalesce adjacent-line frame buckets in the same (file, verb) within
-  //    a short line window. Same helper function with multiple assertions on
-  //    adjacent lines otherwise produces a separate cluster per assertion line
-  coalesceAdjacentFrameBuckets(buckets);
-
-  // 4. Emit one cluster per bucket.
+  // Emit one cluster per component.
   const clusters: FailureCluster[] = [];
-  for (const [key, members] of buckets) {
-    clusters.push(buildOneCluster(members[0].anchor, key, members, metaByKey, resolveReportUrl));
+  for (const comp of components.values()) {
+    const canonical = canonicalKey([...comp.keys]);
+    clusters.push(buildOneCluster(canonical, comp.members, metaByKey, resolveReportUrl));
   }
 
-  // 5. Impact-sort: higher failureCount × testCount come first.
+  // Impact-sort: higher failureCount x testCount come first.
   clusters.sort((a, b) => {
     const impact = b.failureCount * b.testCount - a.failureCount * a.testCount;
     if (impact !== 0) return impact;
@@ -62,72 +90,46 @@ export function buildClusters(
   return clusters;
 }
 
-const ADJACENT_FRAME_LINE_GAP = 10;
-
-function coalesceAdjacentFrameBuckets(buckets: Map<string, AnnotatedRun[]>): void {
-  interface Entry {
+function unionAdjacentFrames(uf: UnionFind): void {
+  interface FrameNode {
     key: string;
     file: string;
     line: number;
-    verb: string;
   }
-  // Group frame buckets by (file, verb).
-  const groups = new Map<string, Entry[]>();
-  for (const [key, members] of buckets) {
-    const anchor = members[0].anchor;
-    if (anchor.kind !== 'frame') continue;
-    const m = /^(.*):(\d+)$/.exec(anchor.frame);
+  const byFile = new Map<string, FrameNode[]>();
+  for (const node of uf.nodes()) {
+    if (!node.startsWith(FRAME_PREFIX)) continue;
+    const body = node.slice(FRAME_PREFIX.length);
+    const m = /^(.*):(\d+)$/.exec(body);
     if (!m) continue;
-    const file = m[1];
     const line = Number.parseInt(m[2], 10);
     if (!Number.isFinite(line)) continue;
-    const groupKey = `${file}|${anchor.verb}`;
-    const entry: Entry = { key, file, line, verb: anchor.verb };
-    const arr = groups.get(groupKey);
-    if (arr) arr.push(entry);
-    else groups.set(groupKey, [entry]);
+    const file = m[1];
+    const arr = byFile.get(file);
+    if (arr) arr.push({ key: node, file, line });
+    else byFile.set(file, [{ key: node, file, line }]);
   }
-
-  for (const entries of groups.values()) {
-    if (entries.length < 2) continue;
-    entries.sort((a, b) => a.line - b.line);
-    // sliding-window merge: each entry joins the previous if within
-    // the line gap. Keeps the anchor on the lowest line.
-    let survivor = entries[0];
-    for (let i = 1; i < entries.length; i++) {
-      const next = entries[i];
-      if (next.line - survivor.line <= ADJACENT_FRAME_LINE_GAP) {
-        // Move members of `next` into `survivor` and drop the next bucket.
-        const survivorMembers = buckets.get(survivor.key);
-        const nextMembers = buckets.get(next.key);
-        if (survivorMembers && nextMembers) {
-          // Rewrite frame anchor on incoming members so anchorKey/clusterId
-          // stays consistent inside the surviving bucket.
-          for (const m of nextMembers) {
-            if (m.anchor.kind === 'frame') {
-              m.anchor = { ...m.anchor, frame: `${survivor.file}:${survivor.line}` };
-            }
-            survivorMembers.push(m);
-          }
-          buckets.delete(next.key);
-        }
-        // Don't advance survivor - stay anchored on the lowest line so
-        // every following member that fits the window merges in too.
-      } else {
-        survivor = next;
+  for (const list of byFile.values()) {
+    if (list.length < 2) continue;
+    list.sort((a, b) => a.line - b.line);
+    for (let i = 1; i < list.length; i++) {
+      if (list[i].line - list[i - 1].line <= ADJACENT_FRAME_LINE_GAP) {
+        uf.union(list[i - 1].key, list[i].key);
       }
     }
   }
 }
 
 function buildOneCluster(
-  anchor: ClusterAnchor,
-  key: string,
+  canonical: string,
   members: AnnotatedRun[],
   metaByKey: Map<string, TestMeta>,
   resolveReportUrl: ReportUrlLookup
 ): FailureCluster {
-  const id = clusterId(key);
+  const id = clusterId(canonical);
+  const scope: RouteScope = canonical.startsWith(GLOBAL_PREFIX) ? 'global' : 'local';
+  const verb = modalVerb(members);
+  const anchor = deriveAnchor(canonical, verb);
 
   const byTest = new Map<
     string,
@@ -137,12 +139,7 @@ function buildOneCluster(
     const k = testKey(run.testId, run.fileId, run.project);
     const existing = byTest.get(k);
     if (!existing) {
-      byTest.set(k, {
-        run,
-        occurrences: 1,
-        lastSeen: run.createdAt,
-        lastReportId: run.reportId,
-      });
+      byTest.set(k, { run, occurrences: 1, lastSeen: run.createdAt, lastReportId: run.reportId });
     } else {
       existing.occurrences++;
       if (run.createdAt > existing.lastSeen) {
@@ -181,15 +178,11 @@ function buildOneCluster(
   }
   const category = [...categoryCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
 
-  const sigGlobals = new Set<string>();
-  for (const { run } of members) {
-    if (run.errorSignatureGlobal) sigGlobals.add(run.errorSignatureGlobal);
-  }
-
   return {
     id,
     anchor,
-    name: buildName(anchor, sampleMessage, tests),
+    scope,
+    name: buildName(anchor, scope, category, sampleMessage, members),
     sampleMessage,
     sampleCodeframe,
     category,
@@ -198,8 +191,47 @@ function buildOneCluster(
     testCount: tests.length,
     failureCount: members.length,
     tests,
-    signatureGlobals: sigGlobals.size > 0 ? [...sigGlobals] : undefined,
   };
+}
+
+// get the display anchor from the component's canonical key.
+function deriveAnchor(canonical: string, verb: PlaywrightVerb): ClusterAnchor {
+  if (canonical.startsWith(FIXTURE_PREFIX)) {
+    const body = canonical.slice(FIXTURE_PREFIX.length);
+    const sep = body.indexOf(':');
+    const phase = (sep === -1 ? body : body.slice(0, sep)) as FixturePhase;
+    const filePath = sep === -1 ? '' : body.slice(sep + 1);
+    return { kind: 'fixture', verb, phase, filePath };
+  }
+  if (canonical.startsWith(LOCATOR_PREFIX)) {
+    return { kind: 'selector', verb, selector: canonical.slice(LOCATOR_PREFIX.length) };
+  }
+  if (canonical.startsWith(FRAME_PREFIX)) {
+    return { kind: 'frame', verb, frame: canonical.slice(FRAME_PREFIX.length) };
+  }
+  const signature = canonical.startsWith(GLOBAL_PREFIX)
+    ? canonical.slice(GLOBAL_PREFIX.length)
+    : canonical.slice(MESSAGE_PREFIX.length);
+  return { kind: 'signature', verb, signature };
+}
+
+// most common verb across member runs for display
+function modalVerb(members: AnnotatedRun[]): PlaywrightVerb {
+  const counts = new Map<PlaywrightVerb, number>();
+  for (const m of members) {
+    const v = extractVerb(m.parsed.message);
+    counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  let best: PlaywrightVerb = 'unknown';
+  let bestCount = -1;
+  for (const [v, n] of counts) {
+    // prefer a meaningful verb over 'unknown' on ties.
+    if (n > bestCount || (n === bestCount && best === 'unknown' && v !== 'unknown')) {
+      best = v;
+      bestCount = n;
+    }
+  }
+  return best;
 }
 
 const CHRONIC_FLAKE_MIN_FAILURES = 10;
@@ -208,14 +240,11 @@ function isChronicFlake(testCount: number, failureCount: number): boolean {
   return testCount === 1 && failureCount >= CHRONIC_FLAKE_MIN_FAILURES;
 }
 
-/** Stable ID = hex sha1 of the anchor key, truncated to 16 chars. Same anchor
- *  → same ID, across calls and across servers. */
+/** stable ID = hex sha1 of the canonical key, truncated to 16 chars. */
 function clusterId(key: string): string {
   return createHash('sha1').update(key).digest('hex').slice(0, 16);
 }
 
-/** Pick the most representative run in a cluster — the one whose message
- *  shape repeats most often. */
 function pickRepresentativeSample(members: AnnotatedRun[]): AnnotatedRun {
   if (members.length === 1) return members[0];
   const shapeCounts = new Map<string, { count: number; member: AnnotatedRun }>();
@@ -224,8 +253,6 @@ function pickRepresentativeSample(members: AnnotatedRun[]): AnnotatedRun {
     const existing = shapeCounts.get(shape);
     if (existing) {
       existing.count++;
-      // Prefer the most-recent member within the modal shape so the sample
-      // also has a recent createdAt — keeps the cluster's lastSeen aligned.
       if (m.run.createdAt > existing.member.run.createdAt) existing.member = m;
     } else {
       shapeCounts.set(shape, { count: 1, member: m });
@@ -255,29 +282,91 @@ function extractCodeframeLine(message: string): string | undefined {
   return undefined;
 }
 
-/** Human-readable cluster name shaped as a sentence */
-function buildName(anchor: ClusterAnchor, sampleMessage: string, tests: ClusterTest[]): string {
+// readable labels for the heuristic failure categories.
+const CATEGORY_LABELS: Record<string, string> = {
+  element_not_visible: 'Element not visible',
+  element_not_found: 'Element not found',
+  assertion_error: 'Assertion failed',
+  timeout: 'Timeout',
+  network_error: 'Network error',
+  api_error: 'API error',
+  authentication_error: 'Auth error',
+  navigation_error: 'Navigation error',
+  browser_crash: 'Browser crash',
+  snapshot_mismatch: 'Snapshot mismatch',
+  setup_teardown: 'Setup/teardown failure',
+  javascript_error: 'JS error',
+};
+
+/**
+ * readable cluster name:
+ *   `[Local|Global] <what> [on <target>] [in <file:line> | across N files]`
+ * location is included only when the cluster's failures share one file
+ * when it spans several use "across N files" instead.
+ */
+function buildName(
+  anchor: ClusterAnchor,
+  scope: RouteScope,
+  category: string | undefined,
+  sampleMessage: string,
+  members: AnnotatedRun[]
+): string {
+  const scopeLabel = scope === 'global' ? 'Global' : 'Local';
+  const categoryLabel = category ? CATEGORY_LABELS[category] : undefined;
+
+  let what = 'Failure';
+  let target: string | undefined;
+  let location: string | undefined;
+
   switch (anchor.kind) {
     case 'fixture':
-      return `${anchor.phase} hook failure in ${anchor.filePath}`;
+      what = `${anchor.phase} hook failure`;
+      location = anchor.filePath || undefined;
+      break;
     case 'selector':
-      return `${verbLabel(anchor.verb)} on ${truncate(anchor.selector, 80)}`;
+      what = categoryLabel ?? verbLabel(anchor.verb);
+      target = truncate(anchor.selector, 60);
+      location = sharedLocation(members);
+      break;
     case 'frame':
-      return `${verbLabel(anchor.verb)} at ${anchor.frame}`;
+      what = categoryLabel ?? verbLabel(anchor.verb);
+      location = anchor.frame; // single by construction
+      break;
     case 'signature': {
-      const symptom = firstSignificantLine(sampleMessage);
-      const verb = verbLabel(anchor.verb);
-      return symptom ? `${verb}: ${truncate(symptom, 70)}` : `${verb} (shared signature)`;
-    }
-    case 'unmatched': {
-      const title = tests[0]?.title ?? 'Unknown test';
-      const symptom = firstSignificantLine(sampleMessage);
-      return symptom ? `Unmatched: ${title} — ${truncate(symptom, 60)}` : `Unmatched: ${title}`;
+      what = categoryLabel ?? firstSignificantLine(sampleMessage) ?? verbLabel(anchor.verb);
+      what = truncate(what, 70);
+      // global signatures intentionally span files — no single location.
+      location = scope === 'global' ? undefined : sharedLocation(members);
+      break;
     }
   }
+
+  let name = `${scopeLabel} · ${what}`;
+  if (target) name += ` on ${target}`;
+  if (location) name += ` in ${location}`;
+  return name;
 }
 
-/** Friendly verb labels for the cluster name. */
+/**
+ * The shared file:line across members, for the name's "in …" suffix:
+ *   - one distinct frame -> that frame (file:line)
+ *   - one distinct file (varying lines) -> just the file
+ *   - several files -> undefined (caller renders "across N files" / nothing)
+ */
+function sharedLocation(members: AnnotatedRun[]): string | undefined {
+  const frames = new Set<string>();
+  for (const m of members) {
+    for (const key of m.keys) {
+      if (key.startsWith(FRAME_PREFIX)) frames.add(key.slice(FRAME_PREFIX.length));
+    }
+  }
+  if (frames.size === 0) return undefined;
+  if (frames.size === 1) return [...frames][0];
+  const files = new Set([...frames].map((f) => f.replace(/:\d+$/, '')));
+  if (files.size === 1) return [...files][0];
+  return `${files.size} files`;
+}
+
 function verbLabel(verb: string): string {
   if (verb === 'strictModeViolation') return 'Ambiguous selector';
   if (verb === 'testTimeout') return 'Test timeout';
@@ -285,12 +374,12 @@ function verbLabel(verb: string): string {
   return verb;
 }
 
-function firstSignificantLine(message: string): string {
+function firstSignificantLine(message: string): string | undefined {
   return (
     message
       .split('\n')
       .find((l) => l.trim().length > 0)
-      ?.trim() ?? ''
+      ?.trim() ?? undefined
   );
 }
 
@@ -298,10 +387,6 @@ function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
-/** Confidence reflects how reliably "one fix resolves all" holds for a
- *  cluster. Used by the UI to visually tier cards and by the LLM to weight
- *  whether to investigate the cluster as a single root cause vs. as a
- *  collection of similar-looking failures. */
 function deriveConfidence(
   kind: ClusterAnchor['kind'],
   testCount: number,
@@ -311,6 +396,5 @@ function deriveConfidence(
   if (kind === 'unmatched') return 'low';
   if (testCount >= 3) return 'high';
   if (testCount === 2) return 'medium';
-  // testCount === 1
   return failureCount >= 3 ? 'medium' : 'low';
 }

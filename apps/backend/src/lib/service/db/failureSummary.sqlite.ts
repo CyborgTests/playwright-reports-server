@@ -219,7 +219,6 @@ export class FailureSummaryDatabase {
         'outcome',
         'failure_category as category',
         'error_signature as signature',
-        'error_signature_global as signatureGlobal',
         'failure_details',
         'createdAt',
       ])
@@ -239,7 +238,6 @@ export class FailureSummaryDatabase {
       outcome: string;
       category: string;
       signature: string | null;
-      signatureGlobal: string | null;
       failure_details: Buffer | string | null;
       createdAt: string;
     }>;
@@ -265,7 +263,7 @@ export class FailureSummaryDatabase {
       totalFailures++;
       categoryCounts[row.category] = (categoryCounts[row.category] ?? 0) + 1;
 
-      const groupKey = row.signatureGlobal || row.signature || `category::${row.category}`;
+      const groupKey = row.signature || `category::${row.category}`;
       const existing = errorMap.get(groupKey);
       if (existing) {
         existing.count++;

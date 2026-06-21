@@ -108,7 +108,7 @@ export const CLUSTER_KIND_DESCRIPTIONS: Record<ClusterAnchorKind, string> = {
   frame:
     'Tests crash at the same line of app code. The frame is the literal fix location (file:line).',
   signature:
-    "Tests share an error_signature_global but no extractable fixture/selector/frame anchor. Often a deep-stack failure pattern (timeouts, framework errors) that the upstream extractors can't pin to a single line.",
+    "Tests share a normalized error signature but no extractable fixture/selector/frame anchor. Either a global (server/network/browser-infra) failure clustered across files, or a deep-stack pattern (timeouts, framework errors) the extractors can't pin to a single line.",
   unmatched:
     'No extractable fix mechanism — the failure shape is unique to the test. Anchored to test identity so repeated failures of the same test still group together.',
 };
@@ -150,7 +150,7 @@ export interface FailureCluster {
   testCount: number;
   failureCount: number;
   tests: ClusterTest[];
-  signatureGlobals?: string[];
+  scope?: 'global' | 'local';
   regressionContext?: ClusterRegressionContext;
   lifecycle?: ClusterLifecycle;
   resolution?: ClusterResolution;

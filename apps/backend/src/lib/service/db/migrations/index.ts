@@ -9,6 +9,7 @@ import * as pruneIndexes from './0005_prune_indexes.js';
 import * as promoteReportStats from './0006_promote_report_stats.js';
 import * as testStateToTestLevel from './0007_test_state_to_test_level.js';
 import * as pruneRedundantIndexes from './0008_prune_redundant_indexes.js';
+import * as resetResolutionsDropSignatureGlobal from './0009_reset_resolutions_drop_signature_global.js';
 
 // Ordered, statically-imported migration set. The keys are the names Kysely
 // records in its `kysely_migration` table; their lexical order is the run order,
@@ -27,6 +28,10 @@ const MIGRATIONS: Record<string, Migration> = {
   '0008_prune_redundant_indexes': {
     up: pruneRedundantIndexes.up,
     down: pruneRedundantIndexes.down,
+  },
+  '0009_reset_resolutions_drop_signature_global': {
+    up: resetResolutionsDropSignatureGlobal.up,
+    down: resetResolutionsDropSignatureGlobal.down,
   },
 };
 
