@@ -10,11 +10,7 @@ import * as promoteReportStats from './0006_promote_report_stats.js';
 import * as testStateToTestLevel from './0007_test_state_to_test_level.js';
 import * as pruneRedundantIndexes from './0008_prune_redundant_indexes.js';
 import * as resetResolutionsDropSignatureGlobal from './0009_reset_resolutions_drop_signature_global.js';
-import * as addLlmModels from './0010_add_llm_models.js';
-import * as llmModelsTaskTemperatures from './0011_llm_models_task_temperatures.js';
-import * as dropLlmModelTier from './0012_drop_llm_model_tier.js';
-import * as llmTaskRoles from './0013_llm_task_roles.js';
-import * as renameLlmModelIsPrimary from './0014_rename_llm_model_is_active_to_is_primary.js';
+import * as llmModelRegistry from './0010_llm_model_registry.js';
 
 // Ordered, statically-imported migration set. The keys are the names Kysely
 // records in its `kysely_migration` table; their lexical order is the run order,
@@ -38,17 +34,7 @@ const MIGRATIONS: Record<string, Migration> = {
     up: resetResolutionsDropSignatureGlobal.up,
     down: resetResolutionsDropSignatureGlobal.down,
   },
-  '0010_add_llm_models': { up: addLlmModels.up, down: addLlmModels.down },
-  '0011_llm_models_task_temperatures': {
-    up: llmModelsTaskTemperatures.up,
-    down: llmModelsTaskTemperatures.down,
-  },
-  '0012_drop_llm_model_tier': { up: dropLlmModelTier.up, down: dropLlmModelTier.down },
-  '0013_llm_task_roles': { up: llmTaskRoles.up, down: llmTaskRoles.down },
-  '0014_rename_llm_model_is_active_to_is_primary': {
-    up: renameLlmModelIsPrimary.up,
-    down: renameLlmModelIsPrimary.down,
-  },
+  '0010_llm_model_registry': { up: llmModelRegistry.up, down: llmModelRegistry.down },
 };
 
 class StaticMigrationProvider implements MigrationProvider {
