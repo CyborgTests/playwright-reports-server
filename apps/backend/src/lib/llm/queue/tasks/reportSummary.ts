@@ -359,24 +359,16 @@ async function maybeEnqueueAutoProjectSummary(
     return;
   }
 
-  const targets = new Set<string>();
-  if (project) targets.add(project);
-  targets.add('all');
-
-  const queued: string[] = [];
-  const skipped: string[] = [];
-  for (const projectKey of targets) {
-    if (llmTasksDb.findInflightProjectSummary(projectKey)) {
-      skipped.push(projectKey);
-      continue;
-    }
-    llmTasksDb.createTask('project_summary', {
-      project: projectKey,
-      priority: AUTO_PROJECT_SUMMARY_PRIORITY,
-    });
-    queued.push(projectKey);
+  const projectKey = project || 'all';
+  if (llmTasksDb.findInflightProjectSummary(projectKey)) {
+    console.log(
+      `[llmQueue] Auto project_summary after report ${reportId} - skipped (in-flight): ${projectKey}`
+    );
+    return;
   }
-  console.log(
-    `[llmQueue] Auto project_summary after report ${reportId} - queued: ${queued.join(', ') || 'none'}; skipped (in-flight): ${skipped.join(', ') || 'none'}`
-  );
+  llmTasksDb.createTask('project_summary', {
+    project: projectKey,
+    priority: AUTO_PROJECT_SUMMARY_PRIORITY,
+  });
+  console.log(`[llmQueue] Auto project_summary after report ${reportId} - queued: ${projectKey}`);
 }
