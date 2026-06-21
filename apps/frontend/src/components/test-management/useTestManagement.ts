@@ -133,21 +133,25 @@ export function useTestMutations({
     },
   });
 
-  const { mutate: resetFlakinessMutation } = useMutation('/api/test', {
-    method: 'POST',
-    onSuccess: () => {
-      invalidateCache(queryClient, { predicate: '/api/tests' });
-      toast.success('Flakiness score reset — new flakiness will be tracked from now');
-    },
-  });
+  const { mutate: resetFlakinessMutation, isPending: isResetFlakinessPending } = useMutation(
+    '/api/test',
+    {
+      method: 'POST',
+      onSuccess: () => {
+        invalidateCache(queryClient, { predicate: '/api/tests' });
+        toast.success('Flakiness score reset — new flakiness will be tracked from now');
+      },
+    }
+  );
 
-  const { mutate: clearFlakinessResetMutation } = useMutation('/api/test', {
-    method: 'DELETE',
-    onSuccess: () => {
-      invalidateCache(queryClient, { predicate: '/api/tests' });
-      toast.success('Flakiness reset removed — score recomputed over full window');
-    },
-  });
+  const { mutate: clearFlakinessResetMutation, isPending: isClearFlakinessResetPending } =
+    useMutation('/api/test', {
+      method: 'DELETE',
+      onSuccess: () => {
+        invalidateCache(queryClient, { predicate: '/api/tests' });
+        toast.success('Flakiness reset removed — score recomputed over full window');
+      },
+    });
 
   return {
     updateQuarantineMutation,
@@ -155,6 +159,8 @@ export function useTestMutations({
     deleteTestMutation,
     isDeletePending,
     resetFlakinessMutation,
+    isResetFlakinessPending,
     clearFlakinessResetMutation,
+    isClearFlakinessResetPending,
   };
 }

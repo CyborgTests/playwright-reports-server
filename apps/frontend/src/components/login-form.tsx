@@ -13,6 +13,7 @@ export default function LoginForm() {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
   const [isAutoSigningIn, setIsAutoSigningIn] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const session = useAuth();
   const [searchParams] = useSearchParams();
@@ -52,19 +53,25 @@ export default function LoginForm() {
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isSubmitting) return;
 
-    const result = await signIn('credentials', {
-      apiToken: input,
-      redirect: false,
-    });
+    setIsSubmitting(true);
+    try {
+      const result = await signIn('credentials', {
+        apiToken: input,
+        redirect: false,
+      });
 
-    if (result?.error) {
-      setError('Invalid API key');
-    } else {
-      if (result?.user?.jwtToken) {
-        localStorage.setItem('jwtToken', result.user.jwtToken);
+      if (result?.error) {
+        setError('Invalid API key');
+      } else {
+        if (result?.user?.jwtToken) {
+          localStorage.setItem('jwtToken', result.user.jwtToken);
+        }
+        navigate(callbackUrl, { replace: true });
       }
-      navigate(callbackUrl, { replace: true });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -115,8 +122,9 @@ export default function LoginForm() {
               </div>
             </CardContent>
             <CardFooter className="pt-4">
-              <Button type="submit" className="w-full" size="lg">
-                Sign In
+              <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
+                {isSubmitting && <Spinner className="mr-2 h-4 w-4" />}
+                {isSubmitting ? 'Signing in…' : 'Sign In'}
               </Button>
             </CardFooter>
           </form>

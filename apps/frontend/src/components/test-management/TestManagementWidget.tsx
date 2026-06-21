@@ -64,6 +64,8 @@ interface TestRowProps {
   stale: boolean;
   regressionFilterActive: boolean;
   regressionHighlightMode: 'opened' | 'closed' | null;
+  isResetFlakinessPending: boolean;
+  isClearFlakinessResetPending: boolean;
   onQuarantine: (test: TestWithQuarantineInfo) => void;
   onResetFlakiness: (test: TestWithQuarantineInfo) => void;
   onClearFlakinessReset: (test: TestWithQuarantineInfo) => void;
@@ -79,6 +81,8 @@ const TestRow = memo(
       stale,
       regressionFilterActive,
       regressionHighlightMode,
+      isResetFlakinessPending,
+      isClearFlakinessResetPending,
       onQuarantine,
       onResetFlakiness,
       onClearFlakinessReset,
@@ -188,11 +192,17 @@ const TestRow = memo(
                 {item.isQuarantined ? 'Remove Quarantine' : 'Send Quarantine'}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onResetFlakiness(item)}>
+              <DropdownMenuItem
+                onClick={() => onResetFlakiness(item)}
+                disabled={isResetFlakinessPending}
+              >
                 Reset Flakiness Score
               </DropdownMenuItem>
               {item.flakinessResetAt && (
-                <DropdownMenuItem onClick={() => onClearFlakinessReset(item)}>
+                <DropdownMenuItem
+                  onClick={() => onClearFlakinessReset(item)}
+                  disabled={isClearFlakinessResetPending}
+                >
                   Remove Flakiness Reset
                 </DropdownMenuItem>
               )}
@@ -277,7 +287,9 @@ export default function TestManagementWidget({
     deleteTestMutation,
     isDeletePending,
     resetFlakinessMutation,
+    isResetFlakinessPending,
     clearFlakinessResetMutation,
+    isClearFlakinessResetPending,
   } = useTestMutations({
     onQuarantineSuccess: () => {
       setIsQuarantineModalOpen(false);
@@ -468,6 +480,8 @@ export default function TestManagementWidget({
                         stale={isStale(item)}
                         regressionFilterActive={regressionFilterActive}
                         regressionHighlightMode={regressionHighlightMode}
+                        isResetFlakinessPending={isResetFlakinessPending}
+                        isClearFlakinessResetPending={isClearFlakinessResetPending}
                         onQuarantine={handleQuarantineAction}
                         onResetFlakiness={handleResetFlakiness}
                         onClearFlakinessReset={handleClearFlakinessReset}
