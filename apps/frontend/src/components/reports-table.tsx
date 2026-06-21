@@ -313,12 +313,14 @@ interface ReportsTableProps {
   selected?: string[];
   onSelect?: (reports: ReportHistory[]) => void;
   onChange: () => void;
+  actions?: React.ReactNode;
 }
 
 export default function ReportsTable({
   selected,
   onSelect,
   onChange,
+  actions,
 }: Readonly<ReportsTableProps>) {
   const reportListEndpoint = '/api/report/list';
   const [searchParams] = useSearchParams();
@@ -491,6 +493,7 @@ export default function ReportsTable({
         selectedTags={selectedTags}
         selectedDateRange={dateRange}
         selectedPassRate={passRate}
+        actions={actions}
       />
       <div className="rounded-md border border-border/50 overflow-x-auto">
         <Table>

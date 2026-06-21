@@ -106,7 +106,7 @@ export default function GenerateReportButton({
       <DialogTrigger asChild>
         <Button disabled={!results?.length}>
           {isPending && <Spinner className="mr-2 h-4 w-4" />}
-          Generate Report
+          Merge
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">

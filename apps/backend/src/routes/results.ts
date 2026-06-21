@@ -137,7 +137,7 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
       };
 
       const query = request.query as Record<string, string>;
-      const contentLength = query['fileContentLength'] || '';
+      const contentLength = query.fileContentLength || '';
 
       // When fileContentLength is provided we can hand back a presigned URL for direct upload.
       const presignedUrl = contentLength ? await service.getPresignedUrl(fileName) : '';

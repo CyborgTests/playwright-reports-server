@@ -150,12 +150,14 @@ interface ResultsTableProps {
   selected?: string[];
   onSelect?: (results: Result[]) => void;
   onDeleted?: () => void;
+  actions?: React.ReactNode;
 }
 
 export default function ResultsTable({
   onSelect,
   onDeleted,
   selected,
+  actions,
 }: Readonly<ResultsTableProps>) {
   const resultListEndpoint = '/api/result/list';
   const [searchParams] = useSearchParams();
@@ -315,6 +317,7 @@ export default function ResultsTable({
         selectedProject={project}
         selectedTags={selectedTags}
         selectedDateRange={dateRange}
+        actions={actions}
         extraFilters={
           <Select value={usage} onValueChange={(v) => onUsageChange(v as UsageFilter)}>
             <SelectTrigger className="w-full sm:w-48" aria-label="Filter by usage">

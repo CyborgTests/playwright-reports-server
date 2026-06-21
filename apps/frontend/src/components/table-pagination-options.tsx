@@ -35,6 +35,7 @@ interface TablePaginationRowProps {
   selectedDateRange?: DateRange;
   selectedPassRate?: PassRateFilter;
   extraFilters?: ReactNode;
+  actions?: ReactNode;
 }
 
 const defaultRowPerPageOptions = [10, 20, 40];
@@ -56,6 +57,7 @@ export default function TablePaginationOptions({
   selectedDateRange,
   selectedPassRate = 'all',
   extraFilters,
+  actions,
 }: Readonly<TablePaginationRowProps>) {
   const rowPerPageItems = rowPerPageOptions ?? defaultRowPerPageOptions;
 
@@ -151,6 +153,7 @@ export default function TablePaginationOptions({
             )}
           </div>
         )}
+        {actions}
         <div className="flex items-center gap-2">
           <Label htmlFor="rows-per-page" className="text-sm whitespace-nowrap">
             Rows per page:
