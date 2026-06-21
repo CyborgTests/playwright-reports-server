@@ -189,7 +189,7 @@ export async function runSync(
     }
 
     toUpload.reverse();
-    handle.progress.phase = 'uploading';
+    handle.progress.phase = 'downloading';
     handle.progress.total = toUpload.length;
     handle.progress.current = 0;
     handle.progress.currentArtifact = undefined;
@@ -204,6 +204,7 @@ export async function runSync(
 
       handle.progress.current = i + 1;
       handle.progress.currentArtifact = item.artifact.name;
+      handle.progress.phase = 'downloading';
 
       const matchArr = item.artifact.name.match(pattern) ?? [];
       const ctx = {
@@ -230,6 +231,9 @@ export async function runSync(
           runDate: item.runDate,
           project,
           title,
+          onUploadStart: () => {
+            handle.progress.phase = 'uploading';
+          },
         })
       );
 
@@ -306,6 +310,7 @@ async function uploadOneArtifact(args: {
   runDate: string;
   project: string;
   title: string;
+  onUploadStart?: () => void;
 }): Promise<void> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gh-sync-'));
   const zipPath = path.join(tmpDir, `${args.artifact.id}.zip`);
@@ -313,6 +318,8 @@ async function uploadOneArtifact(args: {
   try {
     const writeStream = createWriteStream(zipPath);
     await args.api.downloadArtifactZip(args.artifact.id, writeStream, args.signal);
+
+    args.onUploadStart?.();
 
     const reportId = randomUUID();
     const metadata = {

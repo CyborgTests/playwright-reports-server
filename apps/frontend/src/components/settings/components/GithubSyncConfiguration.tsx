@@ -2,9 +2,10 @@ import type {
   GithubSyncConfig,
   GithubSyncConfigInput,
   GithubSyncStatus,
+  SyncPhase,
   SyncProgress,
 } from '@playwright-reports/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,8 +21,10 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/hooks/useAuth';
 import { authHeaders } from '@/lib/auth';
+import { cn } from '@/lib/utils';
 import { GithubSyncTemplateFields } from './GithubSyncTemplateFields';
 
 type GithubSyncConfigWithStatus = GithubSyncConfig & { status?: GithubSyncStatus };
@@ -57,41 +60,85 @@ const blankForm: FormState = {
   enabled: true,
 };
 
+const SYNC_STEPS: { key: SyncPhase; label: string }[] = [
+  { key: 'scanning', label: 'Scan workflows' },
+  { key: 'downloading', label: 'Download from GitHub' },
+  { key: 'uploading', label: 'Upload to app' },
+];
+
+function SyncStepper({ phase }: { phase: SyncPhase }) {
+  const activeIndex = SYNC_STEPS.findIndex((s) => s.key === phase);
+  return (
+    <div className="flex items-center gap-1 text-[11px] leading-none">
+      {SYNC_STEPS.map((step, i) => {
+        const state = i < activeIndex ? 'done' : i === activeIndex ? 'active' : 'pending';
+        return (
+          <Fragment key={step.key}>
+            {i > 0 && <span className="text-muted-foreground/40">›</span>}
+            <span
+              className={cn(
+                'flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors',
+                state === 'active' && 'bg-primary/10 font-medium text-primary',
+                state === 'done' && 'text-muted-foreground',
+                state === 'pending' && 'text-muted-foreground/50'
+              )}
+            >
+              <span
+                className={cn(
+                  'flex h-3.5 w-3.5 items-center justify-center rounded-full border text-[9px] tabular-nums',
+                  state === 'active' && 'border-primary text-primary',
+                  state === 'done' && 'border-transparent bg-muted-foreground/20',
+                  state === 'pending' && 'border-muted-foreground/30'
+                )}
+              >
+                {state === 'done' ? '✓' : i + 1}
+              </span>
+              {step.label}
+            </span>
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
 function SyncProgressPanel({ progress }: { progress: SyncProgress }) {
-  if (progress.phase === 'scanning') {
-    return (
-      <div className="rounded-md border bg-muted/30 p-2 space-y-1">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-medium">Scanning workflow runs…</span>
-          <span className="text-muted-foreground">
-            {progress.total} artifact{progress.total === 1 ? '' : 's'} found
-          </span>
-        </div>
-        <Progress value={undefined} className="h-1.5 animate-pulse" />
-      </div>
-    );
-  }
+  const scanning = progress.phase === 'scanning';
   const pct =
     progress.total > 0 ? Math.min(100, Math.round((progress.current / progress.total) * 100)) : 0;
+  const counters = (
+    <span className="text-muted-foreground tabular-nums">
+      ✓ {progress.uploaded}
+      {progress.failed > 0 ? ` · ✕ ${progress.failed}` : ''}
+      {progress.skipped > 0 ? ` · skipped ${progress.skipped}` : ''}
+    </span>
+  );
+
   return (
-    <div className="rounded-md border bg-muted/30 p-2 space-y-1">
+    <div className="rounded-md border bg-muted/30 p-2 space-y-2">
+      <SyncStepper phase={progress.phase} />
       <div className="flex items-center justify-between text-xs">
-        <span className="font-medium tabular-nums">
-          [{progress.current}/{progress.total}] {pct}%
-        </span>
-        <span className="text-muted-foreground tabular-nums">
-          ✓ {progress.uploaded}
-          {progress.failed > 0 ? ` · ✕ ${progress.failed}` : ''}
-          {progress.skipped > 0 ? ` · skipped ${progress.skipped}` : ''}
-        </span>
+        {scanning ? (
+          <span className="font-medium">
+            Scanning workflow runs… {progress.total} artifact{progress.total === 1 ? '' : 's'} found
+          </span>
+        ) : (
+          <span className="font-medium tabular-nums">
+            [{progress.current}/{progress.total}] {pct}%
+          </span>
+        )}
+        {counters}
       </div>
-      <Progress value={pct} className="h-1.5" />
-      {progress.currentArtifact && (
+      <Progress
+        value={scanning ? undefined : pct}
+        className={cn('h-1.5', scanning && 'animate-pulse')}
+      />
+      {!scanning && progress.currentArtifact && (
         <div
           className="text-xs text-muted-foreground font-mono truncate"
           title={progress.currentArtifact}
         >
-          ↓ {progress.currentArtifact}
+          {progress.phase === 'downloading' ? '↓' : '↑'} {progress.currentArtifact}
         </div>
       )}
     </div>
@@ -167,6 +214,8 @@ export default function GithubSyncConfiguration() {
   const [form, setForm] = useState<FormState>(blankForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GithubSyncConfig | null>(null);
   const [deleteClearState, setDeleteClearState] = useState(false);
 
@@ -258,6 +307,7 @@ export default function GithubSyncConfiguration() {
   };
 
   const togglePause = async (cfg: GithubSyncConfig) => {
+    setBusyId(cfg.id);
     try {
       await api(`/api/config/github-sync/${cfg.id}/enabled`, {
         method: 'PATCH',
@@ -267,31 +317,40 @@ export default function GithubSyncConfiguration() {
       await refresh();
     } catch (err) {
       toast.error(`Failed: ${errMessage(err)}`);
+    } finally {
+      setBusyId(null);
     }
   };
 
   const runNow = async (cfg: GithubSyncConfig) => {
+    setBusyId(cfg.id);
     try {
       await api(`/api/config/github-sync/${cfg.id}/run`, { method: 'POST' });
       toast.success(`Started sync for "${cfg.name}"`);
       await refresh();
     } catch (err) {
       toast.error(`Run failed: ${errMessage(err)}`);
+    } finally {
+      setBusyId(null);
     }
   };
 
   const stopRun = async (cfg: GithubSyncConfig) => {
+    setBusyId(cfg.id);
     try {
       await api(`/api/config/github-sync/${cfg.id}/stop`, { method: 'POST' });
       toast.success('Stop requested');
       await refresh();
     } catch (err) {
       toast.error(`Stop failed: ${errMessage(err)}`);
+    } finally {
+      setBusyId(null);
     }
   };
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
+    setDeleting(true);
     try {
       const q = deleteClearState ? '?clearState=true' : '';
       await api(`/api/config/github-sync/${deleteTarget.id}${q}`, { method: 'DELETE' });
@@ -301,6 +360,8 @@ export default function GithubSyncConfiguration() {
       await refresh();
     } catch (err) {
       toast.error(`Delete failed: ${errMessage(err)}`);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -371,15 +432,32 @@ export default function GithubSyncConfiguration() {
                 </div>
                 <div className="flex gap-2 flex-wrap sm:flex-nowrap shrink-0">
                   {cfg.status?.isRunning ? (
-                    <Button size="sm" variant="outline" onClick={() => stopRun(cfg)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => stopRun(cfg)}
+                      disabled={busyId === cfg.id}
+                    >
+                      {busyId === cfg.id && <Spinner className="mr-2 h-4 w-4" />}
                       Stop
                     </Button>
                   ) : (
-                    <Button size="sm" variant="outline" onClick={() => runNow(cfg)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => runNow(cfg)}
+                      disabled={busyId === cfg.id}
+                    >
+                      {busyId === cfg.id && <Spinner className="mr-2 h-4 w-4" />}
                       Run now
                     </Button>
                   )}
-                  <Button size="sm" variant="outline" onClick={() => togglePause(cfg)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => togglePause(cfg)}
+                    disabled={busyId === cfg.id}
+                  >
                     {cfg.enabled ? 'Pause' : 'Resume'}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => openEdit(cfg)}>
@@ -580,6 +658,7 @@ export default function GithubSyncConfiguration() {
           <DialogFooter>
             <Button
               variant="outline"
+              disabled={deleting}
               onClick={() => {
                 setDeleteTarget(null);
                 setDeleteClearState(false);
@@ -587,7 +666,8 @@ export default function GithubSyncConfiguration() {
             >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmDelete}>
+            <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
+              {deleting && <Spinner className="mr-2 h-4 w-4" />}
               Delete
             </Button>
           </DialogFooter>

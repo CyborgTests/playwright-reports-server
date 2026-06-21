@@ -30,8 +30,10 @@ export interface GithubSyncRun {
   message?: string;
 }
 
+export type SyncPhase = 'scanning' | 'downloading' | 'uploading';
+
 export interface SyncProgress {
-  phase: 'scanning' | 'uploading';
+  phase: SyncPhase;
   total: number;
   current: number;
   currentArtifact?: string;
