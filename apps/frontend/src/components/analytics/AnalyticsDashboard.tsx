@@ -265,6 +265,7 @@ export default function AnalyticsDashboard() {
           metrics={runHealth.metrics}
           isLoading={isLoading}
           totalRuns={overviewStats?.totalRuns}
+          scopeKey={runHealth.scopeKey}
           onLoadPrevious={runHealth.loadPrevious}
           hasMorePrevious={runHealth.hasMore}
           isLoadingPrevious={runHealth.isLoadingPrevious}

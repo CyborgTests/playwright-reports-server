@@ -43,14 +43,15 @@ export function useRunHealthLazy(
     [project, from, to, failedOnly]
   );
 
+  const scopeKey = `${project ?? ''}|${from ?? ''}|${to ?? ''}|${failedOnly ? 1 : 0}`;
   const { items, loadPrevious, hasMore, isLoadingPrevious } = useLazyPrevious<RunHealthMetric>({
     initial: initialMetrics,
     total: totalRuns,
-    scopeKey: `${project ?? ''}|${from ?? ''}|${to ?? ''}|${failedOnly ? 1 : 0}`,
+    scopeKey,
     getKey,
     getCursor,
     fetchPage,
   });
 
-  return { metrics: items, loadPrevious, hasMore, isLoadingPrevious };
+  return { metrics: items, loadPrevious, hasMore, isLoadingPrevious, scopeKey };
 }

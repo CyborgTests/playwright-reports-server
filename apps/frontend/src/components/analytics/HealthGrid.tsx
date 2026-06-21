@@ -8,6 +8,7 @@ interface HealthGridProps {
   metrics: RunHealthMetric[];
   isLoading?: boolean;
   totalRuns?: number;
+  scopeKey?: string;
   onLoadPrevious?: () => void;
   hasMorePrevious?: boolean;
   isLoadingPrevious?: boolean;
@@ -291,6 +292,7 @@ function HealthGridImpl({
   metrics,
   isLoading,
   totalRuns,
+  scopeKey,
   onLoadPrevious,
   hasMorePrevious = false,
   isLoadingPrevious = false,
@@ -353,10 +355,19 @@ function HealthGridImpl({
     return () => observer.disconnect();
   }, [scrollContainer]);
 
+  const scrollSyncRef = useRef<{ scopeKey?: string; newestRunId?: string; length: number }>({
+    length: 0,
+  });
+
   const onScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
       const left = e.currentTarget.scrollLeft;
-      if (left < PREVIOUS_LOAD_THRESHOLD_PX && hasMorePrevious && !isLoadingPrevious) {
+      if (
+        left < PREVIOUS_LOAD_THRESHOLD_PX &&
+        hasMorePrevious &&
+        !isLoadingPrevious &&
+        scrollSyncRef.current.scopeKey === scopeKey
+      ) {
         onLoadPrevious?.();
       }
       if (rafRef.current) return;
@@ -365,7 +376,7 @@ function HealthGridImpl({
         setScrollLeft(left);
       });
     },
-    [hasMorePrevious, isLoadingPrevious, onLoadPrevious]
+    [hasMorePrevious, isLoadingPrevious, onLoadPrevious, scopeKey]
   );
 
   const totalWidth = chartData.length * BAR_PX;
@@ -381,12 +392,12 @@ function HealthGridImpl({
   const windowWidth = overflow ? windowData.length * BAR_PX : Math.max(containerWidth, totalWidth);
   const offsetX = overflow ? start * BAR_PX : 0;
 
-  const scrollSyncRef = useRef<{ newestRunId?: string; length: number }>({ length: 0 });
   useLayoutEffect(() => {
     if (!scrollContainer || isLoading || chartData.length === 0) return;
     const newestRunId = chartData[chartData.length - 1]?.runId;
     const prev = scrollSyncRef.current;
-    if (prev.newestRunId !== newestRunId) {
+    const scopeChanged = prev.scopeKey !== scopeKey;
+    if (scopeChanged || prev.newestRunId !== newestRunId) {
       scrollContainer.scrollLeft = scrollContainer.scrollWidth;
       setScrollLeft(scrollContainer.scrollLeft);
     } else if (chartData.length > prev.length) {
@@ -394,8 +405,8 @@ function HealthGridImpl({
       scrollContainer.scrollLeft += added * BAR_PX;
       setScrollLeft(scrollContainer.scrollLeft);
     }
-    scrollSyncRef.current = { newestRunId, length: chartData.length };
-  }, [scrollContainer, chartData, isLoading]);
+    scrollSyncRef.current = { scopeKey, newestRunId, length: chartData.length };
+  }, [scrollContainer, chartData, isLoading, scopeKey]);
 
   return (
     <Card>

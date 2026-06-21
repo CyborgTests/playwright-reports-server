@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+
+interface ScopedState<T> {
+  scopeKey: string;
+  previous: T[];
+  exhausted: boolean;
+}
 
 export function useLazyPrevious<T>({
   initial,
@@ -15,16 +21,16 @@ export function useLazyPrevious<T>({
   getCursor: (item: T) => string;
   fetchPage: (before: string) => Promise<{ items: T[]; hasMore: boolean }>;
 }) {
-  const [previous, setPrevious] = useState<T[]>([]);
+  const [state, setState] = useState<ScopedState<T>>({ scopeKey, previous: [], exhausted: false });
   const [isLoadingPrevious, setIsLoadingPrevious] = useState(false);
-  const [exhausted, setExhausted] = useState(false);
   const loadingRef = useRef(false);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset keyed on scopeKey only
-  useEffect(() => {
-    setPrevious([]);
-    setExhausted(false);
-  }, [scopeKey]);
+  if (state.scopeKey !== scopeKey) {
+    setState({ scopeKey, previous: [], exhausted: false });
+  }
+  const scopeMatches = state.scopeKey === scopeKey;
+  const previous = scopeMatches ? state.previous : [];
+  const exhausted = scopeMatches ? state.exhausted : false;
 
   const items = useMemo(() => {
     if (previous.length === 0) return initial;
@@ -50,15 +56,19 @@ export function useLazyPrevious<T>({
     setIsLoadingPrevious(true);
     try {
       const page = await fetchPage(getCursor(oldest));
-      setPrevious((prev) => [...prev, ...page.items]);
-      if (!page.hasMore || page.items.length === 0) setExhausted(true);
+      const done = !page.hasMore || page.items.length === 0;
+      setState((prev) =>
+        prev.scopeKey === scopeKey
+          ? { ...prev, previous: [...prev.previous, ...page.items], exhausted: done }
+          : prev
+      );
     } catch {
       // Leave `exhausted` false so a further scroll can retry.
     } finally {
       loadingRef.current = false;
       setIsLoadingPrevious(false);
     }
-  }, [items, total, exhausted, fetchPage, getCursor]);
+  }, [items, total, exhausted, scopeKey, fetchPage, getCursor]);
 
   return { items, loadPrevious, hasMore, isLoadingPrevious };
 }
