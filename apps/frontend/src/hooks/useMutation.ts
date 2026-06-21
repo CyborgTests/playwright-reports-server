@@ -9,9 +9,12 @@ type MutationFnParams<TVariables> = {
   path?: string;
 };
 
-const useMutation = <TData = unknown, TVariables = unknown>(
+const useMutation = <TData = unknown, TVariables = unknown, TContext = unknown>(
   url: string,
-  options?: Omit<UseMutationOptions<TData, Error, MutationFnParams<TVariables>>, 'mutationFn'> & {
+  options?: Omit<
+    UseMutationOptions<TData, Error, MutationFnParams<TVariables>, TContext>,
+    'mutationFn'
+  > & {
     method?: string;
     silent?: boolean;
   }
@@ -19,7 +22,7 @@ const useMutation = <TData = unknown, TVariables = unknown>(
   const session = useAuth();
   const { method, silent, ...mutationOptions } = options ?? {};
 
-  return useTanStackMutation<TData, Error, MutationFnParams<TVariables>>({
+  return useTanStackMutation<TData, Error, MutationFnParams<TVariables>, TContext>({
     mutationFn: async ({ body, path }: MutationFnParams<TVariables>) => {
       const auth = authHeadersForSession(session);
       const isForm = body instanceof FormData;

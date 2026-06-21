@@ -25,13 +25,12 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/hooks/useAuth';
+import { errorMessage } from '@/lib/api';
 import { authHeaders } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { GithubSyncTemplateFields } from './GithubSyncTemplateFields';
 
 type GithubSyncConfigWithStatus = GithubSyncConfig & { status?: GithubSyncStatus };
-
-const errMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 interface FormState {
   name: string;
@@ -264,8 +263,8 @@ export default function GithubSyncConfiguration() {
     try {
       const data = await api<GithubSyncConfigWithStatus[]>('/api/config/github-sync');
       setConfigs(data);
-    } catch (err) {
-      toast.error(`Failed to load GitHub sync configs: ${errMessage(err)}`);
+    } catch (error) {
+      toast.error(`Failed to load GitHub sync configs: ${errorMessage(error)}`);
     } finally {
       setLoading(false);
     }
@@ -340,8 +339,8 @@ export default function GithubSyncConfiguration() {
       }
       setFormOpen(false);
       await refresh();
-    } catch (err) {
-      toast.error(`Save failed: ${errMessage(err)}`);
+    } catch (error) {
+      toast.error(`Save failed: ${errorMessage(error)}`);
     } finally {
       setSaving(false);
     }
@@ -356,8 +355,8 @@ export default function GithubSyncConfiguration() {
       });
       toast.success(cfg.enabled ? 'Sync paused' : 'Sync resumed');
       await refresh();
-    } catch (err) {
-      toast.error(`Failed: ${errMessage(err)}`);
+    } catch (error) {
+      toast.error(`Failed: ${errorMessage(error)}`);
     } finally {
       setBusyId(null);
     }
@@ -369,8 +368,8 @@ export default function GithubSyncConfiguration() {
       await api(`/api/config/github-sync/${cfg.id}/run`, { method: 'POST' });
       toast.success(`Started sync for "${cfg.name}"`);
       await refresh();
-    } catch (err) {
-      toast.error(`Run failed: ${errMessage(err)}`);
+    } catch (error) {
+      toast.error(`Run failed: ${errorMessage(error)}`);
     } finally {
       setBusyId(null);
     }
@@ -382,8 +381,8 @@ export default function GithubSyncConfiguration() {
       await api(`/api/config/github-sync/${cfg.id}/stop`, { method: 'POST' });
       toast.success('Stop requested');
       await refresh();
-    } catch (err) {
-      toast.error(`Stop failed: ${errMessage(err)}`);
+    } catch (error) {
+      toast.error(`Stop failed: ${errorMessage(error)}`);
     } finally {
       setBusyId(null);
     }
@@ -399,8 +398,8 @@ export default function GithubSyncConfiguration() {
       setDeleteTarget(null);
       setDeleteClearState(false);
       await refresh();
-    } catch (err) {
-      toast.error(`Delete failed: ${errMessage(err)}`);
+    } catch (error) {
+      toast.error(`Delete failed: ${errorMessage(error)}`);
     } finally {
       setDeleting(false);
     }

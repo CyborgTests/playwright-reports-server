@@ -6,10 +6,11 @@ import { authHeadersForSession, useAuth } from './useAuth';
 
 const UNAUTHORIZED_ERROR = 'Unauthorized';
 
-const useQuery = <ReturnType>(
+const useQuery = <TData, TQueryFnData = TData>(
   path: string,
-  options?: Omit<UseQueryOptions<ReturnType, Error>, 'queryKey' | 'queryFn'> & {
+  options?: Omit<UseQueryOptions<TQueryFnData, Error, TData>, 'queryKey' | 'queryFn'> & {
     dependencies?: unknown[];
+    queryKey?: readonly unknown[];
     method?: string;
     body?: BodyInit | null;
   }
@@ -22,8 +23,8 @@ const useQuery = <ReturnType>(
       ? isAuthDisabled || session.status === 'authenticated'
       : options.enabled && (isAuthDisabled || session.status === 'authenticated');
 
-  return useTanStackQuery<ReturnType, Error>({
-    queryKey: [path, ...(options?.dependencies ?? [])],
+  return useTanStackQuery<TQueryFnData, Error, TData>({
+    queryKey: options?.queryKey ?? [path, ...(options?.dependencies ?? [])],
     queryFn: async () => {
       const headers = authHeadersForSession(session);
 

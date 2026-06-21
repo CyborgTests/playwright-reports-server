@@ -201,9 +201,9 @@ export default function LLMRoutingConfiguration({
   });
 
   const save = () => {
-    const fd = new FormData();
-    fd.append('llmRouting', JSON.stringify(cleanRouting(routing, modelIds)));
-    mutation.mutate({ body: fd });
+    const formData = new FormData();
+    formData.append('llmRouting', JSON.stringify(cleanRouting(routing, modelIds)));
+    mutation.mutate({ body: formData });
   };
 
   return (

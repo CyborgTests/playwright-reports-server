@@ -57,11 +57,11 @@ export default function LLMAutomationSection() {
   });
 
   const toggle = (key: ToggleKey, field: string, next: boolean) => {
-    setValues((prev) => ({ ...prev, [key]: next })); // optimistic
-    const fd = new FormData();
-    fd.append(field, String(next));
+    setValues((prev) => ({ ...prev, [key]: next }));
+    const formData = new FormData();
+    formData.append(field, String(next));
     mutation.mutate(
-      { body: fd },
+      { body: formData },
       { onError: () => setValues((prev) => ({ ...prev, [key]: !next })) }
     );
   };

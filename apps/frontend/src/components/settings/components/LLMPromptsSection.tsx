@@ -98,10 +98,10 @@ export default function LLMPromptsSection() {
   });
 
   const save = () => {
-    const fd = new FormData();
-    fd.append('llmGeneralContext', state.generalContext);
-    for (const key of PROMPT_KEYS) fd.append(FIELD_NAME[key], state.overrides[key] ?? '');
-    mutation.mutate({ body: fd });
+    const formData = new FormData();
+    formData.append('llmGeneralContext', state.generalContext);
+    for (const key of PROMPT_KEYS) formData.append(FIELD_NAME[key], state.overrides[key] ?? '');
+    mutation.mutate({ body: formData });
   };
 
   const field = (

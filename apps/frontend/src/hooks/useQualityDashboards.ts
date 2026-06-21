@@ -6,63 +6,25 @@ import type {
   QualityNode,
   QualityNodeInput,
 } from '@playwright-reports/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { authHeaders } from '../lib/auth';
-import { withBase } from '../lib/url';
 import { useAuth } from './useAuth';
+import useMutation from './useMutation';
+import useQuery from './useQuery';
 import { useUnauthorizedRedirect } from './useUnauthorizedRedirect';
 
-const QK_LIST = ['quality', 'dashboards'] as const;
-const QK_CONFIG = (slug: string) => ['quality', 'dashboard', slug] as const;
-const QK_SNAPSHOT = (slug: string) => ['quality', 'snapshot', slug] as const;
-const QK_PROJECTS = ['quality', 'projects'] as const;
-const QK_HOME = ['quality', 'home'] as const;
+const QUALITY_KEY = ['quality'] as const;
+const DASHBOARDS_KEY = ['quality', 'dashboards'] as const;
+const PROJECTS_KEY = ['quality', 'projects'] as const;
+const HOME_KEY = ['quality', 'home'] as const;
+const dashboardConfigKey = (slug: string) => ['quality', 'dashboard', slug] as const;
+const dashboardSnapshotKey = (slug: string) => ['quality', 'snapshot', slug] as const;
 
 interface ApiEnvelope<T> {
   success: boolean;
   data?: T;
   error?: string;
-  issues?: Array<{ message?: string; path?: Array<string | number> }>;
-}
-
-function describeError(envelope: ApiEnvelope<unknown> | undefined, fallback: string): string {
-  if (!envelope) return fallback;
-  if (envelope.error) {
-    if (envelope.issues?.length) {
-      const detail = envelope.issues
-        .map((i) => i?.message || JSON.stringify(i))
-        .filter(Boolean)
-        .join('; ');
-      return detail ? `${envelope.error}: ${detail}` : envelope.error;
-    }
-    return envelope.error;
-  }
-  return fallback;
-}
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(withBase(path), {
-    ...init,
-    headers: {
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...authHeaders(),
-      ...(init?.headers ?? {}),
-    },
-  });
-  const text = await res.text();
-  let envelope: ApiEnvelope<T> | undefined;
-  try {
-    envelope = text ? (JSON.parse(text) as ApiEnvelope<T>) : undefined;
-  } catch {
-    envelope = undefined;
-  }
-  if (!res.ok || envelope?.success === false) {
-    const message = describeError(envelope, `Request failed (${res.status})`);
-    throw new Error(message);
-  }
-  return envelope?.data as T;
 }
 
 function useAuthEnabled() {
@@ -74,52 +36,64 @@ function useAuthEnabled() {
 
 export function useQualityDashboardList() {
   const enabled = useAuthEnabled();
-  return useQuery<QualityDashboardSummary[]>({
-    queryKey: QK_LIST,
-    queryFn: () => apiFetch<QualityDashboardSummary[]>('/api/quality/dashboards'),
-    enabled,
-    staleTime: 60_000,
-  });
+  return useQuery<QualityDashboardSummary[], ApiEnvelope<QualityDashboardSummary[]>>(
+    '/api/quality/dashboards',
+    {
+      queryKey: DASHBOARDS_KEY,
+      enabled,
+      staleTime: 60_000,
+      select: (envelope) => envelope.data ?? [],
+    }
+  );
 }
 
 export function useQualityDashboardConfig(slug: string | undefined) {
   const enabled = useAuthEnabled() && !!slug;
-  return useQuery<QualityDashboardConfig>({
-    queryKey: QK_CONFIG(slug ?? ''),
-    queryFn: () => apiFetch<QualityDashboardConfig>(`/api/quality/dashboards/${slug}`),
-    enabled,
-    staleTime: 30_000,
-  });
+  return useQuery<QualityDashboardConfig, ApiEnvelope<QualityDashboardConfig>>(
+    `/api/quality/dashboards/${slug}`,
+    {
+      queryKey: dashboardConfigKey(slug ?? ''),
+      enabled,
+      staleTime: 30_000,
+      select: (envelope) => envelope.data as QualityDashboardConfig,
+    }
+  );
 }
 
 export function useQualityDashboardSnapshot(slug: string | undefined) {
   const enabled = useAuthEnabled() && !!slug;
-  return useQuery<QualityDashboardSnapshot>({
-    queryKey: QK_SNAPSHOT(slug ?? ''),
-    queryFn: () => apiFetch<QualityDashboardSnapshot>(`/api/quality/dashboards/${slug}/snapshot`),
-    enabled,
-    staleTime: 30_000,
-  });
+  return useQuery<QualityDashboardSnapshot, ApiEnvelope<QualityDashboardSnapshot>>(
+    `/api/quality/dashboards/${slug}/snapshot`,
+    {
+      queryKey: dashboardSnapshotKey(slug ?? ''),
+      enabled,
+      staleTime: 30_000,
+      select: (envelope) => envelope.data as QualityDashboardSnapshot,
+    }
+  );
 }
 
 export function useQualityProjects() {
   const enabled = useAuthEnabled();
-  return useQuery<string[]>({
-    queryKey: QK_PROJECTS,
-    queryFn: () => apiFetch<string[]>('/api/quality/projects'),
+  return useQuery<string[], ApiEnvelope<string[]>>('/api/quality/projects', {
+    queryKey: PROJECTS_KEY,
     enabled,
     staleTime: 60_000,
+    select: (envelope) => envelope.data ?? [],
   });
 }
 
 export function useQualityHomeSnapshots() {
   const enabled = useAuthEnabled();
-  return useQuery<QualityDashboardSnapshot[]>({
-    queryKey: QK_HOME,
-    queryFn: () => apiFetch<QualityDashboardSnapshot[]>('/api/quality/home'),
-    enabled,
-    staleTime: 30_000,
-  });
+  return useQuery<QualityDashboardSnapshot[], ApiEnvelope<QualityDashboardSnapshot[]>>(
+    '/api/quality/home',
+    {
+      queryKey: HOME_KEY,
+      enabled,
+      staleTime: 30_000,
+      select: (envelope) => envelope.data ?? [],
+    }
+  );
 }
 
 interface ReorderContext {
@@ -127,40 +101,41 @@ interface ReorderContext {
 }
 
 export function useReorderHome() {
-  const qc = useQueryClient();
-  return useMutation<QualityDashboard[], Error, string[], ReorderContext>({
-    mutationFn: (orderedIds) =>
-      apiFetch<QualityDashboard[]>('/api/quality/home/order', {
-        method: 'PUT',
-        body: JSON.stringify({ orderedIds }),
-      }),
-    onMutate: async (orderedIds) => {
-      await qc.cancelQueries({ queryKey: QK_HOME });
-      const previous = qc.getQueryData<QualityDashboardSnapshot[]>(QK_HOME);
-      if (previous) {
-        const byId = new Map(previous.map((p) => [p.dashboard.id, p]));
-        const next: QualityDashboardSnapshot[] = [];
-        const seen = new Set<string>();
-        for (const id of orderedIds) {
-          const snap = byId.get(id);
-          if (snap) {
-            next.push(snap);
-            seen.add(id);
+  const queryClient = useQueryClient();
+  return useMutation<ApiEnvelope<QualityDashboard[]>, { orderedIds: string[] }, ReorderContext>(
+    '/api/quality/home/order',
+    {
+      method: 'PUT',
+      silent: true,
+      onMutate: async ({ body }) => {
+        const orderedIds = body?.orderedIds ?? [];
+        await queryClient.cancelQueries({ queryKey: HOME_KEY });
+        const previous = queryClient.getQueryData<QualityDashboardSnapshot[]>(HOME_KEY);
+        if (previous) {
+          const byId = new Map(previous.map((snapshot) => [snapshot.dashboard.id, snapshot]));
+          const next: QualityDashboardSnapshot[] = [];
+          const seen = new Set<string>();
+          for (const id of orderedIds) {
+            const snapshot = byId.get(id);
+            if (snapshot) {
+              next.push(snapshot);
+              seen.add(id);
+            }
           }
+          for (const snapshot of previous) {
+            if (!seen.has(snapshot.dashboard.id)) next.push(snapshot);
+          }
+          queryClient.setQueryData(HOME_KEY, next);
         }
-        for (const p of previous) if (!seen.has(p.dashboard.id)) next.push(p);
-        qc.setQueryData(QK_HOME, next);
-      }
-      return { previous };
-    },
-    onError: (err, _vars, ctx) => {
-      if (ctx?.previous) qc.setQueryData(QK_HOME, ctx.previous);
-      toast.error(err.message);
-    },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['quality'] });
-    },
-  });
+        return { previous };
+      },
+      onError: (error, _variables, context) => {
+        if (context?.previous) queryClient.setQueryData(HOME_KEY, context.previous);
+        toast.error(error.message);
+      },
+      onSettled: () => queryClient.invalidateQueries({ queryKey: QUALITY_KEY }),
+    }
+  );
 }
 
 export interface DashboardCreateInput {
@@ -170,72 +145,57 @@ export interface DashboardCreateInput {
 }
 
 export function useCreateDashboard() {
-  const qc = useQueryClient();
-  return useMutation<QualityDashboard, Error, DashboardCreateInput>({
-    mutationFn: (input) =>
-      apiFetch<QualityDashboard>('/api/quality/dashboards', {
-        method: 'POST',
-        body: JSON.stringify(input),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['quality'] });
-      toast.success('Dashboard created');
-    },
-  });
+  const queryClient = useQueryClient();
+  return useMutation<ApiEnvelope<QualityDashboard>, DashboardCreateInput>(
+    '/api/quality/dashboards',
+    {
+      method: 'POST',
+      silent: true,
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: QUALITY_KEY });
+        toast.success('Dashboard created');
+      },
+    }
+  );
 }
 
-export interface DashboardUpdatePayload {
-  id: string;
-  patch: Partial<Omit<QualityDashboard, 'id' | 'createdAt' | 'updatedAt'>>;
-}
+export type DashboardPatch = Partial<Omit<QualityDashboard, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export function useUpdateDashboard() {
-  const qc = useQueryClient();
-  return useMutation<QualityDashboard, Error, DashboardUpdatePayload>({
-    mutationFn: ({ id, patch }) =>
-      apiFetch<QualityDashboard>(`/api/quality/dashboards/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(patch),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['quality'] });
-    },
-    onError: (err) => toast.error(err.message),
+  const queryClient = useQueryClient();
+  return useMutation<ApiEnvelope<QualityDashboard>, DashboardPatch>('/api/quality/dashboards', {
+    method: 'PATCH',
+    silent: true,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: QUALITY_KEY }),
+    onError: (error) => toast.error(error.message),
   });
 }
 
 export function useDeleteDashboard() {
-  const qc = useQueryClient();
-  return useMutation<void, Error, string>({
-    mutationFn: (id) =>
-      apiFetch<void>(`/api/quality/dashboards/${id}`, {
-        method: 'DELETE',
-      }),
+  const queryClient = useQueryClient();
+  return useMutation('/api/quality/dashboards', {
+    method: 'DELETE',
+    silent: true,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['quality'] });
+      queryClient.invalidateQueries({ queryKey: QUALITY_KEY });
       toast.success('Dashboard deleted');
     },
-    onError: (err) => toast.error(err.message),
+    onError: (error) => toast.error(error.message),
   });
-}
-
-export interface SaveTreePayload {
-  id: string;
-  nodes: QualityNodeInput[];
 }
 
 export function useSaveDashboardTree() {
-  const qc = useQueryClient();
-  return useMutation<{ nodes: QualityNode[] }, Error, SaveTreePayload>({
-    mutationFn: ({ id, nodes }) =>
-      apiFetch<{ nodes: QualityNode[] }>(`/api/quality/dashboards/${id}/tree`, {
-        method: 'PUT',
-        body: JSON.stringify({ nodes }),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['quality'] });
-      toast.success('Dashboard saved');
-    },
-    onError: (err) => toast.error(err.message),
-  });
+  const queryClient = useQueryClient();
+  return useMutation<ApiEnvelope<{ nodes: QualityNode[] }>, { nodes: QualityNodeInput[] }>(
+    '/api/quality/dashboards',
+    {
+      method: 'PUT',
+      silent: true,
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: QUALITY_KEY });
+        toast.success('Dashboard saved');
+      },
+      onError: (error) => toast.error(error.message),
+    }
+  );
 }

@@ -28,11 +28,11 @@ export default function LLMConfiguration() {
   });
 
   const toggleFeature = (next: boolean) => {
-    if (next && !hasPrimary) return; // guarded by the disabled checkbox; defensive
-    setFeatureEnabled(next); // optimistic
-    const fd = new FormData();
-    fd.append('llmFeatureEnabled', String(next));
-    mutation.mutate({ body: fd }, { onError: () => setFeatureEnabled(!next) });
+    if (next && !hasPrimary) return;
+    setFeatureEnabled(next);
+    const formData = new FormData();
+    formData.append('llmFeatureEnabled', String(next));
+    mutation.mutate({ body: formData }, { onError: () => setFeatureEnabled(!next) });
   };
 
   return (

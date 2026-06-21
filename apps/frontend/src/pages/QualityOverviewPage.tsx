@@ -95,10 +95,10 @@ export default function QualityOverviewPage() {
   const homeQ = useQualityHomeSnapshots();
   const projectsQ = useQualityProjects();
 
-  const createMut = useCreateDashboard();
-  const updateMut = useUpdateDashboard();
-  const deleteMut = useDeleteDashboard();
-  const saveTreeMut = useSaveDashboardTree();
+  const createMutation = useCreateDashboard();
+  const updateMutation = useUpdateDashboard();
+  const deleteMutation = useDeleteDashboard();
+  const saveTreeMutation = useSaveDashboardTree();
 
   const isLoading =
     dashboardListQ.isLoading ||
@@ -196,9 +196,9 @@ export default function QualityOverviewPage() {
           availableProjects={projectsQ.data ?? []}
           projectStats={flattenStats(snapshotQ.data?.root)}
           onSave={async (next, treeNodes) => {
-            await updateMut.mutateAsync({
-              id: next.id,
-              patch: {
+            await updateMutation.mutateAsync({
+              path: `/api/quality/dashboards/${next.id}`,
+              body: {
                 name: next.name,
                 stalenessDays: next.stalenessDays,
                 isDefault: next.isDefault,
@@ -207,12 +207,17 @@ export default function QualityOverviewPage() {
                 defaultGradeBands: next.defaultGradeBands,
               },
             });
-            await saveTreeMut.mutateAsync({ id: next.id, nodes: treeNodes });
+            await saveTreeMutation.mutateAsync({
+              path: `/api/quality/dashboards/${next.id}/tree`,
+              body: { nodes: treeNodes },
+            });
             setMode('view');
           }}
           onDelete={async () => {
             if (!window.confirm(`Delete dashboard "${configQ.data.dashboard.name}"?`)) return;
-            await deleteMut.mutateAsync(configQ.data.dashboard.id);
+            await deleteMutation.mutateAsync({
+              path: `/api/quality/dashboards/${configQ.data.dashboard.id}`,
+            });
             setSlug(undefined);
             setMode('view');
           }}
@@ -223,7 +228,8 @@ export default function QualityOverviewPage() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         onCreate={async (input: DashboardCreateInput) => {
-          const created = await createMut.mutateAsync(input);
+          const created = (await createMutation.mutateAsync({ body: input })).data;
+          if (!created) return;
           if (!created.isDefault) {
             setSlug(created.slug);
           }
@@ -242,14 +248,14 @@ interface HomeViewProps {
 }
 
 function HomeView({ snapshots, allDashboardsCount, onEdit }: HomeViewProps) {
-  const reorderMut = useReorderHome();
+  const reorderMutation = useReorderHome();
 
   const move = (idx: number, direction: -1 | 1) => {
     const swap = idx + direction;
     if (swap < 0 || swap >= snapshots.length) return;
     const ids = snapshots.map((s) => s.dashboard.id);
     [ids[idx], ids[swap]] = [ids[swap], ids[idx]];
-    reorderMut.mutate(ids);
+    reorderMutation.mutate({ body: { orderedIds: ids } });
   };
 
   if (snapshots.length === 0) {

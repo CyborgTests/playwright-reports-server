@@ -18,7 +18,7 @@ import { Switch } from '@/components/ui/switch';
 import { LLM_MODELS_PATH, useLlmModels } from '@/hooks/useLlmModels';
 import useMutation from '@/hooks/useMutation';
 import { SERVER_CONFIG_KEY, useServerConfig } from '@/hooks/useServerConfig';
-import { errMessage } from '@/lib/api';
+import { errorMessage } from '@/lib/api';
 import { LLMModelFormDialog } from './LLMModelFormDialog';
 import { LLMModelRow } from './LLMModelRow';
 import {
@@ -153,8 +153,8 @@ export default function LLMModelsConfiguration({
         toast.success('Model created - test the connection, then enable it');
       }
       setFormOpen(false);
-    } catch (err) {
-      toast.error(`Save failed: ${errMessage(err)}`);
+    } catch (error) {
+      toast.error(`Save failed: ${errorMessage(error)}`);
     } finally {
       setSaving(false);
     }
@@ -168,8 +168,8 @@ export default function LLMModelsConfiguration({
       });
       if (result.success) toast.success(`"${m.label}" connected`);
       else toast.error(`Connection failed: ${result.error ?? 'unknown error'}`);
-    } catch (err) {
-      toast.error(`Test failed: ${errMessage(err)}`);
+    } catch (error) {
+      toast.error(`Test failed: ${errorMessage(error)}`);
     } finally {
       setBusyId(null);
     }
@@ -181,8 +181,8 @@ export default function LLMModelsConfiguration({
         path: `${LLM_MODELS_PATH}/${m.id}`,
         body: { enabled: !m.enabled },
       });
-    } catch (err) {
-      toast.error(`Failed: ${errMessage(err)}`);
+    } catch (error) {
+      toast.error(`Failed: ${errorMessage(error)}`);
     }
   };
 
@@ -191,8 +191,8 @@ export default function LLMModelsConfiguration({
     try {
       await setPrimaryMut.mutateAsync({ path: `${LLM_MODELS_PATH}/${m.id}/primary` });
       toast.success(`"${m.label}" is now the primary model`);
-    } catch (err) {
-      toast.error(`Failed: ${errMessage(err)}`);
+    } catch (error) {
+      toast.error(`Failed: ${errorMessage(error)}`);
     } finally {
       setBusyId(null);
     }
@@ -203,8 +203,8 @@ export default function LLMModelsConfiguration({
     try {
       const copy = await duplicateMut.mutateAsync({ path: `${LLM_MODELS_PATH}/${m.id}/duplicate` });
       openEdit(copy);
-    } catch (err) {
-      toast.error(`Duplicate failed: ${errMessage(err)}`);
+    } catch (error) {
+      toast.error(`Duplicate failed: ${errorMessage(error)}`);
     } finally {
       setBusyId(null);
     }
@@ -217,20 +217,20 @@ export default function LLMModelsConfiguration({
     [reordered[idx], reordered[target]] = [reordered[target], reordered[idx]];
     try {
       await reorderMut.mutateAsync({ body: { orderedIds: reordered.map((m) => m.id) } });
-    } catch (err) {
-      toast.error(`Reorder failed: ${errMessage(err)}`);
+    } catch (error) {
+      toast.error(`Reorder failed: ${errorMessage(error)}`);
     }
   };
 
   const toggleFallback = async (next: boolean) => {
-    setUseFallbackChain(next); // optimistic
-    const fd = new FormData();
-    fd.append('llmUseFallbackChain', String(next));
+    setUseFallbackChain(next);
+    const formData = new FormData();
+    formData.append('llmUseFallbackChain', String(next));
     try {
-      await fallbackMut.mutateAsync({ body: fd });
-    } catch (err) {
+      await fallbackMut.mutateAsync({ body: formData });
+    } catch (error) {
       setUseFallbackChain(!next);
-      toast.error(`Failed to update fallback setting: ${errMessage(err)}`);
+      toast.error(`Failed to update fallback setting: ${errorMessage(error)}`);
     }
   };
 
@@ -241,8 +241,8 @@ export default function LLMModelsConfiguration({
       await deleteModel.mutateAsync({ path: `${LLM_MODELS_PATH}/${deleteTarget.id}` });
       toast.success('Model deleted');
       setDeleteTarget(null);
-    } catch (err) {
-      toast.error(`Delete failed: ${errMessage(err)}`);
+    } catch (error) {
+      toast.error(`Delete failed: ${errorMessage(error)}`);
     } finally {
       setDeleting(false);
     }
