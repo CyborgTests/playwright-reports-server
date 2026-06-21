@@ -1,5 +1,5 @@
 import type { LlmTaskType } from '@playwright-reports/shared';
-import { isKnownCategory } from '../../service/test-management/failure-classifier.js';
+import { isRootCauseCategory } from '../../service/test-management/failure-classifier.js';
 import { extractTestAnalysisFromMarkdown } from '../testAnalysis.js';
 
 export interface DraftCheck {
@@ -43,7 +43,8 @@ export function verifyDraft(taskType: LlmTaskType, content: string): DraftCheck 
   if (taskType === 'test_analysis') {
     const { category } = extractTestAnalysisFromMarkdown(content);
     if (!category) reasons.push('missing required Category footer');
-    else if (!isKnownCategory(category)) reasons.push(`invalid failure category "${category}"`);
+    else if (!isRootCauseCategory(category))
+      reasons.push(`invalid root-cause category "${category}"`);
   }
   return { ok: reasons.length === 0, reasons };
 }
