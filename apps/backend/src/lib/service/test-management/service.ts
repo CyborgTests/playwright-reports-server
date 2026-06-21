@@ -289,6 +289,12 @@ export class TestManagementService {
           const errorSignature = prepared?.signature ?? null;
           const classification = prepared?.classification ?? null;
 
+          const hasTrace =
+            (test.attachments ?? []).some((a) => a?.name === 'trace') ||
+            (test.results ?? []).some((r) =>
+              (r.attachments ?? []).some((a) => a?.name === 'trace')
+            );
+
           const testRun = {
             runId: undefined,
             testId,
@@ -304,6 +310,7 @@ export class TestManagementService {
             failureCategory: classification?.category,
             failureCategorySource: classification?.source,
             errorSignature: errorSignature ?? undefined,
+            hasTrace,
           };
 
           testDb.createTestRun(testRun);

@@ -61,7 +61,7 @@ interface ConsoleEvent {
   location?: { url?: string; lineNumber?: number };
 }
 
-interface NetworkEvent {
+export interface NetworkEvent {
   method: string;
   url: string;
   status?: number;
@@ -182,6 +182,52 @@ function truncateBody(body: unknown): string | undefined {
   return `${text.substring(0, NETWORK_BODY_MAX_CHARS)}\n[… ${omitted} chars omitted …]`;
 }
 
+export function collectHarEntry(snapshot: unknown): { key: string; event: NetworkEvent } | null {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+  const snap = snapshot as Record<string, unknown>;
+  const req = snap.request as Record<string, unknown> | undefined;
+  const resp = snap.response as Record<string, unknown> | undefined;
+  const url = typeof req?.url === 'string' ? req.url : '';
+  if (!url) return null;
+  const method = typeof req?.method === 'string' ? req.method : 'GET';
+  const statusRaw = typeof resp?.status === 'number' ? resp.status : undefined;
+  const status = statusRaw && statusRaw > 0 ? statusRaw : undefined;
+  const failureText =
+    typeof snap._failureText === 'string'
+      ? snap._failureText
+      : typeof resp?._failureText === 'string'
+        ? (resp._failureText as string)
+        : statusRaw === 0
+          ? 'request failed (no response)'
+          : undefined;
+  const postData = (req?.postData as { text?: string } | undefined)?.text;
+  const respContent = (resp?.content as { text?: string } | undefined)?.text;
+  const monotonic =
+    typeof snap._monotonicTime === 'number'
+      ? snap._monotonicTime
+      : typeof snap.startedDateTime === 'string'
+        ? Date.parse(snap.startedDateTime)
+        : undefined;
+  const timestamp =
+    typeof monotonic === 'number' && !Number.isNaN(monotonic) ? monotonic : undefined;
+  const event: NetworkEvent = {
+    method,
+    url,
+    status,
+    requestHeaders: sanitizeHeaders(
+      req?.headers as Array<{ name?: string; value?: string }> | undefined
+    ),
+    responseHeaders: sanitizeHeaders(
+      resp?.headers as Array<{ name?: string; value?: string }> | undefined
+    ),
+    requestBody: truncateBody(postData),
+    responseBody: truncateBody(respContent),
+    failureText,
+    timestamp,
+  };
+  return { key: `${method} ${url} ${timestamp ?? ''}`, event };
+}
+
 function normalizeConsoleLevel(raw: unknown): ConsoleEvent['level'] {
   const s = typeof raw === 'string' ? raw.toLowerCase() : '';
   switch (s) {
@@ -266,10 +312,12 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
     return;
   }
 
-  // Resource (network) events. Modern shape: a single entry with method/url/status.
-  //    `type:'resource-snapshot'` is a DOM-resource entry and is NOT a network call -
-  //    skip it. The dedicated `*.network` file uses `type:'resource'` with a
-  //    `_monotonicTime` (or `timestamp`) ordering field.
+  if (type === 'resource-snapshot') {
+    const har = collectHarEntry(e.snapshot);
+    if (har) c.network.set(har.key, har.event);
+    return;
+  }
+
   if (type === 'resource' || type === 'resourceSnapshot' || type === 'resourceFinished') {
     if (type === 'resourceSnapshot') return; // not a network call
     const url = typeof e.url === 'string' ? e.url : '';
@@ -474,6 +522,22 @@ async function extractEvidenceFromTrace(
     };
   } catch (error) {
     console.error(`[failure-extraction] Failed to read trace ${tracePath}:`, error);
+    return null;
+  }
+}
+
+export async function parseTraceNetwork(
+  reportId: string,
+  tracePath: string
+): Promise<NetworkEvent[] | null> {
+  try {
+    const reportDir = path.join(REPORTS_FOLDER, reportId);
+    const zipBuffer = await fs.readFile(path.join(reportDir, tracePath));
+    const directory = await Open.buffer(zipBuffer);
+    const collectors = await collectFromTraceZip(directory);
+    return Array.from(collectors.network.values());
+  } catch (error) {
+    console.error(`[failure-extraction] Failed to read trace network ${tracePath}:`, error);
     return null;
   }
 }

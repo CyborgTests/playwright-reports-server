@@ -1,4 +1,10 @@
-import { formatRelativeTime, type TestDetailRegression } from '@playwright-reports/shared';
+import {
+  type DomDiff,
+  formatRelativeTime,
+  type NetworkDiff,
+  type NetworkDiffEntry,
+  type TestDetailRegression,
+} from '@playwright-reports/shared';
 import type { FailureEvidence } from '../../../parser/failure-extraction.js';
 import type { PerFileStep } from '../../../parser/report-payload.js';
 import type { SegmentedPrompt } from '../../types/index.js';
@@ -44,16 +50,8 @@ export interface HistoricalContextInput {
   flakinessScore?: number;
   flakinessThreshold?: number;
   isFlaky?: boolean;
-  previousCategories?: string[];
   isNewFailure?: boolean;
   recentOutcomes?: string[];
-}
-
-export interface PriorInProjectAnalysis {
-  analysis: string;
-  category?: string;
-  model?: string;
-  updatedAt?: string;
 }
 
 interface CrossProjectEntry {
@@ -61,7 +59,6 @@ interface CrossProjectEntry {
   comment: string;
   updatedAt: string;
   errorSignatureMatchesCurrent: boolean;
-  latestAnalysis?: { content: string; updatedAt: string; model?: string };
 }
 
 const OUTCOME_LABELS: Record<string, string> = {
@@ -124,21 +121,6 @@ function buildTestSourceFrameBlock(evidence: FailureEvidence | undefined): strin
   return `## Test Source\n\`\`\`\n${evidence.testSourceFrame}\n\`\`\``;
 }
 
-const PRIOR_ANALYSIS_EXCERPT_MAX_CHARS = 240;
-
-function extractRootCauseExcerpt(analysisMarkdown: string): string {
-  const trimmed = analysisMarkdown.trim();
-  const rootCauseStart = trimmed.search(/^##\s+Root Cause\s*$/im);
-  const body = rootCauseStart >= 0 ? trimmed.slice(rootCauseStart) : trimmed;
-  const lines = body
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith('#') && !l.startsWith('```'));
-  const para = lines.length > 0 ? lines[0] : '';
-  if (para.length <= PRIOR_ANALYSIS_EXCERPT_MAX_CHARS) return para;
-  return `${para.slice(0, PRIOR_ANALYSIS_EXCERPT_MAX_CHARS - 1).trimEnd()}…`;
-}
-
 function buildHistoricalContextBlock(historicalContext?: HistoricalContextInput): string {
   if (!historicalContext) return '';
   let block = `## History\n`;
@@ -152,9 +134,6 @@ function buildHistoricalContextBlock(historicalContext?: HistoricalContextInput)
     block += `- signature: new (not seen in prior runs)\n`;
   } else if (historicalContext.isNewFailure === false) {
     block += `- signature: recurring\n`;
-  }
-  if (historicalContext.previousCategories && historicalContext.previousCategories.length > 0) {
-    block += `- recent_categories (newest first): ${historicalContext.previousCategories.join(' -> ')}\n`;
   }
   return block;
 }
@@ -319,27 +298,6 @@ function normalizeAttemptSignature(message: string | undefined): string {
     .substring(0, 500);
 }
 
-function buildPriorInProjectAnalysisBlock(
-  prior:
-    | {
-        analysis: string;
-        category?: string;
-        model?: string;
-        updatedAt?: string;
-      }
-    | undefined
-): string {
-  if (!prior?.analysis) return '';
-  const meta: string[] = [];
-  if (prior.category) meta.push(prior.category);
-  if (prior.model) meta.push(prior.model);
-  if (prior.updatedAt) meta.push(formatRelativeTime(prior.updatedAt));
-  const header = meta.length > 0 ? ` (${meta.join(' · ')})` : '';
-  const excerpt = extractRootCauseExcerpt(prior.analysis);
-  if (!excerpt) return `## Prior Analysis${header}\n_(excerpt unavailable)_`;
-  return `## Prior Analysis${header}\n_This is a prior hypothesis, not ground truth. Compare it against the current evidence. If it still holds, confirm briefly and note any new supporting evidence. If the current evidence contradicts it, say so explicitly and explain what changed._\n\n> ${excerpt}`;
-}
-
 function buildConsoleLogBlock(evidence: FailureEvidence | undefined): string {
   if (!evidence?.consoleEvents || evidence.consoleEvents.length === 0) return '';
   const errors = evidence.consoleEvents.filter((e) => e.level === 'error' || e.level === 'warning');
@@ -400,6 +358,87 @@ function buildNetworkActivityBlock(evidence: FailureEvidence | undefined): strin
     block += `(no failed requests; entries above are pre-failure context)\n`;
   }
   return block;
+}
+
+function formatDiffStatus(entry: NetworkDiffEntry): string {
+  const base = entry.baselineStatus !== undefined ? String(entry.baselineStatus) : 'ok';
+  const curr =
+    entry.failureText ?? (entry.currentStatus !== undefined ? String(entry.currentStatus) : '—');
+  return `${base} -> ${curr}`;
+}
+
+function buildNetworkDiffBlock(
+  diff: NetworkDiff | null | undefined,
+  baselineLabel: string | undefined
+): string {
+  if (!diff || diff.entries.length === 0) return '';
+  const header = baselineLabel ? ` (vs ${baselineLabel})` : '';
+  let block = `## Network Diff${header}\n`;
+  block +=
+    'App traffic that changed since the baseline run - a strong signal for app_bug vs test_bug. Paths are normalized (query dropped, id-like segments masked).\n';
+  for (const e of diff.entries) {
+    const where = `\`${e.method} ${e.url}\``;
+    if (e.kind === 'now-failing') {
+      block += `- [NOW-FAILING] ${where} ${formatDiffStatus(e)}\n`;
+    } else if (e.kind === 'status-changed') {
+      block += `- [STATUS] ${where} ${formatDiffStatus(e)}\n`;
+    } else if (e.kind === 'added') {
+      const status =
+        e.failureText ?? (e.currentStatus !== undefined ? String(e.currentStatus) : '');
+      block += `- [ADDED] ${where}${status ? ` (${status})` : ''}\n`;
+    } else {
+      const status = e.baselineStatus !== undefined ? ` (was ${e.baselineStatus})` : '';
+      block += `- [REMOVED] ${where}${status}\n`;
+    }
+  }
+  if (diff.omitted > 0) {
+    block += `(+${diff.omitted} more changes omitted)\n`;
+  }
+  return block;
+}
+
+function buildDomDiffBody(diff: DomDiff): string {
+  let body = '';
+  for (const e of diff.entries) {
+    if (e.kind === 'added') body += `- [ADDED] ${e.path}${e.detail ? ` (${e.detail})` : ''}\n`;
+    else if (e.kind === 'removed') body += `- [REMOVED] ${e.path}\n`;
+    else if (e.kind === 'text-changed') body += `- [TEXT] ${e.path}: ${e.detail ?? ''}\n`;
+    else body += `- [ATTR] ${e.path}: ${e.detail ?? ''}\n`;
+  }
+  if (diff.textAdded.length > 0) {
+    const more = diff.textAddedOmitted ? ` (+${diff.textAddedOmitted} more)` : '';
+    body += `Text appeared: ${diff.textAdded.map((t) => `"${t}"`).join(', ')}${more}\n`;
+  }
+  if (diff.textRemoved.length > 0) {
+    const more = diff.textRemovedOmitted ? ` (+${diff.textRemovedOmitted} more)` : '';
+    body += `Text gone: ${diff.textRemoved.map((t) => `"${t}"`).join(', ')}${more}\n`;
+  }
+  if (diff.omitted > 0) body += `(+${diff.omitted} more structural changes omitted)\n`;
+  return body;
+}
+
+function buildDomDiffBlock(
+  diff: DomDiff | null | undefined,
+  baselineLabel: string | undefined
+): string {
+  if (
+    !diff ||
+    (diff.entries.length === 0 && diff.textAdded.length === 0 && diff.textRemoved.length === 0)
+  ) {
+    return '';
+  }
+  const header = baselineLabel ? ` (vs ${baselineLabel})` : '';
+  return `## DOM Diff${header}\nRendered DOM that changed since the baseline run - paths are tag/key, class & style are excluded as noise. Strong signal for app_bug vs test_bug.\n${buildDomDiffBody(diff)}`;
+}
+
+function buildActionDomEffectBlock(diff: DomDiff | null | undefined): string {
+  if (
+    !diff ||
+    (diff.entries.length === 0 && diff.textAdded.length === 0 && diff.textRemoved.length === 0)
+  ) {
+    return '';
+  }
+  return `## Failing Action DOM Effect\nHow the DOM changed across the failing action (before -> after). Little or no change means the action had no visible effect (e.g. target never appeared / not interactable) - weigh that against the error.\n${buildDomDiffBody(diff)}`;
 }
 
 function buildEnvironmentBlock(evidence: FailureEvidence | undefined): string {
@@ -527,10 +566,6 @@ export const buildCrossProjectContext = (
     const sig = e.errorSignatureMatchesCurrent ? 'matching error' : 'different error';
     block += `\n### ${e.project} (${sig}, updated ${formatRelativeTime(e.updatedAt)})\n`;
     block += `${e.comment}\n`;
-    if (e.latestAnalysis) {
-      const modelInfo = e.latestAnalysis.model ? ` · ${e.latestAnalysis.model}` : '';
-      block += `prior_analysis (${formatRelativeTime(e.latestAnalysis.updatedAt)}${modelInfo}):\n${e.latestAnalysis.content}\n`;
-    }
   }
   if (totalCount > entries.length) {
     block += `\n(+${totalCount - entries.length} more not shown)\n`;
@@ -547,8 +582,12 @@ export const buildTestFailureSegments = (args: {
   feedback?: { comment: string; updatedAt: string } | null;
   crossProjectEntries?: CrossProjectEntry[];
   crossProjectTotalCount?: number;
-  priorInProjectAnalysis?: PriorInProjectAnalysis | null;
   regressionContext?: TestDetailRegression | null;
+  networkDiff?: NetworkDiff | null;
+  networkBaselineLabel?: string;
+  domDiff?: DomDiff | null;
+  domBaselineLabel?: string;
+  actionDomEffect?: DomDiff | null;
   overrides?: CustomPromptOverrides;
 }): SegmentedPrompt => {
   const evidence = args.failureDetails.evidence;
@@ -615,12 +654,6 @@ export const buildTestFailureSegments = (args: {
     ),
     buildSegment('cross_project_context', 'user', true, crossProjectBlock),
     buildSegment(
-      'prior_in_project_analysis',
-      'user',
-      false,
-      buildPriorInProjectAnalysisBlock(args.priorInProjectAnalysis ?? undefined)
-    ),
-    buildSegment(
       'step_tree',
       'user',
       false,
@@ -636,6 +669,19 @@ export const buildTestFailureSegments = (args: {
     buildSegment('recent_actions', 'user', false, buildRecentActionsBlock(evidence)),
     buildSegment('console_log', 'user', false, buildConsoleLogBlock(evidence)),
     buildSegment('network_activity', 'user', false, buildNetworkActivityBlock(evidence)),
+    buildSegment(
+      'network_diff',
+      'user',
+      false,
+      buildNetworkDiffBlock(args.networkDiff, args.networkBaselineLabel)
+    ),
+    buildSegment('dom_diff', 'user', false, buildDomDiffBlock(args.domDiff, args.domBaselineLabel)),
+    buildSegment(
+      'action_dom_effect',
+      'user',
+      false,
+      buildActionDomEffectBlock(args.actionDomEffect)
+    ),
     buildSegment(
       'stdout',
       'user',

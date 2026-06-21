@@ -48,7 +48,6 @@ export type {
   AttemptSummary,
   FailureDetailsForPrompt,
   HistoricalContextInput,
-  PriorInProjectAnalysis,
 } from './testAnalysis/segments.js';
 export {
   buildCrossProjectContext,

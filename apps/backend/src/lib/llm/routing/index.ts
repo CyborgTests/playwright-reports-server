@@ -22,8 +22,9 @@ export function resolveRouting(taskType: LlmTaskType): LlmTaskRouting {
 const STRATEGIES = new Set(['one_shot', 'fusion', 'council', 'cascade', 'self_refine']);
 const TASK_TYPES = new Set(['test_analysis', 'report_summary', 'project_summary']);
 const ROLE_LISTS = ['authors', 'judges', 'tiers'] as const;
-const ROLE_SINGLES = ['synthesizer', 'critic', 'reviser', 'scorer'] as const;
-const CASCADE_GATES = new Set(['checks', 'scorer', 'checks_and_scorer']);
+const ROLE_SINGLES = ['synthesizer', 'critic', 'reviser', 'scorer', 'secondOpinion'] as const;
+const CASCADE_GATES = new Set(['checks', 'scorer', 'checks_and_scorer', 'disagreement']);
+const REFINE_MODES = new Set(['revise', 'escalate']);
 
 export function validateRouting(parsed: unknown, enabledModelIds: Set<string>): string | null {
   if (parsed == null || typeof parsed !== 'object') return 'routing must be an object';
@@ -57,6 +58,9 @@ export function validateRouting(parsed: unknown, enabledModelIds: Set<string>): 
       ) {
         return `routing.${taskType} temperature must be between 0 and 2`;
       }
+      if (rr.lens !== undefined && typeof rr.lens !== 'string') {
+        return `routing.${taskType} lens must be a string`;
+      }
     }
     if (
       r.minPassVotes !== undefined &&
@@ -77,6 +81,9 @@ export function validateRouting(parsed: unknown, enabledModelIds: Set<string>): 
     }
     if (r.cascadeGate !== undefined && !CASCADE_GATES.has(r.cascadeGate as string)) {
       return `routing.${taskType}.cascadeGate is invalid`;
+    }
+    if (r.refineMode !== undefined && !REFINE_MODES.has(r.refineMode as string)) {
+      return `routing.${taskType}.refineMode is invalid`;
     }
   }
   return null;

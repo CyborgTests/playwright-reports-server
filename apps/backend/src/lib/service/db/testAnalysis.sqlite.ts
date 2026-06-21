@@ -143,34 +143,6 @@ export class TestAnalysisDatabase {
     return row ?? null;
   }
 
-  /**
-   * Latest completed analysis for this (testId, fileId, project) from any
-   * report OTHER than `excludeReportId`.
-   */
-  public getLatestPriorByTest(
-    testId: string,
-    fileId: string,
-    project: string,
-    excludeReportId: string
-  ): TestAnalysisRow | null {
-    const compiled = this.k
-      .selectFrom('test_llm_analyses')
-      .selectAll()
-      .where('testId', '=', testId)
-      .where('fileId', '=', fileId)
-      .where('project', '=', project)
-      .where('reportId', '!=', excludeReportId)
-      .where('analysis', 'is not', null)
-      .where(sql`TRIM(analysis)`, '!=', '')
-      .orderBy(sql`COALESCE(updatedAt, createdAt)`, 'desc')
-      .limit(1)
-      .compile();
-    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
-      | TestAnalysisRow
-      | undefined;
-    return row ?? null;
-  }
-
   public getLatestAnalysisByTestIds(testIds: string[], reportIds: string[]): Map<string, string> {
     const out = new Map<string, string>();
     if (testIds.length === 0 || reportIds.length === 0) return out;

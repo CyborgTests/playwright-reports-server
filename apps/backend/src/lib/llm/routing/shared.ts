@@ -1,7 +1,7 @@
 import type { LlmRoleRef, LlmTaskType } from '@playwright-reports/shared';
 import { type LlmModelRow, llmModelsDb, llmTasksDb } from '../../service/db/index.js';
 import { llmService, type SegmentedSendOptions } from '../index.js';
-import type { Draft } from '../prompts/routing.js';
+import { buildAuthorLensPrompt, type Draft } from '../prompts/routing.js';
 import {
   OUTPUT_RESERVE_TOKENS_BY_TASK,
   TASK_TEMPERATURE_DEFAULTS,
@@ -12,6 +12,7 @@ import {
   modelRowToProviderConfig,
   runOnModel,
 } from '../registry.js';
+import { extractTestAnalysisFromMarkdown } from '../testAnalysis.js';
 import type { LLMResponse, SegmentedPrompt } from '../types/index.js';
 
 export const TEMP_KEY: Record<LlmTaskType, LlmTaskTemperatureKey> = {
@@ -37,9 +38,18 @@ export interface ResolvedRole {
   row: LlmModelRow;
   isPrimary: boolean;
   temperature: number;
+  lens?: string;
 }
 
 export type Usage = LLMResponse['usage'];
+
+export function extractLabel(taskType: LlmTaskType, content: string): string | null {
+  if (taskType === 'test_analysis') {
+    return extractTestAnalysisFromMarkdown(content).category ?? null;
+  }
+  const m = content.match(/\*\*Verdict:\*\*\s*`?([a-z_]+)`?/i);
+  return m ? m[1].toLowerCase() : null;
+}
 
 export function resolveRole(
   ref: LlmRoleRef | undefined,
@@ -51,7 +61,7 @@ export function resolveRole(
     : (primary ?? null);
   if (!row) return null;
   const temperature = ref?.temperature ?? row[TEMP_KEY[taskType]] ?? DEFAULT_TEMP[taskType];
-  return { row, isPrimary: primary != null && row.id === primary.id, temperature };
+  return { row, isPrimary: primary != null && row.id === primary.id, temperature, lens: ref?.lens };
 }
 
 export function resolveRoles(
@@ -174,7 +184,15 @@ export async function runAuthors(
   authors: ResolvedRole[]
 ): Promise<{ drafts: Draft[]; usages: Usage[] }> {
   const settled = await Promise.allSettled(
-    authors.map((role) => callRole(taskId, taskType, 'author', role, prompt))
+    authors.map((role) =>
+      callRole(
+        taskId,
+        taskType,
+        'author',
+        role,
+        role.lens ? buildAuthorLensPrompt(prompt, role.lens) : prompt
+      )
+    )
   );
   const drafts: Draft[] = [];
   const usages: Usage[] = [];

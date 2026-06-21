@@ -70,6 +70,11 @@ const CASCADE_GATE_OPTIONS: { value: CascadeGate; label: string; hint: string }[
     label: 'Scorer only',
     hint: 'Escalate purely on the model scorer’s rating; skip deterministic checks.',
   },
+  {
+    value: 'disagreement',
+    label: 'Disagreement',
+    hint: 'A second-opinion model answers too; escalate only when its label differs from tier-1. Best with a different-family second opinion. If it can’t produce a label, the gate falls back to the deterministic checks.',
+  },
 ];
 
 const MULTI_MODEL_STRATEGIES = new Set<LlmStrategy>(['fusion', 'council']);
@@ -81,7 +86,11 @@ function diversityWarning(cfg: LlmTaskRouting, primaryId: string | undefined): s
     const id = ref?.modelId ?? primaryId;
     if (id) ids.add(id);
   };
-  (cfg.authors?.length ? cfg.authors : [undefined]).forEach(add);
+  const addAuthor = (ref?: LlmRoleRef) => {
+    const id = ref?.modelId ?? primaryId;
+    if (id) ids.add(cfg.strategy === 'fusion' && ref?.lens ? `${id}::${ref.lens}` : id);
+  };
+  (cfg.authors?.length ? cfg.authors : [undefined]).forEach(addAuthor);
   if (cfg.strategy === 'fusion') add(cfg.synthesizer);
   if (cfg.strategy === 'council') (cfg.judges?.length ? cfg.judges : [undefined]).forEach(add);
   if (ids.size >= 2) return null;
@@ -92,10 +101,10 @@ function diversityWarning(cfg: LlmTaskRouting, primaryId: string | undefined): s
 
 type RoutingMap = Partial<Record<LlmTaskType, LlmTaskRouting>>;
 type RoleListKey = 'authors' | 'judges' | 'tiers';
-type RoleSingleKey = 'synthesizer' | 'scorer' | 'critic' | 'reviser';
+type RoleSingleKey = 'synthesizer' | 'scorer' | 'critic' | 'reviser' | 'secondOpinion';
 
 const LIST_KEYS = ['authors', 'judges', 'tiers'] as const;
-const SINGLE_KEYS = ['synthesizer', 'scorer', 'critic', 'reviser'] as const;
+const SINGLE_KEYS = ['synthesizer', 'scorer', 'critic', 'reviser', 'secondOpinion'] as const;
 
 function sanitizeCfg(cfg: LlmTaskRouting, modelIds: Set<string>): LlmTaskRouting {
   const c: LlmTaskRouting = { ...cfg };
@@ -290,6 +299,7 @@ export default function LLMRoutingConfiguration({
                         onChange={(next) => setList(t.key, 'authors', next)}
                         label="Authors (drafters)"
                         addLabel="Add author"
+                        withLens
                       />
                       <ModelSelect
                         value={singleValue(t.key, 'synthesizer')}
@@ -329,7 +339,8 @@ export default function LLMRoutingConfiguration({
                   {cfg.strategy === 'cascade' &&
                     (() => {
                       const gate = cfg.cascadeGate ?? 'checks_and_scorer';
-                      const scorerUsed = gate !== 'checks';
+                      const scorerUsed = gate === 'scorer' || gate === 'checks_and_scorer';
+                      const disagreementUsed = gate === 'disagreement';
                       return (
                         <div className="grid gap-3 sm:grid-cols-2">
                           <ModelRowList
@@ -382,6 +393,14 @@ export default function LLMRoutingConfiguration({
                               placeholder="0.7"
                             />
                           )}
+                          {disagreementUsed && (
+                            <ModelSelect
+                              value={singleValue(t.key, 'secondOpinion')}
+                              models={models}
+                              onChange={(v) => setSingle(t.key, 'secondOpinion', v)}
+                              label="Second opinion"
+                            />
+                          )}
                         </div>
                       );
                     })()}
@@ -413,6 +432,30 @@ export default function LLMRoutingConfiguration({
                         min={1}
                         placeholder="1"
                       />
+                      <div className="space-y-1.5 sm:col-span-2">
+                        <Label className="text-xs font-medium">Mode</Label>
+                        <Select
+                          value={cfg.refineMode ?? 'revise'}
+                          onValueChange={(v) =>
+                            patchTask(t.key, { refineMode: v as 'revise' | 'escalate' })
+                          }
+                        >
+                          <SelectTrigger className="h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="revise">Revise (edit the draft)</SelectItem>
+                            <SelectItem value="escalate">
+                              Escalate (reviser re-answers from scratch)
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          {cfg.refineMode === 'escalate'
+                            ? 'On a real problem the reviser answers the original evidence fresh (critique as hints, draft not shown) - keeps a strong reviser from following a weak draft.'
+                            : 'The reviser edits the draft using the critique.'}
+                        </p>
+                      </div>
                     </div>
                   )}
 

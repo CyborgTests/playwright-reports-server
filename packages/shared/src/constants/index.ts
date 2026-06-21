@@ -166,7 +166,8 @@ export const ROOT_CAUSE_CATEGORY_DESCRIPTIONS: Record<RootCauseCategory, string>
   test_bug: 'Fix the test code - bad selector, missing wait, wrong assumption, or a race.',
   environment:
     'Fix the environment - missing data, stale fixtures, expired or misconfigured auth, an unavailable dependency, or a runner/browser/network outage.',
-  slow_path: 'Change nothing - the operation finished correctly but past the timeout (performance).',
+  slow_path:
+    'Change nothing - the operation finished correctly but past the timeout (performance).',
   unknown: 'Cannot tell from the evidence which of the above must change.',
 };
 

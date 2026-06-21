@@ -13,6 +13,15 @@ import {
 
 export const PRIMARY = '__primary__';
 
+const NO_LENS = '__none__';
+const LENS_OPTIONS: { value: string; label: string }[] = [
+  { value: NO_LENS, label: 'No lens' },
+  { value: 'app', label: 'Assume app fault' },
+  { value: 'test', label: 'Assume test fault' },
+  { value: 'environment', label: 'Assume environment fault' },
+  { value: 'skeptic', label: 'Be a skeptic' },
+];
+
 export function ModelRowList({
   rows,
   models,
@@ -20,6 +29,7 @@ export function ModelRowList({
   label,
   addLabel,
   ordered = false,
+  withLens = false,
 }: Readonly<{
   rows: LlmRoleRef[];
   models: LlmModel[];
@@ -27,6 +37,7 @@ export function ModelRowList({
   label: string;
   addLabel: string;
   ordered?: boolean;
+  withLens?: boolean;
 }>) {
   const addRow = () => {
     if (models.length > 0) onChange([...rows, { modelId: models[0].id }]);
@@ -34,6 +45,10 @@ export function ModelRowList({
   const removeRow = (i: number) => onChange(rows.filter((_, idx) => idx !== i));
   const setRowModel = (i: number, modelId: string) =>
     onChange(rows.map((r, idx) => (idx === i ? { ...r, modelId } : r)));
+  const setRowLens = (i: number, lens: string) =>
+    onChange(
+      rows.map((r, idx) => (idx === i ? { ...r, lens: lens === NO_LENS ? undefined : lens } : r))
+    );
   const move = (i: number, dir: -1 | 1) => {
     const j = i + dir;
     if (j < 0 || j >= rows.length) return;
@@ -89,6 +104,20 @@ export function ModelRowList({
                   ))}
                 </SelectContent>
               </Select>
+              {withLens && (
+                <Select value={r.lens ?? NO_LENS} onValueChange={(v) => setRowLens(i, v)}>
+                  <SelectTrigger className="h-8 w-44 shrink-0" aria-label="Lens">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LENS_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Button
                 type="button"
                 variant="ghost"

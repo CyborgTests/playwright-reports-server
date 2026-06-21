@@ -13,11 +13,12 @@ export type LlmTaskType = 'test_analysis' | 'report_summary' | 'project_summary'
 
 export type LlmStrategy = 'one_shot' | 'fusion' | 'council' | 'cascade' | 'self_refine';
 
-export type CascadeGate = 'checks' | 'scorer' | 'checks_and_scorer';
+export type CascadeGate = 'checks' | 'scorer' | 'checks_and_scorer' | 'disagreement';
 
 export interface LlmRoleRef {
   modelId?: string;
   temperature?: number;
+  lens?: string;
 }
 
 export interface LlmTaskRouting {
@@ -29,10 +30,12 @@ export interface LlmTaskRouting {
   critic?: LlmRoleRef;
   reviser?: LlmRoleRef;
   maxRounds?: number;
+  refineMode?: 'revise' | 'escalate';
   tiers?: LlmRoleRef[];
   scorer?: LlmRoleRef;
   escalateBelowScore?: number;
   cascadeGate?: CascadeGate;
+  secondOpinion?: LlmRoleRef;
 }
 
 export interface LLMConfig {

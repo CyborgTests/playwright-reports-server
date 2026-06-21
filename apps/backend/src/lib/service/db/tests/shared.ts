@@ -29,6 +29,7 @@ export interface TestRunRow {
   errorSignature?: string;
   reportTitle?: string;
   reportDisplayNumber?: number;
+  hasTrace?: boolean;
 }
 
 export interface TestState {
@@ -84,6 +85,7 @@ export interface TestRunDbRow {
   error_signature: string | null;
   reportTitle?: string | null;
   reportDisplayNumber?: number | null;
+  has_trace?: number | null;
 }
 
 export function convertDbRowToTestRun(row: TestRunDbRow): TestRunRow {
@@ -102,6 +104,7 @@ export function convertDbRowToTestRun(row: TestRunDbRow): TestRunRow {
     errorSignature: row.error_signature || undefined,
     reportTitle: row.reportTitle ?? undefined,
     reportDisplayNumber: row.reportDisplayNumber ?? undefined,
+    hasTrace: row.has_trace == null ? undefined : row.has_trace === 1,
   };
 }
 

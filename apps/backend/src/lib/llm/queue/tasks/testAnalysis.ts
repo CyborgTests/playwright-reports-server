@@ -1,5 +1,9 @@
 import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
+import { computeDomDiff } from '../../../diff/domDiff.js';
+import { computeNetworkDiff } from '../../../diff/networkDiff.js';
+import { normalizeDom } from '../../../parser/domNormalize.js';
 import { stripAnsi } from '../../../parser/failure-extraction.js';
+import { actionBeforeAfterDom, failureDom } from '../../../parser/trace-snapshot.js';
 import {
   analysisFeedbackDb,
   type LlmTaskRow,
@@ -14,6 +18,11 @@ import {
   detectFailureCategory,
   isRootCauseCategory,
 } from '../../../service/test-management/index.js';
+import {
+  loadFullNetworkForTest,
+  loadTraceSnapshotsForTest,
+  resolveBaseline,
+} from '../../../service/traceBaseline.js';
 import { llmService } from '../../index.js';
 import type { FailureDetailsForPrompt } from '../../prompts/index.js';
 import { buildTestFailureSegments, renderSegmentsForDebug } from '../../prompts/index.js';
@@ -35,7 +44,6 @@ import {
 const CROSS_PROJECT_CANDIDATE_POOL = 25;
 const CROSS_PROJECT_KEEP = 5;
 const RECENT_OUTCOMES_KEEP = 15;
-const RECENT_CATEGORIES_KEEP = 8;
 
 const REUSE_TTL_DAYS = 7;
 const REUSE_RECURRENCE_LIMIT = 5;
@@ -168,17 +176,13 @@ async function buildTestAnalysisPrompt(
       ctx.failedRun?.errorSignature ?? undefined
     );
 
-  const { recentOutcomes, previousCategoriesChronological } = buildRecentHistoryFromRuns(ctx.runs);
+  const { recentOutcomes } = buildRecentHistoryFromRuns(ctx.runs);
 
   await enrichEnvironmentFromReport(ctx.details, ctx.reportId);
 
-  const priorPrior = testAnalysisDb.getLatestPriorByTest(
-    ctx.testId,
-    ctx.fileId,
-    ctx.project,
-    ctx.reportId
-  );
   const openRegression = regressionsDb.getOpenForTest(ctx.testId, ctx.fileId, ctx.project);
+
+  const diffs = await buildTraceDiffs(ctx);
   const builtPrompt = buildTestFailureSegments({
     failureDetails: ctx.details,
     historicalContext: {
@@ -189,20 +193,12 @@ async function buildTestAnalysisPrompt(
       isFlaky: flakinessScore >= warningThreshold,
       isNewFailure: ctx.isNewFailure,
       recentOutcomes,
-      previousCategories: previousCategoriesChronological,
     },
     feedback: ctx.feedback,
     crossProjectEntries,
     crossProjectTotalCount,
-    priorInProjectAnalysis: priorPrior?.analysis
-      ? {
-          analysis: priorPrior.analysis,
-          category: priorPrior.category ?? undefined,
-          model: priorPrior.model ?? undefined,
-          updatedAt: priorPrior.updatedAt ?? priorPrior.createdAt,
-        }
-      : null,
     regressionContext: openRegression ? toRegressionContext(openRegression) : null,
+    ...diffs,
     overrides: promptOverrides,
   });
 
@@ -229,7 +225,6 @@ function buildCrossProjectEntries(
     comment: string;
     updatedAt: string;
     errorSignatureMatchesCurrent: boolean;
-    latestAnalysis?: { content: string; updatedAt: string; model?: string };
   }>;
   totalCount: number;
 } {
@@ -244,7 +239,7 @@ function buildCrossProjectEntries(
       !!currentSignature && !!r.errorSignature && r.errorSignature === currentSignature;
     const ageMs = Date.now() - new Date(r.updatedAt).getTime();
     const days = Math.max(0, ageMs / (24 * 60 * 60 * 1000));
-    return (sigMatch ? 100 : 0) + 30 / (1 + days) + (r.latestAnalysis ? 5 : 0);
+    return (sigMatch ? 100 : 0) + 30 / (1 + days);
   };
   const ranked = [...relatedRows]
     .map((r) => ({ row: r, s: score(r) }))
@@ -257,27 +252,73 @@ function buildCrossProjectEntries(
     updatedAt: r.updatedAt,
     errorSignatureMatchesCurrent:
       !!currentSignature && !!r.errorSignature && r.errorSignature === currentSignature,
-    latestAnalysis: r.latestAnalysis
-      ? {
-          content: r.latestAnalysis,
-          updatedAt: r.latestAnalysisUpdatedAt ?? r.updatedAt,
-          model: r.latestAnalysisModel ?? undefined,
-        }
-      : undefined,
   }));
   return { entries, totalCount: relatedRows.length };
 }
 
+interface TraceDiffs {
+  networkDiff: ReturnType<typeof computeNetworkDiff> | null;
+  networkBaselineLabel?: string;
+  domDiff: ReturnType<typeof computeDomDiff> | null;
+  domBaselineLabel?: string;
+  actionDomEffect: ReturnType<typeof computeDomDiff> | null;
+}
+
+async function buildTraceDiffs(ctx: ResolvedTestContext): Promise<TraceDiffs> {
+  const out: TraceDiffs = { networkDiff: null, domDiff: null, actionDomEffect: null };
+
+  const [currentNetwork, currentSnapshots, baseline] = await Promise.all([
+    loadFullNetworkForTest(ctx.reportId, ctx.testId),
+    loadTraceSnapshotsForTest(ctx.reportId, ctx.testId),
+    resolveBaseline({
+      testId: ctx.testId,
+      fileId: ctx.fileId,
+      project: ctx.project,
+      currentReportId: ctx.reportId,
+    }),
+  ]);
+
+  // Cross-run network diff.
+  if (currentNetwork && currentNetwork.length > 0 && baseline && baseline.network.length > 0) {
+    const diff = computeNetworkDiff(baseline.network, currentNetwork);
+    if (diff.entries.length > 0) {
+      out.networkDiff = diff;
+      out.networkBaselineLabel = baseline.label;
+    }
+  }
+
+  if (currentSnapshots) {
+    const failRaw = failureDom(currentSnapshots);
+    const currentDom = failRaw ? normalizeDom(failRaw) : null;
+    if (currentDom && baseline?.dom) {
+      const diff = computeDomDiff(baseline.dom, currentDom);
+      if (diff.entries.length > 0 || diff.textAdded.length > 0 || diff.textRemoved.length > 0) {
+        out.domDiff = diff;
+        out.domBaselineLabel = baseline.label;
+      }
+    }
+
+    if (currentSnapshots.failingCallId) {
+      const ba = actionBeforeAfterDom(currentSnapshots, currentSnapshots.failingCallId);
+      const before = ba.before ? normalizeDom(ba.before) : null;
+      const after = ba.after ? normalizeDom(ba.after) : null;
+      if (before && after) {
+        const diff = computeDomDiff(before, after);
+        if (diff.entries.length > 0 || diff.textAdded.length > 0 || diff.textRemoved.length > 0) {
+          out.actionDomEffect = diff;
+        }
+      }
+    }
+  }
+
+  return out;
+}
+
 function buildRecentHistoryFromRuns(runs: ReturnType<typeof testDb.getTestRuns>): {
   recentOutcomes: string[];
-  previousCategoriesChronological: string[];
 } {
   const recentOutcomes = runs.slice(0, RECENT_OUTCOMES_KEEP).map((r) => r.outcome);
-  const previousCategoriesChronological = runs
-    .map((r) => r.failureCategory)
-    .filter((c): c is string => !!c)
-    .slice(0, RECENT_CATEGORIES_KEEP);
-  return { recentOutcomes, previousCategoriesChronological };
+  return { recentOutcomes };
 }
 
 export async function processTestAnalysis(task: LlmTaskRow): Promise<void> {

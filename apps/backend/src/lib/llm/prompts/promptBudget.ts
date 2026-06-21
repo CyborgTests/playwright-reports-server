@@ -37,13 +37,6 @@ function shrinkFencedBlocks(content: string, blockMax: number): string {
   });
 }
 
-/** Drop the recent-categories line - least informative when budget tight.
- *  Must match the line emitted by buildHistoricalContextBlock:
- *  `- recent_categories (newest first): …`. */
-function shrinkHistoricalContext(content: string): string {
-  return content.replace(/- recent_categories\b.*\n/, '');
-}
-
 /** Cap a block to a max char count by truncating from the tail (keeps the
  *  header + first entries, drops the older ones). Used for evidence segments
  *  whose entries are ordered "most informative first." */
@@ -86,6 +79,9 @@ export function fitPromptToBudget(prompt: SegmentedPrompt, charsBudget: number):
   for (const { id, cap } of [
     { id: 'page_snapshot', cap: 1500 },
     { id: 'network_activity', cap: 2000 },
+    { id: 'network_diff', cap: 1500 },
+    { id: 'dom_diff', cap: 1800 },
+    { id: 'action_dom_effect', cap: 1800 },
     { id: 'console_log', cap: 1200 },
     { id: 'recent_actions', cap: 1000 },
   ]) {
@@ -96,14 +92,6 @@ export function fitPromptToBudget(prompt: SegmentedPrompt, charsBudget: number):
     ) {
       return { prompt: p, changes };
     }
-  }
-
-  if (
-    tryStep('shrunk historical context', (cur) =>
-      transformSegment(cur, 'historical_context', shrinkHistoricalContext)
-    )
-  ) {
-    return { prompt: p, changes };
   }
 
   // Middle-truncate fenced blocks in current_failure (error message + stack trace).

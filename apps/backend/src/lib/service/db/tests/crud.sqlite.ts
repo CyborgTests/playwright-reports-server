@@ -205,6 +205,7 @@ export class TestCrudDatabase extends TestDbBase {
         failure_category: testRunWithId.failureCategory || null,
         failure_category_source: testRunWithId.failureCategorySource || null,
         error_signature: testRunWithId.errorSignature || null,
+        has_trace: testRunWithId.hasTrace ? 1 : 0,
       })
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
@@ -293,6 +294,30 @@ export class TestCrudDatabase extends TestDbBase {
       | TestRunDbRow
       | undefined;
     return row ? convertDbRowToTestRun(row) : undefined;
+  }
+
+  public getBaselineCandidates(
+    testId: string,
+    fileId: string,
+    project: string,
+    excludeReportId: string,
+    limit = 8
+  ): TestRunRow[] {
+    const compiled = this.k
+      .selectFrom('test_runs')
+      .selectAll()
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .where('reportId', '!=', excludeReportId)
+      .where('outcome', '!=', 'skipped')
+      .where('has_trace', '=', 1)
+      .orderBy(sql`CASE WHEN outcome IN ('expected', 'passed') THEN 0 ELSE 1 END`, 'asc')
+      .orderBy('createdAt', 'desc')
+      .limit(limit)
+      .compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as TestRunDbRow[];
+    return rows.map((row) => convertDbRowToTestRun(row));
   }
 
   public getLatestFailedRunsByTestIds(

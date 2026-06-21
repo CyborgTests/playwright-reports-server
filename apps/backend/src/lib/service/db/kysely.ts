@@ -254,6 +254,19 @@ export interface TestRunsRow {
   failure_category: string | null;
   failure_category_source: string | null;
   error_signature: string | null;
+  has_trace: number;
+}
+
+export interface TestTraceBaselinesRow {
+  testId: string;
+  fileId: string;
+  project: string;
+  sourceReportId: string;
+  sourceCreatedAt: string;
+  sourceOutcome: string;
+  network: string; // JSON-serialized NetworkEvent[]
+  dom: string | null; // JSON-serialized normalized DomNode
+  updatedAt: string;
 }
 
 export interface QualityDashboardsRow {
@@ -345,6 +358,7 @@ export interface Database {
   site_config: SiteConfigRow;
   test_llm_analyses: TestLlmAnalysesRow;
   test_runs: TestRunsRow;
+  test_trace_baselines: TestTraceBaselinesRow;
   tests: TestsRow;
   tests_fts: TestsFtsRow;
 }

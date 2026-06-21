@@ -12,6 +12,8 @@ import * as pruneRedundantIndexes from './0008_prune_redundant_indexes.js';
 import * as resetResolutionsDropSignatureGlobal from './0009_reset_resolutions_drop_signature_global.js';
 import * as llmModelRegistry from './0010_llm_model_registry.js';
 import * as mergeInfraIntoEnv from './0011_merge_infrastructure_into_environment.js';
+import * as testTraceBaselines from './0012_test_trace_baselines.js';
+import * as testRunsHasTrace from './0013_test_runs_has_trace.js';
 
 // Ordered, statically-imported migration set. The keys are the names Kysely
 // records in its `kysely_migration` table; their lexical order is the run order,
@@ -40,6 +42,8 @@ const MIGRATIONS: Record<string, Migration> = {
     up: mergeInfraIntoEnv.up,
     down: mergeInfraIntoEnv.down,
   },
+  '0012_test_trace_baselines': { up: testTraceBaselines.up, down: testTraceBaselines.down },
+  '0013_test_runs_has_trace': { up: testRunsHasTrace.up, down: testRunsHasTrace.down },
 };
 
 class StaticMigrationProvider implements MigrationProvider {

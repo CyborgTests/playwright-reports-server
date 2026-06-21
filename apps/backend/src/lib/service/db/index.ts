@@ -66,3 +66,4 @@ export type {
   TestWithQuarantineInfoRow,
 } from './tests.sqlite.js';
 export { testAnalyticsDb, testDb, testQueriesDb } from './tests.sqlite.js';
+export { traceBaselineDb } from './traceBaseline.sqlite.js';

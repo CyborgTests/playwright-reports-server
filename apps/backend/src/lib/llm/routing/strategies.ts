@@ -4,6 +4,7 @@ import type { SegmentedSendOptions } from '../index.js';
 import {
   buildCritiquePrompt,
   buildJudgePrompt,
+  buildReanswerPrompt,
   buildRevisePrompt,
   buildScorerPrompt,
   buildSynthesizerPrompt,
@@ -14,6 +15,7 @@ import type { LLMResponse, SegmentedPrompt } from '../types/index.js';
 import {
   callRole,
   coerceVerdicts,
+  extractLabel,
   fitFinal,
   parseFirstJson,
   RESERVE,
@@ -26,6 +28,9 @@ import {
 import { verifyDraft } from './verify.js';
 
 const SCORE_TIE_EPSILON = 0.05;
+
+const hasNoMaterialIssues = (critique: string): boolean => /\bno material issues\b/i.test(critique);
+
 function shuffleIndices(n: number): number[] {
   const order = Array.from({ length: n }, (_, i) => i);
   for (let i = n - 1; i > 0; i--) {
@@ -87,6 +92,7 @@ export async function runCouncil(
         buildJudgePrompt(
           prompt,
           order.map((oi) => drafts[oi]),
+          taskType,
           customJudge
         ),
         SCORE_RESERVE
@@ -167,11 +173,15 @@ export async function runCascade(
 ): Promise<FallbackSendResult> {
   const tiers = resolveRoles(routing.tiers, taskType);
   const gate = routing.cascadeGate ?? 'checks_and_scorer';
-  const useChecks = gate !== 'scorer';
-  const useScorer = gate !== 'checks';
+  const useChecks = gate === 'checks' || gate === 'checks_and_scorer';
+  const useScorer = gate === 'scorer' || gate === 'checks_and_scorer';
   const scorer = useScorer
     ? (resolveRole(routing.scorer, taskType) ?? resolveRole(undefined, taskType))
     : null;
+  const secondOpinion =
+    gate === 'disagreement'
+      ? (resolveRole(routing.secondOpinion, taskType) ?? resolveRole(undefined, taskType))
+      : null;
   const threshold = routing.escalateBelowScore ?? 0.7;
   const usages: Usage[] = [];
   let lastErr: unknown;
@@ -190,7 +200,31 @@ export async function runCascade(
       return fitFinal(draft, usages, tiers[i].row.baseUrl);
     }
 
-    // Primary gate (skipped when cascadeGate is 'scorer')
+    if (gate === 'disagreement') {
+      if (!secondOpinion) {
+        return fitFinal(draft, usages, tiers[i].row.baseUrl);
+      }
+      let secondLabel: string | null = null;
+      try {
+        const second = await callRole(taskId, taskType, 'second_opinion', secondOpinion, prompt);
+        usages.push(second.usage);
+        secondLabel = extractLabel(taskType, second.content);
+      } catch {
+        secondLabel = null;
+      }
+      const tierLabel = extractLabel(taskType, draft.content);
+
+      const accept =
+        tierLabel == null || secondLabel == null
+          ? verifyDraft(taskType, draft.content).ok
+          : tierLabel === secondLabel;
+      console.info(
+        `[llm-routing] cascade tier ${i + 1} for ${taskType} disagreement gate: tier=${tierLabel ?? 'none'} second=${secondLabel ?? 'none'} → ${accept ? 'accept' : 'escalate'}`
+      );
+      if (accept) return fitFinal(draft, usages, tiers[i].row.baseUrl);
+      continue;
+    }
+
     if (useChecks) {
       const check = verifyDraft(taskType, draft.content);
       if (!check.ok) {
@@ -206,7 +240,12 @@ export async function runCascade(
     if (useScorer && scorer) {
       try {
         const { prompt: sp } = await fitToContextWindow(
-          buildScorerPrompt(prompt, draft.content, configCache.config?.llm?.customScorerPrompt),
+          buildScorerPrompt(
+            prompt,
+            draft.content,
+            taskType,
+            configCache.config?.llm?.customScorerPrompt
+          ),
           SCORE_RESERVE
         );
         const sResp = await callRole(taskId, taskType, 'scorer', scorer, sp);
@@ -248,6 +287,7 @@ export async function runSelfRefine(
   const critic = resolveRole(routing.critic, taskType) ?? author;
   const reviser = resolveRole(routing.reviser, taskType) ?? author;
   const maxRounds = Math.max(1, routing.maxRounds ?? 1);
+  const mode = routing.refineMode ?? 'revise';
 
   const usages: Usage[] = [];
   let draft = await callRole(taskId, taskType, 'author', author, prompt);
@@ -264,16 +304,15 @@ export async function runSelfRefine(
         buildCritiquePrompt(prompt, draft.content, configCache.config?.llm?.customCritiquePrompt)
       );
       usages.push(critique.usage);
-      const { prompt: revisePrompt } = await fitToContextWindow(
-        buildRevisePrompt(
-          prompt,
-          draft.content,
-          critique.content,
-          configCache.config?.llm?.customRevisePrompt
-        ),
-        RESERVE[taskType]
-      );
-      const revised = await callRole(taskId, taskType, 'reviser', reviser, revisePrompt);
+
+      if (mode === 'escalate' && hasNoMaterialIssues(critique.content)) break;
+      const custom = configCache.config?.llm?.customRevisePrompt;
+      const revisePrompt =
+        mode === 'escalate'
+          ? buildReanswerPrompt(prompt, critique.content) // re-answer has no draft; the revise prompt doesn't fit
+          : buildRevisePrompt(prompt, draft.content, critique.content, custom);
+      const { prompt: fitted } = await fitToContextWindow(revisePrompt, RESERVE[taskType]);
+      const revised = await callRole(taskId, taskType, 'reviser', reviser, fitted);
       usages.push(revised.usage);
       draft = revised;
       baseUrl = reviser.row.baseUrl;
