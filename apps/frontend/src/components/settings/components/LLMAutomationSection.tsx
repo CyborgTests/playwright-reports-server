@@ -22,14 +22,14 @@ const TOGGLES: { key: ToggleKey; field: string; title: string; description: stri
     field: 'llmAutoProjectSummaryOnReportComplete',
     title: 'Auto-generate project summary',
     description:
-      'When enabled, completing a report\'s failure analysis automatically queues a project-level summary for that project and for "all" projects.',
+      'When enabled, completing a report failure analysis automatically queues a project-level summary for specific project and for "all" projects.',
   },
   {
     key: 'analyzeGreenWindows',
     field: 'llmAnalyzeGreenWindows',
     title: 'Analyze all-green windows',
     description:
-      'When enabled, "Generate Analysis" runs the LLM even when no failures were observed - surfaces duration creep, near-flakes, quarantine churn, and suite shrinkage. Off by default to keep LLM spend predictable.',
+      'When enabled, runs LLM even when no failures were observed - shows duration diff, near-flakes, quarantine churn, and suite size.',
   },
 ];
 

@@ -226,11 +226,9 @@ export default function LLMRoutingConfiguration() {
       </div>
       <div className={featureEnabled ? '' : 'opacity-50'}>
         <p className="text-sm text-muted-foreground mb-4">
-          Choose how each task is produced. <span className="font-medium">One-shot</span> uses the
-          single primary model and is the recommended default. The other strategies orchestrate
-          several models from the registry - more calls and higher latency, and they only pay off
-          with genuinely <span className="font-medium">different</span> (or stronger) models, not
-          the same model repeated.
+          Choose how each task is produced. Various strategies can allow orchestrate
+          several models. They only pay off with genuinely <span className="font-medium">different</span>
+          (or stronger) models, not the same model repeated.
         </p>
 
         {models.length === 0 ? (

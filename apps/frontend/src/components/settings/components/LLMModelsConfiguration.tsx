@@ -262,7 +262,7 @@ export default function LLMModelsConfiguration() {
     <section className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <h3 className="text-lg font-semibold">Model registry</h3>
+          <h3 className="text-lg font-semibold">Models</h3>
           <Badge variant="outline" className="text-xs">
             {models.length} configured
           </Badge>
