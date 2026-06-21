@@ -9,6 +9,7 @@ interface QuarantinedTest {
   reason: string;
 }
 
+// biome-ignore lint/suspicious/noConfusingVoidType: `void` is the idiomatic type for a Playwright auto-fixture with no value
 export const test = base.extend<{ checkQuarantine: void }>({
   checkQuarantine: [
     // biome-ignore lint/correctness/noEmptyPattern: need an object

@@ -17,6 +17,24 @@ export type ReportGenerationOptions = {
   playwrightVersion: string;
 };
 
+export type UploadBlobResult = {
+  resultID: UUID;
+  createdAt: string;
+  size: string;
+  sizeBytes: number;
+  generatedReport?: {
+    reportId: string;
+    reportUrl: string;
+    metadata: {
+      title: string;
+      project: string;
+    };
+  };
+  username?: string;
+};
+
+type StreamingRequestInit = RequestInit & { duplex: 'half' };
+
 export class ReportServerClient {
   private readonly options: ReportServerClientOptions;
 
@@ -31,21 +49,7 @@ export class ReportServerClient {
   async uploadBlob(
     blobPath: string,
     { fileName = 'blob.zip', fields = {}, logProgress = false }
-  ): Promise<{
-    resultID: UUID;
-    createdAt: string;
-    size: string;
-    sizeBytes: number;
-    generatedReport?: {
-      reportId: string;
-      reportUrl: string;
-      metadata: {
-        title: string;
-        project: string;
-      };
-    };
-    username?: string;
-  }> {
+  ): Promise<UploadBlobResult> {
     let stat: Stats;
     try {
       stat = await fsp.stat(blobPath);
@@ -84,15 +88,13 @@ export class ReportServerClient {
     const timeoutId = setTimeout(() => controller.abort(), totalTimeout);
 
     try {
-      const fetchAny: any = fetch;
-
-      const resp = await fetchAny(uploadUrl, {
+      const resp = await fetch(uploadUrl, {
         method: 'PUT',
         headers,
-        body: body as any,
+        body: body as unknown as BodyInit,
         signal: controller.signal,
         duplex: 'half',
-      });
+      } as StreamingRequestInit);
       clearTimeout(timeoutId);
 
       if (!resp.ok) {
@@ -100,7 +102,7 @@ export class ReportServerClient {
         throw new Error(`[ReportServerClient] Upload failed ${resp.status}: ${text.slice(0, 500)}`);
       }
 
-      const json = (await resp.json()) as { data: any };
+      const json = (await resp.json()) as { data: UploadBlobResult };
       return json.data;
     } catch (err) {
       clearTimeout(timeoutId);
@@ -149,15 +151,13 @@ export class ReportServerClient {
     const timeoutId = setTimeout(() => controller.abort(), totalTimeout);
 
     try {
-      const fetchAny: any = fetch;
-
-      const resp = await fetchAny(uploadUrl, {
+      const resp = await fetch(uploadUrl, {
         method: 'POST',
         headers,
-        body: body as any,
+        body: body as unknown as BodyInit,
         signal: controller.signal,
         duplex: 'half',
-      });
+      } as StreamingRequestInit);
       clearTimeout(timeoutId);
 
       if (!resp.ok) {
