@@ -52,6 +52,7 @@ const SELECT_QUEUED_SQL = `
   )
   SELECT t.* FROM llm_tasks t
   WHERE t.status = 'queued'
+    AND t.parentTaskId IS NULL
     AND (
       t.type = 'test_analysis'
       OR (
