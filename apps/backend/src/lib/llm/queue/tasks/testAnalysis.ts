@@ -36,7 +36,7 @@ import { buildTestFailureSegments, renderSegmentsForDebug } from '../../prompts/
 import { runRoutedTask } from '../../routing/index.js';
 import { extractTestAnalysisFromMarkdown } from '../../testAnalysis.js';
 import type { PromptImage, SegmentedPrompt } from '../../types/index.js';
-import { transcribeScreenshots } from '../../visionTranscribe.js';
+import { resolveScreenshotModel, transcribeScreenshots } from '../../visionTranscribe.js';
 import {
   attachScreenshotImages,
   collectScreenshotImages,
@@ -223,9 +223,15 @@ async function buildTestAnalysisPrompt(
     taskId && screenshots.length > 0
       ? await transcribeScreenshots(screenshots, taskId, logPrefix)
       : null;
+  const labels = screenshots.map((s) => s.source).filter((s): s is string => !!s);
   if (transcription) {
-    const labels = screenshots.map((s) => s.source).filter((s): s is string => !!s);
     injectScreenshotDescription(builtPrompt, transcription.text, labels);
+  } else if (!taskId && screenshots.length > 0 && resolveScreenshotModel()) {
+    injectScreenshotDescription(
+      builtPrompt,
+      `_(preview)_ At analysis time the configured vision model transcribes ${screenshots.length} screenshot(s) to text here; the raw image is not sent to the analysis model.`,
+      labels
+    );
   } else {
     attachScreenshotImages(builtPrompt, screenshots, logPrefix);
   }
