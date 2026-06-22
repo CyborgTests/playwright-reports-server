@@ -23,6 +23,7 @@ export interface LlmRoleRef {
 
 export interface LlmTaskRouting {
   strategy: LlmStrategy;
+  model?: LlmRoleRef;
   authors?: LlmRoleRef[];
   synthesizer?: LlmRoleRef;
   judges?: LlmRoleRef[];

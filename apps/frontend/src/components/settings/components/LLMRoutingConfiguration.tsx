@@ -101,10 +101,17 @@ function diversityWarning(cfg: LlmTaskRouting, primaryId: string | undefined): s
 
 type RoutingMap = Partial<Record<LlmTaskType, LlmTaskRouting>>;
 type RoleListKey = 'authors' | 'judges' | 'tiers';
-type RoleSingleKey = 'synthesizer' | 'scorer' | 'critic' | 'reviser' | 'secondOpinion';
+type RoleSingleKey = 'model' | 'synthesizer' | 'scorer' | 'critic' | 'reviser' | 'secondOpinion';
 
 const LIST_KEYS = ['authors', 'judges', 'tiers'] as const;
-const SINGLE_KEYS = ['synthesizer', 'scorer', 'critic', 'reviser', 'secondOpinion'] as const;
+const SINGLE_KEYS = [
+  'model',
+  'synthesizer',
+  'scorer',
+  'critic',
+  'reviser',
+  'secondOpinion',
+] as const;
 
 function sanitizeCfg(cfg: LlmTaskRouting, modelIds: Set<string>): LlmTaskRouting {
   const c: LlmTaskRouting = { ...cfg };
@@ -125,7 +132,14 @@ function sanitizeCfg(cfg: LlmTaskRouting, modelIds: Set<string>): LlmTaskRouting
 function cleanRouting(routing: RoutingMap, modelIds?: Set<string>): RoutingMap {
   const clean: RoutingMap = {};
   for (const [task, cfg] of Object.entries(routing) as [LlmTaskType, LlmTaskRouting][]) {
-    if (!cfg || cfg.strategy === 'one_shot') continue;
+    if (!cfg) continue;
+    if (cfg.strategy === 'one_shot') {
+      const sanitized = modelIds ? sanitizeCfg(cfg, modelIds) : cfg;
+      if (sanitized.model?.modelId) {
+        clean[task] = { strategy: 'one_shot', model: sanitized.model };
+      }
+      continue;
+    }
     clean[task] = modelIds ? sanitizeCfg(cfg, modelIds) : cfg;
   }
   return clean;
@@ -288,6 +302,17 @@ export default function LLMRoutingConfiguration({
                           )}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {cfg.strategy === 'one_shot' && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <ModelSelect
+                        value={singleValue(t.key, 'model')}
+                        models={models}
+                        onChange={(v) => setSingle(t.key, 'model', v)}
+                        label="Model"
+                      />
                     </div>
                   )}
 

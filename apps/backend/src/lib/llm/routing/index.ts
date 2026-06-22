@@ -9,10 +9,11 @@ import { llmService, type SegmentedSendOptions } from '../index.js';
 import {
   type FallbackSendResult,
   getPrimaryModelTemperature,
+  sendViaModelRow,
   sendWithFallback,
 } from '../registry.js';
 import type { SegmentedPrompt } from '../types/index.js';
-import { DEFAULT_TEMP, TEMP_KEY } from './shared.js';
+import { DEFAULT_TEMP, resolveRole, TEMP_KEY } from './shared.js';
 import { runCascade, runCouncil, runFusion, runSelfRefine } from './strategies.js';
 
 export function resolveRouting(taskType: LlmTaskType): LlmTaskRouting {
@@ -22,7 +23,14 @@ export function resolveRouting(taskType: LlmTaskType): LlmTaskRouting {
 const STRATEGIES = new Set(['one_shot', 'fusion', 'council', 'cascade', 'self_refine']);
 const TASK_TYPES = new Set(['test_analysis', 'report_summary', 'project_summary']);
 const ROLE_LISTS = ['authors', 'judges', 'tiers'] as const;
-const ROLE_SINGLES = ['synthesizer', 'critic', 'reviser', 'scorer', 'secondOpinion'] as const;
+const ROLE_SINGLES = [
+  'model',
+  'synthesizer',
+  'critic',
+  'reviser',
+  'scorer',
+  'secondOpinion',
+] as const;
 const CASCADE_GATES = new Set(['checks', 'scorer', 'checks_and_scorer', 'disagreement']);
 const REFINE_MODES = new Set(['revise', 'escalate']);
 
@@ -127,7 +135,19 @@ export async function runTaskStrategy(
 ): Promise<FallbackSendResult> {
   const routing = resolveRouting(taskType);
 
-  if (routing.strategy === 'one_shot' || !taskId) {
+  if (routing.strategy === 'one_shot') {
+    const override = routing.model?.modelId ? resolveRole(routing.model, taskType) : null;
+    if (override) {
+      if (taskId) llmTasksDb.markStrategy(taskId, 'one_shot');
+      return sendViaModelRow(override.row, prompt, {
+        ...options,
+        temperature: override.temperature,
+      });
+    }
+    return sendWithFallback(prompt, options);
+  }
+
+  if (!taskId) {
     return sendWithFallback(prompt, options);
   }
 

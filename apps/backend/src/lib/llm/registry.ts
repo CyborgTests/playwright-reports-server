@@ -120,6 +120,27 @@ export async function sendWithFallback(
   throw lastErr ?? new Error('all models in the fallback chain failed');
 }
 
+export async function sendViaModelRow(
+  row: LlmModelRow,
+  prompt: SegmentedPrompt,
+  options: SegmentedSendOptions = {}
+): Promise<FallbackSendResult> {
+  const primary = llmModelsDb.getPrimary();
+  const isPrimary = primary?.id === row.id;
+  try {
+    const response = await runOnModel(row, () =>
+      isPrimary
+        ? llmService.sendSegmentedMessage(prompt, options)
+        : llmService.sendViaModel(modelRowToProviderConfig(row), prompt, options)
+    );
+    if (row.lastError) llmModelsDb.setLastError(row.id, null);
+    return { response, baseUrl: row.baseUrl };
+  } catch (err) {
+    llmModelsDb.setLastError(row.id, err instanceof Error ? err.message : String(err));
+    throw err;
+  }
+}
+
 export type LlmTaskTemperatureKey =
   | 'testAnalysisTemperature'
   | 'reportSummaryTemperature'
