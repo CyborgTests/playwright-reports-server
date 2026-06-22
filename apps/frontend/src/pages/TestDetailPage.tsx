@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import FormattedDate from '@/components/date-format';
 import { DurationTrend } from '@/components/test-detail/DurationTrend';
 import { FailurePatternsWithClusters } from '@/components/test-detail/FailurePatterns';
 import {
@@ -26,6 +27,7 @@ import {
 import useQuery from '@/hooks/useQuery';
 import { useTestRunsLazy } from '@/hooks/useTestRunsLazy';
 import { defaultProjectName } from '@/lib/constants';
+import { formatDate } from '@/lib/date';
 
 export default function TestDetailPage() {
   const { testId = '' } = useParams<{ testId: string }>();
@@ -110,7 +112,7 @@ export default function TestDetailPage() {
           <Alert className="mt-3 text-sm">
             <div>
               <strong>Active regression:</strong> opened{' '}
-              {new Date(detail.regression.regressedAt).toLocaleString()} ·{' '}
+              <FormattedDate date={detail.regression.regressedAt} /> ·{' '}
               {detail.regression.failureCount} failing run
               {detail.regression.failureCount === 1 ? '' : 's'} since.
               {detail.regression.regressedAtCommit && detail.regression.lastGreenCommit ? (
@@ -149,15 +151,8 @@ export default function TestDetailPage() {
         />
         <StatTile
           label="Last Run"
-          value={stats.lastRunAt ? new Date(stats.lastRunAt).toLocaleDateString() : '-'}
-          hint={
-            stats.lastRunAt
-              ? new Date(stats.lastRunAt).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })
-              : undefined
-          }
+          value={stats.lastRunAt ? formatDate(stats.lastRunAt, 'date') : '-'}
+          hint={stats.lastRunAt ? formatDate(stats.lastRunAt, 'time') : undefined}
         />
         <StatTile
           label="Mean Duration"
@@ -240,7 +235,7 @@ export default function TestDetailPage() {
                       )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-sm">
-                      {row.lastRunAt ? new Date(row.lastRunAt).toLocaleDateString() : '-'}
+                      {row.lastRunAt ? <FormattedDate date={row.lastRunAt} mode="date" /> : '-'}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { formatDate } from '@/lib/date';
 
 interface HealthGridProps {
   metrics: RunHealthMetric[];
@@ -301,7 +302,7 @@ function HealthGridImpl({
     () =>
       metrics
         .map((metric) => {
-          const date = new Date(metric.timestamp).toLocaleDateString();
+          const date = formatDate(metric.timestamp, 'date');
           return {
             name: date,
             heading: formatReportHeading(metric.displayNumber, metric.title, date),

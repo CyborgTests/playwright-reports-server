@@ -1,4 +1,5 @@
 import { ReportTestOutcomeEnum, type TestRun } from '@playwright-reports/shared';
+import FormattedDate from '@/components/date-format';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const outcomeLabel = (outcome: string) => {
@@ -72,7 +73,7 @@ const SparklineChart = ({
                   {annotation}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {new Date(run.createdAt).toLocaleDateString()}
+                  <FormattedDate date={run.createdAt} mode="date" />
                 </p>
                 <p className="text-xs text-muted-foreground">Click to open report</p>
               </TooltipContent>

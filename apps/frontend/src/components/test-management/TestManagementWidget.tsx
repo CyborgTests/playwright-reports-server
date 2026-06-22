@@ -13,6 +13,7 @@ import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } f
 import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { TrendSparklineHistory } from '@/components/analytics/TrendSparklineHistory';
+import FormattedDate from '@/components/date-format';
 import { outcomeBadge } from '@/components/outcome-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,7 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/compon
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useConfig } from '@/hooks/useConfig';
 import { defaultProjectName } from '@/lib/constants';
+import { formatDate } from '@/lib/date';
 import { formatRegressionAge, getStatusBadge } from './badges';
 import { exponentialMovingAverageDuration } from './calculations/ema';
 import { TestFilters as TestFiltersComponent } from './TestFilters';
@@ -112,7 +114,7 @@ const TestRow = memo(
               {item.regression && (
                 <Badge
                   variant="danger"
-                  title={`Regression · opened ${new Date(item.regression.regressedAt).toLocaleString()} · ${item.regression.failureCount} failing run${item.regression.failureCount === 1 ? '' : 's'} since`}
+                  title={`Regression · opened ${formatDate(item.regression.regressedAt)} · ${item.regression.failureCount} failing run${item.regression.failureCount === 1 ? '' : 's'} since`}
                   className="gap-1 text-[10px] px-1.5 py-0"
                 >
                   Regression · {formatRegressionAge(item.regression.daysOpen)}
@@ -143,7 +145,7 @@ const TestRow = memo(
                   <RotateCcw className="absolute top-7 right-0 h-3 w-3 text-muted-foreground" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  Flakiness reset on {new Date(item.flakinessResetAt).toLocaleString()}
+                  Flakiness reset on <FormattedDate date={item.flakinessResetAt} />
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -163,7 +165,7 @@ const TestRow = memo(
         </TableCell>
         <TableCell>
           <div className="flex items-center gap-1 break-words">
-            {item.lastRunAt ? new Date(item.lastRunAt).toLocaleString() : 'Never'}
+            {item.lastRunAt ? <FormattedDate date={item.lastRunAt} /> : 'Never'}
             {stale && (
               <TooltipProvider>
                 <Tooltip>

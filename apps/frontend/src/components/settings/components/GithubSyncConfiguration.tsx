@@ -9,6 +9,7 @@ import {
 } from '@playwright-reports/shared';
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import FormattedDate from '@/components/date-format';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -458,7 +459,10 @@ export default function GithubSyncConfiguration() {
                     <div>
                       Schedule <span className="font-mono">{cfg.cronSchedule}</span>
                       {cfg.status?.nextRun && cfg.enabled && (
-                        <> · next {new Date(cfg.status.nextRun).toLocaleString()}</>
+                        <>
+                          {' '}
+                          · next <FormattedDate date={cfg.status.nextRun} />
+                        </>
                       )}
                     </div>
                     <div>

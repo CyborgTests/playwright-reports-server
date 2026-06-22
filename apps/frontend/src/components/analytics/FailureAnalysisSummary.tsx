@@ -2,6 +2,7 @@ import type { ProjectAnalysisStructured } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Brain, RefreshCw } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
+import FormattedDate from '@/components/date-format';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { StrategyBadge } from '@/components/StrategyBadge';
 import { Badge } from '@/components/ui/badge';
@@ -215,13 +216,13 @@ export function FailureAnalysisSummary({
                   summary.lastReportAt && (
                     <span>
                       {summary.reportCount} {summary.reportCount === 1 ? 'report' : 'reports'}{' '}
-                      analyzed · {new Date(summary.firstReportAt).toLocaleDateString()} -{' '}
-                      {new Date(summary.lastReportAt).toLocaleDateString()}
+                      analyzed · <FormattedDate date={summary.firstReportAt} mode="date" /> -{' '}
+                      <FormattedDate date={summary.lastReportAt} mode="date" />
                     </span>
                   )}
                 {summary.updatedAt && (
                   <span className="ml-auto">
-                    Generated {new Date(summary.updatedAt).toLocaleString()}
+                    Generated <FormattedDate date={summary.updatedAt} showTimezone />
                   </span>
                 )}
               </div>
@@ -231,7 +232,7 @@ export function FailureAnalysisSummary({
         {!hasOngoingAnalysis && summary?.isTooStale && (
           <div className="text-center py-6 text-muted-foreground text-sm">
             Previous analysis was generated{' '}
-            {summary.updatedAt && new Date(summary.updatedAt).toLocaleDateString()} and is now{' '}
+            {summary.updatedAt && <FormattedDate date={summary.updatedAt} mode="date" />} and is now{' '}
             {daysBehind} days behind the latest run. Click "Re-generate" for an up-to-date verdict.
           </div>
         )}

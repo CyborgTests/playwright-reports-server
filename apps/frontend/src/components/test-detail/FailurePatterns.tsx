@@ -340,7 +340,7 @@ function FailureGroupCard({
               <div>{cluster.resolution.note}</div>
               {cluster.resolution.resolvedAt && (
                 <div className="text-xs text-muted-foreground mt-1">
-                  {new Date(cluster.resolution.resolvedAt).toLocaleString()}
+                  <FormattedDate date={cluster.resolution.resolvedAt} />
                 </div>
               )}
             </div>

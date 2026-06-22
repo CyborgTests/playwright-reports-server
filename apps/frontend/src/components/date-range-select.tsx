@@ -4,7 +4,6 @@ import {
   endOfMonth,
   endOfWeek,
   endOfYesterday,
-  format,
   startOfDay,
   startOfMonth,
   startOfWeek,
@@ -15,6 +14,7 @@ import {
 import { CalendarIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DateRange as PickerRange } from 'react-day-picker';
+import { formatDate } from '@/lib/date';
 import { Button } from './ui/button';
 import { Calendar } from './ui/calendar';
 import { Label } from './ui/label';
@@ -87,7 +87,7 @@ function presetToRange(id: PresetId): SharedDateRange {
 
 function rangeToLabel(range: SharedDateRange): string {
   if (!range.from && !range.to) return 'All time';
-  const fmt = (iso: string) => format(new Date(iso), 'MMM d, yyyy');
+  const fmt = (iso: string) => formatDate(iso, 'date');
   if (range.from && range.to) {
     if (range.from === range.to) return fmt(range.from);
     return `${fmt(range.from)} – ${fmt(range.to)}`;

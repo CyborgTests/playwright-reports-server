@@ -1,8 +1,18 @@
-import { memo, useMemo } from 'react';
+import { memo } from 'react';
+import { type DateDisplayMode, formatDate, formatDateTooltip } from '@/lib/date';
 
-function FormattedDateImpl({ date }: Readonly<{ date: Date | string }>) {
-  const formatted = useMemo(() => new Date(date).toLocaleString(), [date]);
-  return <span>{formatted}</span>;
+interface FormattedDateProps {
+  date: Date | string | number;
+  mode?: DateDisplayMode;
+  showTimezone?: boolean;
+}
+
+function FormattedDateImpl({
+  date,
+  mode = 'datetime',
+  showTimezone = false,
+}: Readonly<FormattedDateProps>) {
+  return <span title={formatDateTooltip(date)}>{formatDate(date, mode, { showTimezone })}</span>;
 }
 
 const FormattedDate = memo(FormattedDateImpl);

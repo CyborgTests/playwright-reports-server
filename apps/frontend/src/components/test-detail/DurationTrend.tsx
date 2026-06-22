@@ -10,8 +10,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import FormattedDate from '@/components/date-format';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { formatDate } from '@/lib/date';
 import { dotColor, outcomeBadge, servedReportUrl } from './test-detail-widgets';
 
 const POINT_PX = 36;
@@ -61,7 +63,9 @@ function DurationTooltip({
         {p.isOutlier && <Badge variant="outline">Outlier</Badge>}
       </div>
       {p.reportTitle && <div className="text-muted-foreground truncate">{p.reportTitle}</div>}
-      <div className="text-muted-foreground">{new Date(p.createdAt).toLocaleString()}</div>
+      <div className="text-muted-foreground">
+        <FormattedDate date={p.createdAt} />
+      </div>
       <div>
         <span className="text-muted-foreground">Duration: </span>
         <span className="font-medium">{formatDuration(p.duration)}</span>
@@ -301,7 +305,7 @@ export function DurationTrend({
                 dataKey="createdAt"
                 height={XAXIS_HEIGHT}
                 tick={{ fontSize: 11 }}
-                tickFormatter={(v) => new Date(v).toLocaleDateString()}
+                tickFormatter={(v) => formatDate(v, 'date')}
               />
               <YAxis hide domain={[0, axisMax]} />
               <RechartsTooltip content={<DurationTooltip />} />

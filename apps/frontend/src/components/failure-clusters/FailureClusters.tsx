@@ -13,6 +13,7 @@ import { AlertOctagon, ExternalLink, GitMerge, HelpCircle, RotateCcw, Users } fr
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import FormattedDate from '@/components/date-format';
 import DateRangeSelect from '@/components/date-range-select';
 import { MarkClusterResolvedDialog } from '@/components/failure-clusters/MarkClusterResolvedDialog';
 import type { ClusterResolutionRequest } from '@/components/failure-clusters/types';
@@ -442,7 +443,7 @@ function ClusterCard({
               <div>{cluster.resolution.note}</div>
               {cluster.resolution.resolvedAt && (
                 <div className="text-xs text-muted-foreground mt-1">
-                  {new Date(cluster.resolution.resolvedAt).toLocaleString()}
+                  <FormattedDate date={cluster.resolution.resolvedAt} />
                 </div>
               )}
             </div>

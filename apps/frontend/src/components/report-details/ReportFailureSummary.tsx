@@ -6,6 +6,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Brain, RefreshCw } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
+import FormattedDate from '@/components/date-format';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { StrategyBadge } from '@/components/StrategyBadge';
 import { Badge } from '@/components/ui/badge';
@@ -241,7 +242,7 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
                 {summary.llmModel && <Badge variant="outline">{summary.llmModel}</Badge>}
                 {summary.updatedAt && (
                   <span className="ml-auto">
-                    Generated {new Date(summary.updatedAt).toLocaleString()}
+                    Generated <FormattedDate date={summary.updatedAt} showTimezone />
                   </span>
                 )}
               </div>

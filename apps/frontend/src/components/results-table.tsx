@@ -96,7 +96,7 @@ const ResultRow = memo(function ResultRow({
       <TableCell className="w-1/4">{item.title ?? item.resultID}</TableCell>
       <TableCell className="w-1/12">{item.project}</TableCell>
       <TableCell className="w-1/12">
-        <FormattedDate date={new Date(item.createdAt)} />
+        <FormattedDate date={item.createdAt} />
       </TableCell>
       <TableCell className="w-1/6">
         {item.linkedReports && item.linkedReports.length > 0 ? (
