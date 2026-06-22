@@ -10,6 +10,11 @@ on:
       - main
     paths:
       - 'packages/reporter/**'
+      - '.github/workflows/reporter-ci.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   biome-format:

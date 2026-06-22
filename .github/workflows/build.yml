@@ -1,12 +1,6 @@
 name: Build Apps
 
 on:
-  pull_request:
-    paths:
-      - 'packages/shared/**'
-      - 'apps/frontend/**'
-      - 'apps/backend/**'
-      - '.github/workflows/build.yml'
   push:
     branches:
       - main
@@ -16,43 +10,13 @@ on:
       - 'apps/backend/**'
       - '.github/workflows/build.yml'
 
-jobs:
-  build-shared:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-      - name: Get pnpm store directory
-        id: pnpm-cache
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-      - name: Install dependencies
-        run: pnpm install
-      - name: Build shared package
-        run: pnpm --filter @playwright-reports/shared build
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
-  build-apps:
-    needs: build-shared
+jobs:
+  build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        app: [frontend, backend]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -78,7 +42,5 @@ jobs:
             ${{ runner.os }}-pnpm-store-
       - name: Install dependencies
         run: pnpm install
-      - name: Build shared package first
-        run: pnpm --filter @playwright-reports/shared build
-      - name: Build ${{ matrix.app }}
-        run: pnpm --filter @playwright-reports/${{ matrix.app }} build
+      - name: Build all packages
+        run: pnpm run build
