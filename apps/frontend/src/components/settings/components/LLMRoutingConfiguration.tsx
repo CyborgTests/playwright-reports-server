@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { useLlmModels } from '@/hooks/useLlmModels';
 import useMutation from '@/hooks/useMutation';
 import { SERVER_CONFIG_KEY, useServerConfig } from '@/hooks/useServerConfig';
@@ -78,6 +79,12 @@ const CASCADE_GATE_OPTIONS: { value: CascadeGate; label: string; hint: string }[
 ];
 
 const MULTI_MODEL_STRATEGIES = new Set<LlmStrategy>(['fusion', 'council']);
+const SCREENSHOT_OFF = '__off__';
+
+interface ScreenshotCfg {
+  modelId: string; // '' = off
+  prompt: string;
+}
 
 function diversityWarning(cfg: LlmTaskRouting, primaryId: string | undefined): string | null {
   if (!MULTI_MODEL_STRATEGIES.has(cfg.strategy)) return null;
@@ -159,10 +166,17 @@ export default function LLMRoutingConfiguration({
   const primaryId = useMemo(() => (allModels ?? []).find((m) => m.isPrimary)?.id, [allModels]);
   const [routing, setRouting] = useState<RoutingMap>({});
   const [savedRouting, setSavedRouting] = useState<RoutingMap>({});
+  const [screenshot, setScreenshot] = useState<ScreenshotCfg>({ modelId: '', prompt: '' });
+  const [savedScreenshot, setSavedScreenshot] = useState<ScreenshotCfg>({
+    modelId: '',
+    prompt: '',
+  });
 
   const dirty =
     JSON.stringify(cleanRouting(routing, modelIds)) !==
-    JSON.stringify(cleanRouting(savedRouting, modelIds));
+      JSON.stringify(cleanRouting(savedRouting, modelIds)) ||
+    screenshot.modelId !== savedScreenshot.modelId ||
+    screenshot.prompt !== savedScreenshot.prompt;
 
   const seeded = useRef(false);
   useEffect(() => {
@@ -171,7 +185,18 @@ export default function LLMRoutingConfiguration({
     const loaded = config.llm?.routing ?? {};
     setRouting(loaded);
     setSavedRouting(loaded);
+    const shot: ScreenshotCfg = {
+      modelId: config.llm?.screenshotModel?.modelId ?? '',
+      prompt: config.llm?.customScreenshotParsePrompt ?? '',
+    };
+    setScreenshot(shot);
+    setSavedScreenshot(shot);
   }, [config]);
+
+  const screenshotValue =
+    screenshot.modelId && models.some((m) => m.id === screenshot.modelId)
+      ? screenshot.modelId
+      : SCREENSHOT_OFF;
 
   const taskRouting = (task: LlmTaskType): LlmTaskRouting =>
     routing[task] ?? { strategy: 'one_shot' };
@@ -219,6 +244,7 @@ export default function LLMRoutingConfiguration({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [SERVER_CONFIG_KEY] });
       setSavedRouting(routing);
+      setSavedScreenshot(screenshot);
       toast.success('Routing configuration saved');
     },
   });
@@ -226,6 +252,11 @@ export default function LLMRoutingConfiguration({
   const save = () => {
     const formData = new FormData();
     formData.append('llmRouting', JSON.stringify(cleanRouting(routing, modelIds)));
+    formData.append(
+      'llmScreenshotModel',
+      screenshotValue === SCREENSHOT_OFF ? '' : screenshotValue
+    );
+    formData.append('llmCustomScreenshotParsePrompt', screenshot.prompt);
     mutation.mutate({ body: formData });
   };
 
@@ -237,7 +268,10 @@ export default function LLMRoutingConfiguration({
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
-              onClick={() => setRouting(savedRouting)}
+              onClick={() => {
+                setRouting(savedRouting);
+                setScreenshot(savedScreenshot);
+              }}
               disabled={mutation.isPending}
             >
               Cancel
@@ -488,6 +522,43 @@ export default function LLMRoutingConfiguration({
                     <p className="rounded bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-400">
                       ⚠ {warning}
                     </p>
+                  )}
+
+                  {t.key === 'test_analysis' && (
+                    <div className="border-t pt-3 space-y-1.5">
+                      <Label className="text-xs font-medium">Screenshot parsing</Label>
+                      <Select
+                        value={screenshotValue}
+                        onValueChange={(v) =>
+                          setScreenshot((p) => ({ ...p, modelId: v === SCREENSHOT_OFF ? '' : v }))
+                        }
+                      >
+                        <SelectTrigger className="h-8 sm:w-72">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={SCREENSHOT_OFF}>Off (send image inline)</SelectItem>
+                          {models.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Vision model that transcribes failure screenshots to text first, so any
+                        strategy works without a vision analysis model.
+                      </p>
+                      {screenshotValue !== SCREENSHOT_OFF && (
+                        <Textarea
+                          className="text-xs"
+                          rows={4}
+                          placeholder="Custom transcription prompt (optional) — blank uses the built-in default."
+                          value={screenshot.prompt}
+                          onChange={(e) => setScreenshot((p) => ({ ...p, prompt: e.target.value }))}
+                        />
+                      )}
+                    </div>
                   )}
                 </div>
               );

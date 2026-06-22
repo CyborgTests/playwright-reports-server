@@ -241,22 +241,31 @@ export const TaskRow = memo(function TaskRow({
   const handleExpand = useCallback(() => onToggleExpand(task.id), [task.id, onToggleExpand]);
 
   const multi = isMultiRoleStrategy(task.strategy);
-  const costSource = multi ? (Array.isArray(childRows) ? childRows : task.childUsage) : undefined;
-  const costRows = costSource?.filter((c) => !('status' in c) || c.status === 'completed');
-  const parentCost = multi
-    ? costRows
-      ? costRows.reduce(
-          (s, c) =>
-            s + (computeCost(c.inputTokens, c.outputTokens, c.baseUrl, c.model, rates) ?? 0),
-          0
-        )
-      : null
+  const childSource = Array.isArray(childRows) ? childRows : task.childUsage;
+  const childCostRows = childSource?.filter((c) => !('status' in c) || c.status === 'completed');
+  const hasRoles =
+    (Array.isArray(childRows) && childRows.length > 0) ||
+    (task.childCount ?? 0) > 0 ||
+    (task.childUsage?.length ?? 0) > 0;
+  const expandable = multi || hasRoles;
+
+  const childCost = childCostRows?.reduce(
+    (s, c) => s + (computeCost(c.inputTokens, c.outputTokens, c.baseUrl, c.model, rates) ?? 0),
+    0
+  );
+  const childCostKnown = !!childCostRows?.some(
+    (c) => computeCost(c.inputTokens, c.outputTokens, c.baseUrl, c.model, rates) != null
+  );
+
+  const ownCost = multi
+    ? null
     : computeCost(task.inputTokens, task.outputTokens, task.baseUrl, task.model, rates);
-  const parentCostKnown = multi
-    ? !!costRows?.some(
-        (c) => computeCost(c.inputTokens, c.outputTokens, c.baseUrl, c.model, rates) != null
-      )
-    : parentCost != null;
+  const parentCost = multi
+    ? childCostRows
+      ? (childCost ?? 0)
+      : null
+    : (ownCost ?? 0) + (childCost ?? 0);
+  const parentCostKnown = multi ? childCostKnown : ownCost != null || childCostKnown;
 
   return (
     <>
@@ -271,7 +280,7 @@ export const TaskRow = memo(function TaskRow({
         <TableCell>
           <div className="flex flex-col gap-1 items-start">
             <Badge variant={statusBadgeVariant(task.status)}>{task.status}</Badge>
-            {multi && (
+            {expandable && (
               <button
                 type="button"
                 onClick={handleExpand}
@@ -280,7 +289,7 @@ export const TaskRow = memo(function TaskRow({
                 title="Show per-role breakdown"
               >
                 <span className="tabular-nums">{expanded ? '▾' : '▸'}</span>
-                {STRATEGY_LABEL[task.strategy ?? ''] ?? task.strategy}
+                {multi ? (STRATEGY_LABEL[task.strategy ?? ''] ?? task.strategy) : 'Roles'}
               </button>
             )}
             {task.status === 'completed' &&
@@ -369,7 +378,7 @@ export const TaskRow = memo(function TaskRow({
         <TableCell className="text-sm font-mono whitespace-nowrap">
           {parentCostKnown ? (
             formatCost(parentCost)
-          ) : multi && !costSource ? (
+          ) : multi && !childSource ? (
             <button
               type="button"
               onClick={handleExpand}
@@ -420,7 +429,7 @@ export const TaskRow = memo(function TaskRow({
           </div>
         </TableCell>
       </TableRow>
-      {multi && expanded && (
+      {expandable && expanded && (
         <TableRow>
           <TableCell colSpan={TOTAL_COLUMNS} className="bg-muted/30 p-0">
             <RolePanel rows={childRows} rates={rates} />

@@ -70,6 +70,7 @@ export const ROLE_LABEL: Record<string, string> = {
   reviser: 'Reviser',
   tier: 'Tier',
   scorer: 'Scorer',
+  screenshot_parser: 'Screenshot',
 };
 
 export function isMultiRoleStrategy(strategy?: string | null): boolean {

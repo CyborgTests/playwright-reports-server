@@ -1,7 +1,7 @@
 import { llmService } from '../../index.js';
 import type { FailureDetailsForPrompt } from '../../prompts/index.js';
 import { fitPromptToBudget } from '../../prompts/index.js';
-import type { SegmentedPrompt } from '../../types/index.js';
+import type { PromptImage, PromptSegment, SegmentedPrompt } from '../../types/index.js';
 import { readImageAttachment } from './reportEnrichment.js';
 
 export const OUTPUT_RESERVE_TOKENS_BY_TASK = {
@@ -21,25 +21,47 @@ export const TASK_TEMPERATURE_DEFAULTS = {
 
 const NO_CONTEXT_CHAR_FALLBACK = 30_000;
 
-export async function attachScreenshotIfAny(
-  builtPrompt: SegmentedPrompt,
+export async function collectScreenshotImages(
   details: FailureDetailsForPrompt,
-  reportId: string,
-  logPrefix?: string
-): Promise<void> {
+  reportId: string
+): Promise<PromptImage[]> {
   const imageAtt = details.attachments?.find((a) => a.contentType?.startsWith('image/'));
-  if (!imageAtt) return;
+  if (!imageAtt) return [];
   const img = await readImageAttachment(reportId, imageAtt);
-  if (!img) return;
+  return img ? [img] : [];
+}
+
+export function attachScreenshotImages(
+  builtPrompt: SegmentedPrompt,
+  images: PromptImage[],
+  logPrefix?: string
+): void {
+  if (images.length === 0) return;
   const failureIdx = builtPrompt.segments.findIndex((s) => s.id === 'current_failure');
   if (failureIdx < 0) return;
-  builtPrompt.segments[failureIdx] = {
-    ...builtPrompt.segments[failureIdx],
-    images: [img],
-  };
+  builtPrompt.segments[failureIdx] = { ...builtPrompt.segments[failureIdx], images };
   if (logPrefix) {
-    console.log(`${logPrefix}: attached screenshot ${imageAtt.path} (${img.mediaType})`);
+    console.log(`${logPrefix}: attached ${images.length} screenshot(s) inline`);
   }
+}
+
+export function injectScreenshotDescription(builtPrompt: SegmentedPrompt, text: string): void {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  const segment: PromptSegment = {
+    id: 'screenshot_description',
+    role: 'user',
+    stable: false,
+    content: `## Screenshot Description\nText transcription of the failure screenshot(s) by a vision model (no raw image is included).\n\n${trimmed}`,
+  };
+  const afterSnapshot = builtPrompt.segments.findIndex((s) => s.id === 'page_snapshot');
+  if (afterSnapshot >= 0) {
+    builtPrompt.segments.splice(afterSnapshot + 1, 0, segment);
+    return;
+  }
+  const beforeFailure = builtPrompt.segments.findIndex((s) => s.id === 'current_failure');
+  if (beforeFailure >= 0) builtPrompt.segments.splice(beforeFailure, 0, segment);
+  else builtPrompt.segments.push(segment);
 }
 
 export async function fitToContextWindow(

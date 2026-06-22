@@ -29,9 +29,12 @@ import { buildTestFailureSegments, renderSegmentsForDebug } from '../../prompts/
 import { runRoutedTask } from '../../routing/index.js';
 import { extractTestAnalysisFromMarkdown } from '../../testAnalysis.js';
 import type { SegmentedPrompt } from '../../types/index.js';
+import { transcribeScreenshots } from '../../visionTranscribe.js';
 import {
-  attachScreenshotIfAny,
+  attachScreenshotImages,
+  collectScreenshotImages,
   fitToContextWindow,
+  injectScreenshotDescription,
   OUTPUT_RESERVE_TOKENS_BY_TASK,
 } from './promptFitting.js';
 import {
@@ -148,6 +151,7 @@ async function resolveTestFailureContext(
 
 async function buildTestAnalysisPrompt(
   ctx: ResolvedTestContext,
+  taskId?: string,
   logPrefix?: string
 ): Promise<{ segmentedPrompt: SegmentedPrompt; debugPrompt: string; fitLog: string | null }> {
   const config = await service.getConfig();
@@ -202,7 +206,16 @@ async function buildTestAnalysisPrompt(
     overrides: promptOverrides,
   });
 
-  await attachScreenshotIfAny(builtPrompt, ctx.details, ctx.reportId, logPrefix);
+  const screenshots = await collectScreenshotImages(ctx.details, ctx.reportId);
+  const transcription =
+    taskId && screenshots.length > 0
+      ? await transcribeScreenshots(screenshots, taskId, logPrefix)
+      : null;
+  if (transcription) {
+    injectScreenshotDescription(builtPrompt, transcription.text);
+  } else {
+    attachScreenshotImages(builtPrompt, screenshots, logPrefix);
+  }
 
   await llmService.initialize();
   const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(
@@ -424,6 +437,7 @@ export async function processTestAnalysis(task: LlmTaskRow): Promise<void> {
 
   const { segmentedPrompt, debugPrompt, fitLog } = await buildTestAnalysisPrompt(
     resolved,
+    task.id,
     `[llmQueue] Task ${task.id}`
   );
 

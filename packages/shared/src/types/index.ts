@@ -46,6 +46,8 @@ export interface LLMConfig {
   primaryModel?: { id: string; label: string; provider: LLMProviderType; model: string } | null;
   useFallbackChain?: boolean;
   routing?: Partial<Record<LlmTaskType, LlmTaskRouting>>;
+  screenshotModel?: LlmRoleRef;
+  customScreenshotParsePrompt?: string;
   autoAnalyzeNewReports?: boolean;
   autoProjectSummaryOnReportComplete?: boolean;
   analyzeGreenWindows?: boolean;

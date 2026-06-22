@@ -122,6 +122,8 @@ interface ConfigFormData {
   llmCustomCritiquePrompt?: string;
   llmCustomRevisePrompt?: string;
   llmCustomScorerPrompt?: string;
+  llmScreenshotModel?: string;
+  llmCustomScreenshotParsePrompt?: string;
   testManagementQuarantineThresholdPercentage?: string;
   testManagementWarningThresholdPercentage?: string;
   testManagementAutoQuarantineEnabled?: string;
@@ -162,6 +164,8 @@ const ALLOWED_CONFIG_FIELDS: ReadonlySet<keyof ConfigFormData> = new Set<keyof C
   'llmCustomCritiquePrompt',
   'llmCustomRevisePrompt',
   'llmCustomScorerPrompt',
+  'llmScreenshotModel',
+  'llmCustomScreenshotParsePrompt',
   'testManagementQuarantineThresholdPercentage',
   'testManagementWarningThresholdPercentage',
   'testManagementAutoQuarantineEnabled',
@@ -238,6 +242,8 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       customCritiquePrompt: config.llm?.customCritiquePrompt,
       customRevisePrompt: config.llm?.customRevisePrompt,
       customScorerPrompt: config.llm?.customScorerPrompt,
+      screenshotModel: config.llm?.screenshotModel,
+      customScreenshotParsePrompt: config.llm?.customScreenshotParsePrompt,
     };
 
     return { ...config, ...envInfo, llm: llmInfo };
@@ -535,6 +541,25 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         }
         if (formData.llmCustomScorerPrompt !== undefined) {
           config.llm.customScorerPrompt = formData.llmCustomScorerPrompt || undefined;
+        }
+
+        if (formData.llmScreenshotModel !== undefined) {
+          const modelId = formData.llmScreenshotModel.trim();
+          if (modelId) {
+            const isEnabled = llmModelsDb.list().some((m) => m.id === modelId && m.enabled === 1);
+            if (!isEnabled) {
+              return reply
+                .status(400)
+                .send({ error: 'llmScreenshotModel references an unknown or disabled model' });
+            }
+            config.llm.screenshotModel = { modelId };
+          } else {
+            config.llm.screenshotModel = undefined;
+          }
+        }
+        if (formData.llmCustomScreenshotParsePrompt !== undefined) {
+          config.llm.customScreenshotParsePrompt =
+            formData.llmCustomScreenshotParsePrompt || undefined;
         }
 
         config.cron ??= {};
