@@ -186,6 +186,9 @@ function RolePanel({
                   ? `${(c.inputTokens ?? 0).toLocaleString()} / ${(c.outputTokens ?? 0).toLocaleString()} tok`
                   : '-'}
               </span>
+              <span className="w-12 shrink-0 whitespace-nowrap text-right font-mono text-muted-foreground">
+                {formatDuration(c.startedAt, c.completedAt)}
+              </span>
               <span className="w-20 shrink-0 whitespace-nowrap text-right font-mono">
                 {isDone ? formatCost(cost) : '-'}
               </span>
