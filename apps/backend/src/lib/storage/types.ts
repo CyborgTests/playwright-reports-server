@@ -4,14 +4,25 @@ import type { Pagination } from './pagination.js';
 
 export type { ReportPath, ServerDataInfo };
 
+export interface ByteRange {
+  start: number;
+  end?: number;
+}
+
 export interface ReadFileResult {
   body: Readable;
   size?: number;
+  totalSize?: number;
+  contentRange?: { start: number; end: number; total: number };
 }
 
 export interface Storage {
   getServerDataInfo: () => Promise<ServerDataInfo>;
-  readFile: (targetPath: string, contentType: string | null) => Promise<ReadFileResult | null>;
+  readFile: (
+    targetPath: string,
+    contentType: string | null,
+    range?: ByteRange
+  ) => Promise<ReadFileResult | null>;
   deleteResults: (resultIDs: string[]) => Promise<void>;
   deleteReports: (reports: ReportPath[]) => Promise<void>;
   saveResult: (filename: string, stream: PassThrough) => Promise<void>;

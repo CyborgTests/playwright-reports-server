@@ -11,6 +11,7 @@ import { reportDb } from '../lib/service/db/index.js';
 import { DATA_FOLDER, REPORTS_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';
 import { streamToString } from '../lib/storage/streamUtils.js';
+import type { ByteRange } from '../lib/storage/types.js';
 import { extractReportIdFromPath } from '../lib/utils/url-parser.js';
 import { withError } from '../lib/withError.js';
 import { type AuthRequest, authenticate } from './auth.js';
@@ -21,6 +22,16 @@ const BACKEND_PUBLIC_DIR =
   [resolve(moduleDir, '..', 'public'), resolve(moduleDir, '..', '..', 'public')].find((p) =>
     existsSync(p)
   ) ?? resolve(moduleDir, '..', '..', 'public');
+
+function parseRange(header: string | string[] | undefined): ByteRange | undefined {
+  if (typeof header !== 'string') return undefined;
+  const m = /^bytes=(\d+)-(\d*)$/.exec(header.trim());
+  if (!m) return undefined;
+  const start = Number(m[1]);
+  const end = m[2] ? Number(m[2]) : undefined;
+  if (end !== undefined && end < start) return undefined;
+  return { start, end };
+}
 
 export async function registerServeRoutes(fastify: FastifyInstance) {
   fastify.get('/api/serve/*', async (request, reply) => {
@@ -59,7 +70,12 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: 'Not Found' });
       }
 
-      const { result, error } = await withError(storage.readFile(targetPath, contentType || null));
+      const isIndexHtml = contentType === 'text/html' && targetPath.endsWith('index.html');
+      // no Range for index.html: it's mutated (LLM button injection) and served whole.
+      const range = isIndexHtml ? undefined : parseRange(request.headers.range);
+      const { result, error } = await withError(
+        storage.readFile(targetPath, contentType || null, range)
+      );
 
       if (error || !result) {
         return reply.code(404).send({
@@ -70,8 +86,6 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       const headers: Record<string, string> = {
         'Content-Type': contentType ?? 'application/octet-stream',
       };
-      const isIndexHtml = contentType === 'text/html' && targetPath.endsWith('index.html');
-
       if (isIndexHtml) {
         headers['Cache-Control'] = 'private, max-age=60, must-revalidate';
       } else {
@@ -79,7 +93,13 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       }
 
       if (!isIndexHtml) {
+        headers['Accept-Ranges'] = 'bytes';
         if (result.size !== undefined) headers['Content-Length'] = String(result.size);
+        if (result.contentRange) {
+          const { start, end, total } = result.contentRange;
+          headers['Content-Range'] = `bytes ${start}-${end}/${total}`;
+          return reply.code(206).headers(headers).send(result.body);
+        }
         return reply.code(200).headers(headers).send(result.body);
       }
 

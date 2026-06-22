@@ -23,6 +23,7 @@ import { createDirectory } from './folders.js';
 import { bytesToString } from './format.js';
 import { safeZipEntryPath } from './streamUtils.js';
 import type {
+  ByteRange,
   ReadFileResult,
   ReportHistory,
   ReportPath,
@@ -84,12 +85,26 @@ export async function getServerDataInfo(): Promise<ServerDataInfo> {
 
 export async function readFile(
   targetPath: string,
-  _contentType: string | null
+  _contentType: string | null,
+  range?: ByteRange
 ): Promise<ReadFileResult | null> {
   const fullPath = path.join(REPORTS_FOLDER, targetPath);
   const { result: stat, error: statErr } = await withError(fs.stat(fullPath));
   if (statErr || !stat?.isFile()) return null;
-  return { body: createReadStream(fullPath), size: stat.size };
+  const total = stat.size;
+  if (range) {
+    const start = Math.max(0, Math.floor(range.start));
+    const end = range.end !== undefined ? Math.min(Math.floor(range.end), total - 1) : total - 1;
+    if (start < total && start <= end) {
+      return {
+        body: createReadStream(fullPath, { start, end }),
+        size: end - start + 1,
+        totalSize: total,
+        contentRange: { start, end, total },
+      };
+    }
+  }
+  return { body: createReadStream(fullPath), size: total, totalSize: total };
 }
 
 export async function deleteResults(resultsIds: string[]) {

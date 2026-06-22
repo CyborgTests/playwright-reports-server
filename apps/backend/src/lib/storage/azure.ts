@@ -29,6 +29,7 @@ import {
 import { bytesToString } from './format.js';
 import { safeZipEntryPath } from './streamUtils.js';
 import type {
+  ByteRange,
   ReadFileResult,
   ReportHistory,
   ReportPath,
@@ -91,7 +92,7 @@ export class AzureBlob implements Storage {
     }
   }
 
-  private async readStream(targetPath: string): Promise<ReadFileResult | null> {
+  private async readStream(targetPath: string, range?: ByteRange): Promise<ReadFileResult | null> {
     await this.ensureContainerExists();
 
     const remotePath = targetPath.includes(REPORTS_BUCKET)
@@ -99,17 +100,26 @@ export class AzureBlob implements Storage {
       : `${REPORTS_BUCKET}/${targetPath}`;
 
     const blobClient = this.container.getBlobClient(remotePath);
-    const { result: response, error } = await withError(blobClient.download());
+    const count = range?.end !== undefined ? range.end - range.start + 1 : undefined;
+    const { result: response, error } = await withError(
+      range ? blobClient.download(range.start, count) : blobClient.download()
+    );
 
     if (error || !response?.readableStreamBody) {
       if (error) console.error(`[azure] failed to read file ${targetPath}: ${error.message}`);
       return null;
     }
 
-    return {
+    const result: ReadFileResult = {
       body: response.readableStreamBody as unknown as Readable,
       size: typeof response.contentLength === 'number' ? response.contentLength : undefined,
     };
+    const m = response.contentRange ? /bytes (\d+)-(\d+)\/(\d+)/.exec(response.contentRange) : null;
+    if (m) {
+      result.contentRange = { start: Number(m[1]), end: Number(m[2]), total: Number(m[3]) };
+      result.totalSize = Number(m[3]);
+    }
+    return result;
   }
 
   async clear(...paths: string[]) {
@@ -219,8 +229,12 @@ export class AzureBlob implements Storage {
     };
   }
 
-  async readFile(targetPath: string, _contentType: string | null): Promise<ReadFileResult | null> {
-    return this.readStream(targetPath);
+  async readFile(
+    targetPath: string,
+    _contentType: string | null,
+    range?: ByteRange
+  ): Promise<ReadFileResult | null> {
+    return this.readStream(targetPath, range);
   }
 
   async deleteResults(resultIDs: string[]): Promise<void> {

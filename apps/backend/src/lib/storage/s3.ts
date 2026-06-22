@@ -37,6 +37,7 @@ import {
 import { bytesToString } from './format.js';
 import { safeZipEntryPath } from './streamUtils.js';
 import type {
+  ByteRange,
   ReadFileResult,
   ReportHistory,
   ReportPath,
@@ -133,7 +134,7 @@ export class S3 implements Storage {
     console.error('[s3] failed to check that bucket exists:', error);
   }
 
-  private async readStream(targetPath: string): Promise<ReadFileResult | null> {
+  private async readStream(targetPath: string, range?: ByteRange): Promise<ReadFileResult | null> {
     await this.ensureBucketExist();
 
     const remotePath = targetPath.includes(REPORTS_BUCKET)
@@ -145,6 +146,7 @@ export class S3 implements Storage {
         new GetObjectCommand({
           Bucket: this.bucket,
           Key: remotePath,
+          Range: range ? `bytes=${range.start}-${range.end ?? ''}` : undefined,
         })
       )
     );
@@ -154,10 +156,16 @@ export class S3 implements Storage {
       return null;
     }
 
-    return {
+    const result: ReadFileResult = {
       body: response.Body as Readable,
       size: typeof response.ContentLength === 'number' ? response.ContentLength : undefined,
     };
+    const m = response.ContentRange ? /bytes (\d+)-(\d+)\/(\d+)/.exec(response.ContentRange) : null;
+    if (m) {
+      result.contentRange = { start: Number(m[1]), end: Number(m[2]), total: Number(m[3]) };
+      result.totalSize = Number(m[3]);
+    }
+    return result;
   }
 
   async clear(...path: string[]) {
@@ -311,8 +319,12 @@ export class S3 implements Storage {
     };
   }
 
-  async readFile(targetPath: string, _contentType: string | null): Promise<ReadFileResult | null> {
-    return this.readStream(targetPath);
+  async readFile(
+    targetPath: string,
+    _contentType: string | null,
+    range?: ByteRange
+  ): Promise<ReadFileResult | null> {
+    return this.readStream(targetPath, range);
   }
 
   async deleteResults(resultIDs: string[]): Promise<void> {
