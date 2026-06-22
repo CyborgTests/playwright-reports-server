@@ -88,8 +88,18 @@ export interface LlmModel {
   sortOrder: number;
   isPrimary: boolean;
   enabled: boolean;
+  concurrencyGroupId?: string | null;
   lastTestedAt?: string;
   lastError?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LlmConcurrencyGroup {
+  id: string;
+  name: string;
+  concurrencyLimit: number;
+  memberCount: number;
   createdAt: string;
   updatedAt: string;
 }

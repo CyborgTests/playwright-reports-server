@@ -70,6 +70,7 @@ export class LlmModelsDatabase {
         sortOrder: patch.sortOrder,
         isPrimary: patch.isPrimary,
         enabled: patch.enabled,
+        concurrencyGroupId: patch.concurrencyGroupId,
         lastTestedAt: patch.lastTestedAt,
         lastError: patch.lastError,
         updatedAt: new Date().toISOString(),

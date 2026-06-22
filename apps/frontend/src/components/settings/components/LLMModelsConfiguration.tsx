@@ -15,10 +15,12 @@ import {
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
+import { useLlmGroups } from '@/hooks/useLlmGroups';
 import { LLM_MODELS_PATH, useLlmModels } from '@/hooks/useLlmModels';
 import useMutation from '@/hooks/useMutation';
 import { SERVER_CONFIG_KEY, useServerConfig } from '@/hooks/useServerConfig';
 import { errorMessage } from '@/lib/api';
+import LLMConcurrencyGroups from './LLMConcurrencyGroups';
 import { LLMModelFormDialog } from './LLMModelFormDialog';
 import { LLMModelRow } from './LLMModelRow';
 import {
@@ -35,6 +37,8 @@ export default function LLMModelsConfiguration({
   const queryClient = useQueryClient();
   const { data: modelsData, isLoading } = useLlmModels();
   const models = modelsData ?? [];
+  const { data: groupsData } = useLlmGroups();
+  const groups = groupsData ?? [];
   const { data: config } = useServerConfig();
 
   const [useFallbackChain, setUseFallbackChain] = useState(false);
@@ -117,6 +121,7 @@ export default function LLMModelsConfiguration({
         m.projectSummaryTemperature != null ? String(m.projectSummaryTemperature) : '',
       inputCostPerMTok: m.inputCostPerMTok != null ? String(m.inputCostPerMTok) : '',
       outputCostPerMTok: m.outputCostPerMTok != null ? String(m.outputCostPerMTok) : '',
+      concurrencyGroupId: m.concurrencyGroupId ?? null,
     });
     setFormOpen(true);
   };
@@ -142,6 +147,7 @@ export default function LLMModelsConfiguration({
         projectSummaryTemperature: parseTemperature(form.projectSummaryTemperature),
         inputCostPerMTok: parseCost(form.inputCostPerMTok),
         outputCostPerMTok: parseCost(form.outputCostPerMTok),
+        concurrencyGroupId: form.concurrencyGroupId,
       };
       if (form.apiKey !== '') payload.apiKey = form.apiKey;
 
@@ -275,6 +281,8 @@ export default function LLMModelsConfiguration({
           <Switch id="llm-fallback" checked={useFallbackChain} onCheckedChange={toggleFallback} />
         </div>
 
+        <LLMConcurrencyGroups disabled={!featureEnabled} />
+
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : models.length === 0 ? (
@@ -298,6 +306,7 @@ export default function LLMModelsConfiguration({
                 onDuplicate={() => duplicate(m)}
                 onEdit={() => openEdit(m)}
                 onDelete={() => setDeleteTarget(m)}
+                group={groups.find((g) => g.id === m.concurrencyGroupId) ?? null}
               />
             ))}
           </div>
@@ -312,6 +321,7 @@ export default function LLMModelsConfiguration({
         setForm={setForm}
         saving={saving}
         onSubmit={submitForm}
+        groups={groups}
       />
 
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>

@@ -184,8 +184,17 @@ export interface LlmModelsRow {
   sortOrder: number;
   isPrimary: number;
   enabled: number;
+  concurrencyGroupId: string | null;
   lastTestedAt: string | null;
   lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LlmConcurrencyGroupsRow {
+  id: string;
+  name: string;
+  concurrencyLimit: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -344,6 +353,7 @@ export interface Database {
   github_sync_configs: GithubSyncConfigsRow;
   github_sync_runs: GithubSyncRunsRow;
   github_sync_state: GithubSyncStateRow;
+  llm_concurrency_groups: LlmConcurrencyGroupsRow;
   llm_models: LlmModelsRow;
   llm_tasks: LlmTasksRow;
   notification_log: NotificationLogRow;

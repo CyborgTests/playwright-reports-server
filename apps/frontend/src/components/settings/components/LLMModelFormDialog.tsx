@@ -1,4 +1,8 @@
-import type { LLMMultimodalMode, LLMProviderType } from '@playwright-reports/shared';
+import type {
+  LLMMultimodalMode,
+  LLMProviderType,
+  LlmConcurrencyGroup,
+} from '@playwright-reports/shared';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -19,6 +23,8 @@ import {
 } from '@/components/ui/select';
 import { type FormState, MULTIMODAL_MODES, PROVIDERS, TASK_TEMP_DEFAULTS } from './llm-model-form';
 
+const NONE_GROUP = '__none__';
+
 export function LLMModelFormDialog({
   open,
   onOpenChange,
@@ -27,6 +33,7 @@ export function LLMModelFormDialog({
   setForm,
   saving,
   onSubmit,
+  groups,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -35,7 +42,9 @@ export function LLMModelFormDialog({
   setForm: (next: FormState) => void;
   saving: boolean;
   onSubmit: () => void;
+  groups: LlmConcurrencyGroup[];
 }>) {
+  const selectedGroup = groups.find((g) => g.id === form.concurrencyGroupId) ?? null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -106,6 +115,31 @@ export function LLMModelFormDialog({
             />
             <p className="text-xs text-muted-foreground">Stored encrypted at rest.</p>
           </div>
+          <div className="space-y-1">
+            <Label htmlFor="lm-group">Concurrency group</Label>
+            <Select
+              value={form.concurrencyGroupId ?? NONE_GROUP}
+              onValueChange={(v) =>
+                setForm({ ...form, concurrencyGroupId: v === NONE_GROUP ? null : v })
+              }
+            >
+              <SelectTrigger id="lm-group">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE_GROUP}>None (use model parallel requests)</SelectItem>
+                {groups.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.name} (limit {g.concurrencyLimit})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Models in a group share one concurrency budget - useful when several models hit the
+              same rate limit or run on the same hardware. Manage groups in the list below.
+            </p>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
               <Label htmlFor="lm-parallel">Parallel requests</Label>
@@ -114,6 +148,7 @@ export function LLMModelFormDialog({
                 type="number"
                 min={1}
                 max={10}
+                disabled={!!selectedGroup}
                 value={form.parallelRequests}
                 onChange={(e) =>
                   setForm({
@@ -125,6 +160,11 @@ export function LLMModelFormDialog({
                   })
                 }
               />
+              {selectedGroup && (
+                <p className="text-xs text-muted-foreground">
+                  Controlled by group {selectedGroup.name} (limit {selectedGroup.concurrencyLimit})
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <Label htmlFor="lm-maxtok">Max output tokens</Label>

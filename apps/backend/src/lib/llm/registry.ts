@@ -1,7 +1,7 @@
 import type { LLMMultimodalMode, LLMProviderType, LlmModel } from '@playwright-reports/shared';
 import { decryptToken } from '../githubSync/encryption.js';
 import { configCache } from '../service/cache/config.js';
-import { type LlmModelRow, llmModelsDb } from '../service/db/index.js';
+import { type LlmModelRow, llmGroupsDb, llmModelsDb } from '../service/db/index.js';
 import { llmService, type SegmentedSendOptions } from './index.js';
 import { modelGate, reservationStore } from './modelGate.js';
 import type { LLMProviderConfig, LLMResponse, SegmentedPrompt } from './types/index.js';
@@ -28,6 +28,7 @@ export function toLlmModel(row: LlmModelRow): LlmModel {
     sortOrder: row.sortOrder,
     isPrimary: row.isPrimary === 1,
     enabled: row.enabled === 1,
+    concurrencyGroupId: row.concurrencyGroupId,
     lastTestedAt: row.lastTestedAt ?? undefined,
     lastError: row.lastError ?? undefined,
     createdAt: row.createdAt,
@@ -65,18 +66,27 @@ export interface FallbackSendResult {
   baseUrl: string;
 }
 
+export function resolveGate(row: LlmModelRow): { key: string; limit: number } {
+  if (row.concurrencyGroupId) {
+    const group = llmGroupsDb.get(row.concurrencyGroupId);
+    if (group) return { key: group.id, limit: group.concurrencyLimit };
+  }
+  return { key: row.id, limit: row.parallelRequests };
+}
+
 export async function runOnModel<T>(
   row: LlmModelRow,
   fn: () => Promise<T>,
   onStart?: () => void
 ): Promise<T> {
+  const gate = resolveGate(row);
   const held = reservationStore.getStore();
-  if (held && !held.consumed && held.modelId === row.id) {
+  if (held && !held.consumed && held.gateKey === gate.key) {
     held.consumed = true;
     onStart?.();
     return fn();
   }
-  return modelGate.run(row.id, row.parallelRequests, fn, onStart);
+  return modelGate.run(gate.key, gate.limit, fn, onStart);
 }
 
 export async function sendWithFallback(

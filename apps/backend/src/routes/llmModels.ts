@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { decryptToken, encryptToken } from '../lib/githubSync/encryption.js';
 import { llmService } from '../lib/llm/index.js';
 import { applyPrimaryModel, toLlmModel } from '../lib/llm/registry.js';
-import { type LlmModelRow, llmModelsDb } from '../lib/service/db/index.js';
+import { type LlmModelRow, llmGroupsDb, llmModelsDb } from '../lib/service/db/index.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
 const MASK_RE = /^\*+$/;
@@ -24,6 +24,7 @@ const ModelBodySchema = z.object({
   projectSummaryTemperature: z.number().min(0).max(2).nullable().optional(),
   inputCostPerMTok: z.number().nonnegative().nullable().optional(),
   outputCostPerMTok: z.number().nonnegative().nullable().optional(),
+  concurrencyGroupId: z.string().nullable().optional(),
 });
 
 const UpdateBodySchema = ModelBodySchema.partial().extend({
@@ -37,6 +38,10 @@ const ReorderSchema = z.object({
 function nextSortOrder(): number {
   const rows = llmModelsDb.list();
   return rows.length === 0 ? 0 : Math.max(...rows.map((r) => r.sortOrder)) + 1;
+}
+
+function groupExists(id: string | null | undefined): boolean {
+  return !id || !!llmGroupsDb.get(id);
 }
 
 export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
@@ -53,6 +58,9 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid' });
       }
       const b = parsed.data;
+      if (!groupExists(b.concurrencyGroupId)) {
+        return reply.status(400).send({ error: 'concurrency group not found' });
+      }
       const now = new Date().toISOString();
       const row: LlmModelRow = {
         id: randomUUID(),
@@ -73,6 +81,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
         sortOrder: nextSortOrder(),
         isPrimary: 0,
         enabled: 0,
+        concurrencyGroupId: b.concurrencyGroupId ?? null,
         lastTestedAt: null,
         lastError: null,
         createdAt: now,
@@ -115,6 +124,9 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
         const existing = llmModelsDb.get(request.params.id);
         if (!existing) return reply.status(404).send({ error: 'model not found' });
         const b = parsed.data;
+        if (b.concurrencyGroupId !== undefined && !groupExists(b.concurrencyGroupId)) {
+          return reply.status(400).send({ error: 'concurrency group not found' });
+        }
 
         let apiKeyCipher = existing.apiKeyCipher;
         if (b.apiKey !== undefined && !MASK_RE.test(b.apiKey)) {
@@ -163,6 +175,8 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
           sortOrder: existing.sortOrder,
           isPrimary: existing.isPrimary,
           enabled: b.enabled !== undefined ? (b.enabled ? 1 : 0) : existing.enabled,
+          concurrencyGroupId:
+            b.concurrencyGroupId !== undefined ? b.concurrencyGroupId : existing.concurrencyGroupId,
           lastTestedAt: nextLastTested,
           lastError: existing.lastError,
         };

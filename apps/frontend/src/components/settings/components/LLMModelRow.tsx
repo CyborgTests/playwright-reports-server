@@ -1,4 +1,4 @@
-import type { LlmModel } from '@playwright-reports/shared';
+import type { LlmConcurrencyGroup, LlmModel } from '@playwright-reports/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -17,11 +17,13 @@ export function LLMModelRow({
   onDuplicate,
   onEdit,
   onDelete,
+  group,
 }: Readonly<{
   model: LlmModel;
   index: number;
   total: number;
   busy: boolean;
+  group: LlmConcurrencyGroup | null;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onToggleEnabled: () => void;
@@ -81,7 +83,15 @@ export function LLMModelRow({
             </div>
             <div className="font-mono truncate">{m.baseUrl}</div>
             <div>
-              {m.parallelRequests} parallel request{m.parallelRequests === 1 ? '' : 's'}
+              {group ? (
+                <>
+                  group: {group.name} (limit {group.concurrencyLimit})
+                </>
+              ) : (
+                <>
+                  {m.parallelRequests} parallel request{m.parallelRequests === 1 ? '' : 's'}
+                </>
+              )}
               {m.maxTokens ? <> · max {m.maxTokens} tok</> : null}
             </div>
           </div>

@@ -319,9 +319,9 @@ export class LlmTasksDatabase {
   public claimNextRunnable(
     decide: (task: LlmTaskRow) => {
       run: boolean;
-      reservation?: { modelId: string; release: () => void };
+      reservation?: { gateKey: string; release: () => void };
     }
-  ): { task: LlmTaskRow; reservation?: { modelId: string; release: () => void } } | null {
+  ): { task: LlmTaskRow; reservation?: { gateKey: string; release: () => void } } | null {
     const hasQueuedCompiled = this.k
       .selectFrom('llm_tasks')
       .select('id')

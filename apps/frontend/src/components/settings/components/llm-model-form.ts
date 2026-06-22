@@ -26,6 +26,7 @@ export interface FormState {
   projectSummaryTemperature: string;
   inputCostPerMTok: string;
   outputCostPerMTok: string;
+  concurrencyGroupId: string | null;
 }
 
 export const blankForm: FormState = {
@@ -43,6 +44,7 @@ export const blankForm: FormState = {
   projectSummaryTemperature: '',
   inputCostPerMTok: '',
   outputCostPerMTok: '',
+  concurrencyGroupId: null,
 };
 
 export function parsePositiveInt(raw: string): number | null {

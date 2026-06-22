@@ -7,7 +7,7 @@ interface ModelState {
 }
 
 export interface GateReservation {
-  modelId: string;
+  gateKey: string;
   consumed: boolean;
 }
 
@@ -16,17 +16,17 @@ export const reservationStore = new AsyncLocalStorage<GateReservation>();
 class ModelGate {
   private readonly state = new Map<string, ModelState>();
 
-  acquire(modelId: string, limit: number): Promise<() => void> {
+  acquire(key: string, limit: number): Promise<() => void> {
     const max = Math.max(1, Math.floor(limit) || 1);
-    let s = this.state.get(modelId);
+    let s = this.state.get(key);
     if (!s) {
       s = { active: 0, limit: max, waiters: [] };
-      this.state.set(modelId, s);
+      this.state.set(key, s);
     } else {
       s.limit = max; // pick up live config changes
     }
 
-    const release = this.makeRelease(modelId);
+    const release = this.makeRelease(key);
     if (s.active < s.limit) {
       s.active++;
       return Promise.resolve(release);
@@ -38,29 +38,29 @@ class ModelGate {
     });
   }
 
-  tryAcquire(modelId: string, limit: number): (() => void) | null {
+  tryAcquire(key: string, limit: number): (() => void) | null {
     const max = Math.max(1, Math.floor(limit) || 1);
-    let s = this.state.get(modelId);
+    let s = this.state.get(key);
     if (!s) {
       s = { active: 0, limit: max, waiters: [] };
-      this.state.set(modelId, s);
+      this.state.set(key, s);
     } else {
       s.limit = max;
     }
     if (s.active < s.limit) {
       s.active++;
-      return this.makeRelease(modelId);
+      return this.makeRelease(key);
     }
     return null;
   }
 
   async run<T>(
-    modelId: string,
+    key: string,
     limit: number,
     fn: () => Promise<T>,
     onAcquire?: () => void
   ): Promise<T> {
-    const release = await this.acquire(modelId, limit);
+    const release = await this.acquire(key, limit);
     try {
       onAcquire?.();
       return await fn();
@@ -69,19 +69,19 @@ class ModelGate {
     }
   }
 
-  inspect(modelId: string): { active: number; waiting: number; limit: number } {
-    const s = this.state.get(modelId);
+  inspect(key: string): { active: number; waiting: number; limit: number } {
+    const s = this.state.get(key);
     return s
       ? { active: s.active, waiting: s.waiters.length, limit: s.limit }
       : { active: 0, waiting: 0, limit: 0 };
   }
 
-  private makeRelease(modelId: string): () => void {
+  private makeRelease(key: string): () => void {
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      const s = this.state.get(modelId);
+      const s = this.state.get(key);
       if (!s) return;
       const next = s.waiters.shift();
       if (next) {

@@ -1,7 +1,7 @@
 import { type LlmTaskRow, llmModelsDb, llmTasksDb } from '../../service/db/index.js';
 import { llmService } from '../index.js';
 import { type GateReservation, modelGate, reservationStore } from '../modelGate.js';
-import { isFallbackChainEnabled, isLlmFeatureEnabled } from '../registry.js';
+import { isFallbackChainEnabled, isLlmFeatureEnabled, resolveGate } from '../registry.js';
 import { resolveRouting } from '../routing/index.js';
 import { LLMProviderError } from '../types/index.js';
 import { resolveScreenshotModel } from '../visionTranscribe.js';
@@ -28,7 +28,12 @@ class LlmAnalysisQueue {
 
   private getParallelRequests(): number {
     const enabled = llmModelsDb.list().filter((m) => m.enabled === 1);
-    const total = enabled.reduce((sum, m) => sum + Math.max(1, m.parallelRequests), 0);
+    const budgets = new Map<string, number>();
+    for (const m of enabled) {
+      const gate = resolveGate(m);
+      budgets.set(gate.key, Math.max(1, gate.limit));
+    }
+    const total = [...budgets.values()].reduce((sum, n) => sum + n, 0);
     return Math.max(1, total);
   }
 
@@ -82,7 +87,7 @@ class LlmAnalysisQueue {
 
   private decideStart(task: LlmTaskRow): {
     run: boolean;
-    reservation?: { modelId: string; release: () => void };
+    reservation?: { gateKey: string; release: () => void };
   } {
     const routing = resolveRouting(task.type);
     if (routing.strategy !== 'one_shot') return { run: true };
@@ -92,18 +97,20 @@ class LlmAnalysisQueue {
       ? (llmModelsDb.list().find((m) => m.id === routing.model?.modelId && m.enabled === 1) ?? null)
       : null;
     const effective = overrideRow ?? primary;
-    if (task.type === 'test_analysis' && resolveScreenshotModel()?.id === effective.id) {
-      return { run: true };
+    const gate = resolveGate(effective);
+    if (task.type === 'test_analysis') {
+      const screenshot = resolveScreenshotModel();
+      if (screenshot && resolveGate(screenshot).key === gate.key) {
+        return { run: true };
+      }
     }
-    const release = modelGate.tryAcquire(effective.id, effective.parallelRequests);
-    return release
-      ? { run: true, reservation: { modelId: effective.id, release } }
-      : { run: false };
+    const release = modelGate.tryAcquire(gate.key, gate.limit);
+    return release ? { run: true, reservation: { gateKey: gate.key, release } } : { run: false };
   }
 
-  private dispatch(task: LlmTaskRow, reservation?: { modelId: string; release: () => void }): void {
+  private dispatch(task: LlmTaskRow, reservation?: { gateKey: string; release: () => void }): void {
     const ctx: GateReservation | null = reservation
-      ? { modelId: reservation.modelId, consumed: false }
+      ? { gateKey: reservation.gateKey, consumed: false }
       : null;
     const run = ctx
       ? () => reservationStore.run(ctx, () => this.processTask(task))

@@ -21,6 +21,8 @@ export type {
   GithubSyncStateRow,
 } from './githubSync.sqlite.js';
 export { githubSyncDb } from './githubSync.sqlite.js';
+export type { LlmConcurrencyGroupRow } from './llmGroups.sqlite.js';
+export { llmGroupsDb } from './llmGroups.sqlite.js';
 export type { LlmModelRow, LlmModelWrite } from './llmModels.sqlite.js';
 export { llmModelsDb } from './llmModels.sqlite.js';
 export type {

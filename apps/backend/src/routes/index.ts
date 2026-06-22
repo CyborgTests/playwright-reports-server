@@ -7,6 +7,7 @@ import { registerFailureClusterRoutes } from './failureClusters.js';
 import { registerGithubSyncRoutes } from './githubSync.js';
 import { registerLlmRoutes } from './llm.js';
 import { registerLlmFeedbackRoutes } from './llmFeedback.js';
+import { registerLlmGroupsRoutes } from './llmGroups.js';
 import { registerLlmModelsRoutes } from './llmModels.js';
 import { registerNotificationsRoutes } from './notifications.js';
 import { registerQualityRoutes } from './quality.js';
@@ -26,6 +27,7 @@ export async function registerApiRoutes(fastify: FastifyInstance) {
   await registerTestsRoutes(fastify);
   await registerLlmRoutes(fastify);
   await registerLlmModelsRoutes(fastify);
+  await registerLlmGroupsRoutes(fastify);
   await registerLlmFeedbackRoutes(fastify);
   await registerCliRoutes(fastify);
   await registerNotificationsRoutes(fastify);
