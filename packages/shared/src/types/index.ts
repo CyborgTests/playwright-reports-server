@@ -15,6 +15,8 @@ export type LlmStrategy = 'one_shot' | 'fusion' | 'council' | 'cascade' | 'self_
 
 export type CascadeGate = 'checks' | 'scorer' | 'checks_and_scorer' | 'disagreement';
 
+export type LlmScreenshotSource = 'attachment' | 'failing_action' | 'series';
+
 export interface LlmRoleRef {
   modelId?: string;
   temperature?: number;
@@ -48,6 +50,8 @@ export interface LLMConfig {
   routing?: Partial<Record<LlmTaskType, LlmTaskRouting>>;
   screenshotModel?: LlmRoleRef;
   customScreenshotParsePrompt?: string;
+  screenshotSources?: LlmScreenshotSource[];
+  maxScreenshots?: number;
   autoAnalyzeNewReports?: boolean;
   autoProjectSummaryOnReportComplete?: boolean;
   analyzeGreenWindows?: boolean;

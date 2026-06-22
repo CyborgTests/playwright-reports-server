@@ -27,7 +27,8 @@ type PromptKey =
   | 'customJudgePrompt'
   | 'customCritiquePrompt'
   | 'customRevisePrompt'
-  | 'customScorerPrompt';
+  | 'customScorerPrompt'
+  | 'customScreenshotParsePrompt';
 
 const FIELD_NAME: Record<PromptKey, string> = {
   customTestAnalysisSystemPrompt: 'llmCustomTestAnalysisSystemPrompt',
@@ -40,6 +41,7 @@ const FIELD_NAME: Record<PromptKey, string> = {
   customCritiquePrompt: 'llmCustomCritiquePrompt',
   customRevisePrompt: 'llmCustomRevisePrompt',
   customScorerPrompt: 'llmCustomScorerPrompt',
+  customScreenshotParsePrompt: 'llmCustomScreenshotParsePrompt',
 };
 
 const PROMPT_KEYS = Object.keys(FIELD_NAME) as PromptKey[];
@@ -249,6 +251,15 @@ export default function LLMPromptsSection() {
             <div className="space-y-3 rounded-md border p-3">
               <h4 className="text-sm font-semibold">Cascade · scorer</h4>
               {field('customScorerPrompt', 'Directive', 5, defaults?.scorerDirective.content)}
+            </div>
+            <div className="space-y-3 rounded-md border p-3">
+              <h4 className="text-sm font-semibold">Screenshot · transcription</h4>
+              {field(
+                'customScreenshotParsePrompt',
+                'Prompt',
+                8,
+                defaults?.screenshotParsePrompt.content
+              )}
             </div>
           </AccordionContent>
         </AccordionItem>

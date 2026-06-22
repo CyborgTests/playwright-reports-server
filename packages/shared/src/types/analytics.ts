@@ -249,6 +249,7 @@ export interface LlmDefaultPrompts {
   critiqueDirective: LlmDefaultPrompt;
   reviseDirective: LlmDefaultPrompt;
   scorerDirective: LlmDefaultPrompt;
+  screenshotParsePrompt: LlmDefaultPrompt;
 }
 
 export interface FailureDetails {

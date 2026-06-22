@@ -2,6 +2,7 @@ import {
   type CascadeGate,
   expectedStrategyCalls,
   type LlmRoleRef,
+  type LlmScreenshotSource,
   type LlmStrategy,
   type LlmTaskRouting,
   type LlmTaskType,
@@ -12,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -20,7 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { useLlmModels } from '@/hooks/useLlmModels';
 import useMutation from '@/hooks/useMutation';
 import { SERVER_CONFIG_KEY, useServerConfig } from '@/hooks/useServerConfig';
@@ -81,9 +82,17 @@ const CASCADE_GATE_OPTIONS: { value: CascadeGate; label: string; hint: string }[
 const MULTI_MODEL_STRATEGIES = new Set<LlmStrategy>(['fusion', 'council']);
 const SCREENSHOT_OFF = '__off__';
 
+const SCREENSHOT_SOURCES: { value: LlmScreenshotSource; label: string }[] = [
+  { value: 'attachment', label: 'Failure screenshot' },
+  { value: 'failing_action', label: 'Before & after failed action (trace)' },
+  { value: 'series', label: 'Series of trace frames' },
+];
+const TRACE_SOURCES: LlmScreenshotSource[] = ['failing_action', 'series'];
+
 interface ScreenshotCfg {
+  sources: LlmScreenshotSource[];
+  max: string; // input string; '' = default
   modelId: string; // '' = off
-  prompt: string;
 }
 
 function diversityWarning(cfg: LlmTaskRouting, primaryId: string | undefined): string | null {
@@ -166,17 +175,18 @@ export default function LLMRoutingConfiguration({
   const primaryId = useMemo(() => (allModels ?? []).find((m) => m.isPrimary)?.id, [allModels]);
   const [routing, setRouting] = useState<RoutingMap>({});
   const [savedRouting, setSavedRouting] = useState<RoutingMap>({});
-  const [screenshot, setScreenshot] = useState<ScreenshotCfg>({ modelId: '', prompt: '' });
-  const [savedScreenshot, setSavedScreenshot] = useState<ScreenshotCfg>({
+  const emptyShot: ScreenshotCfg = {
+    sources: ['attachment'],
+    max: '',
     modelId: '',
-    prompt: '',
-  });
+  };
+  const [screenshot, setScreenshot] = useState<ScreenshotCfg>(emptyShot);
+  const [savedScreenshot, setSavedScreenshot] = useState<ScreenshotCfg>(emptyShot);
 
   const dirty =
     JSON.stringify(cleanRouting(routing, modelIds)) !==
       JSON.stringify(cleanRouting(savedRouting, modelIds)) ||
-    screenshot.modelId !== savedScreenshot.modelId ||
-    screenshot.prompt !== savedScreenshot.prompt;
+    JSON.stringify(screenshot) !== JSON.stringify(savedScreenshot);
 
   const seeded = useRef(false);
   useEffect(() => {
@@ -186,8 +196,9 @@ export default function LLMRoutingConfiguration({
     setRouting(loaded);
     setSavedRouting(loaded);
     const shot: ScreenshotCfg = {
+      sources: config.llm?.screenshotSources ?? ['attachment'],
+      max: config.llm?.maxScreenshots != null ? String(config.llm.maxScreenshots) : '',
       modelId: config.llm?.screenshotModel?.modelId ?? '',
-      prompt: config.llm?.customScreenshotParsePrompt ?? '',
     };
     setScreenshot(shot);
     setSavedScreenshot(shot);
@@ -256,7 +267,9 @@ export default function LLMRoutingConfiguration({
       'llmScreenshotModel',
       screenshotValue === SCREENSHOT_OFF ? '' : screenshotValue
     );
-    formData.append('llmCustomScreenshotParsePrompt', screenshot.prompt);
+    formData.append('llmScreenshotSources', screenshot.sources.join(','));
+    const usesTrace = screenshot.sources.some((s) => TRACE_SOURCES.includes(s));
+    formData.append('llmMaxScreenshots', usesTrace ? screenshot.max : '');
     mutation.mutate({ body: formData });
   };
 
@@ -525,39 +538,77 @@ export default function LLMRoutingConfiguration({
                   )}
 
                   {t.key === 'test_analysis' && (
-                    <div className="border-t pt-3 space-y-1.5">
-                      <Label className="text-xs font-medium">Screenshot parsing</Label>
-                      <Select
-                        value={screenshotValue}
-                        onValueChange={(v) =>
-                          setScreenshot((p) => ({ ...p, modelId: v === SCREENSHOT_OFF ? '' : v }))
-                        }
-                      >
-                        <SelectTrigger className="h-8 sm:w-72">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={SCREENSHOT_OFF}>Off (send image inline)</SelectItem>
-                          {models.map((m) => (
-                            <SelectItem key={m.id} value={m.id}>
-                              {m.label}
-                            </SelectItem>
+                    <div className="border-t pt-3 space-y-3">
+                      <span className="text-sm font-medium">Screenshots</span>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Sources (combine any)</Label>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                          {SCREENSHOT_SOURCES.map((s) => (
+                            <Label
+                              key={s.value}
+                              className="flex cursor-pointer items-center gap-2 text-xs font-normal"
+                            >
+                              <Checkbox
+                                checked={screenshot.sources.includes(s.value)}
+                                onCheckedChange={(c) =>
+                                  setScreenshot((p) => ({
+                                    ...p,
+                                    sources:
+                                      c === true
+                                        ? [...p.sources, s.value]
+                                        : p.sources.filter((x) => x !== s.value),
+                                  }))
+                                }
+                              />
+                              {s.label}
+                            </Label>
                           ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">
-                        Vision model that transcribes failure screenshots to text first, so any
-                        strategy works without a vision analysis model.
-                      </p>
-                      {screenshotValue !== SCREENSHOT_OFF && (
-                        <Textarea
-                          className="text-xs"
-                          rows={4}
-                          placeholder="Custom transcription prompt (optional) — blank uses the built-in default."
-                          value={screenshot.prompt}
-                          onChange={(e) => setScreenshot((p) => ({ ...p, prompt: e.target.value }))}
-                        />
+                        </div>
+                      </div>
+                      {screenshot.sources.some((s) => TRACE_SOURCES.includes(s)) && (
+                        <>
+                          <NumberField
+                            value={screenshot.max === '' ? undefined : Number(screenshot.max)}
+                            onChange={(v) =>
+                              setScreenshot((p) => ({ ...p, max: v == null ? '' : String(v) }))
+                            }
+                            label="Max screenshots"
+                            min={1}
+                            max={10}
+                            placeholder="3"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Trace frames need trace recording; falls back to the failure screenshot
+                            if the trace has none.
+                          </p>
+                        </>
                       )}
+                      <div className="space-y-1">
+                        <Label className="text-xs font-medium">Vision model</Label>
+                        <Select
+                          value={screenshotValue}
+                          onValueChange={(v) =>
+                            setScreenshot((p) => ({ ...p, modelId: v === SCREENSHOT_OFF ? '' : v }))
+                          }
+                        >
+                          <SelectTrigger className="h-8 sm:w-72">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={SCREENSHOT_OFF}>Off (send image inline)</SelectItem>
+                            {models.map((m) => (
+                              <SelectItem key={m.id} value={m.id}>
+                                {m.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Transcribes screenshots to text first, so any strategy works without a
+                          vision analysis model. Customize its prompt under Prompts → Routing role
+                          prompts.
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>

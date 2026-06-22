@@ -17,7 +17,7 @@ Describe only what is visible:
 Rules:
 - Be factual and literal. Transcribe visible text verbatim where it matters.
 - Do NOT diagnose the root cause, speculate about code, or suggest fixes - another model does that.
-- If multiple screenshots are provided, describe each in order (e.g. "Screenshot 1: ...").
+- When multiple screenshots are provided, head each one's description with the exact label given for it (the labels encode timing/role, e.g. "### before failed action" or "### frame (t+1200ms)") and describe them in that order.
 - Keep it concise; skip decorative styling.`;
 
 export interface ScreenshotTranscription {
@@ -51,8 +51,10 @@ export async function transcribeScreenshots(
         stable: false,
         content:
           images.length > 1
-            ? `Transcribe these ${images.length} screenshots in order.`
-            : 'Transcribe this screenshot.',
+            ? `Transcribe these ${images.length} screenshots in order:\n${images
+                .map((im, i) => `${i + 1}. ${im.source ?? 'screenshot'}`)
+                .join('\n')}`
+            : `Transcribe this screenshot${images[0]?.source ? ` (${images[0].source})` : ''}.`,
         images,
       },
     ],
@@ -86,6 +88,7 @@ export async function transcribeScreenshots(
       baseUrl: row.baseUrl,
       usage: resp.usage,
       result: text,
+      category: `${images.length} screenshot${images.length === 1 ? '' : 's'}`,
     });
     if (logPrefix) {
       console.log(`${logPrefix}: transcribed ${images.length} screenshot(s) via ${row.label}`);

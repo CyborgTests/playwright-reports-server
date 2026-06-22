@@ -39,20 +39,39 @@ export function attachScreenshotImages(
   if (images.length === 0) return;
   const failureIdx = builtPrompt.segments.findIndex((s) => s.id === 'current_failure');
   if (failureIdx < 0) return;
-  builtPrompt.segments[failureIdx] = { ...builtPrompt.segments[failureIdx], images };
+  const seg = builtPrompt.segments[failureIdx];
+  const caption =
+    images.length > 1
+      ? `## Screenshots\nAttached image(s), in order:\n${images
+          .map((im, i) => `${i + 1}. ${im.source ?? 'screenshot'}`)
+          .join('\n')}\n\n`
+      : '';
+  builtPrompt.segments[failureIdx] = {
+    ...seg,
+    content: `${caption}${seg.content}`,
+    images,
+  };
   if (logPrefix) {
     console.log(`${logPrefix}: attached ${images.length} screenshot(s) inline`);
   }
 }
 
-export function injectScreenshotDescription(builtPrompt: SegmentedPrompt, text: string): void {
+export function injectScreenshotDescription(
+  builtPrompt: SegmentedPrompt,
+  text: string,
+  labels: string[] = []
+): void {
   const trimmed = text.trim();
   if (!trimmed) return;
+  const manifest =
+    labels.length > 1
+      ? `Frames described below, in order:\n${labels.map((l, i) => `${i + 1}. ${l}`).join('\n')}\n\n`
+      : '';
   const segment: PromptSegment = {
     id: 'screenshot_description',
     role: 'user',
     stable: false,
-    content: `## Screenshot Description\nText transcription of the failure screenshot(s) by a vision model (no raw image is included).\n\n${trimmed}`,
+    content: `## Screenshot Description\nText transcription of the failure screenshot(s) by a vision model (no raw image is included).\n\n${manifest}${trimmed}`,
   };
   const afterSnapshot = builtPrompt.segments.findIndex((s) => s.id === 'page_snapshot');
   if (afterSnapshot >= 0) {

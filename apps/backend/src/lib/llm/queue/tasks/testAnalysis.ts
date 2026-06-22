@@ -1,9 +1,15 @@
-import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
+import { FLAKINESS_THRESHOLDS, type LlmScreenshotSource } from '@playwright-reports/shared';
 import { computeDomDiff } from '../../../diff/domDiff.js';
 import { computeNetworkDiff } from '../../../diff/networkDiff.js';
 import { normalizeDom } from '../../../parser/domNormalize.js';
 import { stripAnsi } from '../../../parser/failure-extraction.js';
-import { actionBeforeAfterDom, failureDom } from '../../../parser/trace-snapshot.js';
+import type { ScreencastSelection } from '../../../parser/trace-screencast.js';
+import {
+  actionBeforeAfterDom,
+  actionBeforeAfterTimestamps,
+  failureDom,
+  type TraceSnapshots,
+} from '../../../parser/trace-snapshot.js';
 import {
   analysisFeedbackDb,
   type LlmTaskRow,
@@ -20,6 +26,7 @@ import {
 } from '../../../service/test-management/index.js';
 import {
   loadFullNetworkForTest,
+  loadScreencastImagesForTest,
   loadTraceSnapshotsForTest,
   resolveBaseline,
 } from '../../../service/traceBaseline.js';
@@ -28,7 +35,7 @@ import type { FailureDetailsForPrompt } from '../../prompts/index.js';
 import { buildTestFailureSegments, renderSegmentsForDebug } from '../../prompts/index.js';
 import { runRoutedTask } from '../../routing/index.js';
 import { extractTestAnalysisFromMarkdown } from '../../testAnalysis.js';
-import type { SegmentedPrompt } from '../../types/index.js';
+import type { PromptImage, SegmentedPrompt } from '../../types/index.js';
 import { transcribeScreenshots } from '../../visionTranscribe.js';
 import {
   attachScreenshotImages,
@@ -186,7 +193,7 @@ async function buildTestAnalysisPrompt(
 
   const openRegression = regressionsDb.getOpenForTest(ctx.testId, ctx.fileId, ctx.project);
 
-  const diffs = await buildTraceDiffs(ctx);
+  const { snapshots, ...diffs } = await buildTraceDiffs(ctx);
   const builtPrompt = buildTestFailureSegments({
     failureDetails: ctx.details,
     historicalContext: {
@@ -206,18 +213,26 @@ async function buildTestAnalysisPrompt(
     overrides: promptOverrides,
   });
 
-  const screenshots = await collectScreenshotImages(ctx.details, ctx.reportId);
+  const screenshots = await collectScreenshots(
+    ctx,
+    llmCfg.screenshotSources ?? ['attachment'],
+    llmCfg.maxScreenshots ?? DEFAULT_MAX_SCREENSHOTS,
+    snapshots
+  );
   const transcription =
     taskId && screenshots.length > 0
       ? await transcribeScreenshots(screenshots, taskId, logPrefix)
       : null;
   if (transcription) {
-    injectScreenshotDescription(builtPrompt, transcription.text);
+    const labels = screenshots.map((s) => s.source).filter((s): s is string => !!s);
+    injectScreenshotDescription(builtPrompt, transcription.text, labels);
   } else {
     attachScreenshotImages(builtPrompt, screenshots, logPrefix);
   }
 
-  await llmService.initialize();
+  if (llmService.isConfigured()) {
+    await llmService.initialize();
+  }
   const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(
     builtPrompt,
     OUTPUT_RESERVE_TOKENS_BY_TASK.testAnalysis
@@ -277,7 +292,9 @@ interface TraceDiffs {
   actionDomEffect: ReturnType<typeof computeDomDiff> | null;
 }
 
-async function buildTraceDiffs(ctx: ResolvedTestContext): Promise<TraceDiffs> {
+async function buildTraceDiffs(
+  ctx: ResolvedTestContext
+): Promise<TraceDiffs & { snapshots: TraceSnapshots | null }> {
   const out: TraceDiffs = { networkDiff: null, domDiff: null, actionDomEffect: null };
 
   const [currentNetwork, currentSnapshots, baseline] = await Promise.all([
@@ -324,7 +341,52 @@ async function buildTraceDiffs(ctx: ResolvedTestContext): Promise<TraceDiffs> {
     }
   }
 
-  return out;
+  return { ...out, snapshots: currentSnapshots };
+}
+
+const DEFAULT_MAX_SCREENSHOTS = 3;
+const MAX_SCREENSHOTS_CAP = 10;
+
+async function collectScreenshots(
+  ctx: ResolvedTestContext,
+  sources: LlmScreenshotSource[],
+  maxScreenshots: number,
+  snapshots: TraceSnapshots | null
+): Promise<PromptImage[]> {
+  if (sources.length === 0) return [];
+  const max = Math.min(Math.max(1, maxScreenshots), MAX_SCREENSHOTS_CAP);
+
+  const wantFailingAction = sources.includes('failing_action');
+  const wantSeries = sources.includes('series');
+
+  const attachment = sources.includes('attachment')
+    ? (await collectScreenshotImages(ctx.details, ctx.reportId)).map((im) => ({
+        ...im,
+        source: 'failure screenshot',
+      }))
+    : [];
+
+  let traceFrames: PromptImage[] = [];
+  const traceBudget = max - attachment.length;
+  if ((wantFailingAction || wantSeries) && traceBudget > 0) {
+    const selection: ScreencastSelection = {
+      max: traceBudget,
+      series: wantSeries,
+      failingAction: wantFailingAction
+        ? snapshots?.failingCallId
+          ? actionBeforeAfterTimestamps(snapshots, snapshots.failingCallId)
+          : {}
+        : undefined,
+    };
+    const frames = await loadScreencastImagesForTest(ctx.reportId, ctx.testId, selection);
+    traceFrames = frames.map((f) => ({ data: f.data, mediaType: f.mediaType, source: f.label }));
+  }
+
+  if (traceFrames.length === 0 && attachment.length === 0 && (wantFailingAction || wantSeries)) {
+    return collectScreenshotImages(ctx.details, ctx.reportId);
+  }
+
+  return [...attachment, ...traceFrames].slice(0, max);
 }
 
 function buildRecentHistoryFromRuns(runs: ReturnType<typeof testDb.getTestRuns>): {

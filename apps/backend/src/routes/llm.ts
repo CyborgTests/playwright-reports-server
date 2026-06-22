@@ -15,6 +15,7 @@ import {
   DEFAULT_SYNTHESIZER_DIRECTIVE,
 } from '../lib/llm/prompts/routing.js';
 import { isLlmFeatureEnabled } from '../lib/llm/registry.js';
+import { DEFAULT_SCREENSHOT_PARSE_PROMPT } from '../lib/llm/visionTranscribe.js';
 import {
   failureSummaryDb,
   getDatabase,
@@ -432,6 +433,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
       critiqueDirective: { content: DEFAULT_CRITIQUE_DIRECTIVE, vars: [] },
       reviseDirective: { content: DEFAULT_REVISE_DIRECTIVE, vars: [] },
       scorerDirective: { content: DEFAULT_SCORER_DIRECTIVE, vars: [] },
+      screenshotParsePrompt: { content: DEFAULT_SCREENSHOT_PARSE_PROMPT, vars: [] },
     };
 
     return { success: true, data };

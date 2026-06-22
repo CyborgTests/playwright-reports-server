@@ -4,7 +4,7 @@ import { mkdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { LlmTaskRouting, LlmTaskType } from '@playwright-reports/shared';
+import type { LlmScreenshotSource, LlmTaskRouting, LlmTaskType } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
 import { defaultConfig } from '../lib/config.js';
@@ -24,6 +24,8 @@ interface MultipartFile {
   filename?: string;
   file: Readable & { truncated?: boolean };
 }
+
+const MAX_SCREENSHOTS_CAP = 10;
 
 const BRANDING_SUBDIR = 'branding';
 const BRANDING_DIR = path.join(DATA_FOLDER, BRANDING_SUBDIR);
@@ -124,6 +126,8 @@ interface ConfigFormData {
   llmCustomScorerPrompt?: string;
   llmScreenshotModel?: string;
   llmCustomScreenshotParsePrompt?: string;
+  llmScreenshotSources?: string;
+  llmMaxScreenshots?: string;
   testManagementQuarantineThresholdPercentage?: string;
   testManagementWarningThresholdPercentage?: string;
   testManagementAutoQuarantineEnabled?: string;
@@ -166,6 +170,8 @@ const ALLOWED_CONFIG_FIELDS: ReadonlySet<keyof ConfigFormData> = new Set<keyof C
   'llmCustomScorerPrompt',
   'llmScreenshotModel',
   'llmCustomScreenshotParsePrompt',
+  'llmScreenshotSources',
+  'llmMaxScreenshots',
   'testManagementQuarantineThresholdPercentage',
   'testManagementWarningThresholdPercentage',
   'testManagementAutoQuarantineEnabled',
@@ -244,6 +250,8 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       customScorerPrompt: config.llm?.customScorerPrompt,
       screenshotModel: config.llm?.screenshotModel,
       customScreenshotParsePrompt: config.llm?.customScreenshotParsePrompt,
+      screenshotSources: config.llm?.screenshotSources,
+      maxScreenshots: config.llm?.maxScreenshots,
     };
 
     return { ...config, ...envInfo, llm: llmInfo };
@@ -560,6 +568,29 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
         if (formData.llmCustomScreenshotParsePrompt !== undefined) {
           config.llm.customScreenshotParsePrompt =
             formData.llmCustomScreenshotParsePrompt || undefined;
+        }
+        if (formData.llmScreenshotSources !== undefined) {
+          const valid: LlmScreenshotSource[] = ['attachment', 'failing_action', 'series'];
+          const parsed = formData.llmScreenshotSources
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          for (const s of parsed) {
+            if (!valid.includes(s as LlmScreenshotSource)) {
+              return reply
+                .status(400)
+                .send({ error: `llmScreenshotSources has invalid value "${s}"` });
+            }
+          }
+          // de-dupe while preserving order; empty list = no screenshots (kept as []).
+          config.llm.screenshotSources = [...new Set(parsed)] as LlmScreenshotSource[];
+        }
+        if (formData.llmMaxScreenshots !== undefined) {
+          const raw = formData.llmMaxScreenshots.trim();
+          const n = raw === '' ? Number.NaN : Number(raw);
+          config.llm.maxScreenshots = Number.isFinite(n)
+            ? Math.min(MAX_SCREENSHOTS_CAP, Math.max(1, Math.round(n)))
+            : undefined;
         }
 
         config.cron ??= {};

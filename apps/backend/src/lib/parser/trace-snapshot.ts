@@ -262,6 +262,17 @@ export function failureDom(ts: TraceSnapshots): RawDomNode | null {
   return richestMainFrameDom(ts);
 }
 
+export function actionBeforeAfterTimestamps(
+  ts: TraceSnapshots,
+  callId: string
+): { before?: number; after?: number } {
+  const snaps = mainFrameSnaps(ts);
+  if (!snaps) return {};
+  const before = snaps.find((s) => s.kind === 'before' && s.callId === callId)?.timestamp;
+  const after = snaps.find((s) => s.kind === 'after' && s.callId === callId)?.timestamp;
+  return { before, after };
+}
+
 export function actionBeforeAfterDom(
   ts: TraceSnapshots,
   callId: string

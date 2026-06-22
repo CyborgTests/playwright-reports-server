@@ -39,6 +39,7 @@
 		"envalid": "^8.1.1",
 		"fastify": "^5.8.5",
 		"get-folder-size": "5.0.0",
+		"jpeg-js": "^0.4.4",
 		"jsonwebtoken": "^9.0.3",
 		"kysely": "^0.29.2",
 		"mime": "^4.1.0",

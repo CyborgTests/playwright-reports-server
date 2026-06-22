@@ -2,6 +2,11 @@ import { type DomNode, normalizeDom } from '../parser/domNormalize.js';
 import { type NetworkEvent, parseTraceNetwork } from '../parser/failure-extraction.js';
 import { extractFromReportPayload, loadReportPayload } from '../parser/report-payload.js';
 import {
+  extractScreencastImages,
+  type ScreencastImage,
+  type ScreencastSelection,
+} from '../parser/trace-screencast.js';
+import {
   parseTraceSnapshots,
   richestMainFrameDom,
   type TraceSnapshots,
@@ -42,6 +47,19 @@ export async function loadTraceSnapshotsForTest(
   const tracePath = slice ? traceAttachmentPath(slice) : undefined;
   if (!tracePath) return null;
   return parseTraceSnapshots(reportId, tracePath);
+}
+
+export async function loadScreencastImagesForTest(
+  reportId: string,
+  testId: string,
+  sel: ScreencastSelection
+): Promise<ScreencastImage[]> {
+  const payload = await loadReportPayload(reportId);
+  if (!payload) return [];
+  const slice = extractFromReportPayload(payload, testId);
+  const tracePath = slice ? traceAttachmentPath(slice) : undefined;
+  if (!tracePath) return [];
+  return extractScreencastImages(reportId, tracePath, sel);
 }
 
 async function parseCandidateBaseline(

@@ -171,6 +171,11 @@ function RolePanel({
                 {c.status}
               </Badge>
               <span className="min-w-0 flex-1 break-all font-mono">{c.model ?? '-'}</span>
+              {c.role === 'screenshot_parser' && c.category && (
+                <span className="shrink-0 whitespace-nowrap text-muted-foreground">
+                  {c.category}
+                </span>
+              )}
               {isDone && (
                 <span className="shrink-0 whitespace-nowrap font-mono text-muted-foreground">
                   <VerdictSummary role={c.role} result={c.result} />

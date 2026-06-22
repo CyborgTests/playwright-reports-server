@@ -226,6 +226,7 @@ export class LlmTasksDatabase {
       usage?: LlmTaskUsage;
       error?: string | null;
       result?: string | null;
+      category?: string | null;
     }
   ): void {
     const input = opts.usage?.inputTokens ?? null;
@@ -244,6 +245,7 @@ export class LlmTasksDatabase {
         totalTokens: total,
         error: opts.error ?? null,
         result: opts.result ?? null,
+        category: opts.category ?? null,
       })
       .where('id', '=', id)
       .compile();
