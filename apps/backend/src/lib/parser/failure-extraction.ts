@@ -70,7 +70,7 @@ export interface NetworkEvent {
   requestBody?: string;
   responseBody?: string;
   failureText?: string;
-  incomplete?: boolean;
+  pending?: boolean;
   timestamp?: number;
 }
 
@@ -193,7 +193,7 @@ export function collectHarEntry(snapshot: unknown): { key: string; event: Networ
   const method = typeof req?.method === 'string' ? req.method : 'GET';
   const statusRaw = typeof resp?.status === 'number' ? resp.status : undefined;
   const status = statusRaw && statusRaw > 0 ? statusRaw : undefined;
-  const incomplete = status === undefined;
+  const pending = status === undefined;
   const failureText =
     typeof snap._failureText === 'string'
       ? snap._failureText
@@ -223,7 +223,7 @@ export function collectHarEntry(snapshot: unknown): { key: string; event: Networ
     requestBody: truncateBody(postData),
     responseBody: truncateBody(respContent),
     failureText,
-    incomplete,
+    pending,
     timestamp,
   };
   return { key: `${method} ${url} ${timestamp ?? ''}`, event };
@@ -332,7 +332,7 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
       method,
       url,
       status,
-      incomplete: status === undefined,
+      pending: status === undefined,
       requestHeaders: sanitizeHeaders(
         e.requestHeaders as Record<string, string> | Array<{ name?: string; value?: string }>
       ),
@@ -458,11 +458,9 @@ function prioritizeConsole(events: ConsoleEvent[]): ConsoleEvent[] {
 function prioritizeNetwork(events: NetworkEvent[], anchorTime?: number): NetworkEvent[] {
   if (events.length === 0) return events;
   const sorted = [...events].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-  // "Notable" = failed, error status, OR incomplete (in-flight at failure)
+  // "Notable" = failed, error status, OR pending (in-flight at failure)
   const isNotable = (ev: NetworkEvent) =>
-    !!ev.failureText ||
-    ev.incomplete === true ||
-    (typeof ev.status === 'number' && ev.status >= 400);
+    !!ev.failureText || ev.pending === true || (typeof ev.status === 'number' && ev.status >= 400);
   const failed = sorted.filter(isNotable);
   const successes = sorted.filter((ev) => !isNotable(ev));
   const beforeAnchor =

@@ -319,14 +319,14 @@ function buildConsoleLogBlock(evidence: FailureEvidence | undefined): string {
 function buildNetworkActivityBlock(evidence: FailureEvidence | undefined): string {
   if (!evidence?.networkEvents || evidence.networkEvents.length === 0) return '';
   const events = evidence.networkEvents;
-  const pendingCount = events.filter((n) => n.incomplete).length;
+  const pendingCount = events.filter((n) => n.pending).length;
   let block = `## Network (failed + pending + recent successful)\n`;
   if (pendingCount > 0) {
     block += `${pendingCount} request(s) never got a response (in-flight/aborted at failure) - marked [PENDING]; a likely cause if the page hung loading.\n`;
   }
   for (const ev of events) {
     const isError = !!ev.failureText || (typeof ev.status === 'number' && ev.status >= 400);
-    const isPending = ev.incomplete === true;
+    const isPending = ev.pending === true;
     const marker = isError ? '[FAIL]' : isPending ? '[PENDING]' : '[OK]';
     const status = ev.failureText
       ? `failed (${ev.failureText})`
@@ -360,7 +360,7 @@ function buildNetworkActivityBlock(evidence: FailureEvidence | undefined): strin
     }
   }
   const notable = events.filter(
-    (n) => !!n.failureText || n.incomplete || (typeof n.status === 'number' && n.status >= 400)
+    (n) => !!n.failureText || n.pending || (typeof n.status === 'number' && n.status >= 400)
   );
   if (notable.length === 0) {
     block += `(no failed or pending requests; entries above are pre-failure context)\n`;

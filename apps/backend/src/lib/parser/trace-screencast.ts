@@ -116,7 +116,7 @@ function hammingDistance(a: boolean[], b: boolean[]): number {
 }
 
 interface SeriesPoint {
-  magnitude: number; // novelty: min dHash distance to any already-kept frame
+  novelty: number; // min dHash distance to any already-kept frame (higher = more distinct)
   hash: boolean[];
   image: ScreencastImage;
 }
@@ -129,7 +129,7 @@ function selectMeaningful(points: SeriesPoint[], budget: number): ScreencastImag
   const rest = points
     .map((_, i) => i)
     .filter((i) => !keep.has(i))
-    .sort((a, b) => points[b].magnitude - points[a].magnitude);
+    .sort((a, b) => points[b].novelty - points[a].novelty);
   for (const i of rest) {
     if (keep.size >= budget) break;
     keep.add(i);
@@ -232,7 +232,7 @@ export async function extractScreencastImages(
         if (novelty < SERIES_DHASH_THRESHOLD) continue; // not distinct from what we already have
         usedSha.add(f.sha1);
         points.push({
-          magnitude: novelty,
+          novelty,
           hash,
           image: toImage(f, `frame (t+${ms(f)}ms)`, buf),
         });

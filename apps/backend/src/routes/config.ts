@@ -4,7 +4,12 @@ import { mkdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { LlmScreenshotSource, LlmTaskRouting, LlmTaskType } from '@playwright-reports/shared';
+import {
+  type LlmScreenshotSource,
+  type LlmTaskRouting,
+  type LlmTaskType,
+  SCREENSHOTS_MAX_CAP,
+} from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
 import { defaultConfig } from '../lib/config.js';
@@ -24,8 +29,6 @@ interface MultipartFile {
   filename?: string;
   file: Readable & { truncated?: boolean };
 }
-
-const MAX_SCREENSHOTS_CAP = 10;
 
 const BRANDING_SUBDIR = 'branding';
 const BRANDING_DIR = path.join(DATA_FOLDER, BRANDING_SUBDIR);
@@ -589,7 +592,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           const raw = formData.llmMaxScreenshots.trim();
           const n = raw === '' ? Number.NaN : Number(raw);
           config.llm.maxScreenshots = Number.isFinite(n)
-            ? Math.min(MAX_SCREENSHOTS_CAP, Math.max(1, Math.round(n)))
+            ? Math.min(SCREENSHOTS_MAX_CAP, Math.max(1, Math.round(n)))
             : undefined;
         }
 

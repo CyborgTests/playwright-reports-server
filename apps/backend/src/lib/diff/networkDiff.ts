@@ -36,8 +36,10 @@ function requestKey(method: string, url: string): string {
   return `${method.toUpperCase()} ${normalizeUrl(url)}`;
 }
 
-function isFailing(ev: { status?: number; failureText?: string }): boolean {
-  return !!ev.failureText || (typeof ev.status === 'number' && ev.status >= 400);
+function isFailing(ev: { status?: number; failureText?: string; pending?: boolean }): boolean {
+  return (
+    !!ev.failureText || ev.pending === true || (typeof ev.status === 'number' && ev.status >= 400)
+  );
 }
 
 function statusClass(status: number | undefined): number | undefined {
@@ -58,13 +60,14 @@ function aggregate(events: NetworkEvent[]): Map<string, Aggregate> {
   for (const ev of events) {
     const key = requestKey(ev.method, ev.url);
     const failed = isFailing(ev);
+    const failureText = ev.failureText ?? (ev.pending ? 'no response (in-flight)' : undefined);
     const existing = map.get(key);
     if (!existing) {
       map.set(key, {
         method: ev.method.toUpperCase(),
         url: normalizeUrl(ev.url),
         status: ev.status,
-        failureText: ev.failureText,
+        failureText,
         failed,
       });
       continue;
@@ -72,7 +75,7 @@ function aggregate(events: NetworkEvent[]): Map<string, Aggregate> {
     if (failed && !existing.failed) {
       existing.failed = true;
       existing.status = ev.status;
-      existing.failureText = ev.failureText;
+      existing.failureText = failureText;
     } else if (!existing.failed) {
       existing.status = ev.status;
     }

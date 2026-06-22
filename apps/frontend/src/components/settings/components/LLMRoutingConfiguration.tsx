@@ -6,6 +6,8 @@ import {
   type LlmStrategy,
   type LlmTaskRouting,
   type LlmTaskType,
+  SCREENSHOTS_DEFAULT_MAX,
+  SCREENSHOTS_MAX_CAP,
   STRATEGY_LABELS,
 } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
@@ -574,8 +576,8 @@ export default function LLMRoutingConfiguration({
                             }
                             label="Max screenshots"
                             min={1}
-                            max={10}
-                            placeholder="3"
+                            max={SCREENSHOTS_MAX_CAP}
+                            placeholder={String(SCREENSHOTS_DEFAULT_MAX)}
                           />
                           <p className="text-xs text-muted-foreground">
                             Trace frames need trace recording; falls back to the failure screenshot

@@ -1,4 +1,9 @@
-import { FLAKINESS_THRESHOLDS, type LlmScreenshotSource } from '@playwright-reports/shared';
+import {
+  FLAKINESS_THRESHOLDS,
+  type LlmScreenshotSource,
+  SCREENSHOTS_DEFAULT_MAX,
+  SCREENSHOTS_MAX_CAP,
+} from '@playwright-reports/shared';
 import { computeDomDiff } from '../../../diff/domDiff.js';
 import { computeNetworkDiff } from '../../../diff/networkDiff.js';
 import { normalizeDom } from '../../../parser/domNormalize.js';
@@ -213,28 +218,15 @@ async function buildTestAnalysisPrompt(
     overrides: promptOverrides,
   });
 
-  const screenshots = await collectScreenshots(
+  await applyScreenshots(
+    builtPrompt,
     ctx,
     llmCfg.screenshotSources ?? ['attachment'],
-    llmCfg.maxScreenshots ?? DEFAULT_MAX_SCREENSHOTS,
-    snapshots
+    llmCfg.maxScreenshots ?? SCREENSHOTS_DEFAULT_MAX,
+    snapshots,
+    taskId,
+    logPrefix
   );
-  const transcription =
-    taskId && screenshots.length > 0
-      ? await transcribeScreenshots(screenshots, taskId, logPrefix)
-      : null;
-  const labels = screenshots.map((s) => s.source).filter((s): s is string => !!s);
-  if (transcription) {
-    injectScreenshotDescription(builtPrompt, transcription.text, labels);
-  } else if (!taskId && screenshots.length > 0 && resolveScreenshotModel()) {
-    injectScreenshotDescription(
-      builtPrompt,
-      `_(preview)_ At analysis time the configured vision model transcribes ${screenshots.length} screenshot(s) to text here; the raw image is not sent to the analysis model.`,
-      labels
-    );
-  } else {
-    attachScreenshotImages(builtPrompt, screenshots, logPrefix);
-  }
 
   if (llmService.isConfigured()) {
     await llmService.initialize();
@@ -350,8 +342,31 @@ async function buildTraceDiffs(
   return { ...out, snapshots: currentSnapshots };
 }
 
-const DEFAULT_MAX_SCREENSHOTS = 3;
-const MAX_SCREENSHOTS_CAP = 10;
+async function applyScreenshots(
+  builtPrompt: SegmentedPrompt,
+  ctx: ResolvedTestContext,
+  sources: LlmScreenshotSource[],
+  maxScreenshots: number,
+  snapshots: TraceSnapshots | null,
+  taskId: string | undefined,
+  logPrefix: string | undefined
+): Promise<void> {
+  const screenshots = await collectScreenshots(ctx, sources, maxScreenshots, snapshots);
+  if (screenshots.length === 0) return;
+  const transcription = taskId ? await transcribeScreenshots(screenshots, taskId, logPrefix) : null;
+  const labels = screenshots.map((s) => s.source).filter((s): s is string => !!s);
+  if (transcription) {
+    injectScreenshotDescription(builtPrompt, transcription.text, labels);
+  } else if (!taskId && resolveScreenshotModel()) {
+    injectScreenshotDescription(
+      builtPrompt,
+      `_(preview)_ At analysis time the configured vision model transcribes ${screenshots.length} screenshot(s) to text here; the raw image is not sent to the analysis model.`,
+      labels
+    );
+  } else {
+    attachScreenshotImages(builtPrompt, screenshots, logPrefix);
+  }
+}
 
 async function collectScreenshots(
   ctx: ResolvedTestContext,
@@ -360,7 +375,7 @@ async function collectScreenshots(
   snapshots: TraceSnapshots | null
 ): Promise<PromptImage[]> {
   if (sources.length === 0) return [];
-  const max = Math.min(Math.max(1, maxScreenshots), MAX_SCREENSHOTS_CAP);
+  const max = Math.min(Math.max(1, maxScreenshots), SCREENSHOTS_MAX_CAP);
 
   const wantFailingAction = sources.includes('failing_action');
   const wantSeries = sources.includes('series');
@@ -388,7 +403,12 @@ async function collectScreenshots(
     traceFrames = frames.map((f) => ({ data: f.data, mediaType: f.mediaType, source: f.label }));
   }
 
-  if (traceFrames.length === 0 && attachment.length === 0 && (wantFailingAction || wantSeries)) {
+  if (
+    traceFrames.length === 0 &&
+    attachment.length === 0 &&
+    !sources.includes('attachment') &&
+    (wantFailingAction || wantSeries)
+  ) {
     return collectScreenshotImages(ctx.details, ctx.reportId);
   }
 

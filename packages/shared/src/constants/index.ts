@@ -216,3 +216,6 @@ export const PROMPT_VARIABLES = {
 } as const;
 
 export type PromptVariableKey = keyof typeof PROMPT_VARIABLES;
+
+export const SCREENSHOTS_DEFAULT_MAX = 3;
+export const SCREENSHOTS_MAX_CAP = 10;

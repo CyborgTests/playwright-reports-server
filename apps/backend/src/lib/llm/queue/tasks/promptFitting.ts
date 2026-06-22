@@ -31,6 +31,10 @@ export async function collectScreenshotImages(
   return img ? [img] : [];
 }
 
+export function numberedList(items: string[]): string {
+  return items.map((item, i) => `${i + 1}. ${item}`).join('\n');
+}
+
 export function attachScreenshotImages(
   builtPrompt: SegmentedPrompt,
   images: PromptImage[],
@@ -42,9 +46,7 @@ export function attachScreenshotImages(
   const seg = builtPrompt.segments[failureIdx];
   const caption =
     images.length > 1
-      ? `## Screenshots\nAttached image(s), in order:\n${images
-          .map((im, i) => `${i + 1}. ${im.source ?? 'screenshot'}`)
-          .join('\n')}\n\n`
+      ? `## Screenshots\nAttached image(s), in order:\n${numberedList(images.map((im) => im.source ?? 'screenshot'))}\n\n`
       : '';
   builtPrompt.segments[failureIdx] = {
     ...seg,
@@ -64,9 +66,7 @@ export function injectScreenshotDescription(
   const trimmed = text.trim();
   if (!trimmed) return;
   const manifest =
-    labels.length > 1
-      ? `Frames described below, in order:\n${labels.map((l, i) => `${i + 1}. ${l}`).join('\n')}\n\n`
-      : '';
+    labels.length > 1 ? `Frames described below, in order:\n${numberedList(labels)}\n\n` : '';
   const segment: PromptSegment = {
     id: 'screenshot_description',
     role: 'user',
