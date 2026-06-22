@@ -1,7 +1,4 @@
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import { Open } from 'unzipper';
-import { REPORTS_FOLDER } from '../storage/constants.js';
+import type { TraceZip } from './trace-zip.js';
 
 export type NodeSnapshot = string | unknown[];
 
@@ -138,13 +135,8 @@ interface TraceEntry {
   };
 }
 
-export async function parseTraceSnapshots(
-  reportId: string,
-  tracePath: string
-): Promise<TraceSnapshots | null> {
+export async function parseTraceSnapshots(directory: TraceZip): Promise<TraceSnapshots | null> {
   try {
-    const zipBuffer = await fs.readFile(path.join(REPORTS_FOLDER, reportId, tracePath));
-    const directory = await Open.buffer(zipBuffer);
     const traceFiles = directory.files.filter(
       (f) => f.type === 'File' && f.path.endsWith('.trace')
     );
@@ -195,7 +187,7 @@ export async function parseTraceSnapshots(
 
     return { byFrame, mainFrameId, failingCallId };
   } catch (error) {
-    console.error(`[trace-snapshot] Failed to read snapshots ${tracePath}:`, error);
+    console.error('[trace-snapshot] Failed to parse snapshots:', error);
     return null;
   }
 }

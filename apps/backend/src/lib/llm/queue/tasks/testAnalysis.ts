@@ -8,13 +8,17 @@ import { computeDomDiff } from '../../../diff/domDiff.js';
 import { computeNetworkDiff } from '../../../diff/networkDiff.js';
 import { normalizeDom } from '../../../parser/domNormalize.js';
 import { stripAnsi } from '../../../parser/failure-extraction.js';
-import type { ScreencastSelection } from '../../../parser/trace-screencast.js';
+import {
+  extractScreencastImages,
+  type ScreencastSelection,
+} from '../../../parser/trace-screencast.js';
 import {
   actionBeforeAfterDom,
   actionBeforeAfterTimestamps,
   failureDom,
   type TraceSnapshots,
 } from '../../../parser/trace-snapshot.js';
+import type { TraceZip } from '../../../parser/trace-zip.js';
 import {
   analysisFeedbackDb,
   type LlmTaskRow,
@@ -29,12 +33,7 @@ import {
   detectFailureCategory,
   isRootCauseCategory,
 } from '../../../service/test-management/index.js';
-import {
-  loadFullNetworkForTest,
-  loadScreencastImagesForTest,
-  loadTraceSnapshotsForTest,
-  resolveBaseline,
-} from '../../../service/traceBaseline.js';
+import { loadTraceArtifacts, resolveBaseline } from '../../../service/traceBaseline.js';
 import { llmService } from '../../index.js';
 import type { FailureDetailsForPrompt } from '../../prompts/index.js';
 import { buildTestFailureSegments, renderSegmentsForDebug } from '../../prompts/index.js';
@@ -198,7 +197,7 @@ async function buildTestAnalysisPrompt(
 
   const openRegression = regressionsDb.getOpenForTest(ctx.testId, ctx.fileId, ctx.project);
 
-  const { snapshots, ...diffs } = await buildTraceDiffs(ctx);
+  const { snapshots, zip: traceZip, ...diffs } = await buildTraceDiffs(ctx);
   const builtPrompt = buildTestFailureSegments({
     failureDetails: ctx.details,
     historicalContext: {
@@ -224,6 +223,7 @@ async function buildTestAnalysisPrompt(
     llmCfg.screenshotSources ?? ['attachment'],
     llmCfg.maxScreenshots ?? SCREENSHOTS_DEFAULT_MAX,
     snapshots,
+    traceZip,
     taskId,
     logPrefix
   );
@@ -292,12 +292,11 @@ interface TraceDiffs {
 
 async function buildTraceDiffs(
   ctx: ResolvedTestContext
-): Promise<TraceDiffs & { snapshots: TraceSnapshots | null }> {
+): Promise<TraceDiffs & { snapshots: TraceSnapshots | null; zip: TraceZip | null }> {
   const out: TraceDiffs = { networkDiff: null, domDiff: null, actionDomEffect: null };
 
-  const [currentNetwork, currentSnapshots, baseline] = await Promise.all([
-    loadFullNetworkForTest(ctx.reportId, ctx.testId),
-    loadTraceSnapshotsForTest(ctx.reportId, ctx.testId),
+  const [current, baseline] = await Promise.all([
+    loadTraceArtifacts(ctx.reportId, ctx.testId),
     resolveBaseline({
       testId: ctx.testId,
       fileId: ctx.fileId,
@@ -305,6 +304,8 @@ async function buildTraceDiffs(
       currentReportId: ctx.reportId,
     }),
   ]);
+  const currentNetwork = current?.network ?? null;
+  const currentSnapshots = current?.snapshots ?? null;
 
   // Cross-run network diff.
   if (currentNetwork && currentNetwork.length > 0 && baseline && baseline.network.length > 0) {
@@ -339,7 +340,7 @@ async function buildTraceDiffs(
     }
   }
 
-  return { ...out, snapshots: currentSnapshots };
+  return { ...out, snapshots: currentSnapshots, zip: current?.zip ?? null };
 }
 
 async function applyScreenshots(
@@ -348,10 +349,11 @@ async function applyScreenshots(
   sources: LlmScreenshotSource[],
   maxScreenshots: number,
   snapshots: TraceSnapshots | null,
+  zip: TraceZip | null,
   taskId: string | undefined,
   logPrefix: string | undefined
 ): Promise<void> {
-  const screenshots = await collectScreenshots(ctx, sources, maxScreenshots, snapshots);
+  const screenshots = await collectScreenshots(ctx, sources, maxScreenshots, snapshots, zip);
   if (screenshots.length === 0) return;
   const transcription = taskId ? await transcribeScreenshots(screenshots, taskId, logPrefix) : null;
   const labels = screenshots.map((s) => s.source).filter((s): s is string => !!s);
@@ -372,7 +374,8 @@ async function collectScreenshots(
   ctx: ResolvedTestContext,
   sources: LlmScreenshotSource[],
   maxScreenshots: number,
-  snapshots: TraceSnapshots | null
+  snapshots: TraceSnapshots | null,
+  zip: TraceZip | null
 ): Promise<PromptImage[]> {
   if (sources.length === 0) return [];
   const max = Math.min(Math.max(1, maxScreenshots), SCREENSHOTS_MAX_CAP);
@@ -389,7 +392,7 @@ async function collectScreenshots(
 
   let traceFrames: PromptImage[] = [];
   const traceBudget = max - attachment.length;
-  if ((wantFailingAction || wantSeries) && traceBudget > 0) {
+  if ((wantFailingAction || wantSeries) && traceBudget > 0 && zip) {
     const selection: ScreencastSelection = {
       max: traceBudget,
       series: wantSeries,
@@ -399,7 +402,7 @@ async function collectScreenshots(
           : {}
         : undefined,
     };
-    const frames = await loadScreencastImagesForTest(ctx.reportId, ctx.testId, selection);
+    const frames = await extractScreencastImages(zip, selection);
     traceFrames = frames.map((f) => ({ data: f.data, mediaType: f.mediaType, source: f.label }));
   }
 

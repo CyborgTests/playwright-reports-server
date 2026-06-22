@@ -1,8 +1,5 @@
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import jpeg from 'jpeg-js';
-import { Open } from 'unzipper';
-import { REPORTS_FOLDER } from '../storage/constants.js';
+import type { TraceZip } from './trace-zip.js';
 
 export interface ScreencastImage {
   data: string;
@@ -138,13 +135,10 @@ function selectMeaningful(points: SeriesPoint[], budget: number): ScreencastImag
 }
 
 export async function extractScreencastImages(
-  reportId: string,
-  tracePath: string,
+  directory: TraceZip,
   sel: ScreencastSelection
 ): Promise<ScreencastImage[]> {
   try {
-    const zipBuffer = await fs.readFile(path.join(REPORTS_FOLDER, reportId, tracePath));
-    const directory = await Open.buffer(zipBuffer);
     const traceFiles = directory.files.filter(
       (f) => f.type === 'File' && f.path.endsWith('.trace')
     );
@@ -243,7 +237,7 @@ export async function extractScreencastImages(
     return out;
   } catch (err) {
     console.warn(
-      `[trace-screencast] failed to extract frames from ${tracePath}: ${err instanceof Error ? err.message : String(err)}`
+      `[trace-screencast] failed to extract frames: ${err instanceof Error ? err.message : String(err)}`
     );
     return [];
   }

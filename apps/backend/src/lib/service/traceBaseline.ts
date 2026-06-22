@@ -2,15 +2,11 @@ import { type DomNode, normalizeDom } from '../parser/domNormalize.js';
 import { type NetworkEvent, parseTraceNetwork } from '../parser/failure-extraction.js';
 import { extractFromReportPayload, loadReportPayload } from '../parser/report-payload.js';
 import {
-  extractScreencastImages,
-  type ScreencastImage,
-  type ScreencastSelection,
-} from '../parser/trace-screencast.js';
-import {
   parseTraceSnapshots,
   richestMainFrameDom,
   type TraceSnapshots,
 } from '../parser/trace-snapshot.js';
+import { openTraceZip, type TraceZip } from '../parser/trace-zip.js';
 import { testDb, traceBaselineDb } from './db/index.js';
 
 export interface BaselineEvidence {
@@ -25,53 +21,40 @@ function traceAttachmentPath(slice: {
   return slice.attachments?.find((a) => a.name === 'trace' && a.path)?.path;
 }
 
-export async function loadFullNetworkForTest(
+export interface TraceArtifacts {
+  network: NetworkEvent[];
+  snapshots: TraceSnapshots | null;
+  zip: TraceZip;
+}
+
+export async function loadTraceArtifacts(
   reportId: string,
   testId: string
-): Promise<NetworkEvent[] | null> {
+): Promise<TraceArtifacts | null> {
   const payload = await loadReportPayload(reportId);
   if (!payload) return null;
   const slice = extractFromReportPayload(payload, testId);
   const tracePath = slice ? traceAttachmentPath(slice) : undefined;
   if (!tracePath) return null;
-  return parseTraceNetwork(reportId, tracePath);
-}
-
-export async function loadTraceSnapshotsForTest(
-  reportId: string,
-  testId: string
-): Promise<TraceSnapshots | null> {
-  const payload = await loadReportPayload(reportId);
-  if (!payload) return null;
-  const slice = extractFromReportPayload(payload, testId);
-  const tracePath = slice ? traceAttachmentPath(slice) : undefined;
-  if (!tracePath) return null;
-  return parseTraceSnapshots(reportId, tracePath);
-}
-
-export async function loadScreencastImagesForTest(
-  reportId: string,
-  testId: string,
-  sel: ScreencastSelection
-): Promise<ScreencastImage[]> {
-  const payload = await loadReportPayload(reportId);
-  if (!payload) return [];
-  const slice = extractFromReportPayload(payload, testId);
-  const tracePath = slice ? traceAttachmentPath(slice) : undefined;
-  if (!tracePath) return [];
-  return extractScreencastImages(reportId, tracePath, sel);
+  const zip = await openTraceZip(reportId, tracePath);
+  if (!zip) return null;
+  return {
+    network: await parseTraceNetwork(zip),
+    snapshots: await parseTraceSnapshots(zip),
+    zip,
+  };
 }
 
 async function parseCandidateBaseline(
   reportId: string,
   testId: string
 ): Promise<{ network: NetworkEvent[]; dom: DomNode | null } | null> {
-  const network = (await loadFullNetworkForTest(reportId, testId)) ?? [];
-  const ts = await loadTraceSnapshotsForTest(reportId, testId);
-  const richest = ts ? richestMainFrameDom(ts) : null;
+  const trace = await loadTraceArtifacts(reportId, testId);
+  if (!trace) return null;
+  const richest = trace.snapshots ? richestMainFrameDom(trace.snapshots) : null;
   const dom = richest ? normalizeDom(richest) : null;
-  if (network.length === 0 && !dom) return null;
-  return { network, dom };
+  if (trace.network.length === 0 && !dom) return null;
+  return { network: trace.network, dom };
 }
 
 function baselineLabel(outcome: string, createdAt: string): string {

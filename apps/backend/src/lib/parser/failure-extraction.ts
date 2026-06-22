@@ -15,6 +15,7 @@ import {
   type PerFileStep,
   type ReportJsonMetadata,
 } from './report-payload.js';
+import type { TraceZip } from './trace-zip.js';
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI escape sequences requires the ESC control char
 const ANSI_ESCAPE_RE = /\x1b\[[0-9;]*m/g;
@@ -530,20 +531,9 @@ async function extractEvidenceFromTrace(
   }
 }
 
-export async function parseTraceNetwork(
-  reportId: string,
-  tracePath: string
-): Promise<NetworkEvent[] | null> {
-  try {
-    const reportDir = path.join(REPORTS_FOLDER, reportId);
-    const zipBuffer = await fs.readFile(path.join(reportDir, tracePath));
-    const directory = await Open.buffer(zipBuffer);
-    const collectors = await collectFromTraceZip(directory);
-    return Array.from(collectors.network.values());
-  } catch (error) {
-    console.error(`[failure-extraction] Failed to read trace network ${tracePath}:`, error);
-    return null;
-  }
+export async function parseTraceNetwork(directory: TraceZip): Promise<NetworkEvent[]> {
+  const collectors = await collectFromTraceZip(directory);
+  return Array.from(collectors.network.values());
 }
 
 function splitMessageAndStack(raw: string): { message: string; stack?: string } {
