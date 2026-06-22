@@ -4,6 +4,7 @@ import { type GateReservation, modelGate, reservationStore } from '../modelGate.
 import { isFallbackChainEnabled, isLlmFeatureEnabled } from '../registry.js';
 import { resolveRouting } from '../routing/index.js';
 import { LLMProviderError } from '../types/index.js';
+import { resolveScreenshotModel } from '../visionTranscribe.js';
 import { processProjectSummary } from './tasks/projectSummary.js';
 import { processReportSummary } from './tasks/reportSummary.js';
 import { processTestAnalysis } from './tasks/testAnalysis.js';
@@ -83,11 +84,21 @@ class LlmAnalysisQueue {
     run: boolean;
     reservation?: { modelId: string; release: () => void };
   } {
-    if (resolveRouting(task.type).strategy !== 'one_shot') return { run: true };
+    const routing = resolveRouting(task.type);
+    if (routing.strategy !== 'one_shot') return { run: true };
     const primary = llmModelsDb.getPrimary();
     if (!primary) return { run: true };
-    const release = modelGate.tryAcquire(primary.id, primary.parallelRequests);
-    return release ? { run: true, reservation: { modelId: primary.id, release } } : { run: false };
+    const overrideRow = routing.model?.modelId
+      ? (llmModelsDb.list().find((m) => m.id === routing.model?.modelId && m.enabled === 1) ?? null)
+      : null;
+    const effective = overrideRow ?? primary;
+    if (task.type === 'test_analysis' && resolveScreenshotModel()?.id === effective.id) {
+      return { run: true };
+    }
+    const release = modelGate.tryAcquire(effective.id, effective.parallelRequests);
+    return release
+      ? { run: true, reservation: { modelId: effective.id, release } }
+      : { run: false };
   }
 
   private dispatch(task: LlmTaskRow, reservation?: { modelId: string; release: () => void }): void {
