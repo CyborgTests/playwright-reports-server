@@ -899,28 +899,7 @@ export class ReportDatabase {
     const hasScanFilter = !!input?.search?.trim() || (input?.tags?.length ?? 0) > 0;
 
     // skip the `files` column, only the detail by id query needs it.
-    let listSelect = applyWhere(
-      this.k
-        .selectFrom('reports')
-        .select([
-          'reportID',
-          'project',
-          'title',
-          'displayNumber',
-          'createdAt',
-          'reportUrl',
-          'size',
-          'sizeBytes',
-          'metadata',
-          'passRate',
-          'updatedAt',
-          'statTotal',
-          'statExpected',
-          'statUnexpected',
-          'statFlaky',
-          'statSkipped',
-        ])
-    );
+    let listSelect = applyWhere(this.k.selectFrom('reports').select(REPORT_COLUMNS_WITHOUT_FILES));
     if (hasScanFilter) {
       listSelect = listSelect.select(sql<number>`COUNT(*) OVER()`.as('__total'));
     }
