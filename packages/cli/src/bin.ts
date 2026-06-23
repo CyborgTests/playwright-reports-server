@@ -32,10 +32,12 @@ import {
   runTestAnalysisSubmit,
   runTestBrief,
   runTestFailureContext,
+  runTestFeedbackRelated,
   runTestFind,
   runTestFromFile,
   runTestHistory,
   runTestSearch,
+  runTestSignatureHistory,
 } from './commands/test.js';
 import { CliConfigError } from './config.js';
 
@@ -71,6 +73,10 @@ const HELP = [
   '  test analysis-prompt <testId> --report-id <id>',
   '                                          Verbatim prompt from the latest completed analysis task',
   '  test history <testId> [--limit N]      Per-run history + signature rollup',
+  '  test signature-history <testId> --report-id <id>',
+  '                                          Prior occurrences of this failure signature (all reports)',
+  '  test feedback-related <testId> --report-id <id>',
+  '                                          Feedback on the same test in other projects',
   '  test search [filters]                  Search tests by tier / status / sort / category',
   "  report latest [--with-failures]        Latest report's brief (compact by default)",
   "  report brief <reportId> [--with-failures]   Specific report's brief",
@@ -148,6 +154,12 @@ const GROUP_HELP: Record<string, string> = {
     '      in-report "Copy prompt" button). Pass --task-id to address a specific run.',
     '  test history <testId> [--project <p>] [--limit N]',
     '      Per-run history + signatureGroups rollup. Default --limit 20, max 50.',
+    '  test signature-history <testId> (--report-id <id> | --file-id <id> --error-signature <sig>)',
+    '      Count + first occurrence of one failure signature across ALL reports (not the',
+    '      ~50-run window `test history` covers). Answers "is this break new or recurring?".',
+    '  test feedback-related <testId> (--report-id <id> | --file-id <id> --exclude-project <p>)',
+    '      Feedback notes + latest analysis on the same test in OTHER projects, with a flag',
+    "      for entries that share this run's error signature. Up to 5 entries.",
     '  test search [filters]',
     '      Open-ended search. Supports --tier, --status, --failure-category, --sort slowest,',
     '      --search, --from/--to, --limit (default 20, max 100), --offset.',
@@ -299,6 +311,8 @@ interface CommonOpts {
   category?: string;
   comment?: string;
   fileId?: string;
+  errorSignature?: string;
+  excludeProject?: string;
   lastReportId?: string;
   reportCount?: number;
   firstReportAt?: string;
@@ -344,6 +358,8 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
       category: { type: 'string' },
       comment: { type: 'string' },
       'file-id': { type: 'string' },
+      'error-signature': { type: 'string' },
+      'exclude-project': { type: 'string' },
       'last-report-id': { type: 'string' },
       'report-count': { type: 'string' },
       'first-report-at': { type: 'string' },
@@ -399,6 +415,8 @@ function parseCommonOpts(argv: string[]): { positionals: string[]; opts: CommonO
       category: str(v.category),
       comment: str(v.comment),
       fileId: str(v['file-id']),
+      errorSignature: str(v['error-signature']),
+      excludeProject: str(v['exclude-project']),
       lastReportId: str(v['last-report-id']),
       reportCount: parseIntOpt(v['report-count']),
       firstReportAt: str(v['first-report-at']),
@@ -494,6 +512,20 @@ async function dispatch(argv: string[]): Promise<void> {
         await runTestHistory(arg0, {
           project: opts.project,
           limit: opts.limit,
+        });
+        return;
+      case 'signature-history':
+        await runTestSignatureHistory(arg0, {
+          reportId: opts.reportId,
+          fileId: opts.fileId,
+          errorSignature: opts.errorSignature,
+        });
+        return;
+      case 'feedback-related':
+        await runTestFeedbackRelated(arg0, {
+          reportId: opts.reportId,
+          fileId: opts.fileId,
+          excludeProject: opts.excludeProject,
         });
         return;
       case 'from-file':

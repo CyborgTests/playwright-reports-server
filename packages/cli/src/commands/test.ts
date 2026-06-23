@@ -2,7 +2,14 @@ import { apiGet, apiPost } from '../client.js';
 import { resolveConfig } from '../config.js';
 import { clampToRange, emitJson } from '../format.js';
 import { readTextInput } from '../input.js';
-import type { TestAnalysis, TestBrief, TestHistory, TestSummary } from '../types.js';
+import type {
+  RelatedFeedbackEntry,
+  TestAnalysis,
+  TestBrief,
+  TestHistory,
+  TestSignatureHistory,
+  TestSummary,
+} from '../types.js';
 
 interface FindOpts {
   project?: string;
@@ -171,6 +178,60 @@ export async function runTestHistory(testId: string, opts: HistoryOpts): Promise
     query
   );
   emitJson(history);
+}
+
+interface SignatureHistoryOpts {
+  reportId?: string;
+  fileId?: string;
+  errorSignature?: string;
+}
+
+export async function runTestSignatureHistory(
+  testId: string,
+  opts: SignatureHistoryOpts
+): Promise<void> {
+  if (!testId) {
+    throw new Error(
+      'Usage: pwrs-cli test signature-history <testId> (--report-id <id> | --file-id <id> --error-signature <sig>)'
+    );
+  }
+  if (!opts.reportId && !(opts.fileId && opts.errorSignature)) {
+    throw new Error('Provide --report-id, or both --file-id and --error-signature');
+  }
+  const config = resolveConfig();
+  const query: Record<string, string | undefined> = { testId };
+  if (opts.reportId) query.reportId = opts.reportId;
+  if (opts.fileId) query.fileId = opts.fileId;
+  if (opts.errorSignature) query.errorSignature = opts.errorSignature;
+  const data = await apiGet<TestSignatureHistory>(config, '/api/llm/test-history', query);
+  emitJson(data);
+}
+
+interface FeedbackRelatedOpts {
+  reportId?: string;
+  fileId?: string;
+  excludeProject?: string;
+}
+
+export async function runTestFeedbackRelated(
+  testId: string,
+  opts: FeedbackRelatedOpts
+): Promise<void> {
+  if (!testId) {
+    throw new Error(
+      'Usage: pwrs-cli test feedback-related <testId> (--report-id <id> | --file-id <id> --exclude-project <p>)'
+    );
+  }
+  if (!opts.reportId && !(opts.fileId && opts.excludeProject)) {
+    throw new Error('Provide --report-id, or both --file-id and --exclude-project');
+  }
+  const config = resolveConfig();
+  const query: Record<string, string | undefined> = { testId };
+  if (opts.reportId) query.reportId = opts.reportId;
+  if (opts.fileId) query.fileId = opts.fileId;
+  if (opts.excludeProject) query.excludeProject = opts.excludeProject;
+  const entries = await apiGet<RelatedFeedbackEntry[]>(config, '/api/llm/feedback/related', query);
+  emitJson({ total: entries.length, entries });
 }
 
 export async function runTestFromFile(spec: string, opts: FromFileOpts): Promise<void> {

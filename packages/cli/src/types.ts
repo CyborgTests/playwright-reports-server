@@ -174,6 +174,37 @@ export interface TestHistory {
   runs: TestHistoryRun[];
 }
 
+export interface TestSignatureHistory {
+  priorOccurrenceCount: number;
+  firstOccurrence: {
+    reportId: string;
+    createdAt: string;
+    displayNumber: number | null;
+    title: string | null;
+  } | null;
+}
+
+export interface RelatedFeedbackEntry {
+  project: string;
+  feedback: {
+    id: string;
+    testId?: string;
+    fileId?: string;
+    project: string;
+    reportId?: string;
+    errorSignature?: string;
+    comment: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  latestAnalysis?: {
+    analysis: string;
+    updatedAt: string;
+    model?: string;
+  };
+  errorSignatureMatchesCurrent: boolean;
+}
+
 export type ClusterAnchorKind = 'fixture' | 'selector' | 'frame' | 'signature' | 'unmatched';
 
 export type ClusterAnchor =
