@@ -18,6 +18,7 @@ import * as llmConcurrencyGroups from './0014_llm_concurrency_groups.js';
 import * as promoteReportGitCi from './0015_promote_report_git_ci.js';
 import * as entityTagsAndCommitSubject from './0016_entity_tags_and_commit_subject.js';
 import * as promoteSkippedDropStats from './0017_promote_skipped_drop_stats.js';
+import * as dropRedundantIndexes from './0018_drop_redundant_indexes.js';
 
 // Ordered, statically-imported migration set. The keys are the names Kysely
 // records in its `kysely_migration` table; their lexical order is the run order,
@@ -63,6 +64,10 @@ const MIGRATIONS: Record<string, Migration> = {
   '0017_promote_skipped_drop_stats': {
     up: promoteSkippedDropStats.up,
     down: promoteSkippedDropStats.down,
+  },
+  '0018_drop_redundant_indexes': {
+    up: dropRedundantIndexes.up,
+    down: dropRedundantIndexes.down,
   },
 };
 
