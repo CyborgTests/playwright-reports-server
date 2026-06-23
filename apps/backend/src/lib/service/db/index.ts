@@ -55,7 +55,7 @@ export type {
 } from './regressions.sqlite.js';
 export { regressionsDb, toRegressionContext } from './regressions.sqlite.js';
 export { reportResultsDb } from './reportResults.sqlite.js';
-export type { ReportHistoryLite } from './reports.sqlite.js';
+export type { ReportAnalyticsRow, ReportHistoryLite } from './reports.sqlite.js';
 export { reportDb } from './reports.sqlite.js';
 export { resultDb } from './results.sqlite.js';
 export { siteConfigDb } from './siteConfig.sqlite.js';

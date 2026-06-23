@@ -7,9 +7,9 @@ import type {
   TrendMetrics,
 } from '@playwright-reports/shared';
 import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
-import type { ReportHistory as BackendReportHistory } from '../storage/types.js';
 import {
   failureSummaryDb,
+  type ReportAnalyticsRow,
   regressionsDb,
   reportDb,
   testAnalyticsDb,
@@ -41,7 +41,9 @@ const EMPTY_TREND_AGGREGATE: TrendAggregate = {
   sumDuration: 0,
 };
 
-function aggregateFromRows(reports: BackendReportHistory[]): TrendAggregate {
+type ReportAggregate = ReturnType<typeof reportDb.aggregateForAnalytics>;
+
+function aggregateFromRows(reports: ReportAnalyticsRow[]): TrendAggregate {
   let totalPassed = 0;
   let totalFailed = 0;
   let totalFlaky = 0;
@@ -69,7 +71,7 @@ function avgDurationOf(agg: TrendAggregate): number {
   return agg.count > 0 ? agg.sumDuration / agg.count : 0;
 }
 
-function windowFromReports(reports: BackendReportHistory[]): Window {
+function windowFromReports(reports: ReportAnalyticsRow[]): Window {
   if (reports.length === 0) return {};
   const newest = reports[0]?.createdAt;
   const oldest = reports[reports.length - 1]?.createdAt;
@@ -116,7 +118,7 @@ export class AnalyticsService {
       regressions,
     ] = await Promise.all([
       this.calculateOverviewStats(
-        displayReports,
+        fetchScope.displayAggregate,
         recentForTrend,
         olderTrendAggregate,
         projectKey,
@@ -167,25 +169,34 @@ export class AnalyticsService {
     to: string | undefined,
     failedOnly: boolean
   ): Promise<{
-    reports: BackendReportHistory[];
+    reports: ReportAnalyticsRow[];
+    displayAggregate: ReportAggregate;
     olderAggregate: TrendAggregate | null;
     olderRange: { from: string; to: string } | null;
   }> {
+    const displayAggregate = reportDb.aggregateForAnalytics(project, from, to, { failedOnly });
+
     if (!from && !to) {
       return {
-        reports: reportDb.getByProject(project, { failedOnly }),
+        reports: reportDb.getByProjectForAnalytics(project, { failedOnly }),
+        displayAggregate,
         olderAggregate: null,
         olderRange: null,
       };
     }
 
-    const reports = reportDb.getByProject(project, { from, to, failedOnly });
+    const reports = reportDb.getByProjectForAnalytics(project, { from, to, failedOnly });
 
     const fromMs = from ? new Date(from).getTime() : Number.NEGATIVE_INFINITY;
     const toMs = to ? new Date(to).getTime() : Number.POSITIVE_INFINITY;
     const duration = Number.isFinite(toMs) && Number.isFinite(fromMs) ? toMs - fromMs : null;
     if (duration === null || duration <= 0) {
-      return { reports, olderAggregate: EMPTY_TREND_AGGREGATE, olderRange: null };
+      return {
+        reports,
+        displayAggregate,
+        olderAggregate: EMPTY_TREND_AGGREGATE,
+        olderRange: null,
+      };
     }
     const compFrom = new Date(fromMs - duration).toISOString();
     const compTo = new Date(fromMs).toISOString();
@@ -194,6 +205,7 @@ export class AnalyticsService {
     });
     return {
       reports,
+      displayAggregate,
       olderAggregate,
       olderRange: { from: compFrom, to: compTo },
     };
@@ -208,14 +220,14 @@ export class AnalyticsService {
    * split at the date midpoint.
    */
   private partitionReports(
-    allReports: BackendReportHistory[],
+    allReports: ReportAnalyticsRow[],
     from?: string,
     to?: string,
     preFetchedOlderRange?: { from: string; to: string } | null,
     preFetchedOlderAggregate?: TrendAggregate | null
   ): {
-    displayReports: BackendReportHistory[];
-    recentForTrend: BackendReportHistory[];
+    displayReports: ReportAnalyticsRow[];
+    recentForTrend: ReportAnalyticsRow[];
     olderTrendAggregate: TrendAggregate;
     olderRange: { from: string; to: string } | null;
     isBounded: boolean;
@@ -253,28 +265,17 @@ export class AnalyticsService {
   }
 
   private async calculateOverviewStats(
-    displayReports: BackendReportHistory[],
-    recentForTrend: BackendReportHistory[],
+    displayAggregate: ReportAggregate,
+    recentForTrend: ReportAnalyticsRow[],
     olderTrendAggregate: TrendAggregate,
     project: string | undefined,
     recentRange: Window,
     previousRange: Window
   ): Promise<OverviewStats> {
-    const totalTests = displayReports.reduce((sum, report) => sum + (report.stats?.total || 0), 0);
-
-    const totalPassed = displayReports.reduce(
-      (sum, report) => sum + (report.stats?.expected || 0),
-      0
-    );
+    const totalTests = displayAggregate.totalTests;
+    const totalPassed = displayAggregate.totalPassed;
     // Skipped tests are excluded from pass rate - they aren't pass/fail outcomes.
-    const totalExecuted = displayReports.reduce(
-      (sum, report) =>
-        sum +
-        (report.stats?.expected || 0) +
-        (report.stats?.unexpected || 0) +
-        (report.stats?.flaky || 0),
-      0
-    );
+    const totalExecuted = displayAggregate.totalExecuted;
     const passRate = totalExecuted > 0 ? (totalPassed / totalExecuted) * 100 : 0;
 
     const recentAgg = testAnalyticsDb.getDurationAggregates(
@@ -297,10 +298,7 @@ export class AnalyticsService {
     const olderAverageTestDuration = olderAgg.avgDuration;
 
     const averageTestRunDuration =
-      displayReports.length > 0
-        ? displayReports.reduce((sum, report) => sum + (report.duration || 0), 0) /
-          displayReports.length
-        : 0;
+      displayAggregate.count > 0 ? displayAggregate.sumDuration / displayAggregate.count : 0;
 
     const recentPassRate = await this.calculatePreviousPassRate(recentForTrend);
     const olderPassRate = passRateOf(olderTrendAggregate);
@@ -335,7 +333,7 @@ export class AnalyticsService {
     };
 
     return {
-      totalRuns: displayReports.length,
+      totalRuns: displayAggregate.count,
       totalTests,
       passRate: Math.round(passRate * 100) / 100,
       averageTestDuration: Math.round(averageTestDuration),
@@ -359,7 +357,7 @@ export class AnalyticsService {
   }
 
   private async calculateRunHealthMetrics(
-    reports: BackendReportHistory[]
+    reports: ReportAnalyticsRow[]
   ): Promise<RunHealthMetric[]> {
     return this.reportsToRunHealth(reports.slice(0, RUN_HEALTH_PAGE_SIZE));
   }
@@ -378,7 +376,7 @@ export class AnalyticsService {
       Math.max(opts.limit ?? RUN_HEALTH_PAGE_SIZE, 1),
       RUN_HEALTH_MAX_PAGE_SIZE
     );
-    const reports = reportDb.getByProject(project, {
+    const reports = reportDb.getByProjectForAnalytics(project, {
       from: opts.from,
       to: opts.to,
       failedOnly: opts.failedOnly ?? false,
@@ -388,7 +386,7 @@ export class AnalyticsService {
     return this.reportsToRunHealth(reports);
   }
 
-  private reportsToRunHealth(reports: BackendReportHistory[]): RunHealthMetric[] {
+  private reportsToRunHealth(reports: ReportAnalyticsRow[]): RunHealthMetric[] {
     const regressionCounts = regressionsDb.countsForReports(reports.map((r) => r.reportID));
     return reports.map((report) => {
       const stats = report.stats;
@@ -413,7 +411,7 @@ export class AnalyticsService {
   }
 
   private async calculateTrendMetrics(
-    displayReports: BackendReportHistory[],
+    displayReports: ReportAnalyticsRow[],
     project: string | undefined,
     recentRange: Window
   ): Promise<TrendMetrics> {
@@ -451,7 +449,7 @@ export class AnalyticsService {
     };
   }
 
-  private async calculatePreviousPassRate(reports: BackendReportHistory[]): Promise<number> {
+  private async calculatePreviousPassRate(reports: ReportAnalyticsRow[]): Promise<number> {
     if (reports.length === 0) return 0;
 
     let totalExecuted = 0;

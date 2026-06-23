@@ -36,6 +36,15 @@ export interface ReportHistoryLite {
   stats?: ReportStats;
 }
 
+export interface ReportAnalyticsRow {
+  reportID: string;
+  createdAt: string;
+  title?: string;
+  displayNumber?: number;
+  duration: number;
+  stats: { total: number; expected: number; unexpected: number; flaky: number };
+}
+
 type ReportRow = ReportsRow;
 
 type ReportSummaryRow = Pick<
@@ -59,6 +68,18 @@ const REPORT_COLUMNS_WITHOUT_FILES = [
   'metadata',
   'passRate',
   'updatedAt',
+] as const satisfies ReadonlyArray<keyof ReportsRow>;
+
+const REPORT_ANALYTICS_COLUMNS = [
+  'reportID',
+  'createdAt',
+  'title',
+  'displayNumber',
+  'durationMs',
+  'statTotal',
+  'statExpected',
+  'statUnexpected',
+  'statFlaky',
 ] as const satisfies ReadonlyArray<keyof ReportsRow>;
 
 // Cache parsed metadata/stats keyed by (reportID, updatedAt) so list endpoints
@@ -532,6 +553,53 @@ export class ReportDatabase {
     const compiled = q.compile();
     const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportRow[];
     return rows.map((row) => this.rowToReport(row));
+  }
+
+  public getByProjectForAnalytics(
+    project?: string,
+    opts?: { from?: string; to?: string; failedOnly?: boolean; before?: string; limit?: number }
+  ): ReportAnalyticsRow[] {
+    const hasProject = project && project !== defaultProjectName;
+    let q = this.k
+      .selectFrom('reports')
+      .select(REPORT_ANALYTICS_COLUMNS)
+      .orderBy('createdAt', 'desc');
+    if (hasProject) q = q.where('project', '=', project ?? '');
+    if (opts?.from) q = q.where('createdAt', '>=', opts.from);
+    if (opts?.to) q = q.where('createdAt', '<', opts.to);
+    if (opts?.before) q = q.where('createdAt', '<', opts.before);
+    if (opts?.failedOnly) {
+      q = q.where(sql<boolean>`(COALESCE(statUnexpected, 0) > 0 OR COALESCE(statFlaky, 0) > 0)`);
+    }
+    if (opts?.limit && opts.limit > 0) q = q.limit(opts.limit);
+    const compiled = q.compile();
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<
+      Pick<
+        ReportsRow,
+        | 'reportID'
+        | 'createdAt'
+        | 'title'
+        | 'displayNumber'
+        | 'durationMs'
+        | 'statTotal'
+        | 'statExpected'
+        | 'statUnexpected'
+        | 'statFlaky'
+      >
+    >;
+    return rows.map((r) => ({
+      reportID: r.reportID,
+      createdAt: r.createdAt,
+      title: r.title ?? undefined,
+      displayNumber: r.displayNumber ?? undefined,
+      duration: r.durationMs ?? 0,
+      stats: {
+        total: r.statTotal ?? 0,
+        expected: r.statExpected ?? 0,
+        unexpected: r.statUnexpected ?? 0,
+        flaky: r.statFlaky ?? 0,
+      },
+    }));
   }
 
   public getLatestByProject(project?: string, limit = 10): ReportHistory[] {
