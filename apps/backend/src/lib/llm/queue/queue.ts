@@ -1,4 +1,5 @@
 import { type LlmTaskRow, llmModelsDb, llmTasksDb } from '../../service/db/index.js';
+import type { ClaimCandidate } from '../../service/db/llmTasks.sqlite.js';
 import { llmTaskEvents } from '../../service/llmTaskEvents.js';
 import { llmService } from '../index.js';
 import { type GateReservation, modelGate, reservationStore } from '../modelGate.js';
@@ -117,7 +118,7 @@ class LlmAnalysisQueue {
     return true;
   }
 
-  private decideStart(task: LlmTaskRow): {
+  private decideStart(task: ClaimCandidate): {
     run: boolean;
     reservation?: { gateKey: string; release: () => void };
   } {

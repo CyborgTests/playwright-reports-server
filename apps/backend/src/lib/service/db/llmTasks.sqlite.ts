@@ -14,6 +14,11 @@ export type LlmTaskRow = LlmTasksRow & {
   status: LlmTaskStatus;
 };
 
+export type ClaimCandidate = Pick<
+  LlmTaskRow,
+  'id' | 'type' | 'reportId' | 'testId' | 'project' | 'priority' | 'createdAt'
+>;
+
 export interface LlmTaskRowEnriched extends LlmTaskRow {
   reportDisplayNumber: number | null;
   reportTitle: string | null;
@@ -50,7 +55,7 @@ const SELECT_QUEUED_SQL = `
     WHERE type IN ('test_analysis', 'report_summary')
       AND status IN ('queued', 'processing')
   )
-  SELECT t.* FROM llm_tasks t
+  SELECT t.id, t.type, t.reportId, t.testId, t.project, t.priority, t.createdAt FROM llm_tasks t
   WHERE t.status = 'queued'
     AND t.parentTaskId IS NULL
     AND (
@@ -383,7 +388,7 @@ export class LlmTasksDatabase {
   }
 
   public claimNextRunnable(
-    decide: (task: LlmTaskRow) => {
+    decide: (task: ClaimCandidate) => {
       run: boolean;
       reservation?: { gateKey: string; release: () => void };
     }
@@ -398,7 +403,7 @@ export class LlmTasksDatabase {
     if (!hasQueued) return null;
 
     const transaction = this.db.transaction(() => {
-      const rows = this.db.prepare(SELECT_QUEUED_SQL).all(CLAIM_SCAN_LIMIT) as LlmTaskRow[];
+      const rows = this.db.prepare(SELECT_QUEUED_SQL).all(CLAIM_SCAN_LIMIT) as ClaimCandidate[];
       const now = new Date().toISOString();
       for (const row of rows) {
         const decision = decide(row);
@@ -411,9 +416,8 @@ export class LlmTasksDatabase {
           .compile();
         const result = this.db.prepare(claimCompiled.sql).run(...claimCompiled.parameters);
         if (result.changes === 1) {
-          row.status = 'processing';
-          row.startedAt = now;
-          return { task: row, reservation: decision.reservation };
+          const task = this.getById(row.id);
+          if (task) return { task, reservation: decision.reservation };
         }
         // Lost the row to a concurrent claim - undo any reservation and keep scanning.
         decision.reservation?.release();
@@ -424,46 +428,6 @@ export class LlmTasksDatabase {
     const result = transaction();
     if (result) this.fireUpdateEvent(result.task.id);
     return result;
-  }
-
-  public claimNext(count: number): LlmTaskRow[] {
-    const hasQueuedCompiled = this.k
-      .selectFrom('llm_tasks')
-      .select('id')
-      .where('status', '=', 'queued')
-      .limit(1)
-      .compile();
-    const hasQueued = this.db.prepare(hasQueuedCompiled.sql).get(...hasQueuedCompiled.parameters);
-    if (!hasQueued) return [];
-
-    const transaction = this.db.transaction(() => {
-      const rows = this.db.prepare(SELECT_QUEUED_SQL).all(count) as LlmTaskRow[];
-      const now = new Date().toISOString();
-
-      const claimed: LlmTaskRow[] = [];
-      for (const row of rows) {
-        const claimCompiled = this.k
-          .updateTable('llm_tasks')
-          .set({ status: 'processing', startedAt: now })
-          .where('id', '=', row.id)
-          .where('status', '=', 'queued')
-          .compile();
-        const result = this.db.prepare(claimCompiled.sql).run(...claimCompiled.parameters);
-        if (result.changes === 1) {
-          row.status = 'processing';
-          row.startedAt = now;
-          claimed.push(row);
-        }
-      }
-
-      return claimed;
-    });
-
-    const claimed = transaction();
-    for (const row of claimed) {
-      this.fireUpdateEvent(row.id);
-    }
-    return claimed;
   }
 
   public complete(
