@@ -5,9 +5,7 @@ import { decodeFailureDetails, encodeFailureDetails } from '../failureDetailsCod
 import { singletonOf } from '../singleton.js';
 import { chunk } from '../utils.js';
 import {
-  computeRefreshStatCols,
   convertDbRowToTestRun,
-  type LaneRunForRefresh,
   REFRESH_TEST_STAT_SQL,
   type Test,
   TestDbBase,
@@ -23,38 +21,26 @@ export class TestCrudDatabase extends TestDbBase {
     this.refreshTestStatStmt.run({ testId, fileId, project });
   }
 
-  public getLaneRunsForRefresh(
-    testId: string,
-    fileId: string,
-    project: string
-  ): LaneRunForRefresh[] {
-    const compiled = this.k
-      .selectFrom('test_runs')
-      .select(['runId', 'outcome', 'duration', 'createdAt', 'failure_category as failureCategory'])
-      .where('testId', '=', testId)
-      .where('fileId', '=', fileId)
-      .where('project', '=', project)
-      .orderBy('createdAt', 'desc')
-      .compile();
-    return this.db.prepare(compiled.sql).all(...compiled.parameters) as LaneRunForRefresh[];
-  }
-
-  public refreshTestStatColsFromRuns(
+  public getNonSkippedRunOutcomesSince(
     testId: string,
     fileId: string,
     project: string,
-    runsDesc: LaneRunForRefresh[],
-    flakinessScore: number
-  ): void {
-    const stats = computeRefreshStatCols(runsDesc);
+    sinceIso: string
+  ): Array<{ outcome: string; createdAt: string }> {
     const compiled = this.k
-      .updateTable('tests')
-      .set({ ...stats, flakinessScore })
+      .selectFrom('test_runs')
+      .select(['outcome', 'createdAt'])
       .where('testId', '=', testId)
       .where('fileId', '=', fileId)
       .where('project', '=', project)
+      .where('outcome', '!=', 'skipped')
+      .where('createdAt', '>=', sinceIso)
+      .orderBy('createdAt', 'desc')
       .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      outcome: string;
+      createdAt: string;
+    }>;
   }
 
   public createTest(test: Omit<Test, 'createdAt'>): Test {

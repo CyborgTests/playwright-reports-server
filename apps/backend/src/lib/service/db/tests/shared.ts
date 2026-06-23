@@ -41,14 +41,6 @@ export interface TestState {
   flakinessResetAt: string | null;
 }
 
-export interface LaneRunForRefresh {
-  runId: string;
-  outcome: string;
-  duration: number | null;
-  createdAt: string;
-  failureCategory: string | null;
-}
-
 export interface TestWithQuarantineInfoRow extends Test {
   isQuarantined?: boolean;
   quarantinedAt?: string;
@@ -156,44 +148,6 @@ export const REFRESH_TEST_STAT_SQL = `
     avgDuration = (SELECT avgDuration FROM recent_agg)
   WHERE testId=:testId AND fileId=:fileId AND project=:project
 `;
-
-export interface RefreshStatCols {
-  totalRuns: number;
-  latestRunAt: string | null;
-  latestOutcome: string | null;
-  latestNonSkippedAt: string | null;
-  latestFailureCategory: string | null;
-  recentPassRate: number | null;
-  avgDuration: number | null;
-}
-
-export function computeRefreshStatCols(runsDesc: LaneRunForRefresh[]): RefreshStatCols {
-  const isPass = (o: string) => o === 'expected' || o === 'passed';
-  const recent = runsDesc.slice(0, 50);
-
-  let passCount = 0;
-  let durSum = 0;
-  let durCount = 0;
-  for (const r of recent) {
-    if (isPass(r.outcome)) passCount++;
-    if (r.duration != null && r.duration >= 0) {
-      durSum += r.duration;
-      durCount++;
-    }
-  }
-
-  const latestNs = runsDesc.find((r) => r.outcome !== 'skipped');
-
-  return {
-    totalRuns: runsDesc.length,
-    latestRunAt: runsDesc.length > 0 ? runsDesc[0].createdAt : null,
-    latestOutcome: runsDesc.length > 0 ? runsDesc[0].outcome : null,
-    latestNonSkippedAt: latestNs ? latestNs.createdAt : null,
-    latestFailureCategory: latestNs ? latestNs.failureCategory : null,
-    recentPassRate: recent.length > 0 ? passCount / recent.length : null,
-    avgDuration: durCount > 0 ? durSum / durCount : null,
-  };
-}
 
 export interface TestDetailStatsAggregate {
   totalRuns: number;

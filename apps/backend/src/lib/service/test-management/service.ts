@@ -306,24 +306,16 @@ export class TestManagementService {
             hasTrace,
           };
 
-          const { runId } = testDb.createTestRun(testRun);
-          const laneRuns = testDb.getLaneRunsForRefresh(testId, fileId, report.project);
-          const priorRuns = laneRuns.filter((r) => r.runId !== runId);
-          const flakinessScore = this.computeFlakinessForRuns(
+          const flakinessScore = this.computeFlakiness(
             testId,
             fileId,
             report.project,
-            priorRuns,
             state?.flakinessResetAt,
             config
           );
-          testDb.refreshTestStatColsFromRuns(
-            testId,
-            fileId,
-            report.project,
-            laneRuns,
-            flakinessScore
-          );
+          testDb.createTestRun(testRun);
+          testDb.refreshTestStatCols(testId, fileId, report.project);
+          testDb.setFlakinessScore(testId, fileId, report.project, flakinessScore);
 
           const quarantineThreshold =
             config.quarantineThresholdPercentage ?? FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE;
@@ -453,11 +445,10 @@ export class TestManagementService {
     return JSON.stringify(details);
   }
 
-  private computeFlakinessForRuns(
+  private computeFlakiness(
     testId: string,
     fileId: string,
     project: string,
-    runsDesc: Array<{ outcome: string; createdAt: string }>,
     flakinessResetAt: string | null | undefined,
     config: TestManagementConfig
   ): number {
@@ -478,8 +469,8 @@ export class TestManagementService {
       }
     }
 
-    const windowed = runsDesc
-      .filter((r) => r.outcome !== 'skipped' && r.createdAt >= effectiveCutoff)
+    const windowed = testDb
+      .getNonSkippedRunOutcomesSince(testId, fileId, project, effectiveCutoff)
       .reverse();
 
     return computeFlakinessFromOutcomes(windowed, minRuns ?? 1);
@@ -492,8 +483,7 @@ export class TestManagementService {
     config: TestManagementConfig,
     flakinessResetAt: string | null | undefined
   ): number {
-    const runs = testDb.getLaneRunsForRefresh(testId, fileId, project);
-    return this.computeFlakinessForRuns(testId, fileId, project, runs, flakinessResetAt, config);
+    return this.computeFlakiness(testId, fileId, project, flakinessResetAt, config);
   }
 
   async resetFlakiness(testId: string, fileId: string, project: string): Promise<void> {
