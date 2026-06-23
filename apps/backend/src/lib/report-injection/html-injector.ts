@@ -1,6 +1,22 @@
 import fs from 'node:fs/promises';
 import type { ParsedTestUrl } from '../utils/url-parser.js';
 
+let injectAssetsPromise: Promise<{ style: string; script: string }> | undefined;
+function loadInjectAssets(): Promise<{ style: string; script: string }> {
+  if (!injectAssetsPromise) {
+    injectAssetsPromise = Promise.all([
+      fs.readFile(new URL('./inject.css', import.meta.url), 'utf-8'),
+      fs.readFile(new URL('./inject.js', import.meta.url), 'utf-8'),
+    ])
+      .then(([style, script]) => ({ style, script }))
+      .catch((err) => {
+        injectAssetsPromise = undefined;
+        throw err;
+      });
+  }
+  return injectAssetsPromise;
+}
+
 export async function injectTestAnalysis(
   source: string,
   testUrl: ParsedTestUrl,
@@ -23,10 +39,7 @@ async function injectClientSideScript(
   testUrl: ParsedTestUrl,
   isLlmEnabled: boolean
 ): Promise<string> {
-  const [styleContent, scriptBody] = await Promise.all([
-    fs.readFile(new URL('./inject.css', import.meta.url), 'utf-8'),
-    fs.readFile(new URL('./inject.js', import.meta.url), 'utf-8'),
-  ]);
+  const { style: styleContent, script: scriptBody } = await loadInjectAssets();
   const scriptContent = `
     const reportId = ${JSON.stringify(testUrl.reportId)};
     const reportProject = ${JSON.stringify(testUrl.project ?? '')};
