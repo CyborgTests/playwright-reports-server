@@ -1,6 +1,7 @@
 import { type ExpressionBuilder, type SelectQueryBuilder, sql } from 'kysely';
 import { defaultProjectName } from '../../constants.js';
 import type { ReadResultsInput, ReadResultsOutput, Result } from '../../storage/types.js';
+import { dataEvents } from '../dataEvents.js';
 import { getDatabase } from './db.js';
 import { type Database, getKysely, type ResultsRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
@@ -77,10 +78,12 @@ export class ResultDatabase {
       }
     });
     tx(resultIds);
+    dataEvents.emitChanged('result');
   }
 
   public onCreated(result: Result) {
     this.insertResult(result);
+    dataEvents.emitChanged('result');
   }
 
   public getDistinctProjects(): string[] {

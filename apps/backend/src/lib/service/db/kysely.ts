@@ -72,7 +72,6 @@ export interface ReportsRow {
   reportUrl: string;
   size: string | null;
   sizeBytes: number;
-  stats: string | null;
   metadata: string;
   files: string | null;
   passRate: number | null;
@@ -80,6 +79,7 @@ export interface ReportsRow {
   statExpected: number | null;
   statUnexpected: number | null;
   statFlaky: number | null;
+  statSkipped: number | null;
   durationMs: number | null;
   gitCommitHash: string | null;
   gitCommitShortHash: string | null;

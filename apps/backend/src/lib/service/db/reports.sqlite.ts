@@ -3,6 +3,7 @@ import { type ExpressionBuilder, type SelectQueryBuilder, sql } from 'kysely';
 import { defaultProjectName } from '../../constants.js';
 import type { ReadReportsInput, ReadReportsOutput, ReportHistory } from '../../storage/types.js';
 import { withError } from '../../withError.js';
+import { dataEvents } from '../dataEvents.js';
 import { testManagementService } from '../test-management/index.js';
 import { getDatabase } from './db.js';
 import { type Database, getKysely, type ReportsRow } from './kysely.js';
@@ -11,6 +12,22 @@ import { singletonOf } from './singleton.js';
 import { distinctTags, replaceReportTags } from './tagsSync.js';
 import { testDb } from './tests.sqlite.js';
 import { chunk, parseJsonColumn } from './utils.js';
+
+function statsFromColumns(
+  row: Pick<
+    ReportsRow,
+    'statTotal' | 'statExpected' | 'statUnexpected' | 'statFlaky' | 'statSkipped'
+  >
+): ReportStats | undefined {
+  if (row.statTotal == null) return undefined;
+  return {
+    total: row.statTotal,
+    expected: row.statExpected ?? undefined,
+    unexpected: row.statUnexpected ?? undefined,
+    flaky: row.statFlaky ?? undefined,
+    skipped: row.statSkipped ?? undefined,
+  };
+}
 
 function computePassRateFromStats(stats: ReportStats | undefined): number | null {
   if (!stats) return null;
@@ -64,10 +81,14 @@ const REPORT_COLUMNS_WITHOUT_FILES = [
   'reportUrl',
   'size',
   'sizeBytes',
-  'stats',
   'metadata',
   'passRate',
   'updatedAt',
+  'statTotal',
+  'statExpected',
+  'statUnexpected',
+  'statFlaky',
+  'statSkipped',
 ] as const satisfies ReadonlyArray<keyof ReportsRow>;
 
 const REPORT_ANALYTICS_COLUMNS = [
@@ -202,7 +223,6 @@ export class ReportDatabase {
         reportUrl,
         size: size || null,
         sizeBytes: sizeBytes || 0,
-        stats: stats ? JSON.stringify(stats) : null,
         metadata: JSON.stringify(metadata),
         files: files ? JSON.stringify(files) : null,
         passRate: computePassRateFromStats(stats),
@@ -210,6 +230,7 @@ export class ReportDatabase {
         statExpected: stats?.expected ?? null,
         statUnexpected: stats?.unexpected ?? null,
         statFlaky: stats?.flaky ?? null,
+        statSkipped: stats?.skipped ?? null,
         durationMs,
         gitCommitHash: git?.hash ?? null,
         gitCommitShortHash: git?.shortHash ?? null,
@@ -227,7 +248,6 @@ export class ReportDatabase {
           reportUrl: eb.ref('excluded.reportUrl'),
           size: eb.ref('excluded.size'),
           sizeBytes: eb.ref('excluded.sizeBytes'),
-          stats: eb.ref('excluded.stats'),
           metadata: eb.ref('excluded.metadata'),
           files: eb.ref('excluded.files'),
           passRate: eb.ref('excluded.passRate'),
@@ -235,6 +255,7 @@ export class ReportDatabase {
           statExpected: eb.ref('excluded.statExpected'),
           statUnexpected: eb.ref('excluded.statUnexpected'),
           statFlaky: eb.ref('excluded.statFlaky'),
+          statSkipped: eb.ref('excluded.statSkipped'),
           durationMs: eb.ref('excluded.durationMs'),
           gitCommitHash: eb.ref('excluded.gitCommitHash'),
           gitCommitShortHash: eb.ref('excluded.gitCommitShortHash'),
@@ -465,6 +486,7 @@ export class ReportDatabase {
     for (const batch of chunk(reportIds, CHUNK_SIZE)) {
       deleteBatch(batch);
     }
+    dataEvents.emitChanged('report');
   }
 
   public onCreated(report: ReportHistory) {
@@ -473,6 +495,7 @@ export class ReportDatabase {
       displayNumber: report.displayNumber ?? this.getNextDisplayNumber(),
     };
     this.insertReport(reportWithDisplayNumber);
+    dataEvents.emitChanged('report');
   }
 
   public getDistinctProjects(): string[] {
@@ -638,7 +661,7 @@ export class ReportDatabase {
     const rows = this.db
       .prepare(
         `SELECT reportID, project, title, displayNumber, createdAt, reportUrl,
-                size, sizeBytes, stats
+                size, sizeBytes, statTotal, statExpected, statUnexpected, statFlaky, statSkipped
          FROM (
            SELECT *,
                   ROW_NUMBER() OVER (PARTITION BY project ORDER BY createdAt DESC) AS rn
@@ -656,7 +679,11 @@ export class ReportDatabase {
       reportUrl: string;
       size: string | null;
       sizeBytes: number;
-      stats: string | null;
+      statTotal: number | null;
+      statExpected: number | null;
+      statUnexpected: number | null;
+      statFlaky: number | null;
+      statSkipped: number | null;
     }>;
 
     for (const project of projects) out.set(project, []);
@@ -884,10 +911,14 @@ export class ReportDatabase {
           'reportUrl',
           'size',
           'sizeBytes',
-          'stats',
           'metadata',
           'passRate',
           'updatedAt',
+          'statTotal',
+          'statExpected',
+          'statUnexpected',
+          'statFlaky',
+          'statSkipped',
         ])
     );
     if (hasScanFilter) {
@@ -938,7 +969,7 @@ export class ReportDatabase {
       baseDecoded = cached;
     } else {
       const metadata = parseJsonColumn<Record<string, unknown>>(row.metadata, {});
-      const stats = parseJsonColumn<ReportStats | undefined>(row.stats, undefined);
+      const stats = statsFromColumns(row);
       baseDecoded = {
         reportID: row.reportID,
         project: row.project,
@@ -965,22 +996,21 @@ export class ReportDatabase {
   }
 
   private rowToReportLite(
-    row: Omit<
+    row: Pick<
       ReportRow,
-      | 'metadata'
-      | 'updatedAt'
-      | 'passRate'
-      | 'files'
+      | 'reportID'
+      | 'project'
+      | 'title'
+      | 'displayNumber'
+      | 'createdAt'
+      | 'reportUrl'
+      | 'size'
+      | 'sizeBytes'
       | 'statTotal'
       | 'statExpected'
       | 'statUnexpected'
       | 'statFlaky'
-      | 'durationMs'
-      | 'gitCommitHash'
-      | 'gitCommitShortHash'
-      | 'gitBranch'
-      | 'gitCommitSubject'
-      | 'ciBuildHref'
+      | 'statSkipped'
     >
   ): ReportHistoryLite {
     return {
@@ -992,7 +1022,7 @@ export class ReportDatabase {
       reportUrl: row.reportUrl,
       size: row.size ?? undefined,
       sizeBytes: row.sizeBytes,
-      stats: parseJsonColumn<ReportStats | undefined>(row.stats, undefined),
+      stats: statsFromColumns(row),
     };
   }
 
