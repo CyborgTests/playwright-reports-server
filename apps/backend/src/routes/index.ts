@@ -3,6 +3,7 @@ import { registerAnalyticsRoutes } from './analytics.js';
 import { registerAuthRoutes } from './auth.js';
 import { registerCliRoutes } from './cli.js';
 import { registerConfigRoutes } from './config.js';
+import { registerEventsRoutes } from './events.js';
 import { registerFailureClusterRoutes } from './failureClusters.js';
 import { registerGithubSyncRoutes } from './githubSync.js';
 import { registerLlmRoutes } from './llm.js';
@@ -33,4 +34,5 @@ export async function registerApiRoutes(fastify: FastifyInstance) {
   await registerNotificationsRoutes(fastify);
   await registerQualityRoutes(fastify);
   await registerFailureClusterRoutes(fastify);
+  await registerEventsRoutes(fastify);
 }

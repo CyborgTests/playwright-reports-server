@@ -1,12 +1,23 @@
-import { useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 import { useConfig } from '@/hooks/useConfig';
+import { useServerEvents } from '@/hooks/useServerEvents';
 import { withBase } from '@/lib/url';
 import { cn } from '@/lib/utils';
 import { Navbar } from './layout/navbar';
 
 interface LayoutProps {
   children?: React.ReactNode;
+}
+
+function extractKinds(data: unknown): string[] {
+  if (data && typeof data === 'object' && 'kinds' in data) {
+    const { kinds } = data as { kinds: unknown };
+    if (Array.isArray(kinds)) return kinds.filter((k): k is string => typeof k === 'string');
+  }
+  return ['report', 'result'];
 }
 
 function setFaviconHref(href: string) {
@@ -21,6 +32,28 @@ function setFaviconHref(href: string) {
 
 export function Layout({ children }: LayoutProps) {
   const { data: config } = useConfig();
+  const session = useAuth();
+  const queryClient = useQueryClient();
+
+  const onDataChanged = useCallback(
+    (data?: unknown) => {
+      const kinds = extractKinds(data);
+      const prefixes: string[] = [];
+      if (kinds.includes('report')) prefixes.push('/api/report', '/api/analytics');
+      if (kinds.includes('result')) prefixes.push('/api/result');
+      if (prefixes.length === 0) return;
+      queryClient.invalidateQueries({
+        predicate: (query) =>
+          query.queryKey.some(
+            (key) => typeof key === 'string' && prefixes.some((p) => key.includes(p))
+          ),
+      });
+    },
+    [queryClient]
+  );
+  useServerEvents('/api/events', onDataChanged, {
+    enabled: session.status === 'authenticated',
+  });
 
   useEffect(() => {
     if (config?.title) {
