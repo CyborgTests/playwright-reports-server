@@ -13,7 +13,7 @@ import {
   sendWithFallback,
 } from '../registry.js';
 import type { SegmentedPrompt } from '../types/index.js';
-import { DEFAULT_TEMP, resolveRole, TEMP_KEY } from './shared.js';
+import { buildFallbackHooks, DEFAULT_TEMP, resolveRole, TEMP_KEY } from './shared.js';
 import { runCascade, runCouncil, runFusion, runSelfRefine } from './strategies.js';
 
 export function resolveRouting(taskType: LlmTaskType): LlmTaskRouting {
@@ -104,6 +104,7 @@ async function executeStrategy(
   options: SegmentedSendOptions,
   routing: LlmTaskRouting
 ): Promise<FallbackSendResult> {
+  const hooks = buildFallbackHooks(taskId, taskType);
   try {
     switch (routing.strategy) {
       case 'fusion':
@@ -115,7 +116,7 @@ async function executeStrategy(
       case 'self_refine':
         return await runSelfRefine(taskId, taskType, prompt, routing, options);
       default:
-        return await sendWithFallback(prompt, options);
+        return await sendWithFallback(prompt, options, hooks);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -123,7 +124,7 @@ async function executeStrategy(
       `[llm-routing] ${routing.strategy} failed for ${taskType}: ${msg}; falling back to one_shot`
     );
     llmTasksDb.markStrategy(taskId, 'one_shot');
-    return sendWithFallback(prompt, options);
+    return sendWithFallback(prompt, options, hooks);
   }
 }
 
@@ -136,15 +137,18 @@ export async function runTaskStrategy(
   const routing = resolveRouting(taskType);
 
   if (routing.strategy === 'one_shot') {
+    const hooks = buildFallbackHooks(taskId, taskType);
     const override = routing.model?.modelId ? resolveRole(routing.model, taskType) : null;
     if (override) {
       if (taskId) llmTasksDb.markStrategy(taskId, 'one_shot');
-      return sendViaModelRow(override.row, prompt, {
-        ...options,
-        temperature: override.temperature,
-      });
+      return sendViaModelRow(
+        override.row,
+        prompt,
+        { ...options, temperature: override.temperature },
+        hooks
+      );
     }
-    return sendWithFallback(prompt, options);
+    return sendWithFallback(prompt, options, hooks);
   }
 
   if (!taskId) {

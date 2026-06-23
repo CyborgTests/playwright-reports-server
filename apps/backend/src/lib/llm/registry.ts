@@ -89,13 +89,20 @@ export async function runOnModel<T>(
   return modelGate.run(gate.key, gate.limit, fn, onStart);
 }
 
+export interface FallbackHooks {
+  onAttemptStart?: (model: LlmModelRow) => void;
+  onAttemptFail?: (model: LlmModelRow, error: string) => void;
+}
+
 export async function sendWithFallback(
   prompt: SegmentedPrompt,
-  options: SegmentedSendOptions = {}
+  options: SegmentedSendOptions = {},
+  hooks?: FallbackHooks
 ): Promise<FallbackSendResult> {
   const primary = llmModelsDb.getPrimary();
 
   if (!isFallbackChainEnabled()) {
+    if (primary) hooks?.onAttemptStart?.(primary);
     const send = () => llmService.sendSegmentedMessage(prompt, options);
     const response = primary ? await runOnModel(primary, send) : await send();
     return { response, baseUrl: llmService.getBaseUrl() ?? primary?.baseUrl ?? '' };
@@ -112,6 +119,7 @@ export async function sendWithFallback(
   let lastErr: unknown;
   for (const model of chain) {
     try {
+      hooks?.onAttemptStart?.(model);
       const isPrimary = model.id === primary?.id;
       const response = await runOnModel(model, () =>
         isPrimary
@@ -124,6 +132,7 @@ export async function sendWithFallback(
       lastErr = err;
       const msg = err instanceof Error ? err.message : String(err);
       llmModelsDb.setLastError(model.id, msg);
+      hooks?.onAttemptFail?.(model, msg);
       console.warn(`[llm-registry] model "${model.label}" failed, trying next in chain: ${msg}`);
     }
   }
@@ -133,10 +142,12 @@ export async function sendWithFallback(
 export async function sendViaModelRow(
   row: LlmModelRow,
   prompt: SegmentedPrompt,
-  options: SegmentedSendOptions = {}
+  options: SegmentedSendOptions = {},
+  hooks?: FallbackHooks
 ): Promise<FallbackSendResult> {
   const primary = llmModelsDb.getPrimary();
   const isPrimary = primary?.id === row.id;
+  hooks?.onAttemptStart?.(row);
   try {
     const response = await runOnModel(row, () =>
       isPrimary

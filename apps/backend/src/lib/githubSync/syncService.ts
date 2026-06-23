@@ -10,6 +10,7 @@ import { testManagementService } from '../service/test-management/index.js';
 import { storage } from '../storage/index.js';
 import { withError } from '../withError.js';
 import type { GithubSyncConfigResolved } from './configService.js';
+import { githubSyncEvents } from './events.js';
 import { type GhArtifact, type GhWorkflowRun, GithubApiClient } from './githubApi.js';
 
 const MAX_RUNS_PER_SCAN = 200;
@@ -74,6 +75,10 @@ export interface SyncResult {
 
 export function isRunning(configId: string): boolean {
   return running.has(configId);
+}
+
+export function hasActiveRun(): boolean {
+  return running.size > 0;
 }
 
 export function stopSync(configId: string): boolean {
@@ -150,6 +155,7 @@ export async function runSync(
     trigger,
     startedAt: startedAtIso,
   });
+  githubSyncEvents.emitChanged();
 
   const api = new GithubApiClient(cfg.repo, cfg.token);
   const signal = controller.signal;
@@ -352,6 +358,7 @@ export async function runSync(
       failed,
       message,
     });
+    githubSyncEvents.emitChanged();
     console.log(
       `[github-sync] ${cfg.name}: ${outcome} - uploaded=${uploaded} skipped=${
         skippedSynced + skippedExpired

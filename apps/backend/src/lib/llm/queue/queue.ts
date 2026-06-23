@@ -1,4 +1,5 @@
 import { type LlmTaskRow, llmModelsDb, llmTasksDb } from '../../service/db/index.js';
+import { llmTaskEvents } from '../../service/llmTaskEvents.js';
 import { llmService } from '../index.js';
 import { type GateReservation, modelGate, reservationStore } from '../modelGate.js';
 import { isFallbackChainEnabled, isLlmFeatureEnabled, resolveGate } from '../registry.js';
@@ -18,6 +19,8 @@ class LlmAnalysisQueue {
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private activeTasks = 0;
   private maxParallel = 1;
+  private cachedBudget: number | null = null;
+  private readonly onEnqueue = (): void => this.kick();
 
   static getInstance(): LlmAnalysisQueue {
     if (!LlmAnalysisQueue.instance) {
@@ -37,15 +40,22 @@ class LlmAnalysisQueue {
     return Math.max(1, total);
   }
 
+  private getBudget(): number {
+    this.cachedBudget ??= this.getParallelRequests();
+    return this.cachedBudget;
+  }
+
   start(): void {
     if (this.running) return;
     this.running = true;
     console.log('[llmQueue] Starting queue processor');
+    llmTaskEvents.on('enqueue', this.onEnqueue);
     this.poll();
   }
 
   stop(): void {
     this.running = false;
+    llmTaskEvents.off('enqueue', this.onEnqueue);
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
       this.pollTimer = null;
@@ -53,22 +63,44 @@ class LlmAnalysisQueue {
     console.log('[llmQueue] Stopped queue processor');
   }
 
+  kick(): void {
+    if (!this.running) return;
+    if (this.pollTimer) clearTimeout(this.pollTimer);
+    this.pollTimer = setTimeout(() => this.poll(), 0);
+  }
+
+  notifyConfigChanged(): void {
+    this.cachedBudget = null;
+    this.kick();
+  }
+
   private async poll(): Promise<void> {
     if (!this.running) return;
+    this.pollTimer = null;
 
+    let pending = false;
     try {
-      const circuitOk = !llmService.isCircuitOpen() || isFallbackChainEnabled();
-      if (isLlmFeatureEnabled() && llmService.isConfigured() && circuitOk) {
-        this.maxParallel = this.getParallelRequests();
-        while (this.running && this.activeTasks < this.maxParallel) {
-          if (!this.fillSlot()) break;
+      const canProcess = isLlmFeatureEnabled() && llmService.isConfigured();
+      if (canProcess && llmTasksDb.hasQueued()) {
+        pending = true;
+        const circuitOk = !llmService.isCircuitOpen() || isFallbackChainEnabled();
+        if (circuitOk) {
+          this.maxParallel = this.getBudget();
+          while (this.running && this.activeTasks < this.maxParallel) {
+            if (!this.fillSlot()) break;
+          }
         }
       }
     } catch (error) {
       console.error('[llmQueue] Poll error:', error);
+      pending = true;
     }
 
-    this.schedulePoll();
+    if (this.running && (pending || this.activeTasks > 0)) {
+      this.schedulePoll();
+    } else {
+      this.cachedBudget = null;
+    }
   }
 
   private schedulePoll(): void {

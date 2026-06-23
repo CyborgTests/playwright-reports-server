@@ -13,6 +13,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
 import { defaultConfig } from '../lib/config.js';
+import { llmAnalysisQueue } from '../lib/llm/queue/index.js';
 import { validateRouting } from '../lib/llm/routing/index.js';
 import { normalizeReporterPaths, validateReporterPaths } from '../lib/pw-reporters.js';
 import { CronService, cronService } from '../lib/service/cron.js';
@@ -754,6 +755,8 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
             error: `failed to save config: ${saveConfigError.message}`,
           });
         }
+
+        llmAnalysisQueue.notifyConfigChanged();
 
         if (config.logoPath !== previousLogoPath) {
           await withError(deleteCustomBrandingFile(previousLogoPath));

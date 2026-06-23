@@ -12,6 +12,7 @@ import {
   githubSyncDb,
 } from '../service/db/index.js';
 import { decryptToken, encryptToken } from './encryption.js';
+import { githubSyncEvents } from './events.js';
 import { getSyncProgress } from './syncService.js';
 
 export interface GithubSyncConfigResolved extends GithubSyncConfig {
@@ -117,6 +118,7 @@ export const githubSyncConfigService = {
       updatedAt: now,
     };
     githubSyncDb.insertConfig(row);
+    githubSyncEvents.emitChanged();
     return rowToPublic(row);
   },
 
@@ -145,6 +147,7 @@ export const githubSyncConfigService = {
       updatedAt: new Date().toISOString(),
     };
     githubSyncDb.updateConfig(id, updated);
+    githubSyncEvents.emitChanged();
     return rowToPublic(updated);
   },
 
@@ -152,6 +155,7 @@ export const githubSyncConfigService = {
     const row = githubSyncDb.getConfig(id);
     if (!row) return false;
     githubSyncDb.setEnabled(id, enabled);
+    githubSyncEvents.emitChanged();
     return true;
   },
 
@@ -163,6 +167,7 @@ export const githubSyncConfigService = {
       githubSyncDb.clearStateForConfig(id);
     }
     githubSyncDb.deleteConfig(id);
+    githubSyncEvents.emitChanged();
     return true;
   },
 

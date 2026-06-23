@@ -7,6 +7,7 @@ import {
   TASK_TEMPERATURE_DEFAULTS,
 } from '../queue/tasks/promptFitting.js';
 import {
+  type FallbackHooks,
   type FallbackSendResult,
   type LlmTaskTemperatureKey,
   modelRowToProviderConfig,
@@ -31,6 +32,24 @@ export const RESERVE: Record<LlmTaskType, number> = {
   project_summary: OUTPUT_RESERVE_TOKENS_BY_TASK.projectSummary,
 };
 export const SCORE_RESERVE = 1500; // judge/scorer outputs are tiny JSON/MD
+
+export function buildFallbackHooks(
+  taskId: string | undefined,
+  taskType: LlmTaskType
+): FallbackHooks | undefined {
+  if (!taskId) return undefined;
+  return {
+    onAttemptStart: (model) => llmTasksDb.setInFlightModel(taskId, model.model, model.baseUrl),
+    onAttemptFail: (model, error) =>
+      llmTasksDb.recordFailedAttempt({
+        parentTaskId: taskId,
+        type: taskType,
+        model: model.model,
+        baseUrl: model.baseUrl,
+        error,
+      }),
+  };
+}
 
 const VERDICT_ROLES = new Set(['scorer', 'judge']);
 

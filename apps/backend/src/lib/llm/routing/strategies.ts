@@ -13,6 +13,7 @@ import { fitToContextWindow } from '../queue/tasks/promptFitting.js';
 import { type FallbackSendResult, sendWithFallback } from '../registry.js';
 import type { LLMResponse, SegmentedPrompt } from '../types/index.js';
 import {
+  buildFallbackHooks,
   callRole,
   coerceVerdicts,
   extractLabel,
@@ -283,7 +284,7 @@ export async function runSelfRefine(
   options: SegmentedSendOptions
 ): Promise<FallbackSendResult> {
   const author = resolveRoles(routing.authors, taskType)[0];
-  if (!author) return sendWithFallback(prompt, options);
+  if (!author) return sendWithFallback(prompt, options, buildFallbackHooks(taskId, taskType));
   const critic = resolveRole(routing.critic, taskType) ?? author;
   const reviser = resolveRole(routing.reviser, taskType) ?? author;
   const maxRounds = Math.max(1, routing.maxRounds ?? 1);

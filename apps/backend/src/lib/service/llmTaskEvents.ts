@@ -11,6 +11,10 @@ class LlmTaskEvents extends EventEmitter {
     this.emit(`task:${row.id}`, row);
     this.emit('task', row);
   }
+
+  emitEnqueue(): void {
+    this.emit('enqueue');
+  }
 }
 
 const symbol = Symbol.for('playwright.reports.llmTaskEvents');

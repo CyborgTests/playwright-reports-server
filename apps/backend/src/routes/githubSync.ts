@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { githubSyncConfigService } from '../lib/githubSync/configService.js';
 import { githubSyncCron } from '../lib/githubSync/cronManager.js';
-import { isRunning, runSync, stopSync } from '../lib/githubSync/syncService.js';
+import { githubSyncEvents } from '../lib/githubSync/events.js';
+import { hasActiveRun, isRunning, runSync, stopSync } from '../lib/githubSync/syncService.js';
 import { CronService } from '../lib/service/cron.js';
 import { type AuthRequest, authenticate } from './auth.js';
 
@@ -48,6 +49,64 @@ export async function registerGithubSyncRoutes(fastify: FastifyInstance) {
 
     fastify.get('/api/config/github-sync', async () => {
       return githubSyncConfigService.listWithStatus((id) => githubSyncCron.nextRun(id));
+    });
+
+    fastify.get('/api/config/github-sync/events', async (request, reply) => {
+      reply.raw.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+
+      let closed = false;
+
+      const write = (line: string): boolean => {
+        if (closed) return false;
+        try {
+          reply.raw.write(line);
+          return true;
+        } catch (err) {
+          fastify.log.warn({ err }, 'SSE write failed; closing github-sync events stream');
+          cleanup();
+          try {
+            reply.raw.end();
+          } catch {
+            // socket already destroyed
+          }
+          return false;
+        }
+      };
+
+      const onChange = () => write('event: changed\ndata: {}\n\n');
+
+      let idleTicks = 0;
+      const tick = setInterval(() => {
+        if (closed) return;
+        if (hasActiveRun()) {
+          idleTicks = 0;
+          write('event: changed\ndata: {}\n\n');
+        } else if (++idleTicks >= 30) {
+          idleTicks = 0;
+          try {
+            reply.raw.write(': keepalive\n\n');
+          } catch {
+            cleanup();
+          }
+        }
+      }, 1_000);
+
+      function cleanup() {
+        if (closed) return;
+        closed = true;
+        clearInterval(tick);
+        githubSyncEvents.off('changed', onChange);
+      }
+
+      if (!write('event: changed\ndata: {}\n\n')) return;
+      githubSyncEvents.on('changed', onChange);
+      request.raw.on('close', cleanup);
+      request.raw.on('error', cleanup);
     });
 
     fastify.post('/api/config/github-sync', async (request, reply) => {

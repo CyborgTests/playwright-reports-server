@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/hooks/useAuth';
+import { useServerEvents } from '@/hooks/useServerEvents';
 import { errorMessage } from '@/lib/api';
 import { authHeaders } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -276,14 +277,9 @@ export default function GithubSyncConfiguration() {
     refresh();
   }, [session.status, refresh]);
 
-  const anyRunning = configs.some((c) => c.status?.isRunning);
-  useEffect(() => {
-    if (session.status !== 'authenticated') return;
-    // 1s while a sync is in flight for progress display, otherwise 30s
-    const interval = anyRunning ? 1_000 : 30_000;
-    const handle = window.setInterval(refresh, interval);
-    return () => window.clearInterval(handle);
-  }, [session.status, anyRunning, refresh]);
+  useServerEvents('/api/config/github-sync/events', refresh, {
+    enabled: session.status === 'authenticated',
+  });
 
   const openCreate = () => {
     setEditingId(null);

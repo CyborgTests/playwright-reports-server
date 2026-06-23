@@ -399,6 +399,72 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     }
   );
 
+  fastify.get('/api/llm/queue-events', async (request: FastifyRequest, reply: FastifyReply) => {
+    const authResult = await authenticate(request as AuthRequest, reply);
+    if (authResult) return;
+
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+
+    let closed = false;
+    let keepalive: NodeJS.Timeout | undefined;
+    let coalesce: NodeJS.Timeout | undefined;
+
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      if (keepalive) clearInterval(keepalive);
+      if (coalesce) clearTimeout(coalesce);
+      llmTaskEvents.off('task', onChange);
+      llmTaskEvents.off('enqueue', onChange);
+    };
+
+    const write = (line: string): boolean => {
+      if (closed) return false;
+      try {
+        reply.raw.write(line);
+        return true;
+      } catch (err) {
+        fastify.log.warn({ err }, 'SSE write failed; closing queue-events stream');
+        cleanup();
+        try {
+          reply.raw.end();
+        } catch {
+          // socket already destroyed
+        }
+        return false;
+      }
+    };
+
+    const onChange = () => {
+      if (closed || coalesce) return;
+      coalesce = setTimeout(() => {
+        coalesce = undefined;
+        write('event: changed\ndata: {}\n\n');
+      }, 500);
+    };
+
+    if (!write('event: changed\ndata: {}\n\n')) return;
+
+    keepalive = setInterval(() => {
+      if (closed) return;
+      try {
+        reply.raw.write(': keepalive\n\n');
+      } catch {
+        cleanup();
+      }
+    }, 30_000);
+
+    llmTaskEvents.on('task', onChange);
+    llmTaskEvents.on('enqueue', onChange);
+    request.raw.on('close', cleanup);
+    request.raw.on('error', cleanup);
+  });
+
   fastify.get('/api/llm/default-prompts', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authenticate(request as AuthRequest, reply);
     if (authResult) return;

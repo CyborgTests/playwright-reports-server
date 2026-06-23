@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import { useLlmTaskModels, useLlmTaskStats, useLlmTasks } from '@/hooks/useLlmTasks';
 import useMutation from '@/hooks/useMutation';
+import { useServerEvents } from '@/hooks/useServerEvents';
 import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
 import { authHeaders } from '@/lib/auth';
 import { formatCategoryName } from '@/lib/format';
@@ -42,17 +43,13 @@ export default function LlmQueuePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data: stats } = useLlmTaskStats();
-  const hasActiveWork = (stats?.queued ?? 0) + (stats?.processing ?? 0) > 0;
-  const { data: tasksData } = useLlmTasks(
-    {
-      status: statusFilter === 'all' ? undefined : statusFilter,
-      type: typeFilter === 'all' ? undefined : typeFilter,
-      model: modelFilter === 'all' ? undefined : modelFilter,
-      limit: PAGE_SIZE,
-      offset: (page - 1) * PAGE_SIZE,
-    },
-    { active: hasActiveWork }
-  );
+  const { data: tasksData } = useLlmTasks({
+    status: statusFilter === 'all' ? undefined : statusFilter,
+    type: typeFilter === 'all' ? undefined : typeFilter,
+    model: modelFilter === 'all' ? undefined : modelFilter,
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE,
+  });
   const { data: modelsData } = useLlmTaskModels(modelDropdownOpened);
 
   const tasks = tasksData?.data ?? [];
@@ -62,6 +59,8 @@ export default function LlmQueuePage() {
   const invalidateLlmQueries = useCallback(() => {
     invalidateCache(queryClient, { predicate: '/api/llm' });
   }, [queryClient]);
+
+  useServerEvents('/api/llm/queue-events', invalidateLlmQueries);
 
   const clearQueueMutation = useMutation('/api/llm/tasks/clear', {
     method: 'DELETE',

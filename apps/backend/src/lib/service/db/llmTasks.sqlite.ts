@@ -132,6 +132,7 @@ export class LlmTasksDatabase {
       })
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
+    llmTaskEvents.emitEnqueue();
 
     return {
       id,
@@ -253,6 +254,60 @@ export class LlmTasksDatabase {
     this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
+  public setInFlightModel(id: string, model: string | null, baseUrl: string | null): void {
+    const compiled = this.k
+      .updateTable('llm_tasks')
+      .set({ model: model ?? null, baseUrl: baseUrl ?? null })
+      .where('id', '=', id)
+      .where('status', '=', 'processing')
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
+  }
+
+  public recordFailedAttempt(opts: {
+    parentTaskId: string;
+    type: LlmTaskType;
+    model?: string | null;
+    baseUrl?: string | null;
+    error: string;
+  }): void {
+    const id = uuid();
+    const now = new Date().toISOString();
+    const compiled = this.k
+      .insertInto('llm_tasks')
+      .values({
+        id,
+        type: opts.type,
+        status: 'failed',
+        priority: 0,
+        reportId: null,
+        testId: null,
+        fileId: null,
+        project: null,
+        prompt: null,
+        result: null,
+        category: null,
+        model: opts.model ?? null,
+        error: opts.error,
+        createdAt: now,
+        startedAt: now,
+        completedAt: now,
+        retryCount: 0,
+        maxRetries: 0,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        isRetry: 0,
+        reportIds: null,
+        baseUrl: opts.baseUrl ?? null,
+        parentTaskId: opts.parentTaskId,
+        role: 'fallback',
+        strategy: null,
+      })
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
+  }
+
   public getRoleChildren(parentId: string): LlmTaskRow[] {
     const compiled = this.k
       .selectFrom('llm_tasks')
@@ -314,6 +369,17 @@ export class LlmTasksDatabase {
       .where('status', 'in', ['queued', 'processing'])
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
+  }
+
+  public hasQueued(): boolean {
+    const compiled = this.k
+      .selectFrom('llm_tasks')
+      .select('id')
+      .where('status', '=', 'queued')
+      .where('parentTaskId', 'is', null)
+      .limit(1)
+      .compile();
+    return this.db.prepare(compiled.sql).get(...compiled.parameters) !== undefined;
   }
 
   public claimNextRunnable(
@@ -462,6 +528,7 @@ export class LlmTasksDatabase {
         .where('id', '=', id)
         .compile();
       this.db.prepare(compiled.sql).run(...compiled.parameters);
+      llmTaskEvents.emitEnqueue();
     } else {
       const compiled = this.k
         .updateTable('llm_tasks')
@@ -520,6 +587,7 @@ export class LlmTasksDatabase {
       .where('status', '=', 'failed')
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
+    llmTaskEvents.emitEnqueue();
     this.fireUpdateEvent(id);
   }
 
@@ -752,6 +820,7 @@ export class LlmTasksDatabase {
       .where('id', '=', id)
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
+    llmTaskEvents.emitEnqueue();
   }
 
   public findInflightTestAnalysis(
