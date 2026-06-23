@@ -44,12 +44,14 @@ const EMPTY_TREND_AGGREGATE: TrendAggregate = {
 type ReportAggregate = ReturnType<typeof reportDb.aggregateForAnalytics>;
 type DurationAggregate = ReturnType<typeof testAnalyticsDb.getDurationAggregates>;
 
-function aggregateFromRows(reports: ReportAnalyticsRow[]): TrendAggregate {
+function reportAggregateFromRows(reports: ReportAnalyticsRow[]): ReportAggregate {
+  let totalTests = 0;
   let totalPassed = 0;
   let totalFailed = 0;
   let totalFlaky = 0;
   let sumDuration = 0;
   for (const r of reports) {
+    totalTests += r.stats?.total ?? 0;
     totalPassed += r.stats?.expected ?? 0;
     totalFailed += r.stats?.unexpected ?? 0;
     totalFlaky += r.stats?.flaky ?? 0;
@@ -57,9 +59,11 @@ function aggregateFromRows(reports: ReportAnalyticsRow[]): TrendAggregate {
   }
   return {
     count: reports.length,
+    totalTests,
     totalPassed,
-    totalExecuted: totalPassed + totalFailed + totalFlaky,
+    totalFailed,
     totalFlaky,
+    totalExecuted: totalPassed + totalFailed + totalFlaky,
     sumDuration,
   };
 }
@@ -182,18 +186,18 @@ export class AnalyticsService {
     olderAggregate: TrendAggregate | null;
     olderRange: { from: string; to: string } | null;
   }> {
-    const displayAggregate = reportDb.aggregateForAnalytics(project, from, to, { failedOnly });
-
     if (!from && !to) {
+      const reports = reportDb.getByProjectForAnalytics(project, { failedOnly });
       return {
-        reports: reportDb.getByProjectForAnalytics(project, { failedOnly }),
-        displayAggregate,
+        reports,
+        displayAggregate: reportAggregateFromRows(reports),
         olderAggregate: null,
         olderRange: null,
       };
     }
 
     const reports = reportDb.getByProjectForAnalytics(project, { from, to, failedOnly });
+    const displayAggregate = reportAggregateFromRows(reports);
 
     const fromMs = from ? new Date(from).getTime() : Number.NEGATIVE_INFINITY;
     const toMs = to ? new Date(to).getTime() : Number.POSITIVE_INFINITY;
@@ -265,7 +269,7 @@ export class AnalyticsService {
     return {
       displayReports: allReports,
       recentForTrend: allReports.slice(0, mid),
-      olderTrendAggregate: aggregateFromRows(olderRows),
+      olderTrendAggregate: reportAggregateFromRows(olderRows),
       olderRange:
         olderRange.from && olderRange.to ? { from: olderRange.from, to: olderRange.to } : null,
       isBounded: false,
