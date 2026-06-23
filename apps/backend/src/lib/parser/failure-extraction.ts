@@ -4,7 +4,6 @@
  *   - trace ZIP: console, network, action log, environment
  *   - `error-context` attachment: ARIA page snapshot
  */
-import * as fsSync from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { Open } from 'unzipper';
@@ -133,13 +132,13 @@ export interface FailureEvidence {
   environment?: EnvironmentContext;
 }
 
-function readErrorContextSync(reportId: string, attachments?: AttachmentLike[]): string {
+async function readErrorContext(reportId: string, attachments?: AttachmentLike[]): Promise<string> {
   if (!attachments) return '';
   for (const att of attachments) {
     if (att.name !== 'error-context' || !att.path) continue;
     try {
       const full = path.join(REPORTS_FOLDER, reportId, att.path);
-      const raw = fsSync.readFileSync(full, 'utf-8');
+      const raw = await fs.readFile(full, 'utf-8');
       if (raw) return raw;
     } catch {
       // file may not exist or be unreadable - keep looking
@@ -663,7 +662,7 @@ export async function extractFailureEvidence(
     }
   }
 
-  const pageSnapshot = readErrorContextSync(reportId, result.attachments) || undefined;
+  const pageSnapshot = (await readErrorContext(reportId, result.attachments)) || undefined;
 
   if (!message) {
     message = `Test ${test.outcome ?? result.status ?? 'failed'}: ${test.title ?? 'Unknown Test'}`;
