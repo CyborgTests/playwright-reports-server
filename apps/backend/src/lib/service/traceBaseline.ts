@@ -2,8 +2,9 @@ import { type DomNode, normalizeDom } from '../parser/domNormalize.js';
 import { type NetworkEvent, parseTraceNetwork } from '../parser/failure-extraction.js';
 import { extractFromReportPayload, loadReportPayload } from '../parser/report-payload.js';
 import {
-  parseTraceSnapshots,
+  parseTrace,
   richestMainFrameDom,
+  type ScreencastFrame,
   type TraceSnapshots,
 } from '../parser/trace-snapshot.js';
 import { openTraceZip, type TraceZip } from '../parser/trace-zip.js';
@@ -24,6 +25,7 @@ function traceAttachmentPath(slice: {
 export interface TraceArtifacts {
   network: NetworkEvent[];
   snapshots: TraceSnapshots | null;
+  screencastFrames: ScreencastFrame[];
   zip: TraceZip;
 }
 
@@ -38,9 +40,11 @@ export async function loadTraceArtifacts(
   if (!tracePath) return null;
   const zip = await openTraceZip(reportId, tracePath);
   if (!zip) return null;
+  const parsed = await parseTrace(zip);
   return {
     network: await parseTraceNetwork(zip),
-    snapshots: await parseTraceSnapshots(zip),
+    snapshots: parsed.snapshots,
+    screencastFrames: parsed.screencastFrames,
     zip,
   };
 }

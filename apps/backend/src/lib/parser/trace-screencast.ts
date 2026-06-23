@@ -1,5 +1,8 @@
 import jpeg from 'jpeg-js';
+import type { ScreencastFrame } from './trace-snapshot.js';
 import type { TraceZip } from './trace-zip.js';
+
+type FrameMeta = ScreencastFrame;
 
 export interface ScreencastImage {
   data: string;
@@ -12,11 +15,6 @@ export interface ScreencastSelection {
   failingAction?: { before?: number; after?: number };
   series?: boolean;
   max: number;
-}
-
-interface FrameMeta {
-  timestamp: number;
-  sha1: string;
 }
 
 interface Chosen {
@@ -136,31 +134,11 @@ function selectMeaningful(points: SeriesPoint[], budget: number): ScreencastImag
 
 export async function extractScreencastImages(
   directory: TraceZip,
+  frames: FrameMeta[],
   sel: ScreencastSelection
 ): Promise<ScreencastImage[]> {
   try {
-    const traceFiles = directory.files.filter(
-      (f) => f.type === 'File' && f.path.endsWith('.trace')
-    );
-
-    const frames: FrameMeta[] = [];
-    for (const file of traceFiles) {
-      const content = (await file.buffer()).toString('utf-8');
-      for (const line of content.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.includes('screencast-frame')) continue;
-        try {
-          const e = JSON.parse(trimmed) as { type?: string; sha1?: string; timestamp?: number };
-          if (e.type === 'screencast-frame' && e.sha1 && typeof e.timestamp === 'number') {
-            frames.push({ timestamp: e.timestamp, sha1: e.sha1 });
-          }
-        } catch {
-          // skip malformed line
-        }
-      }
-    }
     if (frames.length === 0) return [];
-    frames.sort((a, b) => a.timestamp - b.timestamp);
 
     const byPath = new Map(directory.files.map((f) => [f.path, f] as const));
     const readBuf = async (sha1: string): Promise<Buffer | null> => {

@@ -120,30 +120,11 @@ interface ReportPayload {
 }
 
 interface CacheEntry {
-  payload: ReportPayload;
+  promise: Promise<ReportPayload | null>;
   expiresAt: number;
 }
 
 const cache = new Map<string, CacheEntry>();
-
-function readFromCache(reportId: string): ReportPayload | undefined {
-  const entry = cache.get(reportId);
-  if (!entry) return undefined;
-  if (Date.now() >= entry.expiresAt) {
-    cache.delete(reportId);
-    return undefined;
-  }
-  return entry.payload;
-}
-
-function writeToCache(reportId: string, payload: ReportPayload): void {
-  if (cache.size >= PAYLOAD_CACHE_MAX_ENTRIES) {
-    // FIFO eviction.
-    const firstKey = cache.keys().next().value;
-    if (firstKey !== undefined) cache.delete(firstKey);
-  }
-  cache.set(reportId, { payload, expiresAt: Date.now() + PAYLOAD_CACHE_TTL_MS });
-}
 
 const BASE64_PREFIX = 'data:application/zip;base64,';
 const BASE64_RE = new RegExp(`${BASE64_PREFIX}([^";\\s]+)(?=[";\\s]|$)`);
@@ -198,15 +179,37 @@ async function loadReportPayloadUncached(reportId: string): Promise<ReportPayloa
 /**
  * Returns `null` on any failure (missing index.html, malformed base64,
  * unparseable JSON) - callers fall back to DB rows / trace ZIPs. Cache is
- * best-effort (60s TTL, 16-entry cap); concurrent callers may race the
- * initial load.
+ * best-effort (60s TTL, 16-entry cap). 
+ * The promise is cached so concurrent callers share a single parse; 
+ * a load that rejects or resolves to `null` is evicted so the next call retries.
  */
 export async function loadReportPayload(reportId: string): Promise<ReportPayload | null> {
-  const cached = readFromCache(reportId);
-  if (cached) return cached;
-  const payload = await loadReportPayloadUncached(reportId);
-  if (payload) writeToCache(reportId, payload);
-  return payload;
+  const existing = cache.get(reportId);
+  if (existing) {
+    if (Date.now() < existing.expiresAt) return existing.promise;
+    cache.delete(reportId);
+  }
+
+  if (cache.size >= PAYLOAD_CACHE_MAX_ENTRIES) {
+    // FIFO eviction.
+    const firstKey = cache.keys().next().value;
+    if (firstKey !== undefined) cache.delete(firstKey);
+  }
+
+  const promise = loadReportPayloadUncached(reportId);
+  const entry: CacheEntry = { promise, expiresAt: Date.now() + PAYLOAD_CACHE_TTL_MS };
+  cache.set(reportId, entry);
+
+  promise.then(
+    (payload) => {
+      if (payload === null && cache.get(reportId) === entry) cache.delete(reportId);
+    },
+    () => {
+      if (cache.get(reportId) === entry) cache.delete(reportId);
+    }
+  );
+
+  return promise;
 }
 
 interface ReportTestSliceTest {

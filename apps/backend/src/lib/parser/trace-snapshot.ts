@@ -1,3 +1,4 @@
+import * as readline from 'node:readline';
 import type { TraceZip } from './trace-zip.js';
 
 export type NodeSnapshot = string | unknown[];
@@ -126,6 +127,8 @@ interface TraceEntry {
   type?: string;
   callId?: string;
   error?: unknown;
+  sha1?: string;
+  timestamp?: number;
   snapshot?: {
     snapshotName?: string;
     frameId?: string;
@@ -135,7 +138,32 @@ interface TraceEntry {
   };
 }
 
-export async function parseTraceSnapshots(directory: TraceZip): Promise<TraceSnapshots | null> {
+export interface ScreencastFrame {
+  timestamp: number;
+  sha1: string;
+}
+
+export interface ParsedTrace {
+  snapshots: TraceSnapshots | null;
+  screencastFrames: ScreencastFrame[];
+}
+
+type TraceFile = TraceZip['files'][number];
+
+async function* readTraceLines(file: TraceFile): AsyncGenerator<string> {
+  const rl = readline.createInterface({
+    input: file.stream(),
+    crlfDelay: Number.POSITIVE_INFINITY,
+  });
+  try {
+    for await (const line of rl) yield line;
+  } finally {
+    rl.close();
+  }
+}
+
+export async function parseTrace(directory: TraceZip): Promise<ParsedTrace> {
+  const screencastFrames: ScreencastFrame[] = [];
   try {
     const traceFiles = directory.files.filter(
       (f) => f.type === 'File' && f.path.endsWith('.trace')
@@ -147,14 +175,20 @@ export async function parseTraceSnapshots(directory: TraceZip): Promise<TraceSna
     const snapshotCallIds = new Set<string>();
 
     for (const file of traceFiles) {
-      const content = (await file.buffer()).toString('utf-8');
-      for (const line of content.split('\n')) {
+      for await (const line of readTraceLines(file)) {
         const trimmed = line.trim();
         if (!trimmed) continue;
         let entry: TraceEntry;
         try {
           entry = JSON.parse(trimmed) as TraceEntry;
         } catch {
+          continue;
+        }
+
+        if (entry.type === 'screencast-frame') {
+          if (entry.sha1 && typeof entry.timestamp === 'number') {
+            screencastFrames.push({ timestamp: entry.timestamp, sha1: entry.sha1 });
+          }
           continue;
         }
 
@@ -181,14 +215,16 @@ export async function parseTraceSnapshots(directory: TraceZip): Promise<TraceSna
       }
     }
 
-    if (byFrame.size === 0) return null;
+    screencastFrames.sort((a, b) => a.timestamp - b.timestamp);
+
+    if (byFrame.size === 0) return { snapshots: null, screencastFrames };
     let failingCallId = [...erroredCallIds].reverse().find((id) => snapshotCallIds.has(id));
     if (!failingCallId) failingCallId = lastActionWithBeforeAfter(byFrame, mainFrameId);
 
-    return { byFrame, mainFrameId, failingCallId };
+    return { snapshots: { byFrame, mainFrameId, failingCallId }, screencastFrames };
   } catch (error) {
-    console.error('[trace-snapshot] Failed to parse snapshots:', error);
-    return null;
+    console.error('[trace-snapshot] Failed to parse trace:', error);
+    return { snapshots: null, screencastFrames };
   }
 }
 

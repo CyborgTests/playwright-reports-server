@@ -16,6 +16,7 @@ import {
   actionBeforeAfterDom,
   actionBeforeAfterTimestamps,
   failureDom,
+  type ScreencastFrame,
   type TraceSnapshots,
 } from '../../../parser/trace-snapshot.js';
 import type { TraceZip } from '../../../parser/trace-zip.js';
@@ -197,7 +198,7 @@ async function buildTestAnalysisPrompt(
 
   const openRegression = regressionsDb.getOpenForTest(ctx.testId, ctx.fileId, ctx.project);
 
-  const { snapshots, zip: traceZip, ...diffs } = await buildTraceDiffs(ctx);
+  const { snapshots, screencastFrames, zip: traceZip, ...diffs } = await buildTraceDiffs(ctx);
   const builtPrompt = buildTestFailureSegments({
     failureDetails: ctx.details,
     historicalContext: {
@@ -223,6 +224,7 @@ async function buildTestAnalysisPrompt(
     llmCfg.screenshotSources ?? ['attachment'],
     llmCfg.maxScreenshots ?? SCREENSHOTS_DEFAULT_MAX,
     snapshots,
+    screencastFrames,
     traceZip,
     taskId,
     logPrefix
@@ -290,9 +292,13 @@ interface TraceDiffs {
   actionDomEffect: ReturnType<typeof computeDomDiff> | null;
 }
 
-async function buildTraceDiffs(
-  ctx: ResolvedTestContext
-): Promise<TraceDiffs & { snapshots: TraceSnapshots | null; zip: TraceZip | null }> {
+async function buildTraceDiffs(ctx: ResolvedTestContext): Promise<
+  TraceDiffs & {
+    snapshots: TraceSnapshots | null;
+    screencastFrames: ScreencastFrame[];
+    zip: TraceZip | null;
+  }
+> {
   const out: TraceDiffs = { networkDiff: null, domDiff: null, actionDomEffect: null };
 
   const [current, baseline] = await Promise.all([
@@ -340,7 +346,12 @@ async function buildTraceDiffs(
     }
   }
 
-  return { ...out, snapshots: currentSnapshots, zip: current?.zip ?? null };
+  return {
+    ...out,
+    snapshots: currentSnapshots,
+    screencastFrames: current?.screencastFrames ?? [],
+    zip: current?.zip ?? null,
+  };
 }
 
 async function applyScreenshots(
@@ -349,11 +360,19 @@ async function applyScreenshots(
   sources: LlmScreenshotSource[],
   maxScreenshots: number,
   snapshots: TraceSnapshots | null,
+  screencastFrames: ScreencastFrame[],
   zip: TraceZip | null,
   taskId: string | undefined,
   logPrefix: string | undefined
 ): Promise<void> {
-  const screenshots = await collectScreenshots(ctx, sources, maxScreenshots, snapshots, zip);
+  const screenshots = await collectScreenshots(
+    ctx,
+    sources,
+    maxScreenshots,
+    snapshots,
+    screencastFrames,
+    zip
+  );
   if (screenshots.length === 0) return;
   const transcription = taskId ? await transcribeScreenshots(screenshots, taskId, logPrefix) : null;
   const labels = screenshots.map((s) => s.source).filter((s): s is string => !!s);
@@ -375,6 +394,7 @@ async function collectScreenshots(
   sources: LlmScreenshotSource[],
   maxScreenshots: number,
   snapshots: TraceSnapshots | null,
+  screencastFrames: ScreencastFrame[],
   zip: TraceZip | null
 ): Promise<PromptImage[]> {
   if (sources.length === 0) return [];
@@ -402,7 +422,7 @@ async function collectScreenshots(
           : {}
         : undefined,
     };
-    const frames = await extractScreencastImages(zip, selection);
+    const frames = await extractScreencastImages(zip, screencastFrames, selection);
     traceFrames = frames.map((f) => ({ data: f.data, mediaType: f.mediaType, source: f.label }));
   }
 
