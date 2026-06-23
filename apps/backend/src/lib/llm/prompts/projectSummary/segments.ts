@@ -446,19 +446,6 @@ export const buildProjectSummarySegments = (args: {
   const activeClusters = (args.clusters ?? []).filter(isActiveCluster);
   const resolvedClusters = (args.clusters ?? []).filter((c) => !isActiveCluster(c));
 
-  const dataBlock = [
-    buildCrossProjectPreambleBlock(args.project, args.clusters),
-    buildProjectOverviewBlock(args.project, args.runs, args.coverage),
-    buildActiveClustersBlock(activeClusters),
-    buildResolvedClustersBlock(resolvedClusters),
-    args.trendSignal ? renderTrendSignal(args.trendSignal) : '',
-    args.regressions ? renderRegressionsAggregate(args.regressions) : '',
-    buildRunListBlock(args.runs),
-  ]
-    .filter(Boolean)
-    .join('\n')
-    .trimEnd();
-
   return assembleSegments([
     buildSegment(
       'system_prompt',
@@ -474,7 +461,43 @@ export const buildProjectSummarySegments = (args: {
     buildSegment('task_contract', 'user', !contractSub.substituted, contractSub.rendered),
     buildSegment('task_request', 'user', !requestSub.substituted, requestSub.rendered),
     buildSegment('project_data_open', 'user', false, '<project_data>'),
-    buildSegment('project_data', 'user', false, dataBlock),
+    buildSegment(
+      'cross_project_preamble',
+      'user',
+      false,
+      buildCrossProjectPreambleBlock(args.project, args.clusters)
+    ),
+    buildSegment(
+      'project_overview',
+      'user',
+      false,
+      buildProjectOverviewBlock(args.project, args.runs, args.coverage)
+    ),
+    buildSegment(
+      'project_regressions',
+      'user',
+      false,
+      args.regressions ? renderRegressionsAggregate(args.regressions) : ''
+    ),
+    buildSegment(
+      'project_active_clusters',
+      'user',
+      false,
+      buildActiveClustersBlock(activeClusters)
+    ),
+    buildSegment(
+      'project_trend_signal',
+      'user',
+      false,
+      args.trendSignal ? renderTrendSignal(args.trendSignal) : ''
+    ),
+    buildSegment(
+      'project_resolved_clusters',
+      'user',
+      false,
+      buildResolvedClustersBlock(resolvedClusters)
+    ),
+    buildSegment('project_run_list', 'user', false, buildRunListBlock(args.runs)),
     buildSegment('project_data_close', 'user', false, '</project_data>'),
   ]);
 };

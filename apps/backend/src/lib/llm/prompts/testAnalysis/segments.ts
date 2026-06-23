@@ -624,6 +624,8 @@ export const buildTestFailureSegments = (args: {
 
   const feedbackBlock = args.feedback ? buildFeedbackContext(args.feedback).trim() : undefined;
 
+  // Evidence is ordered most-relevant-first
+  // https://arxiv.org/abs/2412.18750) — "Order Matters!"
   return assembleSegments([
     buildSegment(
       'system_prompt',
@@ -639,28 +641,8 @@ export const buildTestFailureSegments = (args: {
     buildSegment('task_contract', 'user', !contractSub.substituted, contractSub.rendered),
     buildSegment('task_request', 'user', !requestSub.substituted, requestSub.rendered),
     buildSegment('evidence_open', 'user', false, '<evidence>'),
-    buildSegment('run_context', 'user', false, buildRunContextBlock(evidence)),
-    buildSegment('test_metadata', 'user', false, buildTestMetadataBlock(evidence)),
-    buildSegment('environment', 'user', false, buildEnvironmentBlock(evidence)),
-    buildSegment(
-      'historical_context',
-      'user',
-      false,
-      buildHistoricalContextBlock(args.historicalContext)
-    ),
-    buildSegment(
-      'flakiness_rationale',
-      'user',
-      false,
-      buildFlakinessRationaleBlock(args.historicalContext)
-    ),
-    buildSegment(
-      'regression_context',
-      'user',
-      false,
-      buildRegressionContextBlock(args.regressionContext)
-    ),
-    buildSegment('cross_project_context', 'user', true, crossProjectBlock),
+    buildSegment('user_feedback', 'user', false, feedbackBlock),
+    buildSegment('current_failure', 'user', false, buildFailureDetailsBlock(args.failureDetails)),
     buildSegment(
       'step_tree',
       'user',
@@ -668,13 +650,6 @@ export const buildTestFailureSegments = (args: {
       evidence?.stepTree?.length ? `## Step Tree\n${renderStepTree(evidence.stepTree)}` : undefined
     ),
     buildSegment('test_source_frame', 'user', false, buildTestSourceFrameBlock(evidence)),
-    buildSegment(
-      'page_snapshot',
-      'user',
-      false,
-      evidence?.pageSnapshot ? `## Page Snapshot\n\n${evidence.pageSnapshot}` : undefined
-    ),
-    buildSegment('recent_actions', 'user', false, buildRecentActionsBlock(evidence)),
     buildSegment('console_log', 'user', false, buildConsoleLogBlock(evidence)),
     buildSegment('network_activity', 'user', false, buildNetworkActivityBlock(evidence)),
     buildSegment(
@@ -691,6 +666,32 @@ export const buildTestFailureSegments = (args: {
       buildActionDomEffectBlock(args.actionDomEffect)
     ),
     buildSegment(
+      'regression_context',
+      'user',
+      false,
+      buildRegressionContextBlock(args.regressionContext)
+    ),
+    buildSegment('cross_project_context', 'user', true, crossProjectBlock),
+    buildSegment(
+      'historical_context',
+      'user',
+      false,
+      buildHistoricalContextBlock(args.historicalContext)
+    ),
+    buildSegment(
+      'flakiness_rationale',
+      'user',
+      false,
+      buildFlakinessRationaleBlock(args.historicalContext)
+    ),
+    buildSegment('recent_actions', 'user', false, buildRecentActionsBlock(evidence)),
+    buildSegment(
+      'git_diff',
+      'user',
+      false,
+      evidence?.gitDiff ? `## Git Diff\n\`\`\`diff\n${evidence.gitDiff}\n\`\`\`` : undefined
+    ),
+    buildSegment(
       'stdout',
       'user',
       false,
@@ -702,14 +703,15 @@ export const buildTestFailureSegments = (args: {
       false,
       evidence?.stderr ? `## Stderr\n\`\`\`\n${stripLogNoise(evidence.stderr)}\n\`\`\`` : undefined
     ),
+    buildSegment('run_context', 'user', false, buildRunContextBlock(evidence)),
+    buildSegment('test_metadata', 'user', false, buildTestMetadataBlock(evidence)),
+    buildSegment('environment', 'user', false, buildEnvironmentBlock(evidence)),
     buildSegment(
-      'git_diff',
+      'page_snapshot',
       'user',
       false,
-      evidence?.gitDiff ? `## Git Diff\n\`\`\`diff\n${evidence.gitDiff}\n\`\`\`` : undefined
+      evidence?.pageSnapshot ? `## Page Snapshot\n\n${evidence.pageSnapshot}` : undefined
     ),
-    buildSegment('user_feedback', 'user', false, feedbackBlock),
-    buildSegment('current_failure', 'user', false, buildFailureDetailsBlock(args.failureDetails)),
     buildSegment('evidence_close', 'user', false, '</evidence>'),
   ]);
 };

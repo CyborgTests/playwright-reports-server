@@ -441,9 +441,9 @@ export const buildReportSummarySegments = (args: {
     buildSegment('task_contract', 'user', !contractSub.substituted, contractSub.rendered),
     buildSegment('task_request', 'user', !requestSub.substituted, requestSub.rendered),
     buildSegment('run_data_open', 'user', false, '<run_data>'),
-    buildSegment('run_context', 'user', false, buildRunContextBlock(args.runContext)),
     buildSegment('report_data', 'user', false, dataBlock),
     buildSegment('trend_context', 'user', false, trendBlock),
+    buildSegment('run_context', 'user', false, buildRunContextBlock(args.runContext)),
     buildSegment('run_data_close', 'user', false, '</run_data>'),
   ]);
 };
