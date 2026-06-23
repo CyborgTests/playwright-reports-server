@@ -89,6 +89,7 @@ export class S3 implements Storage {
   private readonly client: S3Client;
   private readonly bucket: string;
   private readonly batchSize: number;
+  private bucketReady?: Promise<void>;
 
   private constructor() {
     this.client = createClient();
@@ -104,7 +105,17 @@ export class S3 implements Storage {
     return S3.instance;
   }
 
-  private async ensureBucketExist() {
+  private async ensureBucketExist(): Promise<void> {
+    if (this.bucketReady) {
+      return this.bucketReady;
+    }
+
+    const ready = this.resolveBucket();
+    this.bucketReady = ready;
+    return ready;
+  }
+
+  private async resolveBucket(): Promise<void> {
     const { error } = await withError(
       this.client.send(new HeadBucketCommand({ Bucket: this.bucket }))
     );
@@ -112,6 +123,8 @@ export class S3 implements Storage {
     if (!error) {
       return;
     }
+
+    this.bucketReady = undefined;
 
     if (error.name === 'NotFound') {
       console.log(`[s3] bucket ${this.bucket} does not exist, creating...`);
@@ -126,8 +139,10 @@ export class S3 implements Storage {
 
       if (createError) {
         console.error('[s3] failed to create bucket:', createError);
+        return;
       }
 
+      this.bucketReady = Promise.resolve();
       return;
     }
 
