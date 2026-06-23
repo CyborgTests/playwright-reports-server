@@ -73,13 +73,13 @@ export function injectScreenshotDescription(
     stable: false,
     content: `## Screenshot Description\nText transcription of the failure screenshot(s) by a vision model (no raw image is included).\n\n${manifest}${trimmed}`,
   };
-  const afterSnapshot = builtPrompt.segments.findIndex((s) => s.id === 'page_snapshot');
-  if (afterSnapshot >= 0) {
-    builtPrompt.segments.splice(afterSnapshot + 1, 0, segment);
+  const afterFailure = builtPrompt.segments.findIndex((s) => s.id === 'current_failure');
+  if (afterFailure >= 0) {
+    builtPrompt.segments.splice(afterFailure + 1, 0, segment);
     return;
   }
-  const beforeFailure = builtPrompt.segments.findIndex((s) => s.id === 'current_failure');
-  if (beforeFailure >= 0) builtPrompt.segments.splice(beforeFailure, 0, segment);
+  const afterSnapshot = builtPrompt.segments.findIndex((s) => s.id === 'page_snapshot');
+  if (afterSnapshot >= 0) builtPrompt.segments.splice(afterSnapshot + 1, 0, segment);
   else builtPrompt.segments.push(segment);
 }
 

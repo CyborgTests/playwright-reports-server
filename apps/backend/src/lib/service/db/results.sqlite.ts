@@ -4,6 +4,7 @@ import type { ReadResultsInput, ReadResultsOutput, Result } from '../../storage/
 import { getDatabase } from './db.js';
 import { type Database, getKysely, type ResultsRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
+import { distinctTags, replaceResultTags } from './tagsSync.js';
 import { chunk, parseJsonColumn } from './utils.js';
 
 type ResultRow = ResultsRow;
@@ -61,7 +62,10 @@ export class ResultDatabase {
         }))
       )
       .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
+    this.db.transaction(() => {
+      this.db.prepare(compiled.sql).run(...compiled.parameters);
+      replaceResultTags(this.db, resultID, metadata as Record<string, unknown>);
+    })();
   }
 
   public onDeleted(resultIds: string[]) {
@@ -94,26 +98,7 @@ export class ResultDatabase {
   }
 
   public getDistinctTags(project?: string): string[] {
-    let q = this.k.selectFrom('results').select('metadata');
-    if (project) {
-      q = q.where('project', '=', project);
-    }
-    const compiled = q.compile();
-    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
-      metadata: string;
-    }>;
-
-    const allTags = new Set<string>();
-    for (const row of rows) {
-      const parsed = parseJsonColumn<Record<string, unknown>>(row.metadata, {});
-      for (const [key, value] of Object.entries(parsed)) {
-        if (value === undefined || value === null) continue;
-        if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')
-          continue;
-        allTags.add(`${key}: ${value}`);
-      }
-    }
-    return Array.from(allTags).sort();
+    return distinctTags(this.db, { entity: 'result', project });
   }
 
   public getByID(resultID: string): Result | undefined {
@@ -163,13 +148,44 @@ export class ResultDatabase {
       if (input?.project && input.project !== defaultProjectName) {
         q = q.where('project', '=', input.project);
       }
+      const tagExists =
+        (key: string, value: string) => (eb: ExpressionBuilder<Database, 'results'>) =>
+          eb.exists(
+            eb
+              .selectFrom('result_tags')
+              .select((sub) => sub.lit(1).as('x'))
+              .whereRef('result_tags.resultId', '=', 'results.resultID')
+              .where('result_tags.key', '=', key)
+              .where('result_tags.value', '=', value)
+          );
+
       if (input?.testRun) {
-        q = q.where('metadata', 'like', `%"testRun":"${input.testRun}"%`);
+        q = q.where(tagExists('testRun', input.testRun));
       }
       if (input?.tags?.length) {
         for (const tag of input.tags) {
-          const [key, value] = tag.split(':').map((part) => part.trim());
-          q = q.where('metadata', 'like', `%"${key}":"${value}"%`);
+          const colonIndex = tag.indexOf(':');
+          if (colonIndex === -1) {
+            const term = `%${tag.trim()}%`;
+            q = q.where((eb: ExpressionBuilder<Database, 'results'>) =>
+              eb.exists(
+                eb
+                  .selectFrom('result_tags')
+                  .select((sub) => sub.lit(1).as('x'))
+                  .whereRef('result_tags.resultId', '=', 'results.resultID')
+                  .where((inner) =>
+                    inner.or([
+                      inner('result_tags.key', 'like', term),
+                      inner('result_tags.value', 'like', term),
+                    ])
+                  )
+              )
+            );
+          } else {
+            q = q.where(
+              tagExists(tag.slice(0, colonIndex).trim(), tag.slice(colonIndex + 1).trim())
+            );
+          }
         }
       }
       const search = input?.search?.trim();
@@ -180,7 +196,18 @@ export class ResultDatabase {
             eb(eb.fn('LOWER', ['title']), 'like', pattern),
             eb(eb.fn('LOWER', ['resultID']), 'like', pattern),
             eb(eb.fn('LOWER', ['project']), 'like', pattern),
-            eb(eb.fn('LOWER', ['metadata']), 'like', pattern),
+            eb.exists(
+              eb
+                .selectFrom('result_tags')
+                .select((sub) => sub.lit(1).as('x'))
+                .whereRef('result_tags.resultId', '=', 'results.resultID')
+                .where((inner) =>
+                  inner.or([
+                    inner('result_tags.key', 'like', pattern),
+                    inner('result_tags.value', 'like', pattern),
+                  ])
+                )
+            ),
           ])
         );
       }

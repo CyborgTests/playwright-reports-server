@@ -740,7 +740,7 @@ export class RegressionsDatabase {
            (SELECT json_object(
               'reportId', t.reportId,
               'createdAt', t.createdAt,
-              'commit', json_extract(rep.metadata, '$.gitCommit.hash')
+              'commit', rep.gitCommitHash
             )
             FROM test_runs t
             LEFT JOIN reports rep ON rep.reportID = t.reportId

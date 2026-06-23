@@ -81,6 +81,11 @@ export interface ReportsRow {
   statUnexpected: number | null;
   statFlaky: number | null;
   durationMs: number | null;
+  gitCommitHash: string | null;
+  gitCommitShortHash: string | null;
+  gitBranch: string | null;
+  gitCommitSubject: string | null;
+  ciBuildHref: string | null;
   updatedAt: WithDefault<string | null>;
 }
 
@@ -346,6 +351,18 @@ export interface TestsFtsRow {
   filePath: string;
 }
 
+export interface ReportTagsRow {
+  reportId: string;
+  key: string;
+  value: string;
+}
+
+export interface ResultTagsRow {
+  resultId: string;
+  key: string;
+  value: string;
+}
+
 export interface Database {
   cluster_resolutions: ClusterResolutionsRow;
   regressions: RegressionsRow;
@@ -363,7 +380,9 @@ export interface Database {
   quality_dashboard_nodes: QualityDashboardNodesRow;
   report_failure_summaries: ReportFailureSummariesRow;
   report_results: ReportResultsRow;
+  report_tags: ReportTagsRow;
   reports: ReportsRow;
+  result_tags: ResultTagsRow;
   results: ResultsRow;
   site_config: SiteConfigRow;
   test_llm_analyses: TestLlmAnalysesRow;

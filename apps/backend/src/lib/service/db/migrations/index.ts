@@ -15,6 +15,8 @@ import * as mergeInfraIntoEnv from './0011_merge_infrastructure_into_environment
 import * as testTraceBaselines from './0012_test_trace_baselines.js';
 import * as testRunsHasTrace from './0013_test_runs_has_trace.js';
 import * as llmConcurrencyGroups from './0014_llm_concurrency_groups.js';
+import * as promoteReportGitCi from './0015_promote_report_git_ci.js';
+import * as entityTagsAndCommitSubject from './0016_entity_tags_and_commit_subject.js';
 
 // Ordered, statically-imported migration set. The keys are the names Kysely
 // records in its `kysely_migration` table; their lexical order is the run order,
@@ -48,6 +50,14 @@ const MIGRATIONS: Record<string, Migration> = {
   '0014_llm_concurrency_groups': {
     up: llmConcurrencyGroups.up,
     down: llmConcurrencyGroups.down,
+  },
+  '0015_promote_report_git_ci': {
+    up: promoteReportGitCi.up,
+    down: promoteReportGitCi.down,
+  },
+  '0016_entity_tags_and_commit_subject': {
+    up: entityTagsAndCommitSubject.up,
+    down: entityTagsAndCommitSubject.down,
   },
 };
 

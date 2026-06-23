@@ -1,4 +1,4 @@
-import { RESERVED_REPORT_FIELDS, type ReportStats } from '@playwright-reports/shared';
+import type { ReportStats } from '@playwright-reports/shared';
 import { type ExpressionBuilder, type SelectQueryBuilder, sql } from 'kysely';
 import { defaultProjectName } from '../../constants.js';
 import type { ReadReportsInput, ReadReportsOutput, ReportHistory } from '../../storage/types.js';
@@ -8,6 +8,7 @@ import { getDatabase } from './db.js';
 import { type Database, getKysely, type ReportsRow } from './kysely.js';
 import { projectSummaryDb } from './projectSummary.sqlite.js';
 import { singletonOf } from './singleton.js';
+import { distinctTags, replaceReportTags } from './tagsSync.js';
 import { testDb } from './tests.sqlite.js';
 import { chunk, parseJsonColumn } from './utils.js';
 
@@ -163,6 +164,10 @@ export class ReportDatabase {
 
     const reportDuration = (metadata as { duration?: unknown }).duration;
     const durationMs = typeof reportDuration === 'number' ? reportDuration : null;
+    const git = report.metadata?.gitCommit as
+      | { hash?: string; shortHash?: string; branch?: string; subject?: string }
+      | undefined;
+    const ci = report.metadata?.ci as { buildHref?: string } | undefined;
 
     // kysely doesn't model INSERT OR REPLACE well; use ON CONFLICT REPLACE shape.
     const compiled = this.k
@@ -185,6 +190,11 @@ export class ReportDatabase {
         statUnexpected: stats?.unexpected ?? null,
         statFlaky: stats?.flaky ?? null,
         durationMs,
+        gitCommitHash: git?.hash ?? null,
+        gitCommitShortHash: git?.shortHash ?? null,
+        gitBranch: git?.branch ?? null,
+        gitCommitSubject: git?.subject ?? null,
+        ciBuildHref: ci?.buildHref ?? null,
         updatedAt: undefined,
       })
       .onConflict((oc) =>
@@ -205,11 +215,19 @@ export class ReportDatabase {
           statUnexpected: eb.ref('excluded.statUnexpected'),
           statFlaky: eb.ref('excluded.statFlaky'),
           durationMs: eb.ref('excluded.durationMs'),
+          gitCommitHash: eb.ref('excluded.gitCommitHash'),
+          gitCommitShortHash: eb.ref('excluded.gitCommitShortHash'),
+          gitBranch: eb.ref('excluded.gitBranch'),
+          gitCommitSubject: eb.ref('excluded.gitCommitSubject'),
+          ciBuildHref: eb.ref('excluded.ciBuildHref'),
           updatedAt: new Date().toISOString(),
         }))
       )
       .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
+    this.db.transaction(() => {
+      this.db.prepare(compiled.sql).run(...compiled.parameters);
+      replaceReportTags(this.db, reportID, metadata as Record<string, unknown>);
+    })();
   }
 
   public updateMetadata(
@@ -266,6 +284,7 @@ export class ReportDatabase {
           .where('reportID', '=', id)
           .compile();
         this.db.prepare(compiled.sql).run(...compiled.parameters);
+        replaceReportTags(this.db, id, metadata);
 
         if (setProject && nextProject !== row.project) {
           const oldProject = row.project;
@@ -450,27 +469,7 @@ export class ReportDatabase {
   }
 
   public getDistinctTags(project?: string): string[] {
-    let q = this.k.selectFrom('reports').select('metadata');
-    if (project) {
-      q = q.where('project', '=', project);
-    }
-    const compiled = q.compile();
-    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
-      metadata: string;
-    }>;
-
-    const allTags = new Set<string>();
-    for (const row of rows) {
-      const parsed = parseJsonColumn<Record<string, unknown>>(row.metadata, {});
-      for (const [key, value] of Object.entries(parsed)) {
-        if (RESERVED_REPORT_FIELDS.has(key)) continue;
-        if (value === undefined || value === null) continue;
-        if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')
-          continue;
-        allTags.add(`${key}: ${value}`);
-      }
-    }
-    return Array.from(allTags).sort();
+    return distinctTags(this.db, { entity: 'report', project });
   }
 
   public getNewestReportBefore(project: string, beforeISO: string): ReportHistory | undefined {
@@ -690,7 +689,22 @@ export class ReportDatabase {
             eb(eb.fn('LOWER', ['title']), 'like', pattern),
             eb(eb.fn('LOWER', ['reportID']), 'like', pattern),
             eb(eb.fn('LOWER', ['project']), 'like', pattern),
-            eb(eb.fn('LOWER', ['metadata']), 'like', pattern),
+            eb(eb.fn('LOWER', ['gitCommitHash']), 'like', pattern),
+            eb(eb.fn('LOWER', ['gitCommitShortHash']), 'like', pattern),
+            eb(eb.fn('LOWER', ['gitBranch']), 'like', pattern),
+            eb(eb.fn('LOWER', ['gitCommitSubject']), 'like', pattern),
+            eb.exists(
+              eb
+                .selectFrom('report_tags')
+                .select((sub) => sub.lit(1).as('x'))
+                .whereRef('report_tags.reportId', '=', 'reports.reportID')
+                .where((inner) =>
+                  inner.or([
+                    inner('report_tags.key', 'like', pattern),
+                    inner('report_tags.value', 'like', pattern),
+                  ])
+                )
+            ),
             ...(displayNumberMatch !== null ? [eb('displayNumber', '=', displayNumberMatch)] : []),
           ])
         );
@@ -701,17 +715,32 @@ export class ReportDatabase {
         for (const tag of input.tags) {
           const colonIndex = tag.indexOf(':');
           if (colonIndex === -1) {
+            const term = `%${tag.trim()}%`;
             q = q.where((eb: ExpressionBuilder<Database, 'reports'>) =>
-              eb(eb.fn('LOWER', ['metadata']), 'like', `%${tag.toLowerCase()}%`)
+              eb.exists(
+                eb
+                  .selectFrom('report_tags')
+                  .select((sub) => sub.lit(1).as('x'))
+                  .whereRef('report_tags.reportId', '=', 'reports.reportID')
+                  .where((inner) =>
+                    inner.or([
+                      inner('report_tags.key', 'like', term),
+                      inner('report_tags.value', 'like', term),
+                    ])
+                  )
+              )
             );
           } else {
             const key = tag.slice(0, colonIndex).trim();
             const value = tag.slice(colonIndex + 1).trim();
             q = q.where((eb: ExpressionBuilder<Database, 'reports'>) =>
-              eb(
-                eb.fn('LOWER', ['metadata']),
-                'like',
-                `%"${key.toLowerCase()}":"${value.toLowerCase()}"%`
+              eb.exists(
+                eb
+                  .selectFrom('report_tags')
+                  .select((sub) => sub.lit(1).as('x'))
+                  .whereRef('report_tags.reportId', '=', 'reports.reportID')
+                  .where('report_tags.key', '=', key)
+                  .where('report_tags.value', '=', value)
               )
             );
           }
@@ -853,6 +882,11 @@ export class ReportDatabase {
       | 'statUnexpected'
       | 'statFlaky'
       | 'durationMs'
+      | 'gitCommitHash'
+      | 'gitCommitShortHash'
+      | 'gitBranch'
+      | 'gitCommitSubject'
+      | 'ciBuildHref'
     >
   ): ReportHistoryLite {
     return {
