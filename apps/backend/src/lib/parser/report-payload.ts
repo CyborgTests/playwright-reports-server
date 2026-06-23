@@ -179,8 +179,8 @@ async function loadReportPayloadUncached(reportId: string): Promise<ReportPayloa
 /**
  * Returns `null` on any failure (missing index.html, malformed base64,
  * unparseable JSON) - callers fall back to DB rows / trace ZIPs. Cache is
- * best-effort (60s TTL, 16-entry cap). 
- * The promise is cached so concurrent callers share a single parse; 
+ * best-effort (60s TTL, 16-entry cap).
+ * The promise is cached so concurrent callers share a single parse;
  * a load that rejects or resolves to `null` is evicted so the next call retries.
  */
 export async function loadReportPayload(reportId: string): Promise<ReportPayload | null> {
