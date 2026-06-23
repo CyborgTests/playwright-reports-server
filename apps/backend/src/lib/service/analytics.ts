@@ -42,6 +42,7 @@ const EMPTY_TREND_AGGREGATE: TrendAggregate = {
 };
 
 type ReportAggregate = ReturnType<typeof reportDb.aggregateForAnalytics>;
+type DurationAggregate = ReturnType<typeof testAnalyticsDb.getDurationAggregates>;
 
 function aggregateFromRows(reports: ReportAnalyticsRow[]): TrendAggregate {
   let totalPassed = 0;
@@ -108,6 +109,12 @@ export class AnalyticsService {
       : windowFromReports(recentForTrend);
     const previousRange = olderRange ?? {};
 
+    const recentAgg = testAnalyticsDb.getDurationAggregates(
+      projectKey,
+      recentRange.from,
+      recentRange.to
+    );
+
     const [
       overviewStats,
       runHealthMetrics,
@@ -123,10 +130,11 @@ export class AnalyticsService {
         olderTrendAggregate,
         projectKey,
         recentRange,
-        previousRange
+        previousRange,
+        recentAgg
       ),
       this.calculateRunHealthMetrics(displayReports),
-      this.calculateTrendMetrics(displayReports, projectKey, recentRange),
+      this.calculateTrendMetrics(displayReports, projectKey, recentRange, recentAgg),
       testManagementService.getTestsSummary(projectKey, warningThreshold, { from, to }),
       olderRange
         ? testManagementService.getTestsSummary(projectKey, warningThreshold, olderRange)
@@ -270,7 +278,8 @@ export class AnalyticsService {
     olderTrendAggregate: TrendAggregate,
     project: string | undefined,
     recentRange: Window,
-    previousRange: Window
+    previousRange: Window,
+    recentAgg: DurationAggregate
   ): Promise<OverviewStats> {
     const totalTests = displayAggregate.totalTests;
     const totalPassed = displayAggregate.totalPassed;
@@ -278,11 +287,6 @@ export class AnalyticsService {
     const totalExecuted = displayAggregate.totalExecuted;
     const passRate = totalExecuted > 0 ? (totalPassed / totalExecuted) * 100 : 0;
 
-    const recentAgg = testAnalyticsDb.getDurationAggregates(
-      project,
-      recentRange.from,
-      recentRange.to
-    );
     const olderAgg = testAnalyticsDb.getDurationAggregates(
       project,
       previousRange.from,
@@ -413,7 +417,8 @@ export class AnalyticsService {
   private async calculateTrendMetrics(
     displayReports: ReportAnalyticsRow[],
     project: string | undefined,
-    recentRange: Window
+    recentRange: Window,
+    recentAgg: DurationAggregate
   ): Promise<TrendMetrics> {
     const durationTrend = displayReports.map((report) => ({
       date: new Date(report.createdAt).toISOString(),
@@ -425,12 +430,7 @@ export class AnalyticsService {
       count: report.stats?.flaky || 0,
     }));
 
-    const { p95Duration } = testAnalyticsDb.getDurationAggregates(
-      project,
-      recentRange.from,
-      recentRange.to
-    );
-    const slowThreshold = p95Duration > 0 ? p95Duration : 1000;
+    const slowThreshold = recentAgg.p95Duration > 0 ? recentAgg.p95Duration : 1000;
     const slowCountsByReport = testAnalyticsDb.getSlowCountsByReport(
       project,
       recentRange.from,
