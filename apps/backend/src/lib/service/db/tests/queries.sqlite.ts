@@ -159,6 +159,47 @@ export class TestQueriesDatabase extends TestDbBase {
     };
   }
 
+  public getCrossProjectOccurrences(
+    testId: string,
+    excludeProject: string
+  ): Array<{
+    project: string;
+    fileId: string;
+    flakinessScore: number | null;
+    quarantined: number;
+    totalRuns: number;
+    lastRunAt: string | null;
+  }> {
+    const compiled = this.k
+      .selectFrom('tests as t')
+      .leftJoin('test_runs as tr', (join) =>
+        join
+          .onRef('tr.testId', '=', 't.testId')
+          .onRef('tr.fileId', '=', 't.fileId')
+          .onRef('tr.project', '=', 't.project')
+      )
+      .select((eb) => [
+        't.project as project',
+        't.fileId as fileId',
+        't.flakinessScore as flakinessScore',
+        't.quarantined as quarantined',
+        eb.fn.count<number>('tr.runId').as('totalRuns'),
+        eb.fn.max<string | null>('tr.createdAt').as('lastRunAt'),
+      ])
+      .where('t.testId', '=', testId)
+      .where('t.project', '!=', excludeProject)
+      .groupBy(['t.project', 't.fileId', 't.flakinessScore', 't.quarantined'])
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      project: string;
+      fileId: string;
+      flakinessScore: number | null;
+      quarantined: number;
+      totalRuns: number;
+      lastRunAt: string | null;
+    }>;
+  }
+
   // Delegate to testQueries (kept as raw SQL by design - see file header).
   public getDerivedPage(
     project: string | undefined,

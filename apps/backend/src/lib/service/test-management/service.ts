@@ -130,22 +130,17 @@ function buildCrossProjectOccurrences(
   testId: string,
   excludeProject: string
 ): TestCrossProjectOccurrence[] {
-  const rows = testDb.findTestSiblings(testId, excludeProject);
-
-  const occurrences: TestCrossProjectOccurrence[] = [];
-  for (const { project, fileId } of rows) {
-    const derived = testQueriesDb.getTestWithDerivedData(testId, fileId, project);
-    if (!derived) continue;
-    occurrences.push({
-      project,
-      fileId,
-      totalRuns: derived.totalRuns ?? 0,
-      flakinessScore: derived.flakinessScore,
-      isQuarantined: !!derived.isQuarantined,
-      lastRunAt: derived.lastRunAt,
-    });
-  }
-  return occurrences.sort((a, b) => (b.flakinessScore ?? 0) - (a.flakinessScore ?? 0));
+  return testQueriesDb
+    .getCrossProjectOccurrences(testId, excludeProject)
+    .map((r) => ({
+      project: r.project,
+      fileId: r.fileId,
+      totalRuns: r.totalRuns ?? 0,
+      flakinessScore: r.flakinessScore ?? undefined,
+      isQuarantined: Boolean(r.quarantined),
+      lastRunAt: r.lastRunAt ?? undefined,
+    }))
+    .sort((a, b) => (b.flakinessScore ?? 0) - (a.flakinessScore ?? 0));
 }
 
 export class TestManagementService {

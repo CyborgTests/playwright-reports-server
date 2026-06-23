@@ -471,23 +471,6 @@ export class TestCrudDatabase extends TestDbBase {
     return row ?? null;
   }
 
-  public findTestSiblings(
-    testId: string,
-    excludeProject: string
-  ): Array<{ project: string; fileId: string }> {
-    const compiled = this.k
-      .selectFrom('tests')
-      .select(['project', 'fileId'])
-      .where('testId', '=', testId)
-      .where('project', '!=', excludeProject)
-      .groupBy(['project', 'fileId'])
-      .compile();
-    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
-      project: string;
-      fileId: string;
-    }>;
-  }
-
   public countRunsWithSignatureSince(
     testId: string,
     fileId: string,
