@@ -1,9 +1,12 @@
+import { stat, statfs } from 'node:fs/promises';
+import path from 'node:path';
 import type { PassThrough } from 'node:stream';
 import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import { serveReportRoute } from '../constants.js';
 import { invalidateFailureClustersCache } from '../failure-clustering/index.js';
 import { isValidPlaywrightVersion } from '../pw-cache.js';
 import { UUIDSchema } from '../schemas/index.js';
+import { DATA_FOLDER } from '../storage/constants.js';
 import { bytesToString } from '../storage/format.js';
 import {
   type ReadReportsInput,
@@ -18,12 +21,25 @@ import {
 } from '../storage/index.js';
 import { getPresignedUploadUrl, uploadResult } from '../storage/resultUpload.js';
 import type { Report } from '../storage/types.js';
+import { processWithConcurrency } from '../utils/semaphore.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
 import { reportDb, reportResultsDb, resultDb, siteConfigDb } from './db/index.js';
 import { lifecycle } from './lifecycle.js';
 import { dispatchReportUploaded } from './notifications/dispatcher.js';
 import { testManagementService } from './test-management/index.js';
+
+async function dataDbFileBytes(): Promise<number> {
+  let total = 0;
+  for (const name of ['metadata.db', 'metadata.db-wal', 'metadata.db-shm']) {
+    try {
+      total += (await stat(path.join(DATA_FOLDER, name))).size;
+    } catch {
+      // -wal/-shm may not exist — skip
+    }
+  }
+  return total;
+}
 
 class Service {
   private static instance: Service | null = null;
@@ -270,7 +286,71 @@ class Service {
   }
 
   public async getServerInfo(): Promise<ServerDataInfo> {
-    return storage.getServerDataInfo();
+    const reports = reportDb.getStorageInfo();
+    const results = resultDb.getStorageInfo();
+    const dbBytes = await dataDbFileBytes();
+    const dataBytes = reports.totalSizeBytes + results.totalSizeBytes + dbBytes;
+
+    let availableSizeinMB = 'Unlimited';
+    try {
+      const fsStat = await statfs(DATA_FOLDER);
+      availableSizeinMB = bytesToString(fsStat.bsize * fsStat.bavail);
+    } catch {
+      // statfs unavailable on some mounts - leave "Unlimited"
+    }
+
+    return {
+      dataFolderSizeinMB: bytesToString(dataBytes),
+      numOfResults: results.count,
+      resultsFolderSizeinMB: bytesToString(results.totalSizeBytes),
+      numOfReports: reports.count,
+      reportsFolderSizeinMB: bytesToString(reports.totalSizeBytes),
+      availableSizeinMB,
+    };
+  }
+
+  public async reconcileStorageSizes(): Promise<{ reportsZeroed: number; resultsZeroed: number }> {
+    const reportIds = reportDb.listSizedIds();
+    const missingReports: string[] = [];
+    await processWithConcurrency(reportIds, 10, async (id) => {
+      const { result: exists, error } = await withError(storage.reportExists(id));
+      if (!error && exists === false) missingReports.push(id);
+    });
+
+    const resultIds = resultDb.listSizedIds();
+    const missingResults: string[] = [];
+    await processWithConcurrency(resultIds, 10, async (id) => {
+      const { result: exists, error } = await withError(storage.resultExists(id));
+      if (!error && exists === false) missingResults.push(id);
+    });
+
+    const reportsZeroed = this.applyStoragePruneGuarded('report', reportIds.length, missingReports);
+    const resultsZeroed = this.applyStoragePruneGuarded('result', resultIds.length, missingResults);
+
+    if (reportsZeroed || resultsZeroed) {
+      console.log(
+        `[storage-reconcile] zeroed size for ${reportsZeroed} report(s) + ${resultsZeroed} result(s) with missing files`
+      );
+    }
+    return { reportsZeroed, resultsZeroed };
+  }
+
+  private applyStoragePruneGuarded(
+    kind: 'report' | 'result',
+    checked: number,
+    missing: string[]
+  ): number {
+    const MASS_MISSING_MIN = 20;
+    const MASS_MISSING_RATIO = 0.9;
+    if (checked >= MASS_MISSING_MIN && missing.length / checked >= MASS_MISSING_RATIO) {
+      console.warn(
+        `[storage-reconcile] ${missing.length}/${checked} ${kind}s appear missing (≥${MASS_MISSING_RATIO * 100}%) — assuming storage fault, NOT zeroing. Check storage connectivity/config.`
+      );
+      return 0;
+    }
+    if (kind === 'report') reportDb.markStoragePruned(missing);
+    else resultDb.markStoragePruned(missing);
+    return missing.length;
   }
 
   public async getConfig() {

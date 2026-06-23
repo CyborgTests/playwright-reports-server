@@ -34,7 +34,6 @@ import type {
   ReportHistory,
   ReportPath,
   ReportUploadMetadata,
-  ServerDataInfo,
   Storage,
 } from './types.js';
 
@@ -186,47 +185,16 @@ export class AzureBlob implements Storage {
     }
   }
 
-  async getFolderSize(
-    folderPath: string
-  ): Promise<{ size: number; resultCount: number; indexCount: number }> {
-    let resultCount = 0;
-    let indexCount = 0;
-    let totalSize = 0;
-
-    for await (const blob of this.container.listBlobsFlat({ prefix: folderPath })) {
-      if (blob.name?.endsWith('.zip')) {
-        resultCount += 1;
-      }
-
-      if (blob.name?.endsWith('index.html') && !blob.name.includes('/trace/index.html')) {
-        indexCount += 1;
-      }
-
-      totalSize += blob.properties.contentLength ?? 0;
-    }
-
-    return { size: totalSize, resultCount, indexCount };
+  private async blobExists(key: string): Promise<boolean> {
+    return this.container.getBlobClient(key).exists();
   }
 
-  async getServerDataInfo(): Promise<ServerDataInfo> {
-    await this.ensureContainerExists();
+  async reportExists(reportId: string): Promise<boolean> {
+    return this.blobExists(path.posix.join(REPORTS_BUCKET, reportId, 'index.html'));
+  }
 
-    const [results, reports] = await Promise.all([
-      this.getFolderSize(RESULTS_BUCKET),
-      this.getFolderSize(REPORTS_BUCKET),
-    ]);
-
-    const dataSize = results.size + reports.size;
-    const availableSizeinMB = 'Unlimited';
-
-    return {
-      dataFolderSizeinMB: bytesToString(dataSize),
-      numOfResults: results.resultCount,
-      resultsFolderSizeinMB: bytesToString(results.size),
-      numOfReports: reports.indexCount,
-      reportsFolderSizeinMB: bytesToString(reports.size),
-      availableSizeinMB,
-    };
+  async resultExists(resultId: string): Promise<boolean> {
+    return this.blobExists(path.posix.join(RESULTS_BUCKET, `${resultId}.zip`));
   }
 
   async readFile(

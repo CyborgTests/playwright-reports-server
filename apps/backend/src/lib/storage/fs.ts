@@ -13,7 +13,6 @@ import { generatePlaywrightReport } from '../pw.js';
 import { processWithConcurrency, Semaphore } from '../utils/semaphore.js';
 import { withError } from '../withError.js';
 import {
-  DATA_FOLDER,
   DEFAULT_STREAM_CHUNK_SIZE,
   REPORTS_FOLDER,
   RESULTS_FOLDER,
@@ -28,7 +27,6 @@ import type {
   ReportHistory,
   ReportPath,
   ReportUploadMetadata,
-  ServerDataInfo,
   Storage,
 } from './types.js';
 
@@ -36,51 +34,6 @@ async function createDirectoriesIfMissing() {
   await createDirectory(RESULTS_FOLDER);
   await createDirectory(REPORTS_FOLDER);
   await createDirectory(TMP_FOLDER);
-}
-
-const getSizeInMb = async (dir: string) => {
-  const sizeBytes = await getFolderSize.loose(dir);
-
-  return bytesToString(sizeBytes);
-};
-
-async function getAvailableSize(dir: string) {
-  const stat = await fs.statfs(dir);
-
-  const availableSize = stat.bsize * stat.bavail;
-
-  return bytesToString(availableSize);
-}
-
-async function getResultsCount() {
-  const files = await fs.readdir(RESULTS_FOLDER);
-
-  return files.filter((file) => file.endsWith('.zip')).length;
-}
-
-async function getReportsCount() {
-  const entries = await fs.readdir(REPORTS_FOLDER, { withFileTypes: true });
-
-  return entries.filter((entry) => entry.isDirectory()).length;
-}
-
-export async function getServerDataInfo(): Promise<ServerDataInfo> {
-  await createDirectoriesIfMissing();
-  const dataFolderSizeinMB = await getSizeInMb(DATA_FOLDER);
-  const resultsCount = await getResultsCount();
-  const resultsFolderSizeinMB = await getSizeInMb(RESULTS_FOLDER);
-  const reportsCount = await getReportsCount();
-  const reportsFolderSizeinMB = await getSizeInMb(REPORTS_FOLDER);
-  const availableSizeinMB = await getAvailableSize('./');
-
-  return {
-    dataFolderSizeinMB,
-    numOfResults: resultsCount,
-    resultsFolderSizeinMB,
-    numOfReports: reportsCount,
-    reportsFolderSizeinMB,
-    availableSizeinMB,
-  };
 }
 
 export async function readFile(
@@ -105,6 +58,23 @@ export async function readFile(
     }
   }
   return { body: createReadStream(fullPath), size: total, totalSize: total };
+}
+
+async function pathIsFile(target: string): Promise<boolean> {
+  try {
+    return (await fs.stat(target)).isFile();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw err;
+  }
+}
+
+export async function reportExists(reportId: string): Promise<boolean> {
+  return pathIsFile(path.join(REPORTS_FOLDER, reportId, 'index.html'));
+}
+
+export async function resultExists(resultId: string): Promise<boolean> {
+  return pathIsFile(path.join(RESULTS_FOLDER, `${resultId}.zip`));
 }
 
 export async function deleteResults(resultsIds: string[]) {
@@ -277,7 +247,8 @@ async function noopCleanupGeneratedReport(_reportId: string): Promise<void> {
 }
 
 export const FS: Storage = {
-  getServerDataInfo,
+  reportExists,
+  resultExists,
   readFile,
   deleteResults,
   deleteReports,

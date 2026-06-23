@@ -42,7 +42,6 @@ import type {
   ReportHistory,
   ReportPath,
   ReportUploadMetadata,
-  ServerDataInfo,
   Storage,
 } from './types.js';
 
@@ -277,61 +276,23 @@ export class S3 implements Storage {
     }
   }
 
-  async getFolderSize(
-    folderPath: string
-  ): Promise<{ size: number; resultCount: number; indexCount: number }> {
-    let resultCount = 0;
-    let indexCount = 0;
-    let totalSize = 0;
-
-    let continuationToken: string | undefined;
-
-    do {
-      const response = await this.client.send(
-        new ListObjectsV2Command({
-          Bucket: this.bucket,
-          Prefix: folderPath,
-          ContinuationToken: continuationToken,
-        })
-      );
-
-      for (const obj of response.Contents ?? []) {
-        if (obj.Key?.endsWith('.zip')) {
-          resultCount += 1;
-        }
-
-        if (obj.Key?.endsWith('index.html') && !obj.Key.includes('/trace/index.html')) {
-          indexCount += 1;
-        }
-
-        totalSize += obj?.Size ?? 0;
-      }
-
-      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
-    } while (continuationToken);
-
-    return { size: totalSize, resultCount, indexCount };
+  private async objectExists(key: string): Promise<boolean> {
+    try {
+      await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      return true;
+    } catch (err) {
+      const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+      if (e.name === 'NotFound' || e.$metadata?.httpStatusCode === 404) return false;
+      throw err;
+    }
   }
 
-  async getServerDataInfo(): Promise<ServerDataInfo> {
-    await this.ensureBucketExist();
+  async reportExists(reportId: string): Promise<boolean> {
+    return this.objectExists(path.join(REPORTS_BUCKET, reportId, 'index.html'));
+  }
 
-    const [results, reports] = await Promise.all([
-      this.getFolderSize(RESULTS_BUCKET),
-      this.getFolderSize(REPORTS_BUCKET),
-    ]);
-
-    const dataSize = results.size + reports.size;
-    const availableSizeinMB = 'Unlimited';
-
-    return {
-      dataFolderSizeinMB: bytesToString(dataSize),
-      numOfResults: results.resultCount,
-      resultsFolderSizeinMB: bytesToString(results.size),
-      numOfReports: reports.indexCount,
-      reportsFolderSizeinMB: bytesToString(reports.size),
-      availableSizeinMB,
-    };
+  async resultExists(resultId: string): Promise<boolean> {
+    return this.objectExists(path.join(RESULTS_BUCKET, `${resultId}.zip`));
   }
 
   async readFile(

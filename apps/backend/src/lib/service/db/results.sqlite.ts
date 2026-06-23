@@ -135,6 +135,33 @@ export class ResultDatabase {
     return row.count;
   }
 
+  public getStorageInfo(): { count: number; totalSizeBytes: number } {
+    return this.db
+      .prepare(
+        'SELECT COUNT(*) AS count, COALESCE(SUM(sizeBytes), 0) AS totalSizeBytes FROM results WHERE sizeBytes > 0'
+      )
+      .get() as { count: number; totalSizeBytes: number };
+  }
+
+  public listSizedIds(): string[] {
+    const rows = this.db
+      .prepare('SELECT resultID FROM results WHERE sizeBytes > 0')
+      .all() as Array<{ resultID: string }>;
+    return rows.map((r) => r.resultID);
+  }
+
+  public markStoragePruned(ids: string[]): void {
+    if (ids.length === 0) return;
+    const stmt = this.db.prepare(
+      "UPDATE results SET sizeBytes = 0, size = '0.00 B', updatedAt = ? WHERE resultID = ?"
+    );
+    const now = new Date().toISOString();
+    const tx = this.db.transaction((batch: string[]) => {
+      for (const id of batch) stmt.run(now, id);
+    });
+    for (const batch of chunk(ids, 500)) tx(batch);
+  }
+
   public clear(): void {
     const compiled = this.k.deleteFrom('results').compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);

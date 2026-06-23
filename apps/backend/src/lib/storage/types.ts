@@ -17,7 +17,8 @@ export interface ReadFileResult {
 }
 
 export interface Storage {
-  getServerDataInfo: () => Promise<ServerDataInfo>;
+  reportExists: (reportId: string) => Promise<boolean>;
+  resultExists: (resultId: string) => Promise<boolean>;
   readFile: (
     targetPath: string,
     contentType: string | null,

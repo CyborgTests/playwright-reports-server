@@ -676,7 +676,33 @@ export class ReportDatabase {
     return row.count;
   }
 
-  // SQL-side aggregator for analytics. SUM-of-json-extract for the stats columns
+  public getStorageInfo(): { count: number; totalSizeBytes: number } {
+    return this.db
+      .prepare(
+        'SELECT COUNT(*) AS count, COALESCE(SUM(sizeBytes), 0) AS totalSizeBytes FROM reports WHERE sizeBytes > 0'
+      )
+      .get() as { count: number; totalSizeBytes: number };
+  }
+
+  public listSizedIds(): string[] {
+    const rows = this.db
+      .prepare('SELECT reportID FROM reports WHERE sizeBytes > 0')
+      .all() as Array<{ reportID: string }>;
+    return rows.map((r) => r.reportID);
+  }
+
+  public markStoragePruned(ids: string[]): void {
+    if (ids.length === 0) return;
+    const stmt = this.db.prepare(
+      "UPDATE reports SET sizeBytes = 0, size = '0.00 B', updatedAt = ? WHERE reportID = ?"
+    );
+    const now = new Date().toISOString();
+    const tx = this.db.transaction((batch: string[]) => {
+      for (const id of batch) stmt.run(now, id);
+    });
+    for (const batch of chunk(ids, 500)) tx(batch);
+  }
+
   public aggregateForAnalytics(
     project?: string,
     from?: string,
