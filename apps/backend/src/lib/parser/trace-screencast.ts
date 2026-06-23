@@ -141,9 +141,11 @@ export async function extractScreencastImages(
     if (frames.length === 0) return [];
 
     const byPath = new Map(directory.files.map((f) => [f.path, f] as const));
+    const byBasename = new Map(
+      directory.files.map((f) => [f.path.slice(f.path.lastIndexOf('/') + 1), f] as const)
+    );
     const readBuf = async (sha1: string): Promise<Buffer | null> => {
-      const entry =
-        byPath.get(`resources/${sha1}`) ?? directory.files.find((f) => f.path.endsWith(sha1));
+      const entry = byPath.get(`resources/${sha1}`) ?? byBasename.get(sha1);
       if (!entry) return null;
       const buf = await entry.buffer();
       return buf.length === 0 || buf.length > MAX_FRAME_BYTES ? null : buf;
