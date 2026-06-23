@@ -277,13 +277,6 @@ export class TestManagementService {
             ? state.quarantined === 1 && !state.quarantineFixedAt
             : false;
 
-          const flakinessScore = this.calculateFlakinessSync(
-            testId,
-            fileId,
-            report.project,
-            config
-          );
-
           const prepared = preparedByKey.get(`${testId}::${fileId}`);
           const failureDetails = prepared?.details ?? null;
           const errorSignature = prepared?.signature ?? null;
@@ -313,9 +306,24 @@ export class TestManagementService {
             hasTrace,
           };
 
-          testDb.createTestRun(testRun);
-          testDb.refreshTestStatCols(testId, fileId, report.project);
-          testDb.setFlakinessScore(testId, fileId, report.project, flakinessScore);
+          const { runId } = testDb.createTestRun(testRun);
+          const laneRuns = testDb.getLaneRunsForRefresh(testId, fileId, report.project);
+          const priorRuns = laneRuns.filter((r) => r.runId !== runId);
+          const flakinessScore = this.computeFlakinessForRuns(
+            testId,
+            fileId,
+            report.project,
+            priorRuns,
+            state?.flakinessResetAt,
+            config
+          );
+          testDb.refreshTestStatColsFromRuns(
+            testId,
+            fileId,
+            report.project,
+            laneRuns,
+            flakinessScore
+          );
 
           const quarantineThreshold =
             config.quarantineThresholdPercentage ?? FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE;
@@ -445,10 +453,12 @@ export class TestManagementService {
     return JSON.stringify(details);
   }
 
-  private calculateFlakinessSync(
+  private computeFlakinessForRuns(
     testId: string,
     fileId: string,
     project: string,
+    runsDesc: Array<{ outcome: string; createdAt: string }>,
+    flakinessResetAt: string | null | undefined,
     config: TestManagementConfig
   ): number {
     const windowDays =
@@ -460,21 +470,30 @@ export class TestManagementService {
     cutoffDate.setDate(cutoffDate.getDate() - (windowDays ?? 30));
     let effectiveCutoff = cutoffDate.toISOString();
 
-    const test = testDb.getTest(testId, fileId, project);
-    const resetAt = test?.flakinessResetAt;
-    if (resetAt) {
-      if (resetAt < effectiveCutoff) {
+    if (flakinessResetAt) {
+      if (flakinessResetAt < effectiveCutoff) {
         testDb.setFlakinessResetAt(testId, fileId, project, null);
-      } else if (resetAt > effectiveCutoff) {
-        effectiveCutoff = resetAt;
+      } else if (flakinessResetAt > effectiveCutoff) {
+        effectiveCutoff = flakinessResetAt;
       }
     }
 
-    const recentRuns = testDb
-      .getRecentTestRunsForFlakiness(testId, fileId, project, effectiveCutoff)
+    const windowed = runsDesc
+      .filter((r) => r.outcome !== 'skipped' && r.createdAt >= effectiveCutoff)
       .reverse();
 
-    return computeFlakinessFromOutcomes(recentRuns, minRuns ?? 1);
+    return computeFlakinessFromOutcomes(windowed, minRuns ?? 1);
+  }
+
+  private calculateFlakinessSync(
+    testId: string,
+    fileId: string,
+    project: string,
+    config: TestManagementConfig,
+    flakinessResetAt: string | null | undefined
+  ): number {
+    const runs = testDb.getLaneRunsForRefresh(testId, fileId, project);
+    return this.computeFlakinessForRuns(testId, fileId, project, runs, flakinessResetAt, config);
   }
 
   async resetFlakiness(testId: string, fileId: string, project: string): Promise<void> {
@@ -491,7 +510,7 @@ export class TestManagementService {
 
       const latestRun = testDb.getLatestTestRun(testId, fileId, project);
       if (latestRun) {
-        const newScore = this.calculateFlakinessSync(testId, fileId, project, config);
+        const newScore = this.calculateFlakinessSync(testId, fileId, project, config, now);
         testDb.setFlakinessScore(testId, fileId, project, newScore);
       }
     });
@@ -510,7 +529,7 @@ export class TestManagementService {
 
       const latestRun = testDb.getLatestTestRun(testId, fileId, project);
       if (latestRun) {
-        const newScore = this.calculateFlakinessSync(testId, fileId, project, config);
+        const newScore = this.calculateFlakinessSync(testId, fileId, project, config, null);
         testDb.setFlakinessScore(testId, fileId, project, newScore);
       }
     });
@@ -746,7 +765,8 @@ export class TestManagementService {
           test.testId,
           test.fileId,
           test.project,
-          config
+          config,
+          state.flakinessResetAt
         );
 
         if (state.flakinessScore !== newScore) {

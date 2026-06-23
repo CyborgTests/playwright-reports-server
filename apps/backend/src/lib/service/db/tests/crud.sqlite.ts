@@ -1,11 +1,13 @@
 import { randomUUID as uuid } from 'node:crypto';
-import type { FailureCategorySource, ReportTestOutcomeEnum } from '@playwright-reports/shared';
+import type { FailureCategorySource } from '@playwright-reports/shared';
 import { sql } from 'kysely';
 import { decodeFailureDetails, encodeFailureDetails } from '../failureDetailsCodec.js';
 import { singletonOf } from '../singleton.js';
 import { chunk } from '../utils.js';
 import {
+  computeRefreshStatCols,
   convertDbRowToTestRun,
+  type LaneRunForRefresh,
   REFRESH_TEST_STAT_SQL,
   type Test,
   TestDbBase,
@@ -19,6 +21,40 @@ export class TestCrudDatabase extends TestDbBase {
 
   public refreshTestStatCols(testId: string, fileId: string, project: string): void {
     this.refreshTestStatStmt.run({ testId, fileId, project });
+  }
+
+  public getLaneRunsForRefresh(
+    testId: string,
+    fileId: string,
+    project: string
+  ): LaneRunForRefresh[] {
+    const compiled = this.k
+      .selectFrom('test_runs')
+      .select(['runId', 'outcome', 'duration', 'createdAt', 'failure_category as failureCategory'])
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .orderBy('createdAt', 'desc')
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as LaneRunForRefresh[];
+  }
+
+  public refreshTestStatColsFromRuns(
+    testId: string,
+    fileId: string,
+    project: string,
+    runsDesc: LaneRunForRefresh[],
+    flakinessScore: number
+  ): void {
+    const stats = computeRefreshStatCols(runsDesc);
+    const compiled = this.k
+      .updateTable('tests')
+      .set({ ...stats, flakinessScore })
+      .where('testId', '=', testId)
+      .where('fileId', '=', fileId)
+      .where('project', '=', project)
+      .compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public createTest(test: Omit<Test, 'createdAt'>): Test {
@@ -222,6 +258,7 @@ export class TestCrudDatabase extends TestDbBase {
         'quarantineReason',
         'quarantineFixedAt',
         'latestNonSkippedAt',
+        'flakinessResetAt',
       ])
       .where('testId', '=', testId)
       .where('fileId', '=', fileId)
@@ -361,27 +398,6 @@ export class TestCrudDatabase extends TestDbBase {
       });
     }
     return out;
-  }
-
-  public getRecentTestRunsForFlakiness(
-    testId: string,
-    fileId: string,
-    project: string,
-    cutoffDate: string
-  ): Array<{ outcome: ReportTestOutcomeEnum }> {
-    const compiled = this.k
-      .selectFrom('test_runs')
-      .select('outcome')
-      .where('testId', '=', testId)
-      .where('fileId', '=', fileId)
-      .where('project', '=', project)
-      .where('outcome', '!=', 'skipped')
-      .where('createdAt', '>=', cutoffDate)
-      .orderBy('createdAt', 'desc')
-      .compile();
-    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
-      outcome: ReportTestOutcomeEnum;
-    }>;
   }
 
   public getTestRunCount(testId: string, fileId: string, project: string): number {
