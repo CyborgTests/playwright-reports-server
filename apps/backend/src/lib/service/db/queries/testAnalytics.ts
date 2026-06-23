@@ -515,30 +515,26 @@ export function getFlakySummaryInWindow(
   warningThreshold: number
 ): { total: number; flakyCount: number } {
   const scoped = project && project !== 'all';
-  const projectClauseInWindow = scoped ? 'AND project = ?' : '';
+  const projectClause = scoped ? 'AND tr.project = ?' : '';
 
-  const totalRow = db
+  const row = db
     .prepare(
-      `SELECT COUNT(DISTINCT testId) AS total FROM test_runs
-       WHERE outcome != 'skipped' AND createdAt >= ? AND createdAt < ? ${projectClauseInWindow}`
+      `SELECT
+         COUNT(DISTINCT tr.testId) AS total,
+         COUNT(DISTINCT CASE
+           WHEN t.testId IS NOT NULL AND COALESCE(t.flakinessScore, 0) >= ?
+           THEN tr.testId END) AS flakyCount
+       FROM test_runs tr
+       LEFT JOIN tests t
+         ON t.testId = tr.testId AND t.fileId = tr.fileId AND t.project = tr.project
+       WHERE tr.outcome != 'skipped' AND tr.createdAt >= ? AND tr.createdAt < ? ${projectClause}`
     )
-    .get(...(scoped ? [from, to, project] : [from, to])) as { total: number };
-
-  const flakyRow = db
-    .prepare(
-      `SELECT COUNT(DISTINCT iw.testId) AS flakyCount
-       FROM (
-         SELECT DISTINCT testId, fileId, project FROM test_runs
-         WHERE outcome != 'skipped' AND createdAt >= ? AND createdAt < ? ${projectClauseInWindow}
-       ) iw
-       JOIN tests t USING (testId, fileId, project)
-       WHERE COALESCE(t.flakinessScore, 0) >= ?`
-    )
-    .get(...(scoped ? [from, to, project, warningThreshold] : [from, to, warningThreshold])) as {
+    .get(...(scoped ? [warningThreshold, from, to, project] : [warningThreshold, from, to])) as {
+    total: number;
     flakyCount: number;
   };
 
-  return { total: totalRow?.total ?? 0, flakyCount: flakyRow?.flakyCount ?? 0 };
+  return { total: row?.total ?? 0, flakyCount: row?.flakyCount ?? 0 };
 }
 
 export function getTopFailingTestsInWindow(
