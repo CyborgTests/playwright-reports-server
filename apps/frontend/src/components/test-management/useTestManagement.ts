@@ -74,6 +74,7 @@ export function useTestsQuery({
     ],
     queryFn: async ({ pageParam }) => {
       const res = await fetch(withBase(`/api/tests?${buildQueryParams(pageParam as number)}`), {
+        credentials: 'include',
         headers: authHeadersForSession(session),
       });
       if (!res.ok) throw new Error('Failed to fetch tests');

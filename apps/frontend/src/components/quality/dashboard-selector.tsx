@@ -14,7 +14,7 @@ interface DashboardSelectorProps {
   dashboards: QualityDashboardSummary[];
   currentSlug: string | undefined;
   onSelect: (slug: string) => void;
-  onCreate: () => void;
+  onCreate?: () => void;
 }
 
 export function DashboardSelector({
@@ -29,7 +29,7 @@ export function DashboardSelector({
         value={currentSlug ?? ''}
         onValueChange={(v) => {
           if (v === '__create__') {
-            onCreate();
+            onCreate?.();
             return;
           }
           onSelect(v);
@@ -51,10 +51,12 @@ export function DashboardSelector({
           ))}
         </SelectContent>
       </Select>
-      <Button variant="outline" size="sm" onClick={onCreate} className="gap-1">
-        <Plus className="h-4 w-4" />
-        New
-      </Button>
+      {onCreate && (
+        <Button variant="outline" size="sm" onClick={onCreate} className="gap-1">
+          <Plus className="h-4 w-4" />
+          New
+        </Button>
+      )}
     </div>
   );
 }

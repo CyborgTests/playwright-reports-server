@@ -75,9 +75,11 @@ function CrossTestClusterCard({
     <Card className={resolved ? 'opacity-70 border-success/30' : undefined}>
       <Accordion type="single" collapsible>
         <AccordionItem value={cluster.id} className="border-b-0">
-          <AccordionTrigger className="px-6 hover:no-underline">
-            <div className="flex flex-1 items-start justify-between gap-2 text-left">
-              <div className="flex flex-col items-start gap-1 min-w-0">
+          {/* Actions are siblings of the trigger, not children — a <button> (the
+              trigger) must not contain other buttons/links. */}
+          <div className="flex items-start justify-between gap-2">
+            <AccordionTrigger className="flex-1 px-6 hover:no-underline">
+              <div className="flex flex-col items-start gap-1 min-w-0 text-left">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline" className="gap-1">
                     <GitMerge className="h-3 w-3" />
@@ -102,45 +104,38 @@ function CrossTestClusterCard({
                   </div>
                 )}
               </div>
-              <div
-                role="toolbar"
-                className="flex items-center gap-2 shrink-0"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
-                }}
-              >
-                <RouterLink
-                  to={withBase(
-                    `/failures/clusters?clusterId=${cluster.id}&project=${encodeURIComponent(project)}`
-                  )}
-                >
-                  <Button variant="ghost" size="sm">
-                    View
-                  </Button>
-                </RouterLink>
-                {resolved ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => reopenMutation.mutate({ body: { project } })}
-                    disabled={reopenMutation.isPending}
-                  >
-                    Re-open
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setResolveDialogOpen(true)}
-                    disabled={markMutation.isPending}
-                  >
-                    Mark resolved
-                  </Button>
+            </AccordionTrigger>
+            <div className="flex items-center gap-2 shrink-0 pr-6 pt-4">
+              <RouterLink
+                to={withBase(
+                  `/failures/clusters?clusterId=${cluster.id}&project=${encodeURIComponent(project)}`
                 )}
-              </div>
+              >
+                <Button variant="ghost" size="sm">
+                  View
+                </Button>
+              </RouterLink>
+              {resolved ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => reopenMutation.mutate({ body: { project } })}
+                  disabled={reopenMutation.isPending}
+                >
+                  Re-open
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setResolveDialogOpen(true)}
+                  disabled={markMutation.isPending}
+                >
+                  Mark resolved
+                </Button>
+              )}
             </div>
-          </AccordionTrigger>
+          </div>
           <AccordionContent className="px-6 pb-6">
             <div className="space-y-4">
               {cluster.sampleMessage && (

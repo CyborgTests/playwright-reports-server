@@ -2,8 +2,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { useAuth } from '../hooks/useAuth';
 import useQuery from '../hooks/useQuery';
+import { authHeaders } from '../lib/auth';
 import { invalidateCache } from '../lib/query-cache';
 import { buildUrl, withBase } from '../lib/url';
 import { Button } from './ui/button';
@@ -30,7 +30,6 @@ export default function UploadReportButton({
   label = 'Upload Report',
 }: Readonly<UploadReportButtonProps>) {
   const queryClient = useQueryClient();
-  const session = useAuth();
   const [open, setOpen] = useState(false);
 
   const {
@@ -65,10 +64,9 @@ export default function UploadReportButton({
 
       const response = await fetch(withBase('/api/report/upload'), {
         method: 'POST',
+        credentials: 'include',
         body: formData,
-        headers: {
-          authorization: session.data?.user.jwtToken ?? '',
-        },
+        headers: authHeaders(),
       });
 
       if (!response.ok) {

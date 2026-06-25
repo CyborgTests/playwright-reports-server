@@ -322,12 +322,12 @@ export function DurationTrend({
                 strokeWidth={2}
                 isAnimationActive={false}
                 dot={(props: unknown) => {
-                  const p = props as OutcomeDotProps & { index?: number; key?: string };
-                  return <OutcomeDot key={p.key ?? `dot-${p.index}`} {...p} />;
+                  const { key, ...p } = props as OutcomeDotProps & { index?: number; key?: string };
+                  return <OutcomeDot key={key ?? `dot-${p.index}`} {...p} />;
                 }}
                 activeDot={(props: unknown) => {
-                  const p = props as OutcomeDotProps & { index?: number; key?: string };
-                  return <OutcomeDot key={p.key ?? `active-${p.index}`} {...p} radius={6} />;
+                  const { key, ...p } = props as OutcomeDotProps & { index?: number; key?: string };
+                  return <OutcomeDot key={key ?? `active-${p.index}`} {...p} radius={6} />;
                 }}
               />
             </LineChart>

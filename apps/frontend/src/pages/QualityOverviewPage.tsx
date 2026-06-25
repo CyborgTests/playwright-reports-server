@@ -27,6 +27,7 @@ import { StatusBadge } from '@/components/quality/status-badge';
 import { TrendArrow } from '@/components/quality/trend-arrow';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { useCan } from '@/hooks/useCan';
 import {
   type DashboardCreateInput,
   useCreateDashboard,
@@ -71,6 +72,8 @@ export default function QualityOverviewPage() {
   const urlSlug = searchParams.get('dashboard') ?? undefined;
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [showCreate, setShowCreate] = useState(false);
+  // Dashboard definitions are config — admin only. Viewing is open to everyone.
+  const canManage = useCan()('manage:qualityDashboards');
 
   const dashboardListQ = useQualityDashboardList();
   const dashboards = dashboardListQ.data ?? [];
@@ -129,9 +132,9 @@ export default function QualityOverviewPage() {
               setMode('view');
               setSlug(slug);
             }}
-            onCreate={() => setShowCreate(true)}
+            onCreate={canManage ? () => setShowCreate(true) : undefined}
           />
-          {activeSlug && mode === 'view' && (
+          {activeSlug && mode === 'view' && canManage && (
             <Button variant="outline" onClick={() => setMode('edit')}>
               <Pencil className="h-4 w-4" /> Edit
             </Button>
@@ -153,11 +156,13 @@ export default function QualityOverviewPage() {
       {!isLoading && dashboards.length === 0 && (
         <div className="rounded-md border border-dashed p-10 text-center">
           <p className="text-sm text-muted-foreground">
-            No dashboards yet. Create one to get started.
+            No dashboards yet.{canManage ? ' Create one to get started.' : ''}
           </p>
-          <Button className="mt-4" onClick={() => setShowCreate(true)}>
-            New dashboard
-          </Button>
+          {canManage && (
+            <Button className="mt-4" onClick={() => setShowCreate(true)}>
+              New dashboard
+            </Button>
+          )}
         </div>
       )}
 
@@ -165,6 +170,7 @@ export default function QualityOverviewPage() {
         <HomeView
           snapshots={homeQ.data ?? []}
           allDashboardsCount={dashboards.length}
+          canManage={canManage}
           onEdit={(slug) => {
             setMode('edit');
             setSlug(slug);
@@ -244,10 +250,11 @@ export default function QualityOverviewPage() {
 interface HomeViewProps {
   snapshots: QualityDashboardSnapshot[];
   allDashboardsCount: number;
+  canManage: boolean;
   onEdit: (slug: string) => void;
 }
 
-function HomeView({ snapshots, allDashboardsCount, onEdit }: HomeViewProps) {
+function HomeView({ snapshots, allDashboardsCount, canManage, onEdit }: HomeViewProps) {
   const reorderMutation = useReorderHome();
 
   const move = (idx: number, direction: -1 | 1) => {
@@ -278,9 +285,9 @@ function HomeView({ snapshots, allDashboardsCount, onEdit }: HomeViewProps) {
         <PinnedDashboardCard
           key={snapshot.dashboard.id}
           snapshot={snapshot}
-          onEdit={() => onEdit(snapshot.dashboard.slug)}
-          onMoveUp={idx > 0 ? () => move(idx, -1) : undefined}
-          onMoveDown={idx < snapshots.length - 1 ? () => move(idx, 1) : undefined}
+          onEdit={canManage ? () => onEdit(snapshot.dashboard.slug) : undefined}
+          onMoveUp={canManage && idx > 0 ? () => move(idx, -1) : undefined}
+          onMoveDown={canManage && idx < snapshots.length - 1 ? () => move(idx, 1) : undefined}
         />
       ))}
     </div>

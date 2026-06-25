@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 
 interface PinnedDashboardCardProps {
   snapshot: QualityDashboardSnapshot;
-  onEdit: () => void;
+  onEdit?: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
 }
@@ -114,9 +114,11 @@ export function PinnedDashboardCard({
           >
             <ChevronDown className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={onEdit}>
-            <Pencil className="h-4 w-4" /> Edit
-          </Button>
+          {onEdit && (
+            <Button variant="outline" size="sm" onClick={onEdit}>
+              <Pencil className="h-4 w-4" /> Edit
+            </Button>
+          )}
         </div>
       </header>
       <div className={cn('px-4 py-4', !open && 'hidden')}>

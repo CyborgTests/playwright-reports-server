@@ -63,7 +63,10 @@ export function CompareToPicker({
           ...(scopeToProject && defaultProject ? { project: defaultProject } : {}),
         };
         const url = withBase(withQueryParams(API_ENDPOINTS.REPORTS_LIST, params));
-        const res = await fetch(url, { headers: authHeadersForSession(session) });
+        const res = await fetch(url, {
+          credentials: 'include',
+          headers: authHeadersForSession(session),
+        });
         if (!res.ok) throw new Error('Failed to load reports');
         return res.json();
       },
