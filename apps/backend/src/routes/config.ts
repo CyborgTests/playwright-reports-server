@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
+  CAPABILITIES,
   type LlmScreenshotSource,
   type LlmTaskRouting,
   type LlmTaskType,
@@ -23,7 +24,7 @@ import { testManagementService } from '../lib/service/test-management/index.js';
 import { DATA_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';
 import { withError } from '../lib/withError.js';
-import { type AuthRequest, authenticate, isAuthenticated } from './auth.js';
+import { type AuthRequest, authorize, isAuthenticated } from './auth.js';
 
 interface MultipartFile {
   fieldname: string;
@@ -103,6 +104,7 @@ interface ConfigFormData {
   serverBaseUrl?: string;
   logoPath?: string;
   logoInvertOnDark?: string;
+  allowOpenRegistration?: string;
   faviconPath?: string;
   reporterPaths?: string;
   headerLinks?: string;
@@ -147,6 +149,7 @@ const ALLOWED_CONFIG_FIELDS: ReadonlySet<keyof ConfigFormData> = new Set<keyof C
   'serverBaseUrl',
   'logoPath',
   'logoInvertOnDark',
+  'allowOpenRegistration',
   'faviconPath',
   'reporterPaths',
   'headerLinks',
@@ -195,7 +198,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       return reply.status(500).send({ error: 'failed to get config' });
     }
 
-    const isAuthed = await isAuthenticated(request as AuthRequest);
+    const isAuthed = isAuthenticated(request as AuthRequest);
 
     reply.header('Cache-Control', 'private, max-age=10, must-revalidate');
 
@@ -263,7 +266,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     '/api/config',
-    { preHandler: (request, reply) => authenticate(request as AuthRequest, reply) },
+    { preHandler: authorize(CAPABILITIES.configServer) },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         // Bumped from 2 to allow logo + favicon + one icon per header link.
@@ -342,6 +345,10 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
         if (formData.logoInvertOnDark !== undefined) {
           config.logoInvertOnDark = formData.logoInvertOnDark === 'true';
+        }
+
+        if (formData.allowOpenRegistration !== undefined) {
+          config.allowOpenRegistration = formData.allowOpenRegistration === 'true';
         }
 
         if (faviconFileSaved) {
@@ -810,7 +817,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     '/api/info',
-    { preHandler: (request, reply) => authenticate(request as AuthRequest, reply) },
+    { preHandler: authorize(CAPABILITIES.view) },
     async (_request, reply) => {
       const { result: info, error } = await withError(service.getServerInfo());
 

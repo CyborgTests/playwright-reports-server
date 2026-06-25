@@ -1,3 +1,4 @@
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import { llmService } from '../lib/llm/index.js';
 import {
@@ -14,7 +15,7 @@ import {
   testAnalyticsDb,
   testDb,
 } from '../lib/service/db/index.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { authorize } from './auth.js';
 
 function feedbackRowToShared(
   row: {
@@ -94,7 +95,7 @@ const resolveTestKeys = async (
 export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
   fastify.post('/api/llm/analyze-failed-test', async (request, reply) => {
     try {
-      const authResult = await authenticate(request as AuthRequest, reply);
+      const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
       if (authResult) return;
 
       const { testId, reportId } = request.body as { testId: string; reportId: string };
@@ -150,7 +151,7 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/api/llm/feedback', async (request, reply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     const parsed = GetFeedbackQuerySchema.safeParse(request.query);
@@ -168,7 +169,7 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
   });
 
   fastify.put('/api/llm/feedback', async (request, reply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.contentFeedback)(request, reply);
     if (authResult) return;
 
     const parsed = UpsertFeedbackRequestSchema.safeParse(request.body);
@@ -206,7 +207,7 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
   });
 
   fastify.delete('/api/llm/feedback', async (request, reply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.contentFeedback)(request, reply);
     if (authResult) return;
 
     const parsed = DeleteFeedbackRequestSchema.safeParse(request.body);
@@ -222,7 +223,7 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/api/llm/regenerate', async (request, reply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.contentFeedback)(request, reply);
     if (authResult) return;
 
     const parsed = FeedbackRegenerateRequestSchema.safeParse(request.body);
@@ -274,7 +275,7 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/api/llm/feedback/related', async (request, reply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     const parsed = GetRelatedFeedbackQuerySchema.safeParse(request.query);
@@ -334,7 +335,7 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/api/llm/test-history', async (request, reply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     const { testId, reportId, fileId, errorSignature } = request.query as {

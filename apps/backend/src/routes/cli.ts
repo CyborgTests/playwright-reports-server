@@ -4,6 +4,7 @@
  * the dashboard routes, and so adding/removing CLI surface is a single-file
  * change.
  */
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { parseFailureDetails } from '../lib/failure-clustering/extractors/failure-details.js';
 import { FAILED_OUTCOMES } from '../lib/failure-clustering/types.js';
@@ -39,11 +40,11 @@ import {
   testDb,
 } from '../lib/service/db/index.js';
 import { withError } from '../lib/withError.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { authorize } from './auth.js';
 
 export async function registerCliRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(async (api) => {
-    api.addHook('preHandler', (request, reply) => authenticate(request as AuthRequest, reply));
+    api.addHook('preHandler', authorize(CAPABILITIES.view));
 
     api.get('/api/cli/test/:testId/brief', async (request: FastifyRequest, reply: FastifyReply) => {
       const { testId } = request.params as { testId: string };
@@ -453,6 +454,7 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
 
     api.post(
       '/api/cli/test/:testId/analysis',
+      { preHandler: authorize(CAPABILITIES.contentLlm) },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const parsed = SubmitTestAnalysisRequestSchema.safeParse(request.body);
@@ -507,6 +509,7 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
 
     api.post(
       '/api/cli/report/:id/summary',
+      { preHandler: authorize(CAPABILITIES.contentLlm) },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { id: reportId } = request.params as { id: string };
         const parsed = SubmitReportSummaryRequestSchema.safeParse(request.body);
@@ -565,6 +568,7 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
 
     api.post(
       '/api/cli/project/:project/summary',
+      { preHandler: authorize(CAPABILITIES.contentLlm) },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { project } = request.params as { project: string };
         const parsed = SubmitProjectSummaryRequestSchema.safeParse(request.body);

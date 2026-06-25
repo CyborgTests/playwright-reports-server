@@ -1,4 +1,5 @@
 import type { NotificationsConfig } from '@playwright-reports/shared';
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   NotificationLogDeleteSchema,
@@ -11,7 +12,7 @@ import { service } from '../lib/service/index.js';
 import { notificationScheduler } from '../lib/service/notifications/scheduler.js';
 import { maskNotifications, mergeWithStored } from '../lib/service/notifications/secrets.js';
 import { sendTest } from '../lib/service/notifications/testSend.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { authorize } from './auth.js';
 
 const EMPTY_NOTIFICATIONS_CONFIG: NotificationsConfig = {
   enabled: false,
@@ -20,7 +21,7 @@ const EMPTY_NOTIFICATIONS_CONFIG: NotificationsConfig = {
 
 export async function registerNotificationsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/config/notifications', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     const config = await service.getConfig();
@@ -30,7 +31,7 @@ export async function registerNotificationsRoutes(fastify: FastifyInstance) {
   });
 
   fastify.put('/api/config/notifications', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.configNotifications)(request, reply);
     if (authResult) return;
 
     const parsed = NotificationsConfigSchema.safeParse(request.body);
@@ -61,7 +62,7 @@ export async function registerNotificationsRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/api/notifications/log', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     const parsed = NotificationLogQuerySchema.safeParse(request.query);
@@ -85,7 +86,7 @@ export async function registerNotificationsRoutes(fastify: FastifyInstance) {
   fastify.delete(
     '/api/notifications/log/:id',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const authResult = await authenticate(request as AuthRequest, reply);
+      const authResult = await authorize(CAPABILITIES.configNotifications)(request, reply);
       if (authResult) return;
 
       const { id } = (request.params ?? {}) as { id?: string };
@@ -100,7 +101,7 @@ export async function registerNotificationsRoutes(fastify: FastifyInstance) {
   fastify.post(
     '/api/notifications/log/delete',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const authResult = await authenticate(request as AuthRequest, reply);
+      const authResult = await authorize(CAPABILITIES.configNotifications)(request, reply);
       if (authResult) return;
 
       const parsed = NotificationLogDeleteSchema.safeParse(request.body);
@@ -117,7 +118,7 @@ export async function registerNotificationsRoutes(fastify: FastifyInstance) {
   );
 
   fastify.post('/api/notifications/test', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.testNotifications)(request, reply);
     if (authResult) return;
 
     const parsed = NotificationTestRequestSchema.safeParse(request.body);

@@ -15,6 +15,15 @@ const llmEnabled = typeof isLlmEnabled !== 'undefined' ? !!isLlmEnabled : true;
 const inflightAnalysisFetches = new Set();
 const EMPTY_HISTORY = { priorOccurrenceCount: 0, firstOccurrence: null };
 
+// When auth is enabled, mutating requests need the double-submit CSRF token from
+// the readable pwrs_csrf cookie. Returns {} in open mode (no cookie), where CSRF
+// is not enforced.
+function csrfHeader() {
+  const match =
+    typeof document !== 'undefined' && document.cookie.match(/(?:^|;\s*)pwrs_csrf=([^;]+)/);
+  return match ? { 'X-CSRF-Token': decodeURIComponent(match[1]) } : {};
+}
+
 let llmButtonRetryCount = 0;
 const MAX_LLM_BUTTON_RETRIES = 100;
 
@@ -901,7 +910,7 @@ function renderFeedbackPanel({
     try {
       const r = await fetch('/api/llm/feedback', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...csrfHeader() },
         body: feedbackBody(testId, rid, { comment }),
       });
       const j = await r.json();
@@ -921,7 +930,7 @@ function renderFeedbackPanel({
     try {
       const r = await fetch('/api/llm/feedback', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...csrfHeader() },
         body: feedbackBody(testId, rid),
       });
       const j = await r.json();
@@ -1026,7 +1035,7 @@ function injectAskLLMButton() {
     try {
       const response = await fetch('/api/llm/analyze-failed-test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...csrfHeader() },
         body: JSON.stringify({ testId: currentTestId, reportId: rid }),
       });
       const j = await response.json();

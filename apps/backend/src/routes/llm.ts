@@ -1,4 +1,5 @@
 import type { LlmDefaultPrompts, LlmUsageByModel, LlmUsageStats } from '@playwright-reports/shared';
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   PROJECT_SUMMARY_SYSTEM_PROMPT,
@@ -30,7 +31,7 @@ import {
 } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { llmTaskEvents } from '../lib/service/llmTaskEvents.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { authorize } from './auth.js';
 
 const TERMINAL_STATUSES: ReadonlySet<LlmTaskStatus> = new Set(['completed', 'failed', 'cancelled']);
 
@@ -40,7 +41,7 @@ const getFailedTestsWithoutAnalysis = () => testAnalyticsDb.getFailedTestsWithou
 
 export async function registerLlmRoutes(fastify: FastifyInstance) {
   fastify.get('/api/llm/tasks', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     try {
@@ -78,7 +79,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/api/llm/usage-stats', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     try {
@@ -115,7 +116,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/api/llm/usage-by-model', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     try {
@@ -142,7 +143,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/api/llm/usage/reset', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
     if (authResult) return;
 
     try {
@@ -155,7 +156,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/api/llm/tasks/models', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     try {
@@ -173,7 +174,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   fastify.get<{ Params: { id: string } }>(
     '/api/llm/tasks/:id/roles',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-      const authResult = await authenticate(request as AuthRequest, reply);
+      const authResult = await authorize(CAPABILITIES.view)(request, reply);
       if (authResult) return;
       try {
         const rows = llmTasksDb.getRoleChildren(request.params.id);
@@ -186,7 +187,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   );
 
   fastify.get('/api/llm/tasks/stats', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     try {
@@ -202,7 +203,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   });
 
   fastify.delete('/api/llm/tasks', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
     if (authResult) return;
 
     try {
@@ -227,7 +228,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   });
 
   fastify.delete('/api/llm/tasks/:id', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
     if (authResult) return;
 
     try {
@@ -244,7 +245,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   });
 
   fastify.delete('/api/llm/tasks/clear', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
     if (authResult) return;
 
     try {
@@ -262,7 +263,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   fastify.patch(
     '/api/llm/tasks/:id/cancel',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const authResult = await authenticate(request as AuthRequest, reply);
+      const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
       if (authResult) return;
 
       try {
@@ -280,7 +281,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   );
 
   fastify.post('/api/llm/tasks/:id/retry', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
     if (authResult) return;
 
     try {
@@ -299,7 +300,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   fastify.post(
     '/api/llm/generate-existing',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const authResult = await authenticate(request as AuthRequest, reply);
+      const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
       if (authResult) return;
       if (!isLlmFeatureEnabled()) {
         return reply.status(403).send({ success: false, error: 'LLM features are disabled' });
@@ -325,8 +326,8 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   fastify.get(
     '/api/llm/task-progress/:taskId',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const authResult = await authenticate(request as AuthRequest, reply);
-      if (authResult) return;
+      const authResult = await authorize(CAPABILITIES.view)(request, reply);
+      if (authResult || reply.sent) return;
 
       const { taskId } = request.params as { taskId: string };
       const initialRow = llmTasksDb.getById(taskId);
@@ -400,8 +401,8 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   );
 
   fastify.get('/api/llm/queue-events', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return;
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
+    if (authResult || reply.sent) return;
 
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -466,7 +467,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/api/llm/default-prompts', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     const data: LlmDefaultPrompts = {
@@ -506,7 +507,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/api/llm/rerun-all', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
     if (authResult) return;
     if (!isLlmFeatureEnabled()) {
       return reply.status(403).send({ success: false, error: 'LLM features are disabled' });

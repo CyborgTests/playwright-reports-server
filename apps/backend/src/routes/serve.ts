@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { access, readFile } from 'node:fs/promises';
 import path, { resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import mime from 'mime';
 import { env } from '../config/env.js';
@@ -14,7 +15,7 @@ import { streamToString } from '../lib/storage/streamUtils.js';
 import type { ByteRange } from '../lib/storage/types.js';
 import { extractReportIdFromPath } from '../lib/utils/url-parser.js';
 import { withError } from '../lib/withError.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { authorize } from './auth.js';
 
 // locate the backend `public/` dir relative to this module.
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -60,7 +61,7 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       const authRequired = !!env.API_TOKEN;
 
       if (authRequired) {
-        await authenticate(request as AuthRequest, reply);
+        await authorize(CAPABILITIES.view)(request, reply);
         if (reply.sent) return;
       }
 

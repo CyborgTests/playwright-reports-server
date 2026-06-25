@@ -1,3 +1,4 @@
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { githubSyncConfigService } from '../lib/githubSync/configService.js';
@@ -5,7 +6,7 @@ import { githubSyncCron } from '../lib/githubSync/cronManager.js';
 import { githubSyncEvents } from '../lib/githubSync/events.js';
 import { hasActiveRun, isRunning, runSync, stopSync } from '../lib/githubSync/syncService.js';
 import { CronService } from '../lib/service/cron.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { authorize } from './auth.js';
 
 const ConfigBodySchema = z.object({
   name: z.string().min(1, 'name is required'),
@@ -45,7 +46,11 @@ function validateRuntime(body: z.infer<typeof ConfigBodySchema>): string | undef
 
 export async function registerGithubSyncRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
-    fastify.addHook('preHandler', (request, reply) => authenticate(request as AuthRequest, reply));
+    fastify.addHook('preHandler', authorize(CAPABILITIES.view));
+    // Editing sync configs is admin-only; viewing and running/stopping a sync are
+    // operational actions allowed for any user.
+    const cfgGuard = { preHandler: authorize(CAPABILITIES.configGithubSync) };
+    const runGuard = { preHandler: authorize(CAPABILITIES.runGithubSync) };
 
     fastify.get('/api/config/github-sync', async () => {
       return githubSyncConfigService.listWithStatus((id) => githubSyncCron.nextRun(id));
@@ -109,7 +114,7 @@ export async function registerGithubSyncRoutes(fastify: FastifyInstance) {
       request.raw.on('error', cleanup);
     });
 
-    fastify.post('/api/config/github-sync', async (request, reply) => {
+    fastify.post('/api/config/github-sync', cfgGuard, async (request, reply) => {
       const parsed = ConfigBodySchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid' });
@@ -124,6 +129,7 @@ export async function registerGithubSyncRoutes(fastify: FastifyInstance) {
 
     fastify.patch<{ Params: { id: string } }>(
       '/api/config/github-sync/:id',
+      cfgGuard,
       async (request, reply) => {
         const parsed = UpdateBodySchema.safeParse(request.body);
         if (!parsed.success) {
@@ -160,6 +166,7 @@ export async function registerGithubSyncRoutes(fastify: FastifyInstance) {
 
     fastify.patch<{ Params: { id: string } }>(
       '/api/config/github-sync/:id/enabled',
+      cfgGuard,
       async (request, reply) => {
         const parsed = EnabledBodySchema.safeParse(request.body);
         if (!parsed.success) {
@@ -174,6 +181,7 @@ export async function registerGithubSyncRoutes(fastify: FastifyInstance) {
 
     fastify.delete<{ Params: { id: string }; Querystring: { clearState?: string } }>(
       '/api/config/github-sync/:id',
+      cfgGuard,
       async (request, reply) => {
         const clearState = request.query.clearState === 'true';
         if (isRunning(request.params.id)) {
@@ -188,6 +196,7 @@ export async function registerGithubSyncRoutes(fastify: FastifyInstance) {
 
     fastify.post<{ Params: { id: string } }>(
       '/api/config/github-sync/:id/run',
+      runGuard,
       async (request, reply) => {
         const cfg = githubSyncConfigService.getResolved(request.params.id);
         if (!cfg) return reply.status(404).send({ error: 'sync config not found' });
@@ -203,6 +212,7 @@ export async function registerGithubSyncRoutes(fastify: FastifyInstance) {
 
     fastify.post<{ Params: { id: string } }>(
       '/api/config/github-sync/:id/stop',
+      runGuard,
       async (request, reply) => {
         const cfg = githubSyncConfigService.get(request.params.id);
         if (!cfg) return reply.status(404).send({ error: 'sync config not found' });

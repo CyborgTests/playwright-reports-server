@@ -1,11 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { registerAnalyticsRoutes } from './analytics.js';
+import { registerApiKeysRoutes } from './apiKeys.js';
 import { registerAuthRoutes } from './auth.js';
 import { registerCliRoutes } from './cli.js';
 import { registerConfigRoutes } from './config.js';
 import { registerEventsRoutes } from './events.js';
 import { registerFailureClusterRoutes } from './failureClusters.js';
 import { registerGithubSyncRoutes } from './githubSync.js';
+import { registerInvitesRoutes } from './invites.js';
 import { registerLlmRoutes } from './llm.js';
 import { registerLlmFeedbackRoutes } from './llmFeedback.js';
 import { registerLlmGroupsRoutes } from './llmGroups.js';
@@ -16,9 +18,13 @@ import { registerReportRoutes } from './reports.js';
 import { registerResultRoutes } from './results.js';
 import { registerServeRoutes } from './serve.js';
 import { registerTestsRoutes } from './tests.js';
+import { registerUsersRoutes } from './users.js';
 
 export async function registerApiRoutes(fastify: FastifyInstance) {
   await registerAuthRoutes(fastify);
+  await registerUsersRoutes(fastify);
+  await registerInvitesRoutes(fastify);
+  await registerApiKeysRoutes(fastify);
   await registerReportRoutes(fastify);
   await registerResultRoutes(fastify);
   await registerConfigRoutes(fastify);

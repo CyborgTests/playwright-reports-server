@@ -1,3 +1,4 @@
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   getFailureClusters,
@@ -7,11 +8,11 @@ import { ResolveClusterBodySchema, ResolveClusterParamsSchema } from '../lib/sch
 import { clusterResolutionsDb, regressionsDb } from '../lib/service/db/index.js';
 import { ValidationError, validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { authorize } from './auth.js';
 
 export async function registerFailureClusterRoutes(fastify: FastifyInstance) {
   fastify.get('/api/analytics/failure-clusters', async (request, reply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     const { project, from, to, reportId, testId, fileId, clusterId, includeResolved } =
@@ -57,7 +58,7 @@ export async function registerFailureClusterRoutes(fastify: FastifyInstance) {
     failureMsg: string
   ) => {
     try {
-      const authResult = await authenticate(request as AuthRequest, reply);
+      const authResult = await authorize(CAPABILITIES.contentClusters)(request, reply);
       if (authResult) return;
       const { id } = validateSchema(ResolveClusterParamsSchema, request.params);
       apply(id);
@@ -77,7 +78,7 @@ export async function registerFailureClusterRoutes(fastify: FastifyInstance) {
 
   fastify.post('/api/analytics/failure-clusters/:id/resolve', async (request, reply) => {
     try {
-      const authResult = await authenticate(request as AuthRequest, reply);
+      const authResult = await authorize(CAPABILITIES.contentClusters)(request, reply);
       if (authResult) return;
       const { id } = validateSchema(ResolveClusterParamsSchema, request.params);
       const body = validateSchema(ResolveClusterBodySchema, request.body ?? {});

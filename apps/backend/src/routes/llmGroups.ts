@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { LlmConcurrencyGroup } from '@playwright-reports/shared';
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { type LlmConcurrencyGroupRow, llmGroupsDb } from '../lib/service/db/index.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { authorize } from './auth.js';
 
 const GroupBodySchema = z.object({
   name: z.string().min(1, 'name is required').max(60),
@@ -23,14 +24,17 @@ function toGroup(row: LlmConcurrencyGroupRow, memberCount: number): LlmConcurren
 
 export async function registerLlmGroupsRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
-    fastify.addHook('preHandler', (request, reply) => authenticate(request as AuthRequest, reply));
+    // Reading groups is a view-level operation (the LLM settings section is
+    // visible to readers); only mutations require config:llm.
+    fastify.addHook('preHandler', authorize(CAPABILITIES.view));
+    const llmConfig = { preHandler: authorize(CAPABILITIES.configLlm) };
 
     fastify.get('/api/config/llm-groups', async () => {
       const counts = llmGroupsDb.memberCounts();
       return llmGroupsDb.list().map((g) => toGroup(g, counts.get(g.id) ?? 0));
     });
 
-    fastify.post('/api/config/llm-groups', async (request, reply) => {
+    fastify.post('/api/config/llm-groups', llmConfig, async (request, reply) => {
       const parsed = GroupBodySchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid' });
@@ -53,6 +57,7 @@ export async function registerLlmGroupsRoutes(fastify: FastifyInstance) {
 
     fastify.patch<{ Params: { id: string } }>(
       '/api/config/llm-groups/:id',
+      llmConfig,
       async (request, reply) => {
         const parsed = GroupBodySchema.safeParse(request.body);
         if (!parsed.success) {
@@ -74,6 +79,7 @@ export async function registerLlmGroupsRoutes(fastify: FastifyInstance) {
 
     fastify.delete<{ Params: { id: string } }>(
       '/api/config/llm-groups/:id',
+      llmConfig,
       async (request, reply) => {
         const existing = llmGroupsDb.get(request.params.id);
         if (!existing) return reply.status(404).send({ error: 'group not found' });

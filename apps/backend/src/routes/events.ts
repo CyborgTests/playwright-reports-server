@@ -1,11 +1,12 @@
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { type DataEntityKind, dataEvents } from '../lib/service/dataEvents.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { authorize } from './auth.js';
 
 export async function registerEventsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/events', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
-    if (authResult) return;
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
+    if (authResult || reply.sent) return;
 
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',

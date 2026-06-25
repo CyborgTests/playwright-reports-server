@@ -1,3 +1,4 @@
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { llmService } from '../lib/llm/index.js';
 import {
@@ -8,13 +9,13 @@ import { analyticsService } from '../lib/service/analytics.js';
 import { llmTasksDb, projectSummaryDb, reportDb } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { withError } from '../lib/withError.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { authorize } from './auth.js';
 
 const STALENESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/analytics', async (request, reply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     const {
@@ -44,7 +45,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/api/analytics/run-health', async (request, reply) => {
-    const authResult = await authenticate(request as AuthRequest, reply);
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     const {
@@ -90,7 +91,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     '/api/analytics/project-summary',
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const authResult = await authenticate(request as AuthRequest, reply);
+        const authResult = await authorize(CAPABILITIES.view)(request, reply);
         if (authResult) return;
 
         const { project } = request.query as { project?: string };
@@ -161,7 +162,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
     '/api/analytics/failure-categories/llm',
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const authResult = await authenticate(request as AuthRequest, reply);
+        const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
         if (authResult) return;
 
         const { project } = request.query as { project?: string };

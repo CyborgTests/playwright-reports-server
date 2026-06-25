@@ -1,9 +1,10 @@
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import { DashboardNameConflictError } from '../lib/service/db/index.js';
 import { qualityDashboardsService } from '../lib/service/qualityDashboards.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { authorize } from './auth.js';
 
 const GradeSchema = z.enum(['S', 'A', 'B', 'C', 'D', 'F']);
 const FormulaSchema = z.enum(['strict', 'lenient']);
@@ -55,7 +56,12 @@ const TreeReplaceSchema = z.object({
 });
 
 function handleAuth(request: FastifyRequest, reply: FastifyReply) {
-  return authenticate(request as AuthRequest, reply);
+  return authorize(CAPABILITIES.view)(request, reply);
+}
+
+// Dashboard definitions are config — only admins may create/edit/delete/reorder.
+function handleAdmin(request: FastifyRequest, reply: FastifyReply) {
+  return authorize(CAPABILITIES.manageQualityDashboards)(request, reply);
 }
 
 export async function registerQualityRoutes(fastify: FastifyInstance) {
@@ -98,7 +104,7 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
   );
 
   fastify.post('/api/quality/dashboards', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await handleAuth(request, reply);
+    const authResult = await handleAdmin(request, reply);
     if (authResult) return;
 
     const parsed = DashboardCreateSchema.safeParse(request.body);
@@ -129,7 +135,7 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
   fastify.patch(
     '/api/quality/dashboards/:id',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const authResult = await handleAuth(request, reply);
+      const authResult = await handleAdmin(request, reply);
       if (authResult) return;
 
       const { id } = request.params as { id: string };
@@ -165,7 +171,7 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
   fastify.delete(
     '/api/quality/dashboards/:id',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const authResult = await handleAuth(request, reply);
+      const authResult = await handleAdmin(request, reply);
       if (authResult) return;
 
       const { id } = request.params as { id: string };
@@ -180,7 +186,7 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
   fastify.put(
     '/api/quality/dashboards/:id/tree',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const authResult = await handleAuth(request, reply);
+      const authResult = await handleAdmin(request, reply);
       if (authResult) return;
 
       const { id } = request.params as { id: string };
@@ -234,7 +240,7 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
   });
 
   fastify.put('/api/quality/home/order', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await handleAuth(request, reply);
+    const authResult = await handleAdmin(request, reply);
     if (authResult) return;
 
     const parsed = ReorderSchema.safeParse(request.body);

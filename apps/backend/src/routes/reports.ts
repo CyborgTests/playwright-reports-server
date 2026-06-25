@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import { serveReportRoute } from '../lib/constants.js';
 import {
@@ -33,7 +34,7 @@ import { storage } from '../lib/storage/index.js';
 import { parseFromRequest } from '../lib/storage/pagination.js';
 import { ValidationError, validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
-import { type AuthRequest, authenticate, authenticateUpload } from './auth.js';
+import { authorize } from './auth.js';
 
 const COMPARE_KEYWORDS = new Set(['latest', 'prev', 'previous']);
 
@@ -78,7 +79,7 @@ function resolveCompareKeywords(
 
 export async function registerReportRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
-    fastify.addHook('preHandler', (request, reply) => authenticate(request as AuthRequest, reply));
+    fastify.addHook('preHandler', authorize(CAPABILITIES.view));
 
     fastify.get('/api/report/list', async (request, reply) => {
       try {
@@ -209,132 +210,144 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
       return tags;
     });
 
-    fastify.post('/api/report/generate', async (request, reply) => {
-      try {
-        const body = (request.body as { resultsIds?: unknown; [key: string]: unknown }) || {};
+    fastify.post(
+      '/api/report/generate',
+      { preHandler: authorize(CAPABILITIES.contentReports) },
+      async (request, reply) => {
+        try {
+          const body = (request.body as { resultsIds?: unknown; [key: string]: unknown }) || {};
 
-        if (!body.resultsIds || !Array.isArray(body.resultsIds)) {
-          return reply.status(400).send({ error: 'resultsIds array is required' });
+          if (!body.resultsIds || !Array.isArray(body.resultsIds)) {
+            return reply.status(400).send({ error: 'resultsIds array is required' });
+          }
+
+          if (body.resultsIds.length === 0) {
+            return reply.status(400).send({ error: 'At least one result ID must be provided' });
+          }
+
+          const validatedBody = validateSchema(GenerateReportRequestSchema, body);
+
+          const metadata: Record<string, string> = {
+            ...(validatedBody.project && { project: validatedBody.project }),
+            ...(validatedBody.playwrightVersion && {
+              playwrightVersion: validatedBody.playwrightVersion,
+            }),
+            ...(validatedBody.title && { title: validatedBody.title }),
+            ...Object.fromEntries(
+              Object.entries(validatedBody)
+                .filter(
+                  ([key]) =>
+                    !['resultsIds', 'project', 'playwrightVersion', 'title'].includes(key) &&
+                    typeof validatedBody[key as keyof typeof validatedBody] === 'string'
+                )
+                .map(([key, value]) => [key, String(value)])
+            ),
+          };
+
+          const { result, error } = await withError(
+            service.generateReport(validatedBody.resultsIds, metadata)
+          );
+
+          if (error) {
+            console.error(`[routes] generate report error:`, error.message);
+
+            if (
+              error instanceof Error &&
+              error.message.includes('ENOENT: no such file or directory')
+            ) {
+              return reply.status(404).send({
+                error: `ResultID not found: ${error.message}`,
+              });
+            }
+
+            return reply.status(400).send({ error: error.message });
+          }
+
+          console.log(`[routes] generate report success: ${result?.reportId}`);
+          return result;
+        } catch (error) {
+          console.error('[routes] generate report validation error:', error);
+          return reply.status(400).send({ error: 'Invalid request format' });
         }
+      }
+    );
 
-        if (body.resultsIds.length === 0) {
-          return reply.status(400).send({ error: 'At least one result ID must be provided' });
-        }
+    fastify.patch(
+      '/api/report/edit',
+      { preHandler: authorize(CAPABILITIES.contentReports) },
+      async (request, reply) => {
+        try {
+          const validatedBody = validateSchema(EditReportsRequestSchema, request.body ?? {});
 
-        const validatedBody = validateSchema(GenerateReportRequestSchema, body);
+          const { result, error } = await withError(
+            service.updateReports(validatedBody.reportsIds, {
+              project: validatedBody.project,
+              tags: validatedBody.tags,
+              removeTags: validatedBody.removeTags,
+            })
+          );
 
-        const metadata: Record<string, string> = {
-          ...(validatedBody.project && { project: validatedBody.project }),
-          ...(validatedBody.playwrightVersion && {
-            playwrightVersion: validatedBody.playwrightVersion,
-          }),
-          ...(validatedBody.title && { title: validatedBody.title }),
-          ...Object.fromEntries(
-            Object.entries(validatedBody)
-              .filter(
-                ([key]) =>
-                  !['resultsIds', 'project', 'playwrightVersion', 'title'].includes(key) &&
-                  typeof validatedBody[key as keyof typeof validatedBody] === 'string'
-              )
-              .map(([key, value]) => [key, String(value)])
-          ),
-        };
+          if (error) {
+            console.error('[routes] edit reports error:', error);
+            return reply.status(500).send({ error: error.message });
+          }
 
-        const { result, error } = await withError(
-          service.generateReport(validatedBody.resultsIds, metadata)
-        );
-
-        if (error) {
-          console.error(`[routes] generate report error:`, error.message);
-
-          if (
-            error instanceof Error &&
-            error.message.includes('ENOENT: no such file or directory')
-          ) {
+          if (result && result.missing.length > 0) {
             return reply.status(404).send({
-              error: `ResultID not found: ${error.message}`,
+              error: `Reports not found: ${result.missing.join(', ')}`,
+              missing: result.missing,
             });
           }
 
-          return reply.status(400).send({ error: error.message });
-        }
-
-        console.log(`[routes] generate report success: ${result?.reportId}`);
-        return result;
-      } catch (error) {
-        console.error('[routes] generate report validation error:', error);
-        return reply.status(400).send({ error: 'Invalid request format' });
-      }
-    });
-
-    fastify.patch('/api/report/edit', async (request, reply) => {
-      try {
-        const validatedBody = validateSchema(EditReportsRequestSchema, request.body ?? {});
-
-        const { result, error } = await withError(
-          service.updateReports(validatedBody.reportsIds, {
-            project: validatedBody.project,
-            tags: validatedBody.tags,
-            removeTags: validatedBody.removeTags,
-          })
-        );
-
-        if (error) {
-          console.error('[routes] edit reports error:', error);
-          return reply.status(500).send({ error: error.message });
-        }
-
-        if (result && result.missing.length > 0) {
-          return reply.status(404).send({
-            error: `Reports not found: ${result.missing.join(', ')}`,
-            missing: result.missing,
+          return reply.status(200).send({
+            message: 'Reports updated successfully',
+            reportsIds: validatedBody.reportsIds,
+            updated: result?.updated ?? 0,
           });
+        } catch (error) {
+          if (error instanceof ValidationError) {
+            return reply.status(400).send({ error: error.message, details: error.details });
+          }
+          console.error('[routes] edit reports validation error:', error);
+          return reply.status(400).send({ error: 'Invalid request format' });
         }
-
-        return reply.status(200).send({
-          message: 'Reports updated successfully',
-          reportsIds: validatedBody.reportsIds,
-          updated: result?.updated ?? 0,
-        });
-      } catch (error) {
-        if (error instanceof ValidationError) {
-          return reply.status(400).send({ error: error.message, details: error.details });
-        }
-        console.error('[routes] edit reports validation error:', error);
-        return reply.status(400).send({ error: 'Invalid request format' });
       }
-    });
+    );
 
-    fastify.delete('/api/report/delete', async (request, reply) => {
-      try {
-        const body = (request.body as { reportsIds?: unknown }) || { reportsIds: [] };
+    fastify.delete(
+      '/api/report/delete',
+      { preHandler: authorize(CAPABILITIES.contentReports) },
+      async (request, reply) => {
+        try {
+          const body = (request.body as { reportsIds?: unknown }) || { reportsIds: [] };
 
-        if (!body.reportsIds || !Array.isArray(body.reportsIds)) {
-          return reply.status(400).send({ error: 'reportsIds array is required' });
+          if (!body.reportsIds || !Array.isArray(body.reportsIds)) {
+            return reply.status(400).send({ error: 'reportsIds array is required' });
+          }
+
+          if (body.reportsIds.length === 0) {
+            return reply.status(400).send({ error: 'At least one report ID must be provided' });
+          }
+
+          const validatedBody = validateSchema(DeleteReportsRequestSchema, body);
+
+          const { error } = await withError(service.deleteReports(validatedBody.reportsIds));
+
+          if (error) {
+            console.error(`[routes] delete reports error:`, error);
+            return reply.status(404).send({ error: error.message });
+          }
+
+          return reply.status(200).send({
+            message: 'Reports deleted successfully',
+            reportsIds: validatedBody.reportsIds,
+          });
+        } catch (error) {
+          console.error('[routes] delete reports validation error:', error);
+          return reply.status(400).send({ error: 'Invalid request format' });
         }
-
-        if (body.reportsIds.length === 0) {
-          return reply.status(400).send({ error: 'At least one report ID must be provided' });
-        }
-
-        const validatedBody = validateSchema(DeleteReportsRequestSchema, body);
-
-        const { error } = await withError(service.deleteReports(validatedBody.reportsIds));
-
-        if (error) {
-          console.error(`[routes] delete reports error:`, error);
-          return reply.status(404).send({ error: error.message });
-        }
-
-        return reply.status(200).send({
-          message: 'Reports deleted successfully',
-          reportsIds: validatedBody.reportsIds,
-        });
-      } catch (error) {
-        console.error('[routes] delete reports validation error:', error);
-        return reply.status(400).send({ error: 'Invalid request format' });
       }
-    });
+    );
 
     // GET /api/report/:id/failure-summary - get stored failure summary for a report
     fastify.get('/api/report/:id/failure-summary', async (request, reply) => {
@@ -365,119 +378,121 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
     });
 
     // POST /api/report/:id/analyze - trigger analysis for a specific report
-    fastify.post('/api/report/:id/analyze', async (request, reply) => {
-      try {
-        const { id } = (request as { params: { id: string } }).params;
-        const testRuns = testDb.getTestRunsByReport(id);
+    fastify.post(
+      '/api/report/:id/analyze',
+      { preHandler: authorize(CAPABILITIES.contentLlm) },
+      async (request, reply) => {
+        try {
+          const { id } = (request as { params: { id: string } }).params;
+          const testRuns = testDb.getTestRunsByReport(id);
 
-        const failedRuns = testRuns.filter(
-          (run) =>
-            run.failureDetails ||
-            run.outcome === 'unexpected' ||
-            run.outcome === 'failed' ||
-            run.outcome === 'flaky'
-        );
-
-        const seen = new Set<string>();
-        let queued = 0;
-        let skipped = 0;
-        let project: string | undefined;
-
-        const findReuseSource = (
-          testId: string,
-          fileId: string,
-          proj: string,
-          errorSignature: string | undefined,
-          heuristicCategory: string,
-          currentReportId: string
-        ) => {
-          if (!errorSignature) return null;
-          return testAnalysisDb.findReuseSource(
-            testId,
-            fileId,
-            proj,
-            errorSignature,
-            heuristicCategory,
-            currentReportId
-          );
-        };
-
-        for (const run of failedRuns) {
-          const key = `${run.testId}:${run.fileId}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-
-          project ??= run.project;
-
-          const existing = testAnalysisDb.getByTestAndReport(run.testId, id);
-          if (existing?.analysis && existing.analysis.trim() !== '') {
-            skipped++;
-            continue;
-          }
-
-          const heuristicCategory = run.failureDetails
-            ? detectFailureCategory(JSON.parse(run.failureDetails)?.message ?? '')
-            : detectFailureCategory('');
-          const reuseSource = findReuseSource(
-            run.testId,
-            run.fileId,
-            run.project,
-            run.errorSignature,
-            heuristicCategory,
-            id
+          const failedRuns = testRuns.filter(
+            (run) =>
+              run.failureDetails ||
+              run.outcome === 'unexpected' ||
+              run.outcome === 'failed' ||
+              run.outcome === 'flaky'
           );
 
-          if (reuseSource) {
-            skipped++;
-            testAnalysisDb.upsert(
+          const seen = new Set<string>();
+          let queued = 0;
+          let skipped = 0;
+          let project: string | undefined;
+
+          const findReuseSource = (
+            testId: string,
+            fileId: string,
+            proj: string,
+            errorSignature: string | undefined,
+            heuristicCategory: string,
+            currentReportId: string
+          ) => {
+            if (!errorSignature) return null;
+            return testAnalysisDb.findReuseSource(
+              testId,
+              fileId,
+              proj,
+              errorSignature,
+              heuristicCategory,
+              currentReportId
+            );
+          };
+
+          for (const run of failedRuns) {
+            const key = `${run.testId}:${run.fileId}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+
+            project ??= run.project;
+
+            const existing = testAnalysisDb.getByTestAndReport(run.testId, id);
+            if (existing?.analysis && existing.analysis.trim() !== '') {
+              skipped++;
+              continue;
+            }
+
+            const heuristicCategory = run.failureDetails
+              ? detectFailureCategory(JSON.parse(run.failureDetails)?.message ?? '')
+              : detectFailureCategory('');
+            const reuseSource = findReuseSource(
               run.testId,
               run.fileId,
               run.project,
-              id,
-              reuseSource.analysis,
-              reuseSource.category ?? undefined,
-              reuseSource.model ?? undefined,
-              1,
-              reuseSource.id
+              run.errorSignature,
+              heuristicCategory,
+              id
             );
-            if (run.runId && reuseSource.category) {
-              testDb.updateFailureCategory(run.runId, reuseSource.category);
+
+            if (reuseSource) {
+              skipped++;
+              testAnalysisDb.upsert(
+                run.testId,
+                run.fileId,
+                run.project,
+                id,
+                reuseSource.analysis,
+                reuseSource.category ?? undefined,
+                reuseSource.model ?? undefined,
+                1,
+                reuseSource.id
+              );
+              if (run.runId && reuseSource.category) {
+                testDb.updateFailureCategory(run.runId, reuseSource.category);
+              }
+              continue;
             }
-            continue;
+
+            llmTasksDb.createTask('test_analysis', {
+              reportId: id,
+              testId: run.testId,
+              fileId: run.fileId,
+              project: run.project,
+            });
+            queued++;
           }
 
-          llmTasksDb.createTask('test_analysis', {
-            reportId: id,
-            testId: run.testId,
-            fileId: run.fileId,
-            project: run.project,
-          });
-          queued++;
-        }
+          if (queued > 0 || skipped > 0) {
+            llmTasksDb.createTask('report_summary', {
+              reportId: id,
+              project,
+              priority: -1,
+            });
+          }
 
-        if (queued > 0 || skipped > 0) {
-          llmTasksDb.createTask('report_summary', {
-            reportId: id,
-            project,
-            priority: -1,
+          return reply.send({ success: true, queued, skipped });
+        } catch (error) {
+          fastify.log.error(error);
+          return reply.status(500).send({
+            success: false,
+            error: 'Failed to trigger report analysis',
           });
         }
-
-        return reply.send({ success: true, queued, skipped });
-      } catch (error) {
-        fastify.log.error(error);
-        return reply.status(500).send({
-          success: false,
-          error: 'Failed to trigger report analysis',
-        });
       }
-    });
+    );
   });
 
   await fastify.register(async (fastify) => {
-    fastify.addHook('preHandler', (request, reply) =>
-      authenticateUpload(request as AuthRequest, reply)
-    );
+    fastify.addHook('preHandler', authorize(CAPABILITIES.contentReports));
 
     fastify.post('/api/report/upload', async (request, reply) => {
       let metadata: Record<string, unknown> = {};

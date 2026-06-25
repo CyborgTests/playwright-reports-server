@@ -1,4 +1,5 @@
 import type { TestWithQuarantineInfo } from '@playwright-reports/shared';
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
 import {
@@ -10,11 +11,11 @@ import {
 } from '../lib/service/db/index.js';
 import { testManagementService } from '../lib/service/test-management/index.js';
 import { withError } from '../lib/withError.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { authorize } from './auth.js';
 
 export async function registerTestsRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
-    fastify.addHook('preHandler', (request, reply) => authenticate(request as AuthRequest, reply));
+    fastify.addHook('preHandler', authorize(CAPABILITIES.view));
 
     fastify.get('/api/tests', async (request: FastifyRequest, reply: FastifyReply) => {
       const {
@@ -176,97 +177,106 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
       return reply.send({ success: true, data: { runs, hasMore: runs.length >= pageLimit } });
     });
 
-    fastify.delete('/api/test/:testId', async (request: FastifyRequest, reply: FastifyReply) => {
-      const { testId } = request.params as { testId: string };
-      const { project } = request.query as { project: string };
+    fastify.delete(
+      '/api/test/:testId',
+      { preHandler: authorize(CAPABILITIES.contentTests) },
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { testId } = request.params as { testId: string };
+        const { project } = request.query as { project: string };
 
-      if (!project) {
-        return reply
-          .status(400)
-          .send({ success: false, error: 'project query parameter is required' });
+        if (!project) {
+          return reply
+            .status(400)
+            .send({ success: false, error: 'project query parameter is required' });
+        }
+
+        const lane = testDb.findByTestId(testId, project);
+        if (!lane) {
+          return reply.status(404).send({ success: false, error: 'Test not found' });
+        }
+
+        const { error } = await withError(
+          testManagementService.deleteTest(lane.testId, lane.fileId, lane.project)
+        );
+
+        if (error) {
+          fastify.log.error(error);
+          return reply.status(500).send({ success: false, error: 'Failed to delete test' });
+        }
+
+        return reply.send({ success: true });
       }
+    );
 
-      const lane = testDb.findByTestId(testId, project);
-      if (!lane) {
-        return reply.status(404).send({ success: false, error: 'Test not found' });
-      }
+    fastify.patch(
+      '/api/test/:testId',
+      { preHandler: authorize(CAPABILITIES.contentTests) },
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { testId } = request.params as { testId: string };
+        const { project } = request.query as { project: string };
+        const body = request.body as {
+          isQuarantined: boolean;
+          reason?: string;
+        };
 
-      const { error } = await withError(
-        testManagementService.deleteTest(lane.testId, lane.fileId, lane.project)
-      );
+        if (!project) {
+          return reply
+            .status(400)
+            .send({ success: false, error: 'project query parameter is required' });
+        }
 
-      if (error) {
-        fastify.log.error(error);
-        return reply.status(500).send({ success: false, error: 'Failed to delete test' });
-      }
+        if (body.isQuarantined && (!body.reason || body.reason.trim().length === 0)) {
+          return reply.status(400).send({
+            success: false,
+            error: 'Reason is required when quarantining a test',
+          });
+        }
 
-      return reply.send({ success: true });
-    });
+        if (body.reason && body.reason.length > 500) {
+          return reply.status(400).send({
+            success: false,
+            error: 'Reason must be less than 500 characters',
+          });
+        }
 
-    fastify.patch('/api/test/:testId', async (request: FastifyRequest, reply: FastifyReply) => {
-      const { testId } = request.params as { testId: string };
-      const { project } = request.query as { project: string };
-      const body = request.body as {
-        isQuarantined: boolean;
-        reason?: string;
-      };
+        const lane = testDb.findByTestId(testId, project);
+        if (!lane) {
+          return reply.status(404).send({ success: false, error: 'Test not found' });
+        }
 
-      if (!project) {
-        return reply
-          .status(400)
-          .send({ success: false, error: 'project query parameter is required' });
-      }
+        const { error } = await withError(
+          testManagementService.updateQuarantineStatus(
+            lane.testId,
+            lane.fileId,
+            lane.project,
+            body.isQuarantined,
+            body.reason
+          )
+        );
 
-      if (body.isQuarantined && (!body.reason || body.reason.trim().length === 0)) {
-        return reply.status(400).send({
-          success: false,
-          error: 'Reason is required when quarantining a test',
+        if (error) {
+          fastify.log.error(error);
+          return reply.status(500).send({
+            success: false,
+            error: 'Failed to update quarantine status',
+          });
+        }
+
+        return reply.send({
+          success: true,
+          data: {
+            testId: lane.testId,
+            fileId: lane.fileId,
+            isQuarantined: body.isQuarantined,
+            reason: body.reason,
+          },
         });
       }
-
-      if (body.reason && body.reason.length > 500) {
-        return reply.status(400).send({
-          success: false,
-          error: 'Reason must be less than 500 characters',
-        });
-      }
-
-      const lane = testDb.findByTestId(testId, project);
-      if (!lane) {
-        return reply.status(404).send({ success: false, error: 'Test not found' });
-      }
-
-      const { error } = await withError(
-        testManagementService.updateQuarantineStatus(
-          lane.testId,
-          lane.fileId,
-          lane.project,
-          body.isQuarantined,
-          body.reason
-        )
-      );
-
-      if (error) {
-        fastify.log.error(error);
-        return reply.status(500).send({
-          success: false,
-          error: 'Failed to update quarantine status',
-        });
-      }
-
-      return reply.send({
-        success: true,
-        data: {
-          testId: lane.testId,
-          fileId: lane.fileId,
-          isQuarantined: body.isQuarantined,
-          reason: body.reason,
-        },
-      });
-    });
+    );
 
     fastify.post(
       '/api/test/:testId/flakiness-reset',
+      { preHandler: authorize(CAPABILITIES.contentTests) },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { project } = request.query as { project?: string };
@@ -299,6 +309,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
 
     fastify.delete(
       '/api/test/:testId/flakiness-reset',
+      { preHandler: authorize(CAPABILITIES.contentTests) },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { project } = request.query as { project?: string };

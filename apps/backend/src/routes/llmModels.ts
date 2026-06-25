@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { decryptToken, encryptToken } from '../lib/githubSync/encryption.js';
 import { llmService } from '../lib/llm/index.js';
 import { applyPrimaryModel, toLlmModel } from '../lib/llm/registry.js';
 import { type LlmModelRow, llmGroupsDb, llmModelsDb } from '../lib/service/db/index.js';
-import { type AuthRequest, authenticate } from './auth.js';
+import { authorize } from './auth.js';
 
 const MASK_RE = /^\*+$/;
 
@@ -46,13 +47,18 @@ function groupExists(id: string | null | undefined): boolean {
 
 export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
-    fastify.addHook('preHandler', (request, reply) => authenticate(request as AuthRequest, reply));
+    fastify.addHook('preHandler', authorize(CAPABILITIES.view));
+    // The model registry is config — reads are allowed for any session (the queue
+    // page shows model labels). Editing the registry is admin-only, but probing a
+    // model connection is an operational action allowed for readers.
+    const llmConfig = { preHandler: authorize(CAPABILITIES.configLlm) };
+    const testModel = { preHandler: authorize(CAPABILITIES.testLlmModel) };
 
     fastify.get('/api/config/llm-models', async () => {
       return llmModelsDb.list().map(toLlmModel);
     });
 
-    fastify.post('/api/config/llm-models', async (request, reply) => {
+    fastify.post('/api/config/llm-models', llmConfig, async (request, reply) => {
       const parsed = ModelBodySchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid' });
@@ -93,6 +99,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
 
     fastify.post<{ Params: { id: string } }>(
       '/api/config/llm-models/:id/duplicate',
+      llmConfig,
       async (request, reply) => {
         const src = llmModelsDb.get(request.params.id);
         if (!src) return reply.status(404).send({ error: 'model not found' });
@@ -116,6 +123,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
 
     fastify.patch<{ Params: { id: string } }>(
       '/api/config/llm-models/:id',
+      llmConfig,
       async (request, reply) => {
         const parsed = UpdateBodySchema.safeParse(request.body);
         if (!parsed.success) {
@@ -189,6 +197,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
 
     fastify.patch<{ Params: { id: string } }>(
       '/api/config/llm-models/:id/primary',
+      llmConfig,
       async (request, reply) => {
         const model = llmModelsDb.get(request.params.id);
         if (!model) return reply.status(404).send({ error: 'model not found' });
@@ -201,7 +210,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
       }
     );
 
-    fastify.put('/api/config/llm-models/order', async (request, reply) => {
+    fastify.put('/api/config/llm-models/order', llmConfig, async (request, reply) => {
       const parsed = ReorderSchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.status(400).send({ error: 'orderedIds must be a non-empty string array' });
@@ -220,6 +229,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
 
     fastify.delete<{ Params: { id: string } }>(
       '/api/config/llm-models/:id',
+      llmConfig,
       async (request, reply) => {
         const model = llmModelsDb.get(request.params.id);
         if (!model) return reply.status(404).send({ error: 'model not found' });
@@ -235,6 +245,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
 
     fastify.post<{ Params: { id: string } }>(
       '/api/config/llm-models/:id/test-connection',
+      testModel,
       async (request, reply) => {
         const model = llmModelsDb.get(request.params.id);
         if (!model) return reply.status(404).send({ error: 'model not found' });
