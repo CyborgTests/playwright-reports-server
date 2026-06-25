@@ -415,7 +415,7 @@ export const TaskRow = memo(function TaskRow({
         </TableCell>
         <TableCell className="text-right">
           <div className="flex justify-end gap-1">
-            {task.status === 'queued' && (
+            {(task.status === 'queued' || task.status === 'processing') && (
               <Button variant="ghost" size="sm" disabled={cancelPending} onClick={handleCancel}>
                 Cancel
               </Button>

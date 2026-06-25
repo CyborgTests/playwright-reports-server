@@ -1,4 +1,5 @@
 import type { LLMMultimodalMode, LLMProviderType } from '@playwright-reports/shared';
+import { getTaskSignal } from '../taskSignal.js';
 
 export type { LLMProviderType };
 
@@ -137,14 +138,15 @@ export abstract class BaseLLMProvider {
     op: (signal: AbortSignal) => Promise<T>,
     timeoutMs: number = this.config.requestTimeoutMs
   ): Promise<T> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(), timeoutMs);
+    const taskSignal = getTaskSignal();
+    const signal = taskSignal ? AbortSignal.any([timeout.signal, taskSignal]) : timeout.signal;
     try {
-      return await op(controller.signal);
+      return await op(signal);
     } catch (err) {
-      if (controller.signal.aborted) {
-        throw new LLMProviderError('Request timeout', 'timeout', 408);
-      }
+      if (taskSignal?.aborted) throw new LLMProviderError('Request cancelled', 'cancelled', 499);
+      if (timeout.signal.aborted) throw new LLMProviderError('Request timeout', 'timeout', 408);
       throw err;
     } finally {
       clearTimeout(timer);

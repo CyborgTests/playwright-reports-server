@@ -16,6 +16,7 @@ import {
   DEFAULT_SYNTHESIZER_DIRECTIVE,
 } from '../lib/llm/prompts/routing.js';
 import { isLlmFeatureEnabled } from '../lib/llm/registry.js';
+import { abortRunningTask } from '../lib/llm/taskSignal.js';
 import { DEFAULT_SCREENSHOT_PARSE_PROMPT } from '../lib/llm/visionTranscribe.js';
 import {
   failureSummaryDb,
@@ -268,7 +269,8 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
 
       try {
         const { id } = request.params as { id: string };
-        llmTasksDb.cancel(id);
+        abortRunningTask(id);
+        llmTasksDb.cancelTree(id);
         return { success: true };
       } catch (error) {
         fastify.log.error(error);

@@ -255,6 +255,7 @@ export class LlmTasksDatabase {
         category: opts.category ?? null,
       })
       .where('id', '=', id)
+      .where('status', '!=', 'cancelled')
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
@@ -465,6 +466,7 @@ export class LlmTasksDatabase {
         totalTokens: usage?.totalTokens ?? null,
       })
       .where('id', '=', id)
+      .where('status', '!=', 'cancelled')
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
     this.fireUpdateEvent(id);
@@ -473,13 +475,13 @@ export class LlmTasksDatabase {
   public fail(id: string, error: string): void {
     const taskCompiled = this.k
       .selectFrom('llm_tasks')
-      .select(['retryCount', 'maxRetries'])
+      .select(['retryCount', 'maxRetries', 'status'])
       .where('id', '=', id)
       .compile();
     const task = this.db.prepare(taskCompiled.sql).get(...taskCompiled.parameters) as
-      | { retryCount: number; maxRetries: number }
+      | { retryCount: number; maxRetries: number; status: string }
       | undefined;
-    if (!task) return;
+    if (!task || task.status === 'cancelled') return;
 
     if (task.retryCount < task.maxRetries) {
       const compiled = this.k
@@ -511,15 +513,26 @@ export class LlmTasksDatabase {
     if (row) llmTaskEvents.emitTaskUpdate(row);
   }
 
-  public cancel(id: string): void {
-    const compiled = this.k
-      .updateTable('llm_tasks')
-      .set({ status: 'cancelled' })
-      .where('id', '=', id)
-      .where('status', '=', 'queued')
-      .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
-    this.fireUpdateEvent(id);
+  public cancelTree(id: string): string[] {
+    const now = new Date().toISOString();
+    const childIds = this.getRoleChildren(id).map((c) => c.id);
+    const ids = [id, ...childIds];
+    const changed: string[] = [];
+    const tx = this.db.transaction(() => {
+      for (const targetId of ids) {
+        const compiled = this.k
+          .updateTable('llm_tasks')
+          .set({ status: 'cancelled', completedAt: now })
+          .where('id', '=', targetId)
+          .where('status', 'in', ['queued', 'processing'])
+          .compile();
+        const res = this.db.prepare(compiled.sql).run(...compiled.parameters);
+        if (Number(res.changes ?? 0) > 0) changed.push(targetId);
+      }
+    });
+    tx();
+    for (const targetId of changed) this.fireUpdateEvent(targetId);
+    return changed;
   }
 
   public failStaleProcessing(): number {

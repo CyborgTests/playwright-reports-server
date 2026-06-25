@@ -5,6 +5,7 @@ import { llmService } from '../index.js';
 import { type GateReservation, modelGate, reservationStore } from '../modelGate.js';
 import { isFallbackChainEnabled, isLlmFeatureEnabled, resolveGate } from '../registry.js';
 import { resolveRouting } from '../routing/index.js';
+import { registerRunningTask, runWithTaskSignal, unregisterRunningTask } from '../taskSignal.js';
 import { LLMProviderError } from '../types/index.js';
 import { resolveScreenshotModel } from '../visionTranscribe.js';
 import { processProjectSummary } from './tasks/projectSummary.js';
@@ -145,14 +146,15 @@ class LlmAnalysisQueue {
     const ctx: GateReservation | null = reservation
       ? { gateKey: reservation.gateKey, consumed: false }
       : null;
-    const run = ctx
-      ? () => reservationStore.run(ctx, () => this.processTask(task))
-      : () => this.processTask(task);
+    const controller = registerRunningTask(task.id);
+    const core = () => runWithTaskSignal(controller.signal, () => this.processTask(task));
+    const run = ctx ? () => reservationStore.run(ctx, core) : core;
     void run()
       .catch((error) => {
         console.error(`[llmQueue] Unhandled error in task ${task.id}:`, error);
       })
       .finally(() => {
+        unregisterRunningTask(task.id);
         reservation?.release();
         this.activeTasks--;
         if (this.running && this.activeTasks < this.maxParallel) {
