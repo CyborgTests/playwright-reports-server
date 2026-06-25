@@ -1,7 +1,6 @@
 import { join, resolve } from 'node:path';
 import fastifyCookie from '@fastify/cookie';
 import fastifyCors from '@fastify/cors';
-import fastifyJwt from '@fastify/jwt';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
@@ -52,14 +51,6 @@ async function start() {
   });
 
   await fastify.register(fastifyCookie);
-
-  await fastify.register(fastifyJwt, {
-    secret: env.AUTH_SECRET ?? 'default-secret-for-no-auth-mode',
-    cookie: {
-      cookieName: 'token',
-      signed: false,
-    },
-  });
 
   await fastify.register(fastifyMultipart, {
     limits: {

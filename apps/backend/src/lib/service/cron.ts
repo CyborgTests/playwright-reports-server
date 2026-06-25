@@ -4,7 +4,15 @@ import { Cron } from 'croner';
 import { env } from '../../config/env.js';
 import { withError } from '../../lib/withError.js';
 import { TMP_FOLDER } from '../storage/constants.js';
-import { getDatabase, llmTasksDb, notificationLogDb, optimizeDB } from './db/index.js';
+import {
+  authAuditDb,
+  getDatabase,
+  llmTasksDb,
+  notificationLogDb,
+  optimizeDB,
+  resetTokensDb,
+  sessionsDb,
+} from './db/index.js';
 import { service } from './index.js';
 
 const runningCron = Symbol.for('playwright.reports.cron.service');
@@ -29,6 +37,7 @@ export class CronService {
   private clearNotificationLogJob: Cron | undefined;
   private dbMaintenanceJob: Cron | undefined;
   private storageReconcileJob: Cron | undefined;
+  private authGcJob: Cron | undefined;
   private readonly inFlight = new Map<string, Promise<void>>();
 
   public static getInstance() {
@@ -82,12 +91,14 @@ export class CronService {
     this.clearNotificationLogJob?.stop();
     this.dbMaintenanceJob?.stop();
     this.storageReconcileJob?.stop();
+    this.authGcJob?.stop();
     this.clearReportsJob = undefined;
     this.clearResultsJob = undefined;
     this.clearResultCacheJob = undefined;
     this.clearNotificationLogJob = undefined;
     this.dbMaintenanceJob = undefined;
     this.storageReconcileJob = undefined;
+    this.authGcJob = undefined;
   }
 
   private wrapJob(name: string, timeoutMs: number, task: () => Promise<void>): () => Promise<void> {
@@ -162,6 +173,53 @@ export class CronService {
     this.clearNotificationLogJob = this.scheduleNotificationLogJob();
     this.dbMaintenanceJob = this.scheduleDbMaintenanceJob();
     this.storageReconcileJob = this.scheduleStorageReconcileJob();
+    // Auth GC only runs when auth is enabled — open mode must not touch auth tables.
+    if (env.API_TOKEN) {
+      this.authGcJob = this.scheduleAuthGcJob();
+    }
+  }
+
+  private scheduleAuthGcJob(): Cron | undefined {
+    const expression = CronService.AUTH_GC_SCHEDULE;
+    const validation = CronService.validateExpression(expression);
+    if (!validation.valid) {
+      console.error(
+        `[cron-job] auth-gc has invalid cron expression "${expression}": ${validation.error}, skipping`
+      );
+      return undefined;
+    }
+
+    const job = new Cron(
+      expression,
+      {
+        unref: true,
+        protect: true,
+        catch: (err) => console.error('[cron-job] auth-gc task error:', err),
+      },
+      this.wrapJob('auth-gc', CronService.AUTH_GC_TIMEOUT_MS, () =>
+        Promise.resolve(this.runAuthGc())
+      )
+    );
+
+    const nextRun = job.nextRun();
+    console.log(
+      `[cron-job] scheduled auth-gc at "${expression}", next run: ${nextRun?.toISOString() ?? 'unknown'}`
+    );
+    return job;
+  }
+
+  /** Prunes expired sessions, spent/expired reset tokens, and aged-out audit rows. */
+  private runAuthGc() {
+    const nowIso = new Date().toISOString();
+    const sessions = sessionsDb.pruneExpiredSessions(nowIso);
+    const resetTokens = resetTokensDb.pruneResetTokens(nowIso);
+    const auditCutoff = this.cutoffISO(CronService.AUTH_AUDIT_RETENTION_DAYS);
+    const audit = authAuditDb.pruneAuditOlderThan(auditCutoff);
+    if (sessions + resetTokens + audit > 0) {
+      console.log(
+        `[cron-job] auth-gc pruned sessions=${sessions} resetTokens=${resetTokens} audit=${audit}`
+      );
+    }
   }
 
   private scheduleDbMaintenanceJob(): Cron | undefined {
@@ -461,12 +519,15 @@ export class CronService {
   private static readonly NOTIFICATION_LOG_RETENTION_DAYS = 7;
   private static readonly DB_MAINTENANCE_SCHEDULE = '45 3 * * *';
   private static readonly STORAGE_RECONCILE_SCHEDULE = '15 4 * * *';
+  private static readonly AUTH_GC_SCHEDULE = '0 4 * * *';
+  private static readonly AUTH_AUDIT_RETENTION_DAYS = 90;
   private static readonly LLM_TASKS_RETENTION_DAYS = 30;
   private static readonly CLEANUP_TIMEOUT_MS = 60 * 60 * 1000; // 1h, batched DB+storage deletes
   private static readonly RESULT_CACHE_TIMEOUT_MS = 10 * 60 * 1000; // 10m, dir scan
   private static readonly NOTIFICATION_LOG_TIMEOUT_MS = 5 * 60 * 1000; // 5m, single DB delete
   private static readonly DB_MAINTENANCE_TIMEOUT_MS = 10 * 60 * 1000; // 10m, vacuum + checkpoint
   private static readonly STORAGE_RECONCILE_TIMEOUT_MS = 30 * 60 * 1000; // 30m, N HEAD checks
+  private static readonly AUTH_GC_TIMEOUT_MS = 5 * 60 * 1000; // 5m, a few DB deletes
   private static readonly STOP_DEADLINE_MS = 30 * 1000;
 }
 

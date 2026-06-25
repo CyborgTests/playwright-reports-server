@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { env } from '../../config/env.js';
+import { initAuthBootstrap } from '../auth/bootstrap.js';
 import { githubSyncCron } from '../githubSync/cronManager.js';
 import { cleanupOrphanedTempDirs } from '../githubSync/syncService.js';
 import { applyPrimaryModel } from '../llm/registry.js';
@@ -52,6 +53,10 @@ export class Lifecycle {
       // Build/upgrade the schema and run seed migrations.
       // Must happen after any Litestream restore (which swaps the DB file) and before the first query.
       await migrateToLatest(getKysely());
+
+      // Auth bootstrap: open-mode warning, break-glass root row, seed key. Must
+      // run after migrations and before serving requests.
+      await initAuthBootstrap();
 
       await Promise.all([configCache.init(), reportDb.init(), resultDb.init()]);
       if (!restored) {

@@ -12,6 +12,7 @@ export const defaultConfig: SiteWhiteLabelConfig = {
   logoInvertOnDark: true,
   faviconPath: '/favicon.ico',
   reporterPaths: [],
+  allowOpenRegistration: false,
   cron: {
     resultExpireDays: Number(process.env.RESULT_EXPIRE_DAYS ?? defaultResultExpirationDays),
     resultExpireCronSchedule: process.env.RESULT_EXPIRE_CRON_SCHEDULE ?? '0 2 * * *',
