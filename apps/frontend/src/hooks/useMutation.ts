@@ -34,13 +34,20 @@ const useMutation = <TData = unknown, TVariables = unknown, TContext = unknown>(
 
       const response = await fetch(withBase(path ?? url), {
         headers,
+        credentials: 'include',
         body: isForm ? (body as FormData) : hasJsonBody ? JSON.stringify(body) : undefined,
         method: method ?? 'POST',
       });
       const respText = await response.text();
 
       if (!response.ok) {
-        const message = respText || `Request failed (${response.status})`;
+        let message = `Request failed (${response.status})`;
+        try {
+          const envelope = respText ? (JSON.parse(respText) as { error?: string }) : undefined;
+          message = envelope?.error ?? respText ?? message;
+        } catch {
+          if (respText) message = respText; // non-JSON body
+        }
         if (!silent) toast.error(message);
         throw new Error(message);
       }

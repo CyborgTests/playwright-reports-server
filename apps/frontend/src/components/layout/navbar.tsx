@@ -1,8 +1,19 @@
-import { Gauge, ListTodo, Menu } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { Gauge, KeyRound, ListTodo, LogOut, Menu, UserRound } from 'lucide-react';
+import { type FormEvent, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { HeaderLinks } from '@/components/header-links';
 import { ReportIcon, ResultIcon, SettingsIcon, TrendIcon } from '@/components/icons';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,9 +21,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
 import { siteConfig as defaultConfig } from '@/config/site';
+import { useAuth } from '@/hooks/useAuth';
 import { useConfig } from '@/hooks/useConfig';
+import { changePassword, signOut } from '@/lib/auth';
 import { withBase } from '@/lib/url';
 import { cn } from '@/lib/utils';
 import { ThemeSwitch } from './theme-switch';
@@ -101,6 +117,8 @@ export function Navbar() {
           ) : null}
           <ThemeSwitch />
 
+          <AccountMenu />
+
           {/* Mobile hamburger - shown below md */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild className="md:hidden">
@@ -145,5 +163,147 @@ export function Navbar() {
         </div>
       </div>
     </header>
+  );
+}
+
+function AccountMenu() {
+  const session = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [pwOpen, setPwOpen] = useState(false);
+  const user = session.data?.user;
+
+  if (!user?.id) return null;
+
+  const handleSignOut = async () => {
+    await signOut();
+    await queryClient.invalidateQueries({ queryKey: ['auth-session'] });
+    navigate('/login', { replace: true });
+  };
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" aria-label="Account" className="h-9 w-9">
+            <UserRound className="h-5 w-5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <div className="px-2 py-1.5">
+            <p className="text-sm font-medium truncate">{user.username}</p>
+            <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+          </div>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => setPwOpen(true)}>
+            <KeyRound className="mr-2 h-4 w-4" />
+            <span>Change password</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={handleSignOut}>
+            <LogOut className="mr-2 h-4 w-4" />
+            <span>Sign out</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ChangePasswordDialog open={pwOpen} onOpenChange={setPwOpen} username={user.username ?? ''} />
+    </>
+  );
+}
+
+function ChangePasswordDialog({
+  open,
+  onOpenChange,
+  username,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  username: string;
+}) {
+  const queryClient = useQueryClient();
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const reset = () => {
+    setCurrentPassword('');
+    setNewPassword('');
+    setError('');
+    setSubmitting(false);
+  };
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (submitting) return;
+    if (newPassword.length < 8) {
+      setError('New password must be at least 8 characters');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    const result = await changePassword(username, currentPassword, newPassword);
+    if (result.ok) {
+      await queryClient.invalidateQueries({ queryKey: ['auth-session'] });
+      toast.success('Password changed');
+      onOpenChange(false);
+      reset();
+    } else {
+      setError(result.error ?? 'Could not change password');
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        onOpenChange(v);
+        if (!v) reset();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Change password</DialogTitle>
+          <DialogDescription>
+            Enter your current password and choose a new one. Other sessions will be signed out.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="current-password">Current password</Label>
+              <Input
+                id="current-password"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="change-new-password">New password</Label>
+              <Input
+                id="change-new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoComplete="new-password"
+                className={error ? 'border-destructive' : ''}
+              />
+              {error && <p className="text-sm text-destructive animate-fade-in">{error}</p>}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting && <Spinner className="mr-2 h-4 w-4" />}
+              {submitting ? 'Changing…' : 'Change password'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

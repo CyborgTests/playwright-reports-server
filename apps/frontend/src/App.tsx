@@ -21,6 +21,7 @@ const FailureClustersPage = lazy(() => import('@/pages/FailureClustersPage'));
 const LlmQueuePage = lazy(() => import('@/pages/LlmQueuePage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const LoginPage = lazy(() => import('@/pages/LoginPage'));
+const RegisterPage = lazy(() => import('@/pages/RegisterPage'));
 
 function RouteFallback() {
   return (
@@ -63,6 +64,7 @@ function App() {
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
           <Route
             path="/*"
             element={

@@ -44,6 +44,14 @@ export const buildUrl = (path: string, params?: Record<string, string>): string 
   return url.toString();
 };
 
+// Absolute link for out-of-band sharing: prefers the configured Server Base URL,
+// falls back to the current origin.
+export const shareLink = (path: string, serverBaseUrl?: string | null): string => {
+  const base = serverBaseUrl?.trim().replace(/\/+$/, '');
+  const origin = base || (typeof window !== 'undefined' ? window.location.origin : '');
+  return `${origin}${path.startsWith('/') ? path : `/${path}`}`;
+};
+
 export const withBase = (path: string): string => {
   if (path.startsWith('http')) {
     return path;

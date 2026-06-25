@@ -17,11 +17,8 @@ const useQuery = <TData, TQueryFnData = TData>(
 ) => {
   const session = useAuth();
 
-  const isAuthDisabled = session.status === 'authenticated' && session.data === null;
-  const enabled =
-    options?.enabled === undefined
-      ? isAuthDisabled || session.status === 'authenticated'
-      : options.enabled && (isAuthDisabled || session.status === 'authenticated');
+  const authed = session.status === 'authenticated';
+  const enabled = options?.enabled === undefined ? authed : options.enabled && authed;
 
   return useTanStackQuery<TQueryFnData, Error, TData>({
     queryKey: options?.queryKey ?? [path, ...(options?.dependencies ?? [])],
@@ -31,6 +28,7 @@ const useQuery = <TData, TQueryFnData = TData>(
       const fullPath = withBase(path);
       const response = await fetch(fullPath, {
         headers,
+        credentials: 'include',
         body: options?.body ? JSON.stringify(options.body) : undefined,
         method: options?.method ?? 'GET',
       });

@@ -1,5 +1,6 @@
-import { Lock } from 'lucide-react';
-import { type FormEvent, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Lock, ShieldCheck } from 'lucide-react';
+import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader } from '@/components/ui/card';
@@ -7,76 +8,34 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '../hooks/useAuth';
-import { getProviders, signIn } from '../lib/auth';
+import { resetPassword, setupAdmin, signIn } from '../lib/auth';
+
+function Shell({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-8 animate-fade-in">{children}</div>
+    </div>
+  );
+}
 
 export default function LoginForm() {
-  const [input, setInput] = useState('');
-  const [error, setError] = useState('');
-  const [isAutoSigningIn, setIsAutoSigningIn] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const session = useAuth();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
-
-  const target = searchParams?.get('callbackUrl') ?? '/';
-  const callbackUrl = decodeURI(target);
+  const callbackUrl = decodeURI(searchParams?.get('callbackUrl') ?? '/');
+  const resetToken = searchParams?.get('reset') ?? '';
 
   useEffect(() => {
-    // redirect if already authenticated
-    if (session.status === 'authenticated') {
-      navigate(callbackUrl, { replace: true });
-      return;
-    }
+    if (!resetToken && session.status === 'authenticated') navigate(callbackUrl, { replace: true });
+  }, [session.status, callbackUrl, navigate, resetToken]);
 
-    // check if we can sign in automatically
-    getProviders()
-      .then((providers) => {
-        // if no api token required we can automatically sign user in
-        if (providers?.credentials.name === 'No Auth') {
-          return signIn('credentials', {
-            redirect: false,
-          }).then((response) => {
-            if (!response?.error && response?.ok) {
-              navigate(callbackUrl, { replace: true });
-            } else {
-              setIsAutoSigningIn(false);
-            }
-          });
-        } else {
-          setIsAutoSigningIn(false);
-        }
-      })
-      .catch(() => {
-        setIsAutoSigningIn(false);
-      });
-  }, [navigate, callbackUrl, session.status]);
-
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (isSubmitting) return;
-
-    setIsSubmitting(true);
-    try {
-      const result = await signIn('credentials', {
-        apiToken: input,
-        redirect: false,
-      });
-
-      if (result?.error) {
-        setError('Invalid API key');
-      } else {
-        if (result?.user?.jwtToken) {
-          localStorage.setItem('jwtToken', result.user.jwtToken);
-        }
-        navigate(callbackUrl, { replace: true });
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
+  const afterAuth = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['auth-session'] });
+    navigate(callbackUrl, { replace: true });
   };
 
-  // Show spinner while session is loading or while auto-signing in
-  if (session.status === 'loading' || isAutoSigningIn) {
+  if (session.status === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner size="lg" />
@@ -84,65 +43,234 @@ export default function LoginForm() {
     );
   }
 
-  return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-8 animate-fade-in">
-        {/* Logo/Branding */}
-        <div className="text-center space-y-2">
-          <Lock className="mx-auto h-12 w-12 text-primary" />
-          <h1 className="font-display text-3xl font-bold tracking-tight">Welcome Back</h1>
-          <p className="text-muted-foreground">Sign in with your API key to access the reports</p>
-        </div>
+  if (resetToken) return <ResetCard token={resetToken} />;
+  return session.needsSetup ? <SetupCard onDone={afterAuth} /> : <LoginCard onDone={afterAuth} />;
+}
 
-        {/* Login Card */}
-        <Card className="border-border/50 shadow-lg">
-          <CardHeader className="space-y-1 pb-4">
-            <CardDescription>Enter your API key to continue</CardDescription>
-          </CardHeader>
+function ResetCard({ token }: { token: string }) {
+  const navigate = useNavigate();
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setError('');
+    const result = await resetPassword(token, password);
+    if (result.ok) {
+      setDone(true);
+    } else {
+      setError(result.error ?? 'Invalid or expired reset link');
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Shell>
+      <div className="text-center space-y-2">
+        <Lock className="mx-auto h-12 w-12 text-primary" />
+        <h1 className="font-display text-3xl font-bold tracking-tight">Set a new password</h1>
+      </div>
+      <Card className="border-border/50 shadow-lg">
+        <CardHeader className="space-y-1 pb-4">
+          <CardDescription>
+            {done
+              ? 'Password updated. You can sign in now.'
+              : 'Choose a new password for your account'}
+          </CardDescription>
+        </CardHeader>
+        {done ? (
+          <CardFooter className="pt-4">
+            <Button
+              className="w-full"
+              size="lg"
+              onClick={() => navigate('/login', { replace: true })}
+            >
+              Go to sign in
+            </Button>
+          </CardFooter>
+        ) : (
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="api-key">API Key</Label>
+                <Label htmlFor="reset-password">New password</Label>
                 <Input
-                  id="api-key"
+                  id="reset-password"
                   type="password"
-                  placeholder="Enter your API key"
-                  value={input}
-                  onChange={(e) => {
-                    const newValue = e.target.value;
-                    if (!newValue && error) {
-                      setError('');
-                    }
-                    setInput(newValue);
-                  }}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
                   className={error ? 'border-destructive' : ''}
-                  autoComplete="current-password"
                 />
                 {error && <p className="text-sm text-destructive animate-fade-in">{error}</p>}
               </div>
             </CardContent>
             <CardFooter className="pt-4">
-              <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
-                {isSubmitting && <Spinner className="mr-2 h-4 w-4" />}
-                {isSubmitting ? 'Signing in…' : 'Sign In'}
+              <Button type="submit" className="w-full" size="lg" disabled={submitting}>
+                {submitting && <Spinner className="mr-2 h-4 w-4" />}
+                {submitting ? 'Updating…' : 'Update password'}
               </Button>
             </CardFooter>
           </form>
-        </Card>
+        )}
+      </Card>
+    </Shell>
+  );
+}
 
-        {/* Footer */}
-        <p className="text-center text-sm text-muted-foreground">
-          Powered by{' '}
-          <a
-            href="https://www.cyborgtest.com/"
-            target="_blank"
-            rel="noreferrer"
-            className="font-medium text-primary hover:underline"
-          >
-            CyborgTests
-          </a>
+function LoginCard({ onDone }: { onDone: () => Promise<void> }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setError('');
+    const result = await signIn(username, password);
+    if (result.ok) {
+      await onDone();
+    } else {
+      setError(result.error ?? 'Invalid username or password');
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Shell>
+      <div className="text-center space-y-2">
+        <Lock className="mx-auto h-12 w-12 text-primary" />
+        <h1 className="font-display text-3xl font-bold tracking-tight">Welcome Back</h1>
+        <p className="text-muted-foreground">Sign in to access the reports</p>
+      </div>
+      <Card className="border-border/50 shadow-lg">
+        <CardHeader className="space-y-1 pb-4">
+          <CardDescription>Enter your username and password</CardDescription>
+        </CardHeader>
+        <form onSubmit={handleSubmit}>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                className={error ? 'border-destructive' : ''}
+              />
+              {error && <p className="text-sm text-destructive animate-fade-in">{error}</p>}
+            </div>
+          </CardContent>
+          <CardFooter className="pt-4">
+            <Button type="submit" className="w-full" size="lg" disabled={submitting}>
+              {submitting && <Spinner className="mr-2 h-4 w-4" />}
+              {submitting ? 'Signing in…' : 'Sign In'}
+            </Button>
+          </CardFooter>
+        </form>
+      </Card>
+    </Shell>
+  );
+}
+
+function SetupCard({ onDone }: { onDone: () => Promise<void> }) {
+  const [apiToken, setApiToken] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setError('');
+    const created = await setupAdmin(apiToken, username, password);
+    if (!created.ok) {
+      setError(created.error ?? 'Setup failed');
+      setSubmitting(false);
+      return;
+    }
+    // Setup creates the admin but no session; sign in to establish one.
+    const signedIn = await signIn(username, password);
+    if (signedIn.ok) {
+      await onDone();
+    } else {
+      setError('Admin created. Please sign in.');
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Shell>
+      <div className="text-center space-y-2">
+        <ShieldCheck className="mx-auto h-12 w-12 text-primary" />
+        <h1 className="font-display text-3xl font-bold tracking-tight">Create admin account</h1>
+        <p className="text-muted-foreground">
+          First-time setup — provide the server API token and choose admin credentials.
         </p>
       </div>
-    </div>
+      <Card className="border-border/50 shadow-lg">
+        <CardHeader className="space-y-1 pb-4">
+          <CardDescription>This is only available until the first admin exists.</CardDescription>
+        </CardHeader>
+        <form onSubmit={handleSubmit}>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="api-token">Server API token</Label>
+              <Input
+                id="api-token"
+                type="password"
+                value={apiToken}
+                onChange={(e) => setApiToken(e.target.value)}
+                placeholder="API_TOKEN"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="setup-username">Admin username</Label>
+              <Input
+                id="setup-username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="setup-password">Admin password</Label>
+              <Input
+                id="setup-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+                className={error ? 'border-destructive' : ''}
+              />
+              {error && <p className="text-sm text-destructive animate-fade-in">{error}</p>}
+            </div>
+          </CardContent>
+          <CardFooter className="pt-4">
+            <Button type="submit" className="w-full" size="lg" disabled={submitting}>
+              {submitting && <Spinner className="mr-2 h-4 w-4" />}
+              {submitting ? 'Creating…' : 'Create admin'}
+            </Button>
+          </CardFooter>
+        </form>
+      </Card>
+    </Shell>
   );
 }
