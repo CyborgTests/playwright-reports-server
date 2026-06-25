@@ -1,3 +1,4 @@
+export * from './access.js';
 export * from './constants/index.js';
 export * from './mustache.js';
 export * from './types/failure-clusters.js';

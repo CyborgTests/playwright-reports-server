@@ -150,6 +150,7 @@ export interface SiteWhiteLabelConfig {
   serverBaseUrl?: string;
   reporterPaths?: string[];
   authRequired?: boolean;
+  allowOpenRegistration?: boolean;
   database?: DatabaseStats;
   dataStorage?: string;
   s3Endpoint?: string;
@@ -411,6 +412,8 @@ export interface ServerConfig {
   faviconPath?: string;
   reporterPaths?: string[];
   serverBaseUrl?: string;
+  authRequired?: boolean;
+  allowOpenRegistration?: boolean;
   cron?: {
     resultExpireDays?: number;
     resultExpireCronSchedule?: string;
