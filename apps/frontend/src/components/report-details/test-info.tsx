@@ -22,12 +22,13 @@ import {
 } from '@/components/ui/table';
 import { testStatusToColor } from '@/lib/tailwind';
 import { withBase } from '@/lib/url';
+import RootCauseCategoryEditor from './RootCauseCategoryEditor';
 
 interface TestInfoProps {
   history: ReportHistory[];
   test: ReportTest;
-  /** The report's project (DB key), NOT the Playwright project name on the test. */
   project?: string;
+  reportId?: string;
 }
 
 const getTestHistory = (testId: string, history: ReportHistory[]) => {
@@ -63,7 +64,7 @@ const getTestHistory = (testId: string, history: ReportHistory[]) => {
     .filter((item): item is TestHistory => item !== null);
 };
 
-const TestInfo: FC<TestInfoProps> = ({ test, history, project }: TestInfoProps) => {
+const TestInfo: FC<TestInfoProps> = ({ test, history, project, reportId }: TestInfoProps) => {
   if (!test) {
     return <div className="shadow-md rounded-lg p-6">No test data available</div>;
   }
@@ -82,6 +83,15 @@ const TestInfo: FC<TestInfoProps> = ({ test, history, project }: TestInfoProps) 
         <p>
           Outcome: <span className={formatted.color}>{formatted.title}</span>
         </p>
+        {reportId &&
+          test.testId &&
+          project &&
+          (test.outcome === 'unexpected' || test.outcome === 'flaky') && (
+            <div className="flex items-center gap-2">
+              <span>Root cause:</span>
+              <RootCauseCategoryEditor testId={test.testId} reportId={reportId} project={project} />
+            </div>
+          )}
         <p>
           Location:{' '}
           {`${test.location?.file || 'unknown'}:${test.location?.line || 0}:${test.location?.column || 0}`}

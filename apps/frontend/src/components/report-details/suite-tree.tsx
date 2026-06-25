@@ -201,7 +201,7 @@ const SuiteNodeComponent = ({
                 </span>
               </AccordionTrigger>
               <AccordionContent>
-                <TestInfo history={history} test={test} project={project} />
+                <TestInfo history={history} test={test} project={project} reportId={reportId} />
               </AccordionContent>
             </AccordionItem>
           );

@@ -15,6 +15,7 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import FormattedDate from '@/components/date-format';
 import DateRangeSelect from '@/components/date-range-select';
+import ClusterRootCauseBulkEditor from '@/components/failure-clusters/ClusterRootCauseBulkEditor';
 import { MarkClusterResolvedDialog } from '@/components/failure-clusters/MarkClusterResolvedDialog';
 import type { ClusterResolutionRequest } from '@/components/failure-clusters/types';
 import { subtitle, title } from '@/components/primitives';
@@ -415,6 +416,7 @@ function ClusterCard({
         </AccordionTrigger>
         <AccordionContent className="px-6 pb-6">
           <div className="flex justify-end gap-2 mb-3">
+            <ClusterRootCauseBulkEditor tests={cluster.tests} />
             {resolved ? (
               <Button
                 variant="outline"

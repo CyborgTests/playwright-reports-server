@@ -2,10 +2,11 @@ import { existsSync } from 'node:fs';
 import { access, readFile } from 'node:fs/promises';
 import path, { resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CAPABILITIES } from '@playwright-reports/shared';
+import { CAPABILITIES, can, keyCan } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import mime from 'mime';
 import { env } from '../config/env.js';
+import { resolveIdentity } from '../lib/auth/resolve.js';
 import { llmService } from '../lib/llm/index.js';
 import { injectTestAnalysis } from '../lib/report-injection/html-injector.js';
 import { reportDb } from '../lib/service/db/index.js';
@@ -113,6 +114,14 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       }
 
       const isLlmEnabled = llmService.isConfigured();
+      // Whether the viewer may edit the root-cause category (admin/reader, not readonly).
+      // The PATCH endpoint enforces this server-side too; this only hides the affordance.
+      const identity = resolveIdentity(request);
+      const canEditCategory = identity
+        ? identity.via === 'apikey'
+          ? keyCan(identity.scopes, identity.capability ?? 'read', CAPABILITIES.contentTests)
+          : can(identity.role, CAPABILITIES.contentTests)
+        : false;
       const reportId = extractReportIdFromPath(targetPath);
       if (reportId && reportId !== 'trace') {
         const report = reportDb.getByID(reportId);
@@ -124,7 +133,7 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
           isTestPage: false,
         };
         const { result: injected, error: injectionError } = await withError(
-          injectTestAnalysis(reportHtml, testUrl, isLlmEnabled)
+          injectTestAnalysis(reportHtml, testUrl, isLlmEnabled, canEditCategory)
         );
         if (injectionError) {
           console.error('[serve] Failed to inject LLM analysis:', injectionError);

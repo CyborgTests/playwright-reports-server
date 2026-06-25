@@ -86,6 +86,17 @@ export class TestAnalysisDatabase {
     };
   }
 
+  public setCategory(testId: string, reportId: string, category: string): number {
+    const compiled = this.k
+      .updateTable('test_llm_analyses')
+      .set({ category, updatedAt: new Date().toISOString() })
+      .where('testId', '=', testId)
+      .where('reportId', '=', reportId)
+      .compile();
+    const info = this.db.prepare(compiled.sql).run(...compiled.parameters);
+    return Number(info.changes);
+  }
+
   public getByTest(testId: string, fileId: string, project: string): TestAnalysisRow | null {
     const compiled = this.k
       .selectFrom('test_llm_analyses')

@@ -619,6 +619,82 @@ function renderLoadingInto(testId, rid, anchor, askBtn, errorsSection, taskId = 
   }
 }
 
+const ROOT_CAUSE_OPTIONS = [
+  ['app_bug', 'Fix the application code - it produced a wrong result for a valid request.'],
+  ['test_bug', 'Fix the test code - bad selector, missing wait, wrong assumption, or a race.'],
+  [
+    'environment',
+    'Fix the environment - missing data, stale fixtures, expired auth, or a runner/network outage.',
+  ],
+  ['slow_path', 'Change nothing - the operation finished correctly but past the timeout.'],
+  ['unknown', 'Cannot tell from the evidence which must change.'],
+];
+
+async function patchCategory(testId, category) {
+  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+  const rid = typeof reportId !== 'undefined' ? reportId : '';
+  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+  const proj = typeof reportProject !== 'undefined' ? reportProject : '';
+  try {
+    const r = await fetch(
+      `/api/test-analysis/${encodeURIComponent(testId)}?project=${encodeURIComponent(proj)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...csrfHeader() },
+        body: JSON.stringify({ reportId: rid, category }),
+      }
+    );
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+function setupCategoryEditor(section, testId) {
+  const badge = section.querySelector('.llm-category-editable');
+  if (!badge || !testId) return;
+  let menu = null;
+  const onDocClick = (e) => {
+    if (menu && !badge.contains(e.target)) closeMenu();
+  };
+  function closeMenu() {
+    menu?.remove();
+    menu = null;
+    document.removeEventListener('click', onDocClick, true);
+  }
+  badge.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (menu) {
+      closeMenu();
+      return;
+    }
+    menu = document.createElement('div');
+    menu.className = 'llm-category-menu';
+    menu.innerHTML = ROOT_CAUSE_OPTIONS.map(
+      ([value, desc]) =>
+        `<button type="button" class="llm-category-option" data-value="${value}" title="${escapeHtml(desc)}">${value}</button>`
+    ).join('');
+    badge.appendChild(menu);
+    document.addEventListener('click', onDocClick, true);
+    menu.querySelectorAll('.llm-category-option').forEach((opt) => {
+      opt.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const value = opt.getAttribute('data-value');
+        const labelEl = badge.querySelector('.llm-category-label');
+        const prev = labelEl.textContent;
+        labelEl.textContent = value;
+        closeMenu();
+        const ok = await patchCategory(testId, value);
+        if (!ok) {
+          labelEl.textContent = prev;
+          badge.classList.add('llm-category-error');
+          setTimeout(() => badge.classList.remove('llm-category-error'), 1500);
+        }
+      });
+    });
+  });
+}
+
 function renderInlineAnalysis(analysisData, anchor, askBtn, testIdOverride) {
   const existing = document.getElementById('llm-inline-analysis');
   if (existing) existing.remove();
@@ -628,15 +704,19 @@ function renderInlineAnalysis(analysisData, anchor, askBtn, testIdOverride) {
 
     if (askBtn) askBtn.style.display = 'none';
 
-    const categoryBadge = analysisData.category
-      ? `<span class="llm-category-badge">${analysisData.category}</span>`
-      : '';
+    const resolvedTestId = testIdOverride || analysisData.testId || '';
+    // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+    const canEdit = typeof canEditCategory !== 'undefined' && canEditCategory && !!resolvedTestId;
+    const categoryText = analysisData.category ? escapeHtml(analysisData.category) : '';
+    const categoryBadge =
+      categoryText || canEdit
+        ? `<span class="llm-category-badge${canEdit ? ' llm-category-editable' : ''}"${canEdit ? ' role="button" tabindex="0" title="Click to set the root cause"' : ''}><span class="llm-category-label">${categoryText || 'Set category'}</span>${canEdit ? '<span class="llm-category-caret">▾</span>' : ''}</span>`
+        : '';
     const reusedBadge = analysisData.reusedFromAnalysisId
       ? `<span class="llm-reused-badge" title="Same error signature as a previous run - analysis was reused without calling the LLM. Click Retry to force a fresh analysis.">♻ Reused</span>`
       : '';
 
     const retryBtnHtml = llmEnabled ? '<button class="llm-retry-btn">Retry</button>' : '';
-    const resolvedTestId = testIdOverride || analysisData.testId || '';
     const copyPromptBtnHtml =
       resolvedTestId && !analysisData.reusedFromAnalysisId
         ? '<button class="llm-copy-prompt-btn" title="Copy the LLM prompt (with test history and feedback) for this test.">Copy prompt with history</button>'
@@ -664,6 +744,8 @@ function renderInlineAnalysis(analysisData, anchor, askBtn, testIdOverride) {
 
     errorsSection.parentNode.insertBefore(section, errorsSection);
     setFullCopyBtnVisibility(false);
+
+    if (canEdit) setupCategoryEditor(section, resolvedTestId);
 
     if (resolvedTestId) {
       // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope

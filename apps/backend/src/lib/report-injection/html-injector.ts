@@ -20,14 +20,15 @@ function loadInjectAssets(): Promise<{ style: string; script: string }> {
 export async function injectTestAnalysis(
   source: string,
   testUrl: ParsedTestUrl,
-  isLlmEnabled: boolean
+  isLlmEnabled: boolean,
+  canEditCategory = false
 ): Promise<string> {
   if (!testUrl.reportId) {
     return source;
   }
 
   try {
-    return await injectClientSideScript(source, testUrl, isLlmEnabled);
+    return await injectClientSideScript(source, testUrl, isLlmEnabled, canEditCategory);
   } catch (error) {
     console.error('[html-injector] Error injecting HTML:', error);
     return source;
@@ -37,13 +38,15 @@ export async function injectTestAnalysis(
 async function injectClientSideScript(
   html: string,
   testUrl: ParsedTestUrl,
-  isLlmEnabled: boolean
+  isLlmEnabled: boolean,
+  canEditCategory: boolean
 ): Promise<string> {
   const { style: styleContent, script: scriptBody } = await loadInjectAssets();
   const scriptContent = `
     const reportId = ${JSON.stringify(testUrl.reportId)};
     const reportProject = ${JSON.stringify(testUrl.project ?? '')};
     const isLlmEnabled = ${isLlmEnabled ? 'true' : 'false'};
+    const canEditCategory = ${canEditCategory ? 'true' : 'false'};
     ${scriptBody}`;
 
   const styleTag = `<style>${styleContent}</style>`;

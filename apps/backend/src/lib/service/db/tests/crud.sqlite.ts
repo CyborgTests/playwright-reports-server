@@ -438,6 +438,21 @@ export class TestCrudDatabase extends TestDbBase {
     this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
+  public updateFailureCategoryByTest(
+    testId: string,
+    reportId: string,
+    category: string,
+    source: FailureCategorySource = 'manual'
+  ): number {
+    const compiled = this.k
+      .updateTable('test_runs')
+      .set({ failure_category: category, failure_category_source: source })
+      .where('testId', '=', testId)
+      .where('reportId', '=', reportId)
+      .compile();
+    return Number(this.db.prepare(compiled.sql).run(...compiled.parameters).changes);
+  }
+
   public findRunLane(testId: string, project?: string): { fileId: string; project: string } | null {
     let q = this.k
       .selectFrom('test_runs')

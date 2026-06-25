@@ -1,6 +1,7 @@
 import type { TestWithQuarantineInfo } from '@playwright-reports/shared';
-import { CAPABILITIES } from '@playwright-reports/shared';
+import { CAPABILITIES, ROOT_CAUSE_CATEGORIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { invalidateFailureClustersCache } from '../lib/failure-clustering/index.js';
 import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
 import {
   llmTasksDb,
@@ -9,6 +10,7 @@ import {
   testDb,
   toRegressionContext,
 } from '../lib/service/db/index.js';
+import { isRootCauseCategory } from '../lib/service/test-management/failure-classifier.js';
 import { testManagementService } from '../lib/service/test-management/index.js';
 import { withError } from '../lib/withError.js';
 import { authorize } from './auth.js';
@@ -456,6 +458,62 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
             success: false,
             error: 'Failed to fetch test analysis',
           });
+        }
+      }
+    );
+
+    fastify.patch(
+      '/api/test-analysis/:testId',
+      { preHandler: authorize(CAPABILITIES.contentTests) },
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { testId } = request.params as { testId: string };
+        const { project } = request.query as { project?: string };
+        const { reportId, category } = (request.body ?? {}) as {
+          reportId?: string;
+          category?: string;
+        };
+
+        if (!reportId) {
+          return reply.status(400).send({ success: false, error: 'reportId is required' });
+        }
+        if (!category || !isRootCauseCategory(category)) {
+          return reply.status(400).send({
+            success: false,
+            error: `category must be one of: ${ROOT_CAUSE_CATEGORIES.join(', ')}`,
+          });
+        }
+
+        try {
+          const updated = testAnalysisDb.setCategory(testId, reportId, category);
+
+          // No analysis row yet (reused or task-only result) - seed one so the edit persists.
+          if (updated === 0) {
+            if (!project) {
+              return reply
+                .status(400)
+                .send({ success: false, error: 'project query parameter is required' });
+            }
+            const lane = testDb.findByTestId(testId, project);
+            if (!lane) {
+              return reply.status(404).send({ success: false, error: 'Test not found' });
+            }
+            testAnalysisDb.upsert(
+              lane.testId,
+              lane.fileId,
+              lane.project,
+              reportId,
+              undefined,
+              category
+            );
+          }
+
+          testDb.updateFailureCategoryByTest(testId, reportId, category, 'manual');
+          invalidateFailureClustersCache();
+
+          return reply.send({ success: true, data: { testId, reportId, category } });
+        } catch (error) {
+          fastify.log.error(error);
+          return reply.status(500).send({ success: false, error: 'Failed to update category' });
         }
       }
     );
