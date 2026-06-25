@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { Cron } from 'croner';
 import { env } from '../../config/env.js';
+import { defaultCronConfig } from '../../lib/config.js';
 import { withError } from '../../lib/withError.js';
 import { TMP_FOLDER } from '../storage/constants.js';
 import {
@@ -147,10 +148,12 @@ export class CronService {
 
   private async scheduleJobs() {
     const cfg = await service.getConfig();
-    const reportDays = cfg.cron?.reportExpireDays ?? env.REPORT_EXPIRE_DAYS;
-    const resultDays = cfg.cron?.resultExpireDays ?? env.RESULT_EXPIRE_DAYS;
-    const reportSchedule = cfg.cron?.reportExpireCronSchedule ?? env.REPORT_EXPIRE_CRON_SCHEDULE;
-    const resultSchedule = cfg.cron?.resultExpireCronSchedule ?? env.RESULT_EXPIRE_CRON_SCHEDULE;
+    const reportDays = cfg.cron?.reportExpireDays ?? defaultCronConfig.reportExpireDays;
+    const resultDays = cfg.cron?.resultExpireDays ?? defaultCronConfig.resultExpireDays;
+    const reportSchedule =
+      cfg.cron?.reportExpireCronSchedule ?? defaultCronConfig.reportExpireCronSchedule;
+    const resultSchedule =
+      cfg.cron?.resultExpireCronSchedule ?? defaultCronConfig.resultExpireCronSchedule;
 
     console.log('[cron-job] scheduling cron tasks...');
     this.clearReportsJob = this.scheduleJob({
@@ -381,7 +384,7 @@ export class CronService {
 
   private async clearOutdatedReports() {
     const cfg = await service.getConfig();
-    const expireDays = cfg.cron?.reportExpireDays ?? env.REPORT_EXPIRE_DAYS;
+    const expireDays = cfg.cron?.reportExpireDays ?? defaultCronConfig.reportExpireDays;
     if (!expireDays || expireDays <= 0) {
       return;
     }
@@ -415,7 +418,7 @@ export class CronService {
 
   private async clearOutdatedResults() {
     const cfg = await service.getConfig();
-    const expireDays = cfg.cron?.resultExpireDays ?? env.RESULT_EXPIRE_DAYS;
+    const expireDays = cfg.cron?.resultExpireDays ?? defaultCronConfig.resultExpireDays;
     if (!expireDays || expireDays <= 0) {
       return;
     }

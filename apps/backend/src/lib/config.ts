@@ -2,8 +2,12 @@ import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
 import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import { defaultLinks } from '../config/site.js';
 
-const defaultReportExpirationDays = '90';
-const defaultResultExpirationDays = '30';
+export const defaultCronConfig = {
+  resultExpireDays: undefined as number | undefined,
+  resultExpireCronSchedule: '33 3 * * *',
+  reportExpireDays: undefined as number | undefined,
+  reportExpireCronSchedule: '44 4 * * *',
+};
 
 export const defaultConfig: SiteWhiteLabelConfig = {
   title: '', // Empty since logo contains text
@@ -13,22 +17,13 @@ export const defaultConfig: SiteWhiteLabelConfig = {
   faviconPath: '/favicon.ico',
   reporterPaths: [],
   allowOpenRegistration: false,
-  cron: {
-    resultExpireDays: Number(process.env.RESULT_EXPIRE_DAYS ?? defaultResultExpirationDays),
-    resultExpireCronSchedule: process.env.RESULT_EXPIRE_CRON_SCHEDULE ?? '0 2 * * *',
-    reportExpireDays: Number(process.env.REPORT_EXPIRE_DAYS ?? defaultReportExpirationDays),
-    reportExpireCronSchedule: process.env.REPORT_EXPIRE_CRON_SCHEDULE ?? '0 3 * * *',
-  },
+  cron: { ...defaultCronConfig },
   testManagement: {
-    quarantineThresholdPercentage: Number(
-      process.env.TEST_FLAKINESS_QUARANTINE_THRESHOLD ?? FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE
-    ),
-    warningThresholdPercentage: Number(
-      process.env.TEST_FLAKINESS_WARNING_THRESHOLD ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE
-    ),
-    autoQuarantineEnabled: process.env.TEST_FLAKINESS_AUTO_QUARANTINE === 'true',
-    flakinessMinRuns: Number(process.env.TEST_FLAKINESS_MIN_RUNS ?? 1),
-    flakinessEvaluationWindowDays: Number(process.env.TEST_FLAKINESS_EVALUATION_WINDOW_DAYS ?? 30),
+    quarantineThresholdPercentage: FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE,
+    warningThresholdPercentage: FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE,
+    autoQuarantineEnabled: false,
+    flakinessMinRuns: 1,
+    flakinessEvaluationWindowDays: 30,
   },
 };
 
