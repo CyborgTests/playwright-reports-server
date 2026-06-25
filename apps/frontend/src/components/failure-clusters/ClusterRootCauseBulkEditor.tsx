@@ -61,6 +61,7 @@ const ClusterRootCauseBulkEditor = ({ tests }: Props) => {
     );
     setBusy(false);
     invalidateCache(queryClient, { predicate: '/api/test-analysis' });
+    invalidateCache(queryClient, { predicate: '/api/analytics/failure-clusters' });
     const skipped = tests.length - targets.length;
     toast.success(
       `Root cause set for ${ok} test${ok === 1 ? '' : 's'}` +
