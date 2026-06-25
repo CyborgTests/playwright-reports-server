@@ -127,10 +127,12 @@ export class OpenAIProvider extends LLMProvider {
     if (!this.config.model) return null;
     try {
       const response = await this.withTimeout(
-        fetch(this.getModelsEndpoint(), {
-          method: 'GET',
-          headers: this.getHeaders(),
-        }),
+        (signal) =>
+          fetch(this.getModelsEndpoint(), {
+            method: 'GET',
+            headers: this.getHeaders(),
+            signal,
+          }),
         5_000
       );
       if (!response.ok) return null;

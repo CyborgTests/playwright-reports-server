@@ -189,15 +189,17 @@ export class AnthropicProvider extends LLMProvider {
 
     try {
       const response = await this.withTimeout(
-        fetch(`${this.config.baseUrl}/messages/count_tokens`, {
-          method: 'POST',
-          headers: this.getHeaders(),
-          body: JSON.stringify({
-            model: body.model,
-            messages: body.messages,
-            system: body.system,
+        (signal) =>
+          fetch(`${this.config.baseUrl}/messages/count_tokens`, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            body: JSON.stringify({
+              model: body.model,
+              messages: body.messages,
+              system: body.system,
+            }),
+            signal,
           }),
-        }),
         10_000
       );
       if (!response.ok) {

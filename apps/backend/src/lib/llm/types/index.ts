@@ -134,16 +134,21 @@ export abstract class BaseLLMProvider {
   }
 
   protected async withTimeout<T>(
-    promise: Promise<T>,
+    op: (signal: AbortSignal) => Promise<T>,
     timeoutMs: number = this.config.requestTimeoutMs
   ): Promise<T> {
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new LLMProviderError('Request timeout', 'timeout', 408));
-      }, timeoutMs);
-    });
-
-    return Promise.race([promise, timeoutPromise]);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await op(controller.signal);
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw new LLMProviderError('Request timeout', 'timeout', 408);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 

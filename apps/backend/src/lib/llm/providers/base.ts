@@ -119,7 +119,7 @@ export abstract class LLMProvider extends BaseProvider {
 
   private async executeRequest(request: LLMRequest): Promise<LLMResponse> {
     return this.retryRequest(async () => {
-      const response = await this.withTimeout(this.sendRequest(request));
+      const response = await this.withTimeout((signal) => this.sendRequest(request, signal));
 
       if (!response.ok) {
         let errorBody = '';
@@ -157,10 +157,12 @@ export abstract class LLMProvider extends BaseProvider {
   async validateConfig(): Promise<boolean> {
     try {
       const response = await this.withTimeout(
-        fetch(this.getModelsEndpoint(), {
-          method: 'GET',
-          headers: this.getHeaders(),
-        }),
+        (signal) =>
+          fetch(this.getModelsEndpoint(), {
+            method: 'GET',
+            headers: this.getHeaders(),
+            signal,
+          }),
         5000
       );
 
@@ -176,10 +178,11 @@ export abstract class LLMProvider extends BaseProvider {
 
   async getAvailableModels(): Promise<string[]> {
     try {
-      const response = await this.withTimeout(
+      const response = await this.withTimeout((signal) =>
         fetch(this.getModelsEndpoint(), {
           method: 'GET',
           headers: this.getHeaders(),
+          signal,
         })
       );
 
@@ -212,12 +215,13 @@ export abstract class LLMProvider extends BaseProvider {
     };
   }
 
-  protected async sendRequest(request: LLMRequest): Promise<Response> {
+  protected async sendRequest(request: LLMRequest, signal?: AbortSignal): Promise<Response> {
     const { result, error } = await withError(
       fetch(this.getApiEndpoint(), {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(this.formatRequestBody(request)),
+        signal,
       })
     );
 
