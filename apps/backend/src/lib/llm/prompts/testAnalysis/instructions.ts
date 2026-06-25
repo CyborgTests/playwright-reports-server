@@ -17,7 +17,7 @@ Analyze the failure of test {{testTitle}} - project "{{project}}", {{filePath}}.
 </task>
 
 <output_format>
-Sections 1 and 2 are required, section 3 is optional, and the closing Category line is required. Use these exact headings:
+Sections 1 and 2 are required, section 3 is optional, and the closing Decision and Category lines are required. Use these exact headings:
 
 ## Root Cause
 What broke and why, tied to specific evidence: line numbers from the test source, step tree, or stack; console errors; failed requests and their status codes; differences between attempts.
@@ -28,26 +28,31 @@ What broke and why, tied to specific evidence: line numbers from the test source
 ## Recommendation
 A concrete fix - code edit, config change, or infra action (short snippet welcome). Include only with such a fix; omit when the next step is just to investigate further.
 
-Close with one footer line, on its own line:
+Close with two footer lines, each on its own line - first the ladder answers, then the category they select:
 
+Decision: D1=<yes|no> D2=<yes|no> D3=<yes|no> D4=<yes|no>
 Category: <one of: ${ROOT_CAUSE_CATEGORY_LIST}>
 
-The label must match the Root Cause you wrote above. If your Root Cause points to auth,
-session, fixtures, or missing data, the label is environment - not app_bug.
+The Category must equal the category chosen by the FIRST "yes" in your Decision line, or unknown if every answer is no, and must match the Root Cause you wrote above.
 </output_format>
 
-<category_rubric>
-Every label answers one question: what has to change to make this test pass? Pick the one
-the evidence supports; reserve "unknown" only when none does. Emit the line even when uncertain.
-- app_bug - fix the application code: it returned a wrong result for a VALID request. An app correctly rejecting a bad request - a 401/403, a redirect to sign-in, a validation error on bad input - is NOT app_bug.
-- test_bug - fix the test code: bad selector, missing wait, wrong assumption, or a race in the test.
-- environment - fix the environment: missing data, stale fixtures, expired or misconfigured auth (an invalid stored session, 401/403 from auth endpoints, a redirect to a login page), an unavailable dependency, or a runner/browser/network outage.
-- slow_path - change nothing: the operation progressed normally but exceeded the timeout budget; a genuine performance regression, not a hang or deadlock. It would have passed given more time.
-- unknown - the evidence is genuinely insufficient to decide.
+<category_ladder>
+Choose the category by answering D1-D4 in order. The FIRST "yes" decides it - stop there and do not re-open earlier answers. Every label answers one question: what has to change to make this test pass?
 
-Before choosing app_bug, ask: did the app return a wrong result for a valid request, or the
-right result for a broken precondition (no/expired auth, missing data)? The latter is environment.
-</category_rubric>
+D1. Broken precondition? Did it fail because of auth (an expired or invalid stored session, 401/403 from auth endpoints, a redirect to a sign-in page), missing or stale data/fixtures, an unavailable dependency, or a runner/browser/network outage?
+    yes → environment
+
+D2. Test's own fault? A bad selector, a missing or too-short wait, a wrong assumption, a race in the test, or an assertion that encodes the wrong expectation?
+    yes → test_bug
+
+D3. Just slow? The operation actually progressed and would have completed correctly given more time, but exceeded the timeout budget - a genuine performance regression, not a hang or deadlock?
+    yes → slow_path
+
+D4. Wrong result for a VALID request? The app was driven correctly and still returned a wrong result. An app correctly REJECTING a bad request - a 401/403, a redirect to sign-in, a validation error on bad input - is the RIGHT result, so answer no (that case was already D1 environment, never app_bug).
+    yes → app_bug
+
+If every answer is no, the evidence is insufficient to decide → unknown. Reserve unknown only for that case; still emit both footer lines.
+</category_ladder>
 
 <reading_attempt_history>
 The Error block is from the first failing attempt; Attempt History holds the full timeline.
