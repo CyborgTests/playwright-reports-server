@@ -363,8 +363,84 @@ export interface ResultTagsRow {
   value: string;
 }
 
+export interface UsersRow {
+  id: string;
+  username: string;
+  passwordHash: string;
+  role: 'admin' | 'reader' | 'readonly';
+  disabled: WithDefault<number>;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string | null;
+  inviteId: string | null;
+}
+
+export interface SessionsRow {
+  id: string;
+  tokenHash: string;
+  userId: string;
+  role: string;
+  createdAt: string;
+  expiresAt: string;
+  idleExpiresAt: string;
+  lastSeenAt: string;
+  userAgent: string | null;
+  ip: string | null;
+}
+
+export interface ApiKeysRow {
+  id: string;
+  keyHash: string;
+  label: string;
+  scopes: string; // JSON-serialized scope list, e.g. ["upload","cli"]
+  capability: 'read' | 'content';
+  ownerUserId: string | null; // null = service key (survives owner deletion)
+  createdBy: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface InvitesRow {
+  id: string;
+  codeHash: string;
+  role: 'reader' | 'readonly';
+  createdBy: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  maxUses: number | null;
+  useCount: WithDefault<number>;
+  revokedAt: string | null;
+}
+
+export interface PasswordResetTokensRow {
+  id: string;
+  tokenHash: string;
+  userId: string;
+  createdBy: string | null;
+  createdAt: string;
+  expiresAt: string;
+  usedAt: string | null;
+}
+
+export interface AuthAuditRow {
+  id: string;
+  ts: string;
+  actor: string | null;
+  action: string;
+  target: string | null;
+  detail: string | null;
+}
+
 export interface Database {
+  api_keys: ApiKeysRow;
+  auth_audit: AuthAuditRow;
   cluster_resolutions: ClusterResolutionsRow;
+  invites: InvitesRow;
+  password_reset_tokens: PasswordResetTokensRow;
+  sessions: SessionsRow;
+  users: UsersRow;
   regressions: RegressionsRow;
   analysis_feedback: AnalysisFeedbackTableRow;
   github_sync_configs: GithubSyncConfigsRow;
