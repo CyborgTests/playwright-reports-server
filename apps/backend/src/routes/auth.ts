@@ -1,295 +1,295 @@
-import { Buffer } from 'node:buffer';
-import { timingSafeEqual } from 'node:crypto';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import jwt from 'jsonwebtoken';
+import { randomUUID } from 'node:crypto';
+import type { FastifyInstance } from 'fastify';
 import { env } from '../config/env.js';
+import { audit } from '../lib/auth/audit.js';
+import { hashPassword, verifyPassword } from '../lib/auth/password.js';
+import { allowAttempt, clearAttempts } from '../lib/auth/rateLimit.js';
+import {
+  AUTH_ENABLED,
+  type AuthRequest,
+  authorize,
+  clearSessionCookies,
+  csrfValid,
+  generateCsrfToken,
+  isAuthenticated,
+  resolveIdentity,
+  SESSION_COOKIE,
+  setSessionCookies,
+} from '../lib/auth/resolve.js';
+import {
+  changePasswordSchema,
+  registerSchema,
+  resetCompleteSchema,
+  setupSchema,
+  signinSchema,
+} from '../lib/auth/schemas.js';
+import {
+  createSession,
+  IDLE_TTL_MS,
+  revokeAllSessionsForUser,
+  revokeSession,
+} from '../lib/auth/sessions.js';
+import { hashToken, safeEqual } from '../lib/auth/tokens.js';
+import {
+  invitesDb,
+  ROOT_USER_ID,
+  resetTokensDb,
+  sessionsDb,
+  siteConfigDb,
+  tx,
+  usersDb,
+} from '../lib/service/db/index.js';
 
-const apiTokenMatches = (candidate: string | undefined): boolean => {
-  const expected = env.API_TOKEN;
-  if (!expected || !candidate) return false;
-  const a = Buffer.from(candidate);
-  const b = Buffer.from(expected);
-  // timingSafeEqual requires same length; pad the shorter side and flag.
-  const len = Math.max(a.length, b.length);
-  const ap = Buffer.alloc(len);
-  const bp = Buffer.alloc(len);
-  a.copy(ap);
-  b.copy(bp);
-  const equalBytes = timingSafeEqual(ap, bp);
-  return equalBytes && a.length === b.length;
-};
-
-const useAuth = !!env.API_TOKEN;
-
-// strictly recommended to specify via env var
-// Use a stable default secret when AUTH_SECRET is not set to avoid JWT decryption errors
-// This is only acceptable when auth is disabled (no API_TOKEN)
-const secret = env.AUTH_SECRET ?? 'default-secret-for-non-auth-mode';
-
-const expirationHours = env.UI_AUTH_EXPIRE_HOURS
-  ? Number.parseInt(env.UI_AUTH_EXPIRE_HOURS, 10)
-  : 2;
-const expirationSeconds = expirationHours * 60 * 60;
-
-interface JWTPayload {
-  authorized: boolean;
-  apiToken: string;
+// id null signals the SPA to hide the account menu and treat the app as un-gated.
+function openModeUser() {
+  return { id: null, username: null, role: 'admin' as const };
 }
-
-interface AuthUser {
-  apiToken: string;
-  jwtToken: string;
-}
-
-interface AuthRequest extends Omit<FastifyRequest, 'user'> {
-  user?: AuthUser;
-}
-
-const createAuthTokens = (apiToken: string): AuthUser => {
-  const payload: JWTPayload = { authorized: true, apiToken };
-  const jwtToken = jwt.sign(payload, secret, { expiresIn: `${expirationHours}h` });
-  return { apiToken, jwtToken };
-};
-
-const createNoAuthTokens = (): AuthUser => {
-  const payload: JWTPayload = { authorized: true, apiToken: '' };
-  const token = jwt.sign(payload, secret, { expiresIn: `${expirationHours}h` });
-  return { apiToken: '', jwtToken: token };
-};
-
-const verifyToken = (token: string): JWTPayload | null => {
-  try {
-    return jwt.verify(token, secret) as JWTPayload;
-  } catch (_error) {
-    return null;
-  }
-};
-
-export const isAuthenticated = async (request: AuthRequest): Promise<boolean> => {
-  if (!useAuth) return true;
-
-  const authHeader = request.headers.authorization;
-  const cookieToken = request.cookies?.token;
-
-  let token: string | null = null;
-  if (authHeader?.startsWith('Bearer ')) {
-    token = authHeader.substring(7);
-  } else if (cookieToken) {
-    token = cookieToken;
-  }
-
-  if (!token) return false;
-  return verifyToken(token) !== null;
-};
-
-export const authenticateUpload = async (request: AuthRequest, reply: FastifyReply) => {
-  if (!useAuth) {
-    request.user = createNoAuthTokens();
-    return;
-  }
-
-  const authHeader = request.headers.authorization;
-  const cookieToken = request.cookies.token;
-
-  // Allow reporter to authenticate upload calls
-  // with the raw API_TOKEN - either plain or with a Bearer prefix.
-  if (authHeader) {
-    const candidate = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
-    if (apiTokenMatches(candidate)) {
-      request.user = createAuthTokens(env.API_TOKEN as string);
-      return;
-    }
-  }
-
-  let token: string | null = null;
-  if (authHeader?.startsWith('Bearer ')) {
-    token = authHeader.substring(7);
-  } else if (cookieToken) {
-    token = cookieToken;
-  }
-
-  if (!token) {
-    return reply.status(401).send({ error: 'Unauthorized: No token provided' });
-  }
-
-  const decoded = verifyToken(token);
-  if (!decoded) {
-    return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
-  }
-
-  request.user = { apiToken: decoded.apiToken, jwtToken: token };
-};
-
-export const authenticate = async (request: AuthRequest, reply: FastifyReply) => {
-  if (!useAuth) {
-    request.user = createNoAuthTokens();
-    return;
-  }
-
-  const authHeader = request.headers.authorization;
-  const cookieToken = request.cookies.token;
-
-  let token = null;
-
-  if (authHeader?.startsWith('Bearer ')) {
-    token = authHeader.substring(7);
-  } else if (cookieToken) {
-    token = cookieToken;
-  }
-
-  if (!token) {
-    return reply.status(401).send({ error: 'Unauthorized: No token provided' });
-  }
-
-  const decoded = verifyToken(token);
-  if (!decoded) {
-    return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
-  }
-
-  request.user = {
-    apiToken: decoded.apiToken,
-    jwtToken: token,
-  };
-};
-
-export const getSession = async (request: AuthRequest, reply: FastifyReply) => {
-  if (!useAuth) {
-    const noAuthUser = createNoAuthTokens();
-    return {
-      user: {
-        apiToken: noAuthUser.apiToken,
-        jwtToken: noAuthUser.jwtToken,
-      },
-      expires: new Date(Date.now() + expirationSeconds * 1000).toISOString(),
-    };
-  }
-
-  try {
-    await authenticate(request, reply);
-
-    if (request.user) {
-      return {
-        user: {
-          apiToken: request.user.apiToken,
-          jwtToken: request.user.jwtToken,
-        },
-        expires: new Date(Date.now() + expirationSeconds * 1000).toISOString(),
-      };
-    }
-  } catch (_error) {
-    return reply.status(401).send({ error: 'Unauthorized' });
-  }
-};
 
 export async function registerAuthRoutes(fastify: FastifyInstance) {
   fastify.post('/api/auth/signin', async (request, reply) => {
-    try {
-      const { apiToken } = request.body as { apiToken?: string };
+    if (!AUTH_ENABLED) {
+      return { success: true, user: openModeUser() };
+    }
 
-      if (!useAuth) {
-        const noAuthUser = createNoAuthTokens();
+    const ip = request.ip || 'unknown';
+    if (!allowAttempt(`signin:${ip}`)) {
+      return reply.code(429).send({ success: false, error: 'Too many attempts, try again later' });
+    }
 
-        // Set token in cookie
-        reply.setCookie('token', noAuthUser.jwtToken, {
-          path: '/',
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-          maxAge: expirationSeconds,
-        });
+    const parsed = signinSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: 'Username and password are required' });
+    }
+    const { username, password } = parsed.data;
 
-        return {
-          user: {
-            apiToken: noAuthUser.apiToken,
-            jwtToken: noAuthUser.jwtToken,
-          },
-          success: true,
-        };
-      }
+    const user = usersDb.getUserByUsername(username);
+    const ok = user && !user.disabled && (await verifyPassword(password, user.passwordHash));
+    if (!user || !ok) {
+      audit('login_failed', { actor: user?.id ?? null, detail: username });
+      // Generic message — don't reveal whether the username exists.
+      return reply.code(401).send({ success: false, error: 'Invalid username or password' });
+    }
 
-      if (!apiToken || !apiTokenMatches(apiToken)) {
-        return reply.status(401).send({
-          error: 'Invalid API token',
-          success: false,
-        });
-      }
+    const { token } = createSession({
+      userId: user.id,
+      role: user.role,
+      userAgent: request.headers['user-agent'] ?? null,
+      ip,
+    });
+    const csrf = generateCsrfToken();
+    setSessionCookies(reply, token, csrf);
+    clearAttempts(`signin:${ip}`);
+    audit(user.id === ROOT_USER_ID ? 'root_login' : 'login', { actor: user.id });
 
-      const authUser = createAuthTokens(apiToken);
+    return {
+      success: true,
+      user: { id: user.id, username: user.username, role: user.role },
+    };
+  });
 
-      reply.setCookie('token', authUser.jwtToken, {
-        path: '/',
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: expirationSeconds,
-      });
+  // First-admin bootstrap: gated by API_TOKEN, self-locks once any admin exists.
+  fastify.post('/api/auth/setup', async (request, reply) => {
+    if (!AUTH_ENABLED) return reply.code(404).send({ error: 'Not found' });
+    if (usersDb.hasAnyAdmin()) {
+      return reply.code(409).send({ success: false, error: 'Setup already completed' });
+    }
 
-      return {
-        user: {
-          apiToken: authUser.apiToken,
-          jwtToken: authUser.jwtToken,
-        },
-        success: true,
-      };
-    } catch (error) {
-      fastify.log.error({ error }, 'Sign in error');
-      return reply.status(500).send({
-        error: 'Internal server error',
+    const ip = request.ip || 'unknown';
+    if (!allowAttempt(`setup:${ip}`)) {
+      return reply.code(429).send({ success: false, error: 'Too many attempts, try again later' });
+    }
+
+    const parsed = setupSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
         success: false,
+        error: parsed.error.issues[0]?.message ?? 'Invalid setup payload',
       });
     }
+    const { apiToken, username, password } = parsed.data;
+    if (!env.API_TOKEN || !safeEqual(apiToken, env.API_TOKEN)) {
+      return reply.code(403).send({ success: false, error: 'Invalid setup token' });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const created = usersDb.createUserIfNoAdmin({
+      id,
+      username,
+      passwordHash,
+      role: 'admin',
+      createdAt: now,
+      updatedAt: now,
+      createdBy: 'system',
+    });
+    if (!created) {
+      return reply.code(409).send({ success: false, error: 'Setup already completed' });
+    }
+    audit('setup', { actor: id, target: username });
+    return { success: true, user: { id, username, role: 'admin' as const } };
   });
 
-  fastify.post('/api/auth/signout', (_, reply) => {
-    try {
-      reply.clearCookie('token', { path: '/' });
+  fastify.post('/api/auth/register', async (request, reply) => {
+    if (!AUTH_ENABLED) return reply.code(404).send({ error: 'Not found' });
 
-      return {
-        success: true,
-        message: 'Signed out successfully',
-      };
-    } catch (error) {
-      fastify.log.error({ error }, 'Sign out error');
-      return reply.status(500).send({
-        error: 'Internal server error',
+    const ip = request.ip || 'unknown';
+    if (!allowAttempt(`register:${ip}`)) {
+      return reply.code(429).send({ success: false, error: 'Too many attempts, try again later' });
+    }
+
+    const parsed = registerSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
         success: false,
+        error: parsed.error.issues[0]?.message ?? 'Invalid registration payload',
       });
     }
+    const { inviteCode, username, password } = parsed.data;
+
+    const passwordHash = await hashPassword(password);
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const newUser = {
+      id,
+      username,
+      passwordHash,
+      role: 'readonly' as const,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: null,
+    };
+
+    if (inviteCode) {
+      const outcome = invitesDb.consumeInviteAndCreateUser(hashToken(inviteCode), now, newUser);
+      if (outcome === 'invalid_invite') {
+        return reply.code(400).send({ success: false, error: 'Invalid or expired invite' });
+      }
+      if (outcome === 'username_taken') {
+        return reply.code(409).send({ success: false, error: 'Username already taken' });
+      }
+    } else {
+      if (!siteConfigDb.get().allowOpenRegistration) {
+        return reply.code(403).send({ success: false, error: 'Registration requires an invite' });
+      }
+      // Atomic so concurrent same-username registrations can't both pass the check.
+      const created = tx(() => {
+        if (usersDb.getUserByUsername(username)) return false;
+        usersDb.createUser(newUser);
+        return true;
+      });
+      if (!created) {
+        return reply.code(409).send({ success: false, error: 'Username already taken' });
+      }
+    }
+
+    audit('register', { actor: id, target: username });
+    return { success: true, user: { id, username, role: 'readonly' as const } };
   });
 
-  fastify.get('/api/auth/session', async (request, reply) => {
-    try {
-      const sessionData = await getSession(request as AuthRequest, reply);
-      return sessionData;
-    } catch (_error) {
-      return reply.status(401).send({ error: 'Unauthorized' });
+  fastify.post('/api/auth/change-password', async (request, reply) => {
+    if (!AUTH_ENABLED) return reply.code(404).send({ error: 'Not found' });
+    const ip = request.ip || 'unknown';
+    if (!allowAttempt(`change-password:${ip}`)) {
+      return reply.code(429).send({ success: false, error: 'Too many attempts, try again later' });
     }
+    const parsed = changePasswordSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ success: false, error: parsed.error.issues[0]?.message ?? 'Invalid payload' });
+    }
+    const { username, currentPassword, newPassword } = parsed.data;
+
+    const user = usersDb.getUserByUsername(username);
+    const ok = user && !user.disabled && (await verifyPassword(currentPassword, user.passwordHash));
+    if (!user || !ok) {
+      return reply.code(401).send({ success: false, error: 'Invalid username or password' });
+    }
+
+    usersDb.setUserPassword(user.id, await hashPassword(newPassword));
+    revokeAllSessionsForUser(user.id);
+    const { token } = createSession({
+      userId: user.id,
+      role: user.role,
+      userAgent: request.headers['user-agent'] ?? null,
+      ip,
+    });
+    setSessionCookies(reply, token, generateCsrfToken());
+    clearAttempts(`change-password:${ip}`);
+    audit('password_change', { actor: user.id });
+    return { success: true, user: { id: user.id, username: user.username, role: user.role } };
   });
 
-  fastify.all('/api/auth/*', async (request, reply) => {
-    // Handle various next-auth endpoints for compatibility
-    const path = (request.params as { '*': string })['*'] || '';
+  fastify.post('/api/auth/reset', async (request, reply) => {
+    if (!AUTH_ENABLED) return reply.code(404).send({ error: 'Not found' });
+    const parsed = resetCompleteSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ success: false, error: 'Invalid payload' });
+    const { token, password } = parsed.data;
 
-    switch (path) {
-      case 'signin':
-        return reply.send({
-          providers: [
-            {
-              id: 'credentials',
-              name: 'API Token',
-              type: 'credentials',
-            },
-          ],
-        });
-
-      case 'session':
-        return await getSession(request as AuthRequest, reply);
-
-      default:
-        return reply.status(404).send({ error: 'Not found' });
+    const passwordHash = await hashPassword(password);
+    const now = new Date().toISOString();
+    const userId = tx<string | null>(() => {
+      const t = resetTokensDb.getValidResetToken(hashToken(token), now);
+      if (!t) return null;
+      resetTokensDb.markResetTokenUsed(t.id, now);
+      usersDb.setUserPassword(t.userId, passwordHash);
+      sessionsDb.deleteSessionsByUser(t.userId); // revoke all sessions on reset
+      return t.userId;
+    });
+    if (!userId) {
+      return reply.code(400).send({ success: false, error: 'Invalid or expired reset token' });
     }
+    audit('password_reset_complete', { actor: userId });
+    return { success: true };
+  });
+
+  fastify.post('/api/auth/signout', (request, reply) => {
+    const identity = resolveIdentity(request);
+    request.auth = identity ?? undefined;
+    // A valid session must present a matching CSRF token (double-submit). An
+    // expired/absent session skips the check so logout stays idempotent.
+    if (!csrfValid(request)) {
+      return reply.code(403).send({ success: false, error: 'Invalid CSRF token' });
+    }
+    const token = request.cookies?.[SESSION_COOKIE];
+    const all = (request.query as { all?: string } | undefined)?.all === 'true';
+    if (token) {
+      if (all && identity?.userId) {
+        revokeAllSessionsForUser(identity.userId);
+      } else {
+        revokeSession(token);
+      }
+      if (identity?.userId) audit(all ? 'logout_all' : 'logout', { actor: identity.userId });
+    }
+    clearSessionCookies(reply);
+    return { success: true, message: 'Signed out successfully' };
+  });
+
+  fastify.get('/api/auth/session', async (request) => {
+    if (!AUTH_ENABLED) {
+      return {
+        authMode: 'open' as const,
+        user: openModeUser(),
+        expires: new Date(Date.now() + IDLE_TTL_MS).toISOString(),
+      };
+    }
+
+    const identity = resolveIdentity(request);
+    const user =
+      identity?.via === 'session' && identity.userId ? usersDb.getUserById(identity.userId) : null;
+    if (!user) {
+      // 200 (not 401) with needsSetup so the SPA can route to setup vs login.
+      return { authMode: 'enabled' as const, user: null, needsSetup: !usersDb.hasAnyAdmin() };
+    }
+
+    return {
+      authMode: 'enabled' as const,
+      user: { id: user.id, username: user.username, role: user.role },
+      expires: new Date(Date.now() + IDLE_TTL_MS).toISOString(),
+    };
   });
 }
 
-export type { AuthRequest, AuthUser };
-export { useAuth, secret, expirationSeconds };
+export { authorize, isAuthenticated };
+export type { AuthRequest };
