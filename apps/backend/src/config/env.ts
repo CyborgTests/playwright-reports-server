@@ -26,10 +26,25 @@ export const env = cleanEnv(process.env, {
   API_BASE_PATH: str({ desc: 'Base path for the API', default: '' }),
   API_TOKEN: str({ desc: 'API token for authorization', default: undefined }),
   UI_AUTH_EXPIRE_HOURS: str({
-    desc: 'How much hours are allowed to keep auth session valid',
-    default: '2',
+    desc: 'Idle session lifetime in hours (sliding; bounded by a 30-day absolute cap)',
+    default: '12',
   }),
-  AUTH_SECRET: str({ desc: 'Secret for JWT', default: undefined }),
+  AUTH_SECRET: str({
+    desc: 'Encryption key for stored secrets. Set a stable value in production.',
+    default: undefined,
+  }),
+  COOKIE_SECURE: bool({
+    desc: 'Set the Secure flag on auth cookies. Default true; set false only for LAN/HTTP deployments.',
+    default: true,
+  }),
+  ROOT_USERNAME: str({
+    desc: 'Emergency admin username (recovery only). Enables root login when set with ROOT_PASSWORD.',
+    default: undefined,
+  }),
+  ROOT_PASSWORD: str({
+    desc: 'Emergency admin password (recovery only).',
+    default: undefined,
+  }),
   DATA_STORAGE: str({
     desc: 'Where to store data',
     default: 'fs',
