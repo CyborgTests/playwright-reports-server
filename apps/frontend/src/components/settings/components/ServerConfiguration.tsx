@@ -267,6 +267,37 @@ export default function ServerConfiguration({
             </div>
           </div>
 
+          {config.authRequired && (
+            <div className="space-y-2">
+              <Label>Registration</Label>
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="allow-open-registration" className="cursor-pointer">
+                    Allow open registration
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    When on, anyone can create a reader account without an invite. Off =
+                    invite-only.
+                  </p>
+                </div>
+                <Switch
+                  id="allow-open-registration"
+                  disabled={editingSection !== 'server'}
+                  checked={
+                    editingSection === 'server'
+                      ? (tempConfig.allowOpenRegistration ?? false)
+                      : (config.allowOpenRegistration ?? false)
+                  }
+                  onCheckedChange={(checked) => {
+                    if (editingSection === 'server') {
+                      onUpdateTempConfig({ allowOpenRegistration: checked });
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label>Favicon</Label>
             <div className="space-y-3">

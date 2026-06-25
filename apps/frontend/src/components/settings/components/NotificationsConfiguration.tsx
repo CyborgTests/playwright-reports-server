@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { useCan } from '@/hooks/useCan';
 import { useConfig } from '@/hooks/useConfig';
 import {
   useNotificationsConfig,
@@ -26,6 +27,7 @@ import {
 import { ChannelFormDialog } from './notifications/ChannelFormDialog';
 import { DeliveryLogPanel } from './notifications/DeliveryLogPanel';
 import { RuleFormDialog } from './notifications/RuleFormDialog';
+import { SendTestPanel } from './notifications/SendTestPanel';
 
 const EMPTY: NotificationsConfig = { enabled: false, channels: [] };
 
@@ -34,6 +36,8 @@ export default function NotificationsConfiguration() {
   const { data: siteConfig } = useConfig();
   const update = useUpdateNotificationsConfig();
   const config = data ?? EMPTY;
+  // Editing channels/rules is admin-only; viewing and sending a test are open to all.
+  const canEdit = useCan()('config:notifications');
 
   const baseUrlMissing = !siteConfig?.serverBaseUrl?.trim();
 
@@ -148,20 +152,22 @@ export default function NotificationsConfiguration() {
             {config.enabled ? 'Enabled' : 'Disabled'}
           </Badge>
         </div>
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Enable</span>
-            <Switch
-              id="notifications-enabled"
-              checked={config.enabled}
-              onCheckedChange={toggleEnabled}
-              disabled={update.isPending}
-            />
+        {canEdit && (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Enable</span>
+              <Switch
+                id="notifications-enabled"
+                checked={config.enabled}
+                onCheckedChange={toggleEnabled}
+                disabled={update.isPending}
+              />
+            </div>
+            <Button onClick={openAdd} disabled={update.isPending}>
+              Add channel
+            </Button>
           </div>
-          <Button onClick={openAdd} disabled={update.isPending}>
-            Add channel
-          </Button>
-        </div>
+        )}
       </CardHeader>
 
       <CardContent>
@@ -197,6 +203,7 @@ export default function NotificationsConfiguration() {
               <ChannelCard
                 key={channel.id}
                 channel={channel}
+                canEdit={canEdit}
                 onToggle={(v) => toggleChannelEnabled(channel, v)}
                 onEdit={() => openEdit(channel)}
                 onDelete={() => setPendingDelete(channel)}
@@ -265,6 +272,7 @@ export default function NotificationsConfiguration() {
 
 interface ChannelCardProps {
   channel: NotificationChannel;
+  canEdit: boolean;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -277,6 +285,7 @@ interface ChannelCardProps {
 
 function ChannelCard({
   channel,
+  canEdit,
   onToggle,
   onEdit,
   onDelete,
@@ -301,19 +310,32 @@ function ChannelCard({
             </Badge>
           </div>
         </div>
-        <Switch checked={channel.enabled} onCheckedChange={onToggle} disabled={disabled} />
-        <Button variant="outline" size="sm" onClick={onEdit} disabled={disabled}>
-          Edit
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onDelete}
-          disabled={disabled}
-          aria-label="Delete channel"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        {channel.enabled ? (
+          <Badge variant="success" className="text-xs">
+            On
+          </Badge>
+        ) : (
+          <Badge variant="secondary" className="text-xs">
+            Off
+          </Badge>
+        )}
+        {canEdit && (
+          <>
+            <Switch checked={channel.enabled} onCheckedChange={onToggle} disabled={disabled} />
+            <Button variant="outline" size="sm" onClick={onEdit} disabled={disabled}>
+              Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onDelete}
+              disabled={disabled}
+              aria-label="Delete channel"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </>
+        )}
       </div>
 
       <div className="p-3 space-y-2">
@@ -326,6 +348,8 @@ function ChannelCard({
             <RuleRow
               key={rule.id}
               rule={rule}
+              channelId={channel.id}
+              canEdit={canEdit}
               onEdit={() => onEditRule(rule)}
               onDelete={() => onDeleteRule(rule)}
               onToggle={(v) => onToggleRule(rule, v)}
@@ -333,10 +357,12 @@ function ChannelCard({
             />
           ))
         )}
-        <Button variant="outline" size="sm" onClick={onAddRule} disabled={disabled}>
-          <Plus className="h-4 w-4 mr-1" />
-          Add rule
-        </Button>
+        {canEdit && (
+          <Button variant="outline" size="sm" onClick={onAddRule} disabled={disabled}>
+            <Plus className="h-4 w-4 mr-1" />
+            Add rule
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -344,49 +370,81 @@ function ChannelCard({
 
 interface RuleRowProps {
   rule: NotificationRule;
+  channelId: string;
+  canEdit: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onToggle: (enabled: boolean) => void;
   disabled?: boolean;
 }
 
-function RuleRow({ rule, onEdit, onDelete, onToggle, disabled }: Readonly<RuleRowProps>) {
+function RuleRow({
+  rule,
+  channelId,
+  canEdit,
+  onEdit,
+  onDelete,
+  onToggle,
+  disabled,
+}: Readonly<RuleRowProps>) {
+  const [showTest, setShowTest] = useState(false);
   const kindLabel = rule.kind === 'event' ? 'On upload' : 'Scheduled';
   const conditionLabel = formatCondition(rule);
   const filterLabel = formatFilter(rule.projectFilter);
   const ruleEnabled = rule.enabled !== false;
 
   return (
-    <div
-      className={`flex items-center gap-2 rounded border bg-background px-3 py-2 text-sm ${
-        ruleEnabled ? '' : 'opacity-60'
-      }`}
-    >
-      <Switch
-        checked={ruleEnabled}
-        onCheckedChange={onToggle}
-        disabled={disabled}
-        aria-label={ruleEnabled ? 'Disable rule' : 'Enable rule'}
-      />
-      <Badge variant="outline" className="text-xs shrink-0">
-        {kindLabel}
-      </Badge>
-      <span className="truncate">{conditionLabel}</span>
-      <span className="text-muted-foreground text-xs truncate">· {filterLabel}</span>
-      <div className="ml-auto flex items-center gap-1">
-        <Button variant="ghost" size="sm" onClick={onEdit} disabled={disabled}>
-          Edit
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onDelete}
-          disabled={disabled}
-          aria-label="Delete rule"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+    <div className="space-y-2">
+      <div
+        className={`flex items-center gap-2 rounded border bg-background px-3 py-2 text-sm ${
+          ruleEnabled ? '' : 'opacity-60'
+        }`}
+      >
+        {canEdit ? (
+          <Switch
+            checked={ruleEnabled}
+            onCheckedChange={onToggle}
+            disabled={disabled}
+            aria-label={ruleEnabled ? 'Disable rule' : 'Enable rule'}
+          />
+        ) : (
+          <Badge variant={ruleEnabled ? 'success' : 'secondary'} className="text-xs shrink-0">
+            {ruleEnabled ? 'On' : 'Off'}
+          </Badge>
+        )}
+        <Badge variant="outline" className="text-xs shrink-0">
+          {kindLabel}
+        </Badge>
+        <span className="truncate">{conditionLabel}</span>
+        <span className="text-muted-foreground text-xs truncate">· {filterLabel}</span>
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowTest((v) => !v)}
+            aria-expanded={showTest}
+          >
+            Test
+          </Button>
+          {canEdit && (
+            <>
+              <Button variant="ghost" size="sm" onClick={onEdit} disabled={disabled}>
+                Edit
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onDelete}
+                disabled={disabled}
+                aria-label="Delete rule"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+        </div>
       </div>
+      {showTest && <SendTestPanel channelId={channelId} draft={rule} />}
     </div>
   );
 }

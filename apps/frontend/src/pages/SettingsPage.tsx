@@ -1,20 +1,26 @@
 import type { HeaderLink, ServerConfig } from '@playwright-reports/shared';
+import { CAPABILITIES } from '@playwright-reports/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import LazyVisible from '@/components/lazy-visible';
 import AddLinkModal from '@/components/settings/components/AddLinkModal';
+import ApiKeysManagement from '@/components/settings/components/ApiKeysManagement';
 import CronConfiguration from '@/components/settings/components/CronConfiguration';
 import EnvironmentInfo from '@/components/settings/components/EnvironmentInfo';
 import GithubSyncConfiguration from '@/components/settings/components/GithubSyncConfiguration';
+import InvitesManagement from '@/components/settings/components/InvitesManagement';
 import LLMConfiguration from '@/components/settings/components/LLMConfiguration';
 import NotificationsConfiguration from '@/components/settings/components/NotificationsConfiguration';
 import ServerConfiguration from '@/components/settings/components/ServerConfiguration';
 import TestManagementSettings from '@/components/settings/components/TestManagementSettings';
+import UsersManagement from '@/components/settings/components/UsersManagement';
 import { buildConfigFormData } from '@/components/settings/config-serializers';
 import type { EditableSettingsSection } from '@/components/settings/types';
 import { Spinner } from '@/components/ui/spinner';
 import { useActiveSection } from '@/hooks/useActiveSection';
 import { useAuth } from '@/hooks/useAuth';
+import { useCan } from '@/hooks/useCan';
 import { useConfig } from '@/hooks/useConfig';
 import { authHeaders } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -31,6 +37,7 @@ const SECTION_NAV: Array<{ id: string; label: string }> = [
 
 export default function SettingsPage() {
   const session = useAuth();
+  const can = useCan();
   const [editingSection, setEditingSection] = useState<EditableSettingsSection>('none');
   const [tempConfig, setTempConfig] = useState<ServerConfig>({});
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -152,6 +159,29 @@ export default function SettingsPage() {
     return <Navigate to="/login" replace />;
   }
 
+  const authEnabled = session.data?.authMode === 'enabled';
+  const isAdmin = session.data?.user.role === 'admin';
+  const currentUserId = session.data?.user.id ?? null;
+
+  // github/llm/notifications stay visible to everyone (reader-allowed run/test
+  // actions); their config controls are gated inside the components.
+  const visibleConfigNav = SECTION_NAV.filter((s) => {
+    if (s.id === 'server' || s.id === 'cron' || s.id === 'testManagement') {
+      return can(CAPABILITIES.configServer);
+    }
+    return true; // environment, github, llm, notifications (view + test for everyone)
+  });
+  const navSections: Array<{ id: string; label: string }> = [
+    ...visibleConfigNav,
+    ...(authEnabled && can(CAPABILITIES.apiKeysOwn) ? [{ id: 'apiKeys', label: 'API Keys' }] : []),
+    ...(authEnabled && isAdmin
+      ? [
+          { id: 'users', label: 'Users' },
+          { id: 'invites', label: 'Invites' },
+        ]
+      : []),
+  ];
+
   return (
     <div className="lg:py-4">
       <header className="mb-6 max-w-3xl">
@@ -161,61 +191,84 @@ export default function SettingsPage() {
         </p>
       </header>
 
-      <MobileSectionNav />
+      <MobileSectionNav items={navSections} />
 
       <div className="flex gap-8">
         <aside className="hidden lg:block w-52 shrink-0">
-          <SectionNav />
+          <SectionNav items={navSections} />
         </aside>
 
         <div className="flex-1 min-w-0 max-w-5xl">
           <EnvironmentInfo />
 
-          <ServerConfiguration
-            config={config}
-            editingSection={editingSection}
-            faviconFile={faviconFile}
-            isUpdating={isUpdating}
-            logoFile={logoFile}
-            pendingLinkIcons={pendingLinkIcons}
-            tempConfig={tempConfig}
-            onAddHeaderLink={addHeaderLink}
-            onCancel={handleCancel}
-            onEdit={() => setEditingSection('server')}
-            onFaviconFileChange={setFaviconFile}
-            onLogoFileChange={setLogoFile}
-            onSave={() => handleSave('server')}
-            onUpdateLinkIconFile={setLinkIconFile}
-            onUpdateTempConfig={updateTempConfig}
-          />
+          {can(CAPABILITIES.configServer) && (
+            <>
+              <ServerConfiguration
+                config={config}
+                editingSection={editingSection}
+                faviconFile={faviconFile}
+                isUpdating={isUpdating}
+                logoFile={logoFile}
+                pendingLinkIcons={pendingLinkIcons}
+                tempConfig={tempConfig}
+                onAddHeaderLink={addHeaderLink}
+                onCancel={handleCancel}
+                onEdit={() => setEditingSection('server')}
+                onFaviconFileChange={setFaviconFile}
+                onLogoFileChange={setLogoFile}
+                onSave={() => handleSave('server')}
+                onUpdateLinkIconFile={setLinkIconFile}
+                onUpdateTempConfig={updateTempConfig}
+              />
 
-          <CronConfiguration
-            config={config}
-            editingSection={editingSection}
-            isUpdating={isUpdating}
-            tempConfig={tempConfig}
-            onCancel={handleCancel}
-            onEdit={() => setEditingSection('cron')}
-            onSave={() => handleSave('cron')}
-            onUpdateTempConfig={updateTempConfig}
-          />
+              <CronConfiguration
+                config={config}
+                editingSection={editingSection}
+                isUpdating={isUpdating}
+                tempConfig={tempConfig}
+                onCancel={handleCancel}
+                onEdit={() => setEditingSection('cron')}
+                onSave={() => handleSave('cron')}
+                onUpdateTempConfig={updateTempConfig}
+              />
+            </>
+          )}
 
           <GithubSyncConfiguration />
 
           <LLMConfiguration />
 
-          <TestManagementSettings
-            config={config}
-            editingSection={editingSection}
-            isUpdating={isUpdating}
-            tempConfig={tempConfig}
-            onCancel={handleCancel}
-            onEdit={() => setEditingSection('testManagement')}
-            onSave={() => handleSave('testManagement')}
-            onUpdateTempConfig={updateTempConfig}
-          />
+          {can(CAPABILITIES.configServer) && (
+            <TestManagementSettings
+              config={config}
+              editingSection={editingSection}
+              isUpdating={isUpdating}
+              tempConfig={tempConfig}
+              onCancel={handleCancel}
+              onEdit={() => setEditingSection('testManagement')}
+              onSave={() => handleSave('testManagement')}
+              onUpdateTempConfig={updateTempConfig}
+            />
+          )}
 
           <NotificationsConfiguration />
+
+          {/* Deferred until scrolled into view — these lists can be large. */}
+          {authEnabled && can(CAPABILITIES.apiKeysOwn) && (
+            <LazyVisible minHeight={240}>
+              <ApiKeysManagement canManageAllKeys={can(CAPABILITIES.apiKeysService)} />
+            </LazyVisible>
+          )}
+          {authEnabled && isAdmin && (
+            <LazyVisible minHeight={240}>
+              <UsersManagement currentUserId={currentUserId} />
+            </LazyVisible>
+          )}
+          {authEnabled && isAdmin && (
+            <LazyVisible minHeight={240}>
+              <InvitesManagement />
+            </LazyVisible>
+          )}
         </div>
       </div>
 
@@ -224,8 +277,10 @@ export default function SettingsPage() {
   );
 }
 
-function SectionNav() {
-  const ids = SECTION_NAV.map((s) => s.id);
+type SectionItem = { id: string; label: string };
+
+function SectionNav({ items }: { items: SectionItem[] }) {
+  const ids = items.map((s) => s.id);
   const active = useActiveSection(ids);
 
   return (
@@ -233,7 +288,7 @@ function SectionNav() {
       <p className="px-3 mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
         On this page
       </p>
-      {SECTION_NAV.map((item) => {
+      {items.map((item) => {
         const isActive = active === item.id;
         return (
           <a
@@ -255,8 +310,8 @@ function SectionNav() {
   );
 }
 
-function MobileSectionNav() {
-  const ids = SECTION_NAV.map((s) => s.id);
+function MobileSectionNav({ items }: { items: SectionItem[] }) {
+  const ids = items.map((s) => s.id);
   const active = useActiveSection(ids);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -274,7 +329,7 @@ function MobileSectionNav() {
   return (
     <nav className="lg:hidden sticky top-14 z-30 -mx-4 px-4 mb-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border/40">
       <div ref={scrollRef} className="flex gap-1 overflow-x-auto py-2 text-sm">
-        {SECTION_NAV.map((item) => {
+        {items.map((item) => {
           const isActive = active === item.id;
           return (
             <a

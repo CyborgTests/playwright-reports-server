@@ -27,6 +27,9 @@ function serializeServer(
   if ((temp.logoInvertOnDark ?? true) !== (config.logoInvertOnDark ?? true)) {
     fd.append('logoInvertOnDark', (temp.logoInvertOnDark ?? true) ? 'true' : 'false');
   }
+  if ((temp.allowOpenRegistration ?? false) !== (config.allowOpenRegistration ?? false)) {
+    fd.append('allowOpenRegistration', (temp.allowOpenRegistration ?? false) ? 'true' : 'false');
+  }
   if (files.faviconFile) {
     fd.append('favicon', files.faviconFile);
   } else if ((temp.faviconPath ?? '') !== (config.faviconPath ?? '')) {

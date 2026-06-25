@@ -17,12 +17,14 @@ export function LLMModelRow({
   onDuplicate,
   onEdit,
   onDelete,
+  canEdit,
   group,
 }: Readonly<{
   model: LlmModel;
   index: number;
   total: number;
   busy: boolean;
+  canEdit: boolean;
   group: LlmConcurrencyGroup | null;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -36,28 +38,30 @@ export function LLMModelRow({
   return (
     <div className="border rounded-md p-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex items-start gap-2 min-w-0 flex-1">
-        <div className="flex flex-col gap-0.5 pt-0.5">
-          {index > 0 && (
-            <button
-              type="button"
-              aria-label="Move up"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={onMoveUp}
-            >
-              ▲
-            </button>
-          )}
-          {index < total - 1 && (
-            <button
-              type="button"
-              aria-label="Move down"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={onMoveDown}
-            >
-              ▼
-            </button>
-          )}
-        </div>
+        {canEdit && (
+          <div className="flex flex-col gap-0.5 pt-0.5">
+            {index > 0 && (
+              <button
+                type="button"
+                aria-label="Move up"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={onMoveUp}
+              >
+                ▲
+              </button>
+            )}
+            {index < total - 1 && (
+              <button
+                type="button"
+                aria-label="Move down"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={onMoveDown}
+              >
+                ▼
+              </button>
+            )}
+          </div>
+        )}
         <div className="space-y-1 min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium truncate">{m.label}</span>
@@ -98,47 +102,53 @@ export function LLMModelRow({
         </div>
       </div>
       <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
-        <div
-          className="flex items-center gap-1.5"
-          title={m.lastTestedAt ? '' : 'Test the connection first'}
-        >
-          <Switch
-            checked={m.enabled}
-            disabled={!m.enabled && !m.lastTestedAt}
-            onCheckedChange={onToggleEnabled}
-          />
-          <span className="text-xs text-muted-foreground">Enabled</span>
-        </div>
+        {canEdit && (
+          <div
+            className="flex items-center gap-1.5"
+            title={m.lastTestedAt ? '' : 'Test the connection first'}
+          >
+            <Switch
+              checked={m.enabled}
+              disabled={!m.enabled && !m.lastTestedAt}
+              onCheckedChange={onToggleEnabled}
+            />
+            <span className="text-xs text-muted-foreground">Enabled</span>
+          </div>
+        )}
         <Button size="sm" variant="outline" onClick={onTest} disabled={busy}>
           {busy && <Spinner className="mr-2 h-4 w-4" />}
           Test
         </Button>
-        {!m.isPrimary && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onSetPrimary}
-            disabled={busy || !m.enabled}
-            title={m.enabled ? '' : 'Enable the model first'}
-          >
-            Set as primary
-          </Button>
+        {canEdit && (
+          <>
+            {!m.isPrimary && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onSetPrimary}
+                disabled={busy || !m.enabled}
+                title={m.enabled ? '' : 'Enable the model first'}
+              >
+                Set as primary
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={onDuplicate} disabled={busy}>
+              Duplicate
+            </Button>
+            <Button size="sm" variant="outline" onClick={onEdit}>
+              Edit
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={onDelete}
+              disabled={m.isPrimary}
+              title={m.isPrimary ? 'Make another model primary first' : ''}
+            >
+              Delete
+            </Button>
+          </>
         )}
-        <Button size="sm" variant="outline" onClick={onDuplicate} disabled={busy}>
-          Duplicate
-        </Button>
-        <Button size="sm" variant="outline" onClick={onEdit}>
-          Edit
-        </Button>
-        <Button
-          size="sm"
-          variant="destructive"
-          onClick={onDelete}
-          disabled={m.isPrimary}
-          title={m.isPrimary ? 'Make another model primary first' : ''}
-        >
-          Delete
-        </Button>
       </div>
     </div>
   );

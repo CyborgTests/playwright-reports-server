@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/hooks/useAuth';
+import { useCan } from '@/hooks/useCan';
 import { useServerEvents } from '@/hooks/useServerEvents';
 import { errorMessage } from '@/lib/api';
 import { authHeaders } from '@/lib/auth';
@@ -250,6 +251,8 @@ async function api<T = unknown>(path: string, options: RequestInit = {}): Promis
 
 export default function GithubSyncConfiguration() {
   const session = useAuth();
+  // Editing sync configs is admin-only; Run/Stop stay available to readers.
+  const canEditSync = useCan()('config:githubSync');
   const [configs, setConfigs] = useState<GithubSyncConfigWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
@@ -411,7 +414,7 @@ export default function GithubSyncConfiguration() {
             {configs.length} configured
           </Badge>
         </div>
-        <Button onClick={openCreate}>Add sync</Button>
+        {canEditSync && <Button onClick={openCreate}>Add sync</Button>}
       </CardHeader>
       <CardContent>
         <p className="text-sm text-muted-foreground mb-4">
@@ -492,27 +495,31 @@ export default function GithubSyncConfiguration() {
                       Run now
                     </Button>
                   )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => togglePause(cfg)}
-                    disabled={busyId === cfg.id}
-                  >
-                    {cfg.enabled ? 'Pause' : 'Resume'}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => openEdit(cfg)}>
-                    Edit
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => {
-                      setDeleteTarget(cfg);
-                      setDeleteClearState(false);
-                    }}
-                  >
-                    Delete
-                  </Button>
+                  {canEditSync && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => togglePause(cfg)}
+                        disabled={busyId === cfg.id}
+                      >
+                        {cfg.enabled ? 'Pause' : 'Resume'}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => openEdit(cfg)}>
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => {
+                          setDeleteTarget(cfg);
+                          setDeleteClearState(false);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}

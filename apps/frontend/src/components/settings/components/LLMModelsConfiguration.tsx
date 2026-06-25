@@ -33,7 +33,8 @@ import {
 
 export default function LLMModelsConfiguration({
   featureEnabled,
-}: Readonly<{ featureEnabled: boolean }>) {
+  canEdit,
+}: Readonly<{ featureEnabled: boolean; canEdit: boolean }>) {
   const queryClient = useQueryClient();
   const { data: modelsData, isLoading } = useLlmModels();
   const models = modelsData ?? [];
@@ -263,25 +264,27 @@ export default function LLMModelsConfiguration({
             {models.length} configured
           </Badge>
         </div>
-        <Button onClick={openCreate}>Add model</Button>
+        {canEdit && <Button onClick={openCreate}>Add model</Button>}
       </div>
       <div className="space-y-4">
-        <div
-          className={`mb-4 flex items-start justify-between gap-4 rounded-md border bg-muted/30 p-3 ${featureEnabled ? '' : 'opacity-50'}`}
-        >
-          <div>
-            <Label htmlFor="llm-fallback" className="cursor-pointer text-sm font-medium">
-              Use fallback chain
-            </Label>
-            <p className="text-xs text-muted-foreground mt-1">
-              On a failing call, fail over to the next enabled model in order (the primary model
-              stays primary). Order the list below to set fallback priority.
-            </p>
+        {canEdit && (
+          <div
+            className={`mb-4 flex items-start justify-between gap-4 rounded-md border bg-muted/30 p-3 ${featureEnabled ? '' : 'opacity-50'}`}
+          >
+            <div>
+              <Label htmlFor="llm-fallback" className="cursor-pointer text-sm font-medium">
+                Use fallback chain
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                On a failing call, fail over to the next enabled model in order (the primary model
+                stays primary). Order the list below to set fallback priority.
+              </p>
+            </div>
+            <Switch id="llm-fallback" checked={useFallbackChain} onCheckedChange={toggleFallback} />
           </div>
-          <Switch id="llm-fallback" checked={useFallbackChain} onCheckedChange={toggleFallback} />
-        </div>
+        )}
 
-        <LLMConcurrencyGroups disabled={!featureEnabled} />
+        {canEdit && <LLMConcurrencyGroups disabled={!featureEnabled} />}
 
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
@@ -306,6 +309,7 @@ export default function LLMModelsConfiguration({
                 onDuplicate={() => duplicate(m)}
                 onEdit={() => openEdit(m)}
                 onDelete={() => setDeleteTarget(m)}
+                canEdit={canEdit}
                 group={groups.find((g) => g.id === m.concurrencyGroupId) ?? null}
               />
             ))}
