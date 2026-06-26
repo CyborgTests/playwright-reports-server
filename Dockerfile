@@ -6,15 +6,12 @@ RUN npm install -g pnpm@10
 # Build tools for native dependencies (better-sqlite3, esbuild)
 RUN apk add --no-cache python3 make g++ libc6-compat
 
-# CI=true prevents pnpm from prompting; PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD keeps
-# @playwright/test from pulling chromium/firefox/webkit - we only run
-# `playwright merge-reports`, not browsers.
+# CI=true silences pnpm prompts; skip browsers - we only run `merge-reports`.
 ENV CI=true \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# Runner base: minimal runtime image with Node, Litestream and curl (for healthcheck).
-FROM node:24-alpine AS runner-base
-
+# Litestream binary fetched in a throwaway stage so curl never lands in the runtime image.
+FROM node:24-alpine AS litestream-dl
 ARG TARGETPLATFORM
 ENV LITESTREAM_VERSION=0.3.13
 RUN apk add --no-cache curl && \
@@ -24,6 +21,9 @@ RUN apk add --no-cache curl && \
       | tar -xz -C /usr/local/bin litestream && \
     chmod +x /usr/local/bin/litestream
 
+# Runner base: minimal runtime image with Node and Litestream. Healthcheck uses busybox wget.
+FROM node:24-alpine AS runner-base
+COPY --from=litestream-dl /usr/local/bin/litestream /usr/local/bin/litestream
 ENV NODE_ENV=production \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
@@ -50,8 +50,7 @@ WORKDIR /app
 COPY --from=deps /app/ ./
 COPY --from=shared-builder /app/packages/shared/dist ./packages/shared/dist
 
-# Vite is configured to look at ./packages/shared inside the frontend dir
-# when DOCKER_BUILD=true; symlink the workspace package into place.
+# DOCKER_BUILD=true makes Vite resolve ./packages/shared inside the frontend dir; symlink it in.
 RUN mkdir -p /app/apps/frontend/packages && \
     ln -sf /app/packages/shared /app/apps/frontend/packages/shared
 
@@ -67,6 +66,11 @@ COPY --from=shared-builder /app/packages/shared/dist ./packages/shared/dist
 RUN pnpm --filter @playwright-reports/backend bundle
 
 # Runtime deps stage - fresh install of ONLY the externals into a flat node_modules tree.
+# The bundle (esbuild) folds every pure-JS dep into dist/index.js; only its
+# `external` list (apps/backend/scripts/bundle.mjs) needs real node_modules at
+# runtime. Install exactly those externals - keep this in sync with that list:
+#   better-sqlite3   -> native binding
+#   @playwright/test -> merge-reports CLI
 FROM build-base AS runtime-deps
 WORKDIR /runtime
 COPY apps/backend/package.json ./backend-package.json
@@ -104,8 +108,7 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=backend-bundler --chown=appuser:nodejs /app/apps/backend/dist ./apps/backend/dist
 COPY --from=backend-bundler --chown=appuser:nodejs /app/apps/backend/package.json ./apps/backend/package.json
 
-# Backend-served static assets (favicon.ico, logo.svg) reached via /api/static.
-# The bundle layout resolves these at apps/backend/public (dist/../public).
+# Backend static assets (favicon, logo) served at /api/static; resolved as dist/../public.
 COPY --from=backend-bundler --chown=appuser:nodejs /app/apps/backend/public ./apps/backend/public
 
 # Runtime externals - better-sqlite3 native binding + playwright CLI.
@@ -139,4 +142,4 @@ ENV FRONTEND_DIST=/app/apps/frontend/dist
 CMD ["node", "apps/backend/dist/index.js"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:$PORT/api/ping || exit 1
+    CMD wget -q -O /dev/null http://localhost:$PORT/api/ping || exit 1
