@@ -20,8 +20,7 @@ interface ApiEnvelope<T> {
 export function useNotificationsConfig() {
   useUnauthorizedRedirect();
   const session = useAuth();
-  const isAuthDisabled = session.status === 'authenticated' && session.data === null;
-  const enabled = isAuthDisabled || session.status === 'authenticated';
+  const enabled = session.status === 'authenticated';
 
   return useQuery<NotificationsConfig>({
     queryKey: NOTIFICATIONS_QUERY_KEY,

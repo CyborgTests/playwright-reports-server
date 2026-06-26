@@ -1,18 +1,8 @@
 import {
   type EventCondition,
-  eventVariableNames,
   renderTemplate,
   type ScheduleCondition,
-  scheduleVariableNames,
 } from '@playwright-reports/shared';
-
-export function eventVariables(condition: EventCondition): readonly string[] {
-  return eventVariableNames(condition);
-}
-
-export function scheduleVariables(): readonly string[] {
-  return scheduleVariableNames();
-}
 
 export function previewRender(
   template: string,
@@ -34,11 +24,7 @@ export function urlVariablesOnly(variables: readonly string[]): readonly string[
   return variables.filter((v) => URL_VARS_SET.has(v));
 }
 
-interface AnyContext {
-  [key: string]: unknown;
-}
-
-const BASE_EVENT_SAMPLE: AnyContext = {
+const BASE_EVENT_SAMPLE: Record<string, unknown> = {
   project: 'main:e2e',
   reportId: '8f2c1a4d-9e22-4b3f-9c5d-7e1b0a4f8e9c',
   displayNumber: 1247,
@@ -56,7 +42,7 @@ const BASE_EVENT_SAMPLE: AnyContext = {
   durationMs: 102000,
 };
 
-const CLEAN_EVENT_SAMPLE: AnyContext = {
+const CLEAN_EVENT_SAMPLE: Record<string, unknown> = {
   ...BASE_EVENT_SAMPLE,
   passed: 200,
   failed: 0,
@@ -66,7 +52,7 @@ const CLEAN_EVENT_SAMPLE: AnyContext = {
   passRate: '100',
 };
 
-const PASS_BELOW_100_SAMPLE: AnyContext = {
+const PASS_BELOW_100_SAMPLE: Record<string, unknown> = {
   ...BASE_EVENT_SAMPLE,
   passed: 194,
   failed: 0,
@@ -76,7 +62,7 @@ const PASS_BELOW_100_SAMPLE: AnyContext = {
   passRate: '97',
 };
 
-const RECOVERED_PREV_DIRTY: AnyContext = {
+const RECOVERED_PREV_DIRTY: Record<string, unknown> = {
   prevReportId: 'c3a7b218',
   prevDisplayNumber: 1246,
   prevPassRate: '78',
@@ -89,7 +75,7 @@ const RECOVERED_PREV_DIRTY: AnyContext = {
   compareUrl: 'https://reports.example.com/reports/compare?a=prev&b=cur',
 };
 
-export function sampleEventContext(condition: EventCondition): AnyContext {
+export function sampleEventContext(condition: EventCondition): Record<string, unknown> {
   switch (condition) {
     case 'has_failures':
       return BASE_EVENT_SAMPLE;
@@ -113,7 +99,7 @@ export function sampleEventContext(condition: EventCondition): AnyContext {
   }
 }
 
-const BASE_SCHEDULE_SAMPLE: AnyContext = {
+const BASE_SCHEDULE_SAMPLE: Record<string, unknown> = {
   windowStart: '2026-06-04 09:00',
   windowEnd: '2026-06-05 09:00',
   windowLabel: 'last 24 hours',
@@ -147,7 +133,7 @@ const BASE_SCHEDULE_SAMPLE: AnyContext = {
   dashboardUrl: 'https://reports.example.com',
 };
 
-const ALL_CLEAN_SCHEDULE_SAMPLE: AnyContext = {
+const ALL_CLEAN_SCHEDULE_SAMPLE: Record<string, unknown> = {
   ...BASE_SCHEDULE_SAMPLE,
   totalFailed: 0,
   totalFlaky: 0,
@@ -159,7 +145,7 @@ const ALL_CLEAN_SCHEDULE_SAMPLE: AnyContext = {
   topFailingTests: [],
 };
 
-const NO_HARD_FAILURES_SAMPLE: AnyContext = {
+const NO_HARD_FAILURES_SAMPLE: Record<string, unknown> = {
   ...BASE_SCHEDULE_SAMPLE,
   totalFailed: 0,
   totalFlaky: 12,
@@ -168,7 +154,7 @@ const NO_HARD_FAILURES_SAMPLE: AnyContext = {
   recoveriesCount: 3,
 };
 
-export function sampleScheduleContext(condition: ScheduleCondition): AnyContext {
+export function sampleScheduleContext(condition: ScheduleCondition): Record<string, unknown> {
   switch (condition) {
     case 'always':
       return BASE_SCHEDULE_SAMPLE;

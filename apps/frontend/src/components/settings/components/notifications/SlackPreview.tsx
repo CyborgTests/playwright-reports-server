@@ -119,10 +119,7 @@ function PreviewBlock({ block, sample, allowlist }: Readonly<PreviewBlockProps>)
               type="button"
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded border bg-background hover:bg-accent text-sm"
               title={btn.url.output}
-              onClick={(e) => {
-                // avoid navigation for preview
-                e.preventDefault();
-              }}
+              onClick={(e) => e.preventDefault()}
             >
               {btn.label.output}
               <ExternalLink className="h-3 w-3 text-muted-foreground" />

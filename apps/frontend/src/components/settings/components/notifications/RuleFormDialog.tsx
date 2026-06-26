@@ -4,10 +4,12 @@ import {
   defaultScheduleTemplate,
   type EventCondition,
   type EventRule,
+  eventVariableNames,
   type NotificationRule,
   type ProjectFilter,
   type ScheduleCondition,
   type ScheduleRule,
+  scheduleVariableNames,
 } from '@playwright-reports/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -32,12 +34,7 @@ import { ScheduleFields } from './ScheduleFields';
 import { SendTestPanel } from './SendTestPanel';
 import { SlackBlockEditor } from './SlackBlockEditor';
 import { SlackPreview } from './SlackPreview';
-import {
-  eventVariables,
-  sampleEventContext,
-  sampleScheduleContext,
-  scheduleVariables,
-} from './templating';
+import { sampleEventContext, sampleScheduleContext } from './templating';
 import { WebhookPreview, WebhookTemplateEditor } from './WebhookTemplateEditor';
 
 interface RuleFormDialogProps {
@@ -143,8 +140,8 @@ export function RuleFormDialog({
   };
 
   const variables: readonly string[] = useMemo(() => {
-    if (draft.kind === 'event') return eventVariables(draft.condition);
-    return scheduleVariables();
+    if (draft.kind === 'event') return eventVariableNames(draft.condition);
+    return scheduleVariableNames();
   }, [draft]);
 
   const sample = useMemo(() => {

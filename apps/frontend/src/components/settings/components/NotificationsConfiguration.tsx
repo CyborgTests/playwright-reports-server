@@ -36,7 +36,6 @@ export default function NotificationsConfiguration() {
   const { data: siteConfig } = useConfig();
   const update = useUpdateNotificationsConfig();
   const config = data ?? EMPTY;
-  // Editing channels/rules is admin-only; viewing and sending a test are open to all.
   const canEdit = useCan()('config:notifications');
 
   const baseUrlMissing = !siteConfig?.serverBaseUrl?.trim();
@@ -50,6 +49,17 @@ export default function NotificationsConfiguration() {
   >(undefined);
 
   const persist = (next: NotificationsConfig) => update.mutate(next);
+
+  const patchChannelRules = (
+    channelId: string,
+    fn: (rules: NotificationRule[]) => NotificationRule[]
+  ) => {
+    if (!config.channels.some((c) => c.id === channelId)) return;
+    persist({
+      ...config,
+      channels: config.channels.map((c) => (c.id === channelId ? { ...c, rules: fn(c.rules) } : c)),
+    });
+  };
 
   const toggleEnabled = (enabled: boolean) => {
     persist({ ...config, enabled });
@@ -98,44 +108,22 @@ export default function NotificationsConfiguration() {
 
   const handleRuleSubmit = (next: NotificationRule) => {
     if (!ruleEditor) return;
-    const target = config.channels.find((c) => c.id === ruleEditor.channelId);
-    if (!target) return;
-    const exists = target.rules.some((r) => r.id === next.id);
-    const rules = exists
-      ? target.rules.map((r) => (r.id === next.id ? next : r))
-      : [...target.rules, next];
-    persist({
-      ...config,
-      channels: config.channels.map((c) => (c.id === target.id ? { ...c, rules } : c)),
-    });
+    patchChannelRules(ruleEditor.channelId, (rules) =>
+      rules.some((r) => r.id === next.id)
+        ? rules.map((r) => (r.id === next.id ? next : r))
+        : [...rules, next]
+    );
     closeRuleEditor();
   };
 
   const deleteRule = (channelId: string, ruleId: string) => {
-    const target = config.channels.find((c) => c.id === channelId);
-    if (!target) return;
-    persist({
-      ...config,
-      channels: config.channels.map((c) =>
-        c.id === channelId ? { ...c, rules: c.rules.filter((r) => r.id !== ruleId) } : c
-      ),
-    });
+    patchChannelRules(channelId, (rules) => rules.filter((r) => r.id !== ruleId));
   };
 
   const toggleRuleEnabled = (channelId: string, ruleId: string, enabled: boolean) => {
-    const target = config.channels.find((c) => c.id === channelId);
-    if (!target) return;
-    persist({
-      ...config,
-      channels: config.channels.map((c) =>
-        c.id === channelId
-          ? {
-              ...c,
-              rules: c.rules.map((r) => (r.id === ruleId ? { ...r, enabled } : r)),
-            }
-          : c
-      ),
-    });
+    patchChannelRules(channelId, (rules) =>
+      rules.map((r) => (r.id === ruleId ? { ...r, enabled } : r))
+    );
   };
 
   const channelForRuleEditor = ruleEditor

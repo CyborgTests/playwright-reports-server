@@ -66,21 +66,28 @@ function newBlock(type: SlackBlock['type']): SlackBlock {
   }
 }
 
-export function SlackBlockEditor({ blocks, onChange, variables }: Readonly<SlackBlockEditorProps>) {
+// Stable per-item React keys that grow/shrink with `count`; reordering is left
+// to callers via the returned setter.
+function useStableIds(count: number) {
   const [ids, setIds] = useState<string[]>(() =>
-    Array.from({ length: blocks.length }, () => crypto.randomUUID())
+    Array.from({ length: count }, () => crypto.randomUUID())
   );
   useEffect(() => {
     setIds((prev) => {
-      if (prev.length === blocks.length) return prev;
-      if (prev.length < blocks.length) {
+      if (prev.length === count) return prev;
+      if (prev.length < count) {
         const grown = prev.slice();
-        while (grown.length < blocks.length) grown.push(crypto.randomUUID());
+        while (grown.length < count) grown.push(crypto.randomUUID());
         return grown;
       }
-      return prev.slice(0, blocks.length);
+      return prev.slice(0, count);
     });
-  }, [blocks.length]);
+  }, [count]);
+  return [ids, setIds] as const;
+}
+
+export function SlackBlockEditor({ blocks, onChange, variables }: Readonly<SlackBlockEditorProps>) {
+  const [ids, setIds] = useStableIds(blocks.length);
 
   const move = (idx: number, dir: -1 | 1) => {
     const target = idx + dir;
@@ -273,20 +280,7 @@ interface ActionsBlockFormProps {
 }
 
 function ActionsBlockForm({ block, variables, onChange }: Readonly<ActionsBlockFormProps>) {
-  const [btnIds, setBtnIds] = useState<string[]>(() =>
-    Array.from({ length: block.buttons.length }, () => crypto.randomUUID())
-  );
-  useEffect(() => {
-    setBtnIds((prev) => {
-      if (prev.length === block.buttons.length) return prev;
-      if (prev.length < block.buttons.length) {
-        const grown = prev.slice();
-        while (grown.length < block.buttons.length) grown.push(crypto.randomUUID());
-        return grown;
-      }
-      return prev.slice(0, block.buttons.length);
-    });
-  }, [block.buttons.length]);
+  const [btnIds, setBtnIds] = useStableIds(block.buttons.length);
 
   const updateButton = (idx: number, patch: Partial<{ label: string; url: string }>) => {
     onChange({
@@ -444,24 +438,23 @@ function MustacheTextField({
   const closeAutocomplete = () =>
     setAutocomplete((prev) => (prev.active ? { ...prev, active: false } : prev));
 
-  const acceptMatch = (name: string) => {
-    const el = ref.current;
-    const caret = el?.selectionStart ?? value.length;
-    if (!autocomplete.active) return;
-    const before = value.slice(0, autocomplete.tagStart);
-    const after = value.slice(caret);
-    const insert = `{{${name}}}`;
-    const next = before + insert + after;
-    const nextCaret = autocomplete.tagStart + insert.length;
-    onChange(next);
-    setAutocomplete({ active: false, partial: '', tagStart: -1, highlighted: 0 });
+  const restoreCaret = (pos: number) => {
     setTimeout(() => {
       const node = ref.current;
       if (!node) return;
       node.focus();
-      node.setSelectionRange(nextCaret, nextCaret);
-      selectionRef.current = { start: nextCaret, end: nextCaret };
+      node.setSelectionRange(pos, pos);
+      selectionRef.current = { start: pos, end: pos };
     }, 0);
+  };
+
+  const acceptMatch = (name: string) => {
+    if (!autocomplete.active) return;
+    const caret = ref.current?.selectionStart ?? value.length;
+    const { next, cursor } = insertVariable(value, name, autocomplete.tagStart, caret);
+    onChange(next);
+    setAutocomplete({ active: false, partial: '', tagStart: -1, highlighted: 0 });
+    restoreCaret(cursor);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -492,13 +485,7 @@ function MustacheTextField({
     const end = selectionRef.current?.end ?? value.length;
     const { next, cursor } = insertVariable(value, name, start, end);
     onChange(next);
-    setTimeout(() => {
-      const el = ref.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(cursor, cursor);
-      selectionRef.current = { start: cursor, end: cursor };
-    }, 0);
+    restoreCaret(cursor);
   };
 
   return (

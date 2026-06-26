@@ -3,8 +3,7 @@ import { CheckCircle2, Loader2, Send, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { authHeaders } from '@/lib/auth';
-import { withBase } from '@/lib/url';
+import useMutation from '@/hooks/useMutation';
 import { ReportSearchInput } from './ReportSearchInput';
 
 interface SendTestPanelProps {
@@ -22,44 +21,44 @@ interface TestOutcome {
 
 export function SendTestPanel({ channelId, draft }: Readonly<SendTestPanelProps>) {
   const [reportId, setReportId] = useState<string>('');
-  const [sending, setSending] = useState(false);
   const [outcome, setOutcome] = useState<TestOutcome | undefined>(undefined);
 
-  const requiresReport = draft.kind === 'event';
-  const canSend = !sending && (!requiresReport || !!reportId);
+  const test = useMutation<
+    { success: boolean; data?: { results?: Array<{ result: TestOutcome }> }; error?: string },
+    { channelId: string; rule: NotificationRule; reportId?: string }
+  >('/api/notifications/test', { silent: true });
 
-  const run = async () => {
-    setSending(true);
+  const requiresReport = draft.kind === 'event';
+  const canSend = !test.isPending && (!requiresReport || !!reportId);
+
+  const run = () => {
     setOutcome(undefined);
-    try {
-      const res = await fetch(withBase('/api/notifications/test'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ channelId, rule: draft, reportId: reportId || undefined }),
-      });
-      const body = await res.json();
-      if (!res.ok || !body.success) {
-        const err = body.error || `HTTP ${res.status}`;
-        setOutcome({ ok: false, attempts: 0, error: err });
-        toast.error(`Test failed: ${err}`);
-        return;
+    test.mutate(
+      { body: { channelId, rule: draft, reportId: reportId || undefined } },
+      {
+        onSuccess: (body) => {
+          if (!body.success) {
+            const err = body.error || 'Unknown error';
+            setOutcome({ ok: false, attempts: 0, error: err });
+            toast.error(`Test failed: ${err}`);
+            return;
+          }
+          const first = body.data?.results?.[0]?.result;
+          setOutcome(first);
+          if (first?.ok) {
+            toast.success('Test message sent');
+          } else if (first?.skipReason) {
+            toast.warning(`Skipped (${first.skipReason})`);
+          } else {
+            toast.error(`Test failed: ${first?.error ?? 'Unknown error'}`);
+          }
+        },
+        onError: (err) => {
+          setOutcome({ ok: false, attempts: 0, error: err.message });
+          toast.error(`Test failed: ${err.message}`);
+        },
       }
-      const first: TestOutcome | undefined = body.data?.results?.[0]?.result;
-      setOutcome(first);
-      if (first?.ok) {
-        toast.success('Test message sent');
-      } else if (first?.skipReason) {
-        toast.warning(`Skipped (${first.skipReason})`);
-      } else {
-        toast.error(`Test failed: ${first?.error ?? 'Unknown error'}`);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setOutcome({ ok: false, attempts: 0, error: msg });
-      toast.error(`Test failed: ${msg}`);
-    } finally {
-      setSending(false);
-    }
+    );
   };
 
   return (
@@ -83,7 +82,7 @@ export function SendTestPanel({ channelId, draft }: Readonly<SendTestPanelProps>
       />
       <div className="flex items-center gap-2 pt-1">
         <Button type="button" size="sm" onClick={run} disabled={!canSend}>
-          {sending ? (
+          {test.isPending ? (
             <>
               <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
               Sending…
