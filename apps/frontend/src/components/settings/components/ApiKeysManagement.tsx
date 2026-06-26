@@ -84,7 +84,7 @@ export default function ApiKeysManagement({ canManageAllKeys }: { canManageAllKe
   const revokeKey = useMutation(KEYS_PATH, { method: 'DELETE', onSuccess: invalidate });
 
   return (
-    <section id="apiKeys" className="scroll-mt-20 mt-8">
+    <section className="mt-8">
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div>

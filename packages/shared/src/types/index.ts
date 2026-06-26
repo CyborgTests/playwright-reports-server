@@ -166,7 +166,40 @@ export interface SiteWhiteLabelConfig {
   llm?: LLMConfig;
   testManagement?: TestManagementConfig;
   notifications?: NotificationsConfig;
+  oauth?: OAuthConfig;
   llmUsageResetAt?: string;
+}
+
+export const OAUTH_PROVIDER_IDS = ['github', 'google', 'oidc'] as const;
+export type OAuthProviderId = (typeof OAUTH_PROVIDER_IDS)[number];
+export type OAuthProvisioningMode = 'invite_only' | 'open';
+
+export interface OAuthProviderConfig {
+  enabled: boolean;
+  clientId: string;
+  clientSecret?: string;
+  mode: OAuthProvisioningMode;
+  issuerUrl?: string;
+}
+
+export interface OAuthConfig {
+  github?: OAuthProviderConfig;
+  google?: OAuthProviderConfig;
+  oidc?: OAuthProviderConfig;
+}
+
+export interface OAuthProviderSettings {
+  enabled: boolean;
+  clientId: string;
+  mode: OAuthProvisioningMode;
+  issuerUrl?: string;
+  secretSet: boolean;
+}
+export type OAuthSettings = Record<OAuthProviderId, OAuthProviderSettings>;
+
+export interface OAuthPublicProvider {
+  id: OAuthProviderId;
+  label: string;
 }
 
 export interface DatabaseStats {

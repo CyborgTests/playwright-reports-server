@@ -1,5 +1,6 @@
+import type { OAuthProviderId, OAuthPublicProvider } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { Gauge, KeyRound, ListTodo, LogOut, Menu, UserRound } from 'lucide-react';
+import { Gauge, KeyRound, Link2, ListTodo, LogOut, Menu, UserRound } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -28,7 +29,8 @@ import { Spinner } from '@/components/ui/spinner';
 import { siteConfig as defaultConfig } from '@/config/site';
 import { useAuth } from '@/hooks/useAuth';
 import { useConfig } from '@/hooks/useConfig';
-import { changePassword, signOut } from '@/lib/auth';
+import { useOAuthIdentities, useOAuthProviders, useUnlinkProvider } from '@/hooks/useOAuth';
+import { changePassword, oauthStartUrl, signOut } from '@/lib/auth';
 import { withBase } from '@/lib/url';
 import { cn } from '@/lib/utils';
 import { ThemeSwitch } from './theme-switch';
@@ -171,6 +173,9 @@ function AccountMenu() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [pwOpen, setPwOpen] = useState(false);
+  const [accountsOpen, setAccountsOpen] = useState(false);
+  const { data: providers = [] } = useOAuthProviders();
+  const { data: identities } = useOAuthIdentities();
   const user = session.data?.user;
 
   if (!user?.id) return null;
@@ -180,6 +185,9 @@ function AccountMenu() {
     await queryClient.invalidateQueries({ queryKey: ['auth-session'] });
     navigate('/login', { replace: true });
   };
+
+  const hasPassword = identities?.hasPassword ?? true;
+  const ssoAvailable = providers.length > 0;
 
   return (
     <>
@@ -195,10 +203,18 @@ function AccountMenu() {
             <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
           </div>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setPwOpen(true)}>
-            <KeyRound className="mr-2 h-4 w-4" />
-            <span>Change password</span>
-          </DropdownMenuItem>
+          {hasPassword && (
+            <DropdownMenuItem onSelect={() => setPwOpen(true)}>
+              <KeyRound className="mr-2 h-4 w-4" />
+              <span>Change password</span>
+            </DropdownMenuItem>
+          )}
+          {ssoAvailable && (
+            <DropdownMenuItem onSelect={() => setAccountsOpen(true)}>
+              <Link2 className="mr-2 h-4 w-4" />
+              <span>Connected accounts</span>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onSelect={handleSignOut}>
             <LogOut className="mr-2 h-4 w-4" />
             <span>Sign out</span>
@@ -206,7 +222,95 @@ function AccountMenu() {
         </DropdownMenuContent>
       </DropdownMenu>
       <ChangePasswordDialog open={pwOpen} onOpenChange={setPwOpen} username={user.username ?? ''} />
+      <ConnectedAccountsDialog
+        open={accountsOpen}
+        onOpenChange={setAccountsOpen}
+        providers={providers}
+      />
     </>
+  );
+}
+
+function ConnectedAccountsDialog({
+  open,
+  onOpenChange,
+  providers,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  providers: OAuthPublicProvider[];
+}) {
+  const location = useLocation();
+  const { data: identities, isLoading } = useOAuthIdentities();
+  const unlink = useUnlinkProvider();
+
+  const linkedFor = (id: OAuthProviderId) => identities?.identities.find((i) => i.provider === id);
+
+  const handleUnlink = (id: OAuthProviderId) => {
+    unlink.mutate(
+      { path: `/api/auth/oauth/${id}/unlink` },
+      { onSuccess: () => toast.success('Account unlinked') }
+    );
+  };
+
+  const startLink = (id: OAuthProviderId) => {
+    const callbackUrl = location.pathname + location.search;
+    window.location.href = oauthStartUrl(id, { intent: 'link', callbackUrl });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Connected accounts</DialogTitle>
+          <DialogDescription>
+            Link a provider to sign in with it, or unlink one you no longer use.
+          </DialogDescription>
+        </DialogHeader>
+        {isLoading ? (
+          <Spinner />
+        ) : (
+          <div className="space-y-3">
+            {providers.map((p) => {
+              const linked = linkedFor(p.id);
+              return (
+                <div key={p.id} className="flex items-center justify-between rounded-md border p-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{p.label}</p>
+                    {linked ? (
+                      <p className="text-xs text-muted-foreground truncate">
+                        {linked.email ?? linked.displayName ?? 'Connected'}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Not connected</p>
+                    )}
+                  </div>
+                  {linked ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={unlink.isPending}
+                      onClick={() => handleUnlink(p.id)}
+                    >
+                      Unlink
+                    </Button>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={() => startLink(p.id)}>
+                      Connect
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

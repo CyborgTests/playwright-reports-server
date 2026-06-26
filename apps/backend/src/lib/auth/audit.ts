@@ -20,7 +20,12 @@ export type AuthAction =
   | 'invite_revoke'
   | 'password_reset_issue'
   | 'password_reset_complete'
-  | 'password_change';
+  | 'password_change'
+  | 'oauth_login'
+  | 'oauth_register'
+  | 'oauth_link'
+  | 'oauth_unlink'
+  | 'oauth_login_failed';
 
 export interface AuditOptions {
   actor?: string | null; // user id, 'root', or 'system'

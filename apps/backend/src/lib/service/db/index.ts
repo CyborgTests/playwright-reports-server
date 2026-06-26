@@ -79,5 +79,7 @@ export type {
 } from './tests.sqlite.js';
 export { testAnalyticsDb, testDb, testQueriesDb } from './tests.sqlite.js';
 export { traceBaselineDb } from './traceBaseline.sqlite.js';
+export type { NewUserIdentity, UserIdentityRecord } from './userIdentities.sqlite.js';
+export { userIdentitiesDb } from './userIdentities.sqlite.js';
 export type { NewUser, UserRecord, UserRole } from './users.sqlite.js';
 export { ROOT_USER_ID, usersDb } from './users.sqlite.js';

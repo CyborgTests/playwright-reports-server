@@ -50,7 +50,9 @@ async function start() {
     credentials: true,
   });
 
-  await fastify.register(fastifyCookie);
+  await fastify.register(fastifyCookie, {
+    secret: env.AUTH_SECRET || 'playwright-reports-server-default-dev-key',
+  });
 
   await fastify.register(fastifyMultipart, {
     limits: {

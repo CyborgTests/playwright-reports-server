@@ -11,7 +11,8 @@ export type UserRole = 'admin' | 'reader' | 'readonly';
 export interface UserRecord {
   id: string;
   username: string;
-  passwordHash: string;
+  passwordHash: string | null;
+  email: string | null;
   role: UserRole;
   disabled: number;
   createdAt: string;
@@ -23,7 +24,8 @@ export interface UserRecord {
 export interface NewUser {
   id: string;
   username: string;
-  passwordHash: string;
+  passwordHash: string | null;
+  email?: string | null;
   role: UserRole;
   disabled?: number;
   createdAt: string;
@@ -42,6 +44,7 @@ export class UsersDatabase {
       .values({
         ...row,
         disabled: row.disabled ?? 0,
+        email: row.email ?? null,
         inviteId: row.inviteId ?? null,
       })
       .compile();
@@ -61,6 +64,21 @@ export class UsersDatabase {
       .where('username', '=', username)
       .compile();
     return this.db.prepare(compiled.sql).get(...compiled.parameters) as UserRecord | undefined;
+  }
+
+  public getUserByEmail(email: string): UserRecord | undefined {
+    if (!email) return undefined;
+    const compiled = this.k
+      .selectFrom('users')
+      .selectAll()
+      .where('email', '=', email)
+      .where('id', '!=', ROOT_USER_ID)
+      .compile();
+    return this.db.prepare(compiled.sql).get(...compiled.parameters) as UserRecord | undefined;
+  }
+
+  public setUserEmail(id: string, email: string | null): void {
+    runUpdate('users', { email, updatedAt: nowISO() }, id);
   }
 
   public listUsers(): UserRecord[] {

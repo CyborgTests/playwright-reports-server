@@ -63,7 +63,11 @@ export async function hashPassword(password: string): Promise<string> {
   return `scrypt$${N}$${r}$${p}$${salt.toString('base64url')}$${dk.toString('base64url')}`;
 }
 
-export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+export async function verifyPassword(
+  password: string,
+  stored: string | null | undefined
+): Promise<boolean> {
+  if (!stored) return false;
   const parts = stored.split('$');
   if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
 

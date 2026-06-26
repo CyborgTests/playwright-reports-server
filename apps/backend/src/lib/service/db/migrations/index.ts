@@ -21,6 +21,7 @@ import * as promoteSkippedDropStats from './0017_promote_skipped_drop_stats.js';
 import * as dropRedundantIndexes from './0018_drop_redundant_indexes.js';
 import * as backfillSizeBytes from './0019_backfill_size_bytes.js';
 import * as auth from './0020_auth.js';
+import * as oauth from './0021_oauth.js';
 
 // Ordered, statically-imported migration set. The keys are the names Kysely
 // records in its `kysely_migration` table; their lexical order is the run order,
@@ -76,6 +77,7 @@ const MIGRATIONS: Record<string, Migration> = {
     down: backfillSizeBytes.down,
   },
   '0020_auth': { up: auth.up, down: auth.down },
+  '0021_oauth': { up: oauth.up, down: oauth.down },
 };
 
 class StaticMigrationProvider implements MigrationProvider {

@@ -755,6 +755,7 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           }
         }
 
+        delete config.oauth;
         const { error: saveConfigError } = await withError(service.updateConfig(config));
 
         if (saveConfigError) {

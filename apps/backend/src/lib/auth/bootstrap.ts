@@ -1,5 +1,6 @@
+import { OAUTH_PROVIDER_IDS } from '@playwright-reports/shared';
 import { env } from '../../config/env.js';
-import { apiKeysDb, ROOT_USER_ID, usersDb } from '../service/db/index.js';
+import { apiKeysDb, ROOT_USER_ID, siteConfigDb, usersDb } from '../service/db/index.js';
 import { hashPassword } from './password.js';
 import { AUTH_ENABLED } from './resolve.js';
 import { hashToken } from './tokens.js';
@@ -17,6 +18,26 @@ export async function initAuthBootstrap(): Promise<void> {
   }
   await reconcileRootUser();
   await seedApiKeyFromToken();
+  warnOnMisconfiguredOAuth();
+}
+
+function warnOnMisconfiguredOAuth(): void {
+  const cfg = siteConfigDb.get();
+  const oauth = cfg.oauth;
+  if (!oauth) return;
+  const baseUrl = (cfg.serverBaseUrl ?? '').trim();
+  for (const id of OAUTH_PROVIDER_IDS) {
+    const p = oauth[id];
+    if (!p?.enabled) continue;
+    const issues: string[] = [];
+    if (!p.clientId) issues.push('clientId');
+    if (!p.clientSecret) issues.push('clientSecret');
+    if (id === 'oidc' && !p.issuerUrl) issues.push('issuerUrl');
+    if (!baseUrl) issues.push('serverBaseUrl (needed to build the redirect URI)');
+    if (issues.length > 0) {
+      console.warn(`[auth] OAuth provider "${id}" is enabled but missing: ${issues.join(', ')}`);
+    }
+  }
 }
 
 // Reserved break-glass admin row, driven entirely by ROOT_USERNAME/ROOT_PASSWORD.

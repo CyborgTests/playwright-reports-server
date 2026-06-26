@@ -4,17 +4,16 @@ interface LazyVisibleProps {
   children: ReactNode;
   rootMargin?: string;
   minHeight?: number;
+  id?: string;
+  className?: string;
 }
 
-/**
- * Render `children` only after the placeholder enters (or nears) the viewport.
- * Once shown, stays mounted - we don't unmount when the user scrolls back up,
- * so child queries can stay warm in the query cache.
- */
 export default function LazyVisible({
   children,
   rootMargin = '200px 0px',
   minHeight,
+  id,
+  className,
 }: Readonly<LazyVisibleProps>) {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -42,6 +41,15 @@ export default function LazyVisible({
     return () => observer.disconnect();
   }, [visible, rootMargin]);
 
-  if (visible) return <>{children}</>;
-  return <div ref={sentinelRef} style={minHeight ? { minHeight } : undefined} aria-hidden />;
+  return (
+    <div
+      ref={sentinelRef}
+      id={id}
+      className={className}
+      style={!visible && minHeight ? { minHeight } : undefined}
+      aria-hidden={visible ? undefined : true}
+    >
+      {visible ? children : null}
+    </div>
+  );
 }

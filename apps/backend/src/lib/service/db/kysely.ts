@@ -366,13 +366,26 @@ export interface ResultTagsRow {
 export interface UsersRow {
   id: string;
   username: string;
-  passwordHash: string;
+  passwordHash: string | null;
+  email: string | null;
   role: 'admin' | 'reader' | 'readonly';
   disabled: WithDefault<number>;
   createdAt: string;
   updatedAt: string;
   createdBy: string | null;
   inviteId: string | null;
+}
+
+export interface UserIdentitiesRow {
+  id: string;
+  userId: string;
+  provider: 'github' | 'google' | 'oidc';
+  externalId: string;
+  email: string | null;
+  emailVerified: WithDefault<number>;
+  displayName: string | null;
+  createdAt: string;
+  lastLoginAt: string | null;
 }
 
 export interface SessionsRow {
@@ -441,6 +454,7 @@ export interface Database {
   password_reset_tokens: PasswordResetTokensRow;
   sessions: SessionsRow;
   users: UsersRow;
+  user_identities: UserIdentitiesRow;
   regressions: RegressionsRow;
   analysis_feedback: AnalysisFeedbackTableRow;
   github_sync_configs: GithubSyncConfigsRow;

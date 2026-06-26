@@ -1,3 +1,4 @@
+import type { OAuthProviderId, OAuthPublicProvider } from '@playwright-reports/shared';
 import { withBase } from './url';
 
 // The session rides an httpOnly cookie; the SPA only adds the double-submit CSRF
@@ -86,4 +87,35 @@ export const signOut = async (all = false): Promise<void> => {
     credentials: 'include',
     headers: authHeaders(),
   });
+};
+
+export interface LinkedIdentity {
+  provider: OAuthProviderId;
+  email: string | null;
+  displayName: string | null;
+  createdAt: string;
+}
+
+export interface IdentitiesResponse {
+  hasPassword: boolean;
+  identities: LinkedIdentity[];
+}
+
+export const getOAuthProviders = async (): Promise<OAuthPublicProvider[]> => {
+  const response = await fetch(withBase('/api/auth/providers'), { credentials: 'include' });
+  if (!response.ok) return [];
+  const data = await response.json().catch(() => ({}));
+  return Array.isArray(data.providers) ? data.providers : [];
+};
+
+export const oauthStartUrl = (
+  provider: string,
+  opts?: { callbackUrl?: string; inviteCode?: string; intent?: 'link' }
+): string => {
+  const params = new URLSearchParams();
+  if (opts?.callbackUrl) params.set('callbackUrl', opts.callbackUrl);
+  if (opts?.inviteCode) params.set('inviteCode', opts.inviteCode);
+  if (opts?.intent) params.set('intent', opts.intent);
+  const qs = params.toString();
+  return withBase(`/api/auth/oauth/${provider}/start${qs ? `?${qs}` : ''}`);
 };

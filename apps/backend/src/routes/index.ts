@@ -13,21 +13,25 @@ import { registerLlmFeedbackRoutes } from './llmFeedback.js';
 import { registerLlmGroupsRoutes } from './llmGroups.js';
 import { registerLlmModelsRoutes } from './llmModels.js';
 import { registerNotificationsRoutes } from './notifications.js';
+import { registerOAuthRoutes } from './oauth.js';
 import { registerQualityRoutes } from './quality.js';
 import { registerReportRoutes } from './reports.js';
 import { registerResultRoutes } from './results.js';
 import { registerServeRoutes } from './serve.js';
+import { registerSsoConfigRoutes } from './ssoConfig.js';
 import { registerTestsRoutes } from './tests.js';
 import { registerUsersRoutes } from './users.js';
 
 export async function registerApiRoutes(fastify: FastifyInstance) {
   await registerAuthRoutes(fastify);
+  await registerOAuthRoutes(fastify);
   await registerUsersRoutes(fastify);
   await registerInvitesRoutes(fastify);
   await registerApiKeysRoutes(fastify);
   await registerReportRoutes(fastify);
   await registerResultRoutes(fastify);
   await registerConfigRoutes(fastify);
+  await registerSsoConfigRoutes(fastify);
   await registerGithubSyncRoutes(fastify);
   await registerServeRoutes(fastify);
   await registerAnalyticsRoutes(fastify);

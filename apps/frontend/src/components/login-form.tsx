@@ -8,7 +8,39 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '../hooks/useAuth';
-import { resetPassword, setupAdmin, signIn } from '../lib/auth';
+import { useOAuthProviders } from '../hooks/useOAuth';
+import { oauthStartUrl, resetPassword, setupAdmin, signIn } from '../lib/auth';
+
+function SsoButtons({ callbackUrl }: { callbackUrl: string }) {
+  const { data: providers = [] } = useOAuthProviders();
+  if (providers.length === 0) return null;
+  return (
+    <div className="space-y-3">
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t border-border/60" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-card px-2 text-muted-foreground">or</span>
+        </div>
+      </div>
+      {providers.map((p) => (
+        <Button
+          key={p.id}
+          type="button"
+          variant="outline"
+          className="w-full"
+          size="lg"
+          onClick={() => {
+            window.location.href = oauthStartUrl(p.id, { callbackUrl });
+          }}
+        >
+          Continue with {p.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
 
 function Shell({ children }: { children: ReactNode }) {
   return (
@@ -122,6 +154,9 @@ function ResetCard({ token }: { token: string }) {
 }
 
 function LoginCard({ onDone }: { onDone: () => Promise<void> }) {
+  const [searchParams] = useSearchParams();
+  const callbackUrl = searchParams?.get('callbackUrl') ?? '/';
+  const ssoError = searchParams?.get('error');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -154,6 +189,11 @@ function LoginCard({ onDone }: { onDone: () => Promise<void> }) {
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
+            {ssoError && (
+              <p className="text-sm text-destructive animate-fade-in">
+                Single sign-on failed. Try again, or sign in with your username and password.
+              </p>
+            )}
             <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
               <Input
@@ -183,6 +223,9 @@ function LoginCard({ onDone }: { onDone: () => Promise<void> }) {
             </Button>
           </CardFooter>
         </form>
+        <CardContent className="pt-0">
+          <SsoButtons callbackUrl={callbackUrl} />
+        </CardContent>
       </Card>
     </Shell>
   );

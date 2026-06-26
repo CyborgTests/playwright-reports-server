@@ -12,6 +12,7 @@ import GithubSyncConfiguration from '@/components/settings/components/GithubSync
 import InvitesManagement from '@/components/settings/components/InvitesManagement';
 import LLMConfiguration from '@/components/settings/components/LLMConfiguration';
 import NotificationsConfiguration from '@/components/settings/components/NotificationsConfiguration';
+import OAuthConfiguration from '@/components/settings/components/OAuthConfiguration';
 import ServerConfiguration from '@/components/settings/components/ServerConfiguration';
 import TestManagementSettings from '@/components/settings/components/TestManagementSettings';
 import UsersManagement from '@/components/settings/components/UsersManagement';
@@ -173,13 +174,14 @@ export default function SettingsPage() {
   });
   const navSections: Array<{ id: string; label: string }> = [
     ...visibleConfigNav,
-    ...(authEnabled && can(CAPABILITIES.apiKeysOwn) ? [{ id: 'apiKeys', label: 'API Keys' }] : []),
     ...(authEnabled && isAdmin
       ? [
           { id: 'users', label: 'Users' },
           { id: 'invites', label: 'Invites' },
         ]
       : []),
+    ...(authEnabled && can(CAPABILITIES.apiKeysOwn) ? [{ id: 'apiKeys', label: 'API Keys' }] : []),
+    ...(authEnabled && can(CAPABILITIES.configSso) ? [{ id: 'sso', label: 'Single Sign-On' }] : []),
   ];
 
   return (
@@ -253,20 +255,24 @@ export default function SettingsPage() {
 
           <NotificationsConfiguration />
 
-          {/* Deferred until scrolled into view — these lists can be large. */}
-          {authEnabled && can(CAPABILITIES.apiKeysOwn) && (
-            <LazyVisible minHeight={240}>
-              <ApiKeysManagement canManageAllKeys={can(CAPABILITIES.apiKeysService)} />
-            </LazyVisible>
-          )}
           {authEnabled && isAdmin && (
-            <LazyVisible minHeight={240}>
+            <LazyVisible id="users" className="scroll-mt-20" minHeight={240}>
               <UsersManagement currentUserId={currentUserId} />
             </LazyVisible>
           )}
           {authEnabled && isAdmin && (
-            <LazyVisible minHeight={240}>
+            <LazyVisible id="invites" className="scroll-mt-20" minHeight={240}>
               <InvitesManagement />
+            </LazyVisible>
+          )}
+          {authEnabled && can(CAPABILITIES.apiKeysOwn) && (
+            <LazyVisible id="apiKeys" className="scroll-mt-20" minHeight={240}>
+              <ApiKeysManagement canManageAllKeys={can(CAPABILITIES.apiKeysService)} />
+            </LazyVisible>
+          )}
+          {authEnabled && can(CAPABILITIES.configSso) && (
+            <LazyVisible id="sso" className="scroll-mt-20" minHeight={240}>
+              <OAuthConfiguration />
             </LazyVisible>
           )}
         </div>
