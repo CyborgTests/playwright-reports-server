@@ -35,7 +35,7 @@ function maskHeaders(
   return masked;
 }
 
-export function maskChannel(channel: NotificationChannel): NotificationChannel {
+function maskChannel(channel: NotificationChannel): NotificationChannel {
   if (channel.type === 'slack') {
     const config = channel.config as SlackChannelConfig;
     return {

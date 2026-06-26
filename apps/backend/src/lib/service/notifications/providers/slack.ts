@@ -1,19 +1,9 @@
-import type {
-  ChannelTemplate,
-  NotificationChannel,
-  SlackBlock,
-  SlackChannelConfig,
-} from '@playwright-reports/shared';
-import {
-  defaultEventTemplate,
-  defaultScheduleTemplate,
-  renderTemplate,
-} from '@playwright-reports/shared';
-import { isOpen, recordFailure, recordSuccess } from '../circuitBreaker.js';
+import type { SlackBlock, SlackChannelConfig } from '@playwright-reports/shared';
+import { renderTemplate } from '@playwright-reports/shared';
+import { isOpen } from '../circuitBreaker.js';
+import { postWithRetry, resolveTemplate } from './shared.js';
 import type { DispatchInput, DispatchResult } from './types.js';
 
-const PER_ATTEMPT_TIMEOUT_MS = 5_000;
-const BACKOFFS_MS = [1_000, 4_000];
 const HEADER_MAX = 150;
 const MUSTACHE_LEFTOVER = /\{\{[^}]+\}\}/;
 
@@ -70,16 +60,14 @@ export async function sendSlack(input: DispatchInput): Promise<DispatchResult> {
   const slackConfig = channel.config as SlackChannelConfig;
   const body = JSON.stringify({ blocks });
 
-  return runWithRetry(channel.id, slackConfig.webhookUrl, body);
-}
-
-function resolveTemplate(
-  rule: NotificationChannel['rules'][number],
-  channel: NotificationChannel
-): ChannelTemplate {
-  if (rule.template) return rule.template;
-  if (rule.kind === 'event') return defaultEventTemplate(channel.type, rule.condition);
-  return defaultScheduleTemplate(channel.type, rule.condition);
+  return postWithRetry(channel.id, (signal) =>
+    fetch(slackConfig.webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body,
+      signal,
+    })
+  );
 }
 
 function renderBlocks(
@@ -140,105 +128,4 @@ function renderBlocks(
     if (elements.length > 0) out.push({ type: 'actions', elements });
   }
   return out;
-}
-
-async function runWithRetry(
-  channelId: string,
-  webhookUrl: string,
-  body: string
-): Promise<DispatchResult> {
-  let attempts = 0;
-  let lastError = '';
-  let lastStatus: number | undefined;
-
-  const totalAttempts = 1 + BACKOFFS_MS.length;
-  for (let i = 0; i < totalAttempts; i++) {
-    attempts = i + 1;
-    const result = await attempt(webhookUrl, body);
-
-    if (result.ok) {
-      recordSuccess(channelId);
-      return { ok: true, attempts, httpStatus: result.status };
-    }
-
-    lastError = result.error;
-    lastStatus = result.status;
-
-    if (result.status !== undefined && result.status >= 400 && result.status < 500) {
-      return {
-        ok: false,
-        attempts,
-        httpStatus: lastStatus,
-        error: lastError,
-      };
-    }
-
-    if (i === totalAttempts - 1) break;
-
-    const wait = result.retryAfterMs ?? BACKOFFS_MS[i];
-    await sleep(wait);
-  }
-
-  recordFailure(channelId);
-  return {
-    ok: false,
-    attempts,
-    httpStatus: lastStatus,
-    error: lastError,
-  };
-}
-
-interface AttemptResult {
-  ok: boolean;
-  status?: number;
-  error: string;
-  retryAfterMs?: number;
-}
-
-async function attempt(url: string, body: string): Promise<AttemptResult> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PER_ATTEMPT_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body,
-      signal: controller.signal,
-    });
-
-    if (response.ok) {
-      return { ok: true, status: response.status, error: '' };
-    }
-
-    const text = await response.text().catch(() => '');
-    const trimmed = text.slice(0, 200).trim() || `HTTP ${response.status}`;
-
-    let retryAfterMs: number | undefined;
-    const retryAfter = response.headers.get('Retry-After');
-    if (retryAfter) {
-      const secs = Number.parseInt(retryAfter, 10);
-      if (Number.isFinite(secs) && secs > 0) {
-        retryAfterMs = secs * 1000;
-      }
-    }
-
-    return { ok: false, status: response.status, error: trimmed, retryAfterMs };
-  } catch (err) {
-    const isAbort = err instanceof Error && err.name === 'AbortError';
-    return {
-      ok: false,
-      error: isAbort ? `Timed out after ${PER_ATTEMPT_TIMEOUT_MS}ms` : describeError(err),
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function describeError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

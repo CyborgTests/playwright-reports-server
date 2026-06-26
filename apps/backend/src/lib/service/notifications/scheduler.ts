@@ -31,7 +31,7 @@ interface ActiveJob {
   cron: Cron;
 }
 
-export class NotificationScheduler {
+class NotificationScheduler {
   private jobs: ActiveJob[] = [];
 
   public static getInstance(): NotificationScheduler {

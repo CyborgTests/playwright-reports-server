@@ -230,11 +230,8 @@ export interface ScheduleContext extends Record<string, unknown> {
   dashboardUrl: string;
 }
 
-/**
- * Aggregate summary input the dispatcher passes in. The actual aggregation
- * happens in `analyticsService.summarize()` (built in step 10); this type
- * pins the shape so the variable schema and the aggregator stay in sync.
- */
+// Shape shared by the window aggregator (schedule.ts buildSummaryForProject)
+// and the context/variable builder below.
 export interface ScheduleSummary {
   windowStart: string;
   windowEnd: string;
@@ -316,9 +313,7 @@ export function scheduleConditionMatches(
   condition: ScheduleCondition,
   summary: ScheduleSummary
 ): boolean {
-  // Hard guard: no activity in the window → never fire, regardless of
-  // condition. The dispatcher could check this before calling here, but
-  // making it explicit keeps the logic in one place.
+  // No activity in the window → never fire, regardless of condition.
   if (summary.reportCount === 0) return false;
 
   switch (condition) {
