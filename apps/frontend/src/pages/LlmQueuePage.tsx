@@ -23,7 +23,6 @@ import { useLlmTaskModels, useLlmTaskStats, useLlmTasks } from '@/hooks/useLlmTa
 import useMutation from '@/hooks/useMutation';
 import { useServerEvents } from '@/hooks/useServerEvents';
 import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
-import { authHeaders } from '@/lib/auth';
 import { formatCategoryName } from '@/lib/format';
 import { invalidateCache } from '@/lib/query-cache';
 
@@ -93,17 +92,20 @@ export default function LlmQueuePage() {
     },
   });
 
+  const { mutateAsync: cancelTask } = useMutation('/api/llm/tasks', {
+    method: 'PATCH',
+    silent: true,
+  });
   const [isBulkCancelling, setIsBulkCancelling] = useState(false);
 
   const handleBulkCancel = useCallback(async () => {
     setIsBulkCancelling(true);
     try {
       const ids = Array.from(selectedIds);
-      const headers: HeadersInit = { 'Content-Type': 'application/json', ...authHeaders() };
       const results = await Promise.allSettled(
-        ids.map((id) => fetch(`/api/llm/tasks/${id}/cancel`, { method: 'PATCH', headers }))
+        ids.map((id) => cancelTask({ path: `/api/llm/tasks/${id}/cancel` }))
       );
-      const failed = results.filter((r) => r.status === 'rejected' || !r.value.ok).length;
+      const failed = results.filter((r) => r.status === 'rejected').length;
       if (failed > 0) {
         toast.error(`Failed to cancel ${failed} of ${ids.length} task(s)`);
       } else {
@@ -111,12 +113,10 @@ export default function LlmQueuePage() {
       }
       setSelectedIds(new Set());
       invalidateLlmQueries();
-    } catch {
-      toast.error('Failed to cancel some tasks');
     } finally {
       setIsBulkCancelling(false);
     }
-  }, [selectedIds, invalidateLlmQueries]);
+  }, [selectedIds, invalidateLlmQueries, cancelTask]);
 
   const allSelected = tasks.length > 0 && tasks.every((t) => selectedIds.has(t.id));
 
@@ -159,7 +159,6 @@ export default function LlmQueuePage() {
 
       <UsageCard />
 
-      {/* Filters Row */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">Status:</span>
@@ -251,7 +250,6 @@ export default function LlmQueuePage() {
         </div>
       </div>
 
-      {/* Bulk Actions Bar */}
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
           <span className="text-sm font-medium">{selectedIds.size} selected</span>
@@ -287,7 +285,6 @@ export default function LlmQueuePage() {
         onInvalidate={invalidateLlmQueries}
       />
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">

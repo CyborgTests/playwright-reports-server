@@ -7,7 +7,6 @@ interface CustomPromptFieldProps {
   id: string;
   label: string;
   rows: number;
-  disabled: boolean;
   defaultPrompt: string | undefined;
   override: string | undefined;
   helper: React.ReactNode;
@@ -19,7 +18,6 @@ export function CustomPromptField({
   id,
   label,
   rows,
-  disabled,
   defaultPrompt,
   override,
   helper,
@@ -27,14 +25,9 @@ export function CustomPromptField({
   onChange,
 }: CustomPromptFieldProps) {
   const resolved = override ?? defaultPrompt ?? '';
-  // Override is "active" only when it differs from the default. Editing back to
-  // the default is treated as a reset so future default updates flow through.
   const isCustom = override !== undefined && override !== '' && override !== defaultPrompt;
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // Autocomplete state for {{var}} suggestions. Opens when the cursor sits
-  // inside an unclosed `{{…` token, narrows by what's typed after the braces,
-  // and closes on `}}`, newline, or Escape.
   const [acOpen, setAcOpen] = useState(false);
   const [acFilter, setAcFilter] = useState('');
   const [acIndex, setAcIndex] = useState(0);
@@ -73,7 +66,6 @@ export function CustomPromptField({
     const next = resolved.slice(0, lastOpen) + token + after;
     onChange(next === defaultPrompt || next === '' ? undefined : next);
     setAcOpen(false);
-    // Defer focus restoration until after the controlled value updates.
     queueMicrotask(() => {
       const node = textareaRef.current;
       if (!node) return;
@@ -87,7 +79,7 @@ export function CustomPromptField({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <Label htmlFor={id}>{label}</Label>
-        {!disabled && isCustom && (
+        {isCustom && (
           <button
             type="button"
             className="text-xs text-primary hover:underline"
@@ -101,7 +93,6 @@ export function CustomPromptField({
         <Textarea
           ref={textareaRef}
           id={id}
-          disabled={disabled}
           rows={rows}
           value={resolved}
           onChange={(e) => {

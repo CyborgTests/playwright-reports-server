@@ -41,13 +41,12 @@ export function useLlmUsageStats(days: number) {
   });
 }
 
-export function useLlmUsageByModel(days: number, enabled: boolean) {
+export function useLlmUsageByModel(days: number) {
   return useQuery<{ success: boolean; data: LlmUsageByModel }>(
     `/api/llm/usage-by-model?days=${days}`,
     {
-      dependencies: [days, enabled],
+      dependencies: [days],
       staleTime: 30_000,
-      enabled,
     }
   );
 }

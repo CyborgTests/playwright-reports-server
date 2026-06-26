@@ -20,7 +20,12 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useLlmModels } from '@/hooks/useLlmModels';
-import { type LlmUsageByModelRow, useLlmUsageByModel, useLlmUsageStats } from '@/hooks/useLlmTasks';
+import {
+  type LlmTaskStats,
+  type LlmUsageByModelRow,
+  useLlmUsageByModel,
+  useLlmUsageStats,
+} from '@/hooks/useLlmTasks';
 import useMutation from '@/hooks/useMutation';
 import {
   buildRateMap,
@@ -31,7 +36,7 @@ import {
 } from './format-task';
 
 function UsageByModelBreakdown({ days }: { days: number }) {
-  const { data, isLoading, isError } = useLlmUsageByModel(days, true);
+  const { data, isLoading, isError } = useLlmUsageByModel(days);
   const rows: LlmUsageByModelRow[] = data?.data.rows ?? [];
   const { data: models } = useLlmModels();
   const rates = useMemo(() => buildRateMap(models ?? []), [models]);
@@ -130,14 +135,6 @@ function UsageByModelBreakdown({ days }: { days: number }) {
   );
 }
 
-interface LlmTaskStats {
-  queued: number;
-  processing: number;
-  completed: number;
-  failed: number;
-  cancelled: number;
-}
-
 export function StatsBar({ stats }: Readonly<{ stats: LlmTaskStats | undefined }>) {
   const statCards = [
     { label: 'Queued', count: stats?.queued ?? 0, variant: 'secondary' as const },
@@ -165,8 +162,8 @@ export function StatsBar({ stats }: Readonly<{ stats: LlmTaskStats | undefined }
   );
 }
 
-export function UsageCard({ usageDays: initialDays }: Readonly<{ usageDays?: 7 | 30 }>) {
-  const [usageDays, setUsageDays] = useState<7 | 30>(initialDays ?? 7);
+export function UsageCard() {
+  const [usageDays, setUsageDays] = useState<7 | 30>(7);
   const [showByModel, setShowByModel] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [isResetting, setIsResetting] = useState(false);

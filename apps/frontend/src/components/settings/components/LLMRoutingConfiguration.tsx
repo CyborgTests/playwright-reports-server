@@ -100,17 +100,15 @@ interface ScreenshotCfg {
 function diversityWarning(cfg: LlmTaskRouting, primaryId: string | undefined): string | null {
   if (!MULTI_MODEL_STRATEGIES.has(cfg.strategy)) return null;
   const ids = new Set<string>();
-  const add = (ref?: LlmRoleRef) => {
+  const collect = (ref?: LlmRoleRef, useLens = false) => {
     const id = ref?.modelId ?? primaryId;
-    if (id) ids.add(id);
+    if (id) ids.add(useLens && cfg.strategy === 'fusion' && ref?.lens ? `${id}::${ref.lens}` : id);
   };
-  const addAuthor = (ref?: LlmRoleRef) => {
-    const id = ref?.modelId ?? primaryId;
-    if (id) ids.add(cfg.strategy === 'fusion' && ref?.lens ? `${id}::${ref.lens}` : id);
-  };
-  (cfg.authors?.length ? cfg.authors : [undefined]).forEach(addAuthor);
-  if (cfg.strategy === 'fusion') add(cfg.synthesizer);
-  if (cfg.strategy === 'council') (cfg.judges?.length ? cfg.judges : [undefined]).forEach(add);
+  for (const r of cfg.authors?.length ? cfg.authors : [undefined]) collect(r, true);
+  if (cfg.strategy === 'fusion') collect(cfg.synthesizer);
+  if (cfg.strategy === 'council') {
+    for (const r of cfg.judges?.length ? cfg.judges : [undefined]) collect(r);
+  }
   if (ids.size >= 2) return null;
   return cfg.strategy === 'fusion'
     ? 'Every role uses the same model - the drafts and the synthesis share identical blind spots, so this only adds cost and latency. Use different models per author, or switch to One-shot.'
@@ -118,8 +116,6 @@ function diversityWarning(cfg: LlmTaskRouting, primaryId: string | undefined): s
 }
 
 type RoutingMap = Partial<Record<LlmTaskType, LlmTaskRouting>>;
-type RoleListKey = 'authors' | 'judges' | 'tiers';
-type RoleSingleKey = 'model' | 'synthesizer' | 'scorer' | 'critic' | 'reviser' | 'secondOpinion';
 
 const LIST_KEYS = ['authors', 'judges', 'tiers'] as const;
 const SINGLE_KEYS = [
@@ -130,6 +126,8 @@ const SINGLE_KEYS = [
   'reviser',
   'secondOpinion',
 ] as const;
+type RoleListKey = (typeof LIST_KEYS)[number];
+type RoleSingleKey = (typeof SINGLE_KEYS)[number];
 
 function sanitizeCfg(cfg: LlmTaskRouting, modelIds: Set<string>): LlmTaskRouting {
   const c: LlmTaskRouting = { ...cfg };

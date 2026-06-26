@@ -128,12 +128,7 @@ export function FailureAnalysisSummary({
   );
 
   const structured = summary?.structured ?? null;
-  // `isTooStale` → the cached analysis trails the newest report by ≥7 days.
-  // Hide the verdict content and prompt the user to re-generate. We still
-  // show the card and the regenerate button so the action is obvious.
   const showVerdict = !!summary && !summary.isTooStale;
-  // `isStale` → newer reports exist but the analysis is still fresh enough
-  // to surface as supporting context (with a badge calling out the gap).
   const showStaleBadge = !!summary && summary.isStale && !summary.isTooStale;
   const daysBehind =
     summary?.lastReportAt && summary?.currentLatestReportAt
@@ -157,7 +152,7 @@ export function FailureAnalysisSummary({
               {showVerdict && structured && <VerdictBadge verdict={structured.verdict} />}
               <StrategyBadge taskType="project_summary" className="font-normal" />
               {showStaleBadge && (
-                <Badge variant="warning" title={`Newer reports ingested since this analysis ran`}>
+                <Badge variant="warning" title="Newer reports ingested since this analysis ran">
                   Stale{daysBehind > 0 ? ` · ${daysBehind}d behind` : ''}
                 </Badge>
               )}
@@ -210,7 +205,7 @@ export function FailureAnalysisSummary({
             {(summary.model || summary.updatedAt || summary.reportCount) && (
               <div className="flex items-center gap-2 pt-3 border-t text-xs text-muted-foreground flex-wrap">
                 {summary.model && <Badge variant="outline">{summary.model}</Badge>}
-                {summary.reportCount &&
+                {summary.reportCount != null &&
                   summary.reportCount > 0 &&
                   summary.firstReportAt &&
                   summary.lastReportAt && (

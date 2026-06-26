@@ -102,7 +102,6 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
     return null;
   }
 
-  // Show the Summarize button when failures exist but no summary has been generated yet.
   if (!summary || error) {
     return (
       <Card className="mb-4">
@@ -194,7 +193,6 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Category breakdown */}
         {categoryEntries.length > 0 && (
           <TooltipProvider delayDuration={150}>
             <div className="flex flex-wrap gap-2">
@@ -223,7 +221,6 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
           </TooltipProvider>
         )}
 
-        {/* LLM Summary */}
         {(summary.llmSummaryStructured || summary.llmSummary) && (
           <div className="border-t pt-3">
             <p className="text-xs font-medium text-muted-foreground mb-2">LLM Summary</p>

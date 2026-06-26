@@ -71,16 +71,7 @@ export default function LLMModelsConfiguration({
     silent: true,
     onSuccess: invalidateModels,
   });
-  const testConn = useMutation<{ success: boolean; error?: string; models?: string[] }>(
-    LLM_MODELS_PATH,
-    { method: 'POST', silent: true, onSuccess: invalidateModels }
-  );
-  const setPrimaryMut = useMutation(LLM_MODELS_PATH, {
-    method: 'PATCH',
-    silent: true,
-    onSuccess: invalidateModels,
-  });
-  const duplicateMut = useMutation<LlmModel>(LLM_MODELS_PATH, {
+  const testConn = useMutation<{ success: boolean; error?: string }>(LLM_MODELS_PATH, {
     method: 'POST',
     silent: true,
     onSuccess: invalidateModels,
@@ -196,7 +187,7 @@ export default function LLMModelsConfiguration({
   const setPrimary = async (m: LlmModel) => {
     setBusyId(m.id);
     try {
-      await setPrimaryMut.mutateAsync({ path: `${LLM_MODELS_PATH}/${m.id}/primary` });
+      await updateModel.mutateAsync({ path: `${LLM_MODELS_PATH}/${m.id}/primary` });
       toast.success(`"${m.label}" is now the primary model`);
     } catch (error) {
       toast.error(`Failed: ${errorMessage(error)}`);
@@ -208,7 +199,7 @@ export default function LLMModelsConfiguration({
   const duplicate = async (m: LlmModel) => {
     setBusyId(m.id);
     try {
-      const copy = await duplicateMut.mutateAsync({ path: `${LLM_MODELS_PATH}/${m.id}/duplicate` });
+      const copy = await createModel.mutateAsync({ path: `${LLM_MODELS_PATH}/${m.id}/duplicate` });
       openEdit(copy);
     } catch (error) {
       toast.error(`Duplicate failed: ${errorMessage(error)}`);

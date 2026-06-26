@@ -16,7 +16,6 @@ export default function LLMConfiguration() {
   const queryClient = useQueryClient();
   const { data: config } = useServerConfig();
   const { data: models } = useLlmModels();
-  // Editing LLM config is admin-only; testing a model connection stays open to readers.
   const canConfigLlm = useCan()('config:llm');
   const hasPrimary = (models ?? []).some((m) => m.isPrimary);
   const [featureEnabled, setFeatureEnabled] = useState(false);

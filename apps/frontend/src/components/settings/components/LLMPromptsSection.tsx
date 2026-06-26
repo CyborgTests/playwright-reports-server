@@ -117,7 +117,6 @@ export default function LLMPromptsSection() {
       id={`llm-${key}`}
       label={label}
       rows={rows}
-      disabled={false}
       defaultPrompt={defaultPrompt}
       override={state.overrides[key]}
       helper={

@@ -63,7 +63,7 @@ export function TaskTable({
         return next;
       });
       setChildrenById((prev) => {
-        if (prev[id]) return prev; // already loaded/loading
+        if (prev[id]) return prev;
         void fetchChildren(id);
         return { ...prev, [id]: 'loading' };
       });
