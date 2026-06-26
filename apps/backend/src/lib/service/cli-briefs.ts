@@ -17,7 +17,7 @@ import {
 import { service } from './index.js';
 import { testManagementService } from './test-management/index.js';
 
-export const FAILED_TESTS_PER_REPORT_MAX = 50;
+const FAILED_TESTS_PER_REPORT_MAX = 50;
 
 export const DEFAULT_HISTORY_LIMIT = 20;
 export const MAX_HISTORY_LIMIT = 50;
@@ -205,7 +205,7 @@ export interface TestHistory {
   runs: TestHistoryRun[];
 }
 
-export interface ClusterBrief {
+interface ClusterBrief {
   cluster: {
     id: string;
     kind: ClusterAnchor['kind'];
@@ -234,11 +234,15 @@ export function resolveTestIdentity(
 export function resolveTestRun(
   testId: string,
   reportId: string
-): { fileId: string; project: string } | null {
+): { fileId: string; project: string; errorSignature?: string } | null {
   const runs = testDb.getTestRunsByReport(reportId);
   const run = runs.find((r) => r.testId === testId);
   if (!run) return null;
-  return { fileId: run.fileId, project: run.project };
+  return {
+    fileId: run.fileId,
+    project: run.project,
+    errorSignature: run.errorSignature ?? undefined,
+  };
 }
 
 async function getFlakinessThresholds(): Promise<{ warning: number; quarantine: number }> {
@@ -265,7 +269,7 @@ function classifyFlakyTier(
   return 'stable';
 }
 
-export interface PreFetchedTestData {
+interface PreFetchedTestData {
   analysisByKey: ReturnType<typeof testAnalysisDb.getByTests>;
   feedbackByKey: ReturnType<typeof analysisFeedbackDb.getByTests>;
   regressionByKey: ReturnType<typeof regressionsDb.getOpenForTests>;

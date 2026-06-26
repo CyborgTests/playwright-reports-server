@@ -130,16 +130,6 @@ export class TestCrudDatabase extends TestDbBase {
     return this.db.prepare(compiled.sql).get(...compiled.parameters) as Test | undefined;
   }
 
-  public getTestTitle(testId: string, project?: string): string | undefined {
-    let q = this.k.selectFrom('tests').select('title').where('testId', '=', testId).limit(1);
-    if (project && project !== 'all') q = q.where('project', '=', project);
-    const compiled = q.compile();
-    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
-      | { title: string }
-      | undefined;
-    return row?.title ?? undefined;
-  }
-
   public findByTestId(testId: string, project?: string): Test | undefined {
     const queryFor = (proj?: string) => {
       let q = this.k

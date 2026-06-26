@@ -217,10 +217,6 @@ function rollupPreviousPassRate(children: QualityNodeSnapshot[]): number | undef
 }
 
 export class QualityDashboardsService {
-  public listDashboards() {
-    return qualityDashboardsDb.listDashboards();
-  }
-
   public getConfigBySlug(slug: string): QualityDashboardConfig | null {
     const dashboard = qualityDashboardsDb.getBySlug(slug);
     if (!dashboard) return null;
@@ -233,7 +229,7 @@ export class QualityDashboardsService {
     return this.computeSnapshot(config);
   }
 
-  public computeSnapshot(config: QualityDashboardConfig): QualityDashboardSnapshot {
+  private computeSnapshot(config: QualityDashboardConfig): QualityDashboardSnapshot {
     const { dashboard, nodes } = config;
     const tree = buildTree(nodes);
     const stalenessMs = Math.max(0, dashboard.stalenessDays) * 24 * 60 * 60 * 1000;
@@ -287,13 +283,6 @@ export class QualityDashboardsService {
       computedAt: new Date().toISOString(),
     };
   }
-
-  public createDashboard = qualityDashboardsDb.createDashboard.bind(qualityDashboardsDb);
-  public updateDashboard = qualityDashboardsDb.updateDashboard.bind(qualityDashboardsDb);
-  public deleteDashboard = qualityDashboardsDb.deleteDashboard.bind(qualityDashboardsDb);
-  public replaceTree = qualityDashboardsDb.replaceTree.bind(qualityDashboardsDb);
-  public listProjects = qualityDashboardsDb.listAvailableProjects.bind(qualityDashboardsDb);
-  public reorderPinned = qualityDashboardsDb.reorderPinned.bind(qualityDashboardsDb);
 
   public getHomeSnapshots(): QualityDashboardSnapshot[] {
     const pinned = qualityDashboardsDb.listPinned();

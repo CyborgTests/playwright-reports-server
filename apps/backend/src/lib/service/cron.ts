@@ -16,6 +16,13 @@ import {
 } from './db/index.js';
 import { service } from './index.js';
 
+// Shared croner behavioural policy: `unref` so jobs never block process exit,
+// `protect` so an overrun is skipped rather than overlapped. Logging/naming stays
+// per-caller.
+export function cronOptions(onError: (err: unknown) => void) {
+  return { unref: true, protect: true, catch: onError };
+}
+
 const runningCron = Symbol.for('playwright.reports.cron.service');
 const instance = globalThis as typeof globalThis & {
   [runningCron]?: CronService;
@@ -32,13 +39,7 @@ interface JobSpec {
 export class CronService {
   public initialized = false;
 
-  private clearReportsJob: Cron | undefined;
-  private clearResultsJob: Cron | undefined;
-  private clearResultCacheJob: Cron | undefined;
-  private clearNotificationLogJob: Cron | undefined;
-  private dbMaintenanceJob: Cron | undefined;
-  private storageReconcileJob: Cron | undefined;
-  private authGcJob: Cron | undefined;
+  private jobs: Cron[] = [];
   private readonly inFlight = new Map<string, Promise<void>>();
 
   public static getInstance() {
@@ -86,20 +87,8 @@ export class CronService {
   }
 
   private stopJobs() {
-    this.clearReportsJob?.stop();
-    this.clearResultsJob?.stop();
-    this.clearResultCacheJob?.stop();
-    this.clearNotificationLogJob?.stop();
-    this.dbMaintenanceJob?.stop();
-    this.storageReconcileJob?.stop();
-    this.authGcJob?.stop();
-    this.clearReportsJob = undefined;
-    this.clearResultsJob = undefined;
-    this.clearResultCacheJob = undefined;
-    this.clearNotificationLogJob = undefined;
-    this.dbMaintenanceJob = undefined;
-    this.storageReconcileJob = undefined;
-    this.authGcJob = undefined;
+    for (const job of this.jobs) job.stop();
+    this.jobs = [];
   }
 
   private wrapJob(name: string, timeoutMs: number, task: () => Promise<void>): () => Promise<void> {
@@ -156,62 +145,106 @@ export class CronService {
       cfg.cron?.resultExpireCronSchedule ?? defaultCronConfig.resultExpireCronSchedule;
 
     console.log('[cron-job] scheduling cron tasks...');
-    this.clearReportsJob = this.scheduleJob({
-      name: 'reports',
-      expireDays: reportDays,
-      expression: reportSchedule,
-      timeoutMs: CronService.CLEANUP_TIMEOUT_MS,
-      task: () => this.clearOutdatedReports(),
-    });
-    this.clearResultsJob = this.scheduleJob({
-      name: 'results',
-      expireDays: resultDays,
-      expression: resultSchedule,
-      timeoutMs: CronService.CLEANUP_TIMEOUT_MS,
-      task: () => this.clearOutdatedResults(),
-    });
-    if (env.DATA_STORAGE === 's3' || env.DATA_STORAGE === 'azure') {
-      this.clearResultCacheJob = this.scheduleResultCacheJob();
-    }
-    this.clearNotificationLogJob = this.scheduleNotificationLogJob();
-    this.dbMaintenanceJob = this.scheduleDbMaintenanceJob();
-    this.storageReconcileJob = this.scheduleStorageReconcileJob();
-    // Auth GC only runs when auth is enabled — open mode must not touch auth tables.
-    if (env.API_TOKEN) {
-      this.authGcJob = this.scheduleAuthGcJob();
-    }
+
+    const usesObjectStorage = env.DATA_STORAGE === 's3' || env.DATA_STORAGE === 'azure';
+    const fixed: Array<{
+      name: string;
+      expression: string;
+      timeoutMs: number;
+      task: () => Promise<void>;
+      detail?: string;
+      enabled?: boolean;
+    }> = [
+      {
+        name: 'result-cache',
+        expression: CronService.RESULT_CACHE_SCHEDULE,
+        timeoutMs: CronService.RESULT_CACHE_TIMEOUT_MS,
+        task: () => this.clearStaleResultCache(),
+        detail: ` cleanup (older than ${CronService.RESULT_CACHE_TTL_MS / 60_000}m)`,
+        enabled: usesObjectStorage,
+      },
+      {
+        name: 'notification-log',
+        expression: CronService.NOTIFICATION_LOG_SCHEDULE,
+        timeoutMs: CronService.NOTIFICATION_LOG_TIMEOUT_MS,
+        task: () => Promise.resolve(this.clearStaleNotificationLog()),
+        detail: ` cleanup (older than ${CronService.NOTIFICATION_LOG_RETENTION_DAYS}d)`,
+      },
+      {
+        name: 'db-maintenance',
+        expression: CronService.DB_MAINTENANCE_SCHEDULE,
+        timeoutMs: CronService.DB_MAINTENANCE_TIMEOUT_MS,
+        task: () => Promise.resolve(this.runDbMaintenance()),
+      },
+      {
+        name: 'storage-reconcile',
+        expression: CronService.STORAGE_RECONCILE_SCHEDULE,
+        timeoutMs: CronService.STORAGE_RECONCILE_TIMEOUT_MS,
+        task: async () => {
+          await service.reconcileStorageSizes();
+        },
+      },
+      {
+        // Auth GC only runs when auth is enabled — open mode must not touch auth tables.
+        name: 'auth-gc',
+        expression: CronService.AUTH_GC_SCHEDULE,
+        timeoutMs: CronService.AUTH_GC_TIMEOUT_MS,
+        task: () => Promise.resolve(this.runAuthGc()),
+        enabled: !!env.API_TOKEN,
+      },
+    ];
+
+    const candidates: Array<Cron | undefined> = [
+      this.scheduleJob({
+        name: 'reports',
+        expireDays: reportDays,
+        expression: reportSchedule,
+        timeoutMs: CronService.CLEANUP_TIMEOUT_MS,
+        task: () => this.runCleanup('reports'),
+      }),
+      this.scheduleJob({
+        name: 'results',
+        expireDays: resultDays,
+        expression: resultSchedule,
+        timeoutMs: CronService.CLEANUP_TIMEOUT_MS,
+        task: () => this.runCleanup('results'),
+      }),
+      ...fixed
+        .filter((f) => f.enabled !== false)
+        .map((f) => this.buildCron(f.name, f.expression, f.timeoutMs, f.task, f.detail)),
+    ];
+
+    this.jobs = candidates.filter((c): c is Cron => c !== undefined);
   }
 
-  private scheduleAuthGcJob(): Cron | undefined {
-    const expression = CronService.AUTH_GC_SCHEDULE;
+  private buildCron(
+    name: string,
+    expression: string,
+    timeoutMs: number,
+    task: () => Promise<void>,
+    detail = ''
+  ): Cron | undefined {
     const validation = CronService.validateExpression(expression);
     if (!validation.valid) {
       console.error(
-        `[cron-job] auth-gc has invalid cron expression "${expression}": ${validation.error}, skipping`
+        `[cron-job] ${name} has invalid cron expression "${expression}": ${validation.error}, skipping`
       );
       return undefined;
     }
 
     const job = new Cron(
       expression,
-      {
-        unref: true,
-        protect: true,
-        catch: (err) => console.error('[cron-job] auth-gc task error:', err),
-      },
-      this.wrapJob('auth-gc', CronService.AUTH_GC_TIMEOUT_MS, () =>
-        Promise.resolve(this.runAuthGc())
-      )
+      cronOptions((err) => console.error(`[cron-job] ${name} task error:`, err)),
+      this.wrapJob(name, timeoutMs, task)
     );
 
     const nextRun = job.nextRun();
     console.log(
-      `[cron-job] scheduled auth-gc at "${expression}", next run: ${nextRun?.toISOString() ?? 'unknown'}`
+      `[cron-job] scheduled ${name}${detail} at "${expression}", next run: ${nextRun?.toISOString() ?? 'unknown'}`
     );
     return job;
   }
 
-  /** Prunes expired sessions, spent/expired reset tokens, and aged-out audit rows. */
   private runAuthGc() {
     const nowIso = new Date().toISOString();
     const sessions = sessionsDb.pruneExpiredSessions(nowIso);
@@ -225,122 +258,6 @@ export class CronService {
     }
   }
 
-  private scheduleDbMaintenanceJob(): Cron | undefined {
-    const expression = CronService.DB_MAINTENANCE_SCHEDULE;
-    const validation = CronService.validateExpression(expression);
-    if (!validation.valid) {
-      console.error(
-        `[cron-job] db-maintenance has invalid cron expression "${expression}": ${validation.error}, skipping`
-      );
-      return undefined;
-    }
-
-    const job = new Cron(
-      expression,
-      {
-        unref: true,
-        protect: true,
-        catch: (err) => console.error('[cron-job] db-maintenance task error:', err),
-      },
-      this.wrapJob('db-maintenance', CronService.DB_MAINTENANCE_TIMEOUT_MS, () =>
-        Promise.resolve(this.runDbMaintenance())
-      )
-    );
-
-    const nextRun = job.nextRun();
-    console.log(
-      `[cron-job] scheduled db-maintenance at "${expression}", next run: ${nextRun?.toISOString() ?? 'unknown'}`
-    );
-    return job;
-  }
-
-  private scheduleStorageReconcileJob(): Cron | undefined {
-    const expression = CronService.STORAGE_RECONCILE_SCHEDULE;
-    const validation = CronService.validateExpression(expression);
-    if (!validation.valid) {
-      console.error(
-        `[cron-job] storage-reconcile has invalid cron expression "${expression}": ${validation.error}, skipping`
-      );
-      return undefined;
-    }
-
-    const job = new Cron(
-      expression,
-      {
-        unref: true,
-        protect: true,
-        catch: (err) => console.error('[cron-job] storage-reconcile task error:', err),
-      },
-      this.wrapJob('storage-reconcile', CronService.STORAGE_RECONCILE_TIMEOUT_MS, async () => {
-        await service.reconcileStorageSizes();
-      })
-    );
-
-    const nextRun = job.nextRun();
-    console.log(
-      `[cron-job] scheduled storage-reconcile at "${expression}", next run: ${nextRun?.toISOString() ?? 'unknown'}`
-    );
-    return job;
-  }
-
-  private scheduleNotificationLogJob(): Cron | undefined {
-    const expression = CronService.NOTIFICATION_LOG_SCHEDULE;
-    const validation = CronService.validateExpression(expression);
-    if (!validation.valid) {
-      console.error(
-        `[cron-job] notification-log cleanup has invalid cron expression "${expression}": ${validation.error}, skipping`
-      );
-      return undefined;
-    }
-
-    const job = new Cron(
-      expression,
-      {
-        unref: true,
-        protect: true,
-        catch: (err) => console.error('[cron-job] notification-log task error:', err),
-      },
-      this.wrapJob('notification-log', CronService.NOTIFICATION_LOG_TIMEOUT_MS, () =>
-        Promise.resolve(this.clearStaleNotificationLog())
-      )
-    );
-
-    const nextRun = job.nextRun();
-    console.log(
-      `[cron-job] scheduled notification-log cleanup (older than ${CronService.NOTIFICATION_LOG_RETENTION_DAYS}d) at "${expression}", next run: ${nextRun?.toISOString() ?? 'unknown'}`
-    );
-    return job;
-  }
-
-  private scheduleResultCacheJob(): Cron | undefined {
-    const expression = CronService.RESULT_CACHE_SCHEDULE;
-    const validation = CronService.validateExpression(expression);
-    if (!validation.valid) {
-      console.error(
-        `[cron-job] result-cache cleanup has invalid cron expression "${expression}": ${validation.error}, skipping`
-      );
-      return undefined;
-    }
-
-    const job = new Cron(
-      expression,
-      {
-        unref: true,
-        protect: true,
-        catch: (err) => console.error('[cron-job] result-cache task error:', err),
-      },
-      this.wrapJob('result-cache', CronService.RESULT_CACHE_TIMEOUT_MS, () =>
-        this.clearStaleResultCache()
-      )
-    );
-
-    const nextRun = job.nextRun();
-    console.log(
-      `[cron-job] scheduled result-cache cleanup (older than ${CronService.RESULT_CACHE_TTL_MS / 60_000}m) at "${expression}", next run: ${nextRun?.toISOString() ?? 'unknown'}`
-    );
-    return job;
-  }
-
   private scheduleJob(spec: JobSpec): Cron | undefined {
     if (!spec.expireDays || spec.expireDays <= 0) {
       console.log(`[cron-job] ${spec.name} cleanup disabled (expireDays not set), skipping`);
@@ -352,102 +269,54 @@ export class CronService {
       );
       return undefined;
     }
-
-    const validation = CronService.validateExpression(spec.expression);
-    if (!validation.valid) {
-      console.error(
-        `[cron-job] ${spec.name} cleanup has invalid cron expression "${spec.expression}": ${validation.error}, skipping`
-      );
-      return undefined;
-    }
-
-    const job = new Cron(
+    return this.buildCron(
+      spec.name,
       spec.expression,
-      {
-        unref: true,
-        protect: true,
-        catch: (err) => console.error(`[cron-job] ${spec.name} task error:`, err),
-      },
-      this.wrapJob(spec.name, spec.timeoutMs, spec.task)
+      spec.timeoutMs,
+      spec.task,
+      ` cleanup (older than ${spec.expireDays}d)`
     );
-
-    const nextRun = job.nextRun();
-    console.log(
-      `[cron-job] scheduled ${spec.name} cleanup (older than ${spec.expireDays}d) at "${spec.expression}", next run: ${nextRun?.toISOString() ?? 'unknown'}`
-    );
-    return job;
   }
 
   private cutoffISO(days: number): string {
     return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   }
 
-  private async clearOutdatedReports() {
+  private async runCleanup(kind: 'reports' | 'results'): Promise<void> {
     const cfg = await service.getConfig();
-    const expireDays = cfg.cron?.reportExpireDays ?? defaultCronConfig.reportExpireDays;
-    if (!expireDays || expireDays <= 0) {
-      return;
-    }
+    const expireDays =
+      kind === 'reports'
+        ? (cfg.cron?.reportExpireDays ?? defaultCronConfig.reportExpireDays)
+        : (cfg.cron?.resultExpireDays ?? defaultCronConfig.resultExpireDays);
+    if (!expireDays || expireDays <= 0) return;
+
+    const getIds = (cutoff: string, limit: number) =>
+      kind === 'reports'
+        ? service.getExpiredReportIds(cutoff, limit)
+        : service.getExpiredResultIds(cutoff, limit);
+    const deleteFn = (ids: string[]) =>
+      kind === 'reports' ? service.deleteReports(ids) : service.deleteResults(ids);
 
     const cutoff = this.cutoffISO(expireDays);
     const batchSize = CronService.CLEANUP_BATCH_SIZE;
     let totalDeleted = 0;
-
-    console.log(`[cron-job] starting outdated reports cleanup (cutoff=${cutoff})`);
+    console.log(`[cron-job] starting outdated ${kind} cleanup (cutoff=${cutoff})`);
 
     while (true) {
-      const ids = service.getExpiredReportIds(cutoff, batchSize);
-      if (ids.length === 0) {
-        break;
-      }
+      const ids = getIds(cutoff, batchSize);
+      if (ids.length === 0) break;
 
-      const { error } = await withError(service.deleteReports(ids));
+      const { error } = await withError(deleteFn(ids));
       if (error) {
-        console.error(`[cron-job] reports cleanup batch failed after ${totalDeleted}: ${error}`);
+        console.error(`[cron-job] ${kind} cleanup batch failed after ${totalDeleted}: ${error}`);
         return;
       }
 
       totalDeleted += ids.length;
-      if (ids.length < batchSize) {
-        break;
-      }
+      if (ids.length < batchSize) break;
     }
 
-    console.log(`[cron-job] outdated reports cleanup finished, deleted ${totalDeleted}`);
-  }
-
-  private async clearOutdatedResults() {
-    const cfg = await service.getConfig();
-    const expireDays = cfg.cron?.resultExpireDays ?? defaultCronConfig.resultExpireDays;
-    if (!expireDays || expireDays <= 0) {
-      return;
-    }
-
-    const cutoff = this.cutoffISO(expireDays);
-    const batchSize = CronService.CLEANUP_BATCH_SIZE;
-    let totalDeleted = 0;
-
-    console.log(`[cron-job] starting outdated results cleanup (cutoff=${cutoff})`);
-
-    while (true) {
-      const ids = service.getExpiredResultIds(cutoff, batchSize);
-      if (ids.length === 0) {
-        break;
-      }
-
-      const { error } = await withError(service.deleteResults(ids));
-      if (error) {
-        console.error(`[cron-job] results cleanup batch failed after ${totalDeleted}: ${error}`);
-        return;
-      }
-
-      totalDeleted += ids.length;
-      if (ids.length < batchSize) {
-        break;
-      }
-    }
-
-    console.log(`[cron-job] outdated results cleanup finished, deleted ${totalDeleted}`);
+    console.log(`[cron-job] outdated ${kind} cleanup finished, deleted ${totalDeleted}`);
   }
 
   private async clearStaleResultCache() {
@@ -490,9 +359,6 @@ export class CronService {
     }
   }
 
-  /** Daily SQLite cleanup. Prunes completed LLM tasks past their retention
-   *  window, then runs ANALYZE + incremental_vacuum to reclaim freelist pages and
-   *  wal_checkpoint(TRUNCATE) to cap WAL growth between process restarts. */
   private runDbMaintenance() {
     const cutoff = this.cutoffISO(CronService.LLM_TASKS_RETENTION_DAYS);
     const prunedTasks = llmTasksDb.pruneCompletedOlderThan(cutoff);

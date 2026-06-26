@@ -1,5 +1,5 @@
 import { Cron } from 'croner';
-import { CronService } from '../service/cron.js';
+import { CronService, cronOptions } from '../service/cron.js';
 import { withError } from '../withError.js';
 import { githubSyncConfigService } from './configService.js';
 import { runSync } from './syncService.js';
@@ -49,11 +49,7 @@ class GithubSyncCronManager {
 
     const job = new Cron(
       cfg.cronSchedule,
-      {
-        unref: true,
-        protect: true,
-        catch: (err) => console.error(`[github-sync-cron] ${cfg.name} task error:`, err),
-      },
+      cronOptions((err) => console.error(`[github-sync-cron] ${cfg.name} task error:`, err)),
       async () => {
         const resolved = githubSyncConfigService.getResolved(id);
         if (!resolved || !resolved.enabled) return;

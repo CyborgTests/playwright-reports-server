@@ -310,66 +310,51 @@ ${replicaLines.join('\n')}
     return `"${this.configPath}"`;
   }
 
-  private async hasRemoteBackup(): Promise<boolean> {
-    const litestreamEnv = this.buildLitestreamEnv();
-
+  private runLitestream(
+    args: string,
+    timeoutMs: number
+  ): Promise<{ error: Error | null; stdout: string }> {
     return new Promise((resolve) => {
-      exec(
-        `litestream generations -config ${this.cliConfigArg} ${this.cliDbArg}`,
-        { env: litestreamEnv, timeout: 30000 },
-        (error, stdout) => {
-          if (error) {
-            console.error('[litestream] Failed to check remote generations:', error.message);
-            resolve(false);
-          } else {
-            const hasGenerations = stdout.trim().length > 0;
-            resolve(hasGenerations);
-          }
-        }
+      exec(`litestream ${args}`, { env: { ...process.env }, timeout: timeoutMs }, (error, stdout) =>
+        resolve({ error, stdout: stdout ?? '' })
       );
     });
+  }
+
+  private async hasRemoteBackup(): Promise<boolean> {
+    const { error, stdout } = await this.runLitestream(
+      `generations -config ${this.cliConfigArg} ${this.cliDbArg}`,
+      30000
+    );
+    if (error) {
+      console.error('[litestream] Failed to check remote generations:', error.message);
+      return false;
+    }
+    return stdout.trim().length > 0;
   }
 
   private async syncWithRemote(): Promise<boolean> {
-    const litestreamEnv = this.buildLitestreamEnv();
-
-    return new Promise((resolve) => {
-      exec(
-        `litestream restore -config ${this.cliConfigArg} -o "${this.dbPath}" --if-replica-exists ${this.cliDbArg}`,
-        { env: litestreamEnv, timeout: 60000 },
-        (error) => {
-          if (error) {
-            console.error('[litestream] Sync with remote failed:', error.message);
-            resolve(false);
-          } else {
-            resolve(true);
-          }
-        }
-      );
-    });
+    const { error } = await this.runLitestream(
+      `restore -config ${this.cliConfigArg} -o "${this.dbPath}" --if-replica-exists ${this.cliDbArg}`,
+      60000
+    );
+    if (error) {
+      console.error('[litestream] Sync with remote failed:', error.message);
+      return false;
+    }
+    return true;
   }
 
   private async restoreFromRemote(): Promise<boolean> {
-    const litestreamEnv = this.buildLitestreamEnv();
-
-    return new Promise((resolve) => {
-      exec(
-        `litestream restore -config ${this.cliConfigArg} -o "${this.dbPath}" ${this.cliDbArg}`,
-        { env: litestreamEnv, timeout: 60000 },
-        (error) => {
-          if (error) {
-            console.error('[litestream] Restore failed:', error.message);
-            resolve(false);
-          } else {
-            resolve(true);
-          }
-        }
-      );
-    });
-  }
-
-  private buildLitestreamEnv() {
-    return { ...process.env };
+    const { error } = await this.runLitestream(
+      `restore -config ${this.cliConfigArg} -o "${this.dbPath}" ${this.cliDbArg}`,
+      60000
+    );
+    if (error) {
+      console.error('[litestream] Restore failed:', error.message);
+      return false;
+    }
+    return true;
   }
 
   private describeTarget(): string {
@@ -407,11 +392,9 @@ ${replicaLines.join('\n')}
 
     console.log(`[litestream] starting replication for ${this.dbPath}`);
 
-    const litestreamEnv = this.buildLitestreamEnv();
-
     this.process = spawn('litestream', ['replicate', '-config', this.configPath], {
       stdio: 'pipe',
-      env: litestreamEnv,
+      env: { ...process.env },
     });
 
     this.process.stdout?.on('data', (data) => {
@@ -460,10 +443,6 @@ ${replicaLines.join('\n')}
 
     this.process = null;
     console.log('[litestream] Replication stopped');
-  }
-
-  public isRunning(): boolean {
-    return this.process !== null && !this.process.killed;
   }
 }
 

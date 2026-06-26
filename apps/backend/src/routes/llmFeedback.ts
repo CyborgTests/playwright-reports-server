@@ -8,6 +8,7 @@ import {
   GetRelatedFeedbackQuerySchema,
   UpsertFeedbackRequestSchema,
 } from '../lib/schemas/index.js';
+import { resolveTestRun } from '../lib/service/cli-briefs.js';
 import {
   analysisFeedbackDb,
   llmTasksDb,
@@ -44,20 +45,6 @@ function feedbackRowToShared(
     comment: row.comment,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-  };
-}
-
-function resolveTestRun(
-  testId: string,
-  reportId: string
-): { fileId: string; project: string; errorSignature?: string } | null {
-  const runs = testDb.getTestRunsByReport(reportId);
-  const run = runs.find((r) => r.testId === testId);
-  if (!run) return null;
-  return {
-    fileId: run.fileId,
-    project: run.project,
-    errorSignature: run.errorSignature ?? undefined,
   };
 }
 

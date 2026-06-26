@@ -42,26 +42,6 @@ export class TestQueriesDatabase extends TestDbBase {
     );
   }
 
-  public getDurationTrend(
-    testId: string,
-    project?: string
-  ): Array<{ reportId: string; createdAt: string; duration: number }> {
-    let q = this.k
-      .selectFrom('test_runs')
-      .select(['reportId', 'createdAt', 'duration'])
-      .where('testId', '=', testId)
-      .where('duration', 'is not', null)
-      .where('duration', '>', 0)
-      .orderBy('createdAt', 'desc');
-    if (project && project !== 'all') q = q.where('project', '=', project);
-    const compiled = q.compile();
-    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
-      reportId: string;
-      createdAt: string;
-      duration: number;
-    }>;
-  }
-
   public getTestRunPointsPage(
     testId: string,
     fileId: string,

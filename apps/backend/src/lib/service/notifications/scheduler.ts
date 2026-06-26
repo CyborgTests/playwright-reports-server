@@ -5,7 +5,7 @@ import type {
 } from '@playwright-reports/shared';
 import { Cron } from 'croner';
 import { configCache } from '../cache/config.js';
-import { CronService } from '../cron.js';
+import { CronService, cronOptions } from '../cron.js';
 import { notificationStateDb } from '../db/index.js';
 import { dispatchOne, writeLog } from './dispatch-helpers.js';
 import type { DispatchResult } from './providers/types.js';
@@ -86,12 +86,9 @@ class NotificationScheduler {
 
     const cron = new Cron(
       expression,
-      {
-        unref: true,
-        protect: true,
-        catch: (err) =>
-          console.error(`[notifications] schedule task error on ${channel.name}/${rule.id}:`, err),
-      },
+      cronOptions((err) =>
+        console.error(`[notifications] schedule task error on ${channel.name}/${rule.id}:`, err)
+      ),
       () => this.fire(channel, rule)
     );
 

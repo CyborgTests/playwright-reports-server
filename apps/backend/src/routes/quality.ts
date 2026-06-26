@@ -2,7 +2,7 @@ import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
-import { DashboardNameConflictError } from '../lib/service/db/index.js';
+import { DashboardNameConflictError, qualityDashboardsDb } from '../lib/service/db/index.js';
 import { qualityDashboardsService } from '../lib/service/qualityDashboards.js';
 import { authorize } from './auth.js';
 
@@ -69,7 +69,7 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
     const authResult = await handleAuth(request, reply);
     if (authResult) return;
 
-    const dashboards = qualityDashboardsService.listDashboards();
+    const dashboards = qualityDashboardsDb.listDashboards();
     return reply.send({ success: true, data: dashboards });
   });
 
@@ -115,7 +115,7 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const created = qualityDashboardsService.createDashboard(parsed.data);
+      const created = qualityDashboardsDb.createDashboard(parsed.data);
       return reply.send({ success: true, data: created });
     } catch (err) {
       if (err instanceof DashboardNameConflictError) {
@@ -147,7 +147,7 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const updated = qualityDashboardsService.updateDashboard(id, parsed.data);
+        const updated = qualityDashboardsDb.updateDashboard(id, parsed.data);
         if (!updated) {
           return reply.status(404).send({ success: false, error: 'Dashboard not found' });
         }
@@ -175,7 +175,7 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
       if (authResult) return;
 
       const { id } = request.params as { id: string };
-      const removed = qualityDashboardsService.deleteDashboard(id);
+      const removed = qualityDashboardsDb.deleteDashboard(id);
       if (!removed) {
         return reply.status(404).send({ success: false, error: 'Dashboard not found' });
       }
@@ -207,7 +207,7 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const nodes = qualityDashboardsService.replaceTree(id, parsed.data.nodes);
+        const nodes = qualityDashboardsDb.replaceTree(id, parsed.data.nodes);
         return reply.send({ success: true, data: { nodes } });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -227,7 +227,7 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
     const authResult = await handleAuth(request, reply);
     if (authResult) return;
 
-    const projects = qualityDashboardsService.listProjects();
+    const projects = qualityDashboardsDb.listAvailableProjects();
     return reply.send({ success: true, data: projects });
   });
 
@@ -250,7 +250,7 @@ export async function registerQualityRoutes(fastify: FastifyInstance) {
         .send({ success: false, error: 'Invalid input', issues: parsed.error.issues });
     }
 
-    const pinned = qualityDashboardsService.reorderPinned(parsed.data.orderedIds);
+    const pinned = qualityDashboardsDb.reorderPinned(parsed.data.orderedIds);
     return reply.send({ success: true, data: pinned });
   });
 }

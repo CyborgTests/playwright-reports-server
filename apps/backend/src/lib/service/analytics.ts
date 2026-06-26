@@ -3,7 +3,6 @@ import type {
   OverviewStats,
   RunHealthMetric,
   StatDelta,
-  StepTimingTrend,
   TrendMetrics,
 } from '@playwright-reports/shared';
 import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
@@ -13,8 +12,6 @@ import {
   regressionsDb,
   reportDb,
   testAnalyticsDb,
-  testDb,
-  testQueriesDb,
 } from './db/index.js';
 import { service } from './index.js';
 import { testManagementService } from './test-management/index.js';
@@ -480,55 +477,6 @@ export class AnalyticsService {
       return 'stable';
     }
     return percentChange > 0 ? 'up' : 'down';
-  }
-
-  async getTestTrends(testId: string, projectName?: string): Promise<StepTimingTrend | null> {
-    const trendRuns = testQueriesDb.getDurationTrend(testId, projectName);
-
-    if (trendRuns.length === 0) {
-      return null;
-    }
-
-    const runs = trendRuns.map((r) => ({
-      runId: r.reportId,
-      runDate: new Date(r.createdAt),
-      duration: r.duration,
-      isOutlier: false,
-    }));
-    const durations = trendRuns.map((r) => r.duration).sort((a, b) => a - b);
-
-    const mean = durations.reduce((sum, d) => sum + d, 0) / durations.length;
-    const median =
-      durations.length % 2 === 0
-        ? (durations[durations.length / 2 - 1] + durations[durations.length / 2]) / 2
-        : durations[Math.floor(durations.length / 2)];
-
-    const variance = durations.reduce((sum, d) => sum + (d - mean) ** 2, 0) / durations.length;
-    const stdDev = Math.sqrt(variance);
-
-    for (const run of runs) {
-      run.isOutlier = Math.abs(run.duration - mean) > 2 * stdDev;
-    }
-
-    const p95Index = Math.floor(durations.length * 0.95);
-    const p99Index = Math.floor(durations.length * 0.99);
-
-    const testName = testDb.getTestTitle(testId, projectName) ?? 'Unknown Test';
-
-    return {
-      stepId: testId,
-      stepName: testName,
-      runs: runs.sort((a, b) => a.runDate.getTime() - b.runDate.getTime()),
-      statistics: {
-        mean: Math.round(mean),
-        median: Math.round(median),
-        stdDev: Math.round(stdDev),
-        min: Math.min(...durations),
-        max: Math.max(...durations),
-        p95: durations[p95Index] || 0,
-        p99: durations[p99Index] || 0,
-      },
-    };
   }
 }
 

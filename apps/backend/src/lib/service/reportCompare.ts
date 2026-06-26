@@ -99,10 +99,7 @@ const matchKeyOf = (
 const metaKeyOf = (run: Pick<TestRunRow, 'testId' | 'fileId' | 'project'>) =>
   `${run.testId}::${run.fileId}::${run.project}`;
 
-// One report can contain multiple runs for the same test (retries written as
-// separate rows historically, or future per-attempt logging). Pick the run
-// whose outcome best represents the final state: prefer non-skipped, then the
-// latest by createdAt.
+// Multiple runs per test in one report: prefer non-skipped, then latest by createdAt.
 const pickRunForTest = (runs: TestRunRow[]): TestRunRow => {
   const nonSkipped = runs.filter((r) => r.outcome !== 'skipped');
   const pool = nonSkipped.length > 0 ? nonSkipped : runs;
