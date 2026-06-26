@@ -582,12 +582,7 @@ export async function buildTestHistory(
   const sliced = runs.slice(0, limit);
 
   const stats = { runs: runs.length, passed: 0, failed: 0, flaky: 0, skipped: 0 };
-  for (const r of runs) {
-    if (r.outcome === 'expected' || r.outcome === 'passed') stats.passed++;
-    else if (r.outcome === 'unexpected' || r.outcome === 'failed') stats.failed++;
-    else if (r.outcome === 'flaky') stats.flaky++;
-    else if (r.outcome === 'skipped') stats.skipped++;
-  }
+  for (const r of runs) stats[normalizeOutcome(r.outcome)]++;
 
   const groupKey = (sig?: string) => (sig && sig.length > 0 ? sig : '__no_signature__');
   const groups = new Map<
