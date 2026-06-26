@@ -8,14 +8,7 @@ import {
 import type { FailureEvidence } from '../../../parser/failure-extraction.js';
 import type { PerFileStep } from '../../../parser/report-payload.js';
 import type { SegmentedPrompt } from '../../types/index.js';
-import {
-  applyMustache,
-  assembleSegments,
-  buildGeneralContextSegment,
-  buildSegment,
-  resolveSystemPrompt,
-  splitTaskInstructions,
-} from '../assembleSegments.js';
+import { assembleSegments, buildPromptHead, buildSegment } from '../assembleSegments.js';
 import type { CustomPromptOverrides } from '../promptTypes.js';
 import { extractRootCauseParagraph, stripLogNoise } from '../textTransforms.js';
 import {
@@ -553,17 +546,6 @@ export const buildFeedbackContext = (
   return `\n## User Feedback (high-priority; weight heavily, surface contradictions with evidence)\n\n> ${feedback.comment.replace(/\n/g, '\n> ')}\n\n(updated ${formatRelativeTime(feedback.updatedAt)})\n`;
 };
 
-export const buildPerTestFeedbackContext = (
-  notes: Array<{ testTitle?: string; comment: string; updatedAt: string }>
-): string => {
-  if (notes.length === 0) return '';
-  let block = `\n## Per-Test Feedback Notes\n`;
-  for (const n of notes) {
-    block += `- **${n.testTitle ?? 'test'}** (updated ${formatRelativeTime(n.updatedAt)}): ${n.comment}\n`;
-  }
-  return block;
-};
-
 export const buildCrossProjectContext = (
   entries: CrossProjectEntry[],
   totalCount = entries.length
@@ -607,13 +589,6 @@ export const buildTestFailureSegments = (args: {
     testTitle: args.failureDetails.testTitle,
     filePath: args.failureDetails.filePath,
   };
-  // Split so the stable contract (output format + rubrics, identical across every
-  // test analysis) caches separately from the per-test request header.
-  const { request: requestTemplate, contract: contractTemplate } =
-    splitTaskInstructions(taskInstructionsTemplate);
-  const requestSub = applyMustache(requestTemplate, taskBindings, TEST_ANALYSIS_VARS);
-  const contractSub = applyMustache(contractTemplate, taskBindings, TEST_ANALYSIS_VARS);
-
   const crossProjectBlock =
     args.crossProjectEntries && args.crossProjectEntries.length > 0
       ? buildCrossProjectContext(
@@ -627,19 +602,15 @@ export const buildTestFailureSegments = (args: {
   // Evidence is ordered most-relevant-first
   // https://arxiv.org/abs/2412.18750) — "Order Matters!"
   return assembleSegments([
-    buildSegment(
-      'system_prompt',
-      'system',
-      true,
-      resolveSystemPrompt(
-        TEST_ANALYSIS_SYSTEM_PROMPT,
-        args.overrides?.systemPrompt ?? args.systemPrompt,
-        args.overrides?.testAnalysisSystemPrompt
-      )
-    ),
-    buildGeneralContextSegment(args.overrides?.generalContext),
-    buildSegment('task_contract', 'user', !contractSub.substituted, contractSub.rendered),
-    buildSegment('task_request', 'user', !requestSub.substituted, requestSub.rendered),
+    ...buildPromptHead({
+      systemDefault: TEST_ANALYSIS_SYSTEM_PROMPT,
+      legacySystem: args.overrides?.systemPrompt ?? args.systemPrompt,
+      perTaskSystem: args.overrides?.testAnalysisSystemPrompt,
+      generalContext: args.overrides?.generalContext,
+      instructionsTemplate: taskInstructionsTemplate,
+      bindings: taskBindings,
+      vars: TEST_ANALYSIS_VARS,
+    }),
     buildSegment('evidence_open', 'user', false, '<evidence>'),
     buildSegment('user_feedback', 'user', false, feedbackBlock),
     buildSegment('current_failure', 'user', false, buildFailureDetailsBlock(args.failureDetails)),

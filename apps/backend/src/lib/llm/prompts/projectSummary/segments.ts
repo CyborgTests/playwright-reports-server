@@ -5,14 +5,7 @@ import type {
 } from '@playwright-reports/shared';
 import { formatDuration } from '@playwright-reports/shared';
 import type { SegmentedPrompt } from '../../types/index.js';
-import {
-  applyMustache,
-  assembleSegments,
-  buildGeneralContextSegment,
-  buildSegment,
-  resolveSystemPrompt,
-  splitTaskInstructions,
-} from '../assembleSegments.js';
+import { assembleSegments, buildPromptHead, buildSegment } from '../assembleSegments.js';
 import { describeGroupKind, renderAnchorInline } from '../clusterRendering.js';
 import type { CustomPromptOverrides, RunContext } from '../promptTypes.js';
 import {
@@ -118,12 +111,6 @@ function formatSignedDuration(deltaMs: number): string {
 }
 
 function formatRunLabel(reportId: string, displayNumber?: number): string {
-  return typeof displayNumber === 'number'
-    ? `#${displayNumber} [reportId: ${reportId}]`
-    : `[reportId: ${reportId}]`;
-}
-
-function formatRunRef(reportId: string, displayNumber?: number): string {
   return typeof displayNumber === 'number'
     ? `#${displayNumber} [reportId: ${reportId}]`
     : `[reportId: ${reportId}]`;
@@ -353,8 +340,8 @@ function buildActiveClustersBlock(clusters: ProjectCluster[]): string {
     const latestMarker = c.appearedInLatestRun
       ? `**in latest run** (${c.consecutiveLatestRuns} consecutive)`
       : `last seen ${c.runsSinceLastSeen} run${c.runsSinceLastSeen === 1 ? '' : 's'} ago`;
-    const firstSeenRef = formatRunRef(c.firstSeenReportId, c.firstSeenDisplayNumber);
-    const lastSeenRef = formatRunRef(c.lastSeenReportId, c.lastSeenDisplayNumber);
+    const firstSeenRef = formatRunLabel(c.firstSeenReportId, c.firstSeenDisplayNumber);
+    const lastSeenRef = formatRunLabel(c.lastSeenReportId, c.lastSeenDisplayNumber);
     block += `- **Window:** first seen ${firstSeenRef} (${isoDate(c.firstSeenAt)}) -> last seen ${lastSeenRef} (${isoDate(c.lastSeenAt)}); ${latestMarker}\n`;
     if (c.occurrences > 0) {
       const pct = Math.round(c.retryRecoveryRate * 100);
@@ -373,7 +360,7 @@ function buildResolvedClustersBlock(clusters: ProjectCluster[]): string {
   if (clusters.length === 0) return '';
   let block = `## Recently Resolved Patterns (NOT for Recommendations - cite only as recovery evidence in Health Assessment)\n`;
   for (const c of clusters) {
-    const lastSeenRef = formatRunRef(c.lastSeenReportId, c.lastSeenDisplayNumber);
+    const lastSeenRef = formatRunLabel(c.lastSeenReportId, c.lastSeenDisplayNumber);
     const titles = c.affectedTests
       .slice(0, 2)
       .map((t) => `\`${t.title}\``)
@@ -435,31 +422,21 @@ export const buildProjectSummarySegments = (args: {
     totalRuns,
     passingRuns,
   };
-  const { request: requestTemplate, contract: contractTemplate } = splitTaskInstructions(
-    projectInstructionsTemplate
-  );
-  const requestSub = applyMustache(requestTemplate, projectBindings, PROJECT_SUMMARY_VARS);
-  const contractSub = applyMustache(contractTemplate, projectBindings, PROJECT_SUMMARY_VARS);
-
   const isActiveCluster = (c: ProjectCluster): boolean =>
     c.appearedInLatestRun || c.runsSinceLastSeen <= 2;
   const activeClusters = (args.clusters ?? []).filter(isActiveCluster);
   const resolvedClusters = (args.clusters ?? []).filter((c) => !isActiveCluster(c));
 
   return assembleSegments([
-    buildSegment(
-      'system_prompt',
-      'system',
-      true,
-      resolveSystemPrompt(
-        PROJECT_SUMMARY_SYSTEM_PROMPT,
-        args.overrides?.systemPrompt ?? args.systemPrompt,
-        args.overrides?.projectSummarySystemPrompt
-      )
-    ),
-    buildGeneralContextSegment(args.overrides?.generalContext),
-    buildSegment('task_contract', 'user', !contractSub.substituted, contractSub.rendered),
-    buildSegment('task_request', 'user', !requestSub.substituted, requestSub.rendered),
+    ...buildPromptHead({
+      systemDefault: PROJECT_SUMMARY_SYSTEM_PROMPT,
+      legacySystem: args.overrides?.systemPrompt ?? args.systemPrompt,
+      perTaskSystem: args.overrides?.projectSummarySystemPrompt,
+      generalContext: args.overrides?.generalContext,
+      instructionsTemplate: projectInstructionsTemplate,
+      bindings: projectBindings,
+      vars: PROJECT_SUMMARY_VARS,
+    }),
     buildSegment('project_data_open', 'user', false, '<project_data>'),
     buildSegment(
       'cross_project_preamble',

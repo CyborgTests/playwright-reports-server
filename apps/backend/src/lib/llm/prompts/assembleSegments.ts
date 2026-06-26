@@ -34,6 +34,31 @@ export function resolveSystemPrompt(
   return perTaskCustom?.trim() || legacyCustom?.trim() || builtInDefault;
 }
 
+export function buildPromptHead(args: {
+  systemDefault: string;
+  legacySystem?: string;
+  perTaskSystem?: string;
+  generalContext?: string;
+  instructionsTemplate: string;
+  bindings: Record<string, string | number | boolean | undefined>;
+  vars: ReadonlySet<string>;
+}): Array<PromptSegment | null> {
+  const { request, contract } = splitTaskInstructions(args.instructionsTemplate);
+  const requestSub = applyMustache(request, args.bindings, args.vars);
+  const contractSub = applyMustache(contract, args.bindings, args.vars);
+  return [
+    buildSegment(
+      'system_prompt',
+      'system',
+      true,
+      resolveSystemPrompt(args.systemDefault, args.legacySystem, args.perTaskSystem)
+    ),
+    buildGeneralContextSegment(args.generalContext),
+    buildSegment('task_contract', 'user', !contractSub.substituted, contractSub.rendered),
+    buildSegment('task_request', 'user', !requestSub.substituted, requestSub.rendered),
+  ];
+}
+
 /**
  * Split rendered task instructions into
  * - per-call `<task>` request

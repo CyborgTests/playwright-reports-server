@@ -93,12 +93,6 @@ export abstract class LLMProvider extends BaseProvider {
     return imageCount * 1200;
   }
 
-  async sendMessage(prompt: string, systemPrompt?: string): Promise<LLMResponse> {
-    const modelToUse = await this.resolveModelOrThrow();
-    const request = this.createRequest(prompt, systemPrompt, modelToUse);
-    return this.executeRequest(request);
-  }
-
   async sendSegmentedMessage(
     prompt: SegmentedPrompt,
     options: SendOptions = {}
@@ -193,26 +187,8 @@ export abstract class LLMProvider extends BaseProvider {
       const data = await response.json();
       return this.extractModelIds(data);
     } catch {
-      // fallback to returning the configured model if available
       return this.config.model ? [this.config.model] : [];
     }
-  }
-
-  protected createRequest(prompt: string, systemPrompt?: string, model?: string): LLMRequest {
-    const messages = [];
-
-    if (systemPrompt) {
-      messages.push({ role: 'system' as const, content: systemPrompt });
-    }
-
-    messages.push({ role: 'user' as const, content: prompt });
-
-    return {
-      model: model ?? this.config.model,
-      messages,
-      temperature: this.config.temperature,
-      maxTokens: this.config.maxTokens,
-    };
   }
 
   protected async sendRequest(request: LLMRequest, signal?: AbortSignal): Promise<Response> {

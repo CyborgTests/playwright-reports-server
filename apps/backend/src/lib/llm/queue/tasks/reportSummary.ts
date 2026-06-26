@@ -10,15 +10,14 @@ import {
 import { reportDb } from '../../../service/db/reports.sqlite.js';
 import { service } from '../../../service/index.js';
 import { compareReports, findPreviousReportInProject } from '../../../service/reportCompare.js';
-import { llmService } from '../../index.js';
 import type { ReportSummaryTrendContext } from '../../prompts/index.js';
-import { buildReportSummarySegments, renderSegmentsForDebug } from '../../prompts/index.js';
+import { buildReportSummarySegments } from '../../prompts/index.js';
 import {
   parseReportAnalysisFromText,
   renderReportAnalysisAsMarkdown,
 } from '../../reportAnalysis.js';
-import { runRoutedTask } from '../../routing/index.js';
-import { fitToContextWindow, OUTPUT_RESERVE_TOKENS_BY_TASK } from './promptFitting.js';
+import { runFittedTask } from '../../routing/index.js';
+import { OUTPUT_RESERVE_TOKENS_BY_TASK } from './promptFitting.js';
 import { buildRunContextFromReport } from './reportEnrichment.js';
 
 const MAX_TREND_LIST_ITEMS = 25;
@@ -296,20 +295,11 @@ export async function processReportSummary(task: LlmTaskRow): Promise<void> {
     },
   });
 
-  await llmService.initialize();
-  const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(
-    builtPrompt,
-    OUTPUT_RESERVE_TOKENS_BY_TASK.reportSummary
-  );
-
-  const debugPrompt = renderSegmentsForDebug(segmentedPrompt);
-  if (fitLog) console.log(`[llmQueue] Task ${task.id}: ${fitLog}`);
-
-  const { response, baseUrl } = await runRoutedTask(
+  const { response, baseUrl } = await runFittedTask(
     'report_summary',
     task.id,
-    segmentedPrompt,
-    debugPrompt
+    builtPrompt,
+    OUTPUT_RESERVE_TOKENS_BY_TASK.reportSummary
   );
 
   let structured = parseReportAnalysisFromText(response.content);

@@ -11,7 +11,6 @@ import {
 } from '../../../service/db/index.js';
 import { reportDb } from '../../../service/db/reports.sqlite.js';
 import { service } from '../../../service/index.js';
-import { llmService } from '../../index.js';
 import {
   linkifyDataBlockTags,
   parseProjectAnalysisFromText,
@@ -23,13 +22,9 @@ import type {
   ProjectTrendSignal,
   ProjectTrendWindow,
 } from '../../prompts/index.js';
-import {
-  buildProjectSummarySegments,
-  extractRootCauseParagraph,
-  renderSegmentsForDebug,
-} from '../../prompts/index.js';
-import { runRoutedTask } from '../../routing/index.js';
-import { fitToContextWindow, OUTPUT_RESERVE_TOKENS_BY_TASK } from './promptFitting.js';
+import { buildProjectSummarySegments, extractRootCauseParagraph } from '../../prompts/index.js';
+import { runFittedTask } from '../../routing/index.js';
+import { OUTPUT_RESERVE_TOKENS_BY_TASK } from './promptFitting.js';
 import { buildRunContextFromReport } from './reportEnrichment.js';
 
 export const PROJECT_SUMMARY_REPORT_LIMIT = 20;
@@ -397,20 +392,11 @@ export async function processProjectSummary(task: LlmTaskRow): Promise<void> {
     },
   });
 
-  await llmService.initialize();
-  const { prompt: segmentedPrompt, log: fitLog } = await fitToContextWindow(
-    builtPrompt,
-    OUTPUT_RESERVE_TOKENS_BY_TASK.projectSummary
-  );
-
-  const debugPrompt = renderSegmentsForDebug(segmentedPrompt);
-  if (fitLog) console.log(`[llmQueue] Task ${task.id}: ${fitLog}`);
-
-  const { response, baseUrl } = await runRoutedTask(
+  const { response, baseUrl } = await runFittedTask(
     'project_summary',
     task.id,
-    segmentedPrompt,
-    debugPrompt
+    builtPrompt,
+    OUTPUT_RESERVE_TOKENS_BY_TASK.projectSummary
   );
 
   const validReportIds = new Set(latestReports.map((r) => r.reportID));

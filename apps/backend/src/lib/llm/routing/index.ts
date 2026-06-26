@@ -6,6 +6,8 @@ import {
 import { configCache } from '../../service/cache/config.js';
 import { llmTasksDb } from '../../service/db/index.js';
 import { llmService, type SegmentedSendOptions } from '../index.js';
+import { renderSegmentsForDebug } from '../prompts/index.js';
+import { fitToContextWindow } from '../queue/tasks/promptFitting.js';
 import {
   type FallbackSendResult,
   getPrimaryModelTemperature,
@@ -173,4 +175,16 @@ export async function runRoutedTask(
   );
   const temperature = getPrimaryModelTemperature(TEMP_KEY[taskType]) ?? DEFAULT_TEMP[taskType];
   return runTaskStrategy(taskType, prompt, { temperature }, taskId);
+}
+
+export async function runFittedTask(
+  taskType: LlmTaskType,
+  taskId: string,
+  builtPrompt: SegmentedPrompt,
+  reserveTokens: number
+): Promise<FallbackSendResult> {
+  await llmService.initialize();
+  const { prompt, log } = await fitToContextWindow(builtPrompt, reserveTokens);
+  if (log) console.log(`[llmQueue] Task ${taskId}: ${log}`);
+  return runRoutedTask(taskType, taskId, prompt, renderSegmentsForDebug(prompt));
 }

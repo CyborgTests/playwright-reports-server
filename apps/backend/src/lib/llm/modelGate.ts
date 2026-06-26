@@ -69,13 +69,6 @@ class ModelGate {
     }
   }
 
-  inspect(key: string): { active: number; waiting: number; limit: number } {
-    const s = this.state.get(key);
-    return s
-      ? { active: s.active, waiting: s.waiters.length, limit: s.limit }
-      : { active: 0, waiting: 0, limit: 0 };
-  }
-
   private makeRelease(key: string): () => void {
     let released = false;
     return () => {

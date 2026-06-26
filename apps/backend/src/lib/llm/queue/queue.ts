@@ -14,6 +14,8 @@ import { processTestAnalysis } from './tasks/testAnalysis.js';
 
 const CIRCUIT_OPEN_MAX_REQUEUES = 20;
 
+type GateSlot = { gateKey: string; release: () => void };
+
 class LlmAnalysisQueue {
   private static instance: LlmAnalysisQueue;
   private running = false;
@@ -119,10 +121,7 @@ class LlmAnalysisQueue {
     return true;
   }
 
-  private decideStart(task: ClaimCandidate): {
-    run: boolean;
-    reservation?: { gateKey: string; release: () => void };
-  } {
+  private decideStart(task: ClaimCandidate): { run: boolean; reservation?: GateSlot } {
     const routing = resolveRouting(task.type);
     if (routing.strategy !== 'one_shot') return { run: true };
     const primary = llmModelsDb.getPrimary();
@@ -142,7 +141,7 @@ class LlmAnalysisQueue {
     return release ? { run: true, reservation: { gateKey: gate.key, release } } : { run: false };
   }
 
-  private dispatch(task: LlmTaskRow, reservation?: { gateKey: string; release: () => void }): void {
+  private dispatch(task: LlmTaskRow, reservation?: GateSlot): void {
     const ctx: GateReservation | null = reservation
       ? { gateKey: reservation.gateKey, consumed: false }
       : null;

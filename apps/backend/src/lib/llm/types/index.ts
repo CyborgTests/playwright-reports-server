@@ -11,7 +11,6 @@ export interface LLMMessage {
 export interface PromptImage {
   // base64, no "data:" prefix
   data: string;
-  // mime type
   mediaType: string;
   source?: string;
 }
@@ -95,11 +94,9 @@ export abstract class BaseLLMProvider {
     this.config = config;
   }
 
-  abstract sendMessage(prompt: string, systemPrompt?: string): Promise<LLMResponse>;
   abstract validateConfig(): Promise<boolean>;
   abstract getAvailableModels(): Promise<string[]>;
 
-  protected abstract createRequest(prompt: string, systemPrompt?: string): LLMRequest;
   protected abstract sendRequest(request: LLMRequest): Promise<Response>;
   protected abstract parseResponse(response: Response, request?: LLMRequest): Promise<LLMResponse>;
   protected abstract handleError(error: unknown): LLMProviderError;
@@ -125,7 +122,6 @@ export abstract class BaseLLMProvider {
           break;
         }
 
-        // exponential backoff
         const backoffDelay = delayMs * 2 ** attempt + Math.random() * 1000;
         await new Promise((resolve) => setTimeout(resolve, backoffDelay));
       }

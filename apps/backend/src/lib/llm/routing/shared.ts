@@ -95,7 +95,7 @@ export function resolveRoles(
   return active ? [active] : [];
 }
 
-export function sumUsage(usages: Usage[]): Usage {
+function sumUsage(usages: Usage[]): Usage {
   let inputTokens = 0;
   let outputTokens = 0;
   let totalTokens = 0;

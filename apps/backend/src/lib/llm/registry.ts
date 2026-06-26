@@ -6,7 +6,7 @@ import { llmService, type SegmentedSendOptions } from './index.js';
 import { modelGate, reservationStore } from './modelGate.js';
 import type { LLMProviderConfig, LLMResponse, SegmentedPrompt } from './types/index.js';
 
-export const API_KEY_MASK = '********';
+const API_KEY_MASK = '********';
 
 export function toLlmModel(row: LlmModelRow): LlmModel {
   return {

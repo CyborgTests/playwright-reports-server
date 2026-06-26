@@ -23,7 +23,6 @@ const DEFAULT_ANTHROPIC_MAX_TOKENS = 8000;
 function lookupAnthropicContextWindow(model: string): number | null {
   if (!model) return null;
   const m = model.toLowerCase();
-  // Claude 4.x and 3.x families all advertise 200k context.
   if (m.includes('claude-opus') || m.includes('claude-sonnet') || m.includes('claude-haiku')) {
     return 200_000;
   }
@@ -45,18 +44,6 @@ export class AnthropicProvider extends LLMProvider {
   protected getDefaultHeaders(): Record<string, string> {
     return {
       'x-api-key': this.config.apiKey,
-    };
-  }
-
-  protected createRequest(prompt: string, systemPrompt?: string, _model?: string): LLMRequest {
-    const messages = [{ role: 'user' as const, content: prompt }];
-
-    return {
-      model: this.config.model,
-      messages,
-      system: systemPrompt,
-      temperature: this.config.temperature,
-      maxTokens: this.config.maxTokens,
     };
   }
 

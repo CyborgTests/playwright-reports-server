@@ -1,13 +1,6 @@
 import type { ClusterAnchorKind } from '@playwright-reports/shared';
 import type { SegmentedPrompt } from '../../types/index.js';
-import {
-  applyMustache,
-  assembleSegments,
-  buildGeneralContextSegment,
-  buildSegment,
-  resolveSystemPrompt,
-  splitTaskInstructions,
-} from '../assembleSegments.js';
+import { assembleSegments, buildPromptHead, buildSegment } from '../assembleSegments.js';
 import { describeGroupKind, renderAnchorInline, renderTrendLabel } from '../clusterRendering.js';
 import type { CustomPromptOverrides, RunContext } from '../promptTypes.js';
 import { extractRootCauseParagraph, stripLogNoise, truncateMiddle } from '../textTransforms.js';
@@ -404,12 +397,6 @@ export const buildReportSummarySegments = (args: {
     project: args.overrides?.project,
     totalFailures,
   };
-  const { request: requestTemplate, contract: contractTemplate } = splitTaskInstructions(
-    reportInstructionsTemplate
-  );
-  const requestSub = applyMustache(requestTemplate, reportBindings, REPORT_SUMMARY_VARS);
-  const contractSub = applyMustache(contractTemplate, reportBindings, REPORT_SUMMARY_VARS);
-
   const dataBlock = [
     buildReportHeaderBlock(args.reportId, totalFailures),
     buildFailureGroupsBlock(args.clusters),
@@ -428,18 +415,14 @@ export const buildReportSummarySegments = (args: {
     : undefined;
 
   return assembleSegments([
-    buildSegment(
-      'system_prompt',
-      'system',
-      true,
-      resolveSystemPrompt(
-        REPORT_SUMMARY_SYSTEM_PROMPT,
-        args.overrides?.systemPrompt ?? args.systemPrompt
-      )
-    ),
-    buildGeneralContextSegment(args.overrides?.generalContext),
-    buildSegment('task_contract', 'user', !contractSub.substituted, contractSub.rendered),
-    buildSegment('task_request', 'user', !requestSub.substituted, requestSub.rendered),
+    ...buildPromptHead({
+      systemDefault: REPORT_SUMMARY_SYSTEM_PROMPT,
+      legacySystem: args.overrides?.systemPrompt ?? args.systemPrompt,
+      generalContext: args.overrides?.generalContext,
+      instructionsTemplate: reportInstructionsTemplate,
+      bindings: reportBindings,
+      vars: REPORT_SUMMARY_VARS,
+    }),
     buildSegment('run_data_open', 'user', false, '<run_data>'),
     buildSegment('report_data', 'user', false, dataBlock),
     buildSegment('trend_context', 'user', false, trendBlock),

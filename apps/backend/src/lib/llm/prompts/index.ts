@@ -20,7 +20,6 @@ export type { PromptFitResult } from './promptBudget.js';
 export { fitPromptToBudget } from './promptBudget.js';
 export type {
   CustomPromptOverrides,
-  MustacheSubstitution,
   ReportSummaryRunContext,
   RunContext,
 } from './promptTypes.js';
@@ -52,15 +51,8 @@ export type {
 export {
   buildCrossProjectContext,
   buildFeedbackContext,
-  buildPerTestFeedbackContext,
   buildTestFailureSegments,
   extractRootCauseParagraph,
 } from './testAnalysis/segments.js';
 
-export {
-  stableStringify,
-  truncateMiddle,
-  unescapeLiteralNewlines,
-} from './textTransforms.js';
-
-export { PROJECT_VERDICT_ENUM, REPORT_VERDICT_ENUM } from './verdicts.js';
+export { truncateMiddle, unescapeLiteralNewlines } from './textTransforms.js';

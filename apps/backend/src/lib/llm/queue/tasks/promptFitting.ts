@@ -31,7 +31,7 @@ export async function collectScreenshotImages(
   return img ? [img] : [];
 }
 
-export function numberedList(items: string[]): string {
+function numberedList(items: string[]): string {
   return items.map((item, i) => `${i + 1}. ${item}`).join('\n');
 }
 
