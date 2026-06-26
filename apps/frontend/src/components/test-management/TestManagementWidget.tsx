@@ -1,225 +1,27 @@
 import {
   type DateRange,
   FLAKINESS_THRESHOLDS,
-  type FlakinessTier,
-  formatDuration,
   type TestFilters,
-  type TestsSort,
   type TestWithQuarantineInfo,
 } from '@playwright-reports/shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { AlertTriangle, Clock, RotateCcw } from 'lucide-react';
-import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link as RouterLink, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { TrendSparklineHistory } from '@/components/analytics/TrendSparklineHistory';
-import FormattedDate from '@/components/date-format';
-import { outcomeBadge } from '@/components/outcome-badge';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useConfig } from '@/hooks/useConfig';
-import { defaultProjectName } from '@/lib/constants';
-import { formatDate } from '@/lib/date';
-import { formatRegressionAge, getStatusBadge } from './badges';
-import { exponentialMovingAverageDuration } from './calculations/ema';
-import { FLAKINESS_TIERS, TestFilters as TestFiltersComponent } from './TestFilters';
+import { buildFilterParams, parseTestFilters } from './filter-params';
+import { TestFilters as TestFiltersComponent } from './TestFilters';
 import { DeleteTestDialog, QuarantineDialog } from './TestManagementDialogs';
+import { TestRow } from './TestRow';
 import { useTestMutations, useTestsQuery } from './useTestManagement';
 
 interface TestManagementWidgetProps {
   project?: string;
   dateRange?: DateRange;
 }
-
-function parseTiersParam(raw: string | null): FlakinessTier[] | undefined {
-  if (!raw) return undefined;
-  const tiers = raw
-    .split(',')
-    .map((t) => t.trim())
-    .filter((t): t is FlakinessTier => (FLAKINESS_TIERS as string[]).includes(t));
-  return tiers.length > 0 ? tiers : undefined;
-}
-
-function parseSortParam(raw: string | null): TestsSort | undefined {
-  if (raw === 'slowest' || raw === 'stale' || raw === 'regression-age') return raw;
-  return undefined;
-}
-
-function parseStatusParam(raw: string | null): TestFilters['status'] {
-  if (raw === 'quarantined' || raw === 'not-quarantined') return raw;
-  return 'all';
-}
-
-interface TestRowProps {
-  item: TestWithQuarantineInfo;
-  warningThreshold: number;
-  quarantineThreshold: number;
-  stale: boolean;
-  regressionHighlightMode: 'opened' | 'closed' | null;
-  isResetFlakinessPending: boolean;
-  isClearFlakinessResetPending: boolean;
-  onQuarantine: (test: TestWithQuarantineInfo) => void;
-  onResetFlakiness: (test: TestWithQuarantineInfo) => void;
-  onClearFlakinessReset: (test: TestWithQuarantineInfo) => void;
-  onDelete: (test: TestWithQuarantineInfo) => void;
-}
-
-const TestRow = memo(
-  forwardRef<HTMLTableRowElement, TestRowProps & { dataIndex: number }>(function TestRow(
-    {
-      item,
-      warningThreshold,
-      quarantineThreshold,
-      stale,
-      regressionHighlightMode,
-      isResetFlakinessPending,
-      isClearFlakinessResetPending,
-      onQuarantine,
-      onResetFlakiness,
-      onClearFlakinessReset,
-      onDelete,
-      dataIndex,
-    },
-    ref
-  ) {
-    const highlights =
-      regressionHighlightMode && item.regressionHighlights
-        ? regressionHighlightMode === 'closed'
-          ? { resolvedAtReportId: item.regressionHighlights.resolvedAtReportId }
-          : { newAtReportId: item.regressionHighlights.newAtReportId }
-        : undefined;
-
-    return (
-      <TableRow ref={ref} data-index={dataIndex}>
-        <TableCell className="break-words">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <RouterLink
-                to={`/test/${item.testId}?project=${encodeURIComponent(item.project)}`}
-                className="font-medium break-words hover:underline"
-              >
-                {item.title}
-              </RouterLink>
-              {item.regression && (
-                <Badge
-                  variant="danger"
-                  title={`Regression · opened ${formatDate(item.regression.regressedAt)} · ${item.regression.failureCount} failing run${item.regression.failureCount === 1 ? '' : 's'} since`}
-                  className="gap-1 text-[10px] px-1.5 py-0"
-                >
-                  Regression · {formatRegressionAge(item.regression.daysOpen)}
-                </Badge>
-              )}
-            </div>
-            <p className="text-sm text-muted-foreground break-words">{item.filePath}</p>
-          </div>
-        </TableCell>
-        <TableCell className="break-words">
-          <p className="text-sm break-words">{item.project}</p>
-        </TableCell>
-        <TableCell className="whitespace-nowrap w-px">
-          {outcomeBadge(item.runs?.at(0)?.outcome)}
-        </TableCell>
-        <TableCell className="whitespace-nowrap w-px">
-          {getStatusBadge(item, warningThreshold, quarantineThreshold)}
-        </TableCell>
-        <TableCell className="whitespace-nowrap w-px relative">
-          <div className="flex items-center gap-2">
-            <Progress value={item.flakinessScore || 0} className="max-w-[100px] h-2" />
-            <span className="text-sm">{item.flakinessScore?.toFixed(1)}%</span>
-          </div>
-          {item.flakinessResetAt && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <RotateCcw className="absolute top-7 right-0 h-3 w-3 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  Flakiness reset on <FormattedDate date={item.flakinessResetAt} />
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-        </TableCell>
-        <TableCell className="whitespace-nowrap w-px">
-          <Badge variant="outline">{item.totalRuns || 0}</Badge>
-        </TableCell>
-        <TableCell className="whitespace-nowrap w-px">
-          <TrendSparklineHistory runs={item.runs ?? []} highlights={highlights} />
-        </TableCell>
-        <TableCell className="whitespace-nowrap w-px">
-          <span className="flex items-center">
-            <Clock className="h-4 w-4 mr-1" />
-            {formatDuration(exponentialMovingAverageDuration(item.runs))}
-          </span>
-        </TableCell>
-        <TableCell>
-          <div className="flex items-center gap-1 break-words">
-            {item.lastRunAt ? <FormattedDate date={item.lastRunAt} /> : 'Never'}
-            {stale && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <AlertTriangle className="h-4 w-4 text-warning" />
-                  </TooltipTrigger>
-                  <TooltipContent>Not present in latest report - consider removing</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-          </div>
-        </TableCell>
-
-        <TableCell className="whitespace-nowrap w-px">
-          <DropdownMenu modal={false}>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm">
-                Actions
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem
-                onClick={() => onQuarantine(item)}
-                className={item.isQuarantined ? 'text-success' : 'text-danger'}
-              >
-                {item.isQuarantined ? 'Remove Quarantine' : 'Send Quarantine'}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => onResetFlakiness(item)}
-                disabled={isResetFlakinessPending}
-              >
-                Reset Flakiness Score
-              </DropdownMenuItem>
-              {item.flakinessResetAt && (
-                <DropdownMenuItem
-                  onClick={() => onClearFlakinessReset(item)}
-                  disabled={isClearFlakinessResetPending}
-                >
-                  Remove Flakiness Reset
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onDelete(item)} className="text-danger">
-                Delete Test
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </TableCell>
-      </TableRow>
-    );
-  })
-);
 
 export default function TestManagementWidget({
   project,
@@ -228,17 +30,7 @@ export default function TestManagementWidget({
   const [searchParams, setSearchParams] = useSearchParams();
 
   const filters = useMemo<TestFilters>(
-    () => ({
-      project: project ?? defaultProjectName,
-      status: parseStatusParam(searchParams.get('status')),
-      tiers: parseTiersParam(searchParams.get('tiers')),
-      sort: parseSortParam(searchParams.get('sort')),
-      failureCategory: searchParams.get('failureCategory') || undefined,
-      search: searchParams.get('search') || undefined,
-      regressedOnly: searchParams.get('regressedOnly') === '1',
-      regressedSince: searchParams.get('regressedSince') || undefined,
-      resolvedSince: searchParams.get('resolvedSince') || undefined,
-    }),
+    () => parseTestFilters(searchParams, project),
     [project, searchParams]
   );
   const [quarantineTest, setQuarantineTest] = useState<TestWithQuarantineInfo | null>(null);
@@ -249,23 +41,7 @@ export default function TestManagementWidget({
 
   const handleFiltersChange = useCallback(
     (next: TestFilters) => {
-      const params = new URLSearchParams(searchParams);
-      if (next.status && next.status !== 'all') params.set('status', next.status);
-      else params.delete('status');
-      if (next.tiers && next.tiers.length > 0) params.set('tiers', next.tiers.join(','));
-      else params.delete('tiers');
-      if (next.sort && next.sort !== 'default') params.set('sort', next.sort);
-      else params.delete('sort');
-      if (next.regressedOnly) params.set('regressedOnly', '1');
-      else params.delete('regressedOnly');
-      if (next.regressedSince) params.set('regressedSince', next.regressedSince);
-      else params.delete('regressedSince');
-      if (next.resolvedSince) params.set('resolvedSince', next.resolvedSince);
-      else params.delete('resolvedSince');
-      if (next.failureCategory) params.set('failureCategory', next.failureCategory);
-      else params.delete('failureCategory');
-      if (next.search) params.set('search', next.search);
-      else params.delete('search');
+      const params = buildFilterParams(next, searchParams);
       if (params.toString() !== searchParams.toString()) {
         setSearchParams(params, { replace: true });
       }

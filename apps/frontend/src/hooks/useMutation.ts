@@ -43,8 +43,15 @@ const useMutation = <TData = unknown, TVariables = unknown, TContext = unknown>(
       if (!response.ok) {
         let message = `Request failed (${response.status})`;
         try {
-          const envelope = respText ? (JSON.parse(respText) as { error?: string }) : undefined;
-          message = envelope?.error ?? respText ?? message;
+          const envelope = respText
+            ? (JSON.parse(respText) as { error?: string; issues?: Array<{ message?: string }> })
+            : undefined;
+          const issues = envelope?.issues;
+          if (issues && issues.length > 0) {
+            message = issues.map((i) => i.message ?? JSON.stringify(i)).join(' · ');
+          } else {
+            message = envelope?.error ?? respText ?? message;
+          }
         } catch {
           if (respText) message = respText; // non-JSON body
         }

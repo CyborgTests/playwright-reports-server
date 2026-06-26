@@ -1,5 +1,5 @@
 import type { HeaderLink, ServerConfig } from '@playwright-reports/shared';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HEADER_LINK_ICON_CATALOG } from '@/components/header-link-icons';
 import { LinkIcon } from '@/components/icons';
 import { Button } from '@/components/ui/button';
@@ -70,6 +70,15 @@ export default function ServerConfiguration({
   const logoFileRef = useRef<HTMLInputElement>(null);
   const faviconFileRef = useRef<HTMLInputElement>(null);
   const [pendingCustomLinks, setPendingCustomLinks] = useState<Set<string>>(new Set());
+
+  // Leaving edit mode (Cancel or Save) discards the parent's temp state; clear
+  // this component's local "upload new icon" markers too so a cancelled edit
+  // doesn't leave a link's icon picker stuck on "Upload new".
+  useEffect(() => {
+    if (editingSection !== 'server') {
+      setPendingCustomLinks((prev) => (prev.size === 0 ? prev : new Set()));
+    }
+  }, [editingSection]);
 
   const markPendingCustom = (id: string, isCustom: boolean) => {
     setPendingCustomLinks((prev) => {

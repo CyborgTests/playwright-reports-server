@@ -48,7 +48,7 @@ export default function NotificationsConfiguration() {
     { channelId: string; rule?: NotificationRule } | undefined
   >(undefined);
 
-  const persist = (next: NotificationsConfig) => update.mutate(next);
+  const persist = (next: NotificationsConfig) => update.mutate({ body: next });
 
   const patchChannelRules = (
     channelId: string,
