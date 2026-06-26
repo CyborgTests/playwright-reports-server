@@ -7,14 +7,7 @@
 
 export type RouteScope = 'global' | 'local';
 
-export type ErrorClass =
-  | 'server-error'
-  | 'network'
-  | 'browser-infra'
-  | 'timeout'
-  | 'assertion'
-  | 'selector'
-  | 'other';
+export type ErrorClass = 'server-error' | 'network' | 'browser-infra' | 'other';
 
 export interface Route {
   scope: RouteScope;
@@ -44,14 +37,6 @@ const RULES: Rule[] = [
     pattern:
       /target (?:page|frame|context)?\s*closed|browser has been closed|crashed|Protocol error|websocket (?:error|closed)/i,
   },
-  // local classes - kept for display/category; all key the same way (frame ∪ locator).
-  { errorClass: 'timeout', scope: 'local', pattern: /test timeout of \d+ms exceeded/i },
-  {
-    errorClass: 'assertion',
-    scope: 'local',
-    pattern: /\bexpect\(|\bto(?:Be|Have|Contain|Equal|Match)[A-Za-z]*\(/,
-  },
-  { errorClass: 'selector', scope: 'local', pattern: /\b(?:locator|getBy[A-Za-z]+)\s*\(/ },
 ];
 
 export function route(message: string | undefined): Route {

@@ -17,6 +17,7 @@ import {
   keysFor,
   LOCATOR_PREFIX,
   MESSAGE_PREFIX,
+  messageSignature,
 } from './keys.js';
 import { type RouteScope, route } from './route.js';
 import type { FailedTestRun, TestMeta } from './types.js';
@@ -128,7 +129,10 @@ function buildOneCluster(
 ): FailureCluster {
   const id = clusterId(canonical);
   const scope: RouteScope = canonical.startsWith(GLOBAL_PREFIX) ? 'global' : 'local';
-  const verb = modalVerb(members);
+  const sampleSource = pickRepresentativeSample(members);
+  const sampleMessage = sampleSource.parsed.message;
+  const sampleCodeframe = extractCodeframeLine(sampleMessage);
+  const verb = extractVerb(sampleMessage);
   const anchor = deriveAnchor(canonical, verb);
 
   const byTest = new Map<
@@ -165,10 +169,6 @@ function buildOneCluster(
     });
   }
   tests.sort((a, b) => b.occurrences - a.occurrences);
-
-  const sampleSource = pickRepresentativeSample(members);
-  const sampleMessage = sampleSource.parsed.message;
-  const sampleCodeframe = extractCodeframeLine(sampleMessage);
 
   // Category: most common failureCategory among member runs.
   const categoryCounts = new Map<string, number>();
@@ -215,25 +215,6 @@ function deriveAnchor(canonical: string, verb: PlaywrightVerb): ClusterAnchor {
   return { kind: 'signature', verb, signature };
 }
 
-// most common verb across member runs for display
-function modalVerb(members: AnnotatedRun[]): PlaywrightVerb {
-  const counts = new Map<PlaywrightVerb, number>();
-  for (const m of members) {
-    const v = extractVerb(m.parsed.message);
-    counts.set(v, (counts.get(v) ?? 0) + 1);
-  }
-  let best: PlaywrightVerb = 'unknown';
-  let bestCount = -1;
-  for (const [v, n] of counts) {
-    // prefer a meaningful verb over 'unknown' on ties.
-    if (n > bestCount || (n === bestCount && best === 'unknown' && v !== 'unknown')) {
-      best = v;
-      bestCount = n;
-    }
-  }
-  return best;
-}
-
 const CHRONIC_FLAKE_MIN_FAILURES = 10;
 
 function isChronicFlake(testCount: number, failureCount: number): boolean {
@@ -249,7 +230,7 @@ function pickRepresentativeSample(members: AnnotatedRun[]): AnnotatedRun {
   if (members.length === 1) return members[0];
   const shapeCounts = new Map<string, { count: number; member: AnnotatedRun }>();
   for (const m of members) {
-    const shape = messageShape(m.parsed.message);
+    const shape = messageSignature(m.parsed.message);
     const existing = shapeCounts.get(shape);
     if (existing) {
       existing.count++;
@@ -263,15 +244,6 @@ function pickRepresentativeSample(members: AnnotatedRun[]): AnnotatedRun {
     if (!best || entry.count > best.count) best = entry;
   }
   return best?.member ?? members[0];
-}
-
-function messageShape(message: string): string {
-  return message
-    .replace(/\d+/g, 'N')
-    .replace(/'[^']*'/g, "'V'")
-    .replace(/"[^"]*"/g, '"V"')
-    .replace(/0x[0-9a-fA-F]+/g, 'H')
-    .slice(0, 240);
 }
 
 function extractCodeframeLine(message: string): string | undefined {

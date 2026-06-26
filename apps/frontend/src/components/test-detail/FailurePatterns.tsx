@@ -2,10 +2,9 @@ import type { ClusterReport, FailureCluster, TestFailureGroup } from '@playwrigh
 import { ExternalLink, GitMerge } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { toast } from 'sonner';
 import FormattedDate from '@/components/date-format';
 import { MarkClusterResolvedDialog } from '@/components/failure-clusters/MarkClusterResolvedDialog';
-import type { ClusterResolutionRequest } from '@/components/failure-clusters/types';
+import { useClusterResolution } from '@/components/failure-clusters/useClusterResolution';
 import {
   Accordion,
   AccordionContent,
@@ -15,7 +14,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardTitle } from '@/components/ui/card';
-import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 import { buildUrl, withBase } from '@/lib/url';
 import { servedReportUrl } from './test-detail-widgets';
@@ -49,28 +47,7 @@ function CrossTestClusterCard({
   onChange,
 }: Readonly<{ cluster: FailureCluster; project: string; onChange: () => void }>) {
   const resolved = cluster.lifecycle === 'resolved';
-  const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
-  const markMutation = useMutation<{ success: boolean }, ClusterResolutionRequest>(
-    `/api/analytics/failure-clusters/${cluster.id}/resolve`,
-    {
-      method: 'POST',
-      onSuccess: () => {
-        toast.success('Cluster marked as resolved');
-        setResolveDialogOpen(false);
-        onChange();
-      },
-    }
-  );
-  const reopenMutation = useMutation<{ success: boolean }, ClusterResolutionRequest>(
-    `/api/analytics/failure-clusters/${cluster.id}/reopen`,
-    {
-      method: 'POST',
-      onSuccess: () => {
-        toast.success('Cluster re-opened');
-        onChange();
-      },
-    }
-  );
+  const resolution = useClusterResolution(cluster.id, project, onChange);
   return (
     <Card className={resolved ? 'opacity-70 border-success/30' : undefined}>
       <Accordion type="single" collapsible>
@@ -119,8 +96,8 @@ function CrossTestClusterCard({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => reopenMutation.mutate({ body: { project } })}
-                  disabled={reopenMutation.isPending}
+                  onClick={resolution.reopen}
+                  disabled={resolution.reopenPending}
                 >
                   Re-open
                 </Button>
@@ -128,8 +105,8 @@ function CrossTestClusterCard({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setResolveDialogOpen(true)}
-                  disabled={markMutation.isPending}
+                  onClick={() => resolution.setResolveDialogOpen(true)}
+                  disabled={resolution.markPending}
                 >
                   Mark resolved
                 </Button>
@@ -178,15 +155,11 @@ function CrossTestClusterCard({
         </AccordionItem>
       </Accordion>
       <MarkClusterResolvedDialog
-        open={resolveDialogOpen}
-        onOpenChange={setResolveDialogOpen}
+        open={resolution.resolveDialogOpen}
+        onOpenChange={resolution.setResolveDialogOpen}
         clusterName={cluster.name}
-        isPending={markMutation.isPending}
-        onSubmit={(input) => {
-          const body: ClusterResolutionRequest = { project };
-          if (input.note) body.note = input.note;
-          markMutation.mutate({ body });
-        }}
+        isPending={resolution.markPending}
+        onSubmit={resolution.submitResolve}
       />
     </Card>
   );
@@ -257,29 +230,7 @@ function FailureGroupCard({
 }>) {
   const name = firstLine(group.sampleMessage || group.signature);
   const resolved = cluster?.lifecycle === 'resolved';
-  const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
-  const clusterId = cluster?.id ?? '_';
-  const markMutation = useMutation<{ success: boolean }, ClusterResolutionRequest>(
-    `/api/analytics/failure-clusters/${clusterId}/resolve`,
-    {
-      method: 'POST',
-      onSuccess: () => {
-        toast.success('Cluster marked as resolved');
-        setResolveDialogOpen(false);
-        onClustersChanged();
-      },
-    }
-  );
-  const reopenMutation = useMutation<{ success: boolean }, ClusterResolutionRequest>(
-    `/api/analytics/failure-clusters/${clusterId}/reopen`,
-    {
-      method: 'POST',
-      onSuccess: () => {
-        toast.success('Cluster re-opened');
-        onClustersChanged();
-      },
-    }
-  );
+  const resolution = useClusterResolution(cluster?.id ?? '_', project, onClustersChanged);
   return (
     <Card className={resolved ? 'opacity-70 border-success/30' : undefined}>
       <AccordionItem value={group.signature} className="border-b-0">
@@ -318,10 +269,10 @@ function FailureGroupCard({
                 cluster={cluster}
                 resolved={resolved}
                 project={project}
-                onResolve={() => setResolveDialogOpen(true)}
-                onReopen={() => reopenMutation.mutate({ body: { project } })}
-                resolvePending={markMutation.isPending}
-                reopenPending={reopenMutation.isPending}
+                onResolve={() => resolution.setResolveDialogOpen(true)}
+                onReopen={resolution.reopen}
+                resolvePending={resolution.markPending}
+                reopenPending={resolution.reopenPending}
               />
             )}
           </div>
@@ -384,15 +335,11 @@ function FailureGroupCard({
       </AccordionItem>
       {cluster && (
         <MarkClusterResolvedDialog
-          open={resolveDialogOpen}
-          onOpenChange={setResolveDialogOpen}
+          open={resolution.resolveDialogOpen}
+          onOpenChange={resolution.setResolveDialogOpen}
           clusterName={cluster.name}
-          isPending={markMutation.isPending}
-          onSubmit={(input) => {
-            const body: ClusterResolutionRequest = { project };
-            if (input.note) body.note = input.note;
-            markMutation.mutate({ body });
-          }}
+          isPending={resolution.markPending}
+          onSubmit={resolution.submitResolve}
         />
       )}
     </Card>

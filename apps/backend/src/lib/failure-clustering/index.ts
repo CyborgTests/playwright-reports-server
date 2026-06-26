@@ -39,8 +39,6 @@ function cacheGet(key: string): ClusterReport | undefined {
     cache.delete(key);
     return undefined;
   }
-  cache.delete(key);
-  cache.set(key, entry);
   return entry.value;
 }
 

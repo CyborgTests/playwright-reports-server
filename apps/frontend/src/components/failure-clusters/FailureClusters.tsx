@@ -17,7 +17,7 @@ import FormattedDate from '@/components/date-format';
 import DateRangeSelect from '@/components/date-range-select';
 import ClusterRootCauseBulkEditor from '@/components/failure-clusters/ClusterRootCauseBulkEditor';
 import { MarkClusterResolvedDialog } from '@/components/failure-clusters/MarkClusterResolvedDialog';
-import type { ClusterResolutionRequest } from '@/components/failure-clusters/types';
+import { useClusterResolution } from '@/components/failure-clusters/useClusterResolution';
 import { subtitle, title } from '@/components/primitives';
 import ProjectSelect from '@/components/project-select';
 import ReportPicker from '@/components/report-picker';
@@ -34,7 +34,6 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 import { defaultProjectName } from '@/lib/constants';
 import { buildUrl, withBase } from '@/lib/url';
@@ -309,38 +308,7 @@ function ClusterCard({
   const kind = cluster.anchor.kind;
   const resolved = cluster.lifecycle === 'resolved';
   const manualResolution = cluster.resolution?.manual === true;
-  const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
-
-  const markMutation = useMutation<{ success: boolean }, ClusterResolutionRequest>(
-    `/api/analytics/failure-clusters/${cluster.id}/resolve`,
-    {
-      method: 'POST',
-      onSuccess: () => {
-        toast.success('Cluster marked as resolved');
-        setResolveDialogOpen(false);
-        onChange();
-      },
-    }
-  );
-  const reopenMutation = useMutation<{ success: boolean }, ClusterResolutionRequest>(
-    `/api/analytics/failure-clusters/${cluster.id}/reopen`,
-    {
-      method: 'POST',
-      onSuccess: () => {
-        toast.success('Cluster re-opened');
-        onChange();
-      },
-    }
-  );
-
-  const handleResolveSubmit = (input: { note?: string }) => {
-    const body: ClusterResolutionRequest = { project };
-    if (input.note) body.note = input.note;
-    markMutation.mutate({ body });
-  };
-  const handleUnresolve = () => {
-    reopenMutation.mutate({ body: { project } });
-  };
+  const resolution = useClusterResolution(cluster.id, project, onChange);
 
   return (
     <Card
@@ -421,8 +389,8 @@ function ClusterCard({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleUnresolve}
-                disabled={reopenMutation.isPending}
+                onClick={resolution.reopen}
+                disabled={resolution.reopenPending}
               >
                 Re-open cluster
               </Button>
@@ -430,8 +398,8 @@ function ClusterCard({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setResolveDialogOpen(true)}
-                disabled={markMutation.isPending}
+                onClick={() => resolution.setResolveDialogOpen(true)}
+                disabled={resolution.markPending}
               >
                 Mark as resolved
               </Button>
@@ -454,11 +422,11 @@ function ClusterCard({
         </AccordionContent>
       </AccordionItem>
       <MarkClusterResolvedDialog
-        open={resolveDialogOpen}
-        onOpenChange={setResolveDialogOpen}
+        open={resolution.resolveDialogOpen}
+        onOpenChange={resolution.setResolveDialogOpen}
         clusterName={cluster.name}
-        isPending={markMutation.isPending}
-        onSubmit={handleResolveSubmit}
+        isPending={resolution.markPending}
+        onSubmit={resolution.submitResolve}
       />
     </Card>
   );
