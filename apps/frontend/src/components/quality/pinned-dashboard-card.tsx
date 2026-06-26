@@ -6,7 +6,7 @@ import { PassRateBar } from '@/components/quality/pass-rate-bar';
 import { SnapshotTree } from '@/components/quality/snapshot-tree';
 import {
   CARD_BORDER_CLASS,
-  dotForCard,
+  dotForStatus,
   STATUS_LABEL,
   worstStatus,
 } from '@/components/quality/status';
@@ -60,7 +60,7 @@ export function PinnedDashboardCard({
           <GradeBadge
             grade={root.grade}
             size="md"
-            dot={dotForCard(status)}
+            dot={dotForStatus(status)}
             statusLabel={STATUS_LABEL[status]}
           />
         )}

@@ -3,11 +3,11 @@ import { ChevronDown, ChevronRight, Folder } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 import { GradeBadge } from './grade-badge';
 import { PassRateBar } from './pass-rate-bar';
+import { dotForStatus } from './status';
 import { StatusBadge } from './status-badge';
 import { TrendArrow } from './trend-arrow';
 
@@ -71,7 +71,7 @@ function SnapshotNode({ node, depth }: SnapshotNodeProps) {
         <GradeBadge
           grade={node.grade}
           size={isGroup ? 'md' : 'sm'}
-          dot={dotForRow(status)}
+          dot={dotForStatus(status)}
           statusLabel={
             status === 'stale'
               ? `Stale - ${staleDetail(node) ?? 'latest report past staleness threshold'}`
@@ -158,24 +158,10 @@ function statusLabelFor(status: NodeStatus): string | undefined {
   }
 }
 
-function dotForRow(status: NodeStatus): 'ok' | 'warn' | undefined {
-  if (status === 'ok') return 'ok';
-  if (status === 'stale') return 'warn';
-  return undefined;
-}
-
 function staleDetail(node: QualityNodeSnapshot): string | undefined {
   if (!node.latestReportAt) return undefined;
   const ts = Date.parse(node.latestReportAt);
   if (!Number.isFinite(ts)) return undefined;
   const days = Math.floor((Date.now() - ts) / (24 * 60 * 60 * 1000));
   return days <= 0 ? undefined : `${days} day${days === 1 ? '' : 's'} old.`;
-}
-
-export function VerdictChip({ ok }: { ok: boolean }) {
-  return (
-    <Badge variant={ok ? 'success' : 'failure'} className="uppercase">
-      {ok ? 'OK' : 'Not OK'}
-    </Badge>
-  );
 }

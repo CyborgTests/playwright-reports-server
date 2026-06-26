@@ -9,6 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { ChartTooltip } from '@/components/analytics/chart-tooltip';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCategoryName } from '@/lib/format';
@@ -58,12 +59,12 @@ function CustomTooltip({
   if (active && payload?.length) {
     const data = payload[0].payload;
     return (
-      <div className="bg-popover text-popover-foreground p-3 rounded-lg shadow-lg border">
+      <ChartTooltip>
         <p className="font-medium">{formatCategoryName(data.category)}</p>
         <p className="text-sm text-muted-foreground">
           {data.count} failures ({data.percentage.toFixed(1)}%)
         </p>
-      </div>
+      </ChartTooltip>
     );
   }
   return null;

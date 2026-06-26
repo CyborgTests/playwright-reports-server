@@ -19,7 +19,8 @@ import { PinnedDashboardCard } from '@/components/quality/pinned-dashboard-card'
 import { SnapshotTree } from '@/components/quality/snapshot-tree';
 import {
   CARD_BORDER_CLASS,
-  dotForCard,
+  dotForStatus,
+  type PreviewStats,
   STATUS_LABEL,
   worstStatus,
 } from '@/components/quality/status';
@@ -42,13 +43,6 @@ import {
   useUpdateDashboard,
 } from '@/hooks/useQualityDashboards';
 import { cn } from '@/lib/utils';
-
-interface PreviewStats {
-  passed: number;
-  failed: number;
-  flaky: number;
-  total: number;
-}
 
 function flattenStats(
   node: QualityNodeSnapshot | undefined,
@@ -322,7 +316,7 @@ function SingleDashboardView({
           <GradeBadge
             grade={root.grade}
             size="lg"
-            dot={dotForCard(status)}
+            dot={dotForStatus(status)}
             statusLabel={STATUS_LABEL[status]}
           />
         )}

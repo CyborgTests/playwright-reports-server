@@ -1,13 +1,23 @@
 import type { Grade } from '@playwright-reports/shared';
 import { cn } from '@/lib/utils';
 
-const GRADE_CLASS: Record<Grade, string> = {
-  S: 'bg-emerald-500 text-emerald-50 ring-emerald-400/30',
-  A: 'bg-green-500 text-green-50 ring-green-400/30',
-  B: 'bg-lime-500 text-lime-50 ring-lime-400/30',
-  C: 'bg-amber-500 text-amber-50 ring-amber-400/30',
-  D: 'bg-orange-500 text-orange-50 ring-orange-400/30',
-  F: 'bg-red-600 text-red-50 ring-red-500/30',
+// Literal class strings — Tailwind only emits classes it can see as whole tokens.
+export const GRADE_BG: Record<Grade, string> = {
+  S: 'bg-emerald-500',
+  A: 'bg-green-500',
+  B: 'bg-lime-500',
+  C: 'bg-amber-500',
+  D: 'bg-orange-500',
+  F: 'bg-red-600',
+};
+
+const GRADE_TEXT_RING: Record<Grade, string> = {
+  S: 'text-emerald-50 ring-emerald-400/30',
+  A: 'text-green-50 ring-green-400/30',
+  B: 'text-lime-50 ring-lime-400/30',
+  C: 'text-amber-50 ring-amber-400/30',
+  D: 'text-orange-50 ring-orange-400/30',
+  F: 'text-red-50 ring-red-500/30',
 };
 
 const SIZE_CLASS = {
@@ -57,7 +67,8 @@ export function GradeBadge({ grade, size = 'md', dot, statusLabel, className }: 
         role="img"
         className={cn(
           'inline-flex items-center justify-center rounded-md font-bold ring-1',
-          GRADE_CLASS[grade],
+          GRADE_BG[grade],
+          GRADE_TEXT_RING[grade],
           SIZE_CLASS[size]
         )}
         aria-label={tooltip}

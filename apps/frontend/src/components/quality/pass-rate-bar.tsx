@@ -2,6 +2,7 @@ import type { Grade, GradeBands } from '@playwright-reports/shared';
 import { formatPassRate, gradeFor } from '@playwright-reports/shared';
 
 import { cn } from '@/lib/utils';
+import { GRADE_BG } from './grade-badge';
 
 interface PassRateBarProps {
   passRate: number;
@@ -11,30 +12,8 @@ interface PassRateBarProps {
   className?: string;
 }
 
-const FILL_CLASS: Record<Grade, string> = {
-  S: 'bg-emerald-500',
-  A: 'bg-green-500',
-  B: 'bg-lime-500',
-  C: 'bg-amber-500',
-  D: 'bg-orange-500',
-  F: 'bg-red-600',
-};
-
 function thresholdFor(grade: Grade, bands: GradeBands): number {
-  switch (grade) {
-    case 'S':
-      return bands.S;
-    case 'A':
-      return bands.A;
-    case 'B':
-      return bands.B;
-    case 'C':
-      return bands.C;
-    case 'D':
-      return bands.D;
-    case 'F':
-      return 0;
-  }
+  return grade === 'F' ? 0 : bands[grade];
 }
 
 export function PassRateBar({
@@ -62,7 +41,7 @@ export function PassRateBar({
         aria-label={`Pass rate ${formatPassRate(clamped)}, threshold ${threshold}%`}
       >
         <div
-          className={cn('h-full rounded-full transition-all', FILL_CLASS[grade])}
+          className={cn('h-full rounded-full transition-all', GRADE_BG[grade])}
           style={{ width: `${clamped}%` }}
         />
         {threshold > 0 && threshold < 100 && (

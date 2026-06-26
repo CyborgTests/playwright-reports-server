@@ -33,7 +33,14 @@ export const STATUS_LABEL: Record<WorstStatus, string> = {
   empty: 'No data',
 };
 
-export function dotForCard(status: WorstStatus): 'ok' | 'warn' | undefined {
+export interface PreviewStats {
+  passed: number;
+  failed: number;
+  flaky: number;
+  total: number;
+}
+
+export function dotForStatus(status: WorstStatus | 'noReports'): 'ok' | 'warn' | undefined {
   if (status === 'ok') return 'ok';
   if (status === 'stale') return 'warn';
   return undefined;

@@ -1,6 +1,7 @@
 import { formatDuration, type TrendMetrics } from '@playwright-reports/shared';
 import { memo } from 'react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
+import { ChartTooltip } from '@/components/analytics/chart-tooltip';
 import FormattedDate from '@/components/date-format';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -27,7 +28,7 @@ function CustomTooltip({
 }) {
   if (active && payload?.length) {
     return (
-      <div className="bg-popover text-popover-foreground p-2 rounded shadow-lg border text-xs">
+      <ChartTooltip compact>
         <p className="font-medium">
           <FormattedDate date={label ?? ''} mode="date" />
         </p>
@@ -35,7 +36,7 @@ function CustomTooltip({
           {payload[0].name}:{' '}
           {payload[0].dataKey === 'duration' ? formatDuration(payload[0].value) : payload[0].value}
         </p>
-      </div>
+      </ChartTooltip>
     );
   }
   return null;

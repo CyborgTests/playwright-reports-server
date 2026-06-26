@@ -1,6 +1,7 @@
 import type { RunHealthMetric } from '@playwright-reports/shared';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
+import { ChartTooltip } from '@/components/analytics/chart-tooltip';
 import { niceAxisTicks, StickyYAxis } from '@/components/sticky-y-axis';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -66,7 +67,7 @@ function CustomTooltip({
     const data = payload[0].payload;
     const hasRegressionInfo = data.newRegressions > 0 || data.resolvedRegressions > 0;
     return (
-      <div className="bg-popover text-popover-foreground p-3 rounded-lg shadow-lg border">
+      <ChartTooltip>
         <p className="font-medium">{data.heading}</p>
         <p className="text-sm text-muted-foreground">Run ID: {data.runId}</p>
         <div className="mt-2 space-y-1">
@@ -103,7 +104,7 @@ function CustomTooltip({
             </div>
           )}
         </div>
-      </div>
+      </ChartTooltip>
     );
   }
   return null;
@@ -181,7 +182,6 @@ type ChartDatum = {
   passed: number;
   failed: number;
   flaky: number;
-  duration: number;
   newRegressions: number;
   resolvedRegressions: number;
 };
@@ -252,7 +252,6 @@ function HealthGridImpl({
             passed: metric.passed,
             failed: metric.failed,
             flaky: metric.flaky,
-            duration: metric.duration,
             newRegressions: metric.newRegressions ?? 0,
             resolvedRegressions: metric.resolvedRegressions ?? 0,
           };

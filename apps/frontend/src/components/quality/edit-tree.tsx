@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -38,17 +39,10 @@ import {
 import { cn } from '@/lib/utils';
 
 import { GradeBadge } from './grade-badge';
-import { VerdictChip } from './snapshot-tree';
+import type { PreviewStats } from './status';
 
 export interface EditorNode extends QualityNodeInput {
   id: string;
-}
-
-interface PreviewStats {
-  passed: number;
-  failed: number;
-  flaky: number;
-  total: number;
 }
 
 interface EditTreeProps {
@@ -359,7 +353,9 @@ function EditNode({
             <span className="text-xs text-muted-foreground">({node.projectName})</span>
           )}
           <span className="text-xs text-muted-foreground">{formatPassRate(preview.passRate)}</span>
-          <VerdictChip ok={preview.isOk} />
+          <Badge variant={preview.isOk ? 'success' : 'failure'} className="uppercase">
+            {preview.isOk ? 'OK' : 'Not OK'}
+          </Badge>
         </button>
         <div className="flex items-center gap-1">
           <Button

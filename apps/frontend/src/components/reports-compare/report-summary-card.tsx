@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import FormattedDate from '@/components/date-format';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { passRateVariant } from '@/lib/pass-rate';
 
 interface Props {
   label: string;
@@ -17,12 +18,6 @@ const passRate = (stats: CompareReportRef['stats']) => {
   const denom = stats.total - (stats.skipped ?? 0);
   if (denom <= 0) return null;
   return Math.round((passed / denom) * 1000) / 10;
-};
-
-const passRateTone = (rate: number) => {
-  if (rate >= 95) return 'success' as const;
-  if (rate >= 70) return 'warning' as const;
-  return 'failure' as const;
 };
 
 export function ReportSummaryCard({ label, report, footer }: Props) {
@@ -45,7 +40,9 @@ export function ReportSummaryCard({ label, report, footer }: Props) {
         </div>
         {report.stats && (
           <div className="flex flex-wrap gap-1.5 pt-1">
-            {rate !== null && <Badge variant={passRateTone(rate)}>{rate.toFixed(1)}% pass</Badge>}
+            {rate !== null && (
+              <Badge variant={passRateVariant(rate)}>{rate.toFixed(1)}% pass</Badge>
+            )}
             <Badge variant="secondary">{report.stats.total} tests</Badge>
             {(report.stats.unexpected ?? 0) > 0 && (
               <Badge variant="failure">{report.stats.unexpected} failed</Badge>
