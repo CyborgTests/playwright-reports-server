@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { env } from '../config/env.js';
 import { audit } from '../lib/auth/audit.js';
 import { hashPassword, verifyPassword } from '../lib/auth/password.js';
@@ -45,6 +45,18 @@ function openModeUser() {
   return { id: null, username: null, role: 'admin' as const };
 }
 
+function authDisabled(reply: FastifyReply): boolean {
+  if (AUTH_ENABLED) return false;
+  reply.code(404).send({ error: 'Not found' });
+  return true;
+}
+
+function rateLimited(reply: FastifyReply, name: string, ip: string): boolean {
+  if (allowAttempt(`${name}:${ip}`)) return false;
+  reply.code(429).send({ success: false, error: 'Too many attempts, try again later' });
+  return true;
+}
+
 export async function registerAuthRoutes(fastify: FastifyInstance) {
   fastify.post('/api/auth/signin', async (request, reply) => {
     if (!AUTH_ENABLED) {
@@ -52,9 +64,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     }
 
     const ip = request.ip || 'unknown';
-    if (!allowAttempt(`signin:${ip}`)) {
-      return reply.code(429).send({ success: false, error: 'Too many attempts, try again later' });
-    }
+    if (rateLimited(reply, 'signin', ip)) return;
 
     const parsed = signinSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -89,15 +99,11 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
 
   // First-admin bootstrap: gated by API_TOKEN, self-locks once any admin exists.
   fastify.post('/api/auth/setup', async (request, reply) => {
-    if (!AUTH_ENABLED) return reply.code(404).send({ error: 'Not found' });
+    if (authDisabled(reply)) return;
     if (usersDb.hasAnyAdmin()) {
       return reply.code(409).send({ success: false, error: 'Setup already completed' });
     }
-
-    const ip = request.ip || 'unknown';
-    if (!allowAttempt(`setup:${ip}`)) {
-      return reply.code(429).send({ success: false, error: 'Too many attempts, try again later' });
-    }
+    if (rateLimited(reply, 'setup', request.ip || 'unknown')) return;
 
     const parsed = setupSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -131,12 +137,8 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/api/auth/register', async (request, reply) => {
-    if (!AUTH_ENABLED) return reply.code(404).send({ error: 'Not found' });
-
-    const ip = request.ip || 'unknown';
-    if (!allowAttempt(`register:${ip}`)) {
-      return reply.code(429).send({ success: false, error: 'Too many attempts, try again later' });
-    }
+    if (authDisabled(reply)) return;
+    if (rateLimited(reply, 'register', request.ip || 'unknown')) return;
 
     const parsed = registerSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -188,11 +190,9 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/api/auth/change-password', async (request, reply) => {
-    if (!AUTH_ENABLED) return reply.code(404).send({ error: 'Not found' });
+    if (authDisabled(reply)) return;
     const ip = request.ip || 'unknown';
-    if (!allowAttempt(`change-password:${ip}`)) {
-      return reply.code(429).send({ success: false, error: 'Too many attempts, try again later' });
-    }
+    if (rateLimited(reply, 'change-password', ip)) return;
     const parsed = changePasswordSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply
@@ -222,7 +222,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/api/auth/reset', async (request, reply) => {
-    if (!AUTH_ENABLED) return reply.code(404).send({ error: 'Not found' });
+    if (authDisabled(reply)) return;
     const parsed = resetCompleteSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ success: false, error: 'Invalid payload' });
     const { token, password } = parsed.data;

@@ -194,16 +194,23 @@ function CreateKeyDialog({
   const [label, setLabel] = useState('');
   const [type, setType] = useState<KeyType>('cli');
   const [service, setService] = useState(false);
+  const [expiresAt, setExpiresAt] = useState('');
 
   const submit = () => {
     if (!label.trim()) {
       toast.error('A label is required');
       return;
     }
-    onCreate({ label: label.trim(), type, service: canManageAllKeys ? service : undefined });
+    onCreate({
+      label: label.trim(),
+      type,
+      service: canManageAllKeys ? service : undefined,
+      expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
+    });
     setLabel('');
     setType('cli');
     setService(false);
+    setExpiresAt('');
   };
 
   return (
@@ -229,6 +236,15 @@ function CreateKeyDialog({
                 <SelectItem value="cli">CLI / agent (read &amp; manage data)</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="key-expires">Expires (optional)</Label>
+            <Input
+              id="key-expires"
+              type="date"
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+            />
           </div>
           {canManageAllKeys && (
             <div className="flex items-center gap-2 text-sm">
