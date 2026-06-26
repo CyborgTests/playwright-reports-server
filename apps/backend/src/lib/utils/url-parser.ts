@@ -15,15 +15,6 @@ export function extractReportIdFromPath(filePath: string): string | undefined {
   return undefined;
 }
 
-export function parsePlaywrightTestUrl(filePath: string): ParsedTestUrl {
-  const reportId = extractReportIdFromPath(filePath);
-
-  return {
-    reportId: reportId || '',
-    isPlaywrightReport: filePath.includes('/index.html') && !!reportId,
-  };
-}
-
 /**
  * Check if a file path represents a Playwright report index.html
  */

@@ -1,6 +1,6 @@
 import type { PassThrough, Readable } from 'node:stream';
 import type { ReportInfo, ReportPath, ServerDataInfo, UUID } from '@playwright-reports/shared';
-import type { Pagination } from './pagination.js';
+import type { Pagination } from '../pagination.js';
 
 export type { ReportPath, ServerDataInfo };
 

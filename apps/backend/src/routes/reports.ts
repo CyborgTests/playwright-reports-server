@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import { serveReportRoute } from '../lib/constants.js';
+import { parseOffsetQuery } from '../lib/pagination.js';
 import {
   CompareReportsQuerySchema,
   DeleteReportsRequestSchema,
@@ -31,7 +32,6 @@ import {
   testManagementService,
 } from '../lib/service/test-management/index.js';
 import { storage } from '../lib/storage/index.js';
-import { parseFromRequest } from '../lib/storage/pagination.js';
 import { ValidationError, validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
 import { authorize } from './auth.js';
@@ -84,14 +84,7 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
     fastify.get('/api/report/list', async (request, reply) => {
       try {
         const query = validateSchema(ListReportsQuerySchema, request.query);
-        const params = new URLSearchParams();
-        if (query.limit !== undefined) {
-          params.append('limit', query.limit.toString());
-        }
-        if (query.offset !== undefined) {
-          params.append('offset', query.offset.toString());
-        }
-        const pagination = parseFromRequest(params);
+        const pagination = parseOffsetQuery(query);
         const tags = query.tags ? query.tags.split(',').filter(Boolean) : undefined;
         const passRate = query.passRate && query.passRate !== 'all' ? query.passRate : undefined;
 

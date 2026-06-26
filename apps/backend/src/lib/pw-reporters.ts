@@ -7,7 +7,7 @@ export interface ReporterValidationResult {
   missing: { input: string; resolved: string }[];
 }
 
-export const resolveReporterPath = (raw: string): string => {
+const resolveReporterPath = (raw: string): string => {
   return path.isAbsolute(raw) ? raw : path.resolve(CWD, raw);
 };
 

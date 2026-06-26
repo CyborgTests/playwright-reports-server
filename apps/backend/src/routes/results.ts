@@ -4,11 +4,11 @@ import { pipeline } from 'node:stream/promises';
 import type { Result } from '@playwright-reports/shared';
 import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { parseOffsetQuery } from '../lib/pagination.js';
 import { DeleteResultsRequestSchema, ListResultsQuerySchema } from '../lib/schemas/index.js';
 import { reportResultsDb } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { DEFAULT_STREAM_CHUNK_SIZE } from '../lib/storage/constants.js';
-import { parseFromRequest } from '../lib/storage/pagination.js';
 import { validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
 import { authorize } from './auth.js';
@@ -20,14 +20,7 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
     fastify.get('/api/result/list', async (request, reply) => {
       try {
         const query = validateSchema(ListResultsQuerySchema, request.query);
-        const params = new URLSearchParams();
-        if (query.limit !== undefined) {
-          params.append('limit', query.limit.toString());
-        }
-        if (query.offset !== undefined) {
-          params.append('offset', query.offset.toString());
-        }
-        const pagination = parseFromRequest(params);
+        const pagination = parseOffsetQuery(query);
         const tags = query.tags ? query.tags.split(',').filter(Boolean) : [];
         const usage = query.usage && query.usage !== 'all' ? query.usage : undefined;
 
