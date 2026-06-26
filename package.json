@@ -29,11 +29,7 @@
     "format:reporter": "pnpm --filter @shelex/playwright-reporter format:check",
     "typecheck": "pnpm -r --filter './packages/**' --filter './apps/**' run typecheck",
     "clean": "pnpm -r --filter './packages/**' --filter './apps/**' run clean && rm -rf node_modules",
-    "clean:modules": "rm -rf node_modules apps/*/node_modules packages/*/node_modules",
-    "install:all": "pnpm install",
-    "install:backend": "pnpm --filter @playwright-reports/backend install",
-    "install:frontend": "pnpm --filter @playwright-reports/frontend install",
-    "install:shared": "pnpm --filter @playwright-reports/shared install"
+    "clean:modules": "rm -rf node_modules apps/*/node_modules packages/*/node_modules"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.8",
@@ -41,7 +37,6 @@
     "@playwright/test": "^1.46.0",
     "@types/node": "^22.19.17",
     "concurrently": "^9.2.1",
-    "dotenv": "^17.2.3",
     "typescript": "5.9.3"
   },
   "engines": {

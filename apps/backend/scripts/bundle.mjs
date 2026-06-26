@@ -9,9 +9,12 @@ const entry = resolve(backendRoot, 'src/index.ts');
 const outdir = resolve(backendRoot, 'dist');
 const outfile = resolve(outdir, 'index.js');
 
-// Externals: bundling skips these and emits bare require()/import - they must
-// exist in node_modules at runtime.
-const external = ['better-sqlite3', '@playwright/test', 'pino-pretty', 'fsevents'];
+// Externals: esbuild skips these and emits bare require()s, so they must exist
+// in node_modules at runtime. Everything else is folded into the bundle. This
+// list must match what the Dockerfile `runtime-deps` stage installs.
+//   better-sqlite3   -> native binding, can't be bundled
+//   @playwright/test -> merge-reports CLI, resolved via require.resolve at runtime
+const external = ['better-sqlite3', '@playwright/test'];
 
 // ESM output lacks `require`/`__dirname`/`__filename` by default. Bundled
 // CommonJS deps may still call `require()`; provide a top-level shim.
