@@ -1,5 +1,14 @@
 import fs from 'node:fs/promises';
+import {
+  ROOT_CAUSE_CATEGORIES,
+  ROOT_CAUSE_CATEGORY_DESCRIPTIONS,
+} from '@playwright-reports/shared';
 import type { ParsedTestUrl } from '../utils/url-parser.js';
+
+const ROOT_CAUSE_OPTIONS = ROOT_CAUSE_CATEGORIES.map((category) => [
+  category,
+  ROOT_CAUSE_CATEGORY_DESCRIPTIONS[category],
+]);
 
 let injectAssetsPromise: Promise<{ style: string; script: string }> | undefined;
 function loadInjectAssets(): Promise<{ style: string; script: string }> {
@@ -47,6 +56,7 @@ async function injectClientSideScript(
     const reportProject = ${JSON.stringify(testUrl.project ?? '')};
     const isLlmEnabled = ${isLlmEnabled ? 'true' : 'false'};
     const canEditCategory = ${canEditCategory ? 'true' : 'false'};
+    const rootCauseOptions = ${JSON.stringify(ROOT_CAUSE_OPTIONS)};
     ${scriptBody}`;
 
   const styleTag = `<style>${styleContent}</style>`;

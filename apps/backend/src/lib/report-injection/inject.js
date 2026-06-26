@@ -4,7 +4,7 @@
 // navigation bar linking back to the dashboard.
 //
 // Context variables provided by the outer <script> wrapper (html-injector.ts):
-//   reportId, reportProject, isLlmEnabled, canEditCategory
+//   reportId, reportProject, isLlmEnabled, canEditCategory, rootCauseOptions
 // ---------------------------------------------------------------------------
 
 // ── Config & State ──────────────────────────────────────────────────────
@@ -608,16 +608,8 @@ function renderLoadingInto(testId, rid, anchor, askBtn, errorsSection, taskId = 
   }
 }
 
-const ROOT_CAUSE_OPTIONS = [
-  ['app_bug', 'Fix the application code - it produced a wrong result for a valid request.'],
-  ['test_bug', 'Fix the test code - bad selector, missing wait, wrong assumption, or a race.'],
-  [
-    'environment',
-    'Fix the environment - missing data, stale fixtures, expired auth, or a runner/network outage.',
-  ],
-  ['slow_path', 'Change nothing - the operation finished correctly but past the timeout.'],
-  ['unknown', 'Cannot tell from the evidence which must change.'],
-];
+// biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+const ROOT_CAUSE_OPTIONS = typeof rootCauseOptions !== 'undefined' ? rootCauseOptions : [];
 
 async function patchCategory(testId, category) {
   try {
