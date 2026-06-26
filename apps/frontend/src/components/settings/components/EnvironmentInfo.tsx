@@ -130,7 +130,7 @@ export default function EnvironmentInfo() {
       label="Auth"
       value={envInfo?.authRequired ? 'Enabled' : 'Disabled'}
     />,
-    <FactChip key="backend" icon={HardDrive} label="Backend" value={storage} />,
+    <FactChip key="storage" icon={HardDrive} label="Storage" value={storage} />,
   ];
   if (storage === 's3' && envInfo?.s3Endpoint)
     storageChips.push(
