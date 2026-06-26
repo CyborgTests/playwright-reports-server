@@ -1,5 +1,5 @@
 import type { LlmTaskType } from '@playwright-reports/shared';
-import { isRootCauseCategory } from '../../service/test-management/failure-classifier.js';
+import { isRootCauseCategory } from '../../service/test-management/index.js';
 import { extractTestAnalysisFromMarkdown } from '../testAnalysis.js';
 
 export interface DraftCheck {

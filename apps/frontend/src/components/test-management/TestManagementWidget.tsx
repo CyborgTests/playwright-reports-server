@@ -34,7 +34,7 @@ import { defaultProjectName } from '@/lib/constants';
 import { formatDate } from '@/lib/date';
 import { formatRegressionAge, getStatusBadge } from './badges';
 import { exponentialMovingAverageDuration } from './calculations/ema';
-import { TestFilters as TestFiltersComponent } from './TestFilters';
+import { FLAKINESS_TIERS, TestFilters as TestFiltersComponent } from './TestFilters';
 import { DeleteTestDialog, QuarantineDialog } from './TestManagementDialogs';
 import { useTestMutations, useTestsQuery } from './useTestManagement';
 
@@ -43,14 +43,12 @@ interface TestManagementWidgetProps {
   dateRange?: DateRange;
 }
 
-const VALID_TIERS: FlakinessTier[] = ['stable', 'flaky', 'critical'];
-
 function parseTiersParam(raw: string | null): FlakinessTier[] | undefined {
   if (!raw) return undefined;
   const tiers = raw
     .split(',')
     .map((t) => t.trim())
-    .filter((t): t is FlakinessTier => (VALID_TIERS as string[]).includes(t));
+    .filter((t): t is FlakinessTier => (FLAKINESS_TIERS as string[]).includes(t));
   return tiers.length > 0 ? tiers : undefined;
 }
 
@@ -59,12 +57,16 @@ function parseSortParam(raw: string | null): TestsSort | undefined {
   return undefined;
 }
 
+function parseStatusParam(raw: string | null): TestFilters['status'] {
+  if (raw === 'quarantined' || raw === 'not-quarantined') return raw;
+  return 'all';
+}
+
 interface TestRowProps {
   item: TestWithQuarantineInfo;
   warningThreshold: number;
   quarantineThreshold: number;
   stale: boolean;
-  regressionFilterActive: boolean;
   regressionHighlightMode: 'opened' | 'closed' | null;
   isResetFlakinessPending: boolean;
   isClearFlakinessResetPending: boolean;
@@ -81,7 +83,6 @@ const TestRow = memo(
       warningThreshold,
       quarantineThreshold,
       stale,
-      regressionFilterActive,
       regressionHighlightMode,
       isResetFlakinessPending,
       isClearFlakinessResetPending,
@@ -94,7 +95,7 @@ const TestRow = memo(
     ref
   ) {
     const highlights =
-      regressionFilterActive && item.regressionHighlights
+      regressionHighlightMode && item.regressionHighlights
         ? regressionHighlightMode === 'closed'
           ? { resolvedAtReportId: item.regressionHighlights.resolvedAtReportId }
           : { newAtReportId: item.regressionHighlights.newAtReportId }
@@ -229,7 +230,7 @@ export default function TestManagementWidget({
   const filters = useMemo<TestFilters>(
     () => ({
       project: project ?? defaultProjectName,
-      status: 'all',
+      status: parseStatusParam(searchParams.get('status')),
       tiers: parseTiersParam(searchParams.get('tiers')),
       sort: parseSortParam(searchParams.get('sort')),
       failureCategory: searchParams.get('failureCategory') || undefined,
@@ -249,6 +250,8 @@ export default function TestManagementWidget({
   const handleFiltersChange = useCallback(
     (next: TestFilters) => {
       const params = new URLSearchParams(searchParams);
+      if (next.status && next.status !== 'all') params.set('status', next.status);
+      else params.delete('status');
       if (next.tiers && next.tiers.length > 0) params.set('tiers', next.tiers.join(','));
       else params.delete('tiers');
       if (next.sort && next.sort !== 'default') params.set('sort', next.sort);
@@ -345,8 +348,6 @@ export default function TestManagementWidget({
     }
   }, [virtualRows, tests.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const regressionFilterActive =
-    !!filters.regressedOnly || !!filters.regressedSince || !!filters.resolvedSince;
   const regressionHighlightMode: 'opened' | 'closed' | null = filters.resolvedSince
     ? 'closed'
     : filters.regressedOnly || filters.regressedSince
@@ -480,7 +481,6 @@ export default function TestManagementWidget({
                         warningThreshold={warningThreshold}
                         quarantineThreshold={quarantineThreshold}
                         stale={isStale(item)}
-                        regressionFilterActive={regressionFilterActive}
                         regressionHighlightMode={regressionHighlightMode}
                         isResetFlakinessPending={isResetFlakinessPending}
                         isClearFlakinessResetPending={isClearFlakinessResetPending}

@@ -242,7 +242,6 @@ export default function SettingsPage() {
 
           {can(CAPABILITIES.configServer) && (
             <TestManagementSettings
-              config={config}
               editingSection={editingSection}
               isUpdating={isUpdating}
               tempConfig={tempConfig}

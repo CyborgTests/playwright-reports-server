@@ -62,8 +62,7 @@ export function useTestsQuery({
     [filters, debouncedSearch, dateRange?.from, dateRange?.to]
   );
 
-  const isAuthDisabled = session.status === 'authenticated' && session.data === null;
-  const isAuthReady = isAuthDisabled || session.status === 'authenticated';
+  const isAuthReady = session.status === 'authenticated';
 
   const query = useInfiniteQuery<TestsPage>({
     queryKey: [

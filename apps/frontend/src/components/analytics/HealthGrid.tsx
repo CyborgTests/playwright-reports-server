@@ -1,6 +1,7 @@
 import type { RunHealthMetric } from '@playwright-reports/shared';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
+import { niceAxisTicks, StickyYAxis } from '@/components/sticky-y-axis';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatDate } from '@/lib/date';
@@ -41,18 +42,6 @@ const formatReportHeading = (
   if (title) parts.push(parts.length ? `- ${title}` : title);
   return parts.length ? `${parts.join(' ')} (${date})` : date;
 };
-
-function niceAxisTicks(max: number): number[] {
-  if (max <= 0) return [0, 1];
-  const rough = max / 4;
-  const mag = 10 ** Math.floor(Math.log10(rough));
-  const norm = rough / mag;
-  const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
-  const ticks: number[] = [];
-  for (let v = 0; v <= max + 1e-9; v += step) ticks.push(Math.round(v));
-  if (ticks[ticks.length - 1] < max) ticks.push(ticks[ticks.length - 1] + step);
-  return ticks;
-}
 
 function CustomTooltip({
   active,
@@ -241,54 +230,6 @@ function chartChildren(animate: boolean) {
   );
 }
 
-function StickyYAxis({ axisMax }: { axisMax: number }) {
-  const ticks = niceAxisTicks(axisMax);
-  const top = axisMax > 0 ? ticks[ticks.length - 1] : 1;
-  const yFor = (v: number) => PLOT_BOTTOM - (v / top) * (PLOT_BOTTOM - PLOT_TOP);
-  return (
-    <svg
-      width={STICKY_AXIS_W}
-      height={CHART_HEIGHT}
-      className="shrink-0 text-muted-foreground"
-      aria-hidden="true"
-    >
-      <line
-        x1={STICKY_AXIS_W - 1}
-        y1={PLOT_TOP}
-        x2={STICKY_AXIS_W - 1}
-        y2={PLOT_BOTTOM}
-        stroke="currentColor"
-        strokeOpacity={0.3}
-      />
-      {ticks.map((v) => {
-        const y = yFor(v);
-        return (
-          <g key={v}>
-            <line
-              x1={STICKY_AXIS_W - 5}
-              y1={y}
-              x2={STICKY_AXIS_W - 1}
-              y2={y}
-              stroke="currentColor"
-              strokeOpacity={0.3}
-            />
-            <text
-              x={STICKY_AXIS_W - 8}
-              y={y}
-              textAnchor="end"
-              dominantBaseline="middle"
-              fontSize={12}
-              fill="currentColor"
-            >
-              {v}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
 function HealthGridImpl({
   metrics,
   isLoading,
@@ -431,7 +372,15 @@ function HealthGridImpl({
           </div>
         ) : (
           <div className="flex">
-            {overflow && <StickyYAxis axisMax={axisMax} />}
+            {overflow && (
+              <StickyYAxis
+                axisMax={axisMax}
+                width={STICKY_AXIS_W}
+                chartHeight={CHART_HEIGHT}
+                plotTop={PLOT_TOP}
+                plotBottom={PLOT_BOTTOM}
+              />
+            )}
             <div ref={scrollContainerRef} onScroll={onScroll} className="overflow-x-auto flex-1">
               {overflow ? (
                 <div style={{ width: totalWidth, height: CHART_HEIGHT, position: 'relative' }}>

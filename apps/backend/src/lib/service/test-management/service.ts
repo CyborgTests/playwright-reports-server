@@ -7,7 +7,6 @@ import type {
   TestManagementConfig,
 } from '@playwright-reports/shared';
 import { FLAKINESS_THRESHOLDS, ReportTestOutcomeEnum } from '@playwright-reports/shared';
-import { defaultConfig } from '../../config.js';
 import { llmService } from '../../llm/index.js';
 import { extractFailureEvidence } from '../../parser/failure-extraction.js';
 import type { ReportHistory } from '../../storage/types.js';
@@ -165,19 +164,10 @@ export class TestManagementService {
       flakinessEvaluationWindowDays: testManagementCfg.flakinessEvaluationWindowDays ?? 30,
     };
 
-    this.config.quarantineThresholdPercentage ??=
-      defaultConfig.testManagement?.quarantineThresholdPercentage;
-    this.config.warningThresholdPercentage ??=
-      defaultConfig.testManagement?.warningThresholdPercentage;
-    this.config.autoQuarantineEnabled ??= defaultConfig.testManagement?.autoQuarantineEnabled;
-    this.config.flakinessMinRuns ??= defaultConfig.testManagement?.flakinessMinRuns;
-    this.config.flakinessEvaluationWindowDays ??=
-      defaultConfig.testManagement?.flakinessEvaluationWindowDays;
-
     return this.config;
   }
 
-  public invalidateConfigCache(): void {
+  private invalidateConfigCache(): void {
     this.config = null;
   }
 
@@ -200,11 +190,8 @@ export class TestManagementService {
     };
     const preparedByKey = new Map<string, PreparedFailure>();
 
-    type ExtractJob = {
-      key: string;
-      test: NonNullable<typeof report.files>[number]['tests'] extends Array<infer T> ? T : never;
-      filePath: string;
-    };
+    type ReportTest = NonNullable<NonNullable<ReportHistory['files']>[number]['tests']>[number];
+    type ExtractJob = { key: string; test: ReportTest; filePath: string };
     const jobs: ExtractJob[] = [];
     for (const file of report.files) {
       if (!file.tests) continue;
@@ -447,13 +434,11 @@ export class TestManagementService {
     flakinessResetAt: string | null | undefined,
     config: TestManagementConfig
   ): number {
-    const windowDays =
-      config.flakinessEvaluationWindowDays ??
-      defaultConfig.testManagement?.flakinessEvaluationWindowDays;
-    const minRuns = config.flakinessMinRuns ?? defaultConfig.testManagement?.flakinessMinRuns;
+    const windowDays = config.flakinessEvaluationWindowDays ?? 30;
+    const minRuns = config.flakinessMinRuns ?? 1;
 
     const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - (windowDays ?? 30));
+    cutoffDate.setDate(cutoffDate.getDate() - windowDays);
     let effectiveCutoff = cutoffDate.toISOString();
 
     if (flakinessResetAt) {
@@ -468,17 +453,7 @@ export class TestManagementService {
       .getNonSkippedRunOutcomesSince(testId, fileId, project, effectiveCutoff)
       .reverse();
 
-    return computeFlakinessFromOutcomes(windowed, minRuns ?? 1);
-  }
-
-  private calculateFlakinessSync(
-    testId: string,
-    fileId: string,
-    project: string,
-    config: TestManagementConfig,
-    flakinessResetAt: string | null | undefined
-  ): number {
-    return this.computeFlakiness(testId, fileId, project, flakinessResetAt, config);
+    return computeFlakinessFromOutcomes(windowed, minRuns);
   }
 
   async resetFlakiness(testId: string, fileId: string, project: string): Promise<void> {
@@ -495,7 +470,7 @@ export class TestManagementService {
 
       const latestRun = testDb.getLatestTestRun(testId, fileId, project);
       if (latestRun) {
-        const newScore = this.calculateFlakinessSync(testId, fileId, project, config, now);
+        const newScore = this.computeFlakiness(testId, fileId, project, now, config);
         testDb.setFlakinessScore(testId, fileId, project, newScore);
       }
     });
@@ -514,7 +489,7 @@ export class TestManagementService {
 
       const latestRun = testDb.getLatestTestRun(testId, fileId, project);
       if (latestRun) {
-        const newScore = this.calculateFlakinessSync(testId, fileId, project, config, null);
+        const newScore = this.computeFlakiness(testId, fileId, project, null, config);
         testDb.setFlakinessScore(testId, fileId, project, newScore);
       }
     });
@@ -673,14 +648,6 @@ export class TestManagementService {
     };
   }
 
-  async getTestWithQuarantineInfo(
-    testId: string,
-    fileId: string,
-    project: string
-  ): Promise<TestWithQuarantineInfoRow | null> {
-    return testQueriesDb.getTestWithDerivedData(testId, fileId, project) || null;
-  }
-
   async getTestDetail(testId: string, fileId: string, project: string): Promise<TestDetail | null> {
     let resolvedProject = project;
     if (!project || project === 'all') {
@@ -746,12 +713,12 @@ export class TestManagementService {
         const state = testDb.getTestState(test.testId, test.fileId, test.project);
         if (!state) continue;
 
-        const newScore = this.calculateFlakinessSync(
+        const newScore = this.computeFlakiness(
           test.testId,
           test.fileId,
           test.project,
-          config,
-          state.flakinessResetAt
+          state.flakinessResetAt,
+          config
         );
 
         if (state.flakinessScore !== newScore) {

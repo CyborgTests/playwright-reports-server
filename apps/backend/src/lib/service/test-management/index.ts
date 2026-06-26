@@ -1,9 +1,2 @@
-export { computeErrorSignature } from './error-signature.js';
-export {
-  classifyFailure,
-  detectFailureCategory,
-  isKnownCategory,
-  isRootCauseCategory,
-} from './failure-classifier.js';
-export { computeFlakinessFromOutcomes } from './flakiness.js';
+export { detectFailureCategory, isRootCauseCategory } from './failure-classifier.js';
 export { testManagementService } from './service.js';

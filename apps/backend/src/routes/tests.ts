@@ -10,8 +10,10 @@ import {
   testDb,
   toRegressionContext,
 } from '../lib/service/db/index.js';
-import { isRootCauseCategory } from '../lib/service/test-management/failure-classifier.js';
-import { testManagementService } from '../lib/service/test-management/index.js';
+import {
+  isRootCauseCategory,
+  testManagementService,
+} from '../lib/service/test-management/index.js';
 import { withError } from '../lib/withError.js';
 import { authorize } from './auth.js';
 

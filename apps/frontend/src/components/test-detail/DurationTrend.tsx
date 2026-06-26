@@ -11,6 +11,7 @@ import {
   YAxis,
 } from 'recharts';
 import FormattedDate from '@/components/date-format';
+import { niceAxisTicks, StickyYAxis } from '@/components/sticky-y-axis';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { formatDate } from '@/lib/date';
@@ -34,18 +35,6 @@ interface DurationPoint {
   reportTitle?: string;
   failureCategory?: string;
   isOutlier: boolean;
-}
-
-function niceAxisTicks(max: number): number[] {
-  if (max <= 0) return [0, 1];
-  const rough = max / 4;
-  const mag = 10 ** Math.floor(Math.log10(rough));
-  const norm = rough / mag;
-  const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
-  const ticks: number[] = [];
-  for (let v = 0; v <= max + 1e-9; v += step) ticks.push(Math.round(v));
-  if (ticks[ticks.length - 1] < max) ticks.push(ticks[ticks.length - 1] + step);
-  return ticks;
 }
 
 function DurationTooltip({
@@ -98,54 +87,6 @@ function OutcomeDot({ cx, cy, payload, radius = 4.5 }: OutcomeDotProps) {
       stroke={payload.isOutlier ? 'hsl(var(--danger))' : 'transparent'}
       strokeWidth={2}
     />
-  );
-}
-
-function StickyYAxis({ axisMax }: Readonly<{ axisMax: number }>) {
-  const ticks = niceAxisTicks(axisMax);
-  const top = axisMax > 0 ? ticks[ticks.length - 1] : 1;
-  const yFor = (v: number) => PLOT_BOTTOM - (v / top) * (PLOT_BOTTOM - PLOT_TOP);
-  return (
-    <svg
-      width={STICKY_AXIS_W}
-      height={CHART_HEIGHT}
-      className="shrink-0 text-muted-foreground"
-      aria-hidden="true"
-    >
-      <line
-        x1={STICKY_AXIS_W - 1}
-        y1={PLOT_TOP}
-        x2={STICKY_AXIS_W - 1}
-        y2={PLOT_BOTTOM}
-        stroke="currentColor"
-        strokeOpacity={0.3}
-      />
-      {ticks.map((v) => {
-        const y = yFor(v);
-        return (
-          <g key={v}>
-            <line
-              x1={STICKY_AXIS_W - 5}
-              y1={y}
-              x2={STICKY_AXIS_W - 1}
-              y2={y}
-              stroke="currentColor"
-              strokeOpacity={0.3}
-            />
-            <text
-              x={STICKY_AXIS_W - 8}
-              y={y}
-              textAnchor="end"
-              dominantBaseline="middle"
-              fontSize={11}
-              fill="currentColor"
-            >
-              {formatDuration(v)}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
   );
 }
 
@@ -290,7 +231,15 @@ export function DurationTrend({
       </CardHeader>
       <CardContent>
         <div className="flex">
-          <StickyYAxis axisMax={axisMax} />
+          <StickyYAxis
+            axisMax={axisMax}
+            width={STICKY_AXIS_W}
+            chartHeight={CHART_HEIGHT}
+            plotTop={PLOT_TOP}
+            plotBottom={PLOT_BOTTOM}
+            fontSize={11}
+            formatTick={formatDuration}
+          />
           <div ref={scrollContainerRef} onScroll={onScroll} className="overflow-x-auto flex-1">
             <LineChart
               width={plotWidth}

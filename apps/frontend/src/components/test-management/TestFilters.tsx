@@ -25,7 +25,7 @@ interface TestFiltersProps {
   onFiltersChange: (filters: TestFiltersType) => void;
 }
 
-const TIER_ORDER: FlakinessTier[] = ['stable', 'flaky', 'critical'];
+export const FLAKINESS_TIERS: FlakinessTier[] = ['stable', 'flaky', 'critical'];
 
 const CATEGORY_OPTIONS = Array.from(
   new Set<string>([...ROOT_CAUSE_CATEGORIES, ...FAILURE_CATEGORIES])
@@ -146,7 +146,7 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
       <div className="space-y-2">
         <Label>Flakiness</Label>
         <div className="flex flex-wrap gap-1">
-          {TIER_ORDER.map((t) => {
+          {FLAKINESS_TIERS.map((t) => {
             const active = selectedTiers.includes(t);
             return (
               <Button

@@ -24,15 +24,9 @@ function firstLine(message: string): string {
   return newlineIdx === -1 ? trimmed : trimmed.slice(0, newlineIdx);
 }
 
-// Normalized signature of a message's first significant line
-// links a failure group to its cluster by sample-message shape.
+// Links a failure group to its cluster by normalized first-line shape.
 function normalizeMessageSignature(message: string | undefined): string {
-  const line =
-    (message ?? '')
-      .split('\n')
-      .map((l) => l.trim())
-      .find((l) => l.length > 0) ?? '';
-  return line
+  return firstLine(message ?? '')
     .replace(/0x[0-9a-fA-F]+/g, 'H')
     .replace(/['"][^'"]*['"]/g, 'S')
     .replace(/\d+/g, 'N')
@@ -82,35 +76,17 @@ function CrossTestClusterCard({
                 )}
               </div>
             </AccordionTrigger>
-            <div className="flex items-center gap-2 shrink-0 pr-6 pt-4">
-              <RouterLink
-                to={withBase(
-                  `/failures/clusters?clusterId=${cluster.id}&project=${encodeURIComponent(project)}`
-                )}
-              >
-                <Button variant="ghost" size="sm">
-                  View
-                </Button>
-              </RouterLink>
-              {resolved ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={resolution.reopen}
-                  disabled={resolution.reopenPending}
-                >
-                  Re-open
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => resolution.setResolveDialogOpen(true)}
-                  disabled={resolution.markPending}
-                >
-                  Mark resolved
-                </Button>
-              )}
+            <div className="pr-6 pt-4">
+              <ClusterActions
+                cluster={cluster}
+                resolved={resolved}
+                project={project}
+                onResolve={() => resolution.setResolveDialogOpen(true)}
+                onReopen={resolution.reopen}
+                resolvePending={resolution.markPending}
+                reopenPending={resolution.reopenPending}
+                forceView
+              />
             </div>
           </div>
           <AccordionContent className="px-6 pb-6">
@@ -173,6 +149,7 @@ function ClusterActions({
   onReopen,
   resolvePending,
   reopenPending,
+  forceView = false,
 }: Readonly<{
   cluster: FailureCluster;
   resolved: boolean;
@@ -181,6 +158,7 @@ function ClusterActions({
   onReopen: () => void;
   resolvePending: boolean;
   reopenPending: boolean;
+  forceView?: boolean;
 }>) {
   return (
     <div
@@ -191,7 +169,7 @@ function ClusterActions({
         if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
       }}
     >
-      {cluster.anchor.kind !== 'signature' && (
+      {(forceView || cluster.anchor.kind !== 'signature') && (
         <RouterLink
           to={withBase(
             `/failures/clusters?clusterId=${cluster.id}&project=${encodeURIComponent(project)}`
@@ -376,9 +354,11 @@ function FailureGroupsList({
   const activeUnmatched = unmatchedClusters.filter((c) => c.lifecycle !== 'resolved');
   const resolvedUnmatched = unmatchedClusters.filter((c) => c.lifecycle === 'resolved');
 
-  const allResolved = [
-    ...resolvedGroups.map((g) => ({ kind: 'group' as const, group: g })),
-    ...resolvedUnmatched.map((c) => ({ kind: 'cluster' as const, cluster: c })),
+  const allResolved: FailureCluster[] = [
+    ...resolvedGroups
+      .map((g) => clusterForGroup.get(g.signature))
+      .filter((c): c is FailureCluster => !!c),
+    ...resolvedUnmatched,
   ];
   const visibleResolved = showAllResolved ? allResolved : allResolved.slice(0, RESOLVED_LIMIT);
   const hiddenCount = allResolved.length - visibleResolved.length;
@@ -436,28 +416,14 @@ function FailureGroupsList({
             </h3>
           </div>
           <div className="space-y-3">
-            {visibleResolved.map((item) => {
-              if (item.kind === 'group') {
-                const c = clusterForGroup.get(item.group.signature);
-                if (!c) return null;
-                return (
-                  <CrossTestClusterCard
-                    key={item.group.signature}
-                    cluster={c}
-                    project={project}
-                    onChange={onClustersChanged}
-                  />
-                );
-              }
-              return (
-                <CrossTestClusterCard
-                  key={item.cluster.id}
-                  cluster={item.cluster}
-                  project={project}
-                  onChange={onClustersChanged}
-                />
-              );
-            })}
+            {visibleResolved.map((cluster) => (
+              <CrossTestClusterCard
+                key={cluster.id}
+                cluster={cluster}
+                project={project}
+                onChange={onClustersChanged}
+              />
+            ))}
           </div>
           {hiddenCount > 0 && (
             <Button
