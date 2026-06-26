@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { STORAGE_TYPES } from '@playwright-reports/shared';
 import { Cron } from 'croner';
 import { env } from '../../config/env.js';
 import { defaultCronConfig } from '../../lib/config.js';
@@ -146,7 +147,8 @@ export class CronService {
 
     console.log('[cron-job] scheduling cron tasks...');
 
-    const usesObjectStorage = env.DATA_STORAGE === 's3' || env.DATA_STORAGE === 'azure';
+    const usesObjectStorage =
+      env.DATA_STORAGE === STORAGE_TYPES.S3 || env.DATA_STORAGE === STORAGE_TYPES.AZURE;
     const fixed: Array<{
       name: string;
       expression: string;

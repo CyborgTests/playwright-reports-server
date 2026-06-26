@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { STORAGE_TYPES } from '@playwright-reports/shared';
 import { config } from 'dotenv';
 import { bool, cleanEnv, num, str } from 'envalid';
 
@@ -48,7 +49,7 @@ export const env = cleanEnv(process.env, {
   DATA_STORAGE: str({
     desc: 'Where to store data',
     default: 'fs',
-    choices: ['fs', 's3', 'azure'],
+    choices: Object.values(STORAGE_TYPES),
   }),
   // s3
   S3_ENDPOINT: str({ desc: 'S3 endpoint', default: undefined }),

@@ -28,11 +28,7 @@
   "files": [
     "dist/**/*"
   ],
-  "peerDependencies": {
-    "react": "^18.3.1"
-  },
   "devDependencies": {
-    "react": "^18.3.1",
     "typescript": "5.9.3"
   }
 }

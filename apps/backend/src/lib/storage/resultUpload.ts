@@ -2,6 +2,7 @@ import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
+import { STORAGE_TYPES } from '@playwright-reports/shared';
 import { env } from '../../config/env.js';
 import { withError } from '../withError.js';
 import { DEFAULT_STREAM_CHUNK_SIZE, TMP_FOLDER } from './constants.js';
@@ -23,7 +24,8 @@ export async function uploadResult(
   let onUploadSuccess: (() => Promise<void>) | undefined;
   let onUploadFailure: (() => Promise<void>) | undefined;
 
-  const usesRemoteStorage = env.DATA_STORAGE === 's3' || env.DATA_STORAGE === 'azure';
+  const usesRemoteStorage =
+    env.DATA_STORAGE === STORAGE_TYPES.S3 || env.DATA_STORAGE === STORAGE_TYPES.AZURE;
 
   if (options?.shouldStoreLocalCopy && usesRemoteStorage) {
     const finalPath = path.join(TMP_FOLDER, 'results', filename);

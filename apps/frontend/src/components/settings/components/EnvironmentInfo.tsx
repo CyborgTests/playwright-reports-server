@@ -1,4 +1,4 @@
-import type { ServerDataInfo } from '@playwright-reports/shared';
+import { type ServerDataInfo, STORAGE_TYPES } from '@playwright-reports/shared';
 import {
   Activity,
   Cloud,
@@ -73,7 +73,7 @@ export default function EnvironmentInfo() {
   }
 
   const dbStats = envInfo?.database;
-  const storage = envInfo?.dataStorage ?? 'fs';
+  const storage = envInfo?.dataStorage ?? STORAGE_TYPES.FILESYSTEM;
 
   // Groups: Database, Reports, Results, Storage. Chips render only when their
   // value is meaningful - empty groups stay hidden instead of showing a header
@@ -132,7 +132,7 @@ export default function EnvironmentInfo() {
     />,
     <FactChip key="storage" icon={HardDrive} label="Storage" value={storage} />,
   ];
-  if (storage === 's3' && envInfo?.s3Endpoint)
+  if (storage === STORAGE_TYPES.S3 && envInfo?.s3Endpoint)
     storageChips.push(
       <FactChip
         key="s3"
@@ -141,7 +141,7 @@ export default function EnvironmentInfo() {
         value={`${envInfo.s3Bucket ?? 'bucket'} @ ${envInfo.s3Endpoint}`}
       />
     );
-  if (storage === 'azure' && envInfo?.azureAccountName)
+  if (storage === STORAGE_TYPES.AZURE && envInfo?.azureAccountName)
     storageChips.push(
       <FactChip
         key="azure"

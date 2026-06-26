@@ -49,39 +49,13 @@ export const API_ENDPOINTS = {
   QUALITY_HOME_ORDER: '/api/quality/home/order',
 } as const;
 
-export const TEST_OUTCOMES = {
-  PASSED: 'passed',
-  FAILED: 'failed',
-  SKIPPED: 'skipped',
-  FLAKY: 'flaky',
-} as const;
-
 export const STORAGE_TYPES = {
   FILESYSTEM: 'fs',
   S3: 's3',
   AZURE: 'azure',
 } as const;
 
-export const DEFAULT_CONFIG = {
-  PORT: 3001,
-  HOST: '0.0.0.0',
-  CORS_ORIGIN: 'http://localhost:3000',
-  DATA_STORAGE: 'fs',
-  UI_AUTH_EXPIRE_HOURS: 2,
-  FRONTEND_PORT: 3000,
-} as const;
-
-export const UPLOAD_LIMITS = {
-  MAX_FILE_SIZE: 100 * 1024 * 1024, // 100MB
-  MAX_FILES: 1,
-  DEFAULT_CHUNK_SIZE: 25 * 1024 * 1024, // 25MB
-} as const;
-
-export const PAGINATION_DEFAULTS = {
-  DEFAULT_LIMIT: 20,
-  MAX_LIMIT: 100,
-  DEFAULT_PAGE: 1,
-} as const;
+export type StorageType = (typeof STORAGE_TYPES)[keyof typeof STORAGE_TYPES];
 
 export const FLAKINESS_THRESHOLDS = {
   WARNING_PERCENTAGE: 2,

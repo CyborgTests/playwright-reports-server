@@ -9,6 +9,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-blob';
+import { STORAGE_TYPES } from '@playwright-reports/shared';
 import { env } from '../../config/env.js';
 import { withError } from '../withError.js';
 
@@ -34,11 +35,11 @@ export class LitestreamService {
   }
 
   private get usesS3() {
-    return env.DATA_STORAGE === 's3';
+    return env.DATA_STORAGE === STORAGE_TYPES.S3;
   }
 
   private get usesAzure() {
-    return env.DATA_STORAGE === 'azure';
+    return env.DATA_STORAGE === STORAGE_TYPES.AZURE;
   }
 
   private get usesObjectStorage() {

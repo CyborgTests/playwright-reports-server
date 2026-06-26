@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { STORAGE_TYPES } from '@playwright-reports/shared';
 import { env } from '../../config/env.js';
 import { initAuthBootstrap } from '../auth/bootstrap.js';
 import { githubSyncCron } from '../githubSync/cronManager.js';
@@ -66,7 +67,7 @@ export class Lifecycle {
 
       await applyPrimaryModel();
 
-      if (env.DATA_STORAGE === 's3' || env.DATA_STORAGE === 'azure') {
+      if (env.DATA_STORAGE === STORAGE_TYPES.S3 || env.DATA_STORAGE === STORAGE_TYPES.AZURE) {
         const cachePath = path.join(TMP_FOLDER, 'results');
         const { error: mkdirError } = await withError(fs.mkdir(cachePath, { recursive: true }));
         if (mkdirError) {
