@@ -23,7 +23,7 @@
     "package.json"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=24.0.0"
   },
   "author": "Oleksandr Shevtsov <ovr.shevtsov@gmail.com>",
   "license": "MIT",
