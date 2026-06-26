@@ -16,6 +16,7 @@ import {
   DEFAULT_SYNTHESIZER_DIRECTIVE,
 } from '../lib/llm/prompts/routing.js';
 import { isLlmFeatureEnabled } from '../lib/llm/registry.js';
+import { openSseStream } from '../lib/sse.js';
 import { abortRunningTask } from '../lib/llm/taskSignal.js';
 import { DEFAULT_SCREENSHOT_PARSE_PROMPT } from '../lib/llm/visionTranscribe.js';
 import {
@@ -337,68 +338,24 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ success: false, error: 'Task not found' });
       }
 
-      reply.raw.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      });
-
+      const stream = openSseStream(fastify, request, reply, 'task-progress');
       const eventName = `task:${taskId}`;
-      let closed = false;
-      let keepalive: NodeJS.Timeout | undefined;
 
       const onUpdate = (row: LlmTaskRow) => {
-        const ok = send('update', row);
-        if (ok && TERMINAL_STATUSES.has(row.status)) {
-          cleanup();
-          reply.raw.end();
+        if (stream.event('update', row) && TERMINAL_STATUSES.has(row.status)) {
+          stream.close();
         }
       };
 
-      const cleanup = () => {
-        if (closed) return;
-        closed = true;
-        if (keepalive) clearInterval(keepalive);
-        llmTaskEvents.off(eventName, onUpdate);
-      };
+      stream.onClose(() => llmTaskEvents.off(eventName, onUpdate));
 
-      const send = (event: string, data: unknown): boolean => {
-        if (closed) return false;
-        try {
-          reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-          return true;
-        } catch (err) {
-          fastify.log.warn({ err, taskId }, 'SSE write failed; closing stream');
-          cleanup();
-          try {
-            reply.raw.end();
-          } catch {
-            // socket already destroyed
-          }
-          return false;
-        }
-      };
-
-      const initialOk = send('update', initialRow);
-      if (!initialOk) return;
+      if (!stream.event('update', initialRow)) return;
       if (TERMINAL_STATUSES.has(initialRow.status)) {
-        reply.raw.end();
+        stream.close();
         return;
       }
 
-      keepalive = setInterval(() => {
-        if (closed) return;
-        try {
-          reply.raw.write(': keepalive\n\n');
-        } catch {
-          cleanup();
-        }
-      }, 30_000);
-
       llmTaskEvents.on(eventName, onUpdate);
-      request.raw.on('close', cleanup);
-      request.raw.on('error', cleanup);
     }
   );
 
@@ -406,66 +363,26 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult || reply.sent) return;
 
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-
-    let closed = false;
-    let keepalive: NodeJS.Timeout | undefined;
+    const stream = openSseStream(fastify, request, reply, 'queue-events');
     let coalesce: NodeJS.Timeout | undefined;
 
-    const cleanup = () => {
-      if (closed) return;
-      closed = true;
-      if (keepalive) clearInterval(keepalive);
-      if (coalesce) clearTimeout(coalesce);
-      llmTaskEvents.off('task', onChange);
-      llmTaskEvents.off('enqueue', onChange);
-    };
-
-    const write = (line: string): boolean => {
-      if (closed) return false;
-      try {
-        reply.raw.write(line);
-        return true;
-      } catch (err) {
-        fastify.log.warn({ err }, 'SSE write failed; closing queue-events stream');
-        cleanup();
-        try {
-          reply.raw.end();
-        } catch {
-          // socket already destroyed
-        }
-        return false;
-      }
-    };
-
     const onChange = () => {
-      if (closed || coalesce) return;
+      if (stream.closed || coalesce) return;
       coalesce = setTimeout(() => {
         coalesce = undefined;
-        write('event: changed\ndata: {}\n\n');
+        stream.event('changed', {});
       }, 500);
     };
 
-    if (!write('event: changed\ndata: {}\n\n')) return;
+    stream.onClose(() => {
+      if (coalesce) clearTimeout(coalesce);
+      llmTaskEvents.off('task', onChange);
+      llmTaskEvents.off('enqueue', onChange);
+    });
 
-    keepalive = setInterval(() => {
-      if (closed) return;
-      try {
-        reply.raw.write(': keepalive\n\n');
-      } catch {
-        cleanup();
-      }
-    }, 30_000);
-
+    if (!stream.event('changed', {})) return;
     llmTaskEvents.on('task', onChange);
     llmTaskEvents.on('enqueue', onChange);
-    request.raw.on('close', cleanup);
-    request.raw.on('error', cleanup);
   });
 
   fastify.get('/api/llm/default-prompts', async (request: FastifyRequest, reply: FastifyReply) => {

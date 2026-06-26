@@ -6,6 +6,7 @@ import { githubSyncCron } from '../lib/githubSync/cronManager.js';
 import { githubSyncEvents } from '../lib/githubSync/events.js';
 import { hasActiveRun, isRunning, runSync, stopSync } from '../lib/githubSync/syncService.js';
 import { CronService } from '../lib/service/cron.js';
+import { openSseStream } from '../lib/sse.js';
 import { authorize } from './auth.js';
 
 const ConfigBodySchema = z.object({
@@ -57,61 +58,32 @@ export async function registerGithubSyncRoutes(fastify: FastifyInstance) {
     });
 
     fastify.get('/api/config/github-sync/events', async (request, reply) => {
-      reply.raw.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
+      // Custom cadence: poll every 1s while a sync is running, otherwise a
+      // 30s comment heartbeat — so the helper's fixed keepalive is opted out.
+      const stream = openSseStream(fastify, request, reply, 'github-sync events', {
+        keepaliveMs: null,
       });
-
-      let closed = false;
-
-      const write = (line: string): boolean => {
-        if (closed) return false;
-        try {
-          reply.raw.write(line);
-          return true;
-        } catch (err) {
-          fastify.log.warn({ err }, 'SSE write failed; closing github-sync events stream');
-          cleanup();
-          try {
-            reply.raw.end();
-          } catch {
-            // socket already destroyed
-          }
-          return false;
-        }
-      };
-
-      const onChange = () => write('event: changed\ndata: {}\n\n');
+      const onChange = () => stream.event('changed', {});
 
       let idleTicks = 0;
       const tick = setInterval(() => {
-        if (closed) return;
+        if (stream.closed) return;
         if (hasActiveRun()) {
           idleTicks = 0;
-          write('event: changed\ndata: {}\n\n');
+          stream.event('changed', {});
         } else if (++idleTicks >= 30) {
           idleTicks = 0;
-          try {
-            reply.raw.write(': keepalive\n\n');
-          } catch {
-            cleanup();
-          }
+          stream.write(': keepalive\n\n');
         }
       }, 1_000);
 
-      function cleanup() {
-        if (closed) return;
-        closed = true;
+      stream.onClose(() => {
         clearInterval(tick);
         githubSyncEvents.off('changed', onChange);
-      }
+      });
 
-      if (!write('event: changed\ndata: {}\n\n')) return;
+      if (!stream.event('changed', {})) return;
       githubSyncEvents.on('changed', onChange);
-      request.raw.on('close', cleanup);
-      request.raw.on('error', cleanup);
     });
 
     fastify.post('/api/config/github-sync', cfgGuard, async (request, reply) => {
