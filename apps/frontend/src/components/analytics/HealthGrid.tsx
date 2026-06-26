@@ -5,6 +5,7 @@ import { ChartTooltip } from '@/components/analytics/chart-tooltip';
 import { niceAxisTicks, StickyYAxis } from '@/components/sticky-y-axis';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CHART_COLORS } from '@/lib/chart-colors';
 import { formatDate } from '@/lib/date';
 
 interface HealthGridProps {
@@ -18,9 +19,9 @@ interface HealthGridProps {
 }
 
 const chartColors = {
-  passed: 'hsl(142, 76%, 36%)', // green
-  failed: 'hsl(0, 84%, 60%)', // red
-  flaky: 'hsl(38, 92%, 50%)', // yellow/orange
+  passed: CHART_COLORS.passed,
+  failed: CHART_COLORS.failed,
+  flaky: CHART_COLORS.flaky,
 };
 
 const BAR_PX = 36;
@@ -129,10 +130,10 @@ function RegressionMarkBar(props: BarShapeProps) {
   const fmt = (n: number) => (n > 99 ? '99+' : String(n));
   const segments: Array<{ text: string; bg: string; fg: string }> = [];
   if (opened > 0) {
-    segments.push({ text: `↓${fmt(opened)}`, bg: 'hsl(0, 84%, 60%)', fg: 'white' });
+    segments.push({ text: `↓${fmt(opened)}`, bg: CHART_COLORS.failed, fg: 'white' });
   }
   if (closed > 0) {
-    segments.push({ text: `↑${fmt(closed)}`, bg: 'hsl(142, 76%, 36%)', fg: 'white' });
+    segments.push({ text: `↑${fmt(closed)}`, bg: CHART_COLORS.passed, fg: 'white' });
   }
   const CHIP_H = 14;
   const CHIP_PADDING = 6;

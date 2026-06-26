@@ -14,6 +14,7 @@ import FormattedDate from '@/components/date-format';
 import { niceAxisTicks, StickyYAxis } from '@/components/sticky-y-axis';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { CHART_COLORS } from '@/lib/chart-colors';
 import { formatDate } from '@/lib/date';
 import { dotColor, outcomeBadge, servedReportUrl } from './test-detail-widgets';
 
@@ -259,15 +260,15 @@ export function DurationTrend({
               <YAxis hide domain={[0, axisMax]} />
               <RechartsTooltip content={<DurationTooltip />} />
               {typeof mean === 'number' && (
-                <ReferenceLine y={mean} stroke="hsl(217, 91%, 60%)" strokeDasharray="4 4" />
+                <ReferenceLine y={mean} stroke={CHART_COLORS.duration} strokeDasharray="4 4" />
               )}
               {typeof p95 === 'number' && (
-                <ReferenceLine y={p95} stroke="hsl(0, 84%, 60%)" strokeDasharray="4 4" />
+                <ReferenceLine y={p95} stroke={CHART_COLORS.failed} strokeDasharray="4 4" />
               )}
               <Line
                 type="monotone"
                 dataKey="duration"
-                stroke="hsl(217, 91%, 60%)"
+                stroke={CHART_COLORS.duration}
                 strokeWidth={2}
                 isAnimationActive={false}
                 dot={(props: unknown) => {
@@ -326,7 +327,7 @@ export function DurationTrend({
           <span className="flex items-center gap-2">
             <span
               className="inline-block w-6 border-t-2 border-dashed"
-              style={{ borderColor: 'hsl(217, 91%, 60%)' }}
+              style={{ borderColor: CHART_COLORS.duration }}
               aria-hidden
             />
             Mean {typeof mean === 'number' ? `· ${formatDuration(mean)}` : ''}
@@ -334,7 +335,7 @@ export function DurationTrend({
           <span className="flex items-center gap-2">
             <span
               className="inline-block w-6 border-t-2 border-dashed"
-              style={{ borderColor: 'hsl(0, 84%, 60%)' }}
+              style={{ borderColor: CHART_COLORS.failed }}
               aria-hidden
             />
             p95 {typeof p95 === 'number' ? `· ${formatDuration(p95)}` : ''}

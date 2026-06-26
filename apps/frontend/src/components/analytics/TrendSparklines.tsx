@@ -5,6 +5,7 @@ import { ChartTooltip } from '@/components/analytics/chart-tooltip';
 import FormattedDate from '@/components/date-format';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CHART_COLORS } from '@/lib/chart-colors';
 
 interface TrendSparklinesProps {
   metrics?: TrendMetrics;
@@ -13,9 +14,9 @@ interface TrendSparklinesProps {
   onFlakyClick?: () => void;
 }
 
-const durationColor = 'hsl(217, 91%, 60%)'; // blue
-const flakyColor = 'hsl(38, 92%, 50%)'; // orange
-const slowColor = 'hsl(0, 84%, 60%)'; // red
+const durationColor = CHART_COLORS.duration;
+const flakyColor = CHART_COLORS.flaky;
+const slowColor = CHART_COLORS.failed;
 
 function CustomTooltip({
   active,
