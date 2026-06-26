@@ -4,7 +4,7 @@ export type { ApiKeyRecord } from './apiKeys.sqlite.js';
 export { apiKeysDb } from './apiKeys.sqlite.js';
 export type { AuditEntry } from './authAudit.sqlite.js';
 export { authAuditDb } from './authAudit.sqlite.js';
-export { runUpdate, tx } from './authShared.js';
+export { tx } from './authShared.js';
 export type {
   ClusterOverrideState,
   ClusterResolutionRow,
@@ -32,13 +32,7 @@ export type { LlmConcurrencyGroupRow } from './llmGroups.sqlite.js';
 export { llmGroupsDb } from './llmGroups.sqlite.js';
 export type { LlmModelRow, LlmModelWrite } from './llmModels.sqlite.js';
 export { llmModelsDb } from './llmModels.sqlite.js';
-export type {
-  LlmTaskRow,
-  LlmTaskRowEnriched,
-  LlmTaskStatus,
-  LlmTaskType,
-  LlmTaskUsage,
-} from './llmTasks.sqlite.js';
+export type { LlmTaskRow, LlmTaskStatus, LlmTaskType } from './llmTasks.sqlite.js';
 export { llmTasksDb } from './llmTasks.sqlite.js';
 export type { NotificationLogQueryFilters } from './notificationLog.sqlite.js';
 export { notificationLogDb } from './notificationLog.sqlite.js';
@@ -50,15 +44,9 @@ export type {
   DashboardUpdateInput,
 } from './qualityDashboards.sqlite.js';
 export { DashboardNameConflictError, qualityDashboardsDb } from './qualityDashboards.sqlite.js';
-export type { UsageByModel, UsageReuse, UsageTotals } from './queries/llmUsage.js';
 export { getUsageByModel, getUsageStats } from './queries/llmUsage.js';
 export { computeProjectCoverageScope } from './queries/projectCoverage.js';
-export type {
-  ListFilters as RegressionListFilters,
-  RegressionListItem,
-  RegressionRow,
-  RegressionSummary,
-} from './regressions.sqlite.js';
+export type { RegressionSummary } from './regressions.sqlite.js';
 export { regressionsDb, toRegressionContext } from './regressions.sqlite.js';
 export { reportResultsDb } from './reportResults.sqlite.js';
 export type { ReportAnalyticsRow, ReportHistoryLite } from './reports.sqlite.js';

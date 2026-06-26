@@ -77,10 +77,6 @@ export class UsersDatabase {
     return this.db.prepare(compiled.sql).get(...compiled.parameters) as UserRecord | undefined;
   }
 
-  public setUserEmail(id: string, email: string | null): void {
-    runUpdate('users', { email, updatedAt: nowISO() }, id);
-  }
-
   public listUsers(): UserRecord[] {
     const compiled = this.k
       .selectFrom('users')

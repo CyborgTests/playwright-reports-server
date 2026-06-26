@@ -3,8 +3,38 @@ import type { TestDetailRegression } from '@playwright-reports/shared';
 import { getDatabase } from './db.js';
 import type { RegressionsRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
+import { chunk } from './utils.js';
 
 export type RegressionRow = RegressionsRow;
+
+const KEY_BATCH = 200;
+
+function keysCte(slice: ReadonlyArray<{ testId: string; fileId: string; project: string }>): {
+  valuesRows: string;
+  params: string[];
+} {
+  const params: string[] = [];
+  for (const k of slice) params.push(k.testId, k.fileId, k.project);
+  return { valuesRows: slice.map(() => '(?, ?, ?)').join(','), params };
+}
+
+function toRegressionSummary(row: OpenForTestRow): RegressionSummary {
+  return {
+    id: row.id,
+    regressedAtReportId: row.regressedAtReportId,
+    regressedAtCreatedAt: row.regressedAtCreatedAt,
+    regressedAtCommit: row.regressedAtCommit,
+    regressedAtCategory: row.regressedAtCategory,
+    regressedAtDisplayNumber: row.regressedDisplayNumber,
+    lastGreenReportId: row.lastGreenReportId,
+    lastGreenCreatedAt: row.lastGreenCreatedAt,
+    lastGreenCommit: row.lastGreenCommit,
+    lastGreenDisplayNumber: row.lastGreenDisplayNumber,
+    daysOpen: (Date.now() - Date.parse(row.regressedAtCreatedAt)) / 86_400_000,
+    failureCount: row.failureCount,
+    flakyCount: row.flakyCount,
+  };
+}
 
 export function toRegressionContext(reg: RegressionSummary): TestDetailRegression {
   return {
@@ -88,23 +118,7 @@ export class RegressionsDatabase {
       LIMIT 1
     `;
     const row = this.db.prepare(sqlText).get(testId, fileId, project) as OpenForTestRow | undefined;
-    if (!row) return null;
-    const daysOpen = (Date.now() - Date.parse(row.regressedAtCreatedAt)) / 86_400_000;
-    return {
-      id: row.id,
-      regressedAtReportId: row.regressedAtReportId,
-      regressedAtCreatedAt: row.regressedAtCreatedAt,
-      regressedAtCommit: row.regressedAtCommit,
-      regressedAtCategory: row.regressedAtCategory,
-      regressedAtDisplayNumber: row.regressedDisplayNumber,
-      lastGreenReportId: row.lastGreenReportId,
-      lastGreenCreatedAt: row.lastGreenCreatedAt,
-      lastGreenCommit: row.lastGreenCommit,
-      lastGreenDisplayNumber: row.lastGreenDisplayNumber,
-      daysOpen,
-      failureCount: row.failureCount,
-      flakyCount: row.flakyCount,
-    };
+    return row ? toRegressionSummary(row) : null;
   }
 
   public getOpenForTests(
@@ -112,14 +126,8 @@ export class RegressionsDatabase {
   ): Map<string, RegressionSummary> {
     const out = new Map<string, RegressionSummary>();
     if (keys.length === 0) return out;
-    const BATCH = 200;
-    for (let i = 0; i < keys.length; i += BATCH) {
-      const slice = keys.slice(i, i + BATCH);
-      const valuesRows = slice.map(() => '(?, ?, ?)').join(',');
-      const params: string[] = [];
-      for (const k of slice) {
-        params.push(k.testId, k.fileId, k.project);
-      }
+    for (const slice of chunk(keys, KEY_BATCH)) {
+      const { valuesRows, params } = keysCte(slice);
       const sqlText = `
         WITH keys(testId, fileId, project) AS (VALUES ${valuesRows})
         SELECT r.id, r.testId, r.fileId, r.project,
@@ -144,22 +152,7 @@ export class RegressionsDatabase {
         OpenForTestRow & { testId: string; fileId: string; project: string }
       >;
       for (const row of rows) {
-        const daysOpen = (Date.now() - Date.parse(row.regressedAtCreatedAt)) / 86_400_000;
-        out.set(`${row.testId}::${row.fileId}::${row.project}`, {
-          id: row.id,
-          regressedAtReportId: row.regressedAtReportId,
-          regressedAtCreatedAt: row.regressedAtCreatedAt,
-          regressedAtCommit: row.regressedAtCommit,
-          regressedAtCategory: row.regressedAtCategory,
-          regressedAtDisplayNumber: row.regressedDisplayNumber,
-          lastGreenReportId: row.lastGreenReportId,
-          lastGreenCreatedAt: row.lastGreenCreatedAt,
-          lastGreenCommit: row.lastGreenCommit,
-          lastGreenDisplayNumber: row.lastGreenDisplayNumber,
-          daysOpen,
-          failureCount: row.failureCount,
-          flakyCount: row.flakyCount,
-        });
+        out.set(`${row.testId}::${row.fileId}::${row.project}`, toRegressionSummary(row));
       }
     }
     return out;
@@ -427,12 +420,8 @@ export class RegressionsDatabase {
   ): Set<string> {
     const out = new Set<string>();
     if (keys.length === 0) return out;
-    const BATCH = 200;
-    for (let i = 0; i < keys.length; i += BATCH) {
-      const slice = keys.slice(i, i + BATCH);
-      const valuesRows = slice.map(() => '(?, ?, ?)').join(',');
-      const params: string[] = [];
-      for (const k of slice) params.push(k.testId, k.fileId, k.project);
+    for (const slice of chunk(keys, KEY_BATCH)) {
+      const { valuesRows, params } = keysCte(slice);
       const rows = this.db
         .prepare(
           `WITH keys(testId, fileId, project) AS (VALUES ${valuesRows})
@@ -497,12 +486,8 @@ export class RegressionsDatabase {
   ): Map<string, { newAtReportId?: string; resolvedAtReportId?: string }> {
     const out = new Map<string, { newAtReportId?: string; resolvedAtReportId?: string }>();
     if (keys.length === 0) return out;
-    const BATCH = 200;
-    for (let i = 0; i < keys.length; i += BATCH) {
-      const slice = keys.slice(i, i + BATCH);
-      const valuesRows = slice.map(() => '(?, ?, ?)').join(',');
-      const params: Array<string | number> = [];
-      for (const k of slice) params.push(k.testId, k.fileId, k.project);
+    for (const slice of chunk(keys, KEY_BATCH)) {
+      const { valuesRows, params } = keysCte(slice);
       const windowClauses: string[] = [];
       if (since) {
         windowClauses.push(
@@ -555,9 +540,7 @@ export class RegressionsDatabase {
     const out = new Map<string, { newHere: number; resolvedHere: number }>();
     if (reportIds.length === 0) return out;
     for (const id of reportIds) out.set(id, { newHere: 0, resolvedHere: 0 });
-    const BATCH = 200;
-    for (let i = 0; i < reportIds.length; i += BATCH) {
-      const slice = reportIds.slice(i, i + BATCH);
+    for (const slice of chunk(reportIds, KEY_BATCH)) {
       const placeholders = slice.map(() => '?').join(',');
       const openedRows = this.db
         .prepare(
@@ -630,7 +613,6 @@ export class RegressionsDatabase {
     >();
     if (reportIds.length === 0) return out;
     for (const id of reportIds) out.set(id, { newHere: [], resolvedHere: [] });
-    const BATCH = 200;
     type Row = {
       id: string;
       testId: string;
@@ -640,8 +622,7 @@ export class RegressionsDatabase {
       filePath: string;
       rn: number;
     };
-    for (let i = 0; i < reportIds.length; i += BATCH) {
-      const slice = reportIds.slice(i, i + BATCH);
+    for (const slice of chunk(reportIds, KEY_BATCH)) {
       const placeholders = slice.map(() => '?').join(',');
       const opened = this.db
         .prepare(

@@ -104,42 +104,7 @@ export class LlmTasksDatabase {
     const reportIdsJson =
       opts.reportIds && opts.reportIds.length > 0 ? JSON.stringify(opts.reportIds) : null;
 
-    const compiled = this.k
-      .insertInto('llm_tasks')
-      .values({
-        id,
-        type,
-        status: 'queued',
-        priority,
-        reportId: opts.reportId ?? null,
-        testId: opts.testId ?? null,
-        fileId: opts.fileId ?? null,
-        project: opts.project ?? null,
-        prompt: null,
-        result: null,
-        category: null,
-        model: null,
-        error: null,
-        createdAt: now,
-        startedAt: null,
-        completedAt: null,
-        retryCount: 0,
-        maxRetries: 2,
-        inputTokens: null,
-        outputTokens: null,
-        totalTokens: null,
-        isRetry,
-        reportIds: reportIdsJson,
-        baseUrl: null,
-        parentTaskId: null,
-        role: null,
-        strategy: null,
-      })
-      .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
-    llmTaskEvents.emitEnqueue();
-
-    return {
+    const row: LlmTaskRow = {
       id,
       type,
       status: 'queued',
@@ -168,6 +133,12 @@ export class LlmTasksDatabase {
       role: null,
       strategy: null,
     };
+
+    const compiled = this.k.insertInto('llm_tasks').values(row).compile();
+    this.db.prepare(compiled.sql).run(...compiled.parameters);
+    llmTaskEvents.emitEnqueue();
+
+    return row;
   }
 
   public startRoleExecution(opts: {
@@ -506,7 +477,6 @@ export class LlmTasksDatabase {
     this.fireUpdateEvent(id);
   }
 
-  /** Look up the post-update row and broadcast it to event subscribers. */
   private fireUpdateEvent(id: string): void {
     const compiled = this.k.selectFrom('llm_tasks').selectAll().where('id', '=', id).compile();
     const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as LlmTaskRow | undefined;
@@ -722,15 +692,6 @@ export class LlmTasksDatabase {
       model: string | null;
     }>;
     return rows.map((r) => r.model).filter((m): m is string => !!m && m.length > 0);
-  }
-
-  public getByReport(reportId: string): LlmTaskRow[] {
-    const compiled = this.k
-      .selectFrom('llm_tasks')
-      .selectAll()
-      .where('reportId', '=', reportId)
-      .compile();
-    return this.db.prepare(compiled.sql).all(...compiled.parameters) as LlmTaskRow[];
   }
 
   public areAllTestTasksComplete(reportId: string): boolean {

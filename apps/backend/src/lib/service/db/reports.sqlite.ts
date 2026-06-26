@@ -111,6 +111,28 @@ function parseCacheKey(row: Pick<ReportRow, 'reportID' | 'updatedAt'>): string {
   return `${row.reportID}|${row.updatedAt ?? ''}`;
 }
 
+function invalidateParseCache(id: string): void {
+  for (const key of parseCache.keys()) {
+    if (key.startsWith(`${id}|`)) parseCache.delete(key);
+  }
+}
+
+const FAILED_ONLY_SQL = sql<boolean>`(COALESCE(statUnexpected, 0) > 0 OR COALESCE(statFlaky, 0) > 0)`;
+
+function applyReportFilters<O>(
+  q: SelectQueryBuilder<Database, 'reports', O>,
+  project: string | undefined,
+  opts?: { from?: string; to?: string; failedOnly?: boolean; before?: string; limit?: number }
+): SelectQueryBuilder<Database, 'reports', O> {
+  if (project && project !== defaultProjectName) q = q.where('project', '=', project);
+  if (opts?.from) q = q.where('createdAt', '>=', opts.from);
+  if (opts?.to) q = q.where('createdAt', '<', opts.to);
+  if (opts?.before) q = q.where('createdAt', '<', opts.before);
+  if (opts?.failedOnly) q = q.where(FAILED_ONLY_SQL);
+  if (opts?.limit && opts.limit > 0) q = q.limit(opts.limit);
+  return q;
+}
+
 export class ReportDatabase {
   public initialized = false;
   private readonly k = getKysely();
@@ -395,11 +417,7 @@ export class ReportDatabase {
     });
     applyAll();
 
-    for (const id of rows.keys()) {
-      for (const key of parseCache.keys()) {
-        if (key.startsWith(`${id}|`)) parseCache.delete(key);
-      }
-    }
+    for (const id of rows.keys()) invalidateParseCache(id);
 
     return { updated: rows.size, missing: [] };
   }
@@ -441,11 +459,7 @@ export class ReportDatabase {
 
       const compiled = this.k.deleteFrom('reports').where('reportID', 'in', ids).compile();
       this.db.prepare(compiled.sql).run(...compiled.parameters);
-      for (const id of ids) {
-        for (const key of parseCache.keys()) {
-          if (key.startsWith(`${id}|`)) parseCache.delete(key);
-        }
-      }
+      for (const id of ids) invalidateParseCache(id);
 
       // no FK can cascade reports -> project_llm_summaries
       // when a project loses its last report, drop its summary.
@@ -530,7 +544,6 @@ export class ReportDatabase {
   }
 
   public getPreviousReportId(reportID: string): string | null {
-    // self-join to find the prior report in the same project
     const compiled = this.k
       .selectFrom('reports as cur')
       .innerJoin('reports as prev', 'prev.project', 'cur.project')
@@ -560,19 +573,14 @@ export class ReportDatabase {
     project?: string,
     opts?: { from?: string; to?: string; failedOnly?: boolean; before?: string; limit?: number }
   ): ReportHistory[] {
-    const hasProject = project && project !== defaultProjectName;
-    let q = this.k
-      .selectFrom('reports')
-      .select(REPORT_COLUMNS_WITHOUT_FILES)
-      .orderBy('createdAt', 'desc');
-    if (hasProject) q = q.where('project', '=', project ?? '');
-    if (opts?.from) q = q.where('createdAt', '>=', opts.from);
-    if (opts?.to) q = q.where('createdAt', '<', opts.to);
-    if (opts?.before) q = q.where('createdAt', '<', opts.before);
-    if (opts?.failedOnly) {
-      q = q.where(sql<boolean>`(COALESCE(statUnexpected, 0) > 0 OR COALESCE(statFlaky, 0) > 0)`);
-    }
-    if (opts?.limit && opts.limit > 0) q = q.limit(opts.limit);
+    const q = applyReportFilters(
+      this.k
+        .selectFrom('reports')
+        .select(REPORT_COLUMNS_WITHOUT_FILES)
+        .orderBy('createdAt', 'desc'),
+      project,
+      opts
+    );
     const compiled = q.compile();
     const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportRow[];
     return rows.map((row) => this.rowToReport(row));
@@ -582,19 +590,11 @@ export class ReportDatabase {
     project?: string,
     opts?: { from?: string; to?: string; failedOnly?: boolean; before?: string; limit?: number }
   ): ReportAnalyticsRow[] {
-    const hasProject = project && project !== defaultProjectName;
-    let q = this.k
-      .selectFrom('reports')
-      .select(REPORT_ANALYTICS_COLUMNS)
-      .orderBy('createdAt', 'desc');
-    if (hasProject) q = q.where('project', '=', project ?? '');
-    if (opts?.from) q = q.where('createdAt', '>=', opts.from);
-    if (opts?.to) q = q.where('createdAt', '<', opts.to);
-    if (opts?.before) q = q.where('createdAt', '<', opts.before);
-    if (opts?.failedOnly) {
-      q = q.where(sql<boolean>`(COALESCE(statUnexpected, 0) > 0 OR COALESCE(statFlaky, 0) > 0)`);
-    }
-    if (opts?.limit && opts.limit > 0) q = q.limit(opts.limit);
+    const q = applyReportFilters(
+      this.k.selectFrom('reports').select(REPORT_ANALYTICS_COLUMNS).orderBy('createdAt', 'desc'),
+      project,
+      opts
+    );
     const compiled = q.compile();
     const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<
       Pick<
@@ -744,20 +744,7 @@ export class ReportDatabase {
     totalExecuted: number;
     sumDuration: number;
   } {
-    const applyWhere = <O>(
-      qb: SelectQueryBuilder<Database, 'reports', O>
-    ): SelectQueryBuilder<Database, 'reports', O> => {
-      let q = qb;
-      if (project && project !== defaultProjectName) q = q.where('project', '=', project);
-      if (from) q = q.where('createdAt', '>=', from);
-      if (to) q = q.where('createdAt', '<', to);
-      if (options.failedOnly) {
-        q = q.where(sql<boolean>`(COALESCE(statUnexpected, 0) > 0 OR COALESCE(statFlaky, 0) > 0)`);
-      }
-      return q;
-    };
-
-    const compiled = applyWhere(
+    const compiled = applyReportFilters(
       this.k
         .selectFrom('reports')
         .select((eb) => [
@@ -767,7 +754,9 @@ export class ReportDatabase {
           sql<number>`COALESCE(SUM(statUnexpected), 0)`.as('totalFailed'),
           sql<number>`COALESCE(SUM(statFlaky), 0)`.as('totalFlaky'),
           sql<number>`COALESCE(SUM(durationMs), 0)`.as('sumDuration'),
-        ])
+        ]),
+      project,
+      { from, to, failedOnly: options.failedOnly }
     ).compile();
 
     const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as {
@@ -782,11 +771,6 @@ export class ReportDatabase {
       ...row,
       totalExecuted: row.totalPassed + row.totalFailed + row.totalFlaky,
     };
-  }
-
-  public clear(): void {
-    const compiled = this.k.deleteFrom('reports').compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
   }
 
   public query(input?: ReadReportsInput): ReadReportsOutput {

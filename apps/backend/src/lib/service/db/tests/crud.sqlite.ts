@@ -506,13 +506,6 @@ export class TestCrudDatabase extends TestDbBase {
     return row.count;
   }
 
-  public clear(): void {
-    const delRuns = this.k.deleteFrom('test_runs').compile();
-    this.db.prepare(delRuns.sql).run(...delRuns.parameters);
-    const delTests = this.k.deleteFrom('tests').compile();
-    this.db.prepare(delTests.sql).run(...delTests.parameters);
-  }
-
   public runTransaction<T>(fn: () => T): T {
     return this.db.transaction(fn)();
   }

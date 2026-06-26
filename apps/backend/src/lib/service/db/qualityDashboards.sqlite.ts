@@ -71,7 +71,7 @@ export class DashboardNameConflictError extends Error {
   }
 }
 
-export function slugify(input: string): string {
+function slugify(input: string): string {
   return input
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')

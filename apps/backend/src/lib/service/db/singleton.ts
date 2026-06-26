@@ -26,15 +26,5 @@ export function singletonOf<T extends object>(key: string, factory: () => T): T 
       }
       return bound;
     },
-    set(_target, prop, value) {
-      const instance = resolve();
-      return Reflect.set(instance as object, prop, value, instance);
-    },
-    has(_target, prop) {
-      return Reflect.has(resolve() as object, prop);
-    },
-    getPrototypeOf() {
-      return Reflect.getPrototypeOf(resolve() as object);
-    },
   });
 }

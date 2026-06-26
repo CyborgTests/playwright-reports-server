@@ -1,5 +1,5 @@
 import type { Kysely } from 'kysely';
-import { type Migration, type MigrationProvider, Migrator } from 'kysely/migration';
+import { type Migration, Migrator } from 'kysely/migration';
 import type { Database } from '../kysely.js';
 import * as baseline from './0001_baseline.js';
 import * as dropLegacyTables from './0002_drop_legacy_tables.js';
@@ -80,14 +80,8 @@ const MIGRATIONS: Record<string, Migration> = {
   '0021_oauth': { up: oauth.up, down: oauth.down },
 };
 
-class StaticMigrationProvider implements MigrationProvider {
-  async getMigrations(): Promise<Record<string, Migration>> {
-    return MIGRATIONS;
-  }
-}
-
 export async function migrateToLatest(db: Kysely<Database>): Promise<void> {
-  const migrator = new Migrator({ db, provider: new StaticMigrationProvider() });
+  const migrator = new Migrator({ db, provider: { getMigrations: async () => MIGRATIONS } });
   const { error, results } = await migrator.migrateToLatest();
 
   for (const result of results ?? []) {
