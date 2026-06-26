@@ -4,13 +4,19 @@
 // navigation bar linking back to the dashboard.
 //
 // Context variables provided by the outer <script> wrapper (html-injector.ts):
-//   reportId, reportProject, isLlmEnabled
+//   reportId, reportProject, isLlmEnabled, canEditCategory
 // ---------------------------------------------------------------------------
 
 // ── Config & State ──────────────────────────────────────────────────────
 
 // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
 const llmEnabled = typeof isLlmEnabled !== 'undefined' ? !!isLlmEnabled : true;
+// biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+const RID = typeof reportId !== 'undefined' ? reportId : '';
+// biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+const REPORT_PROJECT = typeof reportProject !== 'undefined' ? reportProject : '';
+// biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+const CAN_EDIT_CATEGORY = typeof canEditCategory !== 'undefined' && !!canEditCategory;
 
 const inflightAnalysisFetches = new Set();
 const EMPTY_HISTORY = { priorOccurrenceCount: 0, firstOccurrence: null };
@@ -65,10 +71,10 @@ function extractTestIdFromCurrentUrl() {
     if (testId) {
       return testId;
     }
-    return 'unknown';
+    return null;
   } catch (error) {
     console.warn('[Playwright LLM] Error extracting test ID from URL:', error);
-    return 'unknown';
+    return null;
   }
 }
 
@@ -342,9 +348,18 @@ async function fetchAnalysisStatus(testId, rid) {
   }
 }
 
+async function getAnalysis(testId, rid) {
+  try {
+    const r = await fetch(
+      `/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`
+    );
+    return r.ok ? await r.json() : null;
+  } catch {
+    return null;
+  }
+}
+
 async function copyLLMPromptToClipboard(btn, testId) {
-  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-  const rid = typeof reportId !== 'undefined' ? reportId : '';
   const originalLabel = btn.textContent;
   btn.disabled = true;
   btn.style.opacity = '0.6';
@@ -358,7 +373,7 @@ async function copyLLMPromptToClipboard(btn, testId) {
   };
   try {
     const r = await fetch(
-      `/api/test-analysis/${encodeURIComponent(testId)}/prompt?reportId=${encodeURIComponent(rid)}&refresh=1`
+      `/api/test-analysis/${encodeURIComponent(testId)}/prompt?reportId=${encodeURIComponent(RID)}&refresh=1`
     );
     if (r.status === 404) {
       restore('Not available');
@@ -395,12 +410,10 @@ function injectNavBar() {
   bar.id = 'pwrs-nav-bar';
   bar.className = 'pwrs-nav-bar';
 
-  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-  const rid = typeof reportId !== 'undefined' ? reportId : '';
-  if (rid) {
+  if (RID) {
     const reportBtn = document.createElement('a');
     reportBtn.className = 'pwrs-nav-btn';
-    reportBtn.href = `/report/${encodeURIComponent(rid)}`;
+    reportBtn.href = `/report/${encodeURIComponent(RID)}`;
     reportBtn.innerHTML = `${ARROW_LEFT_SVG} Report Details`;
     reportBtn.title = 'View this report in the dashboard';
     bar.appendChild(reportBtn);
@@ -421,14 +434,12 @@ function updateTestDetailsButton() {
   const testId = extractTestIdFromCurrentUrl();
   const existing = bar.querySelector('.pwrs-test-details-btn');
 
-  if (!testId || testId === 'unknown') {
+  if (!testId) {
     if (existing) existing.remove();
     return;
   }
 
-  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-  const project = typeof reportProject !== 'undefined' ? reportProject : '';
-  const href = `/test/${encodeURIComponent(testId)}?project=${encodeURIComponent(project)}`;
+  const href = `/test/${encodeURIComponent(testId)}?project=${encodeURIComponent(REPORT_PROJECT)}`;
 
   if (existing) {
     existing.href = href;
@@ -451,25 +462,16 @@ function setFullCopyBtnVisibility(visible) {
 }
 
 function checkForPrecomputedAnalysis(testId, anchor, askBtn) {
-  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-  const rid = typeof reportId !== 'undefined' ? reportId : '';
-  const key = `${testId}::${rid}`;
+  const key = `${testId}::${RID}`;
   if (inflightAnalysisFetches.has(key)) return;
   inflightAnalysisFetches.add(key);
-  fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
-    .then((response) => {
-      if (!response.ok) return null;
-      return response.json();
-    })
+  getAnalysis(testId, RID)
     .then((data) => {
       if (data?.success && data?.data?.analysis) {
         renderInlineAnalysis(data.data, anchor, askBtn, testId);
       } else if (data?.success && data?.pending && llmEnabled) {
-        renderLoadingAnalysis(testId, rid, anchor, askBtn);
+        renderLoadingAnalysis(testId, RID, anchor, askBtn);
       }
-    })
-    .catch(() => {
-      /* no section injected on failure */
     })
     .finally(() => {
       inflightAnalysisFetches.delete(key);
@@ -517,30 +519,31 @@ function renderLoadingInto(testId, rid, anchor, askBtn, errorsSection, taskId = 
   `;
   errorsSection.parentNode.insertBefore(section, errorsSection);
 
-  // SSE subscription with poll fallback for task progress.
+  const restoreAskControls = () => {
+    setFullCopyBtnVisibility(true);
+    if (askBtn) askBtn.style.display = '';
+  };
+
+  const renderIfResolved = (data) => {
+    if (data?.success && data?.data?.analysis) {
+      section.remove();
+      renderInlineAnalysis(data.data, anchor, askBtn, testId);
+      return true;
+    }
+    return false;
+  };
+
   let cleanup = null;
   const settle = () => {
     if (cleanup) {
       cleanup();
       cleanup = null;
     }
-    fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.success && data?.data?.analysis) {
-          section.remove();
-          renderInlineAnalysis(data.data, anchor, askBtn, testId);
-        } else {
-          section.remove();
-          setFullCopyBtnVisibility(true);
-          if (askBtn) askBtn.style.display = '';
-        }
-      })
-      .catch(() => {
-        section.remove();
-        setFullCopyBtnVisibility(true);
-        if (askBtn) askBtn.style.display = '';
-      });
+    getAnalysis(testId, rid).then((data) => {
+      if (renderIfResolved(data)) return;
+      section.remove();
+      restoreAskControls();
+    });
   };
 
   const subscribe = (taskId) => {
@@ -576,18 +579,13 @@ function renderLoadingInto(testId, rid, anchor, askBtn, errorsSection, taskId = 
       fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
-          if (data?.success && data?.data?.analysis) {
-            section.remove();
-            renderInlineAnalysis(data.data, anchor, askBtn, testId);
-            return;
-          }
+          if (renderIfResolved(data)) return;
           if (data?.success && data?.pending && attempts < MAX_ATTEMPTS) {
             setTimeout(tick, 3000);
             return;
           }
           section.remove();
-          setFullCopyBtnVisibility(true);
-          if (askBtn) askBtn.style.display = '';
+          restoreAskControls();
         })
         .catch(() => {
           if (attempts < MAX_ATTEMPTS) setTimeout(tick, 3000);
@@ -599,23 +597,14 @@ function renderLoadingInto(testId, rid, anchor, askBtn, errorsSection, taskId = 
   if (taskId) {
     subscribe(taskId);
   } else {
-    fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.success && data?.data?.analysis) {
-          section.remove();
-          renderInlineAnalysis(data.data, anchor, askBtn, testId);
-          return;
-        }
-        if (data?.success && data?.pending?.taskId) {
-          subscribe(data.pending.taskId);
-          return;
-        }
-        pollFallback();
-      })
-      .catch(() => {
-        pollFallback();
-      });
+    getAnalysis(testId, rid).then((data) => {
+      if (renderIfResolved(data)) return;
+      if (data?.success && data?.pending?.taskId) {
+        subscribe(data.pending.taskId);
+        return;
+      }
+      pollFallback();
+    });
   }
 }
 
@@ -631,17 +620,13 @@ const ROOT_CAUSE_OPTIONS = [
 ];
 
 async function patchCategory(testId, category) {
-  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-  const rid = typeof reportId !== 'undefined' ? reportId : '';
-  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-  const proj = typeof reportProject !== 'undefined' ? reportProject : '';
   try {
     const r = await fetch(
-      `/api/test-analysis/${encodeURIComponent(testId)}?project=${encodeURIComponent(proj)}`,
+      `/api/test-analysis/${encodeURIComponent(testId)}?project=${encodeURIComponent(REPORT_PROJECT)}`,
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...csrfHeader() },
-        body: JSON.stringify({ reportId: rid, category }),
+        body: JSON.stringify({ reportId: RID, category }),
       }
     );
     return r.ok;
@@ -705,8 +690,7 @@ function renderInlineAnalysis(analysisData, anchor, askBtn, testIdOverride) {
     if (askBtn) askBtn.style.display = 'none';
 
     const resolvedTestId = testIdOverride || analysisData.testId || '';
-    // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-    const canEdit = typeof canEditCategory !== 'undefined' && canEditCategory && !!resolvedTestId;
+    const canEdit = CAN_EDIT_CATEGORY && !!resolvedTestId;
     const categoryText = analysisData.category ? escapeHtml(analysisData.category) : '';
     const categoryBadge =
       categoryText || canEdit
@@ -748,9 +732,7 @@ function renderInlineAnalysis(analysisData, anchor, askBtn, testIdOverride) {
     if (canEdit) setupCategoryEditor(section, resolvedTestId);
 
     if (resolvedTestId) {
-      // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-      const rid = typeof reportId !== 'undefined' ? reportId : '';
-      refreshFeedbackStaleIndicator(resolvedTestId, rid);
+      refreshFeedbackStaleIndicator(resolvedTestId, RID);
     }
 
     const retryBtn = section.querySelector('.llm-retry-btn');
@@ -778,17 +760,17 @@ function feedbackBody(testId, rid, extra) {
   return JSON.stringify({ testId: testId, reportId: rid, ...extra });
 }
 
-function reportLinkLabel(reportId, displayNumber, title) {
+function reportLinkLabel(rid, displayNumber, title) {
   const safeTitle = typeof title === 'string' && title ? escapeHtml(title) : '';
   if (typeof displayNumber === 'number' && displayNumber > 0) {
     return safeTitle ? `#${displayNumber} ${safeTitle}` : `#${displayNumber}`;
   }
   if (safeTitle) return safeTitle;
-  return `report ${reportId.slice(0, 8)}`;
+  return `report ${rid.slice(0, 8)}`;
 }
 
 async function injectFeedbackPanel(testId, rid, anchor) {
-  if (!testId || !rid || testId === 'unknown') return;
+  if (!testId || !rid) return;
   if (document.getElementById('llm-feedback-panel')) return;
 
   const [feedback, related, history, analysisStatus] = await Promise.all([
@@ -1037,9 +1019,7 @@ async function refreshFeedbackStaleIndicator(testId, rid) {
 
   const [feedback, analysis] = await Promise.all([
     fetchFeedback(testId, rid),
-    fetch(`/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(rid)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null),
+    getAnalysis(testId, rid),
   ]);
 
   const feedbackAt = feedback?.updatedAt ? new Date(feedback.updatedAt).getTime() : 0;
@@ -1062,7 +1042,7 @@ function injectAskLLMButton() {
   // Read-only mode: surface previously-generated analyses without the Ask button.
   if (!llmEnabled) {
     const currentTestId = extractTestIdFromCurrentUrl();
-    if (!currentTestId || currentTestId === 'unknown') return;
+    if (!currentTestId) return;
     if (!document.getElementById('llm-inline-analysis')) {
       checkForPrecomputedAnalysis(currentTestId, anchor, null);
     }
@@ -1072,7 +1052,7 @@ function injectAskLLMButton() {
   const existingAskBtn = anchor.querySelector('.llm-ask-btn');
   if (existingAskBtn) {
     const currentTestId = extractTestIdFromCurrentUrl();
-    if (!currentTestId || currentTestId === 'unknown') return;
+    if (!currentTestId) return;
 
     const testChanged = existingAskBtn.dataset.testId !== currentTestId;
     const inlineMissing = !document.getElementById('llm-inline-analysis');
@@ -1085,8 +1065,7 @@ function injectAskLLMButton() {
       document.getElementById('llm-feedback-panel')?.remove();
       setFullCopyBtnVisibility(true);
       checkForPrecomputedAnalysis(currentTestId, anchor, existingAskBtn);
-      // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-      injectFeedbackPanel(currentTestId, reportId, anchor);
+      injectFeedbackPanel(currentTestId, RID, anchor);
       return;
     }
 
@@ -1094,8 +1073,7 @@ function injectAskLLMButton() {
       checkForPrecomputedAnalysis(currentTestId, anchor, existingAskBtn);
     }
     if (feedbackMissing) {
-      // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-      injectFeedbackPanel(currentTestId, reportId, anchor);
+      injectFeedbackPanel(currentTestId, RID, anchor);
     }
     return;
   }
@@ -1108,8 +1086,6 @@ function injectAskLLMButton() {
 
   askBtn.onclick = async () => {
     const currentTestId = extractTestIdFromCurrentUrl();
-    // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-    const rid = reportId;
 
     askBtn.style.display = 'none';
     setFullCopyBtnVisibility(false);
@@ -1118,7 +1094,7 @@ function injectAskLLMButton() {
       const response = await fetch('/api/llm/analyze-failed-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...csrfHeader() },
-        body: JSON.stringify({ testId: currentTestId, reportId: rid }),
+        body: JSON.stringify({ testId: currentTestId, reportId: RID }),
       });
       const j = await response.json();
       if (!response.ok || !j?.success || !j?.data?.taskId) {
@@ -1126,7 +1102,7 @@ function injectAskLLMButton() {
       }
       whenErrorsSectionReady(anchor, (errorsSection) => {
         if (document.getElementById('llm-inline-analysis')) return;
-        renderLoadingInto(currentTestId, rid, anchor, askBtn, errorsSection, j.data.taskId);
+        renderLoadingInto(currentTestId, RID, anchor, askBtn, errorsSection, j.data.taskId);
       });
     } catch (error) {
       console.error('[Playwright LLM] Analysis error:', error);
@@ -1145,17 +1121,16 @@ function injectAskLLMButton() {
     'Copy the LLM prompt (with test history and feedback) that would be sent for this test+report right now.';
   fullCopyBtn.onclick = () => {
     const currentTestId = extractTestIdFromCurrentUrl();
-    if (!currentTestId || currentTestId === 'unknown') return;
+    if (!currentTestId) return;
     copyLLMPromptToClipboard(fullCopyBtn, currentTestId);
   };
   anchor.appendChild(fullCopyBtn);
 
   const currentTestId = extractTestIdFromCurrentUrl();
-  if (currentTestId && currentTestId !== 'unknown') {
+  if (currentTestId) {
     askBtn.dataset.testId = currentTestId;
     checkForPrecomputedAnalysis(currentTestId, anchor, askBtn);
-    // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-    injectFeedbackPanel(currentTestId, reportId, anchor);
+    injectFeedbackPanel(currentTestId, RID, anchor);
   }
 
   return true;
@@ -1164,8 +1139,7 @@ function injectAskLLMButton() {
 // ── Initialization ──────────────────────────────────────────────────────
 
 function tryInjectAskLLMButton() {
-  // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
-  if (typeof reportId !== 'undefined' && reportId === 'trace') return;
+  if (RID === 'trace') return;
 
   injectNavBar();
   updateTestDetailsButton();
