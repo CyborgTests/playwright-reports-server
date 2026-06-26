@@ -42,6 +42,24 @@ import {
 import { withError } from '../lib/withError.js';
 import { authorize } from './auth.js';
 
+// Resolves a testId (+ optional project) to its run identity, or sends the
+// standard 404 and returns null so the caller bails with `if (!resolved) return`.
+function resolveTestOr404(
+  reply: FastifyReply,
+  testId: string,
+  project: string | undefined
+): NonNullable<ReturnType<typeof resolveTestIdentity>> | null {
+  const resolved = resolveTestIdentity(testId, project);
+  if (!resolved) {
+    reply.status(404).send({
+      success: false,
+      error: 'Test not found - pass --project, or ensure the testId has a run',
+    });
+    return null;
+  }
+  return resolved;
+}
+
 export async function registerCliRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(async (api) => {
     api.addHook('preHandler', authorize(CAPABILITIES.view));
@@ -49,13 +67,8 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
     api.get('/api/cli/test/:testId/brief', async (request: FastifyRequest, reply: FastifyReply) => {
       const { testId } = request.params as { testId: string };
       const { project } = request.query as { project?: string };
-      const resolved = resolveTestIdentity(testId, project);
-      if (!resolved) {
-        return reply.status(404).send({
-          success: false,
-          error: 'Test not found - pass --project, or ensure the testId has a run',
-        });
-      }
+      const resolved = resolveTestOr404(reply, testId, project);
+      if (!resolved) return;
       const { result: brief, error } = await withError(
         buildTestBrief(resolved.testId, resolved.fileId, resolved.project)
       );
@@ -74,13 +87,8 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { project } = request.query as { project?: string };
-        const resolved = resolveTestIdentity(testId, project);
-        if (!resolved) {
-          return reply.status(404).send({
-            success: false,
-            error: 'Test not found - pass --project, or ensure the testId has a run',
-          });
-        }
+        const resolved = resolveTestOr404(reply, testId, project);
+        if (!resolved) return;
         const { result: analysis, error } = await withError(
           buildTestAnalysis(resolved.testId, resolved.fileId, resolved.project)
         );
@@ -102,13 +110,8 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
             .status(400)
             .send({ success: false, error: 'reportId query parameter is required' });
         }
-        const resolved = resolveTestIdentity(testId, project);
-        if (!resolved) {
-          return reply.status(404).send({
-            success: false,
-            error: 'Test not found - pass --project, or ensure the testId has a run',
-          });
-        }
+        const resolved = resolveTestOr404(reply, testId, project);
+        if (!resolved) return;
         const { result: built, error } = await withError(
           buildTestAnalysisRequest({
             testId: resolved.testId,
@@ -224,13 +227,8 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { project, limit } = request.query as { project?: string; limit?: string };
-        const resolved = resolveTestIdentity(testId, project);
-        if (!resolved) {
-          return reply.status(404).send({
-            success: false,
-            error: 'Test not found - pass --project, or ensure the testId has a run',
-          });
-        }
+        const resolved = resolveTestOr404(reply, testId, project);
+        if (!resolved) return;
         const requestedLimit = limit ? Number.parseInt(limit, 10) : DEFAULT_HISTORY_LIMIT;
         const normalizedRequest = Number.isFinite(requestedLimit)
           ? requestedLimit

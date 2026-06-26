@@ -9,7 +9,7 @@ import { DeleteResultsRequestSchema, ListResultsQuerySchema } from '../lib/schem
 import { reportResultsDb } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { DEFAULT_STREAM_CHUNK_SIZE } from '../lib/storage/constants.js';
-import { validateSchema } from '../lib/validation/index.js';
+import { ValidationError, validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
 import { authorize } from './auth.js';
 
@@ -54,6 +54,9 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
 
         return result;
       } catch (error) {
+        if (error instanceof ValidationError) {
+          return reply.status(400).send({ error: error.message, details: error.details });
+        }
         console.error('[routes] list results error:', error);
         return reply.status(500).send({ error: 'Internal server error' });
       }

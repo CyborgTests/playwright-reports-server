@@ -16,7 +16,6 @@ import {
   DEFAULT_SYNTHESIZER_DIRECTIVE,
 } from '../lib/llm/prompts/routing.js';
 import { isLlmFeatureEnabled } from '../lib/llm/registry.js';
-import { openSseStream } from '../lib/sse.js';
 import { abortRunningTask } from '../lib/llm/taskSignal.js';
 import { DEFAULT_SCREENSHOT_PARSE_PROMPT } from '../lib/llm/visionTranscribe.js';
 import {
@@ -33,6 +32,7 @@ import {
 } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { llmTaskEvents } from '../lib/service/llmTaskEvents.js';
+import { openSseStream } from '../lib/sse.js';
 import { authorize } from './auth.js';
 
 const TERMINAL_STATUSES: ReadonlySet<LlmTaskStatus> = new Set(['completed', 'failed', 'cancelled']);

@@ -79,6 +79,27 @@ const resolveTestKeys = async (
   return { ok: true, fileId: fId, project: proj, signature };
 };
 
+function enqueueOrReuseTestAnalysis(args: {
+  testId: string;
+  reportId?: string;
+  fileId: string;
+  project: string;
+}): { taskId: string; deduped: boolean } {
+  const inflight = llmTasksDb.findInflightTestAnalysis(args.testId, args.reportId ?? '');
+  if (inflight) {
+    llmTasksDb.markAsRetry(inflight.id);
+    return { taskId: inflight.id, deduped: true };
+  }
+  const created = llmTasksDb.createTask('test_analysis', {
+    reportId: args.reportId,
+    testId: args.testId,
+    fileId: args.fileId,
+    project: args.project,
+    isRetry: true,
+  });
+  return { taskId: created.id, deduped: false };
+}
+
 export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
   fastify.post('/api/llm/analyze-failed-test', async (request, reply) => {
     try {
@@ -107,25 +128,12 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const inflightTest = llmTasksDb.findInflightTestAnalysis(testId, reportId);
-
-      let taskId: string;
-      let deduped: boolean;
-      if (inflightTest) {
-        taskId = inflightTest.id;
-        deduped = true;
-        llmTasksDb.markAsRetry(taskId);
-      } else {
-        const created = llmTasksDb.createTask('test_analysis', {
-          reportId,
-          testId,
-          fileId: tr.fileId,
-          project: tr.project,
-          isRetry: true,
-        });
-        taskId = created.id;
-        deduped = false;
-      }
+      const { taskId, deduped } = enqueueOrReuseTestAnalysis({
+        testId,
+        reportId,
+        fileId: tr.fileId,
+        project: tr.project,
+      });
 
       return reply.send({ success: true, data: { taskId, deduped } });
     } catch (error) {
@@ -221,25 +229,12 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
     const keys = await resolveTestKeys(body.testId, body.fileId, body.project, body.reportId);
     if (!keys.ok) return reply.status(keys.status).send({ success: false, error: keys.error });
 
-    const inflightTest = llmTasksDb.findInflightTestAnalysis(body.testId, body.reportId ?? '');
-
-    let taskId: string;
-    let deduped: boolean;
-    if (inflightTest) {
-      taskId = inflightTest.id;
-      deduped = true;
-      llmTasksDb.markAsRetry(taskId);
-    } else {
-      const created = llmTasksDb.createTask('test_analysis', {
-        reportId: body.reportId,
-        testId: body.testId,
-        fileId: keys.fileId,
-        project: keys.project,
-        isRetry: true,
-      });
-      taskId = created.id;
-      deduped = false;
-    }
+    const { taskId, deduped } = enqueueOrReuseTestAnalysis({
+      testId: body.testId,
+      reportId: body.reportId,
+      fileId: keys.fileId,
+      project: keys.project,
+    });
 
     let cascadedReportTaskId: string | undefined;
     if (body.cascadeReportSummary && body.reportId) {

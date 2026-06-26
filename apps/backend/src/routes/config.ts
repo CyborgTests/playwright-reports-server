@@ -4,20 +4,18 @@ import { mkdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import {
-  CAPABILITIES,
-  type LlmScreenshotSource,
-  type LlmTaskRouting,
-  type LlmTaskType,
-  SCREENSHOTS_MAX_CAP,
-} from '@playwright-reports/shared';
+import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
+import {
+  ALLOWED_CONFIG_FIELDS,
+  applyConfigFormData,
+  type ConfigFormData,
+} from '../lib/config/applyConfigForm.js';
 import { defaultConfig } from '../lib/config.js';
 import { llmAnalysisQueue } from '../lib/llm/queue/index.js';
-import { validateRouting } from '../lib/llm/routing/index.js';
 import { normalizeReporterPaths, validateReporterPaths } from '../lib/pw-reporters.js';
-import { CronService, cronService } from '../lib/service/cron.js';
+import { cronService } from '../lib/service/cron.js';
 import { getDatabaseStats, llmModelsDb } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { testManagementService } from '../lib/service/test-management/index.js';
@@ -98,93 +96,6 @@ async function persistBrandingFile(
 
   return { relativePath: `/${BRANDING_SUBDIR}/${safeName}` };
 }
-
-interface ConfigFormData {
-  title?: string;
-  serverBaseUrl?: string;
-  logoPath?: string;
-  logoInvertOnDark?: string;
-  allowOpenRegistration?: string;
-  faviconPath?: string;
-  reporterPaths?: string;
-  headerLinks?: string;
-  resultExpireDays?: string;
-  resultExpireCronSchedule?: string;
-  reportExpireDays?: string;
-  reportExpireCronSchedule?: string;
-  llmFeatureEnabled?: string;
-  llmUseFallbackChain?: string;
-  llmRouting?: string;
-  llmAutoAnalyzeNewReports?: string;
-  llmAutoProjectSummaryOnReportComplete?: string;
-  llmAnalyzeGreenWindows?: string;
-  llmGeneralContext?: string;
-  llmCustomSystemPrompt?: string;
-  llmCustomTestAnalysisSystemPrompt?: string;
-  llmCustomProjectSummarySystemPrompt?: string;
-  llmCustomTestAnalysisInstructions?: string;
-  llmCustomReportSummaryPrompt?: string;
-  llmCustomProjectSummaryInstructions?: string;
-  llmCustomSynthesizerPrompt?: string;
-  llmCustomJudgePrompt?: string;
-  llmCustomCritiquePrompt?: string;
-  llmCustomRevisePrompt?: string;
-  llmCustomScorerPrompt?: string;
-  llmScreenshotModel?: string;
-  llmCustomScreenshotParsePrompt?: string;
-  llmScreenshotSources?: string;
-  llmMaxScreenshots?: string;
-  testManagementQuarantineThresholdPercentage?: string;
-  testManagementWarningThresholdPercentage?: string;
-  testManagementAutoQuarantineEnabled?: string;
-  testManagementFlakinessMinRuns?: string;
-  testManagementFlakinessEvaluationWindowDays?: string;
-}
-
-// Explicit allow-list of accepted multipart field names. Anything not in this
-// set is dropped, so we cannot smuggle __proto__/constructor/etc.
-// into the formData object.
-const ALLOWED_CONFIG_FIELDS: ReadonlySet<keyof ConfigFormData> = new Set<keyof ConfigFormData>([
-  'title',
-  'serverBaseUrl',
-  'logoPath',
-  'logoInvertOnDark',
-  'allowOpenRegistration',
-  'faviconPath',
-  'reporterPaths',
-  'headerLinks',
-  'resultExpireDays',
-  'resultExpireCronSchedule',
-  'reportExpireDays',
-  'reportExpireCronSchedule',
-  'llmFeatureEnabled',
-  'llmUseFallbackChain',
-  'llmRouting',
-  'llmAutoAnalyzeNewReports',
-  'llmAutoProjectSummaryOnReportComplete',
-  'llmAnalyzeGreenWindows',
-  'llmGeneralContext',
-  'llmCustomSystemPrompt',
-  'llmCustomTestAnalysisSystemPrompt',
-  'llmCustomProjectSummarySystemPrompt',
-  'llmCustomTestAnalysisInstructions',
-  'llmCustomReportSummaryPrompt',
-  'llmCustomProjectSummaryInstructions',
-  'llmCustomSynthesizerPrompt',
-  'llmCustomJudgePrompt',
-  'llmCustomCritiquePrompt',
-  'llmCustomRevisePrompt',
-  'llmCustomScorerPrompt',
-  'llmScreenshotModel',
-  'llmCustomScreenshotParsePrompt',
-  'llmScreenshotSources',
-  'llmMaxScreenshots',
-  'testManagementQuarantineThresholdPercentage',
-  'testManagementWarningThresholdPercentage',
-  'testManagementAutoQuarantineEnabled',
-  'testManagementFlakinessMinRuns',
-  'testManagementFlakinessEvaluationWindowDays',
-]);
 
 export async function registerConfigRoutes(fastify: FastifyInstance) {
   fastify.get('/api/config', async (request, reply) => {
@@ -464,207 +375,9 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           });
         }
 
-        config.llm ??= {};
-
-        if (formData.llmFeatureEnabled !== undefined) {
-          const enable = formData.llmFeatureEnabled === 'true';
-          if (enable && !llmModelsDb.getPrimary()) {
-            return reply.status(409).send({
-              error: 'Set a primary model before enabling LLM features',
-            });
-          }
-          config.llm ??= {};
-          config.llm.featureEnabled = enable;
-        }
-
-        if (formData.llmUseFallbackChain !== undefined) {
-          config.llm ??= {};
-          config.llm.useFallbackChain = formData.llmUseFallbackChain === 'true';
-        }
-
-        if (formData.llmRouting !== undefined) {
-          let parsedRouting: unknown;
-          try {
-            parsedRouting = JSON.parse(formData.llmRouting);
-          } catch {
-            return reply.status(400).send({ error: 'llmRouting must be valid JSON' });
-          }
-          const enabledIds = new Set(
-            llmModelsDb
-              .list()
-              .filter((m) => m.enabled === 1)
-              .map((m) => m.id)
-          );
-          const routingError = validateRouting(parsedRouting, enabledIds);
-          if (routingError) return reply.status(400).send({ error: routingError });
-          config.llm ??= {};
-          config.llm.routing = parsedRouting as Partial<Record<LlmTaskType, LlmTaskRouting>>;
-        }
-
-        if (formData.llmAutoAnalyzeNewReports !== undefined) {
-          config.llm.autoAnalyzeNewReports = formData.llmAutoAnalyzeNewReports === 'true';
-        }
-
-        if (formData.llmAutoProjectSummaryOnReportComplete !== undefined) {
-          config.llm.autoProjectSummaryOnReportComplete =
-            formData.llmAutoProjectSummaryOnReportComplete === 'true';
-        }
-
-        if (formData.llmAnalyzeGreenWindows !== undefined) {
-          config.llm.analyzeGreenWindows = formData.llmAnalyzeGreenWindows === 'true';
-        }
-
-        if (formData.llmGeneralContext !== undefined) {
-          const trimmed = formData.llmGeneralContext.trim();
-          if (trimmed.length > 500) {
-            return reply
-              .status(400)
-              .send({ error: 'LLM general context must be 500 characters or fewer' });
-          }
-          config.llm.generalContext = trimmed || undefined;
-        }
-
-        if (formData.llmCustomSystemPrompt !== undefined) {
-          config.llm.customSystemPrompt = formData.llmCustomSystemPrompt || undefined;
-        }
-        if (formData.llmCustomTestAnalysisSystemPrompt !== undefined) {
-          config.llm.customTestAnalysisSystemPrompt =
-            formData.llmCustomTestAnalysisSystemPrompt || undefined;
-        }
-        if (formData.llmCustomProjectSummarySystemPrompt !== undefined) {
-          config.llm.customProjectSummarySystemPrompt =
-            formData.llmCustomProjectSummarySystemPrompt || undefined;
-        }
-        if (formData.llmCustomTestAnalysisInstructions !== undefined) {
-          config.llm.customTestAnalysisInstructions =
-            formData.llmCustomTestAnalysisInstructions || undefined;
-        }
-        if (formData.llmCustomReportSummaryPrompt !== undefined) {
-          config.llm.customReportSummaryPrompt = formData.llmCustomReportSummaryPrompt || undefined;
-        }
-        if (formData.llmCustomProjectSummaryInstructions !== undefined) {
-          config.llm.customProjectSummaryInstructions =
-            formData.llmCustomProjectSummaryInstructions || undefined;
-        }
-        if (formData.llmCustomSynthesizerPrompt !== undefined) {
-          config.llm.customSynthesizerPrompt = formData.llmCustomSynthesizerPrompt || undefined;
-        }
-        if (formData.llmCustomJudgePrompt !== undefined) {
-          config.llm.customJudgePrompt = formData.llmCustomJudgePrompt || undefined;
-        }
-        if (formData.llmCustomCritiquePrompt !== undefined) {
-          config.llm.customCritiquePrompt = formData.llmCustomCritiquePrompt || undefined;
-        }
-        if (formData.llmCustomRevisePrompt !== undefined) {
-          config.llm.customRevisePrompt = formData.llmCustomRevisePrompt || undefined;
-        }
-        if (formData.llmCustomScorerPrompt !== undefined) {
-          config.llm.customScorerPrompt = formData.llmCustomScorerPrompt || undefined;
-        }
-
-        if (formData.llmScreenshotModel !== undefined) {
-          const modelId = formData.llmScreenshotModel.trim();
-          if (modelId) {
-            const isEnabled = llmModelsDb.list().some((m) => m.id === modelId && m.enabled === 1);
-            if (!isEnabled) {
-              return reply
-                .status(400)
-                .send({ error: 'llmScreenshotModel references an unknown or disabled model' });
-            }
-            config.llm.screenshotModel = { modelId };
-          } else {
-            config.llm.screenshotModel = undefined;
-          }
-        }
-        if (formData.llmCustomScreenshotParsePrompt !== undefined) {
-          config.llm.customScreenshotParsePrompt =
-            formData.llmCustomScreenshotParsePrompt || undefined;
-        }
-        if (formData.llmScreenshotSources !== undefined) {
-          const valid: LlmScreenshotSource[] = ['attachment', 'failing_action', 'series'];
-          const parsed = formData.llmScreenshotSources
-            .split(',')
-            .map((s) => s.trim())
-            .filter((s) => s.length > 0);
-          for (const s of parsed) {
-            if (!valid.includes(s as LlmScreenshotSource)) {
-              return reply
-                .status(400)
-                .send({ error: `llmScreenshotSources has invalid value "${s}"` });
-            }
-          }
-          // de-dupe while preserving order; empty list = no screenshots (kept as []).
-          config.llm.screenshotSources = [...new Set(parsed)] as LlmScreenshotSource[];
-        }
-        if (formData.llmMaxScreenshots !== undefined) {
-          const raw = formData.llmMaxScreenshots.trim();
-          const n = raw === '' ? Number.NaN : Number(raw);
-          config.llm.maxScreenshots = Number.isFinite(n)
-            ? Math.min(SCREENSHOTS_MAX_CAP, Math.max(1, Math.round(n)))
-            : undefined;
-        }
-
-        config.cron ??= {};
-
-        const parseExpireDays = (
-          raw: string | undefined,
-          field: string
-        ): number | undefined | { error: string } => {
-          if (raw === undefined) return undefined;
-          const trimmed = raw.trim();
-          if (trimmed === '') return undefined;
-          const days = Number.parseInt(trimmed, 10);
-          if (Number.isNaN(days) || days < 0) {
-            return { error: `${field} must be a non-negative integer` };
-          }
-          return days;
-        };
-        if (formData.resultExpireDays !== undefined) {
-          const parsed = parseExpireDays(formData.resultExpireDays, 'resultExpireDays');
-          if (parsed && typeof parsed === 'object' && 'error' in parsed) {
-            return reply.status(400).send({ error: parsed.error });
-          }
-          config.cron.resultExpireDays = parsed as number | undefined;
-        }
-        if (formData.reportExpireDays !== undefined) {
-          const parsed = parseExpireDays(formData.reportExpireDays, 'reportExpireDays');
-          if (parsed && typeof parsed === 'object' && 'error' in parsed) {
-            return reply.status(400).send({ error: parsed.error });
-          }
-          config.cron.reportExpireDays = parsed as number | undefined;
-        }
-        const parseCronSchedule = (
-          raw: string | undefined,
-          field: string
-        ): string | undefined | { error: string } => {
-          if (raw === undefined) return undefined;
-          const trimmed = raw.trim();
-          if (trimmed === '') return undefined;
-          const validation = CronService.validateExpression(trimmed);
-          if (!validation.valid) {
-            return { error: `${field} is invalid: ${validation.error}` };
-          }
-          return trimmed;
-        };
-        if (formData.resultExpireCronSchedule !== undefined) {
-          const parsed = parseCronSchedule(
-            formData.resultExpireCronSchedule,
-            'resultExpireCronSchedule'
-          );
-          if (parsed && typeof parsed === 'object' && 'error' in parsed) {
-            return reply.status(400).send({ error: parsed.error });
-          }
-          config.cron.resultExpireCronSchedule = parsed as string | undefined;
-        }
-        if (formData.reportExpireCronSchedule !== undefined) {
-          const parsed = parseCronSchedule(
-            formData.reportExpireCronSchedule,
-            'reportExpireCronSchedule'
-          );
-          if (parsed && typeof parsed === 'object' && 'error' in parsed) {
-            return reply.status(400).send({ error: parsed.error });
-          }
-          config.cron.reportExpireCronSchedule = parsed as string | undefined;
+        const applyError = applyConfigFormData(config, formData);
+        if (applyError) {
+          return reply.status(applyError.status).send({ error: applyError.error });
         }
 
         const cronConfigChanged =
@@ -672,59 +385,6 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           formData.resultExpireCronSchedule !== undefined ||
           formData.reportExpireDays !== undefined ||
           formData.reportExpireCronSchedule !== undefined;
-
-        config.testManagement ??= {};
-
-        if (formData.testManagementQuarantineThresholdPercentage !== undefined) {
-          const threshold = Number.parseInt(
-            formData.testManagementQuarantineThresholdPercentage,
-            10
-          );
-          if (Number.isNaN(threshold) || threshold < 0 || threshold > 100) {
-            return reply.status(400).send({
-              error: 'Test management quarantine threshold must be a number between 0 and 100',
-            });
-          }
-          config.testManagement.quarantineThresholdPercentage = threshold;
-        }
-
-        if (formData.testManagementWarningThresholdPercentage !== undefined) {
-          const threshold = Number.parseInt(formData.testManagementWarningThresholdPercentage, 10);
-          if (Number.isNaN(threshold) || threshold < 0 || threshold > 100) {
-            return reply.status(400).send({
-              error: 'Test management warning threshold must be a number between 0 and 100',
-            });
-          }
-          config.testManagement.warningThresholdPercentage = threshold;
-        }
-
-        if (formData.testManagementAutoQuarantineEnabled !== undefined) {
-          config.testManagement.autoQuarantineEnabled =
-            formData.testManagementAutoQuarantineEnabled === 'true';
-        }
-
-        if (formData.testManagementFlakinessMinRuns !== undefined) {
-          const minRuns = Number.parseInt(formData.testManagementFlakinessMinRuns, 10);
-          if (Number.isNaN(minRuns) || minRuns < 1) {
-            return reply.status(400).send({
-              error: 'Test management minimum runs must be a number greater than 0',
-            });
-          }
-          config.testManagement.flakinessMinRuns = minRuns;
-        }
-
-        if (formData.testManagementFlakinessEvaluationWindowDays !== undefined) {
-          const windowDays = Number.parseInt(
-            formData.testManagementFlakinessEvaluationWindowDays,
-            10
-          );
-          if (Number.isNaN(windowDays) || windowDays < 1) {
-            return reply.status(400).send({
-              error: 'Test management evaluation window must be a number of days greater than 0',
-            });
-          }
-          config.testManagement.flakinessEvaluationWindowDays = windowDays;
-        }
 
         if (logoFileSaved && isCustomBrandingPath(logoFileSaved)) {
           const { error } = await withError(storage.uploadBrandingAsset(logoFileSaved));

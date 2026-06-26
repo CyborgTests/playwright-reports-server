@@ -118,6 +118,9 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
 
         return reports;
       } catch (error) {
+        if (error instanceof ValidationError) {
+          return reply.status(400).send({ error: error.message, details: error.details });
+        }
         console.error('[routes] list reports error:', error);
         return reply.status(500).send({ error: 'Internal server error' });
       }

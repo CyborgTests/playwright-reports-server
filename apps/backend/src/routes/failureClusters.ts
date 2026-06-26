@@ -1,5 +1,5 @@
 import { CAPABILITIES } from '@playwright-reports/shared';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import {
   getFailureClusters,
   invalidateFailureClustersCache,
@@ -51,31 +51,6 @@ export async function registerFailureClusterRoutes(fastify: FastifyInstance) {
     return reply.send({ success: true, data: report });
   });
 
-  const handleClusterMutation = async (
-    request: FastifyRequest,
-    reply: FastifyReply,
-    apply: (clusterId: string) => void,
-    failureMsg: string
-  ) => {
-    try {
-      const authResult = await authorize(CAPABILITIES.contentClusters)(request, reply);
-      if (authResult) return;
-      const { id } = validateSchema(ResolveClusterParamsSchema, request.params);
-      apply(id);
-      invalidateFailureClustersCache();
-      return reply.send({ success: true });
-    } catch (error) {
-      if (error instanceof ValidationError) {
-        return reply.status(400).send({ error: error.message, details: error.details });
-      }
-      fastify.log.error(error);
-      return reply.status(500).send({
-        success: false,
-        error: `${failureMsg}: ${error instanceof Error ? error.message : String(error)}`,
-      });
-    }
-  };
-
   fastify.post('/api/analytics/failure-clusters/:id/resolve', async (request, reply) => {
     try {
       const authResult = await authorize(CAPABILITIES.contentClusters)(request, reply);
@@ -120,15 +95,24 @@ export async function registerFailureClusterRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post('/api/analytics/failure-clusters/:id/reopen', async (request, reply) =>
-    handleClusterMutation(
-      request,
-      reply,
-      (clusterId) => {
-        const body = validateSchema(ResolveClusterBodySchema, request.body ?? {});
-        clusterResolutionsDb.setOverride({ clusterId, state: 'active', ...body });
-      },
-      'Failed to re-open cluster'
-    )
-  );
+  fastify.post('/api/analytics/failure-clusters/:id/reopen', async (request, reply) => {
+    try {
+      const authResult = await authorize(CAPABILITIES.contentClusters)(request, reply);
+      if (authResult) return;
+      const { id } = validateSchema(ResolveClusterParamsSchema, request.params);
+      const body = validateSchema(ResolveClusterBodySchema, request.body ?? {});
+      clusterResolutionsDb.setOverride({ clusterId: id, state: 'active', ...body });
+      invalidateFailureClustersCache();
+      return reply.send({ success: true });
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        return reply.status(400).send({ error: error.message, details: error.details });
+      }
+      fastify.log.error(error);
+      return reply.status(500).send({
+        success: false,
+        error: `Failed to re-open cluster: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  });
 }

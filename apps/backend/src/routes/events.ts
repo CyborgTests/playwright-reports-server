@@ -1,7 +1,7 @@
 import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { openSseStream } from '../lib/sse.js';
 import { type DataEntityKind, dataEvents } from '../lib/service/dataEvents.js';
+import { openSseStream } from '../lib/sse.js';
 import { authorize } from './auth.js';
 
 export async function registerEventsRoutes(fastify: FastifyInstance) {
