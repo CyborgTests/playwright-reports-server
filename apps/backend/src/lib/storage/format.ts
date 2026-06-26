@@ -1,5 +1,3 @@
-import type { Report, Result } from './types.js';
-
 export const bytesToString = (bytes: number): string => {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let value = bytes;
@@ -11,8 +9,4 @@ export const bytesToString = (bytes: number): string => {
   }
 
   return `${value.toFixed(2)} ${units[unitIndex]}`;
-};
-
-export const getUniqueProjectsList = (items: (Result | Report)[]): string[] => {
-  return Array.from(new Set(items.map((r) => r.project).filter(Boolean)));
 };

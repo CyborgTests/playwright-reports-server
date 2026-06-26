@@ -36,7 +36,7 @@ async function createDirectoriesIfMissing() {
   await createDirectory(TMP_FOLDER);
 }
 
-export async function readFile(
+async function readFile(
   targetPath: string,
   _contentType: string | null,
   range?: ByteRange
@@ -69,25 +69,25 @@ async function pathIsFile(target: string): Promise<boolean> {
   }
 }
 
-export async function reportExists(reportId: string): Promise<boolean> {
+async function reportExists(reportId: string): Promise<boolean> {
   return pathIsFile(path.join(REPORTS_FOLDER, reportId, 'index.html'));
 }
 
-export async function resultExists(resultId: string): Promise<boolean> {
+async function resultExists(resultId: string): Promise<boolean> {
   return pathIsFile(path.join(RESULTS_FOLDER, `${resultId}.zip`));
 }
 
-export async function deleteResults(resultsIds: string[]) {
+async function deleteResults(resultsIds: string[]) {
   await Promise.allSettled(resultsIds.map((id) => deleteResult(id)));
 }
 
-export async function deleteResult(resultId: string) {
+async function deleteResult(resultId: string) {
   const resultPath = path.join(RESULTS_FOLDER, resultId);
 
   await withError(fs.unlink(`${resultPath}.zip`));
 }
 
-export async function deleteReports(reports: ReportPath[]) {
+async function deleteReports(reports: ReportPath[]) {
   const paths = reports.map((report) => report.reportID);
 
   await processWithConcurrency(paths, 10, async (id) => {
@@ -98,13 +98,13 @@ export async function deleteReports(reports: ReportPath[]) {
   });
 }
 
-export async function deleteReport(reportId: string) {
+async function deleteReport(reportId: string) {
   const reportPath = path.join(REPORTS_FOLDER, reportId);
 
   await fs.rm(reportPath, { recursive: true, force: true });
 }
 
-export async function saveResult(filename: string, stream: PassThrough) {
+async function saveResult(filename: string, stream: PassThrough) {
   await createDirectoriesIfMissing();
   const resultPath = path.join(RESULTS_FOLDER, filename);
 
@@ -120,7 +120,7 @@ export async function saveResult(filename: string, stream: PassThrough) {
   }
 }
 
-export async function generateReport(resultsIds: string[], metadata?: ReportUploadMetadata) {
+async function generateReport(resultsIds: string[], metadata?: ReportUploadMetadata) {
   await createDirectoriesIfMissing();
 
   const reportId = randomUUID();

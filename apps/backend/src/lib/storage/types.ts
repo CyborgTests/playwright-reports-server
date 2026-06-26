@@ -121,10 +121,6 @@ export type Report = {
 
 export type ReportHistory = Report & ReportInfo;
 
-export const isReportHistory = (
-  report: Report | ReportHistory | undefined
-): report is ReportHistory => !!report && typeof report === 'object' && 'stats' in report;
-
 export type ReportUploadMetadata = Partial<{
   title: string;
   project: string;

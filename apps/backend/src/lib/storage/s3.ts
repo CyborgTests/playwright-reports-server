@@ -21,20 +21,12 @@ import mime from 'mime';
 import { Open } from 'unzipper';
 import { env } from '../../config/env.js';
 import { withError } from '../../lib/withError.js';
-import { serveReportRoute } from '../constants.js';
-import { parse } from '../parser/index.js';
 import { generatePlaywrightReport } from '../pw.js';
 import { resultDb } from '../service/db/index.js';
 import { processWithConcurrency, Semaphore } from '../utils/semaphore.js';
-import {
-  DATA_FOLDER,
-  DATA_PATH,
-  REPORTS_BUCKET,
-  REPORTS_FOLDER,
-  RESULTS_BUCKET,
-  TMP_FOLDER,
-} from './constants.js';
+import { REPORTS_BUCKET, REPORTS_FOLDER, RESULTS_BUCKET, TMP_FOLDER } from './constants.js';
 import { bytesToString } from './format.js';
+import { parseRemoteReportMetadata, resolveBrandingAssetPaths } from './remoteShared.js';
 import { safeZipEntryPath } from './streamUtils.js';
 import type {
   ByteRange,
@@ -182,7 +174,7 @@ export class S3 implements Storage {
     return result;
   }
 
-  async clear(...path: string[]) {
+  private async clear(...path: string[]) {
     // Avoid `removeObjects`: not supported by every S3-compatible provider (e.g. GCS).
     await processWithConcurrency(path, this.batchSize, async (object) => {
       await this.client.send(
@@ -194,23 +186,8 @@ export class S3 implements Storage {
     });
   }
 
-  // S3 keys must use forward slashes regardless of host OS, so the remote key
-  // is built with `path.posix.join` while the local path uses the platform
-  // separator. Leading slashes on the stored config path are stripped so we
-  // don't produce an absolute path that escapes DATA_FOLDER.
-  private resolveBrandingAsset(relativePath: string): {
-    localPath: string;
-    remoteKey: string;
-  } {
-    const safeRelative = path.normalize(relativePath).replace(/^[/\\]+/, '');
-    return {
-      localPath: path.join(DATA_FOLDER, safeRelative),
-      remoteKey: path.posix.join(DATA_PATH, safeRelative.split(path.sep).join('/')),
-    };
-  }
-
   async uploadBrandingAsset(relativePath: string): Promise<void> {
-    const { localPath, remoteKey } = this.resolveBrandingAsset(relativePath);
+    const { localPath, remoteKey } = resolveBrandingAssetPaths(relativePath);
 
     const { error: accessError } = await withError(fs.access(localPath));
     if (accessError) {
@@ -226,7 +203,7 @@ export class S3 implements Storage {
   }
 
   async ensureBrandingAsset(relativePath: string): Promise<void> {
-    const { localPath, remoteKey } = this.resolveBrandingAsset(relativePath);
+    const { localPath, remoteKey } = resolveBrandingAssetPaths(relativePath);
 
     const { error: missingLocally } = await withError(fs.access(localPath));
     if (!missingLocally) return; // file is on disk, nothing to download
@@ -269,7 +246,7 @@ export class S3 implements Storage {
   }
 
   async deleteBrandingAsset(relativePath: string): Promise<void> {
-    const { remoteKey } = this.resolveBrandingAsset(relativePath);
+    const { remoteKey } = resolveBrandingAssetPaths(relativePath);
     const { error } = await withError(this.clear(remoteKey));
     if (error) {
       console.warn(`[s3] failed to delete branding asset ${remoteKey}: ${error.message}`);
@@ -574,7 +551,7 @@ export class S3 implements Storage {
     console.log(`[s3] report ${reportId} generated (${bytesToString(sizeBytes)})`);
 
     const { result: info, error: parseReportMetadataError } = await withError(
-      this.parseReportMetadata(reportId, reportPath, metadata, undefined, sizeBytes)
+      parseRemoteReportMetadata(reportId, reportPath, metadata, undefined, sizeBytes)
     );
 
     if (parseReportMetadataError) console.error(parseReportMetadataError.message);
@@ -648,39 +625,6 @@ export class S3 implements Storage {
     return keys;
   }
 
-  private async parseReportMetadata(
-    reportId: string,
-    reportPath: string,
-    metadata?: ReportUploadMetadata,
-    // Optionally provide the file's content directly (when it lives on S3, not on disk).
-    htmlContent?: string,
-    sizeBytes?: number
-  ): Promise<ReportUploadMetadata> {
-    const html = htmlContent ?? (await fs.readFile(path.join(reportPath, 'index.html'), 'utf-8'));
-
-    const info = await parse(html as string);
-
-    const content = Object.assign(
-      info,
-      {
-        reportID: reportId,
-        createdAt: info.startTime
-          ? new Date(info.startTime).toISOString()
-          : new Date().toISOString(),
-        reportUrl: `${serveReportRoute}/${reportId}/index.html`,
-        project: '',
-      },
-      sizeBytes !== undefined ? { sizeBytes, size: bytesToString(sizeBytes) } : {},
-      metadata ?? {}
-    );
-
-    if (metadata?.displayNumber) {
-      content.displayNumber = metadata.displayNumber;
-    }
-
-    return content;
-  }
-
   async uploadReportFromZipFile(
     reportId: string,
     zipFilePath: string,
@@ -743,7 +687,7 @@ export class S3 implements Storage {
     const totalSizeBytes = uploadResults.reduce((sum, { size }) => sum + size, 0);
 
     const htmlContent = (await indexFile.file.buffer()).toString('utf-8');
-    const info = await this.parseReportMetadata(
+    const info = await parseRemoteReportMetadata(
       reportId,
       remotePath,
       metadata,
