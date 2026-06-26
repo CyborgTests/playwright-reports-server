@@ -1,4 +1,5 @@
 import type { ServerConfig } from '@playwright-reports/shared';
+import { CalendarClock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -143,6 +144,7 @@ export default function CronConfiguration({
     <Card id="cron" className="mb-6 scroll-mt-20 p-4">
       <SettingsSectionHeader
         title="Cron Settings"
+        icon={CalendarClock}
         isEditing={isEditing}
         canEdit={editingSection === 'none'}
         isUpdating={isUpdating}

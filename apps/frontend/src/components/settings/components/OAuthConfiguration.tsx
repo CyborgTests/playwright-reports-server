@@ -4,15 +4,32 @@ import {
   type OAuthProvisioningMode,
   type OAuthSettings,
 } from '@playwright-reports/shared';
+import { Fingerprint } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 import { authHeaders } from '@/lib/auth';
 import { withBase } from '@/lib/url';
+import SettingsSectionHeader from './SettingsSectionHeader';
 
 const PROVIDERS: Array<{ id: OAuthProviderId; name: string; oidc: boolean }> = [
   { id: 'github', name: 'GitHub', oidc: false },
@@ -32,6 +49,7 @@ interface ProviderForm {
   issuerUrl: string;
   secret: string;
   secretSet: boolean;
+  clearSecret: boolean;
 }
 
 type Forms = Record<OAuthProviderId, ProviderForm>;
@@ -47,6 +65,7 @@ function toForms(settings: OAuthSettings): Forms {
       issuerUrl: p?.issuerUrl ?? '',
       secret: '',
       secretSet: p?.secretSet ?? false,
+      clearSecret: false,
     };
   }
   return out;
@@ -64,6 +83,7 @@ async function fetchSettings(): Promise<OAuthSettings | null> {
 
 export default function OAuthConfiguration() {
   const [forms, setForms] = useState<Forms | null>(null);
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
@@ -80,18 +100,31 @@ export default function OAuthConfiguration() {
     setForms((prev) => (prev ? { ...prev, [id]: { ...prev[id], ...patch } } : prev));
   };
 
+  // Cancel discards the draft by re-reading server state.
+  const cancel = () => {
+    setEditing(false);
+    load();
+  };
+
   const save = async () => {
     if (!forms) return;
     setSaving(true);
     const body: Record<string, unknown> = {};
     for (const id of OAUTH_PROVIDER_IDS) {
       const f = forms[id];
+      // Send the secret only when changing it: a new value sets it, an explicit
+      // clear sends '', and an untouched field is omitted to keep the current one.
+      const secretField = f.secret
+        ? { clientSecret: f.secret }
+        : f.clearSecret
+          ? { clientSecret: '' }
+          : {};
       body[id] = {
         enabled: f.enabled,
         clientId: f.clientId,
         mode: f.mode,
         ...(PROVIDERS.find((p) => p.id === id)?.oidc ? { issuerUrl: f.issuerUrl } : {}),
-        ...(f.secret ? { clientSecret: f.secret } : {}),
+        ...secretField,
       };
     }
     const res = await fetch(withBase('/api/config/sso'), {
@@ -108,101 +141,154 @@ export default function OAuthConfiguration() {
     }
     toast.success('SSO settings saved');
     if (data.providers) setForms(toForms(data.providers));
+    setEditing(false);
   };
 
   return (
     <Card className="mb-6 p-4">
-      <CardHeader className="flex flex-col gap-1 pb-2">
-        <h2 className="text-xl font-semibold">Single Sign-On</h2>
+      <SettingsSectionHeader
+        title="Single Sign-On"
+        icon={Fingerprint}
+        isEditing={editing}
+        canEdit={true}
+        isUpdating={saving}
+        onEdit={() => setEditing(true)}
+        onSave={save}
+        onCancel={cancel}
+      />
+      <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
           Let users sign in with GitHub, Google, or an OIDC provider. Set the{' '}
           <strong>server base URL</strong> (General settings) so redirect URIs resolve, and register
           each provider's redirect URI with that provider.
         </p>
-      </CardHeader>
-      <CardContent className="space-y-6">
         {!forms ? (
           <Spinner />
         ) : (
-          <>
+          <Accordion
+            type="multiple"
+            className="space-y-3"
+            defaultValue={OAUTH_PROVIDER_IDS.filter((id) => forms[id].enabled)}
+          >
             {PROVIDERS.map(({ id, name, oidc }) => {
               const f = forms[id];
               return (
-                <div key={id} className="space-y-3 rounded-lg border p-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium">{name}</h3>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
+                <AccordionItem key={id} value={id} className="rounded-lg border px-4">
+                  <AccordionTrigger className="hover:no-underline">
+                    <div className="flex flex-1 items-center justify-between gap-2 pr-2">
+                      <span className="font-medium">{name}</span>
+                      <Badge variant={f.enabled ? 'success' : 'outline'}>
+                        {f.enabled ? 'Enabled' : 'Disabled'}
+                      </Badge>
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="space-y-3 pb-4">
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <Label htmlFor={`${id}-enabled`} className="cursor-pointer font-normal">
+                        Enable {name} sign-in
+                      </Label>
+                      <Switch
+                        id={`${id}-enabled`}
                         checked={f.enabled}
-                        onChange={(e) => update(id, { enabled: e.target.checked })}
-                      />
-                      Enabled
-                    </label>
-                  </div>
-
-                  <p className="text-xs text-muted-foreground font-mono break-all">
-                    Redirect URI: {origin}/api/auth/oauth/{id}/callback
-                  </p>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <Label htmlFor={`${id}-client-id`}>Client ID</Label>
-                      <Input
-                        id={`${id}-client-id`}
-                        value={f.clientId}
-                        onChange={(e) => update(id, { clientId: e.target.value })}
+                        disabled={!editing}
+                        onCheckedChange={(checked) => update(id, { enabled: checked })}
                       />
                     </div>
-                    <div className="space-y-1">
-                      <Label htmlFor={`${id}-secret`}>Client secret</Label>
-                      <Input
-                        id={`${id}-secret`}
-                        type="password"
-                        value={f.secret}
-                        placeholder={f.secretSet ? '•••••• (leave blank to keep current)' : ''}
-                        onChange={(e) => update(id, { secret: e.target.value })}
-                      />
-                    </div>
-                  </div>
 
-                  <div className="space-y-1">
-                    <Label htmlFor={`${id}-mode`}>Provisioning</Label>
-                    <select
-                      id={`${id}-mode`}
-                      className="flex h-9 w-full max-w-xs rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                      value={f.mode}
-                      onChange={(e) =>
-                        update(id, { mode: e.target.value as OAuthProvisioningMode })
-                      }
-                    >
-                      {MODES.map((m) => (
-                        <option key={m.value} value={m.value}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                    <p className="text-xs text-muted-foreground font-mono break-all">
+                      Redirect URI: {origin}/api/auth/oauth/{id}/callback
+                    </p>
 
-                  {oidc && (
-                    <div className="space-y-1">
-                      <Label htmlFor={`${id}-issuer`}>Issuer URL</Label>
-                      <Input
-                        id={`${id}-issuer`}
-                        value={f.issuerUrl}
-                        placeholder="https://your-org.okta.com"
-                        onChange={(e) => update(id, { issuerUrl: e.target.value })}
-                      />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1">
+                        <Label htmlFor={`${id}-client-id`}>Client ID</Label>
+                        <Input
+                          id={`${id}-client-id`}
+                          value={f.clientId}
+                          disabled={!editing}
+                          onChange={(e) => update(id, { clientId: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`${id}-secret`}>Client secret</Label>
+                        {f.clearSecret ? (
+                          <div className="flex h-9 items-center gap-2 text-sm">
+                            <span className="text-muted-foreground">
+                              Stored secret will be removed on save.
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => update(id, { clearSecret: false })}
+                            >
+                              Undo
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              id={`${id}-secret`}
+                              type="password"
+                              value={f.secret}
+                              disabled={!editing}
+                              placeholder={
+                                f.secretSet ? '•••••• (leave blank to keep current)' : ''
+                              }
+                              onChange={(e) => update(id, { secret: e.target.value })}
+                            />
+                            {editing && f.secretSet && !f.secret && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => update(id, { clearSecret: true, secret: '' })}
+                              >
+                                Clear
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
+
+                    <div className="space-y-1">
+                      <Label htmlFor={`${id}-mode`}>Provisioning</Label>
+                      <Select
+                        value={f.mode}
+                        disabled={!editing}
+                        onValueChange={(value) =>
+                          update(id, { mode: value as OAuthProvisioningMode })
+                        }
+                      >
+                        <SelectTrigger id={`${id}-mode`} className="max-w-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {MODES.map((m) => (
+                            <SelectItem key={m.value} value={m.value}>
+                              {m.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {oidc && (
+                      <div className="space-y-1">
+                        <Label htmlFor={`${id}-issuer`}>Issuer URL</Label>
+                        <Input
+                          id={`${id}-issuer`}
+                          value={f.issuerUrl}
+                          disabled={!editing}
+                          placeholder="https://your-org.okta.com"
+                          onChange={(e) => update(id, { issuerUrl: e.target.value })}
+                        />
+                      </div>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
               );
             })}
-            <Button onClick={save} disabled={saving}>
-              {saving && <Spinner className="mr-2 h-4 w-4" />}
-              Save SSO settings
-            </Button>
-          </>
+          </Accordion>
         )}
       </CardContent>
     </Card>

@@ -49,8 +49,9 @@ function applyUpdate(
     next.mode = input.mode as OAuthProvisioningMode;
   }
   if (typeof input.issuerUrl === 'string') next.issuerUrl = input.issuerUrl.trim() || undefined;
-  if (typeof input.clientSecret === 'string' && input.clientSecret.trim()) {
-    next.clientSecret = encryptToken(input.clientSecret.trim());
+  if (typeof input.clientSecret === 'string') {
+    const trimmed = input.clientSecret.trim();
+    next.clientSecret = trimmed ? encryptToken(trimmed) : undefined;
   }
   return next;
 }

@@ -1,4 +1,5 @@
 import { FLAKINESS_THRESHOLDS, type ServerConfig } from '@playwright-reports/shared';
+import { FlaskConical } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -163,6 +164,7 @@ export default function TestManagementSettings({
     <Card id="testManagement" className="mb-6 scroll-mt-20 p-4">
       <SettingsSectionHeader
         title="Test Management"
+        icon={FlaskConical}
         isEditing={editingSection === 'testManagement'}
         canEdit={editingSection === 'none'}
         isUpdating={isUpdating}

@@ -1,4 +1,5 @@
 import type { HeaderLink, ServerConfig } from '@playwright-reports/shared';
+import { Settings } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { HEADER_LINK_ICON_CATALOG } from '@/components/header-link-icons';
 import { LinkIcon } from '@/components/icons';
@@ -152,6 +153,7 @@ export default function ServerConfiguration({
     <Card id="server" className="mb-6 scroll-mt-20 p-4">
       <SettingsSectionHeader
         title="Server Configuration"
+        icon={Settings}
         isEditing={editingSection === 'server'}
         canEdit={editingSection === 'none'}
         isUpdating={isUpdating}

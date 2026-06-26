@@ -7,6 +7,7 @@ import {
   type SyncTransfer,
 } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
+import { Github } from 'lucide-react';
 import { Fragment, useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import FormattedDate from '@/components/date-format';
@@ -250,6 +251,7 @@ export default function GithubSyncConfiguration() {
     <Card id="github" className="mb-6 scroll-mt-20 p-4">
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
+          <Github className="h-5 w-5 text-muted-foreground" />
           <h2 className="text-xl font-semibold">GitHub Sync</h2>
           <Badge variant="outline" className="text-xs">
             {configs.length} configured

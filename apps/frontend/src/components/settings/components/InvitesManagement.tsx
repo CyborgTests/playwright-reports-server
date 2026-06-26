@@ -5,7 +5,7 @@ import CopyableSecretDialog from '@/components/copyable-secret-dialog';
 import FormattedDate from '@/components/date-format';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -75,13 +75,14 @@ export default function InvitesManagement() {
   const revokeInvite = useMutation(INVITES_PATH, { method: 'DELETE', onSuccess: invalidate });
 
   return (
-    <section className="mt-8">
-      <Card>
+    <>
+      <Card className="mb-6 p-4">
         <CardHeader className="flex flex-row items-start justify-between gap-4">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5" /> Invites
-            </CardTitle>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-3">
+              <Mail className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-xl font-semibold">Invites</h2>
+            </div>
             <CardDescription>
               Generate invite links for new accounts (no email required). New users start read-only;
               promote them from the Users section.
@@ -180,7 +181,7 @@ export default function InvitesManagement() {
         description="Share this link. The code is shown once."
         onClose={() => setCreatedCode(null)}
       />
-    </section>
+    </>
   );
 }
 

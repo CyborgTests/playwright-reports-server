@@ -6,7 +6,7 @@ import CopyableSecretDialog from '@/components/copyable-secret-dialog';
 import PaginatedControls from '@/components/paginated-controls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -66,13 +66,14 @@ export default function UsersManagement({ currentUserId }: { currentUserId: stri
   });
 
   return (
-    <section className="mt-8">
-      <Card>
+    <>
+      <Card className="mb-6 p-4">
         <CardHeader className="flex flex-row items-start justify-between gap-4">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" /> Users
-            </CardTitle>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-3">
+              <Users className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-xl font-semibold">Users</h2>
+            </div>
             <CardDescription>
               Manage accounts and roles. New users join via invites. The last enabled admin can't be
               disabled or removed.
@@ -175,6 +176,6 @@ export default function UsersManagement({ currentUserId }: { currentUserId: stri
         description="Share this one-time link with the user out-of-band. Shown once."
         onClose={() => setResetToken(null)}
       />
-    </section>
+    </>
   );
 }

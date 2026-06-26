@@ -8,7 +8,7 @@ import FormattedDate from '@/components/date-format';
 import PaginatedControls from '@/components/paginated-controls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -84,13 +84,14 @@ export default function ApiKeysManagement({ canManageAllKeys }: { canManageAllKe
   const revokeKey = useMutation(KEYS_PATH, { method: 'DELETE', onSuccess: invalidate });
 
   return (
-    <section className="mt-8">
-      <Card>
+    <>
+      <Card className="mb-6 p-4">
         <CardHeader className="flex flex-row items-start justify-between gap-4">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <KeyRound className="h-5 w-5" /> API Keys
-            </CardTitle>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-3">
+              <KeyRound className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-xl font-semibold">API Keys</h2>
+            </div>
             <CardDescription>
               Keys for the reporter (upload) and CLI/agents (cli). Shown once at creation.
               {canManageAllKeys && ' As an admin you can see and revoke every user’s keys.'}
@@ -176,7 +177,7 @@ export default function ApiKeysManagement({ canManageAllKeys }: { canManageAllKe
         description="This is the only time the full key is shown. Store it now."
         onClose={() => setCreatedKey(null)}
       />
-    </section>
+    </>
   );
 }
 

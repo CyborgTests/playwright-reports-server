@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -40,7 +41,10 @@ export default function LLMConfiguration() {
   return (
     <Card id="llm" className="mb-6 scroll-mt-20 p-4">
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <h2 className="text-xl font-semibold">LLM Configuration</h2>
+        <div className="flex items-center gap-3">
+          <Sparkles className="h-5 w-5 text-muted-foreground" />
+          <h2 className="text-xl font-semibold">LLM Configuration</h2>
+        </div>
         {canConfigLlm && (
           <div className="flex flex-col items-start gap-1 sm:items-end">
             <Label className="flex cursor-pointer items-center gap-2 text-sm font-medium">

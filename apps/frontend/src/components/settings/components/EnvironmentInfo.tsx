@@ -8,6 +8,7 @@ import {
   HardDrive,
   Lock,
   LockOpen,
+  Server,
 } from 'lucide-react';
 import type { ComponentType, ReactNode } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -55,7 +56,10 @@ export default function EnvironmentInfo() {
     return (
       <Card id="environment" className="mb-6 scroll-mt-20 p-4">
         <CardHeader>
-          <h2 className="text-xl font-semibold">Environment Information</h2>
+          <div className="flex items-center gap-3">
+            <Server className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-xl font-semibold">Environment Information</h2>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
@@ -163,7 +167,10 @@ export default function EnvironmentInfo() {
   return (
     <Card id="environment" className="mb-6 scroll-mt-20 p-4">
       <CardHeader>
-        <h2 className="text-xl font-semibold">Environment Information</h2>
+        <div className="flex items-center gap-3">
+          <Server className="h-5 w-5 text-muted-foreground" />
+          <h2 className="text-xl font-semibold">Environment Information</h2>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {dbChips.length > 0 && <FactGroup title="Database">{dbChips}</FactGroup>}
