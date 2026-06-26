@@ -4,10 +4,10 @@ import {
   SCREENSHOTS_DEFAULT_MAX,
   SCREENSHOTS_MAX_CAP,
 } from '@playwright-reports/shared';
+import { stripAnsi } from '../../../ansi.js';
 import { computeDomDiff } from '../../../diff/domDiff.js';
 import { computeNetworkDiff } from '../../../diff/networkDiff.js';
 import { normalizeDom } from '../../../parser/domNormalize.js';
-import { stripAnsi } from '../../../parser/failure-extraction.js';
 import {
   extractScreencastImages,
   type ScreencastSelection,

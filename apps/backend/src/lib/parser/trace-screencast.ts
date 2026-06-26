@@ -2,8 +2,6 @@ import jpeg from 'jpeg-js';
 import type { ScreencastFrame } from './trace-snapshot.js';
 import type { TraceZip } from './trace-zip.js';
 
-type FrameMeta = ScreencastFrame;
-
 export interface ScreencastImage {
   data: string;
   mediaType: string;
@@ -18,13 +16,13 @@ export interface ScreencastSelection {
 }
 
 interface Chosen {
-  frame: FrameMeta;
+  frame: ScreencastFrame;
   label: string;
 }
 
 const MAX_FRAME_BYTES = 2 * 1024 * 1024;
 
-function frameAtOrBefore(frames: FrameMeta[], ts: number): FrameMeta {
+function frameAtOrBefore(frames: ScreencastFrame[], ts: number): ScreencastFrame {
   let result = frames[0];
   for (const f of frames) {
     if (f.timestamp <= ts) result = f;
@@ -33,14 +31,14 @@ function frameAtOrBefore(frames: FrameMeta[], ts: number): FrameMeta {
   return result;
 }
 
-function frameAtOrAfter(frames: FrameMeta[], ts: number): FrameMeta {
+function frameAtOrAfter(frames: ScreencastFrame[], ts: number): ScreencastFrame {
   for (const f of frames) {
     if (f.timestamp >= ts) return f;
   }
   return frames[frames.length - 1];
 }
 
-function selectAroundAction(frames: FrameMeta[], before?: number, after?: number): Chosen[] {
+function selectAroundAction(frames: ScreencastFrame[], before?: number, after?: number): Chosen[] {
   const chosen: Chosen[] = [];
   if (before != null)
     chosen.push({ frame: frameAtOrBefore(frames, before), label: 'before failed action' });
@@ -61,9 +59,9 @@ const SERIES_DHASH_THRESHOLD = 6;
 const DHASH_W = 9;
 const DHASH_H = 8;
 
-function sampleEven(frames: FrameMeta[], n: number): FrameMeta[] {
+function sampleEven(frames: ScreencastFrame[], n: number): ScreencastFrame[] {
   if (frames.length <= n) return frames;
-  const out: FrameMeta[] = [];
+  const out: ScreencastFrame[] = [];
   const seen = new Set<number>();
   for (let i = 0; i < n; i++) {
     const idx = Math.round((i * (frames.length - 1)) / (n - 1));
@@ -134,7 +132,7 @@ function selectMeaningful(points: SeriesPoint[], budget: number): ScreencastImag
 
 export async function extractScreencastImages(
   directory: TraceZip,
-  frames: FrameMeta[],
+  frames: ScreencastFrame[],
   sel: ScreencastSelection
 ): Promise<ScreencastImage[]> {
   try {
@@ -150,7 +148,7 @@ export async function extractScreencastImages(
       const buf = await entry.buffer();
       return buf.length === 0 || buf.length > MAX_FRAME_BYTES ? null : buf;
     };
-    const toImage = (frame: FrameMeta, label: string, buf: Buffer): ScreencastImage => ({
+    const toImage = (frame: ScreencastFrame, label: string, buf: Buffer): ScreencastImage => ({
       data: buf.toString('base64'),
       mediaType: frame.sha1.endsWith('.png') ? 'image/png' : 'image/jpeg',
       timestamp: frame.timestamp,
@@ -158,7 +156,7 @@ export async function extractScreencastImages(
     });
 
     const t0 = frames[0].timestamp;
-    const ms = (frame: FrameMeta) => Math.round(frame.timestamp - t0);
+    const ms = (frame: ScreencastFrame) => Math.round(frame.timestamp - t0);
     const out: ScreencastImage[] = [];
     const usedSha = new Set<string>();
     // Perceptual hashes of every frame already kept (across BOTH sources), so we

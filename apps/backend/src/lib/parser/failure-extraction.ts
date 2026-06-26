@@ -1,12 +1,6 @@
-/**
- * Single entry point for extracting Playwright failure context. Sources:
- *   - report payload: error, codeframe, steps, stdio, meta
- *   - trace ZIP: console, network, action log, environment
- *   - `error-context` attachment: ARIA page snapshot
- */
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { Open } from 'unzipper';
+import { stripAnsi } from '../ansi.js';
 import { REPORTS_FOLDER } from '../storage/constants.js';
 import {
   extractFromReportPayload,
@@ -14,23 +8,14 @@ import {
   type PerFileStep,
   type ReportJsonMetadata,
 } from './report-payload.js';
-import type { TraceZip } from './trace-zip.js';
+import { openTraceZip, readTraceLines, type TraceZip } from './trace-zip.js';
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI escape sequences requires the ESC control char
-const ANSI_ESCAPE_RE = /\x1b\[[0-9;]*m/g;
-
-// Per-message text cap.
 const CONSOLE_MAX_TEXT_CHARS = 500;
 const CONSOLE_RECENT_LOGS_KEEP = 5;
-// Hard cap on total console events
 const CONSOLE_MAX_TOTAL = 25;
-// Per-request body cap (chars).
 const NETWORK_BODY_MAX_CHARS = 1024;
-// How many "context" requests to keep around the failure
 const NETWORK_PRE_FAILURE_KEEP = 5;
-// Hard cap on network events
 const NETWORK_MAX_TOTAL = 20;
-// Last N actions before the error point.
 const ACTION_LOG_KEEP = 10;
 
 /** Header names whose values must be replaced with `[redacted]` before the
@@ -44,10 +29,6 @@ const SENSITIVE_HEADER_PATTERNS: RegExp[] = [
   /^x-api-key$/i,
   /^x-api-token$/i,
 ];
-
-export function stripAnsi(s: string): string {
-  return s.replace(ANSI_ESCAPE_RE, '');
-}
 
 interface AttachmentLike {
   name?: string;
@@ -229,21 +210,19 @@ export function collectHarEntry(snapshot: unknown): { key: string; event: Networ
   return { key: `${method} ${url} ${timestamp ?? ''}`, event };
 }
 
+const CONSOLE_LEVELS = new Set<ConsoleEvent['level']>([
+  'error',
+  'warning',
+  'log',
+  'info',
+  'debug',
+  'trace',
+]);
+
 function normalizeConsoleLevel(raw: unknown): ConsoleEvent['level'] {
   const s = typeof raw === 'string' ? raw.toLowerCase() : '';
-  switch (s) {
-    case 'error':
-    case 'warning':
-    case 'warn':
-      return s === 'warn' ? 'warning' : (s as ConsoleEvent['level']);
-    case 'log':
-    case 'info':
-    case 'debug':
-    case 'trace':
-      return s;
-    default:
-      return 'log';
-  }
+  if (s === 'warn') return 'warning';
+  return CONSOLE_LEVELS.has(s as ConsoleEvent['level']) ? (s as ConsoleEvent['level']) : 'log';
 }
 
 /** Accumulators a single trace-line parse appends into. */
@@ -260,8 +239,6 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
   const e = entry as Record<string, unknown>;
   const type = typeof e.type === 'string' ? e.type : undefined;
 
-  // Browser / page context - emitted once near the top of `0-trace.trace`.
-  //    Carries browserName + page options (viewport, locale, baseURL, ...).
   if (type === 'context-options') {
     const opts = (e.options as Record<string, unknown> | undefined) ?? {};
     const viewport = opts.viewport as { width?: number; height?: number } | undefined;
@@ -283,8 +260,6 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
     return;
   }
 
-  // Console messages. Modern traces emit `type:'console'`; older ones wrap
-  //    them in `type:'event'` with `method:'console.message'`.
   if (
     type === 'console' ||
     (type === 'event' && typeof e.method === 'string' && e.method.toLowerCase().includes('console'))
@@ -319,45 +294,8 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
     return;
   }
 
-  if (type === 'resource' || type === 'resourceSnapshot' || type === 'resourceFinished') {
-    if (type === 'resourceSnapshot') return; // not a network call
-    const url = typeof e.url === 'string' ? e.url : '';
-    if (!url) return;
-    const method = typeof e.method === 'string' ? e.method : 'GET';
-    const statusRaw = typeof e.status === 'number' ? e.status : undefined;
-    const status = statusRaw && statusRaw > 0 ? statusRaw : undefined;
-    const key = `${method} ${url} ${typeof e.timestamp === 'number' ? e.timestamp : ''}`;
-    const existing = c.network.get(key);
-    const event: NetworkEvent = {
-      method,
-      url,
-      status,
-      pending: status === undefined,
-      requestHeaders: sanitizeHeaders(
-        e.requestHeaders as Record<string, string> | Array<{ name?: string; value?: string }>
-      ),
-      responseHeaders: sanitizeHeaders(
-        e.responseHeaders as Record<string, string> | Array<{ name?: string; value?: string }>
-      ),
-      requestBody: truncateBody(e.requestBody),
-      responseBody: truncateBody(e.responseBody),
-      failureText: typeof e.failureText === 'string' ? e.failureText : undefined,
-      timestamp:
-        typeof e.timestamp === 'number'
-          ? e.timestamp
-          : typeof e._monotonicTime === 'number'
-            ? (e._monotonicTime as number)
-            : undefined,
-    };
-    c.network.set(key, { ...existing, ...event });
-    return;
-  }
-
-  // Action entries - `before` (start) + `after` (end, sometimes with error).
-  //    Modern shape: a single `type:'action'` entry. We carry the latest
-  //    end-time-of-an-action so prioritization can use it as the failure anchor.
-  //    Error message + stack are NOT pulled from the trace - those live in
-  //    the report payload (`result.errors[]`), which is the canonical source.
+  // Error message + stack are NOT pulled from the trace - those live in the
+  // report payload (`result.errors[]`), the canonical source.
   if (type === 'before' || type === 'action') {
     const title = typeof e.title === 'string' && e.title.trim() ? e.title.trim() : undefined;
     const method =
@@ -403,30 +341,24 @@ function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
   }
 }
 
-/** Read every `*.trace` and `*.network` JSONL entry in the trace ZIP. */
-async function collectFromTraceZip(
-  directory: Awaited<ReturnType<typeof Open.buffer>>
-): Promise<RawCollectors> {
+async function collectFromTraceZip(directory: TraceZip): Promise<RawCollectors> {
   const collectors: RawCollectors = { console: [], network: new Map(), actions: [] };
   const files = directory.files.filter(
     (f) => f.type === 'File' && /\.(trace|network)$/.test(f.path)
   );
   for (const file of files) {
-    let content: string;
     try {
-      content = (await file.buffer()).toString('utf-8');
-    } catch {
-      continue;
-    }
-    const lines = content.split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        collectFromTraceEntry(JSON.parse(trimmed), collectors);
-      } catch {
-        // skip unparseable lines - trace files are best-effort JSONL
+      for await (const line of readTraceLines(file)) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          collectFromTraceEntry(JSON.parse(trimmed), collectors);
+        } catch {
+          // best-effort JSONL: skip unparseable lines
+        }
       }
+    } catch {
+      // skip unreadable trace entries
     }
   }
   return collectors;
@@ -500,7 +432,6 @@ function prioritizeActions(actions: ActionEvent[]): ActionEvent[] {
   return filtered.slice(start, erroredIdx + 1);
 }
 
-/** Read console + network + action + environment context from a Playwright trace ZIP. */
 async function extractEvidenceFromTrace(
   reportId: string,
   tracePath: string
@@ -510,24 +441,18 @@ async function extractEvidenceFromTrace(
   actionLog: ActionEvent[];
   environment?: EnvironmentContext;
 } | null> {
-  try {
-    const reportDir = path.join(REPORTS_FOLDER, reportId);
-    const zipBuffer = await fs.readFile(path.join(reportDir, tracePath));
-    const directory = await Open.buffer(zipBuffer);
-    const collectors = await collectFromTraceZip(directory);
-    return {
-      consoleEvents: prioritizeConsole(collectors.console),
-      networkEvents: prioritizeNetwork(
-        Array.from(collectors.network.values()),
-        collectors.lastActionEndTime
-      ),
-      actionLog: prioritizeActions(collectors.actions),
-      environment: collectors.environment,
-    };
-  } catch (error) {
-    console.error(`[failure-extraction] Failed to read trace ${tracePath}:`, error);
-    return null;
-  }
+  const directory = await openTraceZip(reportId, tracePath);
+  if (!directory) return null;
+  const collectors = await collectFromTraceZip(directory);
+  return {
+    consoleEvents: prioritizeConsole(collectors.console),
+    networkEvents: prioritizeNetwork(
+      Array.from(collectors.network.values()),
+      collectors.lastActionEndTime
+    ),
+    actionLog: prioritizeActions(collectors.actions),
+    environment: collectors.environment,
+  };
 }
 
 export async function parseTraceNetwork(directory: TraceZip): Promise<NetworkEvent[]> {
@@ -545,27 +470,29 @@ function splitMessageAndStack(raw: string): { message: string; stack?: string } 
   return { message: cleaned };
 }
 
+function compactStringFields<T extends Record<string, string | undefined>>(obj: T): T | undefined {
+  return Object.values(obj).some((v) => typeof v === 'string' && v.length > 0) ? obj : undefined;
+}
+
 function metadataToGitCommit(
   meta: ReportJsonMetadata['gitCommit'] | undefined
 ): GitCommitInfo | undefined {
   if (!meta) return undefined;
-  const info: GitCommitInfo = {
+  return compactStringFields({
     hash: meta.hash,
     shortHash: meta.shortHash,
     branch: meta.branch,
     subject: meta.subject,
-  };
-  return Object.values(info).some((v) => typeof v === 'string' && v.length > 0) ? info : undefined;
+  });
 }
 
 function metadataToCiBuild(meta: ReportJsonMetadata['ci'] | undefined): CiBuildInfo | undefined {
   if (!meta) return undefined;
-  const info: CiBuildInfo = {
+  return compactStringFields({
     buildHref: meta.buildHref,
     commitHref: meta.commitHref,
     commitHash: meta.commitHash,
-  };
-  return Object.values(info).some((v) => typeof v === 'string' && v.length > 0) ? info : undefined;
+  });
 }
 
 function buildTestMeta(slice: {
@@ -585,14 +512,6 @@ function buildTestMeta(slice: {
   return { titlePath, tags, annotations };
 }
 
-/**
- * Best-effort full-evidence extraction for one failed test attempt. Source:
- *   - Error message, stack, code frame, step tree, stdout/stderr, test meta,
- *     git commit, git diff, CI build links → embedded report payload
- *     (`script#playwrightReportBase64`).
- *   - Console events, network events, action log, environment → trace ZIP.
- *   - Page snapshot → `error-context` attachment.
- */
 export async function extractFailureEvidence(
   reportId: string,
   test: { testId?: string; title?: string; outcome?: string },
@@ -611,8 +530,6 @@ export async function extractFailureEvidence(
   let ciBuild: CiBuildInfo | undefined;
   let gitDiff: string | undefined;
 
-  // Payload-derived fields. The richest error here wins for message/stack
-  //    because the trace no longer owns the canonical error path.
   let payloadMessage: string | undefined;
   let payloadStack: string | undefined;
   if (test.testId) {
@@ -636,8 +553,6 @@ export async function extractFailureEvidence(
     }
   }
 
-  // Error message / stack: payload wins; fall back to result.message
-  //    (split into message + stack when concatenated), finally synthetic.
   let message = payloadMessage ?? '';
   let stackTrace = payloadStack;
   if (!message) {
@@ -646,7 +561,6 @@ export async function extractFailureEvidence(
     if (!stackTrace) stackTrace = split.stack;
   }
 
-  // Trace ZIP - console + network + action + environment only.
   let consoleEvents: ConsoleEvent[] = [];
   let networkEvents: NetworkEvent[] = [];
   let actionLog: ActionEvent[] = [];

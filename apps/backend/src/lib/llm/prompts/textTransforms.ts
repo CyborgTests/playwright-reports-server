@@ -1,3 +1,5 @@
+import { stripAnsi } from '../../ansi.js';
+
 export function unescapeLiteralNewlines(text: string): string {
   if (!text || !/\\+[ntr"]/.test(text)) return text;
   return text
@@ -7,16 +9,12 @@ export function unescapeLiteralNewlines(text: string): string {
     .replace(/\\+"/g, '"');
 }
 
-// ANSI/CSI escape sequences (terminal colors, cursor moves).
-// biome-ignore lint/suspicious/noControlCharactersInRegex: matching the ANSI ESC (U+001B) is the intent
-const ANSI_RE = /\u001b\[[0-9;:?]*[ -/]*[@-~]/g;
-
 // Minimum length of an identical-line run before we collapse it.
 const REPEAT_RUN_MIN = 3;
 
 export function stripLogNoise(text: string): string {
   if (!text) return text;
-  const lines = text.replace(ANSI_RE, '').split('\n');
+  const lines = stripAnsi(text).split('\n');
   const out: string[] = [];
   for (let i = 0; i < lines.length; ) {
     const line = lines[i];

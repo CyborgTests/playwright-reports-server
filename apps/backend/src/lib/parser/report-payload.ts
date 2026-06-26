@@ -1,15 +1,9 @@
-/**
- * Reads the embedded Playwright report payload (base64 ZIP under
- * `<script id="playwrightReportBase64">` in the merged `index.html`). The
- * per-file JSONs inside carry `errors[].codeframe`, the step tree, stdout/
- * stderr, tags, annotations, and git/CI metadata - richer than the top-level
- * `report.json`. Cached per reportId so prompt builds unzip once.
- */
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { Open } from 'unzipper';
+import { stripAnsi } from '../ansi.js';
 import { REPORTS_FOLDER } from '../storage/constants.js';
-import { stripAnsi } from './failure-extraction.js';
+import { decodeReportZip } from './report-zip.js';
 
 const PAYLOAD_CACHE_TTL_MS = 60_000;
 const PAYLOAD_CACHE_MAX_ENTRIES = 16;
@@ -126,9 +120,6 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 
-const BASE64_PREFIX = 'data:application/zip;base64,';
-const BASE64_RE = new RegExp(`${BASE64_PREFIX}([^";\\s]+)(?=[";\\s]|$)`);
-
 async function loadReportPayloadUncached(reportId: string): Promise<ReportPayload | null> {
   const indexPath = path.join(REPORTS_FOLDER, reportId, 'index.html');
   let html: string;
@@ -138,13 +129,12 @@ async function loadReportPayloadUncached(reportId: string): Promise<ReportPayloa
     return null;
   }
 
-  const match = BASE64_RE.exec(html);
-  const base64 = match?.[1]?.trim();
-  if (!base64) return null;
+  const zipBuffer = decodeReportZip(html);
+  if (!zipBuffer) return null;
 
   let directory: Awaited<ReturnType<typeof Open.buffer>>;
   try {
-    directory = await Open.buffer(Buffer.from(base64, 'base64'));
+    directory = await Open.buffer(zipBuffer);
   } catch {
     return null;
   }
@@ -191,7 +181,6 @@ export async function loadReportPayload(reportId: string): Promise<ReportPayload
   }
 
   if (cache.size >= PAYLOAD_CACHE_MAX_ENTRIES) {
-    // FIFO eviction.
     const firstKey = cache.keys().next().value;
     if (firstKey !== undefined) cache.delete(firstKey);
   }

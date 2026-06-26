@@ -1,9 +1,8 @@
-import * as readline from 'node:readline';
-import type { TraceZip } from './trace-zip.js';
+import { readTraceLines, type TraceZip } from './trace-zip.js';
 
 export type NodeSnapshot = string | unknown[];
 
-export type RawChild = RawDomNode | string;
+type RawChild = RawDomNode | string;
 
 export interface RawDomNode {
   tag: string;
@@ -53,7 +52,7 @@ function buildFlatNodes(html: NodeSnapshot): NodeSnapshot[] {
       return;
     }
     if (!Array.isArray(n)) return;
-    if (isReference(n)) return; // references are neither emitted nor descended
+    if (isReference(n)) return;
     if (isElement(n)) {
       out.push(n);
       const { childStart } = elementAttrs(n);
@@ -64,7 +63,7 @@ function buildFlatNodes(html: NodeSnapshot): NodeSnapshot[] {
   return out;
 }
 
-export function reconstructDom(frameSnaps: FrameSnapshotRaw[], index: number): RawDomNode | null {
+function reconstructDom(frameSnaps: FrameSnapshotRaw[], index: number): RawDomNode | null {
   if (index < 0 || index >= frameSnaps.length) return null;
   const flatCache = new Map<number, NodeSnapshot[]>();
   const flatFor = (i: number): NodeSnapshot[] => {
@@ -146,20 +145,6 @@ export interface ScreencastFrame {
 export interface ParsedTrace {
   snapshots: TraceSnapshots | null;
   screencastFrames: ScreencastFrame[];
-}
-
-type TraceFile = TraceZip['files'][number];
-
-async function* readTraceLines(file: TraceFile): AsyncGenerator<string> {
-  const rl = readline.createInterface({
-    input: file.stream(),
-    crlfDelay: Number.POSITIVE_INFINITY,
-  });
-  try {
-    for await (const line of rl) yield line;
-  } finally {
-    rl.close();
-  }
 }
 
 export async function parseTrace(directory: TraceZip): Promise<ParsedTrace> {

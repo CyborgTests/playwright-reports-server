@@ -1,4 +1,4 @@
-import type { RawChild, RawDomNode } from './trace-snapshot.js';
+import type { RawDomNode } from './trace-snapshot.js';
 
 export interface DomNode {
   tag: string;
@@ -87,7 +87,7 @@ export function normalizeDom(raw: RawDomNode): DomNode | null {
     const children: DomNode[] = [];
 
     if (!LEAF_TAGS.has(node.tag)) {
-      for (const child of node.children as RawChild[]) {
+      for (const child of node.children) {
         if (typeof child === 'string') {
           const t = collapseWs(child);
           if (t) directText.push(t);

@@ -1,29 +1,14 @@
 import type { ReportInfo } from '@playwright-reports/shared';
 import { Open } from 'unzipper';
 import { withError } from '../../lib/withError.js';
-
-/**
- *
- * @param html HTML string of the Playwright report
- * @description Parses the HTML report to extract the base64 encoded report data, decodes it
- * There are two possible formats (at the moment):
- * @example <script>window.playwrightReportBase64 = "...";</script>
- * @example <script id="playwrightReportBase64" type="application/zip">"..."</script>
- * @returns
- */
+import { decodeReportZip } from './report-zip.js';
 
 export const parse = async (html: string): Promise<ReportInfo> => {
-  const base64Prefix = 'data:application/zip;base64,';
-  const pattern = new RegExp(`${base64Prefix}([^";\\s]+)(?=[";\\s]|$)`);
-  const matches = RegExp(pattern).exec(html);
-  const match = matches?.at(0) ?? '';
-  const base64String = match.replace(base64Prefix, '').replace('</script>', '').trim();
+  const zipData = decodeReportZip(html);
 
-  if (!base64String) {
+  if (!zipData) {
     throw Error('[report parser] no data found in the html report');
   }
-
-  const zipData = Buffer.from(base64String, 'base64');
 
   const { result: directory, error } = await withError(Open.buffer(zipData));
 
