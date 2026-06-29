@@ -35,6 +35,7 @@ const CAPABILITY_DESCRIPTIONS: Record<Capability, string> = {
   'content:llm': 'Run LLM analysis and manage models/groups',
   'content:clusters': 'Resolve and edit failure clusters',
   'content:feedback': 'Add and edit analysis feedback',
+  'content:share': 'Use share tokens to create public report links',
   'config:server': 'Change server, branding, cron, and registration settings',
   'config:llm': 'Change LLM configuration',
   'config:githubSync': 'Change GitHub sync configuration',

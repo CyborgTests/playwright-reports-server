@@ -28,6 +28,7 @@ export interface MintedApiKey {
 export function mintApiKey(input: MintApiKeyInput): MintedApiKey {
   const key = generateApiKey();
   const id = randomUUID();
+  const isShare = input.scopes.includes(KEY_SCOPES.share);
   apiKeysDb.insertApiKey({
     id,
     keyHash: hashToken(key),
@@ -40,6 +41,7 @@ export function mintApiKey(input: MintApiKeyInput): MintedApiKey {
     expiresAt: input.expiresAt ?? null,
     lastUsedAt: null,
     revokedAt: null,
+    shareToken: isShare ? key : null,
   });
   return { id, key };
 }

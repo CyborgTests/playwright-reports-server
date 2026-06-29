@@ -83,6 +83,7 @@ async function seedApiKeyFromToken(): Promise<void> {
     expiresAt: null,
     lastUsedAt: null,
     revokedAt: null,
+    shareToken: null,
   });
   console.warn(
     '[auth] seeded a deprecated service API key equal to API_TOKEN so existing CI keeps working. Revoke it after issuing real keys.'

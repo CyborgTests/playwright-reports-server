@@ -12,6 +12,7 @@ export type Role = (typeof ROLES)[keyof typeof ROLES];
 export const KEY_SCOPES = {
   upload: 'upload',
   cli: 'cli',
+  share: 'share',
 } as const;
 export type KeyScope = (typeof KEY_SCOPES)[keyof typeof KEY_SCOPES];
 
@@ -25,6 +26,7 @@ export type KeyCapability = (typeof KEY_CAPABILITIES)[keyof typeof KEY_CAPABILIT
 export const KEY_TYPES = {
   reporter: 'reporter',
   cli: 'cli',
+  share: 'share',
 } as const;
 export type KeyType = (typeof KEY_TYPES)[keyof typeof KEY_TYPES];
 
@@ -36,6 +38,7 @@ export const CAPABILITIES = {
   contentLlm: 'content:llm',
   contentClusters: 'content:clusters',
   contentFeedback: 'content:feedback',
+  shareReports: 'content:share',
   configServer: 'config:server',
   configLlm: 'config:llm',
   configGithubSync: 'config:githubSync',
@@ -64,6 +67,7 @@ export const ACCESS_MATRIX: Record<Capability, readonly Role[]> = {
   'content:llm': ADMIN_OR_MEMBER,
   'content:clusters': ADMIN_OR_MEMBER,
   'content:feedback': ADMIN_OR_MEMBER,
+  'content:share': ADMIN_OR_MEMBER,
   'config:server': ADMIN_ONLY,
   'config:llm': ADMIN_ONLY,
   'config:githubSync': ADMIN_ONLY,
@@ -141,6 +145,9 @@ export function scopeGrants(
       out.add(CAPABILITIES.contentReports);
       out.add(CAPABILITIES.contentResults);
     }
+  }
+  if (scopes.includes(KEY_SCOPES.share)) {
+    out.add(CAPABILITIES.view);
   }
   return [...out];
 }

@@ -15,6 +15,7 @@ export interface ApiKeyRecord {
   expiresAt: string | null;
   lastUsedAt: string | null;
   revokedAt: string | null;
+  shareToken: string | null;
 }
 
 export class ApiKeysDatabase {
@@ -90,6 +91,17 @@ export class ApiKeysDatabase {
       .orderBy('createdAt', 'asc')
       .limit(limit)
       .offset(offset)
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as ApiKeyRecord[];
+  }
+
+  public listShareKeys(): ApiKeyRecord[] {
+    const compiled = this.k
+      .selectFrom('api_keys')
+      .selectAll()
+      .where('revokedAt', 'is', null)
+      .where('scopes', 'like', '%share%')
+      .orderBy('createdAt', 'desc')
       .compile();
     return this.db.prepare(compiled.sql).all(...compiled.parameters) as ApiKeyRecord[];
   }

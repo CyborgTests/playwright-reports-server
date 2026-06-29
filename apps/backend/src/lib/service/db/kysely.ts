@@ -413,6 +413,7 @@ export interface ApiKeysRow {
   expiresAt: string | null;
   lastUsedAt: string | null;
   revokedAt: string | null;
+  shareToken: string | null; // plaintext, set only for share-type keys (public report links)
 }
 
 export interface InvitesRow {

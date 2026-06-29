@@ -17,6 +17,10 @@ const RID = typeof reportId !== 'undefined' ? reportId : '';
 const REPORT_PROJECT = typeof reportProject !== 'undefined' ? reportProject : '';
 // biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
 const CAN_EDIT_CATEGORY = typeof canEditCategory !== 'undefined' && !!canEditCategory;
+// biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+const CAN_SHARE = typeof canShare !== 'undefined' && !!canShare;
+// biome-ignore lint/correctness/noUndeclaredVariables: provided by outer scope
+const CAN_CREATE_SHARE = typeof canCreateShare !== 'undefined' && !!canCreateShare;
 
 const inflightAnalysisFetches = new Set();
 const EMPTY_HISTORY = { priorOccurrenceCount: 0, firstOccurrence: null };
@@ -419,6 +423,10 @@ function injectNavBar() {
     bar.appendChild(reportBtn);
   }
 
+  if (CAN_SHARE && RID) {
+    injectShareButton(bar);
+  }
+
   const headerView = document.querySelector('.header-view');
   if (headerView) {
     headerView.prepend(bar);
@@ -452,6 +460,133 @@ function updateTestDetailsButton() {
   btn.innerHTML = `${EXTERNAL_SVG} Test Details`;
   btn.title = 'View test history and analytics';
   bar.appendChild(btn);
+}
+
+// ── Share ────────────────────────────────────────────────────────────────
+
+const SHARE_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5 8.6 10.5"/></svg>';
+
+// The link shares exactly the report page we're on; just append the share token.
+function shareLinkFor(token) {
+  return `${globalThis.location.origin}${globalThis.location.pathname}?token=${encodeURIComponent(token)}`;
+}
+
+async function fetchShareTokens() {
+  try {
+    // GET, so no CSRF token needed.
+    const response = await fetch('/api/keys/share');
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data?.data) ? data.data : [];
+  } catch {
+    return [];
+  }
+}
+
+async function createShareToken() {
+  // Date-stamp the label so multiple share tokens stay distinguishable in the picker.
+  const label = `Report share link (${new Date().toISOString().slice(0, 10)})`;
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const response = await fetch('/api/keys', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...csrfHeader() },
+    body: JSON.stringify({ label, type: 'share', expiresAt }),
+  });
+  if (!response.ok) throw new Error('create failed');
+  const data = await response.json();
+  if (typeof data?.key !== 'string') throw new Error('no token returned');
+  return data.key;
+}
+
+async function copyShareLink(token, button) {
+  await navigator.clipboard.writeText(shareLinkFor(token));
+  flashShareButton(button, 'Link copied');
+}
+
+function flashShareButton(button, text) {
+  if (!button.dataset.originalHtml) button.dataset.originalHtml = button.innerHTML;
+  button.textContent = text;
+  setTimeout(() => {
+    button.innerHTML = button.dataset.originalHtml;
+  }, 1500);
+}
+
+function closeShareMenu() {
+  document.getElementById('pwrs-share-menu')?.remove();
+}
+
+// Picker shown only when more than one share token exists.
+function openShareMenu(anchor, tokens, button) {
+  closeShareMenu();
+  const menu = document.createElement('div');
+  menu.id = 'pwrs-share-menu';
+  menu.className = 'pwrs-share-menu';
+  for (const entry of tokens) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'pwrs-share-menu-item';
+    row.textContent = entry.label;
+    row.addEventListener('click', async () => {
+      closeShareMenu();
+      await copyShareLink(entry.token, button);
+    });
+    menu.appendChild(row);
+  }
+  anchor.appendChild(menu);
+  // Dismiss on the next outside click.
+  setTimeout(() => {
+    const onDocClick = (event) => {
+      if (!menu.contains(event.target)) {
+        closeShareMenu();
+        document.removeEventListener('click', onDocClick);
+      }
+    };
+    document.addEventListener('click', onDocClick);
+  }, 0);
+}
+
+function injectShareButton(bar) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'pwrs-share-wrapper';
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'pwrs-nav-btn';
+  button.innerHTML = `${SHARE_SVG} Share`;
+  button.title = 'Copy a link that opens this report without an account';
+
+  button.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    if (document.getElementById('pwrs-share-menu')) {
+      closeShareMenu();
+      return;
+    }
+    const tokens = await fetchShareTokens();
+    if (tokens.length === 1) {
+      await copyShareLink(tokens[0].token, button);
+      return;
+    }
+    if (tokens.length > 1) {
+      openShareMenu(wrapper, tokens, button);
+      return;
+    }
+    // No tokens yet.
+    if (!CAN_CREATE_SHARE) {
+      flashShareButton(button, 'Ask an admin');
+      return;
+    }
+    try {
+      flashShareButton(button, 'Creating…');
+      const token = await createShareToken();
+      await copyShareLink(token, button);
+    } catch {
+      flashShareButton(button, 'Failed');
+    }
+  });
+
+  wrapper.appendChild(button);
+  bar.appendChild(wrapper);
 }
 
 // ── Inline Analysis ─────────────────────────────────────────────────────

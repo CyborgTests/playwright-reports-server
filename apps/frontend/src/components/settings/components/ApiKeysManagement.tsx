@@ -38,7 +38,7 @@ import {
 import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 
-type KeyType = 'reporter' | 'cli';
+type KeyType = 'reporter' | 'cli' | 'share';
 
 interface ApiKey {
   id: string;
@@ -235,6 +235,9 @@ function CreateKeyDialog({
               <SelectContent>
                 <SelectItem value="reporter">Reporter (upload &amp; generate reports)</SelectItem>
                 <SelectItem value="cli">CLI / agent (read &amp; manage data)</SelectItem>
+                {canManageAllKeys && (
+                  <SelectItem value="share">Share link (read-only public report links)</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>

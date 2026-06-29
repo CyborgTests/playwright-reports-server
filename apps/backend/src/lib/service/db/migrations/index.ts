@@ -23,6 +23,7 @@ import * as backfillSizeBytes from './0019_backfill_size_bytes.js';
 import * as auth from './0020_auth.js';
 import * as oauth from './0021_oauth.js';
 import * as renameReaderToMember from './0022_rename_reader_to_member.js';
+import * as apiKeyShareToken from './0023_api_key_share_token.js';
 
 // Ordered, statically-imported migration set. The keys are the names Kysely
 // records in its `kysely_migration` table; their lexical order is the run order,
@@ -82,6 +83,10 @@ const MIGRATIONS: Record<string, Migration> = {
   '0022_rename_reader_to_member': {
     up: renameReaderToMember.up,
     down: renameReaderToMember.down,
+  },
+  '0023_api_key_share_token': {
+    up: apiKeyShareToken.up,
+    down: apiKeyShareToken.down,
   },
 };
 

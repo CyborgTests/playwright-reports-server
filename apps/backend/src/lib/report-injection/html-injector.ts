@@ -30,14 +30,23 @@ export async function injectTestAnalysis(
   source: string,
   testUrl: ParsedTestUrl,
   isLlmEnabled: boolean,
-  canEditCategory = false
+  canEditCategory = false,
+  canShare = false,
+  canCreateShare = false
 ): Promise<string> {
   if (!testUrl.reportId) {
     return source;
   }
 
   try {
-    return await injectClientSideScript(source, testUrl, isLlmEnabled, canEditCategory);
+    return await injectClientSideScript(
+      source,
+      testUrl,
+      isLlmEnabled,
+      canEditCategory,
+      canShare,
+      canCreateShare
+    );
   } catch (error) {
     console.error('[html-injector] Error injecting HTML:', error);
     return source;
@@ -48,7 +57,9 @@ async function injectClientSideScript(
   html: string,
   testUrl: ParsedTestUrl,
   isLlmEnabled: boolean,
-  canEditCategory: boolean
+  canEditCategory: boolean,
+  canShare: boolean,
+  canCreateShare: boolean
 ): Promise<string> {
   const { style: styleContent, script: scriptBody } = await loadInjectAssets();
   const scriptContent = `
@@ -56,6 +67,8 @@ async function injectClientSideScript(
     const reportProject = ${JSON.stringify(testUrl.project ?? '')};
     const isLlmEnabled = ${isLlmEnabled ? 'true' : 'false'};
     const canEditCategory = ${canEditCategory ? 'true' : 'false'};
+    const canShare = ${canShare ? 'true' : 'false'};
+    const canCreateShare = ${canCreateShare ? 'true' : 'false'};
     const rootCauseOptions = ${JSON.stringify(ROOT_CAUSE_OPTIONS)};
     ${scriptBody}`;
 

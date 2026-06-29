@@ -56,7 +56,7 @@ export const createInviteSchema = z.object({
 
 export const createKeySchema = z.object({
   label: z.string().trim().min(1).max(120),
-  type: z.enum([KEY_TYPES.reporter, KEY_TYPES.cli]),
+  type: z.enum([KEY_TYPES.reporter, KEY_TYPES.cli, KEY_TYPES.share]),
   // ISO datetime so resolveApiKey's Date.parse can't yield NaN (which never expires).
   expiresAt: z.iso.datetime().optional(),
   service: z.boolean().optional(), // admin-only: owner-less service key

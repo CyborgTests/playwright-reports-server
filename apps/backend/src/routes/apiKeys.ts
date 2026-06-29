@@ -17,6 +17,7 @@ import { type ApiKeyRecord, apiKeysDb, usersDb } from '../lib/service/db/index.j
 
 // The legacy seed key holds both scopes; it shows as `reporter + cli`.
 function keyType(scopes: ReturnType<typeof parseScopes>): string {
+  if (scopes.includes(KEY_SCOPES.share)) return KEY_TYPES.share;
   const hasUpload = scopes.includes(KEY_SCOPES.upload);
   const hasCli = scopes.includes(KEY_SCOPES.cli);
   if (hasUpload && hasCli) return `${KEY_TYPES.reporter} + ${KEY_TYPES.cli}`;
@@ -74,14 +75,21 @@ export async function registerApiKeysRoutes(fastify: FastifyInstance) {
       if (service && !can(request.auth?.role, CAPABILITIES.apiKeysService)) {
         return reply.code(403).send({ error: 'Only admins can create service keys' });
       }
+      const isShare = type === KEY_TYPES.share;
+      if (isShare && !can(request.auth?.role, CAPABILITIES.apiKeysService)) {
+        return reply.code(403).send({ error: 'Only admins can create share keys' });
+      }
       const ownerUserId = service ? null : (request.auth?.userId ?? null);
-      // Preset → stored scopes; both presets are full-content within their surface.
-      const scopes: KeyScope[] =
-        type === KEY_TYPES.reporter ? [KEY_SCOPES.upload] : [KEY_SCOPES.cli];
+      // Preset → stored scopes. Share is view-only; the others are full-content.
+      const scopes: KeyScope[] = isShare
+        ? [KEY_SCOPES.share]
+        : type === KEY_TYPES.reporter
+          ? [KEY_SCOPES.upload]
+          : [KEY_SCOPES.cli];
       const minted = mintApiKey({
         label,
         scopes,
-        capability: KEY_CAPABILITIES.content,
+        capability: isShare ? KEY_CAPABILITIES.read : KEY_CAPABILITIES.content,
         ownerUserId,
         createdBy: request.auth?.userId ?? null,
         expiresAt: expiresAt ?? null,
@@ -104,5 +112,24 @@ export async function registerApiKeysRoutes(fastify: FastifyInstance) {
       audit('key_revoke', { actor: request.auth?.userId ?? null, target: id });
       return { success: true };
     });
+  });
+
+  // Listing/using share tokens is gated by `content:share` (default admin+member),
+  // independent of API-key management. Returns plaintext so the served-report "Share"
+  // picker can build links; minting still happens via the admin-only POST above.
+  fastify.get('/api/keys/share', { preHandler: authorize(CAPABILITIES.shareReports) }, async () => {
+    const now = Date.now();
+    const data = apiKeysDb
+      .listShareKeys()
+      .filter((k) => !k.expiresAt || Date.parse(k.expiresAt) > now)
+      .filter((k): k is typeof k & { shareToken: string } => !!k.shareToken)
+      .map((k) => ({
+        id: k.id,
+        label: k.label,
+        token: k.shareToken,
+        expiresAt: k.expiresAt,
+        createdAt: k.createdAt,
+      }));
+    return { data };
   });
 }

@@ -525,6 +525,42 @@
   margin: 0 8px;
 }
 
+.pwrs-share-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.pwrs-share-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 9999;
+  margin-top: 4px;
+  min-width: 220px;
+  padding: 4px;
+  background: var(--llm-body-bg, #ffffff);
+  border: 1px solid var(--llm-btn-border, #d0d7de);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.pwrs-share-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--llm-body-text, #1f2937);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.pwrs-share-menu-item:hover {
+  background: var(--llm-code-bg, #f3f4f6);
+}
+
 /* ── Loading Spinner ─────────────────────────────────────────────────── */
 
 @keyframes llm-spin {
