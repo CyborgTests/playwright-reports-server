@@ -4,7 +4,7 @@ import { llmTaskEvents } from '../../service/llmTaskEvents.js';
 import { llmService } from '../index.js';
 import { type GateReservation, modelGate, reservationStore } from '../modelGate.js';
 import { isFallbackChainEnabled, isLlmFeatureEnabled, resolveGate } from '../registry.js';
-import { resolveRouting } from '../routing/index.js';
+import { resolveOneShotModelRow } from '../routing/index.js';
 import { registerRunningTask, runWithTaskSignal, unregisterRunningTask } from '../taskSignal.js';
 import { LLMProviderError } from '../types/index.js';
 import { resolveScreenshotModel } from '../visionTranscribe.js';
@@ -47,6 +47,11 @@ class LlmAnalysisQueue {
   private getBudget(): number {
     this.cachedBudget ??= this.getParallelRequests();
     return this.cachedBudget;
+  }
+
+  // Total concurrent slots across all enabled models' gates - the divisor for queue ETA.
+  public parallelism(): number {
+    return this.getParallelRequests();
   }
 
   start(): void {
@@ -122,14 +127,8 @@ class LlmAnalysisQueue {
   }
 
   private decideStart(task: ClaimCandidate): { run: boolean; reservation?: GateSlot } {
-    const routing = resolveRouting(task.type);
-    if (routing.strategy !== 'one_shot') return { run: true };
-    const primary = llmModelsDb.getPrimary();
-    if (!primary) return { run: true };
-    const overrideRow = routing.model?.modelId
-      ? (llmModelsDb.list().find((m) => m.id === routing.model?.modelId && m.enabled === 1) ?? null)
-      : null;
-    const effective = overrideRow ?? primary;
+    const effective = resolveOneShotModelRow(task.type);
+    if (!effective) return { run: true };
     const gate = resolveGate(effective);
     if (task.type === 'test_analysis') {
       const screenshot = resolveScreenshotModel();
@@ -142,6 +141,9 @@ class LlmAnalysisQueue {
   }
 
   private dispatch(task: LlmTaskRow, reservation?: GateSlot): void {
+    const effective = resolveOneShotModelRow(task.type);
+    if (effective) llmTasksDb.setInFlightModel(task.id, effective.model, effective.baseUrl);
+
     const ctx: GateReservation | null = reservation
       ? { gateKey: reservation.gateKey, consumed: false }
       : null;

@@ -1,5 +1,16 @@
 import { randomUUID as uuid } from 'node:crypto';
-import type { LlmTaskChildUsage, LlmTaskStatus, LlmTaskType } from '@playwright-reports/shared';
+import type {
+  LlmDurationEstimate,
+  LlmEstimates,
+  LlmTaskChildUsage,
+  LlmTaskStatus,
+  LlmTaskType,
+} from '@playwright-reports/shared';
+import {
+  parentEstimateKey,
+  roleEstimateKey,
+  strategyEstimateKey,
+} from '@playwright-reports/shared';
 import { sql } from 'kysely';
 import { linkifyReportRefs } from '../../llm/linkifyReportRefs.js';
 import { llmTaskEvents } from '../llmTaskEvents.js';
@@ -81,9 +92,80 @@ const SELECT_QUEUED_SQL = `
 
 const CLAIM_SCAN_LIMIT = 200;
 
+const FRESH_SAMPLE_PREDICATE = `
+  t.completedAt > COALESCE(
+    (SELECT MAX(m.updatedAt) FROM llm_models m
+      WHERE m.model = t.model AND m.baseUrl = COALESCE(t.baseUrl, '')), '')
+  AND t.completedAt > COALESCE(
+    (SELECT MAX(g.updatedAt) FROM llm_concurrency_groups g
+      JOIN llm_models m2 ON m2.concurrencyGroupId = g.id
+      WHERE m2.model = t.model AND m2.baseUrl = COALESCE(t.baseUrl, '')), '')
+`;
+
+const DURATION_MS_EXPR = '(julianday(t.completedAt) - julianday(t.startedAt)) * 86400000.0';
+
+const PARENT_ESTIMATES_SQL = `
+  SELECT t.type AS type, COALESCE(t.strategy, 'one_shot') AS strategy, t.model AS model,
+    COALESCE(t.baseUrl, '') AS baseUrl,
+    AVG(${DURATION_MS_EXPR}) AS meanMs, COUNT(*) AS samples
+  FROM llm_tasks t
+  WHERE t.status = 'completed' AND t.parentTaskId IS NULL
+    AND t.startedAt IS NOT NULL AND t.completedAt IS NOT NULL AND t.model IS NOT NULL
+    AND ${FRESH_SAMPLE_PREDICATE}
+  GROUP BY t.type, COALESCE(t.strategy, 'one_shot'), t.model, COALESCE(t.baseUrl, '')
+  HAVING samples >= ?
+`;
+
+const PARENT_BY_STRATEGY_ESTIMATES_SQL = `
+  SELECT t.type AS type, COALESCE(t.strategy, 'one_shot') AS strategy,
+    AVG(${DURATION_MS_EXPR}) AS meanMs, COUNT(*) AS samples
+  FROM llm_tasks t
+  WHERE t.status = 'completed' AND t.parentTaskId IS NULL
+    AND t.startedAt IS NOT NULL AND t.completedAt IS NOT NULL AND t.model IS NOT NULL
+    AND ${FRESH_SAMPLE_PREDICATE}
+  GROUP BY t.type, COALESCE(t.strategy, 'one_shot')
+  HAVING samples >= ?
+`;
+
+const ROLE_ESTIMATES_SQL = `
+  SELECT t.type AS type, COALESCE(p.strategy, 'one_shot') AS strategy, t.role AS role,
+    t.model AS model, COALESCE(t.baseUrl, '') AS baseUrl,
+    AVG(${DURATION_MS_EXPR}) AS meanMs, COUNT(*) AS samples
+  FROM llm_tasks t
+  JOIN llm_tasks p ON p.id = t.parentTaskId
+  WHERE t.status = 'completed' AND t.parentTaskId IS NOT NULL AND t.role IS NOT NULL
+    AND t.startedAt IS NOT NULL AND t.completedAt IS NOT NULL AND t.model IS NOT NULL
+    AND ${FRESH_SAMPLE_PREDICATE}
+  GROUP BY t.type, COALESCE(p.strategy, 'one_shot'), t.role, t.model, COALESCE(t.baseUrl, '')
+  HAVING samples >= ?
+`;
+
+const ESTIMATE_CACHE_TTL_MS = 60_000;
+
+interface ParentEstimateRow {
+  type: string;
+  strategy: string;
+  model: string;
+  baseUrl: string;
+  meanMs: number;
+  samples: number;
+}
+
+interface RoleEstimateRow extends ParentEstimateRow {
+  role: string;
+}
+
+interface StrategyEstimateRow {
+  type: string;
+  strategy: string;
+  meanMs: number;
+  samples: number;
+}
+
 export class LlmTasksDatabase {
   private readonly k = getKysely();
   private readonly db = getDatabase();
+  private estimateCache: { at: number; minSamples: number; value: LlmEstimates } | null = null;
 
   public createTask(
     type: LlmTaskType,
@@ -680,6 +762,24 @@ export class LlmTasksDatabase {
     return { data, total };
   }
 
+  public getScheduledForEta(): Array<{
+    type: LlmTaskType;
+    status: LlmTaskStatus;
+    startedAt: string | null;
+  }> {
+    const compiled = this.k
+      .selectFrom('llm_tasks')
+      .select(['type', 'status', 'startedAt'])
+      .where('parentTaskId', 'is', null)
+      .where('status', 'in', ['queued', 'processing'])
+      .compile();
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+      type: LlmTaskType;
+      status: LlmTaskStatus;
+      startedAt: string | null;
+    }>;
+  }
+
   public getDistinctModels(): string[] {
     const compiled = this.k
       .selectFrom('llm_tasks')
@@ -692,6 +792,49 @@ export class LlmTasksDatabase {
       model: string | null;
     }>;
     return rows.map((r) => r.model).filter((m): m is string => !!m && m.length > 0);
+  }
+
+  public getDurationEstimates(minSamples: number): LlmEstimates {
+    const now = Date.now();
+    if (
+      this.estimateCache &&
+      this.estimateCache.minSamples === minSamples &&
+      now - this.estimateCache.at < ESTIMATE_CACHE_TTL_MS
+    ) {
+      return this.estimateCache.value;
+    }
+
+    const parentRows = this.db.prepare(PARENT_ESTIMATES_SQL).all(minSamples) as ParentEstimateRow[];
+    const byStrategyRows = this.db
+      .prepare(PARENT_BY_STRATEGY_ESTIMATES_SQL)
+      .all(minSamples) as StrategyEstimateRow[];
+    const roleRows = this.db.prepare(ROLE_ESTIMATES_SQL).all(minSamples) as RoleEstimateRow[];
+
+    const parents: Record<string, LlmDurationEstimate> = {};
+    for (const r of parentRows) {
+      parents[parentEstimateKey(r.type, r.strategy, r.model, r.baseUrl)] = {
+        meanMs: Math.round(r.meanMs),
+        sampleCount: r.samples,
+      };
+    }
+    const parentsByStrategy: Record<string, LlmDurationEstimate> = {};
+    for (const r of byStrategyRows) {
+      parentsByStrategy[strategyEstimateKey(r.type, r.strategy)] = {
+        meanMs: Math.round(r.meanMs),
+        sampleCount: r.samples,
+      };
+    }
+    const roles: Record<string, LlmDurationEstimate> = {};
+    for (const r of roleRows) {
+      roles[roleEstimateKey(r.type, r.strategy, r.role, r.model, r.baseUrl)] = {
+        meanMs: Math.round(r.meanMs),
+        sampleCount: r.samples,
+      };
+    }
+
+    const value: LlmEstimates = { parents, parentsByStrategy, roles };
+    this.estimateCache = { at: now, minSamples, value };
+    return value;
   }
 
   public areAllTestTasksComplete(reportId: string): boolean {

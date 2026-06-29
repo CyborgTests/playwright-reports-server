@@ -12,6 +12,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useLlmModels } from '@/hooks/useLlmModels';
+import { useLlmEstimates } from '@/hooks/useLlmTasks';
 import useMutation from '@/hooks/useMutation';
 import { buildRateMap } from './format-task';
 import { TaskRow, TOTAL_COLUMNS } from './TaskRow';
@@ -36,6 +37,8 @@ export function TaskTable({
 
   const { data: models } = useLlmModels();
   const rates = useMemo(() => buildRateMap(models ?? []), [models]);
+  const { data: estimatesData } = useLlmEstimates();
+  const estimates = estimatesData?.data;
 
   const { mutateAsync: fetchRoles } = useMutation<{ data?: LlmTask[] }>('/api/llm/tasks', {
     method: 'GET',
@@ -180,6 +183,7 @@ export function TaskTable({
                 retryPending={retryTaskMutation.isPending}
                 deletePending={deleteTaskMutation.isPending}
                 rates={rates}
+                estimates={estimates}
                 expanded={expanded.has(task.id)}
                 childRows={childrenById[task.id]}
                 onToggleExpand={toggleExpand}

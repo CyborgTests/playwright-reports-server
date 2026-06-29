@@ -1,5 +1,5 @@
 import type { LlmDefaultPrompts, LlmUsageByModel, LlmUsageStats } from '@playwright-reports/shared';
-import { CAPABILITIES } from '@playwright-reports/shared';
+import { CAPABILITIES, MIN_ESTIMATE_SAMPLES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   PROJECT_SUMMARY_SYSTEM_PROMPT,
@@ -15,6 +15,7 @@ import {
   DEFAULT_SCORER_DIRECTIVE,
   DEFAULT_SYNTHESIZER_DIRECTIVE,
 } from '../lib/llm/prompts/routing.js';
+import { computeQueueEta } from '../lib/llm/queueEta.js';
 import { isLlmFeatureEnabled } from '../lib/llm/registry.js';
 import { abortRunningTask } from '../lib/llm/taskSignal.js';
 import { DEFAULT_SCREENSHOT_PARSE_PROMPT } from '../lib/llm/visionTranscribe.js';
@@ -188,13 +189,27 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     }
   );
 
+  fastify.get('/api/llm/estimates', async (request: FastifyRequest, reply: FastifyReply) => {
+    const authResult = await authorize(CAPABILITIES.view)(request, reply);
+    if (authResult) return;
+
+    try {
+      const data = llmTasksDb.getDurationEstimates(MIN_ESTIMATE_SAMPLES);
+      return { success: true, data };
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.status(500).send({ success: false, error: 'Failed to fetch LLM estimates' });
+    }
+  });
+
   fastify.get('/api/llm/tasks/stats', async (request: FastifyRequest, reply: FastifyReply) => {
     const authResult = await authorize(CAPABILITIES.view)(request, reply);
     if (authResult) return;
 
     try {
       const stats = llmTasksDb.getStats();
-      return { success: true, ...stats };
+      const eta = computeQueueEta();
+      return { success: true, ...stats, eta };
     } catch (error) {
       fastify.log.error(error);
       return reply.status(500).send({

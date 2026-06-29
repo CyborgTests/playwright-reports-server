@@ -7,4 +7,5 @@ export * from './types/quality.js';
 export * from './types/trace-diff.js';
 export * from './utils/grading.js';
 export * from './utils/index.js';
+export * from './utils/llmEstimates.js';
 export * from './utils/strategy.js';

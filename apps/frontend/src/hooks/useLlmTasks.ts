@@ -1,6 +1,7 @@
 import type {
   LlmDefaultPrompt,
   LlmDefaultPrompts,
+  LlmEstimates,
   LlmTask,
   LlmTaskStats,
   LlmUsageByModel,
@@ -82,6 +83,12 @@ export function useLlmTasks(filters: {
       placeholderData: keepPreviousData,
     }
   );
+}
+
+export function useLlmEstimates() {
+  return useQuery<{ success: boolean; data: LlmEstimates }>('/api/llm/estimates', {
+    staleTime: 30_000,
+  });
 }
 
 export function useLlmTaskModels(enabled: boolean) {

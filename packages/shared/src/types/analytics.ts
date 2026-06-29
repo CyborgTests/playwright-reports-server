@@ -168,12 +168,19 @@ export interface LlmTaskChildUsage {
   outputTokens?: number | null;
 }
 
+export interface QueueEtaEstimate {
+  etaMs: number | null; // estimated time to drain queued+processing work; null if nothing estimable
+  estimatedTasks: number; // scheduled tasks we had a duration estimate for
+  totalScheduled: number; // all queued+processing parent tasks
+}
+
 export interface LlmTaskStats {
   queued: number;
   processing: number;
   completed: number;
   failed: number;
   cancelled: number;
+  eta?: QueueEtaEstimate;
 }
 
 export interface LlmUsageTotals {

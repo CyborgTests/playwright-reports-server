@@ -4,7 +4,7 @@ import {
   type LlmTaskType,
 } from '@playwright-reports/shared';
 import { configCache } from '../../service/cache/config.js';
-import { llmTasksDb } from '../../service/db/index.js';
+import { llmModelsDb, llmTasksDb } from '../../service/db/index.js';
 import { llmService, type SegmentedSendOptions } from '../index.js';
 import { renderSegmentsForDebug } from '../prompts/index.js';
 import { fitToContextWindow } from '../queue/tasks/promptFitting.js';
@@ -20,6 +20,19 @@ import { runCascade, runCouncil, runFusion, runSelfRefine } from './strategies.j
 
 export function resolveRouting(taskType: LlmTaskType): LlmTaskRouting {
   return configCache.config?.llm?.routing?.[taskType] ?? { strategy: 'one_shot' };
+}
+
+// The model a one_shot task will run on, known from routing/config before it starts.
+// null for multi-role strategies (model varies per role) or when no primary is set.
+export function resolveOneShotModelRow(taskType: LlmTaskType) {
+  const routing = resolveRouting(taskType);
+  if (routing.strategy !== 'one_shot') return null;
+  const primary = llmModelsDb.getPrimary();
+  if (!primary) return null;
+  const overrideRow = routing.model?.modelId
+    ? (llmModelsDb.list().find((m) => m.id === routing.model?.modelId && m.enabled === 1) ?? null)
+    : null;
+  return overrideRow ?? primary;
 }
 
 const STRATEGIES = new Set(['one_shot', 'fusion', 'council', 'cascade', 'self_refine']);

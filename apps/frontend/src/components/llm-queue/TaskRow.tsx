@@ -1,5 +1,10 @@
-import type { LlmTask } from '@playwright-reports/shared';
-import { formatRelativeTime } from '@playwright-reports/shared';
+import type { LlmEstimates, LlmTask } from '@playwright-reports/shared';
+import {
+  formatRelativeTime,
+  parentEstimateKey,
+  roleEstimateKey,
+  strategyEstimateKey,
+} from '@playwright-reports/shared';
 import { memo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -20,6 +25,7 @@ import {
   statusBadgeVariant,
   TYPE_SHORT_LABEL,
 } from './format-task';
+import { TaskProgress } from './TaskProgress';
 
 export const TOTAL_COLUMNS = 12;
 
@@ -123,7 +129,14 @@ function VerdictSummary({
 function RolePanel({
   rows,
   rates,
-}: Readonly<{ rows: LlmTask[] | 'loading' | undefined; rates: Map<string, ModelRate> }>) {
+  strategy,
+  estimates,
+}: Readonly<{
+  rows: LlmTask[] | 'loading' | undefined;
+  rates: Map<string, ModelRate>;
+  strategy?: string | null;
+  estimates?: LlmEstimates;
+}>) {
   if (rows === 'loading' || rows === undefined) {
     return <div className="px-12 py-3 text-xs text-muted-foreground">Loading roles…</div>;
   }
@@ -186,8 +199,19 @@ function RolePanel({
                   ? `${(c.inputTokens ?? 0).toLocaleString()} / ${(c.outputTokens ?? 0).toLocaleString()} tok`
                   : '-'}
               </span>
-              <span className="w-12 shrink-0 whitespace-nowrap text-right font-mono text-muted-foreground">
-                {formatDuration(c.startedAt, c.completedAt)}
+              <span className="w-20 shrink-0 whitespace-nowrap text-right font-mono text-muted-foreground">
+                {c.status === 'processing' ? (
+                  <TaskProgress
+                    startedAt={c.startedAt}
+                    estimate={
+                      estimates?.roles[
+                        roleEstimateKey(c.type, strategy, c.role, c.model, c.baseUrl)
+                      ]
+                    }
+                  />
+                ) : (
+                  formatDuration(c.startedAt, c.completedAt)
+                )}
               </span>
               <span className="w-20 shrink-0 whitespace-nowrap text-right font-mono">
                 {isDone ? formatCost(cost) : '-'}
@@ -222,6 +246,7 @@ interface TaskRowProps {
   retryPending: boolean;
   deletePending: boolean;
   rates: Map<string, ModelRate>;
+  estimates?: LlmEstimates;
   expanded: boolean;
   childRows: LlmTask[] | 'loading' | undefined;
   onToggleExpand: (id: string) => void;
@@ -238,6 +263,7 @@ export const TaskRow = memo(function TaskRow({
   retryPending,
   deletePending,
   rates,
+  estimates,
   expanded,
   childRows,
   onToggleExpand,
@@ -402,7 +428,20 @@ export const TaskRow = memo(function TaskRow({
           {formatRelativeTime(task.createdAt)}
         </TableCell>
         <TableCell className="text-sm">
-          {formatDuration(task.startedAt, task.completedAt)}
+          {task.status === 'processing' ? (
+            <TaskProgress
+              startedAt={task.startedAt}
+              estimate={
+                multi
+                  ? estimates?.parentsByStrategy[strategyEstimateKey(task.type, task.strategy)]
+                  : estimates?.parents[
+                      parentEstimateKey(task.type, task.strategy, task.model, task.baseUrl)
+                    ]
+              }
+            />
+          ) : (
+            formatDuration(task.startedAt, task.completedAt)
+          )}
         </TableCell>
         <TableCell>
           {task.status === 'failed' && task.error ? (
@@ -440,7 +479,12 @@ export const TaskRow = memo(function TaskRow({
       {expandable && expanded && (
         <TableRow>
           <TableCell colSpan={TOTAL_COLUMNS} className="bg-muted/30 p-0">
-            <RolePanel rows={childRows} rates={rates} />
+            <RolePanel
+              rows={childRows}
+              rates={rates}
+              strategy={task.strategy}
+              estimates={estimates}
+            />
           </TableCell>
         </TableRow>
       )}

@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { formatDuration } from '@playwright-reports/shared';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -135,7 +136,29 @@ function UsageByModelBreakdown({ days }: { days: number }) {
   );
 }
 
+// Tick the server's drain estimate down each second, re-anchoring whenever a
+// fresh estimate arrives, so "~Xm left" counts down instead of sitting static
+// between stats refetches.
+function useCountdown(targetMs: number | null): number | null {
+  const [remaining, setRemaining] = useState<number | null>(targetMs);
+  useEffect(() => {
+    if (targetMs == null) {
+      setRemaining(null);
+      return;
+    }
+    const anchor = Date.now();
+    setRemaining(targetMs);
+    const id = setInterval(() => {
+      setRemaining(Math.max(0, targetMs - (Date.now() - anchor)));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [targetMs]);
+  return remaining;
+}
+
 export function StatsBar({ stats }: Readonly<{ stats: LlmTaskStats | undefined }>) {
+  const eta = stats?.eta;
+  const liveEtaMs = useCountdown(eta?.etaMs ?? null);
   const statCards = [
     { label: 'Queued', count: stats?.queued ?? 0, variant: 'secondary' as const },
     { label: 'Processing', count: stats?.processing ?? 0, variant: 'running' as const },
@@ -143,6 +166,7 @@ export function StatsBar({ stats }: Readonly<{ stats: LlmTaskStats | undefined }
     { label: 'Failed', count: stats?.failed ?? 0, variant: 'failure' as const },
     { label: 'Cancelled', count: stats?.cancelled ?? 0, variant: 'skipped' as const },
   ];
+  const unestimated = eta ? eta.totalScheduled - eta.estimatedTasks : 0;
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
@@ -155,6 +179,14 @@ export function StatsBar({ stats }: Readonly<{ stats: LlmTaskStats | undefined }
               </Badge>
               <span className="text-2xl font-bold">{s.count}</span>
             </div>
+            {s.label === 'Queued' && eta && liveEtaMs != null && liveEtaMs > 0 && (
+              <div
+                className="mt-1 text-xs text-muted-foreground"
+                title={`Estimated time to drain ${eta.estimatedTasks} scheduled task${eta.estimatedTasks === 1 ? '' : 's'} at current concurrency${unestimated > 0 ? ` (${unestimated} without an estimate)` : ''}`}
+              >
+                ~{formatDuration(liveEtaMs)} left{unestimated > 0 ? ' +' : ''}
+              </div>
+            )}
           </CardContent>
         </Card>
       ))}
