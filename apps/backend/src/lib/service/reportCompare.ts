@@ -1,4 +1,4 @@
-import type { ReportStats } from '@playwright-reports/shared';
+import type { DiffOutcome, ReportStats } from '@playwright-reports/shared';
 import type { ReportHistory } from '../storage/types.js';
 import { regressionsDb, reportDb, type Test, type TestRunRow, testDb } from './db/index.js';
 
@@ -9,8 +9,6 @@ const PASS_OUTCOMES = new Set(['passed', 'expected']);
 const MIN_DURATION_DELTA_MS = 250;
 const MIN_DURATION_DELTA_PCT = 0.2;
 const MAX_DURATION_DELTAS_RETURNED = 50;
-
-export type DiffOutcome = 'pass' | 'fail' | 'flaky' | 'skipped' | 'unknown';
 
 const classifyOutcome = (outcome: string): DiffOutcome => {
   if (FAILURE_OUTCOMES.has(outcome)) return 'fail';

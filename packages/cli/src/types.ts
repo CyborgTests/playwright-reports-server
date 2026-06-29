@@ -409,7 +409,7 @@ export interface ClusterReport {
   windowDays?: number;
 }
 
-export type DiffOutcome = 'passed' | 'failed' | 'flaky' | 'skipped' | 'unknown';
+export type DiffOutcome = 'pass' | 'fail' | 'flaky' | 'skipped' | 'unknown';
 
 export interface DiffTestEntry {
   testId: string;
