@@ -1,5 +1,6 @@
 import { useQueryClient, useQuery as useTanStackQuery } from '@tanstack/react-query';
 import { getOAuthProviders, type IdentitiesResponse } from '@/lib/auth';
+import { useAuth } from './useAuth';
 import appUseMutation from './useMutation';
 import appUseQuery from './useQuery';
 
@@ -14,7 +15,9 @@ export function useOAuthProviders() {
 }
 
 export function useOAuthIdentities() {
-  return appUseQuery<IdentitiesResponse>(IDENTITIES_KEY, { staleTime: 60_000 });
+  const { data } = useAuth();
+  const enabled = data?.authMode === 'enabled' && !!data.user?.id;
+  return appUseQuery<IdentitiesResponse>(IDENTITIES_KEY, { staleTime: 60_000, enabled });
 }
 
 export function useUnlinkProvider() {

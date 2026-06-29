@@ -214,6 +214,7 @@ export async function registerOAuthRoutes(fastify: FastifyInstance) {
   );
 
   fastify.get('/api/auth/identities', async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!AUTH_ENABLED) return reply.code(404).send({ error: 'Not found' });
     const guard = await authorize(CAPABILITIES.view)(request, reply);
     if (guard) return;
     const identity = request.auth;
@@ -233,6 +234,7 @@ export async function registerOAuthRoutes(fastify: FastifyInstance) {
   fastify.post(
     '/api/auth/oauth/:provider/unlink',
     async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!AUTH_ENABLED) return reply.code(404).send({ error: 'Not found' });
       const guard = await authorize(CAPABILITIES.view)(request, reply);
       if (guard) return;
       const id = parseProviderId(request.params);
