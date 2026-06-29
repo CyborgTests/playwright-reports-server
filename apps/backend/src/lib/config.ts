@@ -17,6 +17,7 @@ export const defaultConfig: SiteWhiteLabelConfig = {
   faviconPath: '/favicon.ico',
   reporterPaths: [],
   allowOpenRegistration: false,
+  defaultUserRole: 'readonly',
   cron: { ...defaultCronConfig },
   testManagement: {
     quarantineThresholdPercentage: FLAKINESS_THRESHOLDS.QUARANTINE_PERCENTAGE,

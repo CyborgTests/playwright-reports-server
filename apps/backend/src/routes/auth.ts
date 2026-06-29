@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { Role } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { env } from '../config/env.js';
 import { audit } from '../lib/auth/audit.js';
@@ -156,11 +157,15 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       id,
       username,
       passwordHash,
-      role: 'readonly' as const,
+      role: 'readonly' as Role,
       createdAt: now,
       updatedAt: now,
       createdBy: null,
     };
+
+    // Invite-created users take the invite's role (consumeInviteAndCreateUser
+    // overrides it); open self-registration uses the admin-configured default.
+    let registeredRole: Role = 'readonly';
 
     if (inviteCode) {
       const outcome = invitesDb.consumeInviteAndCreateUser(hashToken(inviteCode), now, newUser);
@@ -171,13 +176,15 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
         return reply.code(409).send({ success: false, error: 'Username already taken' });
       }
     } else {
-      if (!siteConfigDb.get().allowOpenRegistration) {
+      const siteConfig = siteConfigDb.get();
+      if (!siteConfig.allowOpenRegistration) {
         return reply.code(403).send({ success: false, error: 'Registration requires an invite' });
       }
+      registeredRole = siteConfig.defaultUserRole ?? 'readonly';
       // Atomic so concurrent same-username registrations can't both pass the check.
       const created = tx(() => {
         if (usersDb.getUserByUsername(username)) return false;
-        usersDb.createUser(newUser);
+        usersDb.createUser({ ...newUser, role: registeredRole });
         return true;
       });
       if (!created) {
@@ -186,7 +193,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     }
 
     audit('register', { actor: id, target: username });
-    return { success: true, user: { id, username, role: 'readonly' as const } };
+    return { success: true, user: { id, username, role: registeredRole } };
   });
 
   fastify.post('/api/auth/change-password', async (request, reply) => {

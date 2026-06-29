@@ -4,9 +4,10 @@ import { mkdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { CAPABILITIES } from '@playwright-reports/shared';
+import { CAPABILITIES, ROLES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
+import { audit } from '../lib/auth/audit.js';
 import {
   ALLOWED_CONFIG_FIELDS,
   applyConfigFormData,
@@ -260,6 +261,16 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
         if (formData.allowOpenRegistration !== undefined) {
           config.allowOpenRegistration = formData.allowOpenRegistration === 'true';
+        }
+
+        if (formData.defaultUserRole !== undefined) {
+          const r = formData.defaultUserRole;
+          if (r === ROLES.admin || r === ROLES.member || r === ROLES.readonly) {
+            if (config.defaultUserRole !== r) {
+              audit('default_role_change', { actor: request.auth?.userId ?? null, detail: r });
+            }
+            config.defaultUserRole = r;
+          }
         }
 
         if (faviconFileSaved) {

@@ -18,6 +18,7 @@ export type AuthAction =
   | 'key_revoke'
   | 'invite_create'
   | 'invite_revoke'
+  | 'default_role_change'
   | 'password_reset_issue'
   | 'password_reset_complete'
   | 'password_change'

@@ -15,6 +15,7 @@ export interface ConfigFormData {
   logoPath?: string;
   logoInvertOnDark?: string;
   allowOpenRegistration?: string;
+  defaultUserRole?: string;
   faviconPath?: string;
   reporterPaths?: string;
   headerLinks?: string;
@@ -62,6 +63,7 @@ export const ALLOWED_CONFIG_FIELDS: ReadonlySet<keyof ConfigFormData> = new Set<
   'logoPath',
   'logoInvertOnDark',
   'allowOpenRegistration',
+  'defaultUserRole',
   'faviconPath',
   'reporterPaths',
   'headerLinks',

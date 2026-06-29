@@ -30,6 +30,9 @@ function serializeServer(
   if ((temp.allowOpenRegistration ?? false) !== (config.allowOpenRegistration ?? false)) {
     fd.append('allowOpenRegistration', (temp.allowOpenRegistration ?? false) ? 'true' : 'false');
   }
+  if ((temp.defaultUserRole ?? 'readonly') !== (config.defaultUserRole ?? 'readonly')) {
+    fd.append('defaultUserRole', temp.defaultUserRole ?? 'readonly');
+  }
   if (files.faviconFile) {
     fd.append('favicon', files.faviconFile);
   } else if ((temp.faviconPath ?? '') !== (config.faviconPath ?? '')) {

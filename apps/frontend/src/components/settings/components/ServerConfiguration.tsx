@@ -1,4 +1,4 @@
-import type { HeaderLink, ServerConfig } from '@playwright-reports/shared';
+import type { HeaderLink, Role, ServerConfig } from '@playwright-reports/shared';
 import { Settings } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { HEADER_LINK_ICON_CATALOG } from '@/components/header-link-icons';
@@ -305,6 +305,36 @@ export default function ServerConfiguration({
                     }
                   }}
                 />
+              </div>
+              <div className="space-y-1.5 rounded-lg border p-3">
+                <Label htmlFor="default-user-role">Default role for new accounts</Label>
+                <p className="text-xs text-muted-foreground">
+                  Role for users who self-register or sign in via an open-mode SSO provider.{' '}
+                  <span className="font-medium text-foreground">admin</span> lets anyone become an
+                  administrator — use with care.
+                </p>
+                <Select
+                  disabled={editingSection !== 'server'}
+                  value={
+                    editingSection === 'server'
+                      ? (tempConfig.defaultUserRole ?? 'readonly')
+                      : (config.defaultUserRole ?? 'readonly')
+                  }
+                  onValueChange={(value) => {
+                    if (editingSection === 'server') {
+                      onUpdateTempConfig({ defaultUserRole: value as Role });
+                    }
+                  }}
+                >
+                  <SelectTrigger id="default-user-role" className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="readonly">readonly</SelectItem>
+                    <SelectItem value="member">member</SelectItem>
+                    <SelectItem value="admin">admin</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           )}

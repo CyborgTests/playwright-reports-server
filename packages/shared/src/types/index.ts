@@ -1,3 +1,5 @@
+import type { Role } from '../access.js';
+
 export type UUID = `${string}-${string}-${string}-${string}-${string}`;
 
 export interface DateRange {
@@ -151,6 +153,7 @@ export interface SiteWhiteLabelConfig {
   reporterPaths?: string[];
   authRequired?: boolean;
   allowOpenRegistration?: boolean;
+  defaultUserRole?: Role;
   database?: DatabaseStats;
   dataStorage?: string;
   s3Endpoint?: string;
@@ -447,6 +450,7 @@ export interface ServerConfig {
   serverBaseUrl?: string;
   authRequired?: boolean;
   allowOpenRegistration?: boolean;
+  defaultUserRole?: Role;
   cron?: {
     resultExpireDays?: number;
     resultExpireCronSchedule?: string;

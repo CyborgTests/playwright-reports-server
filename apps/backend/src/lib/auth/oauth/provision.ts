@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { OAuthProviderId, OAuthProvisioningMode } from '@playwright-reports/shared';
-import { invitesDb, tx, userIdentitiesDb, usersDb } from '../../service/db/index.js';
+import { invitesDb, siteConfigDb, tx, userIdentitiesDb, usersDb } from '../../service/db/index.js';
 import { hashToken } from '../tokens.js';
 import type { OAuthProfile } from './types.js';
 
@@ -76,6 +76,7 @@ export function findOrProvision(
     return { ok: true, userId: id, isNew: true, linked: false };
   }
 
+  const role = siteConfigDb.get().defaultUserRole ?? 'readonly';
   const created = tx(() => {
     if (usersDb.getUserByUsername(username)) return false;
     usersDb.createUser({
@@ -83,7 +84,7 @@ export function findOrProvision(
       username,
       passwordHash: null,
       email,
-      role: 'member',
+      role,
       createdAt: now,
       updatedAt: now,
       createdBy: 'system',
