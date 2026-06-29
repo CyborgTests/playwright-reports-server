@@ -13,7 +13,7 @@ export function createDatabase(): Database.Database {
     return instance[initiatedDb];
   }
 
-  const dbDir = path.join(process.cwd(), 'data');
+  const dbDir = process.env.DATA_FOLDER ?? path.join(process.cwd(), 'data');
 
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
