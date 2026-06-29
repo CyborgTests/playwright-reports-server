@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { registerAdminRoutes } from './admin.js';
 import { registerAnalyticsRoutes } from './analytics.js';
 import { registerApiKeysRoutes } from './apiKeys.js';
 import { registerAuditRoutes } from './audit.js';
@@ -47,4 +48,5 @@ export async function registerApiRoutes(fastify: FastifyInstance) {
   await registerQualityRoutes(fastify);
   await registerFailureClusterRoutes(fastify);
   await registerEventsRoutes(fastify);
+  await registerAdminRoutes(fastify);
 }
