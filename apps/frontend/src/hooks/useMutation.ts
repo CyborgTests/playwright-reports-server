@@ -1,6 +1,11 @@
-import { type UseMutationOptions, useMutation as useTanStackMutation } from '@tanstack/react-query';
+import {
+  type UseMutationOptions,
+  useQueryClient,
+  useMutation as useTanStackMutation,
+} from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { extractResponseError } from '../lib/api';
 import { withBase } from '../lib/url';
 import { authHeadersForSession, useAuth } from './useAuth';
 
@@ -20,6 +25,7 @@ const useMutation = <TData = unknown, TVariables = unknown, TContext = unknown>(
   }
 ) => {
   const session = useAuth();
+  const queryClient = useQueryClient();
   const { method, silent, ...mutationOptions } = options ?? {};
 
   return useTanStackMutation<TData, Error, MutationFnParams<TVariables>, TContext>({
@@ -40,21 +46,13 @@ const useMutation = <TData = unknown, TVariables = unknown, TContext = unknown>(
       });
       const respText = await response.text();
 
+      if (response.status === 401) {
+        queryClient.invalidateQueries({ queryKey: ['auth-session'] });
+        throw new Error('Unauthorized');
+      }
+
       if (!response.ok) {
-        let message = `Request failed (${response.status})`;
-        try {
-          const envelope = respText
-            ? (JSON.parse(respText) as { error?: string; issues?: Array<{ message?: string }> })
-            : undefined;
-          const issues = envelope?.issues;
-          if (issues && issues.length > 0) {
-            message = issues.map((i) => i.message ?? JSON.stringify(i)).join(' · ');
-          } else {
-            message = envelope?.error ?? respText ?? message;
-          }
-        } catch {
-          if (respText) message = respText; // non-JSON body
-        }
+        const message = extractResponseError(respText, response.status);
         if (!silent) toast.error(message);
         throw new Error(message);
       }

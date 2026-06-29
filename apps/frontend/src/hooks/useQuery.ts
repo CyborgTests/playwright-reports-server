@@ -1,6 +1,7 @@
 import { type UseQueryOptions, useQuery as useTanStackQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { extractResponseError } from '../lib/api';
 import { withBase } from '../lib/url';
 import { authHeadersForSession, useAuth } from './useAuth';
 
@@ -38,14 +39,7 @@ const useQuery = <TData, TQueryFnData = TData>(
       }
 
       if (!response.ok) {
-        const text = await response.text();
-        let message = `Request failed (${response.status})`;
-        try {
-          const envelope = text ? (JSON.parse(text) as { error?: string }) : undefined;
-          if (envelope?.error) message = envelope.error;
-        } catch {
-          // non-JSON body - keep the generic status message.
-        }
+        const message = extractResponseError(await response.text(), response.status);
         toast.error(message);
         throw new Error(message);
       }
