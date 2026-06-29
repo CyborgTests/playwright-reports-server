@@ -322,7 +322,8 @@ function HealthGridImpl({
   );
 
   const totalWidth = chartData.length * BAR_PX;
-  const overflow = containerWidth > 0 && totalWidth > containerWidth;
+  const measured = containerWidth > 0;
+  const overflow = measured && totalWidth > containerWidth;
 
   const visibleCount = Math.ceil(containerWidth / BAR_PX) + 2 * WINDOW_OVERSCAN;
   const maxStart = Math.max(0, chartData.length - visibleCount);
@@ -381,8 +382,14 @@ function HealthGridImpl({
                 plotBottom={PLOT_BOTTOM}
               />
             )}
-            <div ref={scrollContainerRef} onScroll={onScroll} className="overflow-x-auto flex-1">
-              {overflow ? (
+            <div
+              ref={scrollContainerRef}
+              onScroll={onScroll}
+              className="overflow-x-auto flex-1 min-w-0"
+            >
+              {!measured ? (
+                <div style={{ height: CHART_HEIGHT }} />
+              ) : overflow ? (
                 <div style={{ width: totalWidth, height: CHART_HEIGHT, position: 'relative' }}>
                   <div style={{ position: 'absolute', left: offsetX, top: 0 }}>
                     <BarChart
