@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { CircuitBanner } from '@/components/llm-queue/CircuitBanner';
 import {
   PAGE_SIZE,
   STATUS_OPTIONS,
@@ -155,6 +156,8 @@ export default function LlmQueuePage() {
 
   return (
     <div className="space-y-6">
+      <CircuitBanner circuit={stats?.circuit} />
+
       <StatsBar stats={stats} />
 
       <UsageCard />

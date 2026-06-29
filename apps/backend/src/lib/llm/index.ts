@@ -1,3 +1,4 @@
+import type { LlmCircuitStatus } from '@playwright-reports/shared';
 import { AnthropicProvider } from './providers/anthropic.js';
 import { OpenAIProvider } from './providers/openai.js';
 import type {
@@ -72,6 +73,14 @@ class LLMCircuitBreaker {
     this.state = 'closed';
     this.consecutiveFailures = 0;
     this.openedAt = 0;
+  }
+
+  getStatus(): LlmCircuitStatus {
+    if (this.state === 'open' && this.isBlocking()) {
+      return { state: 'open', retryInMs: this.msUntilRetry() };
+    }
+    if (this.state !== 'closed') return { state: 'half-open', retryInMs: null };
+    return { state: 'closed', retryInMs: null };
   }
 
   private trip(): void {
@@ -246,6 +255,10 @@ export class LLMService {
 
   public isCircuitOpen(): boolean {
     return this.circuit.isBlocking();
+  }
+
+  public getCircuitState(): LlmCircuitStatus {
+    return this.circuit.getStatus();
   }
 
   private isMultimodalBlocked(): boolean {

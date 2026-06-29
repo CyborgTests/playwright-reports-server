@@ -314,6 +314,15 @@ export const TaskRow = memo(function TaskRow({
         <TableCell>
           <div className="flex flex-col gap-1 items-start">
             <Badge variant={statusBadgeVariant(task.status)}>{task.status}</Badge>
+            {task.status === 'queued' && task.retryCount > 0 && (
+              <Badge
+                variant="warning"
+                className="text-xs"
+                title={task.error ?? 'A previous attempt failed; the task is being retried.'}
+              >
+                Retrying ({task.retryCount}/{task.maxRetries})
+              </Badge>
+            )}
             {expandable && (
               <button
                 type="button"

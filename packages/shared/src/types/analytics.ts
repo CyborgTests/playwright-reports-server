@@ -174,6 +174,11 @@ export interface QueueEtaEstimate {
   totalScheduled: number; // all queued+processing parent tasks
 }
 
+export interface LlmCircuitStatus {
+  state: 'closed' | 'open' | 'half-open';
+  retryInMs: number | null; // ms until the open circuit next probes; null unless open
+}
+
 export interface LlmTaskStats {
   queued: number;
   processing: number;
@@ -181,6 +186,7 @@ export interface LlmTaskStats {
   failed: number;
   cancelled: number;
   eta?: QueueEtaEstimate;
+  circuit?: LlmCircuitStatus;
 }
 
 export interface LlmUsageTotals {

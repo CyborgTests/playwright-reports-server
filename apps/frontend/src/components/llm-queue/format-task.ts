@@ -71,6 +71,7 @@ export const ROLE_LABEL: Record<string, string> = {
   tier: 'Tier',
   scorer: 'Scorer',
   screenshot_parser: 'Screenshot',
+  fallback: 'Fallback',
 };
 
 export function isMultiRoleStrategy(strategy?: string | null): boolean {

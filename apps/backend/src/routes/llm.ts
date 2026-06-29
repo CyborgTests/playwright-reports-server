@@ -1,6 +1,7 @@
 import type { LlmDefaultPrompts, LlmUsageByModel, LlmUsageStats } from '@playwright-reports/shared';
 import { CAPABILITIES, MIN_ESTIMATE_SAMPLES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { llmService } from '../lib/llm/index.js';
 import {
   PROJECT_SUMMARY_SYSTEM_PROMPT,
   PROJECT_SUMMARY_TASK_INSTRUCTIONS,
@@ -209,7 +210,8 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     try {
       const stats = llmTasksDb.getStats();
       const eta = computeQueueEta();
-      return { success: true, ...stats, eta };
+      const circuit = llmService.getCircuitState();
+      return { success: true, ...stats, eta, circuit };
     } catch (error) {
       fastify.log.error(error);
       return reply.status(500).send({
