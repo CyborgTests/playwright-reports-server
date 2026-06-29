@@ -162,6 +162,17 @@ interface StrategyEstimateRow {
   samples: number;
 }
 
+export interface ScheduledEtaTask {
+  id: string;
+  type: LlmTaskType;
+  status: LlmTaskStatus;
+  startedAt: string | null;
+  priority: number;
+  createdAt: string;
+  reportId: string | null;
+  project: string | null;
+}
+
 export class LlmTasksDatabase {
   private readonly k = getKysely();
   private readonly db = getDatabase();
@@ -762,22 +773,14 @@ export class LlmTasksDatabase {
     return { data, total };
   }
 
-  public getScheduledForEta(): Array<{
-    type: LlmTaskType;
-    status: LlmTaskStatus;
-    startedAt: string | null;
-  }> {
+  public getScheduledForEta(): ScheduledEtaTask[] {
     const compiled = this.k
       .selectFrom('llm_tasks')
-      .select(['type', 'status', 'startedAt'])
+      .select(['id', 'type', 'status', 'startedAt', 'priority', 'createdAt', 'reportId', 'project'])
       .where('parentTaskId', 'is', null)
       .where('status', 'in', ['queued', 'processing'])
       .compile();
-    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
-      type: LlmTaskType;
-      status: LlmTaskStatus;
-      startedAt: string | null;
-    }>;
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as ScheduledEtaTask[];
   }
 
   public getDistinctModels(): string[] {

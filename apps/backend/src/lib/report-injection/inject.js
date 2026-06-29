@@ -511,13 +511,51 @@ function renderLoadingInto(testId, rid, anchor, askBtn, errorsSection, taskId = 
           border-radius: 50%;
           animation: llm-spin 1s linear infinite;
         "></div>
-        <span style="color: var(--llm-muted); font-size: 13px;">
-          LLM analysis is already queued / running. This panel will update automagically.
-        </span>
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="color: var(--llm-muted); font-size: 13px;">
+            LLM analysis is queued / running.
+          </span>
+          <span id="llm-eta" style="color: var(--llm-muted); font-size: 12px;"></span>
+        </div>
       </div>
     </div>
   `;
   errorsSection.parentNode.insertBefore(section, errorsSection);
+
+  const formatEtaMs = (ms) => {
+    const total = Math.round(ms / 1000);
+    if (total < 60) return `${total}s`;
+    return `${Math.floor(total / 60)}m ${total % 60}s`;
+  };
+  let etaAnchor = null;
+  const etaEl = section.querySelector('#llm-eta');
+  const renderEta = () => {
+    if (!etaEl) return;
+    if (!etaAnchor) {
+      etaEl.textContent = '';
+      return;
+    }
+    const left = Math.max(0, etaAnchor.ms - (Date.now() - etaAnchor.at));
+    etaEl.textContent = left > 0 ? `~${formatEtaMs(left)} left` : 'finishing…';
+  };
+  const setEta = (ms) => {
+    if (typeof ms === 'number' && ms > 0) etaAnchor = { ms, at: Date.now() };
+    renderEta();
+  };
+  const etaTimer = setInterval(() => {
+    if (!section.isConnected || section.dataset.loading !== '1') {
+      clearInterval(etaTimer);
+      return;
+    }
+    renderEta();
+  }, 1000);
+  getAnalysis(testId, rid)
+    .then((data) => {
+      if (data?.success && data?.pending) setEta(data.pending.etaMs);
+    })
+    .catch(() => {
+      // best-effort: leave the panel without an ETA if the prime fetch fails
+    });
 
   const restoreAskControls = () => {
     setFullCopyBtnVisibility(true);
@@ -581,6 +619,7 @@ function renderLoadingInto(testId, rid, anchor, askBtn, errorsSection, taskId = 
         .then((data) => {
           if (renderIfResolved(data)) return;
           if (data?.success && data?.pending && attempts < MAX_ATTEMPTS) {
+            setEta(data.pending.etaMs);
             setTimeout(tick, 3000);
             return;
           }

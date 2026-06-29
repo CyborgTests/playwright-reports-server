@@ -1,4 +1,4 @@
-import type { ProjectAnalysisStructured } from '@playwright-reports/shared';
+import { formatDuration, type ProjectAnalysisStructured } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Brain, RefreshCw } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useConfig } from '@/hooks/useConfig';
+import { useCountdown } from '@/hooks/useCountdown';
 import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 import { defaultProjectName } from '@/lib/constants';
@@ -34,6 +35,7 @@ interface CachedSummaryResponse {
   success: boolean;
   data: CachedProjectSummary | null;
   pendingAnalysisCount?: number;
+  pendingEtaMs?: number | null;
 }
 
 interface EnqueueResponse {
@@ -66,7 +68,7 @@ export function FailureAnalysisSummary({
     retry: false,
     refetchInterval: (query) => {
       const data = query.state.data as CachedSummaryResponse | undefined;
-      return (data?.pendingAnalysisCount ?? 0) > 0 ? 5000 : false;
+      return (data?.pendingAnalysisCount ?? 0) > 0 ? 3000 : false;
     },
   });
 
@@ -83,6 +85,8 @@ export function FailureAnalysisSummary({
   const summary = cached?.data ?? null;
   const pendingAnalysisCount = cached?.pendingAnalysisCount ?? 0;
   const hasOngoingAnalysis = pendingAnalysisCount > 0 || isEnqueuing;
+  const liveEtaMs = useCountdown(cached?.pendingEtaMs ?? null);
+  const etaText = liveEtaMs && liveEtaMs > 0 ? `~${formatDuration(liveEtaMs)} left` : null;
 
   if (isLoading) {
     return null;
@@ -113,6 +117,7 @@ export function FailureAnalysisSummary({
               <Spinner size="sm" className="mr-1" />
               Analysis ongoing
               {pendingAnalysisCount > 0 ? ` (${pendingAnalysisCount})` : ''}
+              {etaText ? ` · ${etaText}` : ''}
             </Button>
           </span>
         </TooltipTrigger>

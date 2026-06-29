@@ -1,5 +1,5 @@
 import { formatDuration } from '@playwright-reports/shared';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useCountdown } from '@/hooks/useCountdown';
 import { useLlmModels } from '@/hooks/useLlmModels';
 import {
   type LlmTaskStats,
@@ -134,26 +135,6 @@ function UsageByModelBreakdown({ days }: { days: number }) {
       )}
     </div>
   );
-}
-
-// Tick the server's drain estimate down each second, re-anchoring whenever a
-// fresh estimate arrives, so "~Xm left" counts down instead of sitting static
-// between stats refetches.
-function useCountdown(targetMs: number | null): number | null {
-  const [remaining, setRemaining] = useState<number | null>(targetMs);
-  useEffect(() => {
-    if (targetMs == null) {
-      setRemaining(null);
-      return;
-    }
-    const anchor = Date.now();
-    setRemaining(targetMs);
-    const id = setInterval(() => {
-      setRemaining(Math.max(0, targetMs - (Date.now() - anchor)));
-    }, 1000);
-    return () => clearInterval(id);
-  }, [targetMs]);
-  return remaining;
 }
 
 export function StatsBar({ stats }: Readonly<{ stats: LlmTaskStats | undefined }>) {

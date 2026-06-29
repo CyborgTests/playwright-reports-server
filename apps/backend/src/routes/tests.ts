@@ -3,6 +3,7 @@ import { CAPABILITIES, ROOT_CAUSE_CATEGORIES } from '@playwright-reports/shared'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { invalidateFailureClustersCache } from '../lib/failure-clustering/index.js';
 import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
+import { getTaskEtaMs } from '../lib/llm/queueEta.js';
 import {
   llmTasksDb,
   regressionsDb,
@@ -426,7 +427,11 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
             return reply.send({
               success: true,
               data: null,
-              pending: { taskId: retryPending.id, status: retryPending.status },
+              pending: {
+                taskId: retryPending.id,
+                status: retryPending.status,
+                etaMs: getTaskEtaMs(retryPending.id),
+              },
             });
           }
 
@@ -452,7 +457,9 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
           return reply.send({
             success: true,
             data: null,
-            pending: pending ? { taskId: pending.id, status: pending.status } : null,
+            pending: pending
+              ? { taskId: pending.id, status: pending.status, etaMs: getTaskEtaMs(pending.id) }
+              : null,
           });
         } catch (error) {
           fastify.log.error(error);

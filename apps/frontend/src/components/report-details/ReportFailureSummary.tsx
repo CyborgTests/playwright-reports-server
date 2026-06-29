@@ -2,6 +2,7 @@ import {
   FAILURE_CATEGORY_DESCRIPTIONS,
   type FailureCategory,
   type ReportFailureSummary as FailureSummary,
+  formatDuration,
 } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Brain, RefreshCw } from 'lucide-react';
@@ -15,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useConfig } from '@/hooks/useConfig';
+import { useCountdown } from '@/hooks/useCountdown';
 import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 import { ReportAnalysisRenderer, ReportVerdictBadge } from './ReportAnalysisRenderer';
@@ -28,6 +30,7 @@ interface FailureSummaryResponse {
   data?: FailureSummary;
   hasFailures?: boolean;
   pendingAnalysisCount?: number;
+  pendingEtaMs?: number | null;
   error?: string;
 }
 
@@ -70,7 +73,7 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
     retry: false,
     refetchInterval: (query) => {
       const data = query.state.data as FailureSummaryResponse | undefined;
-      return (data?.pendingAnalysisCount ?? 0) > 0 ? 10000 : false;
+      return (data?.pendingAnalysisCount ?? 0) > 0 ? 3000 : false;
     },
   });
 
@@ -84,6 +87,7 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
   );
 
   const llmConfigured = !!config?.llm?.configured;
+  const liveEtaMs = useCountdown(summaryResponse?.pendingEtaMs ?? null);
 
   if (isLoading) {
     return null;
@@ -93,6 +97,7 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
   const hasFailures = summaryResponse?.hasFailures ?? false;
   const pendingAnalysisCount = summaryResponse?.pendingAnalysisCount ?? 0;
   const hasOngoingAnalysis = pendingAnalysisCount > 0 || isAnalyzing;
+  const etaText = liveEtaMs && liveEtaMs > 0 ? `~${formatDuration(liveEtaMs)} left` : null;
 
   if (!summary && !llmConfigured) {
     return null;
@@ -118,6 +123,7 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
                     <Button size="sm" variant="outline" disabled>
                       <Spinner size="sm" className="mr-1" />
                       Analysis ongoing{pendingAnalysisCount > 0 ? ` (${pendingAnalysisCount})` : ''}
+                      {etaText ? ` · ${etaText}` : ''}
                     </Button>
                   </span>
                 </TooltipTrigger>
@@ -164,7 +170,8 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
                 <TooltipTrigger asChild>
                   <span className="inline-flex">
                     <Button size="sm" variant="ghost" disabled>
-                      <Spinner size="sm" />
+                      <Spinner size="sm" className={etaText ? 'mr-1' : ''} />
+                      {etaText ?? ''}
                     </Button>
                   </span>
                 </TooltipTrigger>

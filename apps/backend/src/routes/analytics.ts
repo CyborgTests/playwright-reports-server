@@ -5,6 +5,7 @@ import {
   MANUAL_PROJECT_SUMMARY_PRIORITY,
   PROJECT_SUMMARY_REPORT_LIMIT,
 } from '../lib/llm/queue/index.js';
+import { getProjectEtaMs } from '../lib/llm/queueEta.js';
 import { analyticsService } from '../lib/service/analytics.js';
 import { llmTasksDb, projectSummaryDb, reportDb } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
@@ -150,6 +151,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
           success: true,
           data: responseData,
           pendingAnalysisCount,
+          pendingEtaMs: getProjectEtaMs(projectKey),
         });
       } catch (error) {
         fastify.log.error(error);
