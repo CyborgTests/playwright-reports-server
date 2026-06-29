@@ -77,13 +77,6 @@ export default function LlmQueuePage() {
     },
   });
 
-  const rerunAllMutation = useMutation('/api/llm/rerun-all', {
-    onSuccess: () => {
-      toast.success('Re-running all failed tasks');
-      invalidateLlmQueries();
-    },
-  });
-
   const bulkDeleteMutation = useMutation('/api/llm/tasks', {
     method: 'DELETE',
     onSuccess: () => {
@@ -97,18 +90,27 @@ export default function LlmQueuePage() {
     method: 'PATCH',
     silent: true,
   });
+  const { mutateAsync: retryTask } = useMutation('/api/llm/tasks', { silent: true });
   const [isBulkCancelling, setIsBulkCancelling] = useState(false);
+  const [isBulkRerunning, setIsBulkRerunning] = useState(false);
+
+  const selectedTasks = tasks.filter((t) => selectedIds.has(t.id));
+  const cancelableIds = selectedTasks
+    .filter((t) => t.status === 'queued' || t.status === 'processing')
+    .map((t) => t.id);
+  const rerunnableIds = selectedTasks
+    .filter((t) => t.status === 'failed' || t.status === 'completed')
+    .map((t) => t.id);
 
   const handleBulkCancel = useCallback(async () => {
     setIsBulkCancelling(true);
     try {
-      const ids = Array.from(selectedIds);
       const results = await Promise.allSettled(
-        ids.map((id) => cancelTask({ path: `/api/llm/tasks/${id}/cancel` }))
+        cancelableIds.map((id) => cancelTask({ path: `/api/llm/tasks/${id}/cancel` }))
       );
       const failed = results.filter((r) => r.status === 'rejected').length;
       if (failed > 0) {
-        toast.error(`Failed to cancel ${failed} of ${ids.length} task(s)`);
+        toast.error(`Failed to cancel ${failed} of ${cancelableIds.length} task(s)`);
       } else {
         toast.success('Selected tasks cancelled');
       }
@@ -117,7 +119,26 @@ export default function LlmQueuePage() {
     } finally {
       setIsBulkCancelling(false);
     }
-  }, [selectedIds, invalidateLlmQueries, cancelTask]);
+  }, [cancelableIds, invalidateLlmQueries, cancelTask]);
+
+  const handleBulkRerun = useCallback(async () => {
+    setIsBulkRerunning(true);
+    try {
+      const results = await Promise.allSettled(
+        rerunnableIds.map((id) => retryTask({ path: `/api/llm/tasks/${id}/retry` }))
+      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed > 0) {
+        toast.error(`Failed to re-run ${failed} of ${rerunnableIds.length} task(s)`);
+      } else {
+        toast.success('Selected tasks queued for re-run');
+      }
+      setSelectedIds(new Set());
+      invalidateLlmQueries();
+    } finally {
+      setIsBulkRerunning(false);
+    }
+  }, [rerunnableIds, invalidateLlmQueries, retryTask]);
 
   const allSelected = tasks.length > 0 && tasks.every((t) => selectedIds.has(t.id));
 
@@ -228,15 +249,7 @@ export default function LlmQueuePage() {
             disabled={generateExistingMutation.isPending}
             onClick={() => generateExistingMutation.mutate({})}
           >
-            {generateExistingMutation.isPending ? 'Starting...' : 'Generate for Existing'}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={rerunAllMutation.isPending}
-            onClick={() => rerunAllMutation.mutate({})}
-          >
-            {rerunAllMutation.isPending ? 'Re-running...' : 'Re-run All Failed'}
+            {generateExistingMutation.isPending ? 'Starting...' : 'Backfill Failure Analyses'}
           </Button>
           <Button
             variant="destructive"
@@ -271,10 +284,18 @@ export default function LlmQueuePage() {
           <Button
             variant="outline"
             size="sm"
-            disabled={isBulkCancelling}
+            disabled={isBulkRerunning || rerunnableIds.length === 0}
+            onClick={handleBulkRerun}
+          >
+            {isBulkRerunning ? 'Re-running...' : `Re-run Selected (${rerunnableIds.length})`}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isBulkCancelling || cancelableIds.length === 0}
             onClick={handleBulkCancel}
           >
-            {isBulkCancelling ? 'Cancelling...' : `Cancel Selected (${selectedIds.size})`}
+            {isBulkCancelling ? 'Cancelling...' : `Cancel Selected (${cancelableIds.length})`}
           </Button>
         </div>
       )}

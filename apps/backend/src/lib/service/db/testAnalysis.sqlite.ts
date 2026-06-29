@@ -253,11 +253,6 @@ export class TestAnalysisDatabase {
       | undefined;
     return row ?? null;
   }
-
-  public deleteAll(): void {
-    const compiled = this.k.deleteFrom('test_llm_analyses').compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
-  }
 }
 
 export const testAnalysisDb = singletonOf('testAnalysis', () => new TestAnalysisDatabase());

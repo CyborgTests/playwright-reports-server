@@ -436,11 +436,6 @@ export class FailureSummaryDatabase {
       cache.delete(oldest);
     }
   }
-
-  public deleteAll(): void {
-    const compiled = this.k.deleteFrom('report_failure_summaries').compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
-  }
 }
 
 export const failureSummaryDb = singletonOf('failureSummary', () => new FailureSummaryDatabase());

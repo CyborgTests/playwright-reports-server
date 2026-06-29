@@ -624,7 +624,7 @@ export class LlmTasksDatabase {
         isRetry: 1,
       })
       .where('id', '=', id)
-      .where('status', '=', 'failed')
+      .where('status', 'in', ['failed', 'completed'])
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
     llmTaskEvents.emitEnqueue();
