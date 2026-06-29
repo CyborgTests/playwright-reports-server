@@ -6,6 +6,11 @@ import { withBase } from '../lib/url';
 import { authHeadersForSession, useAuth } from './useAuth';
 
 const UNAUTHORIZED_ERROR = 'Unauthorized';
+const FORBIDDEN_ERROR = 'Forbidden';
+
+export function isForbidden(error: unknown): boolean {
+  return error instanceof Error && error.message === FORBIDDEN_ERROR;
+}
 
 const useQuery = <TData, TQueryFnData = TData>(
   path: string,
@@ -38,6 +43,10 @@ const useQuery = <TData, TQueryFnData = TData>(
         throw new Error(UNAUTHORIZED_ERROR);
       }
 
+      if (response.status === 403) {
+        throw new Error(FORBIDDEN_ERROR);
+      }
+
       if (!response.ok) {
         const message = extractResponseError(await response.text(), response.status);
         toast.error(message);
@@ -51,7 +60,10 @@ const useQuery = <TData, TQueryFnData = TData>(
     ...(options?.gcTime !== undefined && { gcTime: options.gcTime }),
     retry:
       options?.retry ??
-      ((failureCount, error) => error.message !== UNAUTHORIZED_ERROR && failureCount < 3),
+      ((failureCount, error) =>
+        error.message !== UNAUTHORIZED_ERROR &&
+        error.message !== FORBIDDEN_ERROR &&
+        failureCount < 3),
     ...(options?.select !== undefined && { select: options.select }),
     ...(options?.placeholderData !== undefined && { placeholderData: options.placeholderData }),
     ...(options?.refetchInterval !== undefined && { refetchInterval: options.refetchInterval }),
