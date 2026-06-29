@@ -24,6 +24,7 @@ import * as auth from './0020_auth.js';
 import * as oauth from './0021_oauth.js';
 import * as renameReaderToMember from './0022_rename_reader_to_member.js';
 import * as apiKeyShareToken from './0023_api_key_share_token.js';
+import * as legacyStoragePath from './0024_legacy_storage_path.js';
 
 // Ordered, statically-imported migration set. The keys are the names Kysely
 // records in its `kysely_migration` table; their lexical order is the run order,
@@ -87,6 +88,10 @@ const MIGRATIONS: Record<string, Migration> = {
   '0023_api_key_share_token': {
     up: apiKeyShareToken.up,
     down: apiKeyShareToken.down,
+  },
+  '0024_legacy_storage_path': {
+    up: legacyStoragePath.up,
+    down: legacyStoragePath.down,
   },
 };
 

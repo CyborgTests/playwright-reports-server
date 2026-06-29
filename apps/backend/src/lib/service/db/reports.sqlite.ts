@@ -89,6 +89,7 @@ const REPORT_COLUMNS_WITHOUT_FILES = [
   'statUnexpected',
   'statFlaky',
   'statSkipped',
+  'storagePath',
 ] as const satisfies ReadonlyArray<keyof ReportsRow>;
 
 const REPORT_ANALYTICS_COLUMNS = [
@@ -215,6 +216,7 @@ export class ReportDatabase {
       sizeBytes,
       stats,
       files,
+      storagePath,
       ...metadata
     } = report;
 
@@ -253,6 +255,7 @@ export class ReportDatabase {
         gitBranch: git?.branch ?? null,
         gitCommitSubject: git?.subject ?? null,
         ciBuildHref: ci?.buildHref ?? null,
+        storagePath: storagePath ?? null,
         updatedAt: undefined,
       })
       .onConflict((oc) =>
@@ -278,6 +281,7 @@ export class ReportDatabase {
           gitBranch: eb.ref('excluded.gitBranch'),
           gitCommitSubject: eb.ref('excluded.gitCommitSubject'),
           ciBuildHref: eb.ref('excluded.ciBuildHref'),
+          storagePath: eb.ref('excluded.storagePath'),
           updatedAt: new Date().toISOString(),
         }))
       )
@@ -548,6 +552,13 @@ export class ReportDatabase {
       | { reportID: string }
       | undefined;
     return row?.reportID ?? null;
+  }
+
+  public getStoragePath(reportID: string): string | null {
+    const row = this.db
+      .prepare('SELECT storagePath FROM reports WHERE reportID = ?')
+      .get(reportID) as { storagePath: string | null } | undefined;
+    return row?.storagePath ?? null;
   }
 
   public getByID(reportID: string): ReportHistory | undefined {
@@ -936,6 +947,7 @@ export class ReportDatabase {
         size: row.size || undefined,
         sizeBytes: row.sizeBytes,
         stats,
+        storagePath: row.storagePath ?? undefined,
         ...metadata,
       } as unknown as ReportHistory;
       if (parseCache.size >= PARSE_CACHE_MAX) {

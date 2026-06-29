@@ -86,6 +86,7 @@ export interface ReportsRow {
   gitBranch: string | null;
   gitCommitSubject: string | null;
   ciBuildHref: string | null;
+  storagePath: string | null;
   updatedAt: WithDefault<string | null>;
 }
 

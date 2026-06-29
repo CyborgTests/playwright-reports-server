@@ -146,8 +146,22 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       const isIndexHtml = contentType === 'text/html' && targetPath.endsWith('index.html');
       // no Range for index.html: it's mutated (LLM button injection) and served whole.
       const range = isIndexHtml ? undefined : parseRange(request.headers.range);
+
+      // one indexed point-lookup per served file; 
+      // add a reportId->prefix memo cache only if serve throughput needs.
+      let effectivePath = targetPath;
+      const reportSegment = targetPath.split('/')[0];
+      const storagePath = reportSegment ? reportDb.getStoragePath(reportSegment) : null;
+      if (storagePath && storagePath !== reportSegment) {
+        const rewritten = storagePath + targetPath.slice(reportSegment.length);
+        const resolvedRewritten = resolve(reportsRoot, rewritten);
+        if (resolvedRewritten === reportsRoot || resolvedRewritten.startsWith(reportsRoot + sep)) {
+          effectivePath = rewritten;
+        }
+      }
+
       const { result, error } = await withError(
-        storage.readFile(targetPath, contentType || null, range)
+        storage.readFile(effectivePath, contentType || null, range)
       );
 
       if (error || !result) {

@@ -99,6 +99,9 @@ export type Report = {
   createdAt: string;
   size: string;
   sizeBytes: number;
+  // Relative storage prefix for in-place legacy reports (`{project}/{id}`); null/undefined
+  // for native flat reports whose path is the reportID. See migration 0024.
+  storagePath?: string | null;
   regressions?: {
     newHere: number;
     resolvedHere: number;
