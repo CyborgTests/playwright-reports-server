@@ -3,7 +3,7 @@ import type { ClaimCandidate } from '../../service/db/llmTasks.sqlite.js';
 import { llmTaskEvents } from '../../service/llmTaskEvents.js';
 import { llmService } from '../index.js';
 import { type GateReservation, modelGate, reservationStore } from '../modelGate.js';
-import { isFallbackChainEnabled, isLlmFeatureEnabled, resolveGate } from '../registry.js';
+import { anyModelCircuitAvailable, isLlmFeatureEnabled, resolveGate } from '../registry.js';
 import { resolveOneShotModelRow } from '../routing/index.js';
 import { registerRunningTask, runWithTaskSignal, unregisterRunningTask } from '../taskSignal.js';
 import { LLMProviderError } from '../types/index.js';
@@ -92,8 +92,7 @@ class LlmAnalysisQueue {
       const canProcess = isLlmFeatureEnabled() && llmService.isConfigured();
       if (canProcess && llmTasksDb.hasQueued()) {
         pending = true;
-        const circuitOk = !llmService.isCircuitOpen() || isFallbackChainEnabled();
-        if (circuitOk) {
+        if (anyModelCircuitAvailable()) {
           this.maxParallel = this.getBudget();
           while (this.running && this.activeTasks < this.maxParallel) {
             if (!this.fillSlot()) break;

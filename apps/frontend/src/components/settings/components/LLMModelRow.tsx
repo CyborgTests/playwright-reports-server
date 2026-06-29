@@ -66,7 +66,15 @@ export function LLMModelRow({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium truncate">{m.label}</span>
             {m.isPrimary && <Badge variant="success">Primary</Badge>}
-            {m.lastError ? (
+            {m.circuit && m.circuit.state !== 'closed' ? (
+              <Badge
+                variant="destructive"
+                className="text-xs"
+                title={m.lastError ?? 'Temporarily disabled after repeated failures; retrying...'}
+              >
+                {m.circuit.state === 'open' ? 'Circuit open' : 'Recovering'}
+              </Badge>
+            ) : m.lastError ? (
               <Badge variant="destructive" className="text-xs" title={m.lastError}>
                 Failing
               </Badge>

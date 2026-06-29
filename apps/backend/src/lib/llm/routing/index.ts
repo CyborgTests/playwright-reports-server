@@ -11,6 +11,7 @@ import { fitToContextWindow } from '../queue/tasks/promptFitting.js';
 import {
   type FallbackSendResult,
   getPrimaryModelTemperature,
+  isFallbackChainEnabled,
   sendViaModelRow,
   sendWithFallback,
 } from '../registry.js';
@@ -134,6 +135,7 @@ async function executeStrategy(
         return await sendWithFallback(prompt, options, hooks);
     }
   } catch (err) {
+    if (!isFallbackChainEnabled()) throw err;
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(
       `[llm-routing] ${routing.strategy} failed for ${taskType}: ${msg}; falling back to one_shot`

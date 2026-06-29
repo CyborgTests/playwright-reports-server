@@ -1,10 +1,21 @@
-import type { LLMMultimodalMode, LLMProviderType, LlmModel } from '@playwright-reports/shared';
+import type {
+  LLMMultimodalMode,
+  LLMProviderType,
+  LlmCircuitStatus,
+  LlmModel,
+} from '@playwright-reports/shared';
 import { decryptToken } from '../githubSync/encryption.js';
 import { configCache } from '../service/cache/config.js';
 import { type LlmModelRow, llmGroupsDb, llmModelsDb } from '../service/db/index.js';
+import { circuitFor, circuitStatusFor } from './circuitBreaker.js';
 import { llmService, type SegmentedSendOptions } from './index.js';
 import { modelGate, reservationStore } from './modelGate.js';
-import type { LLMProviderConfig, LLMResponse, SegmentedPrompt } from './types/index.js';
+import {
+  type LLMProviderConfig,
+  LLMProviderError,
+  type LLMResponse,
+  type SegmentedPrompt,
+} from './types/index.js';
 
 const API_KEY_MASK = '********';
 
@@ -31,6 +42,7 @@ export function toLlmModel(row: LlmModelRow): LlmModel {
     concurrencyGroupId: row.concurrencyGroupId,
     lastTestedAt: row.lastTestedAt ?? undefined,
     lastError: row.lastError ?? undefined,
+    circuit: circuitStatusFor(row.id),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -79,14 +91,51 @@ export async function runOnModel<T>(
   fn: () => Promise<T>,
   onStart?: () => void
 ): Promise<T> {
+  const breaker = circuitFor(row.id, row.label);
+  if (!breaker.shouldAttempt()) {
+    throw new LLMProviderError(
+      `model "${row.label}" circuit open - it has been failing; retrying in ${Math.ceil(
+        breaker.msUntilRetry() / 1000
+      )}s`,
+      'circuit_open'
+    );
+  }
+  const guarded = async (): Promise<T> => {
+    try {
+      const result = await fn();
+      breaker.onSuccess();
+      return result;
+    } catch (err) {
+      breaker.onFailure(err);
+      throw err;
+    }
+  };
   const gate = resolveGate(row);
   const held = reservationStore.getStore();
   if (held && !held.consumed && held.gateKey === gate.key) {
     held.consumed = true;
     onStart?.();
-    return fn();
+    return guarded();
   }
-  return modelGate.run(gate.key, gate.limit, fn, onStart);
+  return modelGate.run(gate.key, gate.limit, guarded, onStart);
+}
+
+export function anyModelCircuitAvailable(): boolean {
+  const enabled = llmModelsDb.list().filter((m) => m.enabled === 1);
+  if (enabled.length === 0) return true;
+  return enabled.some((m) => circuitStatusFor(m.id).state !== 'open');
+}
+
+export function aggregateCircuitStatus(): LlmCircuitStatus {
+  const enabled = llmModelsDb.list().filter((m) => m.enabled === 1);
+  if (enabled.length === 0) return { state: 'closed', retryInMs: null };
+  const statuses = enabled.map((m) => circuitStatusFor(m.id));
+  if (statuses.some((s) => s.state === 'closed')) return { state: 'closed', retryInMs: null };
+  const open = statuses.filter((s) => s.state === 'open');
+  if (open.length > 0) {
+    return { state: 'open', retryInMs: Math.min(...open.map((s) => s.retryInMs ?? 0)) };
+  }
+  return { state: 'half-open', retryInMs: null };
 }
 
 export interface FallbackHooks {

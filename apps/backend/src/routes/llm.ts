@@ -1,7 +1,6 @@
 import type { LlmDefaultPrompts, LlmUsageByModel, LlmUsageStats } from '@playwright-reports/shared';
 import { CAPABILITIES, MIN_ESTIMATE_SAMPLES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { llmService } from '../lib/llm/index.js';
 import {
   PROJECT_SUMMARY_SYSTEM_PROMPT,
   PROJECT_SUMMARY_TASK_INSTRUCTIONS,
@@ -17,19 +16,16 @@ import {
   DEFAULT_SYNTHESIZER_DIRECTIVE,
 } from '../lib/llm/prompts/routing.js';
 import { computeQueueEta } from '../lib/llm/queueEta.js';
-import { isLlmFeatureEnabled } from '../lib/llm/registry.js';
+import { aggregateCircuitStatus, isLlmFeatureEnabled } from '../lib/llm/registry.js';
 import { abortRunningTask } from '../lib/llm/taskSignal.js';
 import { DEFAULT_SCREENSHOT_PARSE_PROMPT } from '../lib/llm/visionTranscribe.js';
 import {
-  failureSummaryDb,
-  getDatabase,
   getUsageByModel,
   getUsageStats,
   type LlmTaskRow,
   type LlmTaskStatus,
   type LlmTaskType,
   llmTasksDb,
-  testAnalysisDb,
   testAnalyticsDb,
 } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
@@ -210,7 +206,7 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     try {
       const stats = llmTasksDb.getStats();
       const eta = computeQueueEta();
-      const circuit = llmService.getCircuitState();
+      const circuit = aggregateCircuitStatus();
       return { success: true, ...stats, eta, circuit };
     } catch (error) {
       fastify.log.error(error);
@@ -440,34 +436,5 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     };
 
     return { success: true, data };
-  });
-
-  fastify.post('/api/llm/rerun-all', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
-    if (authResult) return;
-    if (!isLlmFeatureEnabled()) {
-      return reply.status(403).send({ success: false, error: 'LLM features are disabled' });
-    }
-
-    try {
-      const tx = getDatabase().transaction(() => {
-        testAnalysisDb.deleteAll();
-        failureSummaryDb.deleteAll();
-      });
-      tx();
-
-      const rows = getFailedTestsWithoutAnalysis();
-      const batch = rows.slice(0, BULK_REQUEUE_LIMIT);
-      const queued = llmTasksDb.bulkCreateTestAnalysis(batch);
-      const remaining = Math.max(0, rows.length - queued);
-
-      return { success: true, queued, remaining };
-    } catch (error) {
-      fastify.log.error(error);
-      return reply.status(500).send({
-        success: false,
-        error: 'Failed to rerun all analyses',
-      });
-    }
   });
 }

@@ -3,6 +3,7 @@ import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { decryptToken, encryptToken } from '../lib/githubSync/encryption.js';
+import { deleteCircuit, resetCircuit } from '../lib/llm/circuitBreaker.js';
 import { llmService } from '../lib/llm/index.js';
 import { applyPrimaryModel, toLlmModel } from '../lib/llm/registry.js';
 import { type LlmModelRow, llmGroupsDb, llmModelsDb } from '../lib/service/db/index.js';
@@ -190,6 +191,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
         };
         llmModelsDb.update(request.params.id, next);
 
+        if (connectionChanged || willEnable) resetCircuit(request.params.id);
         if (existing.isPrimary === 1) await applyPrimaryModel();
         return toLlmModel(llmModelsDb.get(request.params.id) as LlmModelRow);
       }
@@ -239,6 +241,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
             .send({ error: 'cannot delete the primary model - make another model primary first' });
         }
         llmModelsDb.delete(request.params.id);
+        deleteCircuit(request.params.id);
         return { id: request.params.id, deleted: true };
       }
     );
@@ -259,6 +262,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
 
         if (result.success) {
           llmModelsDb.setLastTested(request.params.id, new Date().toISOString());
+          resetCircuit(request.params.id);
         } else {
           llmModelsDb.setLastError(request.params.id, result.error ?? 'connection test failed');
         }

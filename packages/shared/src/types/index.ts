@@ -1,4 +1,5 @@
 import type { AccessMatrixOverrides, Role } from '../access.js';
+import type { LlmCircuitStatus } from './analytics.js';
 
 export type UUID = `${string}-${string}-${string}-${string}-${string}`;
 
@@ -93,6 +94,7 @@ export interface LlmModel {
   concurrencyGroupId?: string | null;
   lastTestedAt?: string;
   lastError?: string;
+  circuit?: LlmCircuitStatus;
   createdAt: string;
   updatedAt: string;
 }
