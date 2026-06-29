@@ -46,8 +46,10 @@ export async function registerApiKeysRoutes(fastify: FastifyInstance) {
 
     f.get('/api/keys', async (request: FastifyRequest) => {
       const { page, limit, offset } = parsePageQuery(request.query);
+      const includeRevoked =
+        (request.query as { includeInactive?: string }).includeInactive === 'true';
       if (can(request.auth?.role, CAPABILITIES.apiKeysService)) {
-        const rows = apiKeysDb.listAllApiKeysPaged(limit, offset);
+        const rows = apiKeysDb.listAllApiKeysPaged(limit, offset, includeRevoked);
         // Resolve owner names only for this page's keys (not the whole user table).
         const ownerIds = [
           ...new Set(rows.map((k) => k.ownerUserId).filter((id): id is string => id !== null)),
@@ -58,14 +60,19 @@ export async function registerApiKeysRoutes(fastify: FastifyInstance) {
         const data = rows.map((k) =>
           toPublic(k, k.ownerUserId ? (usernameById.get(k.ownerUserId) ?? null) : null)
         );
-        return pageResponse(data, apiKeysDb.countApiKeys(), page, limit);
+        return pageResponse(data, apiKeysDb.countApiKeys(includeRevoked), page, limit);
       }
       const ownerId = request.auth?.userId ?? null;
       if (!ownerId) return pageResponse([], 0, page, limit);
       const data = apiKeysDb
-        .listApiKeysByOwnerPaged(ownerId, limit, offset)
+        .listApiKeysByOwnerPaged(ownerId, limit, offset, includeRevoked)
         .map((k) => toPublic(k));
-      return pageResponse(data, apiKeysDb.countApiKeysByOwner(ownerId), page, limit);
+      return pageResponse(
+        data,
+        apiKeysDb.countApiKeysByOwner(ownerId, includeRevoked),
+        page,
+        limit
+      );
     });
 
     f.post('/api/keys', async (request, reply) => {

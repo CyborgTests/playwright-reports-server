@@ -39,9 +39,11 @@ export async function registerUsersRoutes(fastify: FastifyInstance) {
 
     f.get('/api/users', async (request) => {
       const { page, limit, offset } = parsePageQuery(request.query);
+      const includeDisabled =
+        (request.query as { includeInactive?: string }).includeInactive === 'true';
       return pageResponse(
-        usersDb.listUsersPaged(limit, offset).map(toPublic),
-        usersDb.countUsers(),
+        usersDb.listUsersPaged(limit, offset, includeDisabled).map(toPublic),
+        usersDb.countUsers(includeDisabled),
         page,
         limit
       );

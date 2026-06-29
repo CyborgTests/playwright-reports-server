@@ -1,5 +1,5 @@
 import type { PaginationResponse } from '@playwright-reports/shared';
-import { useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -54,14 +55,15 @@ interface ApiKey {
 }
 
 const KEYS_PATH = '/api/keys';
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 10;
 
 export default function ApiKeysManagement({ canManageAllKeys }: { canManageAllKeys: boolean }) {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
+  const [showInactive, setShowInactive] = useState(false);
   const { data, isLoading } = useQuery<PaginationResponse<ApiKey>>(
-    `${KEYS_PATH}?page=${page}&limit=${PAGE_SIZE}`,
-    { queryKey: [KEYS_PATH, page] }
+    `${KEYS_PATH}?page=${page}&limit=${PAGE_SIZE}${showInactive ? '&includeInactive=true' : ''}`,
+    { queryKey: [KEYS_PATH, page, showInactive], placeholderData: keepPreviousData }
   );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [createdKey, setCreatedKey] = useState<string | null>(null);
@@ -97,9 +99,24 @@ export default function ApiKeysManagement({ canManageAllKeys }: { canManageAllKe
               {canManageAllKeys && ' As an admin you can see and revoke every user’s keys.'}
             </CardDescription>
           </div>
-          <Button size="sm" onClick={() => setDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> New key
-          </Button>
+          <div className="flex shrink-0 items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="keys-show-revoked"
+                checked={showInactive}
+                onCheckedChange={setShowInactive}
+              />
+              <Label
+                htmlFor="keys-show-revoked"
+                className="text-sm font-normal text-muted-foreground"
+              >
+                Show revoked
+              </Label>
+            </div>
+            <Button size="sm" onClick={() => setDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" /> New key
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (

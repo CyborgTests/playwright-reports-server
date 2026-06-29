@@ -1,8 +1,10 @@
-import { useQueryClient } from '@tanstack/react-query';
+import type { PaginationResponse } from '@playwright-reports/shared';
+import { keepPreviousData, useQueryClient } from '@tanstack/react-query';
 import { Mail, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import CopyableSecretDialog from '@/components/copyable-secret-dialog';
 import FormattedDate from '@/components/date-format';
+import PaginatedControls from '@/components/paginated-controls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
@@ -16,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -42,6 +45,7 @@ interface Invite {
 }
 
 const INVITES_PATH = '/api/invites';
+const PAGE_SIZE = 10;
 
 type InviteState = 'active' | 'revoked' | 'expired' | 'used up';
 
@@ -58,7 +62,17 @@ function inviteLink(code: string, serverBaseUrl?: string | null): string {
 
 export default function InvitesManagement() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery<{ invites: Invite[] }>(INVITES_PATH);
+  const [page, setPage] = useState(1);
+  const [showInactive, setShowInactive] = useState(false);
+  const { data, isLoading } = useQuery<PaginationResponse<Invite>>(
+    `${INVITES_PATH}?page=${page}&limit=${PAGE_SIZE}${showInactive ? '&includeInactive=true' : ''}`,
+    { queryKey: [INVITES_PATH, page, showInactive], placeholderData: keepPreviousData }
+  );
+  const invites = data?.data;
+  const totalPages = data?.pagination.totalPages ?? 1;
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
   const { data: config } = useConfig();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [createdCode, setCreatedCode] = useState<string | null>(null);
@@ -88,14 +102,29 @@ export default function InvitesManagement() {
               promote them from the Users section.
             </CardDescription>
           </div>
-          <Button size="sm" onClick={() => setDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> New invite
-          </Button>
+          <div className="flex shrink-0 items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="invites-show-revoked"
+                checked={showInactive}
+                onCheckedChange={setShowInactive}
+              />
+              <Label
+                htmlFor="invites-show-revoked"
+                className="text-sm font-normal text-muted-foreground"
+              >
+                Show revoked
+              </Label>
+            </div>
+            <Button size="sm" onClick={() => setDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" /> New invite
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : !data?.invites.length ? (
+          ) : !invites?.length ? (
             <p className="text-sm text-muted-foreground">No invites yet.</p>
           ) : (
             <TooltipProvider delayDuration={150}>
@@ -109,7 +138,7 @@ export default function InvitesManagement() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.invites.map((i) => {
+                  {invites.map((i) => {
                     const state = inviteState(i);
                     return (
                       <TableRow key={i.id} className={state !== 'active' ? 'opacity-50' : ''}>
@@ -167,6 +196,12 @@ export default function InvitesManagement() {
               </Table>
             </TooltipProvider>
           )}
+          <PaginatedControls
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            className="mt-4"
+          />
         </CardContent>
       </Card>
 

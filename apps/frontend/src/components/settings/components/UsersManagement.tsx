@@ -1,5 +1,5 @@
 import type { PaginationResponse } from '@playwright-reports/shared';
-import { useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Trash2, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import CopyableSecretDialog from '@/components/copyable-secret-dialog';
@@ -7,6 +7,7 @@ import PaginatedControls from '@/components/paginated-controls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -39,14 +40,15 @@ interface User {
 }
 
 const USERS_PATH = '/api/users';
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 10;
 
 export default function UsersManagement({ currentUserId }: { currentUserId: string | null }) {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
+  const [showInactive, setShowInactive] = useState(false);
   const { data, isLoading } = useQuery<PaginationResponse<User>>(
-    `${USERS_PATH}?page=${page}&limit=${PAGE_SIZE}`,
-    { queryKey: [USERS_PATH, page] }
+    `${USERS_PATH}?page=${page}&limit=${PAGE_SIZE}${showInactive ? '&includeInactive=true' : ''}`,
+    { queryKey: [USERS_PATH, page, showInactive], placeholderData: keepPreviousData }
   );
   const { data: config } = useConfig();
   const [resetToken, setResetToken] = useState<string | null>(null);
@@ -78,6 +80,19 @@ export default function UsersManagement({ currentUserId }: { currentUserId: stri
               Manage accounts and roles. New users join via invites. The last enabled admin can't be
               disabled or removed.
             </CardDescription>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Switch
+              id="users-show-disabled"
+              checked={showInactive}
+              onCheckedChange={setShowInactive}
+            />
+            <Label
+              htmlFor="users-show-disabled"
+              className="text-sm font-normal text-muted-foreground"
+            >
+              Show disabled
+            </Label>
           </div>
         </CardHeader>
         <CardContent>

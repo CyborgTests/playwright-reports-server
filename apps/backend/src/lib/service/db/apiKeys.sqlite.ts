@@ -59,39 +59,36 @@ export class ApiKeysDatabase {
     return this.db.prepare(compiled.sql).all(...compiled.parameters) as ApiKeyRecord[];
   }
 
-  public listAllApiKeysPaged(limit: number, offset: number): ApiKeyRecord[] {
-    const compiled = this.k
-      .selectFrom('api_keys')
-      .selectAll()
-      .orderBy('createdAt', 'asc')
-      .limit(limit)
-      .offset(offset)
-      .compile();
+  public listAllApiKeysPaged(
+    limit: number,
+    offset: number,
+    includeRevoked = false
+  ): ApiKeyRecord[] {
+    let query = this.k.selectFrom('api_keys').selectAll();
+    if (!includeRevoked) query = query.where('revokedAt', 'is', null);
+    const compiled = query.orderBy('createdAt', 'asc').limit(limit).offset(offset).compile();
     return this.db.prepare(compiled.sql).all(...compiled.parameters) as ApiKeyRecord[];
   }
 
-  public countApiKeysByOwner(ownerUserId: string): number {
-    const compiled = this.k
+  public countApiKeysByOwner(ownerUserId: string, includeRevoked = false): number {
+    let query = this.k
       .selectFrom('api_keys')
       .select((eb) => eb.fn.countAll().as('n'))
-      .where('ownerUserId', '=', ownerUserId)
-      .compile();
+      .where('ownerUserId', '=', ownerUserId);
+    if (!includeRevoked) query = query.where('revokedAt', 'is', null);
+    const compiled = query.compile();
     return Number((this.db.prepare(compiled.sql).get(...compiled.parameters) as { n: number }).n);
   }
 
   public listApiKeysByOwnerPaged(
     ownerUserId: string,
     limit: number,
-    offset: number
+    offset: number,
+    includeRevoked = false
   ): ApiKeyRecord[] {
-    const compiled = this.k
-      .selectFrom('api_keys')
-      .selectAll()
-      .where('ownerUserId', '=', ownerUserId)
-      .orderBy('createdAt', 'asc')
-      .limit(limit)
-      .offset(offset)
-      .compile();
+    let query = this.k.selectFrom('api_keys').selectAll().where('ownerUserId', '=', ownerUserId);
+    if (!includeRevoked) query = query.where('revokedAt', 'is', null);
+    const compiled = query.orderBy('createdAt', 'asc').limit(limit).offset(offset).compile();
     return this.db.prepare(compiled.sql).all(...compiled.parameters) as ApiKeyRecord[];
   }
 
@@ -106,11 +103,10 @@ export class ApiKeysDatabase {
     return this.db.prepare(compiled.sql).all(...compiled.parameters) as ApiKeyRecord[];
   }
 
-  public countApiKeys(): number {
-    const compiled = this.k
-      .selectFrom('api_keys')
-      .select((eb) => eb.fn.countAll().as('n'))
-      .compile();
+  public countApiKeys(includeRevoked = false): number {
+    let query = this.k.selectFrom('api_keys').select((eb) => eb.fn.countAll().as('n'));
+    if (!includeRevoked) query = query.where('revokedAt', 'is', null);
+    const compiled = query.compile();
     return Number((this.db.prepare(compiled.sql).get(...compiled.parameters) as { n: number }).n);
   }
 }

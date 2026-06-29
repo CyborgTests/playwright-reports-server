@@ -5,6 +5,7 @@ import { audit } from '../lib/auth/audit.js';
 import { authorize } from '../lib/auth/resolve.js';
 import { createInviteSchema } from '../lib/auth/schemas.js';
 import { generateToken, hashToken } from '../lib/auth/tokens.js';
+import { pageResponse, parsePageQuery } from '../lib/pagination.js';
 import { type InviteRecord, invitesDb } from '../lib/service/db/index.js';
 
 function toPublic(i: InviteRecord, createdUsernames: string[] = []) {
@@ -28,9 +29,19 @@ export async function registerInvitesRoutes(fastify: FastifyInstance) {
   await fastify.register(async (f) => {
     f.addHook('preHandler', authorize(CAPABILITIES.manageInvites));
 
-    f.get('/api/invites', async () => {
+    f.get('/api/invites', async (request) => {
+      const { page, limit, offset } = parsePageQuery(request.query);
+      const includeRevoked =
+        (request.query as { includeInactive?: string }).includeInactive === 'true';
       const byInvite = invitesDb.usernamesByInvite();
-      return { invites: invitesDb.listInvites().map((i) => toPublic(i, byInvite.get(i.id) ?? [])) };
+      return pageResponse(
+        invitesDb
+          .listInvitesPaged(limit, offset, includeRevoked)
+          .map((i) => toPublic(i, byInvite.get(i.id) ?? [])),
+        invitesDb.countInvites(includeRevoked),
+        page,
+        limit
+      );
     });
 
     f.post('/api/invites', async (request, reply) => {

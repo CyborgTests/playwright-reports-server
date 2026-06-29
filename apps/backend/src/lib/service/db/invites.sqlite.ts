@@ -82,13 +82,18 @@ export class InvitesDatabase {
     runUpdate('invites', { revokedAt }, id);
   }
 
-  public listInvites(): InviteRecord[] {
-    const compiled = this.k
-      .selectFrom('invites')
-      .selectAll()
-      .orderBy('createdAt', 'desc')
-      .compile();
+  public listInvitesPaged(limit: number, offset: number, includeRevoked = false): InviteRecord[] {
+    let query = this.k.selectFrom('invites').selectAll();
+    if (!includeRevoked) query = query.where('revokedAt', 'is', null);
+    const compiled = query.orderBy('createdAt', 'desc').limit(limit).offset(offset).compile();
     return this.db.prepare(compiled.sql).all(...compiled.parameters) as InviteRecord[];
+  }
+
+  public countInvites(includeRevoked = false): number {
+    let query = this.k.selectFrom('invites').select((eb) => eb.fn.countAll().as('n'));
+    if (!includeRevoked) query = query.where('revokedAt', 'is', null);
+    const compiled = query.compile();
+    return Number((this.db.prepare(compiled.sql).get(...compiled.parameters) as { n: number }).n);
   }
 }
 

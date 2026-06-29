@@ -87,24 +87,20 @@ export class UsersDatabase {
     return this.db.prepare(compiled.sql).all(...compiled.parameters) as UserRecord[];
   }
 
-  public countUsers(): number {
-    const compiled = this.k
+  public countUsers(includeDisabled = false): number {
+    let query = this.k
       .selectFrom('users')
       .select((eb) => eb.fn.countAll().as('n'))
-      .where('id', '!=', ROOT_USER_ID)
-      .compile();
+      .where('id', '!=', ROOT_USER_ID);
+    if (!includeDisabled) query = query.where('disabled', '=', 0);
+    const compiled = query.compile();
     return Number((this.db.prepare(compiled.sql).get(...compiled.parameters) as { n: number }).n);
   }
 
-  public listUsersPaged(limit: number, offset: number): UserRecord[] {
-    const compiled = this.k
-      .selectFrom('users')
-      .selectAll()
-      .where('id', '!=', ROOT_USER_ID)
-      .orderBy('createdAt', 'asc')
-      .limit(limit)
-      .offset(offset)
-      .compile();
+  public listUsersPaged(limit: number, offset: number, includeDisabled = false): UserRecord[] {
+    let query = this.k.selectFrom('users').selectAll().where('id', '!=', ROOT_USER_ID);
+    if (!includeDisabled) query = query.where('disabled', '=', 0);
+    const compiled = query.orderBy('createdAt', 'asc').limit(limit).offset(offset).compile();
     return this.db.prepare(compiled.sql).all(...compiled.parameters) as UserRecord[];
   }
 

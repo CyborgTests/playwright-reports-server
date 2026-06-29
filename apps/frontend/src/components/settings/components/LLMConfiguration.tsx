@@ -3,8 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { useHasCapability } from '@/hooks/useHasCapability';
 import { useLlmModels } from '@/hooks/useLlmModels';
 import useMutation from '@/hooks/useMutation';
@@ -48,14 +48,17 @@ export default function LLMConfiguration() {
         </div>
         {canConfigLlm && (
           <div className="flex flex-col items-start gap-1 sm:items-end">
-            <Label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-              <Checkbox
+            <div className="flex items-center gap-2">
+              <Switch
+                id="llm-feature-enabled"
                 checked={featureEnabled}
                 disabled={!hasPrimary}
-                onCheckedChange={(c) => toggleFeature(c === true)}
+                onCheckedChange={toggleFeature}
               />
-              Enable LLM features
-            </Label>
+              <Label htmlFor="llm-feature-enabled" className="cursor-pointer text-sm font-medium">
+                Enable LLM features
+              </Label>
+            </div>
             {!hasPrimary && (
               <p className="text-xs text-amber-600 dark:text-amber-500">
                 Add a model below and set it as primary to enable.
