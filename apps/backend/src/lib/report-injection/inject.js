@@ -728,7 +728,7 @@ function renderInlineAnalysis(analysisData, anchor, askBtn, testIdOverride) {
         ? `<span class="llm-category-badge${canEdit ? ' llm-category-editable' : ''}"${canEdit ? ' role="button" tabindex="0" title="Click to set the root cause"' : ''}><span class="llm-category-label">${categoryText || 'Set category'}</span>${canEdit ? '<span class="llm-category-caret">▾</span>' : ''}</span>`
         : '';
     const reusedBadge = analysisData.reusedFromAnalysisId
-      ? `<span class="llm-reused-badge" title="Same error signature as a previous run - analysis was reused without calling the LLM. Click Retry to force a fresh analysis.">♻ Reused</span>`
+      ? `<span class="llm-reused-badge" title="Reused from a previous run with the same error signature. Retry to force a fresh analysis.">♻ Reused</span>`
       : '';
 
     const retryBtnHtml = llmEnabled ? '<button class="llm-retry-btn">Retry</button>' : '';
@@ -891,7 +891,7 @@ function renderFeedbackPanel({
       : '';
 
   const reusedChip = status.reused
-    ? `<span class="llm-feedback-reused-chip" title="The analysis shown for this test was reused from a previous run with the same error signature - it wasn't generated for this specific failure. Click Retry on the analysis to force a fresh one.">♻ Reused</span>`
+    ? `<span class="llm-feedback-reused-chip" title="Reused from a run with the same error signature, not generated for this failure. Retry to force a fresh one.">♻ Reused</span>`
     : '';
   const relatedSection =
     relatedCount > 0
@@ -933,7 +933,7 @@ function renderFeedbackPanel({
     <div class="llm-feedback-body" ${expanded ? '' : 'hidden'}>
       ${originLine}
       ${relatedSection}
-      <textarea class="llm-feedback-textarea" placeholder="Add a note for the LLM. Will be included in future analyses for this test in this project."></textarea>
+      <textarea class="llm-feedback-textarea" placeholder="Note for the LLM, included in future analyses of this test in this project."></textarea>
       <div class="llm-feedback-actions">
         <button class="llm-feedback-save" type="button">Save</button>
         <button class="llm-feedback-delete" type="button" ${feedback ? '' : 'hidden'}>Delete</button>
@@ -1148,8 +1148,7 @@ function injectAskLLMButton() {
   fullCopyBtn.textContent = 'Copy prompt with history';
   fullCopyBtn.className = 'button llm-copy-prompt-full-btn';
   fullCopyBtn.style.marginLeft = '6px';
-  fullCopyBtn.title =
-    'Copy the LLM prompt (with test history and feedback) that would be sent for this test+report right now.';
+  fullCopyBtn.title = 'Copy the LLM prompt (with test history and feedback) for this test.';
   fullCopyBtn.onclick = () => {
     const currentTestId = extractTestIdFromCurrentUrl();
     if (!currentTestId) return;

@@ -297,7 +297,7 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
           }
 
           return reply.status(200).send({
-            message: 'Reports updated successfully',
+            message: 'Reports updated',
             reportsIds: validatedBody.reportsIds,
             updated: result?.updated ?? 0,
           });
@@ -336,7 +336,7 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
           }
 
           return reply.status(200).send({
-            message: 'Reports deleted successfully',
+            message: 'Reports deleted',
             reportsIds: validatedBody.reportsIds,
           });
         } catch (error) {

@@ -271,7 +271,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       if (identity?.userId) audit(all ? 'logout_all' : 'logout', { actor: identity.userId });
     }
     clearSessionCookies(reply);
-    return { success: true, message: 'Signed out successfully' };
+    return { success: true, message: 'Signed out' };
   });
 
   fastify.get('/api/auth/session', async (request) => {

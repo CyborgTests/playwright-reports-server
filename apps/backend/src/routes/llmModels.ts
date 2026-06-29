@@ -152,7 +152,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
         if (willEnable && !nextLastTested) {
           return reply
             .status(400)
-            .send({ error: 'Test the connection successfully before enabling this model' });
+            .send({ error: 'Test the connection before enabling this model' });
         }
 
         const next: Omit<LlmModelRow, 'id' | 'createdAt' | 'updatedAt'> = {

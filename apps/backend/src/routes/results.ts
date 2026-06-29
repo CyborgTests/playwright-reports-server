@@ -107,7 +107,7 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
           }
 
           return reply.status(200).send({
-            message: 'Results files deleted successfully',
+            message: 'Results files deleted',
             resultsIds: validatedBody.resultsIds,
           });
         } catch (error) {
