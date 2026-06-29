@@ -48,26 +48,6 @@ export interface TrendMetrics {
   slowCountTrend: Array<{ date: string; count: number }>;
 }
 
-export interface StepTimingTrend {
-  stepId: string;
-  stepName: string;
-  runs: Array<{
-    runId: string;
-    runDate: Date;
-    duration: number;
-    isOutlier: boolean;
-  }>;
-  statistics: {
-    mean: number;
-    median: number;
-    stdDev: number;
-    min: number;
-    max: number;
-    p95: number;
-    p99: number;
-  };
-}
-
 export interface TestsSummary {
   total: number;
   flakyCount: number;
