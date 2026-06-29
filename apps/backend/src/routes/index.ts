@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { registerAnalyticsRoutes } from './analytics.js';
 import { registerApiKeysRoutes } from './apiKeys.js';
+import { registerAuditRoutes } from './audit.js';
 import { registerAuthRoutes } from './auth.js';
 import { registerCliRoutes } from './cli.js';
 import { registerConfigRoutes } from './config.js';
@@ -28,6 +29,7 @@ export async function registerApiRoutes(fastify: FastifyInstance) {
   await registerUsersRoutes(fastify);
   await registerInvitesRoutes(fastify);
   await registerApiKeysRoutes(fastify);
+  await registerAuditRoutes(fastify);
   await registerReportRoutes(fastify);
   await registerResultRoutes(fastify);
   await registerConfigRoutes(fastify);

@@ -425,6 +425,15 @@ export interface PaginationResponse<T> {
   };
 }
 
+export interface AuditLogEntry {
+  id: string;
+  ts: string;
+  action: string;
+  actor: string | null;
+  target: string | null;
+  detail: string | null;
+}
+
 export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;

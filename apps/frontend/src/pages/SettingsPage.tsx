@@ -7,6 +7,7 @@ import LazyVisible from '@/components/lazy-visible';
 import AccessControlConfiguration from '@/components/settings/components/AccessControlConfiguration';
 import AddLinkModal from '@/components/settings/components/AddLinkModal';
 import ApiKeysManagement from '@/components/settings/components/ApiKeysManagement';
+import AuditLogPanel from '@/components/settings/components/AuditLogPanel';
 import CronConfiguration from '@/components/settings/components/CronConfiguration';
 import EnvironmentInfo from '@/components/settings/components/EnvironmentInfo';
 import GithubSyncConfiguration from '@/components/settings/components/GithubSyncConfiguration';
@@ -191,6 +192,7 @@ export default function SettingsPage() {
     ...(authEnabled && hasCapability(CAPABILITIES.configServer)
       ? [{ id: 'access', label: 'Access Control' }]
       : []),
+    ...(authEnabled && isAdmin ? [{ id: 'audit', label: 'Audit Log' }] : []),
   ];
 
   return (
@@ -294,6 +296,7 @@ export default function SettingsPage() {
               onUpdateTempConfig={updateTempConfig}
             />
           )}
+          {authEnabled && isAdmin && <AuditLogPanel />}
         </div>
       </div>
 
