@@ -70,7 +70,7 @@ export function LLMModelRow({
               <Badge
                 variant="destructive"
                 className="text-xs"
-                title={m.lastError ?? 'Temporarily disabled after repeated failures; retrying...'}
+                title={m.lastError ?? 'Disabled after repeated failures, retrying'}
               >
                 {m.circuit.state === 'open' ? 'Circuit open' : 'Recovering'}
               </Badge>

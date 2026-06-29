@@ -89,7 +89,7 @@ export default function UploadResultsButton({
         queryKeys: ['/api/info'],
         predicate: '/api/result',
       });
-      toast.success('Results uploaded successfully');
+      toast.success('Results uploaded');
       setOpen(false);
       setFile(null);
       setProject('');

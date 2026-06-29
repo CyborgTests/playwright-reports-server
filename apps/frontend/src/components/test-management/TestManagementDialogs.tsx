@@ -34,12 +34,12 @@ export function QuarantineDialog({
       <DialogContent onCloseAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>
-            {test?.isQuarantined ? 'Remove from Quarantine' : 'Quarantine Test'}
+            {test?.isQuarantined ? 'Remove from quarantine' : 'Quarantine test'}
           </DialogTitle>
           <DialogDescription>
             {test?.isQuarantined
-              ? 'This test will be removed from quarantine and allowed to run again.'
-              : 'This test will be quarantined and skipped in future runs.'}
+              ? 'The test will run again.'
+              : 'The test will be skipped in future runs.'}
           </DialogDescription>
         </DialogHeader>
         {test && (
@@ -50,7 +50,7 @@ export function QuarantineDialog({
               </p>
               {!test.isQuarantined && (
                 <Textarea
-                  placeholder="Enter reason for quarantine..."
+                  placeholder="Reason for quarantine"
                   value={reason}
                   onChange={(e) => onReasonChange(e.target.value)}
                   required
@@ -59,7 +59,7 @@ export function QuarantineDialog({
               )}
               {test.isQuarantined && test.quarantineReason && (
                 <div className="bg-muted p-3 rounded-lg">
-                  <p className="text-sm font-semibold mb-1">Current Reason:</p>
+                  <p className="text-sm font-semibold mb-1">Current reason:</p>
                   <p className="text-sm">{test.quarantineReason}</p>
                 </div>
               )}
@@ -75,11 +75,7 @@ export function QuarantineDialog({
             onClick={onSubmit}
             disabled={isPending}
           >
-            {isPending
-              ? 'Saving...'
-              : test?.isQuarantined
-                ? 'Remove Quarantine'
-                : 'Quarantine Test'}
+            {isPending ? 'Saving…' : test?.isQuarantined ? 'Remove quarantine' : 'Quarantine test'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -106,10 +102,9 @@ export function DeleteTestDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent onCloseAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
-          <DialogTitle>Delete Test</DialogTitle>
+          <DialogTitle>Delete test?</DialogTitle>
           <DialogDescription>
-            This will permanently delete the test and all its run history. This action cannot be
-            undone.
+            Permanently deletes the test and its run history. Can't be undone.
           </DialogDescription>
         </DialogHeader>
         {test && (

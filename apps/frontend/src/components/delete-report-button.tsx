@@ -74,12 +74,8 @@ export default function DeleteReportButton({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Are you sure?</DialogTitle>
-          <DialogDescription>
-            {count > 1
-              ? `This will permanently delete ${count} reports.`
-              : 'This will permanently delete your report.'}
-          </DialogDescription>
+          <DialogTitle>{count > 1 ? `Delete ${count} reports?` : 'Delete report?'}</DialogTitle>
+          <DialogDescription>This can't be undone.</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>

@@ -51,8 +51,7 @@ export function LLMModelFormDialog({
         <DialogHeader>
           <DialogTitle>{editingId ? 'Edit model' : 'Add model'}</DialogTitle>
           <DialogDescription>
-            A new model is saved as a draft. Test its connection, then enable it before it can be
-            made the primary model.
+            New models start as drafts. Test the connection, enable, then set as primary.
           </DialogDescription>
         </DialogHeader>
 
@@ -136,8 +135,8 @@ export function LLMModelFormDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Models in a group share one concurrency budget - useful when several models hit the
-              same rate limit or run on the same hardware. Manage groups in the list below.
+              Models in a group share one concurrency budget - for shared rate limits or hardware.
+              Manage groups below.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -234,8 +233,7 @@ export function LLMModelFormDialog({
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Cost rates are for reference only - used to estimate per-task and usage costs later.
-            They don't affect requests.
+            Reference only - used for cost estimates, never sent with requests.
           </p>
 
           <div className="space-y-2 border-t pt-3">
@@ -288,7 +286,7 @@ export function LLMModelFormDialog({
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Applied when this is the primary model. Leave blank to use the server default.
+              Applied when primary. Blank uses the server default.
             </p>
           </div>
         </div>

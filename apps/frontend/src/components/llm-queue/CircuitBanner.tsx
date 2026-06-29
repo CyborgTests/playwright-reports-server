@@ -8,8 +8,8 @@ export function CircuitBanner({ circuit }: Readonly<{ circuit?: LlmCircuitStatus
 
   const message =
     circuit.state === 'half-open'
-      ? 'LLM provider recovering...'
-      : `LLM provider unavailable — retrying ${
+      ? 'LLM provider recovering…'
+      : `LLM provider unavailable - retrying ${
           retryInMs && retryInMs > 0 ? `in ~${formatDuration(retryInMs)}` : 'shortly'
         }.`;
 

@@ -53,9 +53,7 @@ function FailureGroupsList({
         <>
           <div className="mb-3">
             <h3 className="text-lg font-semibold">Failure patterns</h3>
-            <p className="text-sm text-muted-foreground">
-              Failures for this test grouped by error signature
-            </p>
+            <p className="text-sm text-muted-foreground">Grouped by error signature</p>
           </div>
           <Accordion type="multiple" className="space-y-3">
             {activeGroups.map((group) => (
@@ -76,7 +74,7 @@ function FailureGroupsList({
           <div className="mb-3">
             <h3 className="text-lg font-semibold">Cross-test failure clusters</h3>
             <p className="text-sm text-muted-foreground">
-              Clusters that group this test with others failing the same way
+              Other tests failing the same way as this one
             </p>
           </div>
           <div className="space-y-3">

@@ -192,8 +192,8 @@ export default function ServerConfiguration({
               }
             />
             <p className="text-xs text-muted-foreground">
-              Externally-visible origin (no trailing slash). Used to build absolute report links in
-              notifications. Leave blank to disable links.
+              External origin for report links in notifications (no trailing slash). Leave blank to
+              disable.
             </p>
           </div>
 
@@ -287,8 +287,7 @@ export default function ServerConfiguration({
                     Allow open registration
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    When on, anyone can create a readonly account without an invite. Off =
-                    invite-only.
+                    On: anyone can self-register a readonly account. Off: invite-only.
                   </p>
                 </div>
                 <Switch
@@ -309,9 +308,9 @@ export default function ServerConfiguration({
               <div className="space-y-1.5 rounded-lg border p-3">
                 <Label htmlFor="default-user-role">Default role for new accounts</Label>
                 <p className="text-xs text-muted-foreground">
-                  Role for users who self-register or sign in via an open-mode SSO provider.{' '}
-                  <span className="font-medium text-foreground">admin</span> lets anyone become an
-                  administrator - use with care.
+                  Role for self-registered and open-mode SSO users.{' '}
+                  <span className="font-medium text-foreground">admin</span> is permissive - use
+                  with care.
                 </p>
                 <Select
                   disabled={editingSection !== 'server'}

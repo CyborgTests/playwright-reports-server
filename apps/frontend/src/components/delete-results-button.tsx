@@ -71,8 +71,10 @@ export default function DeleteResultsButton({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Are you sure?</DialogTitle>
-          <DialogDescription>This will permanently delete your results files.</DialogDescription>
+          <DialogTitle>Delete results?</DialogTitle>
+          <DialogDescription>
+            Permanently removes the results files. This can't be undone.
+          </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>

@@ -82,7 +82,7 @@ export default function UploadReportButton({
         queryKeys: ['/api/info'],
         predicate: '/api/report',
       });
-      toast.success(`Report uploaded successfully: ${reportId}`);
+      toast.success(`Report uploaded: ${reportId}`);
       setOpen(false);
       setFile(null);
       setProject('');

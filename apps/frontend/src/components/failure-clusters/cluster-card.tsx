@@ -184,8 +184,8 @@ function RegressionClusterCallout({ cluster }: { cluster: FailureCluster }) {
           </>
         ) : (
           <>
-            {ctx.membersInRegression} of {ctx.totalMembers} cluster members are sitting on open
-            regressions (commits differ).
+            {ctx.membersInRegression} of {ctx.totalMembers} members have open regressions (commits
+            differ).
           </>
         )}
       </div>

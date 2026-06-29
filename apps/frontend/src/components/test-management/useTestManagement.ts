@@ -117,9 +117,7 @@ export function useTestMutations({
         invalidateCache(queryClient, { predicate: '/api/tests' });
         onQuarantineSuccess();
         const test = (variables as { body: { test: TestWithQuarantineInfo } }).body.test;
-        toast.success(
-          test.isQuarantined ? 'Test removed from quarantine' : 'Test quarantined successfully'
-        );
+        toast.success(test.isQuarantined ? 'Test removed from quarantine' : 'Test quarantined');
       },
     }
   );
@@ -129,7 +127,7 @@ export function useTestMutations({
     onSuccess: () => {
       invalidateCache(queryClient, { predicate: '/api/tests' });
       onDeleteSuccess();
-      toast.success('Test deleted successfully');
+      toast.success('Test deleted');
     },
   });
 
@@ -139,7 +137,7 @@ export function useTestMutations({
       method: 'POST',
       onSuccess: () => {
         invalidateCache(queryClient, { predicate: '/api/tests' });
-        toast.success('Flakiness score reset - new flakiness will be tracked from now');
+        toast.success('Flakiness score reset');
       },
     }
   );
@@ -149,7 +147,7 @@ export function useTestMutations({
       method: 'DELETE',
       onSuccess: () => {
         invalidateCache(queryClient, { predicate: '/api/tests' });
-        toast.success('Flakiness reset removed - score recomputed over full window');
+        toast.success('Flakiness reset removed');
       },
     });
 

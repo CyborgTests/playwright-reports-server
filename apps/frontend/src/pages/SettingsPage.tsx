@@ -199,9 +199,6 @@ export default function SettingsPage() {
     <div className="lg:py-4">
       <header className="mb-6 max-w-3xl">
         <h1 className="font-display text-3xl font-bold tracking-tight">Settings</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Configure your server, scheduled cleanup, LLM analysis, and test management policies.
-        </p>
       </header>
 
       <MobileSectionNav items={navSections} />

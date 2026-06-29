@@ -65,7 +65,7 @@ function UsageByModelBreakdown({ days }: { days: number }) {
   if (isError) {
     return (
       <div className="mt-3 text-xs text-destructive">
-        Failed to load per-model breakdown. Try collapsing and re-opening.
+        Failed to load per-model breakdown. Collapse and re-open to retry.
       </div>
     );
   }
@@ -202,9 +202,7 @@ export function UsageCard() {
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
             <CardTitle className="text-base">Usage</CardTitle>
-            <span className="text-xs text-muted-foreground">
-              completed tasks · last {usageDays}d
-            </span>
+            <span className="text-xs text-muted-foreground">last {usageDays}d</span>
           </div>
           <div className="flex gap-1 items-center">
             {([7, 30] as const).map((d) => (
@@ -292,8 +290,8 @@ export function UsageCard() {
           <DialogHeader>
             <DialogTitle>Reset usage counters?</DialogTitle>
             <DialogDescription>
-              This sets the new baseline for the Usage card to right now. Historical task rows are
-              kept in the database, but the chart will read as zero until new completed tasks land.
+              Resets the Usage baseline to now. Task history is kept; the card reads zero until new
+              tasks appear.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

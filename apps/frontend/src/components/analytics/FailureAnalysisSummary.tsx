@@ -101,7 +101,7 @@ export function FailureAnalysisSummary({
       <Card>
         <CardContent className="py-6">
           <div className="text-center text-sm text-muted-foreground">
-            No failures observed in the latest reports. Good job!
+            No failures in the latest reports. Good job!
           </div>
         </CardContent>
       </Card>
@@ -153,7 +153,7 @@ export function FailureAnalysisSummary({
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-lg font-semibold">LLM Failure Analysis</h3>
+              <h3 className="text-lg font-semibold">LLM failure analysis</h3>
               {showVerdict && structured && <VerdictBadge verdict={structured.verdict} />}
               <StrategyBadge taskType="project_summary" className="font-normal" />
               {showStaleBadge && (
@@ -162,9 +162,7 @@ export function FailureAnalysisSummary({
                 </Badge>
               )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              Test health analysis based on the latest 20 runs
-            </p>
+            <p className="text-sm text-muted-foreground">Based on the latest 20 runs</p>
           </div>
           {hasOngoingAnalysis
             ? ongoingButton
@@ -180,7 +178,7 @@ export function FailureAnalysisSummary({
                     </>
                   ) : (
                     <>
-                      <Brain className="h-4 w-4 mr-1" /> Generate Analysis
+                      <Brain className="h-4 w-4 mr-1" /> Generate analysis
                     </>
                   )}
                 </Button>
@@ -192,7 +190,7 @@ export function FailureAnalysisSummary({
           <div className="flex items-center justify-center py-8 gap-2">
             <Spinner size="sm" />
             <span className="text-muted-foreground">
-              LLM is analyzing latest runs - track progress on the{' '}
+              Analyzing latest runs - see the{' '}
               <RouterLink to="/llm-queue" className="underline">
                 LLM queue
               </RouterLink>
@@ -231,14 +229,12 @@ export function FailureAnalysisSummary({
         )}
         {!hasOngoingAnalysis && summary?.isTooStale && (
           <div className="text-center py-6 text-muted-foreground text-sm">
-            Previous analysis was generated{' '}
-            {summary.updatedAt && <FormattedDate date={summary.updatedAt} mode="date" />} and is now{' '}
-            {daysBehind} days behind the latest run. Click "Re-generate" for an up-to-date verdict.
+            This analysis is {daysBehind} days behind the latest run. Re-generate to update.
           </div>
         )}
         {!hasOngoingAnalysis && !summary && llmConfigured && (
           <div className="text-center py-6 text-muted-foreground text-sm">
-            Click "Generate Analysis" to get an LLM-powered health analysis of the latest runs
+            Generate an LLM analysis of the latest runs.
           </div>
         )}
       </CardContent>

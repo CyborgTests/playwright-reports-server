@@ -110,7 +110,7 @@ export default function QualityOverviewPage() {
           <p className="text-sm text-muted-foreground">
             {showHome
               ? 'Pinned dashboards'
-              : 'Grade each project off its latest report. Configure thresholds and groups to roll up to an overall verdict.'}
+              : 'Grade each project on its latest report; group projects to roll up a verdict.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -330,7 +330,7 @@ function SingleDashboardView({
           </div>
           {root.empty ? (
             <p className="text-sm text-muted-foreground">
-              Add projects in Edit mode, or upload Playwright reports to start grading.
+              Add projects in Edit mode, or upload reports to grade.
             </p>
           ) : (
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">

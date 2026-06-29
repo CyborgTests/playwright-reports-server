@@ -42,7 +42,7 @@ function CopyableTokenCount({ display, text, label }: Readonly<CopyableTokenCoun
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success(`${label} copied (${text.length.toLocaleString()} chars)`);
+      toast.success(`${label} copied`);
     } catch (error) {
       toast.error(`Failed to copy: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -141,9 +141,7 @@ function RolePanel({
     return <div className="px-12 py-3 text-xs text-muted-foreground">Loading roles…</div>;
   }
   if (rows.length === 0) {
-    return (
-      <div className="px-12 py-3 text-xs text-muted-foreground">No role executions recorded.</div>
-    );
+    return <div className="px-12 py-3 text-xs text-muted-foreground">No roles executed yet.</div>;
   }
   let total = 0;
   let anyCost = false;
@@ -318,7 +316,7 @@ export const TaskRow = memo(function TaskRow({
               <Badge
                 variant="warning"
                 className="text-xs"
-                title={task.error ?? 'A previous attempt failed; the task is being retried.'}
+                title={task.error ?? 'Previous attempt failed, retrying.'}
               >
                 Retrying ({task.retryCount}/{task.maxRetries})
               </Badge>
@@ -343,7 +341,7 @@ export const TaskRow = memo(function TaskRow({
                 <Badge
                   variant="secondary"
                   className="text-xs"
-                  title="Analysis was reused from a prior signature match - no LLM call was made."
+                  title="Reused from a prior signature match - no LLM call."
                 >
                   ♻ Reused
                 </Badge>
@@ -352,7 +350,7 @@ export const TaskRow = memo(function TaskRow({
               <Badge
                 variant="outline"
                 className="text-xs"
-                title="Streaming in progress - partial content is already persisted."
+                title="Streaming - partial content already saved."
               >
                 Streaming
               </Badge>

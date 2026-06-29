@@ -119,9 +119,7 @@ export default function LLMPromptsSection() {
       rows={rows}
       defaultPrompt={defaultPrompt}
       override={state.overrides[key]}
-      helper={
-        variables.length ? <>Type {'{{'} for variable suggestions.</> : <>No vars available.</>
-      }
+      helper={variables.length ? <>Type {'{{'} for variables.</> : <>No variables available.</>}
       variables={variables}
       onChange={setOverride(key)}
     />
@@ -147,7 +145,7 @@ export default function LLMPromptsSection() {
               id="llm-general-context"
               rows={4}
               maxLength={500}
-              placeholder="Describe the project, its stack, environment specifics, or anything that helps interpret failures."
+              placeholder="Project, stack, environment - anything that helps interpret failures."
               value={state.generalContext}
               onChange={(e) => setState((p) => ({ ...p, generalContext: e.target.value }))}
             />
@@ -162,8 +160,7 @@ export default function LLMPromptsSection() {
           <AccordionTrigger className="text-sm font-medium">Task prompts</AccordionTrigger>
           <AccordionContent className="space-y-6">
             <p className="text-xs text-muted-foreground">
-              Override the built-in templates per task. Each field is pre-filled with the prompt in
-              effect - edit to override, or reset to roll back.
+              Pre-filled with the active prompt. Edit to override, or reset to the default.
             </p>
             <div className="space-y-3 rounded-md border p-3">
               <h4 className="text-sm font-semibold">Test</h4>
@@ -216,8 +213,8 @@ export default function LLMPromptsSection() {
           <AccordionTrigger className="text-sm font-medium">Routing role prompts</AccordionTrigger>
           <AccordionContent className="space-y-6">
             <p className="text-xs text-muted-foreground">
-              Directives used by the multi-model routing strategies. They're appended to the task's
-              own prompt, so leave the output format to the task templates above.
+              Appended to the task prompt for routing strategies - leave the output format to the
+              task templates above.
             </p>
             <div className="space-y-3 rounded-md border p-3">
               <h4 className="text-sm font-semibold">Fusion · synthesizer</h4>

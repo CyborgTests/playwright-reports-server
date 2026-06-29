@@ -14,22 +14,20 @@ const TOGGLES: { key: ToggleKey; field: string; title: string; description: stri
     key: 'autoAnalyzeNewReports',
     field: 'llmAutoAnalyzeNewReports',
     title: 'Auto-analyze new reports',
-    description:
-      'When enabled, every failed test in a newly ingested report is queued for LLM analysis automatically.',
+    description: 'Queue every failed test for LLM analysis when a report is ingested.',
   },
   {
     key: 'autoProjectSummaryOnReportComplete',
     field: 'llmAutoProjectSummaryOnReportComplete',
     title: 'Auto-generate project summary',
-    description:
-      "When enabled, completing a report failure analysis automatically queues a project-level summary for that report's project.",
+    description: "Queue a project summary once a report's failure analysis finishes.",
   },
   {
     key: 'analyzeGreenWindows',
     field: 'llmAnalyzeGreenWindows',
     title: 'Analyze all-green windows',
     description:
-      'When enabled, runs LLM even when no failures were observed - shows duration diff, near-flakes, quarantine churn, and suite size.',
+      'Analyze passing runs too: duration diff, near-flakes, quarantine churn, suite size.',
   },
 ];
 

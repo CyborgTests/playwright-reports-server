@@ -101,9 +101,7 @@ export default function FailureClusters() {
   return (
     <div className="w-full">
       <h1 className={`${title()} mb-2`}>Failure clusters</h1>
-      <p className={`${subtitle()} mb-2`}>
-        Groups of failing tests likely caused by the same underlying defect.
-      </p>
+      <p className={`${subtitle()} mb-2`}>Failing tests grouped by likely shared cause.</p>
 
       <Card className="mb-6">
         <CardContent className="flex flex-wrap items-end gap-4 pt-6">
@@ -181,7 +179,7 @@ function EmptyState({ reportScoped }: { reportScoped: boolean }) {
         <div className="text-lg">No failure clusters in this window</div>
         <div className="text-sm mt-2 max-w-md mx-auto">
           {reportScoped
-            ? "None of this report's failed tests overlap with any active cluster."
+            ? "None of this report's failed tests match an active cluster."
             : 'Adjust the project or date range to broaden the search.'}
         </div>
       </CardContent>

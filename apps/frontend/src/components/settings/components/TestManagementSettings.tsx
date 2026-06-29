@@ -175,11 +175,10 @@ export default function TestManagementSettings({
       <CardContent>
         <div className="space-y-6">
           <Alert>
-            <h3 className="font-medium mb-2">About Test Management Settings</h3>
+            <h3 className="font-medium mb-2">About thresholds</h3>
             <p className="text-sm">
-              Configure thresholds for test flakiness detection and automatic quarantine. Tests
-              exceeding these thresholds will be flagged or quarantined based on their failure
-              history.
+              Thresholds for flakiness detection and auto-quarantine. Tests above a threshold are
+              flagged or quarantined.
             </p>
           </Alert>
 
@@ -212,7 +211,7 @@ export default function TestManagementSettings({
             <div>
               <h4 className="text-sm font-medium">Auto-Quarantine Tests</h4>
               <p className="text-xs text-muted-foreground mt-1">
-                Automatically quarantine tests that exceed the quarantine threshold
+                Quarantine tests that exceed the threshold
               </p>
             </div>
             <Switch
@@ -229,7 +228,7 @@ export default function TestManagementSettings({
           <IntField
             id="flakiness-min-runs"
             label="Minimum Runs for Flakiness Evaluation"
-            help="Minimum number of times a test must run before being evaluated for flakiness"
+            help="Minimum runs before evaluating flakiness"
             value={flakinessMinRuns}
             disabled={disabled}
             onChange={(v) => update({ flakinessMinRuns: v })}
@@ -238,7 +237,7 @@ export default function TestManagementSettings({
           <IntField
             id="flakiness-evaluation-window"
             label="Evaluation Window (Days)"
-            help="Number of days to look back when calculating test flakiness scores"
+            help="Days to look back when scoring flakiness"
             value={flakinessEvaluationWindowDays}
             disabled={disabled}
             onChange={(v) => update({ flakinessEvaluationWindowDays: v })}

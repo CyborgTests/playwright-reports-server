@@ -211,9 +211,9 @@ export default function AnalyticsDashboard() {
     return (
       <div className="w-[min(100%, 1200px)] mx-auto">
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="text-muted-foreground text-lg">No analytics data available.</div>
+          <div className="text-muted-foreground text-lg">No analytics yet.</div>
           <div className="text-muted-foreground/80 text-sm mt-2">
-            Generate some reports first to see analytics.
+            Upload reports to see analytics.
           </div>
         </div>
       </div>
@@ -305,10 +305,9 @@ export default function AnalyticsDashboard() {
       {!isLoading && runHealthMetrics.length === 0 && (
         <div className="bg-warning-50 border border-warning/30 rounded-lg p-6">
           <div className="text-center">
-            <div className="text-warning-900 font-medium mb-2">Limited Data Available</div>
+            <div className="text-warning-900 font-medium mb-2">Limited data</div>
             <div className="text-warning text-sm">
-              Analytics insights become more meaningful with at least 5-10 test runs. Continue
-              generating reports to see detailed trends and patterns.
+              Trends need at least 5-10 runs. Let's wait for more reports.
             </div>
           </div>
         </div>

@@ -139,7 +139,7 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
           ) : (
             <Button size="sm" variant="outline" onClick={() => triggerAnalysis({})}>
               <Brain className="h-4 w-4 mr-1" />
-              Summarize Failures
+              Summarize failures
             </Button>
           )}
         </CardContent>
