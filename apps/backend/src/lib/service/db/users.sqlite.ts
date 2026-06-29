@@ -162,7 +162,7 @@ export class UsersDatabase {
     this.deleteUser(ROOT_USER_ID);
   }
 
-  // Excludes the reserved root row — it is recovery-only, not a real admin.
+  // Excludes the reserved root row - it is recovery-only, not a real admin.
   public countEnabledAdmins(): number {
     const compiled = this.k
       .selectFrom('users')

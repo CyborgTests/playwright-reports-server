@@ -265,7 +265,7 @@ function SetupCard({ onDone }: { onDone: () => Promise<void> }) {
         <ShieldCheck className="mx-auto h-12 w-12 text-primary" />
         <h1 className="font-display text-3xl font-bold tracking-tight">Create admin account</h1>
         <p className="text-muted-foreground">
-          First-time setup — provide the server API token and choose admin credentials.
+          First-time setup - provide the server API token and choose admin credentials.
         </p>
       </div>
       <Card className="border-border/50 shadow-lg">

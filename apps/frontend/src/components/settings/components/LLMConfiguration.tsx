@@ -1,10 +1,11 @@
+import { CAPABILITIES } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { useCan } from '@/hooks/useCan';
+import { useHasCapability } from '@/hooks/useHasCapability';
 import { useLlmModels } from '@/hooks/useLlmModels';
 import useMutation from '@/hooks/useMutation';
 import { SERVER_CONFIG_KEY, useServerConfig } from '@/hooks/useServerConfig';
@@ -17,7 +18,7 @@ export default function LLMConfiguration() {
   const queryClient = useQueryClient();
   const { data: config } = useServerConfig();
   const { data: models } = useLlmModels();
-  const canConfigLlm = useCan()('config:llm');
+  const canConfigLlm = useHasCapability()(CAPABILITIES.configLlm);
   const hasPrimary = (models ?? []).some((m) => m.isPrimary);
   const [featureEnabled, setFeatureEnabled] = useState(false);
 

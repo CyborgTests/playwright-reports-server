@@ -22,7 +22,7 @@ export interface MintApiKeyInput {
 
 export interface MintedApiKey {
   id: string;
-  key: string; // plaintext — shown to the caller once, never stored
+  key: string; // plaintext - shown to the caller once, never stored
 }
 
 export function mintApiKey(input: MintApiKeyInput): MintedApiKey {

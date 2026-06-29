@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import type { Role } from '@playwright-reports/shared';
+import { capabilitiesFor, type Role } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { env } from '../config/env.js';
+import { getEffectiveAccessMatrix } from '../lib/auth/access.js';
 import { audit } from '../lib/auth/audit.js';
 import { hashPassword, verifyPassword } from '../lib/auth/password.js';
 import { allowAttempt, clearAttempts } from '../lib/auth/rateLimit.js';
@@ -77,7 +78,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     const ok = user && !user.disabled && (await verifyPassword(password, user.passwordHash));
     if (!user || !ok) {
       audit('login_failed', { actor: user?.id ?? null, detail: username });
-      // Generic message — don't reveal whether the username exists.
+      // Generic message - don't reveal whether the username exists.
       return reply.code(401).send({ success: false, error: 'Invalid username or password' });
     }
 
@@ -275,9 +276,11 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
 
   fastify.get('/api/auth/session', async (request) => {
     if (!AUTH_ENABLED) {
+      const user = openModeUser();
       return {
         authMode: 'open' as const,
-        user: openModeUser(),
+        user,
+        capabilities: capabilitiesFor(user.role),
         expires: new Date(Date.now() + IDLE_TTL_MS).toISOString(),
       };
     }
@@ -293,6 +296,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     return {
       authMode: 'enabled' as const,
       user: { id: user.id, username: user.username, role: user.role },
+      capabilities: capabilitiesFor(user.role, getEffectiveAccessMatrix()),
       expires: new Date(Date.now() + IDLE_TTL_MS).toISOString(),
     };
   });

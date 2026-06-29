@@ -30,5 +30,5 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 }
 
 export async function down(_db: Kysely<unknown>): Promise<void> {
-  // Data-only correction of malformed values — no schema change to revert.
+  // Data-only correction of malformed values - no schema change to revert.
 }

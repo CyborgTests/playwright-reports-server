@@ -35,7 +35,7 @@ async function dataDbFileBytes(): Promise<number> {
     try {
       total += (await stat(path.join(DATA_FOLDER, name))).size;
     } catch {
-      // -wal/-shm may not exist — skip
+      // -wal/-shm may not exist - skip
     }
   }
   return total;
@@ -344,7 +344,7 @@ class Service {
     const MASS_MISSING_RATIO = 0.9;
     if (checked >= MASS_MISSING_MIN && missing.length / checked >= MASS_MISSING_RATIO) {
       console.warn(
-        `[storage-reconcile] ${missing.length}/${checked} ${kind}s appear missing (≥${MASS_MISSING_RATIO * 100}%) — assuming storage fault, NOT zeroing. Check storage connectivity/config.`
+        `[storage-reconcile] ${missing.length}/${checked} ${kind}s appear missing (≥${MASS_MISSING_RATIO * 100}%) - assuming storage fault, NOT zeroing. Check storage connectivity/config.`
       );
       return 0;
     }

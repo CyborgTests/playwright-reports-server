@@ -1,6 +1,5 @@
 import {
   CAPABILITIES,
-  can,
   KEY_CAPABILITIES,
   KEY_SCOPES,
   KEY_TYPES,
@@ -8,6 +7,7 @@ import {
 } from '@playwright-reports/shared';
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { can } from '../lib/auth/access.js';
 import { mintApiKey, parseScopes } from '../lib/auth/apiKeys.js';
 import { audit } from '../lib/auth/audit.js';
 import { authorize } from '../lib/auth/resolve.js';

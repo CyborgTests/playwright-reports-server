@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import LazyVisible from '@/components/lazy-visible';
+import AccessControlConfiguration from '@/components/settings/components/AccessControlConfiguration';
 import AddLinkModal from '@/components/settings/components/AddLinkModal';
 import ApiKeysManagement from '@/components/settings/components/ApiKeysManagement';
 import CronConfiguration from '@/components/settings/components/CronConfiguration';
@@ -21,8 +22,8 @@ import type { EditableSettingsSection } from '@/components/settings/types';
 import { Spinner } from '@/components/ui/spinner';
 import { useActiveSection } from '@/hooks/useActiveSection';
 import { useAuth } from '@/hooks/useAuth';
-import { useCan } from '@/hooks/useCan';
 import { useConfig } from '@/hooks/useConfig';
+import { useHasCapability } from '@/hooks/useHasCapability';
 import { authHeaders } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
@@ -38,7 +39,7 @@ const SECTION_NAV: Array<{ id: string; label: string }> = [
 
 export default function SettingsPage() {
   const session = useAuth();
-  const can = useCan();
+  const hasCapability = useHasCapability();
   const [editingSection, setEditingSection] = useState<EditableSettingsSection>('none');
   const [tempConfig, setTempConfig] = useState<ServerConfig>({});
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -87,6 +88,7 @@ export default function SettingsPage() {
         cron: 'Cron',
         llm: 'LLM',
         testManagement: 'Test Management',
+        access: 'Access Control',
       };
       toast.success(`${sectionName[section]} configuration updated successfully`);
       setEditingSection('none');
@@ -168,7 +170,7 @@ export default function SettingsPage() {
   // actions); their config controls are gated inside the components.
   const visibleConfigNav = SECTION_NAV.filter((s) => {
     if (s.id === 'server' || s.id === 'cron' || s.id === 'testManagement') {
-      return can(CAPABILITIES.configServer);
+      return hasCapability(CAPABILITIES.configServer);
     }
     return true; // environment, github, llm, notifications (view + test for everyone)
   });
@@ -180,8 +182,15 @@ export default function SettingsPage() {
           { id: 'invites', label: 'Invites' },
         ]
       : []),
-    ...(authEnabled && can(CAPABILITIES.apiKeysOwn) ? [{ id: 'apiKeys', label: 'API Keys' }] : []),
-    ...(authEnabled && can(CAPABILITIES.configSso) ? [{ id: 'sso', label: 'Single Sign-On' }] : []),
+    ...(authEnabled && hasCapability(CAPABILITIES.apiKeysOwn)
+      ? [{ id: 'apiKeys', label: 'API Keys' }]
+      : []),
+    ...(authEnabled && hasCapability(CAPABILITIES.configSso)
+      ? [{ id: 'sso', label: 'Single Sign-On' }]
+      : []),
+    ...(authEnabled && hasCapability(CAPABILITIES.configServer)
+      ? [{ id: 'access', label: 'Access Control' }]
+      : []),
   ];
 
   return (
@@ -203,7 +212,7 @@ export default function SettingsPage() {
         <div className="flex-1 min-w-0 max-w-5xl">
           <EnvironmentInfo />
 
-          {can(CAPABILITIES.configServer) && (
+          {hasCapability(CAPABILITIES.configServer) && (
             <>
               <ServerConfiguration
                 config={config}
@@ -240,7 +249,7 @@ export default function SettingsPage() {
 
           <LLMConfiguration />
 
-          {can(CAPABILITIES.configServer) && (
+          {hasCapability(CAPABILITIES.configServer) && (
             <TestManagementSettings
               editingSection={editingSection}
               isUpdating={isUpdating}
@@ -264,15 +273,26 @@ export default function SettingsPage() {
               <InvitesManagement />
             </LazyVisible>
           )}
-          {authEnabled && can(CAPABILITIES.apiKeysOwn) && (
+          {authEnabled && hasCapability(CAPABILITIES.apiKeysOwn) && (
             <LazyVisible id="apiKeys" className="scroll-mt-20" minHeight={240}>
-              <ApiKeysManagement canManageAllKeys={can(CAPABILITIES.apiKeysService)} />
+              <ApiKeysManagement canManageAllKeys={hasCapability(CAPABILITIES.apiKeysService)} />
             </LazyVisible>
           )}
-          {authEnabled && can(CAPABILITIES.configSso) && (
+          {authEnabled && hasCapability(CAPABILITIES.configSso) && (
             <LazyVisible id="sso" className="scroll-mt-20" minHeight={240}>
               <OAuthConfiguration />
             </LazyVisible>
+          )}
+          {authEnabled && hasCapability(CAPABILITIES.configServer) && (
+            <AccessControlConfiguration
+              editingSection={editingSection}
+              isUpdating={isUpdating}
+              tempConfig={tempConfig}
+              onCancel={handleCancel}
+              onEdit={() => setEditingSection('access')}
+              onSave={() => handleSave('access')}
+              onUpdateTempConfig={updateTempConfig}
+            />
           )}
         </div>
       </div>

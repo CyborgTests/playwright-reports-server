@@ -47,7 +47,7 @@ export const CASCADE_GATE_OPTIONS: { value: CascadeGate; label: string; hint: st
   {
     value: 'checks',
     label: 'Checks only',
-    hint: 'Escalate only on machine-detectable defects. No scorer call — cheapest gate.',
+    hint: 'Escalate only on machine-detectable defects. No scorer call - cheapest gate.',
   },
   {
     value: 'scorer',

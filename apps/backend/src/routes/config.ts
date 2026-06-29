@@ -4,7 +4,13 @@ import { mkdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { CAPABILITIES, ROLES } from '@playwright-reports/shared';
+import {
+  type AccessMatrixOverrides,
+  CAPABILITIES,
+  EDITABLE_ROLES,
+  ROLES,
+  type Role,
+} from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
 import { audit } from '../lib/auth/audit.js';
@@ -96,6 +102,31 @@ async function persistBrandingFile(
   }
 
   return { relativePath: `/${BRANDING_SUBDIR}/${safeName}` };
+}
+
+function parseAccessMatrixField(
+  raw: string
+): { overrides: AccessMatrixOverrides } | { error: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { error: 'accessMatrix must be valid JSON' };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { error: 'accessMatrix must be an object' };
+  }
+  const validCapabilities = new Set<string>(Object.values(CAPABILITIES));
+  const editableRoles = new Set<string>(EDITABLE_ROLES);
+  const overrides: Record<string, readonly Role[]> = {};
+  for (const [capability, roles] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!validCapabilities.has(capability)) continue;
+    if (!Array.isArray(roles)) return { error: `accessMatrix.${capability} must be an array` };
+    overrides[capability] = roles.filter(
+      (role): role is Role => typeof role === 'string' && editableRoles.has(role)
+    );
+  }
+  return { overrides };
 }
 
 export async function registerConfigRoutes(fastify: FastifyInstance) {
@@ -271,6 +302,18 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
             }
             config.defaultUserRole = r;
           }
+        }
+
+        if (formData.accessMatrix !== undefined) {
+          if (request.auth?.role !== ROLES.admin) {
+            return reply.status(403).send({ error: 'Only an admin can change the access matrix' });
+          }
+          const result = parseAccessMatrixField(formData.accessMatrix);
+          if ('error' in result) {
+            return reply.status(400).send({ error: result.error });
+          }
+          config.accessMatrix = result.overrides;
+          audit('access_matrix_change', { actor: request.auth?.userId ?? null });
         }
 
         if (faviconFileSaved) {

@@ -1,7 +1,7 @@
 import type { Grade } from '@playwright-reports/shared';
 import { cn } from '@/lib/utils';
 
-// Literal class strings — Tailwind only emits classes it can see as whole tokens.
+// Literal class strings - Tailwind only emits classes it can see as whole tokens.
 export const GRADE_BG: Record<Grade, string> = {
   S: 'bg-emerald-500',
   A: 'bg-green-500',

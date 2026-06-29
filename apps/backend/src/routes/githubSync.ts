@@ -59,7 +59,7 @@ export async function registerGithubSyncRoutes(fastify: FastifyInstance) {
 
     fastify.get('/api/config/github-sync/events', async (request, reply) => {
       // Custom cadence: poll every 1s while a sync is running, otherwise a
-      // 30s comment heartbeat — so the helper's fixed keepalive is opted out.
+      // 30s comment heartbeat - so the helper's fixed keepalive is opted out.
       const stream = openSseStream(fastify, request, reply, 'github-sync events', {
         keepaliveMs: null,
       });

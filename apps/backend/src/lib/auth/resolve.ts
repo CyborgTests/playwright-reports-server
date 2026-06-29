@@ -1,4 +1,5 @@
-import { type Capability, can, keyCan, type Role } from '@playwright-reports/shared';
+import { type Capability, keyCan, type Role } from '@playwright-reports/shared';
+import { can } from './access.js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { type AuthCapability, type AuthScope, resolveApiKey } from './apiKeys.js';

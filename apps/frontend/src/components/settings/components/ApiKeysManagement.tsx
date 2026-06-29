@@ -130,7 +130,7 @@ export default function ApiKeysManagement({ canManageAllKeys }: { canManageAllKe
                     </TableCell>
                     {canManageAllKeys && (
                       <TableCell className="text-sm text-muted-foreground">
-                        {k.service ? '—' : (k.ownerUsername ?? 'unknown')}
+                        {k.service ? '-' : (k.ownerUsername ?? 'unknown')}
                       </TableCell>
                     )}
                     <TableCell>{k.type}</TableCell>
@@ -255,7 +255,7 @@ function CreateKeyDialog({
                 onCheckedChange={(v) => setService(v === true)}
               />
               <Label htmlFor="key-service" className="font-normal">
-                Service key (no owner — survives user deletion; for CI)
+                Service key (no owner - survives user deletion; for CI)
               </Label>
             </div>
           )}

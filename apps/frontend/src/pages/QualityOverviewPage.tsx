@@ -4,6 +4,7 @@ import type {
   QualityNodeInput,
   QualityNodeSnapshot,
 } from '@playwright-reports/shared';
+import { CAPABILITIES } from '@playwright-reports/shared';
 import { Pencil, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -28,7 +29,7 @@ import { StatusBadge } from '@/components/quality/status-badge';
 import { TrendArrow } from '@/components/quality/trend-arrow';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { useCan } from '@/hooks/useCan';
+import { useHasCapability } from '@/hooks/useHasCapability';
 import {
   type DashboardCreateInput,
   useCreateDashboard,
@@ -66,8 +67,7 @@ export default function QualityOverviewPage() {
   const urlSlug = searchParams.get('dashboard') ?? undefined;
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [showCreate, setShowCreate] = useState(false);
-  // Dashboard definitions are config — admin only. Viewing is open to everyone.
-  const canManage = useCan()('manage:qualityDashboards');
+  const canManage = useHasCapability()(CAPABILITIES.manageQualityDashboards);
 
   const dashboardListQ = useQualityDashboardList();
   const dashboards = dashboardListQ.data ?? [];

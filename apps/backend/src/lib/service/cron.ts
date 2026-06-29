@@ -187,7 +187,7 @@ export class CronService {
         },
       },
       {
-        // Auth GC only runs when auth is enabled — open mode must not touch auth tables.
+        // Auth GC only runs when auth is enabled - open mode must not touch auth tables.
         name: 'auth-gc',
         expression: CronService.AUTH_GC_SCHEDULE,
         timeoutMs: CronService.AUTH_GC_TIMEOUT_MS,

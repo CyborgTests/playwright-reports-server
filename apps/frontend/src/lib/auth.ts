@@ -1,4 +1,4 @@
-import type { OAuthProviderId, OAuthPublicProvider } from '@playwright-reports/shared';
+import type { Capability, OAuthProviderId, OAuthPublicProvider } from '@playwright-reports/shared';
 import { withBase } from './url';
 
 // The session rides an httpOnly cookie; the SPA only adds the double-submit CSRF
@@ -27,6 +27,7 @@ export interface SessionResponse {
   user?: AuthUser | null;
   needsSetup?: boolean;
   expires?: string;
+  capabilities?: Capability[];
 }
 
 export interface AuthResult {

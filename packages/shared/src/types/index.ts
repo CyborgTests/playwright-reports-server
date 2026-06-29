@@ -1,4 +1,4 @@
-import type { Role } from '../access.js';
+import type { AccessMatrixOverrides, Role } from '../access.js';
 
 export type UUID = `${string}-${string}-${string}-${string}-${string}`;
 
@@ -154,6 +154,7 @@ export interface SiteWhiteLabelConfig {
   authRequired?: boolean;
   allowOpenRegistration?: boolean;
   defaultUserRole?: Role;
+  accessMatrix?: AccessMatrixOverrides;
   database?: DatabaseStats;
   dataStorage?: string;
   s3Endpoint?: string;
@@ -451,6 +452,7 @@ export interface ServerConfig {
   authRequired?: boolean;
   allowOpenRegistration?: boolean;
   defaultUserRole?: Role;
+  accessMatrix?: AccessMatrixOverrides;
   cron?: {
     resultExpireDays?: number;
     resultExpireCronSchedule?: string;

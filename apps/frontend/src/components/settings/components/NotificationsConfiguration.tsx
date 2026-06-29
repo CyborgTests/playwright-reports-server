@@ -3,6 +3,7 @@ import type {
   NotificationRule,
   NotificationsConfig,
 } from '@playwright-reports/shared';
+import { CAPABILITIES } from '@playwright-reports/shared';
 import { AlertTriangle, Bell, Plus, Slack, Trash2, Webhook } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -18,8 +19,8 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { useCan } from '@/hooks/useCan';
 import { useConfig } from '@/hooks/useConfig';
+import { useHasCapability } from '@/hooks/useHasCapability';
 import {
   useNotificationsConfig,
   useUpdateNotificationsConfig,
@@ -36,7 +37,7 @@ export default function NotificationsConfiguration() {
   const { data: siteConfig } = useConfig();
   const update = useUpdateNotificationsConfig();
   const config = data ?? EMPTY;
-  const canEdit = useCan()('config:notifications');
+  const canEdit = useHasCapability()(CAPABILITIES.configNotifications);
 
   const baseUrlMissing = !siteConfig?.serverBaseUrl?.trim();
 

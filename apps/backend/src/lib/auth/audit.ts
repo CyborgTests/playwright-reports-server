@@ -19,6 +19,7 @@ export type AuthAction =
   | 'invite_create'
   | 'invite_revoke'
   | 'default_role_change'
+  | 'access_matrix_change'
   | 'password_reset_issue'
   | 'password_reset_complete'
   | 'password_change'

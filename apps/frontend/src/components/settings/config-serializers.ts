@@ -103,6 +103,12 @@ function serializeTestManagement(fd: FormData, temp: ServerConfig): void {
   }
 }
 
+function serializeAccess(fd: FormData, temp: ServerConfig, config: ServerConfig): void {
+  if (JSON.stringify(temp.accessMatrix ?? {}) !== JSON.stringify(config.accessMatrix ?? {})) {
+    fd.append('accessMatrix', JSON.stringify(temp.accessMatrix ?? {}));
+  }
+}
+
 export function buildConfigFormData(
   section: Exclude<EditableSettingsSection, 'none'>,
   tempConfig: ServerConfig,
@@ -119,6 +125,9 @@ export function buildConfigFormData(
       break;
     case 'testManagement':
       serializeTestManagement(fd, tempConfig);
+      break;
+    case 'access':
+      serializeAccess(fd, tempConfig, config);
       break;
   }
   return fd;

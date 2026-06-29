@@ -1,4 +1,5 @@
 import {
+  CAPABILITIES,
   formatBytes,
   type GithubSyncConfig,
   type GithubSyncStatus,
@@ -26,7 +27,7 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/hooks/useAuth';
-import { useCan } from '@/hooks/useCan';
+import { useHasCapability } from '@/hooks/useHasCapability';
 import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 import { useServerEvents } from '@/hooks/useServerEvents';
@@ -177,8 +178,7 @@ function statusBadge(cfg: GithubSyncConfigWithStatus) {
 
 export default function GithubSyncConfiguration() {
   const session = useAuth();
-  // Editing sync configs is admin-only; Run/Stop stay available to members.
-  const canEditSync = useCan()('config:githubSync');
+  const canEditSync = useHasCapability()(CAPABILITIES.configGithubSync);
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery<GithubSyncConfigWithStatus[]>(LIST_PATH, {

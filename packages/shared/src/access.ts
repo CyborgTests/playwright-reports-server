@@ -79,11 +79,42 @@ export const ACCESS_MATRIX: Record<Capability, readonly Role[]> = {
   'test:notifications': ADMIN_OR_MEMBER,
 };
 
-export function can(role: Role | null | undefined, capability: Capability): boolean {
-  return role != null && ACCESS_MATRIX[capability].includes(role);
+export const EDITABLE_ROLES: readonly Role[] = [ROLES.member, ROLES.readonly];
+
+export type AccessMatrixOverrides = Partial<Record<Capability, readonly Role[]>>;
+
+export function resolveAccessMatrix(
+  overrides?: AccessMatrixOverrides
+): Record<Capability, readonly Role[]> {
+  const out = {} as Record<Capability, readonly Role[]>;
+  for (const capability of Object.keys(ACCESS_MATRIX) as Capability[]) {
+    const override = overrides?.[capability];
+    out[capability] = override
+      ? [ROLES.admin, ...override.filter((role) => role !== ROLES.admin)]
+      : ACCESS_MATRIX[capability];
+  }
+  return out;
 }
 
-const CONTENT_CAPS: readonly Capability[] = [
+export function can(
+  role: Role | null | undefined,
+  capability: Capability,
+  matrix: Record<Capability, readonly Role[]> = ACCESS_MATRIX
+): boolean {
+  if (role === ROLES.admin) return true;
+  return role != null && matrix[capability].includes(role);
+}
+
+export function capabilitiesFor(
+  role: Role | null | undefined,
+  matrix: Record<Capability, readonly Role[]> = ACCESS_MATRIX
+): Capability[] {
+  return (Object.keys(matrix) as Capability[]).filter((capability) =>
+    can(role, capability, matrix)
+  );
+}
+
+const CONTENT_CAPABILITIES: readonly Capability[] = [
   CAPABILITIES.contentReports,
   CAPABILITIES.contentResults,
   CAPABILITIES.contentTests,
@@ -92,7 +123,7 @@ const CONTENT_CAPS: readonly Capability[] = [
   CAPABILITIES.contentFeedback,
 ];
 
-// API keys never get config/admin/operational capabilities — those are session-only.
+// API keys never get config/admin/operational capabilities - those are session-only.
 export function scopeGrants(
   scopes: readonly KeyScope[],
   capability: KeyCapability
@@ -100,7 +131,8 @@ export function scopeGrants(
   const out = new Set<Capability>();
   if (scopes.includes(KEY_SCOPES.cli)) {
     out.add(CAPABILITIES.view);
-    if (capability === KEY_CAPABILITIES.content) for (const c of CONTENT_CAPS) out.add(c);
+    if (capability === KEY_CAPABILITIES.content)
+      for (const contentCapability of CONTENT_CAPABILITIES) out.add(contentCapability);
   }
   if (scopes.includes(KEY_SCOPES.upload)) {
     // The reporter's workflow includes GET /api/tests?status=quarantined (view-gated).

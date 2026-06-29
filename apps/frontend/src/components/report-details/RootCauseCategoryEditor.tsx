@@ -1,6 +1,5 @@
 import {
   CAPABILITIES,
-  can,
   ROOT_CAUSE_CATEGORIES,
   ROOT_CAUSE_CATEGORY_DESCRIPTIONS,
   type RootCauseCategory,
@@ -16,7 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useAuth } from '@/hooks/useAuth';
+import { useHasCapability } from '@/hooks/useHasCapability';
 import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 import { formatCategoryName } from '@/lib/format';
@@ -33,8 +32,7 @@ interface Props {
 }
 
 const RootCauseCategoryEditor: FC<Props> = ({ testId, reportId, project }) => {
-  const session = useAuth();
-  const canEdit = can(session.data?.user.role ?? null, CAPABILITIES.contentTests);
+  const canEdit = useHasCapability()(CAPABILITIES.contentTests);
   const queryClient = useQueryClient();
 
   const { data } = useQuery<AnalysisResponse>(

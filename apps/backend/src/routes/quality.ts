@@ -59,7 +59,7 @@ function handleAuth(request: FastifyRequest, reply: FastifyReply) {
   return authorize(CAPABILITIES.view)(request, reply);
 }
 
-// Dashboard definitions are config — only admins may create/edit/delete/reorder.
+// Dashboard definitions are config - only admins may create/edit/delete/reorder.
 function handleAdmin(request: FastifyRequest, reply: FastifyReply) {
   return authorize(CAPABILITIES.manageQualityDashboards)(request, reply);
 }

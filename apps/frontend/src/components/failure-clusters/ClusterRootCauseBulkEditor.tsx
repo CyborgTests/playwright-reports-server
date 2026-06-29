@@ -1,7 +1,6 @@
 import {
   CAPABILITIES,
   type ClusterTest,
-  can,
   ROOT_CAUSE_CATEGORIES,
   ROOT_CAUSE_CATEGORY_DESCRIPTIONS,
   type RootCauseCategory,
@@ -17,7 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useAuth } from '@/hooks/useAuth';
+import { useHasCapability } from '@/hooks/useHasCapability';
 import useMutation from '@/hooks/useMutation';
 import { formatCategoryName } from '@/lib/format';
 import { invalidateCache } from '@/lib/query-cache';
@@ -27,8 +26,7 @@ interface Props {
 }
 
 const ClusterRootCauseBulkEditor = ({ tests }: Props) => {
-  const session = useAuth();
-  const canEdit = can(session.data?.user.role ?? null, CAPABILITIES.contentTests);
+  const canEdit = useHasCapability()(CAPABILITIES.contentTests);
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
 

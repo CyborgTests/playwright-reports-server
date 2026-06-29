@@ -1,4 +1,4 @@
-// Semantic series colors for Recharts (raw hsl strings, passed to fill/stroke —
+// Semantic series colors for Recharts (raw hsl strings, passed to fill/stroke -
 // not Tailwind classes). Single source so a retheme touches one place.
 export const CHART_COLORS = {
   passed: 'hsl(142, 76%, 36%)',

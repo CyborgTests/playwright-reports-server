@@ -311,7 +311,7 @@ export default function ServerConfiguration({
                 <p className="text-xs text-muted-foreground">
                   Role for users who self-register or sign in via an open-mode SSO provider.{' '}
                   <span className="font-medium text-foreground">admin</span> lets anyone become an
-                  administrator — use with care.
+                  administrator - use with care.
                 </p>
                 <Select
                   disabled={editingSection !== 'server'}

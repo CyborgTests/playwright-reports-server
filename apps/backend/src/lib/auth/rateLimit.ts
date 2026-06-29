@@ -1,5 +1,5 @@
 // Fixed-window, per-key rate limiter for auth endpoints. Keyed on IP (never on
-// username) so an attacker can't lock a known account out — see AUTH_PRD.md.
+// username) so an attacker can't lock a known account out - see AUTH_PRD.md.
 // In-memory: single-instance app, counters reset on restart (acceptable).
 
 const WINDOW_MS = 15 * 60 * 1000;

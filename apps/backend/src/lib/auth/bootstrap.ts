@@ -5,14 +5,14 @@ import { hashPassword } from './password.js';
 import { AUTH_ENABLED } from './resolve.js';
 import { hashToken } from './tokens.js';
 
-const SEED_KEY_LABEL = 'legacy API_TOKEN (deprecated — rotate)';
+const SEED_KEY_LABEL = 'legacy API_TOKEN (deprecated - rotate)';
 
 // Runs once at boot, after migrations. In open mode it only logs a warning and
 // touches nothing else.
 export async function initAuthBootstrap(): Promise<void> {
   if (!AUTH_ENABLED) {
     console.warn(
-      '[auth] API_TOKEN is not set — auth is DISABLED (open mode). All endpoints are publicly accessible.'
+      '[auth] API_TOKEN is not set - auth is DISABLED (open mode). All endpoints are publicly accessible.'
     );
     return;
   }
@@ -53,7 +53,7 @@ async function reconcileRootUser(): Promise<void> {
   const collision = usersDb.getUserByUsername(username);
   if (collision && collision.id !== ROOT_USER_ID) {
     console.error(
-      `[auth] ROOT_USERNAME "${username}" collides with an existing user — break-glass login is DISABLED until resolved.`
+      `[auth] ROOT_USERNAME "${username}" collides with an existing user - break-glass login is DISABLED until resolved.`
     );
     return;
   }
@@ -63,7 +63,7 @@ async function reconcileRootUser(): Promise<void> {
 }
 
 // One-time seed so existing reporters/CLIs keep working post-upgrade: a service
-// key whose secret equals API_TOKEN. Idempotent — only when there is no admin and
+// key whose secret equals API_TOKEN. Idempotent - only when there is no admin and
 // no key yet (so an enabled→open→enabled toggle never re-mints).
 async function seedApiKeyFromToken(): Promise<void> {
   const token = env.API_TOKEN;

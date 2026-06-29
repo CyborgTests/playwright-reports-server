@@ -101,7 +101,7 @@ function parseVerdict(result?: string | null): { score?: number; count?: number 
         if (Array.isArray(parsed.results)) return { count: parsed.results.length };
       }
     } catch {
-      // not JSON in this candidate — try the next
+      // not JSON in this candidate - try the next
     }
   }
   return null;

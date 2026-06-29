@@ -364,7 +364,7 @@ function buildNetworkActivityBlock(evidence: FailureEvidence | undefined): strin
 function formatDiffStatus(entry: NetworkDiffEntry): string {
   const base = entry.baselineStatus !== undefined ? String(entry.baselineStatus) : 'ok';
   const curr =
-    entry.failureText ?? (entry.currentStatus !== undefined ? String(entry.currentStatus) : '—');
+    entry.failureText ?? (entry.currentStatus !== undefined ? String(entry.currentStatus) : '-');
   return `${base} -> ${curr}`;
 }
 
@@ -600,7 +600,7 @@ export const buildTestFailureSegments = (args: {
   const feedbackBlock = args.feedback ? buildFeedbackContext(args.feedback).trim() : undefined;
 
   // Evidence is ordered most-relevant-first
-  // https://arxiv.org/abs/2412.18750) — "Order Matters!"
+  // https://arxiv.org/abs/2412.18750) - "Order Matters!"
   return assembleSegments([
     ...buildPromptHead({
       systemDefault: TEST_ANALYSIS_SYSTEM_PROMPT,

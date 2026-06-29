@@ -80,7 +80,7 @@ export function CrossTestClusterCard({
     <Card className={resolved ? 'opacity-70 border-success/30' : undefined}>
       <Accordion type="single" collapsible>
         <AccordionItem value={cluster.id} className="border-b-0">
-          {/* Actions are siblings of the trigger, not children — a <button> (the
+          {/* Actions are siblings of the trigger, not children - a <button> (the
               trigger) must not contain other buttons/links. */}
           <div className="flex items-start justify-between gap-2">
             <AccordionTrigger className="flex-1 px-6 hover:no-underline">

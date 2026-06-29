@@ -5,7 +5,11 @@ import { withBase } from '../lib/url';
 
 export interface AuthSession {
   status: 'loading' | 'authenticated' | 'unauthenticated';
-  data: { user: AuthUser; authMode: 'open' | 'enabled' } | null;
+  data: {
+    user: AuthUser;
+    authMode: 'open' | 'enabled';
+    capabilities?: SessionResponse['capabilities'];
+  } | null;
   needsSetup: boolean;
 }
 
@@ -40,7 +44,7 @@ export function useAuth(): AuthSession {
     }
     return {
       status: 'authenticated',
-      data: { user, authMode: data?.authMode ?? 'enabled' },
+      data: { user, authMode: data?.authMode ?? 'enabled', capabilities: data?.capabilities },
       needsSetup: false,
     };
   }, [data, isLoading, error]);
