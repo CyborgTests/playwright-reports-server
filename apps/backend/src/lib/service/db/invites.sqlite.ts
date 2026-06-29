@@ -7,7 +7,7 @@ import { type NewUser, usersDb } from './users.sqlite.js';
 export interface InviteRecord {
   id: string;
   codeHash: string;
-  role: 'reader' | 'readonly';
+  role: 'member' | 'readonly';
   createdBy: string | null;
   createdAt: string;
   expiresAt: string | null;

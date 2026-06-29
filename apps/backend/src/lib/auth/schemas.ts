@@ -36,7 +36,7 @@ export const changePasswordSchema = z.object({
 
 export const updateUserSchema = z
   .object({
-    role: z.enum([ROLES.admin, ROLES.reader, ROLES.readonly]).optional(),
+    role: z.enum([ROLES.admin, ROLES.member, ROLES.readonly]).optional(),
     disabled: z.boolean().optional(),
   })
   .refine((v) => v.role !== undefined || v.disabled !== undefined, {

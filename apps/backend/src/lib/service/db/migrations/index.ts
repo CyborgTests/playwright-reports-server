@@ -22,6 +22,7 @@ import * as dropRedundantIndexes from './0018_drop_redundant_indexes.js';
 import * as backfillSizeBytes from './0019_backfill_size_bytes.js';
 import * as auth from './0020_auth.js';
 import * as oauth from './0021_oauth.js';
+import * as renameReaderToMember from './0022_rename_reader_to_member.js';
 
 // Ordered, statically-imported migration set. The keys are the names Kysely
 // records in its `kysely_migration` table; their lexical order is the run order,
@@ -78,6 +79,10 @@ const MIGRATIONS: Record<string, Migration> = {
   },
   '0020_auth': { up: auth.up, down: auth.down },
   '0021_oauth': { up: oauth.up, down: oauth.down },
+  '0022_rename_reader_to_member': {
+    up: renameReaderToMember.up,
+    down: renameReaderToMember.down,
+  },
 };
 
 export async function migrateToLatest(db: Kysely<Database>): Promise<void> {

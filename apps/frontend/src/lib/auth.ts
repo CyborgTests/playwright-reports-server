@@ -14,7 +14,7 @@ export function authHeaders(): HeadersInit {
   return csrf ? { 'X-CSRF-Token': csrf } : {};
 }
 
-export type UserRole = 'admin' | 'reader' | 'readonly';
+export type UserRole = 'admin' | 'member' | 'readonly';
 
 export interface AuthUser {
   id: string | null;

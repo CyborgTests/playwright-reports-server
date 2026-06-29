@@ -368,7 +368,7 @@ export interface UsersRow {
   username: string;
   passwordHash: string | null;
   email: string | null;
-  role: 'admin' | 'reader' | 'readonly';
+  role: 'admin' | 'member' | 'readonly';
   disabled: WithDefault<number>;
   createdAt: string;
   updatedAt: string;
@@ -418,7 +418,7 @@ export interface ApiKeysRow {
 export interface InvitesRow {
   id: string;
   codeHash: string;
-  role: 'reader' | 'readonly';
+  role: 'member' | 'readonly';
   createdBy: string | null;
   createdAt: string;
   expiresAt: string | null;

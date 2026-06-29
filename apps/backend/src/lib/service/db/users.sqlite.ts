@@ -6,7 +6,7 @@ import { singletonOf } from './singleton.js';
 // Fixed-id break-glass admin row: excluded from listings and the last-admin invariant.
 export const ROOT_USER_ID = 'root';
 
-export type UserRole = 'admin' | 'reader' | 'readonly';
+export type UserRole = 'admin' | 'member' | 'readonly';
 
 export interface UserRecord {
   id: string;

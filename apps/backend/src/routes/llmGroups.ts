@@ -25,7 +25,7 @@ function toGroup(row: LlmConcurrencyGroupRow, memberCount: number): LlmConcurren
 export async function registerLlmGroupsRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
     // Reading groups is a view-level operation (the LLM settings section is
-    // visible to readers); only mutations require config:llm.
+    // visible to members); only mutations require config:llm.
     fastify.addHook('preHandler', authorize(CAPABILITIES.view));
     const llmConfig = { preHandler: authorize(CAPABILITIES.configLlm) };
 

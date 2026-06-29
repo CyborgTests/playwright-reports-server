@@ -28,7 +28,7 @@ import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 import { shareLink } from '@/lib/url';
 
-type Role = 'admin' | 'reader' | 'readonly';
+type Role = 'admin' | 'member' | 'readonly';
 
 interface User {
   id: string;
@@ -118,7 +118,7 @@ export default function UsersManagement({ currentUserId }: { currentUserId: stri
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="readonly">readonly</SelectItem>
-                          <SelectItem value="reader">reader</SelectItem>
+                          <SelectItem value="member">member</SelectItem>
                           <SelectItem value="admin">admin</SelectItem>
                         </SelectContent>
                       </Select>

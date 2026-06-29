@@ -83,7 +83,7 @@ export function findOrProvision(
       username,
       passwordHash: null,
       email,
-      role: 'reader',
+      role: 'member',
       createdAt: now,
       updatedAt: now,
       createdBy: 'system',

@@ -55,7 +55,7 @@ export function resolveIdentity(request: FastifyRequest): AuthIdentity | null {
         userId: session.userId,
         // Carry the exact role; unknown values fall back to the least-privileged.
         role:
-          session.role === 'admin' ? 'admin' : session.role === 'reader' ? 'reader' : 'readonly',
+          session.role === 'admin' ? 'admin' : session.role === 'member' ? 'member' : 'readonly',
         scopes: [],
         capability: null,
         sessionId: session.id,

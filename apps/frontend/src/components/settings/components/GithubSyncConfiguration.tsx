@@ -177,7 +177,7 @@ function statusBadge(cfg: GithubSyncConfigWithStatus) {
 
 export default function GithubSyncConfiguration() {
   const session = useAuth();
-  // Editing sync configs is admin-only; Run/Stop stay available to readers.
+  // Editing sync configs is admin-only; Run/Stop stay available to members.
   const canEditSync = useCan()('config:githubSync');
   const queryClient = useQueryClient();
 

@@ -32,7 +32,7 @@ import { shareLink } from '@/lib/url';
 
 interface Invite {
   id: string;
-  role: 'reader' | 'readonly';
+  role: 'member' | 'readonly';
   createdAt: string;
   expiresAt: string | null;
   maxUses: number | null;

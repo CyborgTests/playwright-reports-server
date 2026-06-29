@@ -4,7 +4,7 @@
 
 export const ROLES = {
   admin: 'admin',
-  reader: 'reader',
+  member: 'member',
   readonly: 'readonly',
 } as const;
 export type Role = (typeof ROLES)[keyof typeof ROLES];
@@ -53,17 +53,17 @@ export const CAPABILITIES = {
 export type Capability = (typeof CAPABILITIES)[keyof typeof CAPABILITIES];
 
 const ADMIN_ONLY: readonly Role[] = [ROLES.admin];
-const ADMIN_OR_READER: readonly Role[] = [ROLES.admin, ROLES.reader];
-const VIEWERS: readonly Role[] = [ROLES.admin, ROLES.reader, ROLES.readonly];
+const ADMIN_OR_MEMBER: readonly Role[] = [ROLES.admin, ROLES.member];
+const VIEWERS: readonly Role[] = [ROLES.admin, ROLES.member, ROLES.readonly];
 
 export const ACCESS_MATRIX: Record<Capability, readonly Role[]> = {
   view: VIEWERS,
-  'content:reports': ADMIN_OR_READER,
-  'content:results': ADMIN_OR_READER,
-  'content:tests': ADMIN_OR_READER,
-  'content:llm': ADMIN_OR_READER,
-  'content:clusters': ADMIN_OR_READER,
-  'content:feedback': ADMIN_OR_READER,
+  'content:reports': ADMIN_OR_MEMBER,
+  'content:results': ADMIN_OR_MEMBER,
+  'content:tests': ADMIN_OR_MEMBER,
+  'content:llm': ADMIN_OR_MEMBER,
+  'content:clusters': ADMIN_OR_MEMBER,
+  'content:feedback': ADMIN_OR_MEMBER,
   'config:server': ADMIN_ONLY,
   'config:llm': ADMIN_ONLY,
   'config:githubSync': ADMIN_ONLY,
@@ -73,10 +73,10 @@ export const ACCESS_MATRIX: Record<Capability, readonly Role[]> = {
   'manage:invites': ADMIN_ONLY,
   'manage:qualityDashboards': ADMIN_ONLY,
   'apiKeys:service': ADMIN_ONLY,
-  'apiKeys:own': ADMIN_OR_READER,
-  'run:githubSync': ADMIN_OR_READER,
-  'test:llmModel': ADMIN_OR_READER,
-  'test:notifications': ADMIN_OR_READER,
+  'apiKeys:own': ADMIN_OR_MEMBER,
+  'run:githubSync': ADMIN_OR_MEMBER,
+  'test:llmModel': ADMIN_OR_MEMBER,
+  'test:notifications': ADMIN_OR_MEMBER,
 };
 
 export function can(role: Role | null | undefined, capability: Capability): boolean {

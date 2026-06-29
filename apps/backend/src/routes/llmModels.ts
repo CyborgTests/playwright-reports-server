@@ -50,7 +50,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
     fastify.addHook('preHandler', authorize(CAPABILITIES.view));
     // The model registry is config — reads are allowed for any session (the queue
     // page shows model labels). Editing the registry is admin-only, but probing a
-    // model connection is an operational action allowed for readers.
+    // model connection is an operational action allowed for members.
     const llmConfig = { preHandler: authorize(CAPABILITIES.configLlm) };
     const testModel = { preHandler: authorize(CAPABILITIES.testLlmModel) };
 

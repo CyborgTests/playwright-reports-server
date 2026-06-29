@@ -287,7 +287,7 @@ export default function ServerConfiguration({
                     Allow open registration
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    When on, anyone can create a reader account without an invite. Off =
+                    When on, anyone can create a readonly account without an invite. Off =
                     invite-only.
                   </p>
                 </div>

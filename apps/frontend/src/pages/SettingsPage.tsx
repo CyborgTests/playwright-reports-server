@@ -164,7 +164,7 @@ export default function SettingsPage() {
   const isAdmin = session.data?.user.role === 'admin';
   const currentUserId = session.data?.user.id ?? null;
 
-  // github/llm/notifications stay visible to everyone (reader-allowed run/test
+  // github/llm/notifications stay visible to everyone (member-allowed run/test
   // actions); their config controls are gated inside the components.
   const visibleConfigNav = SECTION_NAV.filter((s) => {
     if (s.id === 'server' || s.id === 'cron' || s.id === 'testManagement') {

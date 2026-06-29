@@ -114,7 +114,7 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       }
 
       const isLlmEnabled = llmService.isConfigured();
-      // Whether the viewer may edit the root-cause category (admin/reader, not readonly).
+      // Whether the viewer may edit the root-cause category (admin/member, not readonly).
       // The PATCH endpoint enforces this server-side too; this only hides the affordance.
       const identity = resolveIdentity(request);
       const canEditCategory = identity
