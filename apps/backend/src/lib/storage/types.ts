@@ -41,6 +41,20 @@ export interface Storage {
   uploadBrandingAsset: (relativePath: string) => Promise<void>;
   ensureBrandingAsset: (relativePath: string) => Promise<void>;
   deleteBrandingAsset: (relativePath: string) => Promise<void>;
+
+  // --- Legacy migration ---
+  // Generic key-scan/read helpers used by the one-shot legacy importer to scan the
+  // legacy reports layout.
+  // see migration 0024. Not part of the normal report/result flow.
+  //
+  // List full bucket-relative keys of all objects under `prefix` (recursive). `prefix` is
+  // rooted at DATA_PATH, e.g. `data/reports` or `data/results`. Returns [] if none.
+  listKeys: (prefix: string) => Promise<string[]>;
+  // Read a small object fully as UTF-8 by its full bucket-relative key. Null on miss/error.
+  readToString: (key: string) => Promise<string | null>;
+  // Read an object fully as a Buffer by its full bucket-relative key. Null on miss/error.
+  // For binary attachments (trace zips, screenshots)
+  readToBuffer: (key: string) => Promise<Buffer | null>;
 }
 
 export interface ReadResultsInput {

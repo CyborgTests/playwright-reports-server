@@ -210,7 +210,9 @@ export class TestManagementService {
     for (let i = 0; i < jobs.length; i += CONCURRENCY) {
       const chunk = jobs.slice(i, i + CONCURRENCY);
       const results = await Promise.all(
-        chunk.map((job) => this.extractFailureDetails(job.test, job.filePath, 1, report.reportID))
+        chunk.map((job) =>
+          this.extractFailureDetails(job.test, job.filePath, 1, report.reportID, report.storagePath)
+        )
       );
       for (let j = 0; j < chunk.length; j++) {
         const details = results[j];
@@ -391,12 +393,13 @@ export class TestManagementService {
     },
     filePath: string,
     attempt: number,
-    reportId: string
+    reportId: string,
+    storagePath?: string | null
   ): Promise<string | null> {
     const result = test.results?.[attempt - 1];
     if (!result || result.status === 'passed') return null;
 
-    const evidence = await extractFailureEvidence(reportId, test, result);
+    const evidence = await extractFailureEvidence(reportId, test, result, storagePath);
 
     const attempts = (test.results ?? []).map((r, idx) => {
       const summary =

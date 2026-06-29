@@ -13,6 +13,8 @@ import { generatePlaywrightReport } from '../pw.js';
 import { processWithConcurrency, Semaphore } from '../utils/semaphore.js';
 import { withError } from '../withError.js';
 import {
+  CWD,
+  DATA_FOLDER,
   DEFAULT_STREAM_CHUNK_SIZE,
   REPORTS_FOLDER,
   RESULTS_FOLDER,
@@ -236,6 +238,42 @@ async function uploadReportFromZipFile(
   return { reportPath, report: info as unknown as ReportHistory };
 }
 
+// Bucket-relative keys map to `${CWD}/${key}` on disk (DATA_FOLDER is `${CWD}/data`).
+async function listKeys(prefix: string): Promise<string[]> {
+  const { result: entries } = await withError(
+    fs.readdir(path.join(CWD, prefix), { withFileTypes: true, recursive: true })
+  );
+  if (!entries) return [];
+  const keys: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const absolute = path.join(entry.parentPath, entry.name);
+    keys.push(path.relative(CWD, absolute).split(path.sep).join('/'));
+  }
+  return keys;
+}
+
+function resolveWithinData(key: string): string | null {
+  const resolved = path.resolve(CWD, key);
+  const root = path.resolve(DATA_FOLDER);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
+  return resolved;
+}
+
+async function readToString(key: string): Promise<string | null> {
+  const fullPath = resolveWithinData(key);
+  if (!fullPath) return null;
+  const { result } = await withError(fs.readFile(fullPath, 'utf-8'));
+  return result ?? null;
+}
+
+async function readToBuffer(key: string): Promise<Buffer | null> {
+  const fullPath = resolveWithinData(key);
+  if (!fullPath) return null;
+  const { result } = await withError(fs.readFile(fullPath));
+  return result ?? null;
+}
+
 // FS storage keeps branding assets on local disk only; nothing to mirror.
 async function noopBrandingAsset(_relativePath: string): Promise<void> {
   return;
@@ -255,6 +293,9 @@ export const FS: Storage = {
   saveResult,
   generateReport,
   uploadReportFromZipFile,
+  listKeys,
+  readToString,
+  readToBuffer,
   cleanupGeneratedReport: noopCleanupGeneratedReport,
   uploadBrandingAsset: noopBrandingAsset,
   ensureBrandingAsset: noopBrandingAsset,

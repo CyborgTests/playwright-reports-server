@@ -181,6 +181,25 @@ export class AzureBlob implements Storage {
     return this.readStream(targetPath, range);
   }
 
+  async listKeys(prefix: string): Promise<string[]> {
+    await this.ensureContainerExists();
+    return this.listBlobsUnderPrefix(prefix);
+  }
+
+  async readToString(key: string): Promise<string | null> {
+    const buffer = await this.readToBuffer(key);
+    return buffer ? buffer.toString('utf-8') : null;
+  }
+
+  async readToBuffer(key: string): Promise<Buffer | null> {
+    await this.ensureContainerExists();
+    const { result: buffer, error } = await withError(
+      this.container.getBlobClient(key).downloadToBuffer()
+    );
+    if (error || !buffer) return null;
+    return buffer;
+  }
+
   async deleteResults(resultIDs: string[]): Promise<void> {
     const objects = resultIDs.map((id) => `${RESULTS_BUCKET}/${id}.zip`);
 

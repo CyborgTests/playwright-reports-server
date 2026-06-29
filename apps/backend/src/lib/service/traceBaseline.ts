@@ -8,7 +8,7 @@ import {
   type TraceSnapshots,
 } from '../parser/trace-snapshot.js';
 import { openTraceZip, type TraceZip } from '../parser/trace-zip.js';
-import { testDb, traceBaselineDb } from './db/index.js';
+import { reportDb, testDb, traceBaselineDb } from './db/index.js';
 
 export interface BaselineEvidence {
   network: NetworkEvent[];
@@ -33,12 +33,13 @@ export async function loadTraceArtifacts(
   reportId: string,
   testId: string
 ): Promise<TraceArtifacts | null> {
-  const payload = await loadReportPayload(reportId);
+  const storagePath = reportDb.getStoragePath(reportId);
+  const payload = await loadReportPayload(reportId, storagePath);
   if (!payload) return null;
   const slice = extractFromReportPayload(payload, testId);
   const tracePath = slice ? traceAttachmentPath(slice) : undefined;
   if (!tracePath) return null;
-  const zip = await openTraceZip(reportId, tracePath);
+  const zip = await openTraceZip(reportId, tracePath, storagePath);
   if (!zip) return null;
   const parsed = await parseTrace(zip);
   return {

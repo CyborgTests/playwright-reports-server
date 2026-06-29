@@ -147,7 +147,7 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       // no Range for index.html: it's mutated (LLM button injection) and served whole.
       const range = isIndexHtml ? undefined : parseRange(request.headers.range);
 
-      // one indexed point-lookup per served file; 
+      // one indexed point-lookup per served file;
       // add a reportId->prefix memo cache only if serve throughput needs.
       let effectivePath = targetPath;
       const reportSegment = targetPath.split('/')[0];

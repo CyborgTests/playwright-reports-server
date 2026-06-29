@@ -280,6 +280,27 @@ export class S3 implements Storage {
     return this.readStream(targetPath, range);
   }
 
+  async listKeys(prefix: string): Promise<string[]> {
+    await this.ensureBucketExist();
+    return this.listObjectsUnderPrefix(prefix);
+  }
+
+  async readToString(key: string): Promise<string | null> {
+    const buffer = await this.readToBuffer(key);
+    return buffer ? buffer.toString('utf-8') : null;
+  }
+
+  async readToBuffer(key: string): Promise<Buffer | null> {
+    await this.ensureBucketExist();
+    const { result: response, error } = await withError(
+      this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }))
+    );
+    if (error || !response?.Body) return null;
+    const chunks: Buffer[] = [];
+    for await (const chunk of response.Body as Readable) chunks.push(Buffer.from(chunk));
+    return Buffer.concat(chunks);
+  }
+
   async deleteResults(resultIDs: string[]): Promise<void> {
     const objects = resultIDs.map((id) => `${RESULTS_BUCKET}/${id}.zip`);
 

@@ -1,8 +1,7 @@
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import { Open } from 'unzipper';
 import { stripAnsi } from '../ansi.js';
-import { REPORTS_FOLDER } from '../storage/constants.js';
+import { reportObjectKey } from '../storage/constants.js';
+import { storage } from '../storage/index.js';
 import { decodeReportZip } from './report-zip.js';
 
 const PAYLOAD_CACHE_TTL_MS = 60_000;
@@ -120,14 +119,15 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 
-async function loadReportPayloadUncached(reportId: string): Promise<ReportPayload | null> {
-  const indexPath = path.join(REPORTS_FOLDER, reportId, 'index.html');
-  let html: string;
-  try {
-    html = await fs.readFile(indexPath, 'utf-8');
-  } catch {
-    return null;
-  }
+async function loadReportPayloadUncached(
+  reportId: string,
+  storagePath?: string | null
+): Promise<ReportPayload | null> {
+  // `storagePath` points legacy reports at their in-place `{project}/{id}` prefix; native
+  // reports use the id directly. Reading via the storage adapter (not local fs) means this
+  // also works for s3/azure reports whose local copy was cleaned up after generation.
+  const html = await storage.readToString(reportObjectKey(reportId, storagePath, 'index.html'));
+  if (!html) return null;
 
   const zipBuffer = decodeReportZip(html);
   if (!zipBuffer) return null;
@@ -173,7 +173,10 @@ async function loadReportPayloadUncached(reportId: string): Promise<ReportPayloa
  * The promise is cached so concurrent callers share a single parse;
  * a load that rejects or resolves to `null` is evicted so the next call retries.
  */
-export async function loadReportPayload(reportId: string): Promise<ReportPayload | null> {
+export async function loadReportPayload(
+  reportId: string,
+  storagePath?: string | null
+): Promise<ReportPayload | null> {
   const existing = cache.get(reportId);
   if (existing) {
     if (Date.now() < existing.expiresAt) return existing.promise;
@@ -185,7 +188,7 @@ export async function loadReportPayload(reportId: string): Promise<ReportPayload
     if (firstKey !== undefined) cache.delete(firstKey);
   }
 
-  const promise = loadReportPayloadUncached(reportId);
+  const promise = loadReportPayloadUncached(reportId, storagePath);
   const entry: CacheEntry = { promise, expiresAt: Date.now() + PAYLOAD_CACHE_TTL_MS };
   cache.set(reportId, entry);
 

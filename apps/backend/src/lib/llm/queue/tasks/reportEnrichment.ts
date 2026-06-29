@@ -1,12 +1,11 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import {
   extractFailureEvidence,
   type FailureEvidence,
 } from '../../../parser/failure-extraction.js';
 import { parseHtmlReport } from '../../../parser/index.js';
 import { reportDb } from '../../../service/db/reports.sqlite.js';
-import { REPORTS_FOLDER } from '../../../storage/constants.js';
+import { reportObjectKey } from '../../../storage/constants.js';
+import { storage } from '../../../storage/index.js';
 import type { AttemptSummary, FailureDetailsForPrompt } from '../../prompts/index.js';
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -16,23 +15,15 @@ export async function readImageAttachment(
   att: { name: string; path: string; contentType: string }
 ): Promise<{ data: string; mediaType: string; source: string } | null> {
   if (!att.contentType?.startsWith('image/')) return null;
-  try {
-    const fullPath = path.join(REPORTS_FOLDER, reportId, att.path);
-    const stat = await fs.stat(fullPath);
-    if (stat.size > MAX_IMAGE_BYTES) {
-      console.warn(
-        `[llmQueue] image ${att.path} skipped (${stat.size}B > ${MAX_IMAGE_BYTES}B cap)`
-      );
-      return null;
-    }
-    const buf = await fs.readFile(fullPath);
-    return { data: buf.toString('base64'), mediaType: att.contentType, source: att.path };
-  } catch (err) {
-    console.warn(
-      `[llmQueue] failed to read image ${att.path}: ${err instanceof Error ? err.message : String(err)}`
-    );
+  // storagePath-aware + via the storage adapter, so legacy and s3/azure reports resolve.
+  const storagePath = reportDb.getStoragePath(reportId);
+  const buf = await storage.readToBuffer(reportObjectKey(reportId, storagePath, att.path));
+  if (!buf) return null;
+  if (buf.length > MAX_IMAGE_BYTES) {
+    console.warn(`[llmQueue] image ${att.path} skipped (${buf.length}B > ${MAX_IMAGE_BYTES}B cap)`);
     return null;
   }
+  return { data: buf.toString('base64'), mediaType: att.contentType, source: att.path };
 }
 
 export function isEvidenceStale(evidence: FailureEvidence | undefined): boolean {
@@ -86,9 +77,10 @@ export async function extractDetailsFromReport(
   testId: string
 ): Promise<FailureDetailsForPrompt | null> {
   try {
-    const reportDir = path.join(REPORTS_FOLDER, reportId);
-    const htmlPath = path.join(reportDir, 'index.html');
-    const html = await fs.readFile(htmlPath, 'utf-8');
+    // storagePath-aware + via the storage adapter, so legacy and s3/azure reports resolve.
+    const storagePath = reportDb.getStoragePath(reportId);
+    const html = await storage.readToString(reportObjectKey(reportId, storagePath, 'index.html'));
+    if (!html) return null;
     const reportInfo = await parseHtmlReport(html);
 
     if (!reportInfo?.files) return null;
@@ -165,7 +157,8 @@ export async function extractDetailsFromReport(
         const evidence = await extractFailureEvidence(
           reportId,
           { testId: test.testId, title: test.title, outcome: test.outcome },
-          firstFailedResult ?? { status: test.outcome, attachments: allAttachments }
+          firstFailedResult ?? { status: test.outcome, attachments: allAttachments },
+          storagePath
         );
 
         return {

@@ -1,7 +1,6 @@
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import { stripAnsi } from '../ansi.js';
-import { REPORTS_FOLDER } from '../storage/constants.js';
+import { reportObjectKey } from '../storage/constants.js';
+import { storage } from '../storage/index.js';
 import {
   extractFromReportPayload,
   loadReportPayload,
@@ -113,17 +112,16 @@ export interface FailureEvidence {
   environment?: EnvironmentContext;
 }
 
-async function readErrorContext(reportId: string, attachments?: AttachmentLike[]): Promise<string> {
+async function readErrorContext(
+  reportId: string,
+  attachments?: AttachmentLike[],
+  storagePath?: string | null
+): Promise<string> {
   if (!attachments) return '';
   for (const att of attachments) {
     if (att.name !== 'error-context' || !att.path) continue;
-    try {
-      const full = path.join(REPORTS_FOLDER, reportId, att.path);
-      const raw = await fs.readFile(full, 'utf-8');
-      if (raw) return raw;
-    } catch {
-      // file may not exist or be unreadable - keep looking
-    }
+    const raw = await storage.readToString(reportObjectKey(reportId, storagePath, att.path));
+    if (raw) return raw;
   }
   return '';
 }
@@ -434,14 +432,15 @@ function prioritizeActions(actions: ActionEvent[]): ActionEvent[] {
 
 async function extractEvidenceFromTrace(
   reportId: string,
-  tracePath: string
+  tracePath: string,
+  storagePath?: string | null
 ): Promise<{
   consoleEvents: ConsoleEvent[];
   networkEvents: NetworkEvent[];
   actionLog: ActionEvent[];
   environment?: EnvironmentContext;
 } | null> {
-  const directory = await openTraceZip(reportId, tracePath);
+  const directory = await openTraceZip(reportId, tracePath, storagePath);
   if (!directory) return null;
   const collectors = await collectFromTraceZip(directory);
   return {
@@ -519,7 +518,8 @@ export async function extractFailureEvidence(
     status?: string;
     message?: string;
     attachments?: Array<{ name?: string; path?: string; contentType?: string }>;
-  }
+  },
+  storagePath?: string | null
 ): Promise<FailureEvidence> {
   let testSourceFrame: string | undefined;
   let stepTree: PerFileStep[] | undefined;
@@ -533,7 +533,7 @@ export async function extractFailureEvidence(
   let payloadMessage: string | undefined;
   let payloadStack: string | undefined;
   if (test.testId) {
-    const payload = await loadReportPayload(reportId);
+    const payload = await loadReportPayload(reportId, storagePath);
     if (payload) {
       const slice = extractFromReportPayload(payload, test.testId);
       if (slice) {
@@ -567,7 +567,7 @@ export async function extractFailureEvidence(
   let environment: EnvironmentContext | undefined;
   const traceAtt = result.attachments?.find((a) => a.name === 'trace' && a.path);
   if (traceAtt?.path) {
-    const evidence = await extractEvidenceFromTrace(reportId, traceAtt.path);
+    const evidence = await extractEvidenceFromTrace(reportId, traceAtt.path, storagePath);
     if (evidence) {
       consoleEvents = evidence.consoleEvents;
       networkEvents = evidence.networkEvents;
@@ -576,7 +576,8 @@ export async function extractFailureEvidence(
     }
   }
 
-  const pageSnapshot = (await readErrorContext(reportId, result.attachments)) || undefined;
+  const pageSnapshot =
+    (await readErrorContext(reportId, result.attachments, storagePath)) || undefined;
 
   if (!message) {
     message = `Test ${test.outcome ?? result.status ?? 'failed'}: ${test.title ?? 'Unknown Test'}`;
