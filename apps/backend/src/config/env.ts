@@ -13,12 +13,8 @@ const envPaths = [
 ];
 
 for (const envPath of envPaths) {
-  try {
-    config({ path: envPath });
-    break;
-  } catch {
-    // Continue to next path if this one doesn't exist
-  }
+  const { error } = config({ path: envPath });
+  if (!error) break;
 }
 
 export const env = cleanEnv(process.env, {
