@@ -103,18 +103,12 @@ const REPORT_ANALYTICS_COLUMNS = [
   'statFlaky',
 ] as const satisfies ReadonlyArray<keyof ReportsRow>;
 
-// Cache parsed metadata/stats keyed by (reportID, updatedAt) so list endpoints
+// LRU cache of parsed metadata/stats keyed by (reportID, updatedAt) so list endpoints
 // don't re-run JSON.parse on every row of every request.
-const PARSE_CACHE_MAX = 5000;
+const PARSE_CACHE_MAX = 1000;
 const parseCache = new Map<string, ReportHistory>();
 function parseCacheKey(row: Pick<ReportRow, 'reportID' | 'updatedAt'>): string {
   return `${row.reportID}|${row.updatedAt ?? ''}`;
-}
-
-function invalidateParseCache(id: string): void {
-  for (const key of parseCache.keys()) {
-    if (key.startsWith(`${id}|`)) parseCache.delete(key);
-  }
 }
 
 const FAILED_ONLY_SQL = sql<boolean>`(COALESCE(statUnexpected, 0) > 0 OR COALESCE(statFlaky, 0) > 0)`;
@@ -417,8 +411,6 @@ export class ReportDatabase {
     });
     applyAll();
 
-    for (const id of rows.keys()) invalidateParseCache(id);
-
     return { updated: rows.size, missing: [] };
   }
 
@@ -459,7 +451,6 @@ export class ReportDatabase {
 
       const compiled = this.k.deleteFrom('reports').where('reportID', 'in', ids).compile();
       this.db.prepare(compiled.sql).run(...compiled.parameters);
-      for (const id of ids) invalidateParseCache(id);
 
       // no FK can cascade reports -> project_llm_summaries
       // when a project loses its last report, drop its summary.
@@ -929,6 +920,8 @@ export class ReportDatabase {
     const cached = parseCache.get(key);
     let baseDecoded: ReportHistory;
     if (cached) {
+      parseCache.delete(key);
+      parseCache.set(key, cached);
       baseDecoded = cached;
     } else {
       const metadata = parseJsonColumn<Record<string, unknown>>(row.metadata, {});
@@ -946,8 +939,8 @@ export class ReportDatabase {
         ...metadata,
       } as unknown as ReportHistory;
       if (parseCache.size >= PARSE_CACHE_MAX) {
-        const firstKey = parseCache.keys().next().value;
-        if (firstKey !== undefined) parseCache.delete(firstKey);
+        const oldest = parseCache.keys().next().value;
+        if (oldest !== undefined) parseCache.delete(oldest);
       }
       parseCache.set(key, baseDecoded);
     }
