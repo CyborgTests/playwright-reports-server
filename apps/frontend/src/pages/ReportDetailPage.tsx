@@ -1,5 +1,5 @@
 import type { RegressionTestRef, ReportHistory } from '@playwright-reports/shared';
-import { AlertOctagon, CheckCircle2, GitCompare, Users } from 'lucide-react';
+import { AlertOctagon, CheckCircle2, Download, GitCompare, Users } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -157,6 +157,14 @@ function ReportDetailPage() {
               Failure clusters
             </Button>
           </Link>
+        )}
+        {id && (
+          <a href={withBase(`/api/report/${id}/export.pdf?scope=all&compare=previous`)} download>
+            <Button variant="outline" size="sm" className="gap-2">
+              <Download className="h-4 w-4" />
+              Download PDF
+            </Button>
+          </a>
         )}
         <RegressionHeaderChips regressions={report?.regressions} />
       </div>

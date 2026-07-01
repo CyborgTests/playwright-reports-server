@@ -98,6 +98,14 @@ export const GetReportParamsSchema = z.object({
   id: z.string(),
 });
 
+export const ExportReportPdfQuerySchema = z.object({
+  scope: z.enum(['failures', 'all']).default('all'),
+  compare: z.string().min(1).optional(),
+  screenshots: z.enum(['0', '1']).default('1'),
+  analysis: z.enum(['0', '1']).default('1'),
+  onePerPage: z.enum(['0', '1']).default('1'),
+});
+
 export const UploadReportRequestSchema = z.looseObject({
   project: z.string().optional(),
   title: z.string().optional(),

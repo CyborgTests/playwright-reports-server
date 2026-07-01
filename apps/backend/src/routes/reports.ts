@@ -3,16 +3,25 @@ import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { CAPABILITIES } from '@playwright-reports/shared';
+import { CAPABILITIES, type FailureDetails } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import { serveReportRoute } from '../lib/constants.js';
 import { getReportEtaMs } from '../lib/llm/queueEta.js';
 import { parseOffsetQuery } from '../lib/pagination.js';
 import {
+  buildReportPdf,
+  isFailingOutcome,
+  type PdfDiff,
+  type PdfFailureCard,
+  type PdfTestRow,
+} from '../lib/pdf/reportPdf.js';
+import {
   CompareReportsQuerySchema,
   DeleteReportsRequestSchema,
   EditReportsRequestSchema,
+  ExportReportPdfQuerySchema,
   GenerateReportRequestSchema,
   GetReportParamsSchema,
   ListReportsQuerySchema,
@@ -38,6 +47,29 @@ import { withError } from '../lib/withError.js';
 import { authorize } from './auth.js';
 
 const COMPARE_KEYWORDS = new Set(['latest', 'prev', 'previous']);
+
+interface ReportMetadataExtras {
+  playwrightVersion?: string;
+  gitCommit?: { shortHash?: string; hash?: string; branch?: string; subject?: string };
+  ci?: { buildHref?: string };
+}
+
+async function streamToBuffer(stream: Readable): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+function parseFailureDetails(value: string | undefined): FailureDetails | undefined {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as FailureDetails;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Resolve `latest` / `prev` / `previous` keywords for `report compare`. The
@@ -182,6 +214,173 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         return report;
       } catch (error) {
         console.error('[routes] get report error:', error);
+        return reply.status(500).send({ error: 'Internal server error' });
+      }
+    });
+
+    fastify.get('/api/report/:id/export.pdf', async (request, reply) => {
+      try {
+        const params = validateSchema(GetReportParamsSchema, request.params);
+        const query = validateSchema(ExportReportPdfQuerySchema, request.query);
+        const { result: report, error } = await withError(service.getReport(params.id));
+        if (error || !report) {
+          return reply.status(404).send({ error: error?.message ?? 'Report not found' });
+        }
+
+        const wantScreenshots = query.screenshots === '1';
+        const wantAnalysis = query.analysis === '1';
+        const reportExtras = report as unknown as {
+          duration?: number;
+          metadata?: ReportMetadataExtras;
+        };
+        const meta = reportExtras.metadata ?? {};
+        const stats = {
+          total: report.stats?.total ?? 0,
+          expected: report.stats?.expected ?? 0,
+          unexpected: report.stats?.unexpected ?? 0,
+          flaky: report.stats?.flaky ?? 0,
+          skipped: report.stats?.skipped ?? 0,
+        };
+        const passDenominator = stats.expected + stats.unexpected + stats.flaky;
+        const passRate = passDenominator > 0 ? (stats.expected / passDenominator) * 100 : null;
+
+        const testMeta = new Map<string, { title: string; file: string }>();
+        const allTests: PdfTestRow[] = [];
+        for (const file of report.files ?? []) {
+          for (const test of file.tests) {
+            const fileName = test.location?.file ?? file.fileName;
+            testMeta.set(test.testId, { title: test.title, file: fileName });
+            allTests.push({
+              title: test.title,
+              file: fileName,
+              outcome: test.outcome,
+              durationMs: test.duration,
+            });
+          }
+        }
+        allTests.sort((a, b) => a.outcome.localeCompare(b.outcome) || a.file.localeCompare(b.file));
+
+        const seen = new Set<string>();
+        const failures: PdfFailureCard[] = [];
+        let screenshotsEmbedded = 0;
+        for (const run of testDb.getTestRunsByReport(params.id)) {
+          if (seen.has(run.testId)) continue;
+          seen.add(run.testId);
+          if (!isFailingOutcome(run.outcome)) continue;
+
+          const details = parseFailureDetails(run.failureDetails);
+          const fallback = testMeta.get(run.testId);
+          const location = details?.location
+            ? `${details.location.file}:${details.location.line}`
+            : (details?.filePath ?? fallback?.file ?? '');
+
+          const card: PdfFailureCard = {
+            testId: run.testId,
+            title: details?.testTitle ?? fallback?.title ?? run.testId,
+            location,
+            outcome: run.outcome,
+            durationMs: run.duration,
+            category: run.failureCategory,
+            errorMessage: details?.message,
+          };
+
+          if (wantAnalysis) {
+            const analysis = testAnalysisDb.getByTestAndReport(run.testId, params.id);
+            if (analysis?.analysis) {
+              card.analysis = { text: analysis.analysis, model: analysis.model ?? 'unknown' };
+            }
+          }
+
+          if (wantScreenshots) {
+            const shot = details?.attachments?.find(
+              (attachment) =>
+                /image\/(png|jpe?g)/i.test(attachment.contentType) &&
+                /screenshot/i.test(attachment.name)
+            );
+            if (shot) {
+              const file = await storage.readFile(`${params.id}/${shot.path}`, shot.contentType);
+              if (file) {
+                card.screenshot = {
+                  data: await streamToBuffer(file.body),
+                  contentType: shot.contentType,
+                };
+                screenshotsEmbedded += 1;
+              }
+            }
+          }
+
+          failures.push(card);
+        }
+
+        let diff: PdfDiff | null = null;
+        if (query.compare) {
+          const baselineId = COMPARE_KEYWORDS.has(query.compare.toLowerCase())
+            ? report.previousReportId
+            : query.compare;
+          if (baselineId) {
+            const { result: compared } = compareReports(baselineId, params.id);
+            if (compared) {
+              diff = {
+                baselineDisplayNumber: compared.reportA.displayNumber,
+                baselineTitle: compared.reportA.title,
+                baselineCreatedAt: compared.reportA.createdAt,
+                newlyFailed: compared.newlyFailed.map((e) => ({
+                  title: e.title,
+                  file: e.filePath,
+                })),
+                fixed: compared.fixed.map((e) => ({ title: e.title, file: e.filePath })),
+                stillFailing: compared.stillFailing.map((e) => ({
+                  title: e.title,
+                  file: e.filePath,
+                })),
+              };
+            }
+          }
+        }
+
+        const baseUrl = `${request.protocol}://${request.headers.host ?? ''}`;
+        const summary = wantAnalysis ? failureSummaryDb.getSummary(params.id) : null;
+
+        const pdf = await buildReportPdf({
+          report: {
+            reportID: report.reportID,
+            project: report.project,
+            title: report.title,
+            displayNumber: report.displayNumber,
+            createdAt: report.createdAt,
+            durationMs: reportExtras.duration,
+            stats,
+            passRate,
+            gitShortHash: meta.gitCommit?.shortHash,
+            gitBranch: meta.gitCommit?.branch,
+            gitSubject: meta.gitCommit?.subject,
+            ciBuildHref: meta.ci?.buildHref,
+            playwrightVersion: meta.playwrightVersion,
+          },
+          failures,
+          allTests: query.scope === 'all' ? allTests : undefined,
+          structured: summary?.llmSummaryStructured ?? null,
+          categories: summary?.categories,
+          llmModel: summary?.llmModel,
+          diff,
+          baseUrl,
+          generatedAt: new Date().toISOString(),
+          onePerPage: query.onePerPage === '1',
+        });
+
+        const safeProject = report.project.replace(/[^a-zA-Z0-9._-]+/g, '-');
+        const stamp = report.createdAt.slice(0, 10).replace(/-/g, '');
+        const filename = `${safeProject}-${report.displayNumber ?? report.reportID.slice(0, 8)}-${stamp}.pdf`;
+
+        return reply
+          .header('Content-Type', 'application/pdf')
+          .header('Content-Disposition', `attachment; filename="${filename}"`)
+          .send(Buffer.from(pdf));
+      } catch (caught) {
+        if (caught instanceof ValidationError) {
+          return reply.status(400).send({ error: caught.message, details: caught.details });
+        }
+        console.error('[routes] export report pdf error:', caught);
         return reply.status(500).send({ error: 'Internal server error' });
       }
     });
