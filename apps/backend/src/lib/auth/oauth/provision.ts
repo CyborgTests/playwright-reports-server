@@ -14,6 +14,17 @@ function uniqueUsername(base: string): string {
   return `${clean}-${randomUUID().slice(0, 8)}`;
 }
 
+function emailDomainAllowed(email: string | null | undefined, allowed: string[]): boolean {
+  if (!email) return false;
+  const at = email.lastIndexOf('@');
+  if (at < 0) return false;
+  const domain = email
+    .slice(at + 1)
+    .toLowerCase()
+    .trim();
+  return allowed.some((d) => domain === d || domain.endsWith(`.${d}`));
+}
+
 export function findOrProvision(
   providerId: OAuthProviderId,
   profile: OAuthProfile,
@@ -42,6 +53,16 @@ export function findOrProvision(
         displayName: profile.displayName,
       });
       return { ok: true, userId: match.id, isNew: false, linked: true };
+    }
+  }
+
+  if (mode === 'open') {
+    const allowed = siteConfigDb.get().oauth?.[providerId]?.allowedEmailDomains ?? [];
+    if (
+      allowed.length > 0 &&
+      !(profile.emailVerified && emailDomainAllowed(profile.email, allowed))
+    ) {
+      return { ok: false, reason: 'email_domain_not_allowed' };
     }
   }
 

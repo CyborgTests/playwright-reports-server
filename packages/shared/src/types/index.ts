@@ -186,6 +186,7 @@ export interface OAuthProviderConfig {
   clientSecret?: string;
   mode: OAuthProvisioningMode;
   issuerUrl?: string;
+  allowedEmailDomains?: string[];
 }
 
 export interface OAuthConfig {
@@ -200,6 +201,7 @@ export interface OAuthProviderSettings {
   mode: OAuthProvisioningMode;
   issuerUrl?: string;
   secretSet: boolean;
+  allowedEmailDomains: string[];
 }
 export type OAuthSettings = Record<OAuthProviderId, OAuthProviderSettings>;
 

@@ -191,7 +191,9 @@ function LoginCard({ onDone }: { onDone: () => Promise<void> }) {
           <CardContent className="space-y-4">
             {ssoError && (
               <p className="text-sm text-destructive animate-fade-in">
-                Single sign-on failed. Try again, or sign in with your username and password.
+                {ssoError.includes('email_domain_not_allowed')
+                  ? 'Your email domain is not allowed to sign up. Ask an admin for an invite.'
+                  : 'Single sign-on failed. Try again, or sign in with your username and password.'}
               </p>
             )}
             <div className="space-y-2">

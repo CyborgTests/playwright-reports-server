@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { authHeaders } from '@/lib/auth';
 import { withBase } from '@/lib/url';
 import SettingsSectionHeader from './SettingsSectionHeader';
@@ -50,6 +51,8 @@ interface ProviderForm {
   secret: string;
   secretSet: boolean;
   clearSecret: boolean;
+  // One domain per line in the textarea; serialized to string[] on save.
+  allowedEmailDomains: string;
 }
 
 type Forms = Record<OAuthProviderId, ProviderForm>;
@@ -66,6 +69,7 @@ function toForms(settings: OAuthSettings): Forms {
       secret: '',
       secretSet: p?.secretSet ?? false,
       clearSecret: false,
+      allowedEmailDomains: (p?.allowedEmailDomains ?? []).join('\n'),
     };
   }
   return out;
@@ -123,6 +127,10 @@ export default function OAuthConfiguration() {
         enabled: f.enabled,
         clientId: f.clientId,
         mode: f.mode,
+        allowedEmailDomains: f.allowedEmailDomains
+          .split(/[\n,]/)
+          .map((d) => d.trim())
+          .filter(Boolean),
         ...(PROVIDERS.find((p) => p.id === id)?.oidc ? { issuerUrl: f.issuerUrl } : {}),
         ...secretField,
       };
@@ -270,6 +278,23 @@ export default function OAuthConfiguration() {
                           ))}
                         </SelectContent>
                       </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label htmlFor={`${id}-domains`}>Allowed email domains</Label>
+                      <Textarea
+                        id={`${id}-domains`}
+                        value={f.allowedEmailDomains}
+                        disabled={!editing}
+                        rows={3}
+                        placeholder={'acme.com\neng.acme.com'}
+                        onChange={(e) => update(id, { allowedEmailDomains: e.target.value })}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        One per line. Restricts open sign-up to verified emails on these domains
+                        (subdomains included). Leave empty for no restriction. A direct invite
+                        always bypasses this.
+                      </p>
                     </div>
 
                     {oidc && (
