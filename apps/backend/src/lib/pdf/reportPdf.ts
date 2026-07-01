@@ -2,7 +2,7 @@ import type { ReportAnalysisStructured } from '@playwright-reports/shared';
 import { PDFDocument, type PDFFont, type PDFPage, rgb, StandardFonts } from 'pdf-lib';
 
 // Programmatic PDF export - no headless browser.
-// The route assembles the data; this module only draws. 
+// The route assembles the data; this module only draws.
 // Screenshots are pre-loaded by the caller (async I/O stays out of the layout pass).
 
 export interface PdfReportStats {

@@ -262,7 +262,6 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
 
         const seen = new Set<string>();
         const failures: PdfFailureCard[] = [];
-        let screenshotsEmbedded = 0;
         for (const run of testDb.getTestRunsByReport(params.id)) {
           if (seen.has(run.testId)) continue;
           seen.add(run.testId);
@@ -304,7 +303,6 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
                   data: await streamToBuffer(file.body),
                   contentType: shot.contentType,
                 };
-                screenshotsEmbedded += 1;
               }
             }
           }

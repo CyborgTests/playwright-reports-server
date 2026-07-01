@@ -89,12 +89,10 @@ export async function registerSsoConfigRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = ssoPatchSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
-        return reply
-          .code(400)
-          .send({
-            success: false,
-            error: parsed.error.issues[0]?.message ?? 'Invalid SSO settings',
-          });
+        return reply.code(400).send({
+          success: false,
+          error: parsed.error.issues[0]?.message ?? 'Invalid SSO settings',
+        });
       }
       const body = parsed.data;
       const cfg = await service.getConfig();
