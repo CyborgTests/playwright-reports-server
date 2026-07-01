@@ -1,6 +1,6 @@
 import type { LlmTaskRouting, LlmTaskType } from '@playwright-reports/shared';
 import { configCache } from '../../service/cache/config.js';
-import type { SegmentedSendOptions } from '../index.js';
+import { llmService, type SegmentedSendOptions } from '../index.js';
 import {
   buildCritiquePrompt,
   buildJudgePrompt,
@@ -9,7 +9,7 @@ import {
   buildScorerPrompt,
   buildSynthesizerPrompt,
 } from '../prompts/routing.js';
-import { fitToContextWindow } from '../queue/tasks/promptFitting.js';
+import { fitToContextWindow, SAFETY_MARGIN_TOKENS } from '../queue/tasks/promptFitting.js';
 import { type FallbackSendResult, sendWithFallback } from '../registry.js';
 import type { LLMResponse, SegmentedPrompt } from '../types/index.js';
 import {
@@ -189,6 +189,24 @@ export async function runCascade(
 
   for (let i = 0; i < tiers.length; i++) {
     const isLast = i === tiers.length - 1;
+
+    // Context-pressure gate: the prompt was fitted to the primary model's window
+    // upstream, so a weak tier with a smaller window would silently run a prompt
+    // that overflows it.
+    // Escalate before spending the call when we know the tier can't hold the input.
+    // Only fires when the tier has a configured contextWindow; null = unknown = don't block.
+    const tierWindow = tiers[i].row.contextWindow;
+    if (!isLast && tierWindow && tierWindow > 0) {
+      const inputBudget = tierWindow - RESERVE[taskType] - SAFETY_MARGIN_TOKENS;
+      const estimatedTokens = llmService.estimateLocalInputTokens(prompt);
+      if (estimatedTokens > inputBudget) {
+        console.info(
+          `[llm-routing] cascade tier ${i + 1} for ${taskType} context pressure: prompt ~${estimatedTokens} tokens exceeds tier window ${tierWindow} (budget ${inputBudget}); escalating`
+        );
+        continue;
+      }
+    }
+
     let draft: LLMResponse;
     try {
       draft = await callRole(taskId, taskType, 'tier', tiers[i], prompt);

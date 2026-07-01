@@ -11,7 +11,7 @@ export const OUTPUT_RESERVE_TOKENS_BY_TASK = {
 } as const;
 
 const DEFAULT_OUTPUT_RESERVE_TOKENS = OUTPUT_RESERVE_TOKENS_BY_TASK.projectSummary;
-const SAFETY_MARGIN_TOKENS = 1000;
+export const SAFETY_MARGIN_TOKENS = 1000;
 
 export const TASK_TEMPERATURE_DEFAULTS = {
   testAnalysis: 0.2,
