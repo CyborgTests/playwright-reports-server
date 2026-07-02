@@ -246,9 +246,16 @@ curl --location --request PUT 'http://localhost:3000/api/result/upload' \
 --header 'Authorization: <api-token>' \
 --form 'file=@"/path/to/file"' \
 --form 'project="desktop"' \
+--form 'level="e2e"' \
 --form 'reporter="okhotemskyi"' \
 --form 'appVersion="1.2.2"'
 ```
+
+Alongside `project`, the `level` field is a first-class dimension describing the **testing level**
+(e.g. `unit`, `integration`, `e2e`). Like `project`, it is stored on the result, carried onto the
+generated report, is filterable via the `level` query param on `/api/report/list` and `/api/result/list`,
+enumerable via `/api/report/levels` and `/api/result/levels`, and shown as a dedicated column/filter in
+the UI (rather than as a generic tag).
 
 If you have **s3 storage** configured, you can pass `fileContentLength` query parameter to use **presigned URL** for **direct upload**:
 

@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const pagination = parseFromRequest(searchParams);
   const project = searchParams.get('project') ?? '';
+  const level = searchParams.get('level') ?? '';
   const search = searchParams.get('search') ?? '';
   const dateFrom = searchParams.get('dateFrom') ?? undefined;
   const dateTo = searchParams.get('dateTo') ?? undefined;
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
   const sortBy = parseReportSortField(searchParams.get('sortBy'));
 
   const { result: reports, error } = await withError(
-    service.getReports({ pagination, project, search, dateFrom, dateTo, order, sortBy }),
+    service.getReports({ pagination, project, level, search, dateFrom, dateTo, order, sortBy }),
   );
 
   if (error) {

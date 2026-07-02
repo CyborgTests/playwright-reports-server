@@ -32,13 +32,14 @@ export type SortOrder = 'asc' | 'desc';
 export interface ReadResultsInput {
   pagination?: Pagination;
   project?: string;
+  level?: string;
   testRun?: string;
   tags?: string[];
   search?: string;
   dateFrom?: string;
   dateTo?: string;
   order?: SortOrder;
-  sortBy?: 'createdAt' | 'title' | 'project' | 'tags' | 'size';
+  sortBy?: 'createdAt' | 'title' | 'project' | 'level' | 'tags' | 'size';
 }
 
 export interface ReadResultsOutput {
@@ -49,12 +50,13 @@ export interface ReadResultsOutput {
 export interface ReadReportsInput {
   pagination?: Pagination;
   project?: string;
+  level?: string;
   ids?: string[];
   search?: string;
   dateFrom?: string;
   dateTo?: string;
   order?: SortOrder;
-  sortBy?: 'createdAt' | 'title' | 'project' | 'passRate' | 'size';
+  sortBy?: 'createdAt' | 'title' | 'project' | 'level' | 'passRate' | 'size';
 }
 
 export interface ReadReportsOutput {
@@ -77,6 +79,7 @@ export type Result = {
   title?: string;
   createdAt: string;
   project: string;
+  level?: string;
   size: string;
   sizeBytes: number;
 } & ResultDetails;
@@ -85,6 +88,7 @@ export type Report = {
   reportID: string;
   title?: string;
   project: string;
+  level?: string;
   reportUrl: string;
   createdAt: Date;
   size: string;
@@ -98,7 +102,7 @@ export const isReportHistory = (report: Report | ReportHistory | undefined): rep
 
 export type TestHistory = Report & ReportTest;
 
-export type ReportMetadata = Partial<{ title: string; project: string; playwrightVersion?: string }> &
+export type ReportMetadata = Partial<{ title: string; project: string; level: string; playwrightVersion?: string }> &
   Record<string, string>;
 
 export interface ServerDataInfo {

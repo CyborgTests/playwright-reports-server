@@ -2,6 +2,7 @@ import { type ChangeEvent, useCallback } from 'react';
 import { Select, SelectItem, Input } from '@heroui/react';
 
 import ProjectSelect from '@/app/components/project-select';
+import LevelSelect from '@/app/components/level-select';
 import TagSelect from '@/app/components/tag-select';
 import DateRangePicker from '@/app/components/date-range-picker';
 import { SearchIcon } from '@/app/components/icons';
@@ -12,6 +13,7 @@ interface TablePaginationRowProps {
   setRowsPerPage: (rows: number) => void;
   setPage: (page: number) => void;
   onProjectChange: (project: string) => void;
+  onLevelChange?: (level: string) => void;
   onSearchChange?: (search: string) => void;
   onTagsChange?: (tags: string[]) => void;
   onDateFromChange?: (date: string) => void;
@@ -32,6 +34,7 @@ export default function TablePaginationOptions({
   setRowsPerPage,
   setPage,
   onProjectChange,
+  onLevelChange,
   onSearchChange,
   onTagsChange,
   onDateFromChange,
@@ -63,6 +66,7 @@ export default function TablePaginationOptions({
           onChange={(e) => onSearchChange?.(e.target.value)}
         />
         <ProjectSelect entity={entity} onSelect={onProjectChange} />
+        {onLevelChange && <LevelSelect entity={entity} onSelect={onLevelChange} />}
         {entity === 'result' && <TagSelect entity={entity} onSelect={onTagsChange} />}
         {(onDateFromChange || onDateToChange) && (
           <DateRangePicker

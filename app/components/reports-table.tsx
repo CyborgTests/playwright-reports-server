@@ -26,7 +26,7 @@ import TablePaginationOptions from './table-pagination-options';
 import InlineStatsCircle from './inline-stats-circle';
 
 import { withQueryParams } from '@/app/lib/network';
-import { defaultProjectName } from '@/app/lib/constants';
+import { defaultLevelName, defaultProjectName } from '@/app/lib/constants';
 import useQuery from '@/app/hooks/useQuery';
 import DeleteReportButton from '@/app/components/delete-report-button';
 import FormattedDate from '@/app/components/date-format';
@@ -36,6 +36,7 @@ import { ReadReportsHistory, ReportHistory } from '@/app/lib/storage';
 const columns = [
   { name: 'Title', uid: 'title', sortable: true },
   { name: 'Project', uid: 'project', sortable: true },
+  { name: 'Level', uid: 'level', sortable: true },
   { name: 'Pass Rate', uid: 'passRate', sortable: true },
   { name: 'Created at', uid: 'createdAt', sortable: true },
   { name: 'Size', uid: 'size', sortable: true },
@@ -46,6 +47,7 @@ const coreFields = [
   'reportID',
   'title',
   'project',
+  'level',
   'createdAt',
   'size',
   'sizeBytes',
@@ -121,6 +123,7 @@ interface ReportsTableProps {
 export default function ReportsTable({ onChange, selected, onSelect, onDeleted }: Readonly<ReportsTableProps>) {
   const reportListEndpoint = '/api/report/list';
   const [project, setProject] = useState(defaultProjectName);
+  const [level, setLevel] = useState(defaultLevelName);
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
@@ -135,6 +138,7 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
     limit: rowsPerPage.toString(),
     offset: ((page - 1) * rowsPerPage).toString(),
     project,
+    level,
     order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
     sortBy: String(sortDescriptor.column ?? 'createdAt'),
     ...(search.trim() && { search: search.trim() }),
@@ -151,6 +155,7 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
   } = useQuery<ReadReportsHistory>(withQueryParams(reportListEndpoint, getQueryParams()), {
     dependencies: [
       project,
+      level,
       search,
       dateFrom,
       dateTo,
@@ -202,6 +207,11 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
     [page, rowsPerPage],
   );
 
+  const onLevelChange = useCallback((level: string) => {
+    setLevel(level);
+    setPage(1);
+  }, []);
+
   const onSearchChange = useCallback((searchTerm: string) => {
     setSearch(searchTerm);
     setPage(1);
@@ -242,6 +252,7 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
         total={total}
         onDateFromChange={onDateFromChange}
         onDateToChange={onDateToChange}
+        onLevelChange={onLevelChange}
         onProjectChange={onProjectChange}
         onSearchChange={onSearchChange}
       />
@@ -326,6 +337,7 @@ export default function ReportsTable({ onChange, selected, onSelect, onDeleted }
                 </div>
               </TableCell>
               <TableCell className="w-1/6">{item.project}</TableCell>
+              <TableCell className="w-1/12">{item.level}</TableCell>
               <TableCell className="w-1/12">{<InlineStatsCircle stats={item.stats} />}</TableCell>
               <TableCell className="w-1/6">
                 <FormattedDate date={item.createdAt} />

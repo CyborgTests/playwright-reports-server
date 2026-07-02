@@ -125,9 +125,14 @@ export async function readResults(input?: ReadResultsInput) {
 
   let filteredResults = fileContents.filter((result) => (input?.project ? result.project === input.project : result));
 
+  // Filter by level (testing level) if provided
+  if (input?.level) {
+    filteredResults = filteredResults.filter((result) => result.level === input.level);
+  }
+
   // Filter by tags if provided
   if (input?.tags && input.tags.length > 0) {
-    const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'];
+    const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'level'];
 
     filteredResults = filteredResults.filter((result) => {
       const resultTags = Object.entries(result)
@@ -149,7 +154,7 @@ export async function readResults(input?: ReadResultsInput) {
         result.resultID,
         result.project,
         ...Object.entries(result)
-          .filter(([key]) => !['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'].includes(key))
+          .filter(([key]) => !['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'level'].includes(key))
           .map(([key, value]) => `${key}: ${value}`),
       ].filter(Boolean);
 
@@ -290,6 +295,11 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
 
   let filteredReports = allReports as ReportHistory[];
 
+  // Filter by level (testing level) if provided
+  if (input?.level) {
+    filteredReports = filteredReports.filter((report) => report.level === input.level);
+  }
+
   // Filter by search if provided
   if (input?.search && input.search.trim()) {
     const searchTerm = input.search.toLowerCase().trim();
@@ -303,7 +313,17 @@ export async function readReports(input?: ReadReportsInput): Promise<ReadReports
         ...Object.entries(report)
           .filter(
             ([key]) =>
-              !['reportID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'reportUrl', 'stats'].includes(key),
+              ![
+                'reportID',
+                'title',
+                'createdAt',
+                'size',
+                'sizeBytes',
+                'project',
+                'level',
+                'reportUrl',
+                'stats',
+              ].includes(key),
           )
           .map(([key, value]) => `${key}: ${value}`),
       ].filter(Boolean);
@@ -391,6 +411,7 @@ export async function saveResultDetails(resultID: string, resultDetails: ResultD
     resultID,
     createdAt: new Date().toISOString(),
     project: resultDetails?.project ?? '',
+    level: resultDetails?.level ?? '',
     ...resultDetails,
     size: bytesToString(size),
     sizeBytes: size,

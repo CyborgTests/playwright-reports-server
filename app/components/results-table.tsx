@@ -18,7 +18,7 @@ import { keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { withQueryParams } from '@/app/lib/network';
-import { defaultProjectName } from '@/app/lib/constants';
+import { defaultLevelName, defaultProjectName } from '@/app/lib/constants';
 import TablePaginationOptions from '@/app/components/table-pagination-options';
 import useQuery from '@/app/hooks/useQuery';
 import FormattedDate from '@/app/components/date-format';
@@ -28,13 +28,14 @@ import DeleteResultsButton from '@/app/components/delete-results-button';
 const columns = [
   { name: 'Result ID', uid: 'title', sortable: true },
   { name: 'Project', uid: 'project', sortable: true },
+  { name: 'Level', uid: 'level', sortable: true },
   { name: 'Created at', uid: 'createdAt', sortable: true },
   { name: 'Tags', uid: 'tags', sortable: true },
   { name: 'Size', uid: 'size', sortable: true },
   { name: '', uid: 'actions' },
 ];
 
-const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'];
+const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'level'];
 
 const getTags = (item: Result) => {
   return Object.entries(item).filter(([key]) => !notMetadataKeys.includes(key));
@@ -49,6 +50,7 @@ interface ResultsTableProps {
 export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly<ResultsTableProps>) {
   const resultListEndpoint = '/api/result/list';
   const [project, setProject] = useState(defaultProjectName);
+  const [level, setLevel] = useState(defaultLevelName);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState<string>('');
@@ -64,6 +66,7 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
     limit: rowsPerPage.toString(),
     offset: ((page - 1) * rowsPerPage).toString(),
     project,
+    level,
     order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
     sortBy: String(sortDescriptor.column ?? 'createdAt'),
     ...(selectedTags.length > 0 && { tags: selectedTags.join(',') }),
@@ -81,6 +84,7 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
   } = useQuery<ReadResultsOutput>(withQueryParams(resultListEndpoint, getQueryParams()), {
     dependencies: [
       project,
+      level,
       selectedTags,
       search,
       dateFrom,
@@ -114,6 +118,11 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
     },
     [page, rowsPerPage],
   );
+
+  const onLevelChange = useCallback((level: string) => {
+    setLevel(level);
+    setPage(1);
+  }, []);
 
   const onTagsChange = useCallback((tags: string[]) => {
     setSelectedTags(tags);
@@ -176,6 +185,7 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
         total={total}
         onDateFromChange={onDateFromChange}
         onDateToChange={onDateToChange}
+        onLevelChange={onLevelChange}
         onProjectChange={onProjectChange}
         onSearchChange={onSearchChange}
         onTagsChange={onTagsChange}
@@ -240,6 +250,7 @@ export default function ResultsTable({ onSelect, onDeleted, selected }: Readonly
             <TableRow key={item.resultID}>
               <TableCell className="w-1/3">{item.title ?? item.resultID}</TableCell>
               <TableCell className="w-1/6">{item.project}</TableCell>
+              <TableCell className="w-1/12">{item.level}</TableCell>
               <TableCell className="w-1/12">
                 <FormattedDate date={new Date(item.createdAt)} />
               </TableCell>

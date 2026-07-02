@@ -303,7 +303,7 @@ export class S3 implements Storage {
     jsonFiles.sort((a, b) => resultsDir * (getTimestamp(a.lastModified) - getTimestamp(b.lastModified)));
 
     // check if we can apply pagination early
-    const noFilters = !input?.project && !input?.pagination;
+    const noFilters = !input?.project && !input?.level && !input?.pagination;
 
     const resultFiles = noFilters ? handlePagination(jsonFiles, input?.pagination) : jsonFiles;
 
@@ -324,9 +324,14 @@ export class S3 implements Storage {
 
     let filteredResults = results.filter((file) => (input?.project ? file.project === input.project : file));
 
+    // Filter by level (testing level) if provided
+    if (input?.level) {
+      filteredResults = filteredResults.filter((result) => result.level === input.level);
+    }
+
     // Filter by tags if provided
     if (input?.tags && input.tags.length > 0) {
-      const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'];
+      const notMetadataKeys = ['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'level'];
 
       filteredResults = filteredResults.filter((result) => {
         const resultTags = Object.entries(result)
@@ -348,7 +353,9 @@ export class S3 implements Storage {
           result.resultID,
           result.project,
           ...Object.entries(result)
-            .filter(([key]) => !['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project'].includes(key))
+            .filter(
+              ([key]) => !['resultID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'level'].includes(key),
+            )
             .map(([key, value]) => `${key}: ${value}`),
         ].filter(Boolean);
 
@@ -466,6 +473,11 @@ export class S3 implements Storage {
 
         let filteredReports = withMetadata;
 
+        // Filter by level (testing level) if provided
+        if (input?.level) {
+          filteredReports = filteredReports.filter((report) => report.level === input.level);
+        }
+
         // Filter by search if provided
         if (input?.search && input.search.trim()) {
           const searchTerm = input.search.toLowerCase().trim();
@@ -479,9 +491,17 @@ export class S3 implements Storage {
               ...Object.entries(report)
                 .filter(
                   ([key]) =>
-                    !['reportID', 'title', 'createdAt', 'size', 'sizeBytes', 'project', 'reportUrl', 'stats'].includes(
-                      key,
-                    ),
+                    ![
+                      'reportID',
+                      'title',
+                      'createdAt',
+                      'size',
+                      'sizeBytes',
+                      'project',
+                      'level',
+                      'reportUrl',
+                      'stats',
+                    ].includes(key),
                 )
                 .map(([key, value]) => `${key}: ${value}`),
             ].filter(Boolean);
@@ -660,6 +680,7 @@ export class S3 implements Storage {
       resultID,
       createdAt: new Date().toISOString(),
       project: resultDetails?.project ?? '',
+      level: resultDetails?.level ?? '',
       ...resultDetails,
       size: bytesToString(size),
       sizeBytes: size,

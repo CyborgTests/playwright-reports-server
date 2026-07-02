@@ -16,3 +16,7 @@ export const bytesToString = (bytes: number): string => {
 export const getUniqueProjectsList = (items: (Result | Report)[]): string[] => {
   return Array.from(new Set(items.map((r) => r.project).filter(Boolean)));
 };
+
+export const getUniqueLevelsList = (items: (Result | Report)[]): string[] => {
+  return Array.from(new Set(items.map((r) => r.level).filter(Boolean))) as string[];
+};
