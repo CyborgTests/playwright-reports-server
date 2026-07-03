@@ -60,7 +60,11 @@ export default function LlmQueuePage() {
     invalidateCache(queryClient, { predicate: '/api/llm' });
   }, [queryClient]);
 
-  useServerEvents('/api/llm/queue-events', invalidateLlmQueries);
+  const invalidateLiveQueries = useCallback(() => {
+    invalidateCache(queryClient, { predicate: '/api/llm/tasks' });
+  }, [queryClient]);
+
+  useServerEvents('/api/llm/queue-events', invalidateLiveQueries);
 
   const clearQueueMutation = useMutation('/api/llm/tasks/clear', {
     method: 'DELETE',
