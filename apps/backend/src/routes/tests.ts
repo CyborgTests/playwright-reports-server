@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { invalidateFailureClustersCache } from '../lib/failure-clustering/index.js';
 import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
 import { getTaskEtaMs } from '../lib/llm/queueEta.js';
+import { QuarantineUpdateSchema, TestsQuerySchema } from '../lib/schemas/index.js';
 import {
   llmTasksDb,
   regressionsDb,
@@ -23,78 +24,45 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
     fastify.addHook('preHandler', authorize(CAPABILITIES.view));
 
     fastify.get('/api/tests', async (request: FastifyRequest, reply: FastifyReply) => {
-      const {
-        project,
-        status,
-        tiers,
-        sort,
-        failureCategory,
-        limit,
-        offset,
-        from,
-        to,
-        search,
-        regressedOnly,
-        regressedSince,
-        resolvedSince,
-        slim,
-      } = request.query as {
-        project?: string;
-        status?: string;
-        tiers?: string;
-        sort?: string;
-        failureCategory?: string;
-        limit?: string;
-        offset?: string;
-        from?: string;
-        to?: string;
-        search?: string;
-        regressedOnly?: string;
-        regressedSince?: string;
-        resolvedSince?: string;
-        slim?: string;
-      };
+      const parsed = TestsQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Invalid query parameters',
+          issues: parsed.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })),
+        });
+      }
+      const query = parsed.data;
+      const { project, from, to, search, slim: slimRaw } = query;
 
       try {
-        const parsedTiers = tiers
-          ? (tiers
+        const parsedTiers = query.tiers
+          ? (query.tiers
               .split(',')
               .map((t) => t.trim())
               .filter((t) => t === 'stable' || t === 'flaky' || t === 'critical') as Array<
               'stable' | 'flaky' | 'critical'
             >)
           : undefined;
-        const toInt = (v: string | undefined, min: number): number | undefined => {
-          if (!v) return undefined;
-          const n = Number.parseInt(v, 10);
-          return Number.isFinite(n) && n >= min ? n : undefined;
-        };
         const options = {
-          status: status as 'all' | 'quarantined' | 'not-quarantined' | undefined,
+          status: query.status,
           tiers: parsedTiers,
-          sort:
-            sort === 'slowest'
-              ? ('slowest' as const)
-              : sort === 'stale'
-                ? ('stale' as const)
-                : sort === 'regression-age'
-                  ? ('regression-age' as const)
-                  : undefined,
-          failureCategory: failureCategory || undefined,
-          limit: toInt(limit, 1),
-          offset: toInt(offset, 0),
+          sort: query.sort,
+          failureCategory: query.failureCategory || undefined,
+          limit: query.limit ?? 100,
+          offset: query.offset ?? 0,
           from,
           to,
           search,
-          regressedOnly: regressedOnly === 'true',
-          regressedSince: regressedSince || undefined,
-          resolvedSince: resolvedSince || undefined,
-          slim: slim === '1',
+          regressedOnly: query.regressedOnly === 'true',
+          regressedSince: query.regressedSince || undefined,
+          resolvedSince: query.resolvedSince || undefined,
+          slim: slimRaw === '1',
         };
 
         const { data, total } = await testManagementService.getTests(project, options);
 
-        const isSlim = slim === '1';
+        const isSlim = slimRaw === '1';
         if (!isSlim && data.length > 0) {
           const keys = data.map((t) => ({
             testId: t.testId,
@@ -219,10 +187,6 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { project } = request.query as { project: string };
-        const body = request.body as {
-          isQuarantined: boolean;
-          reason?: string;
-        };
 
         if (!project) {
           return reply
@@ -230,19 +194,18 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
             .send({ success: false, error: 'project query parameter is required' });
         }
 
-        if (body.isQuarantined && (!body.reason || body.reason.trim().length === 0)) {
+        const parsedBody = QuarantineUpdateSchema.safeParse(request.body);
+        if (!parsedBody.success) {
           return reply.status(400).send({
             success: false,
-            error: 'Reason is required when quarantining a test',
+            error: parsedBody.error.issues[0]?.message ?? 'Invalid request body',
+            issues: parsedBody.error.issues.map((i) => ({
+              field: i.path.join('.'),
+              message: i.message,
+            })),
           });
         }
-
-        if (body.reason && body.reason.length > 500) {
-          return reply.status(400).send({
-            success: false,
-            error: 'Reason must be less than 500 characters',
-          });
-        }
+        const body = parsedBody.data;
 
         const lane = testDb.findByTestId(testId, project);
         if (!lane) {

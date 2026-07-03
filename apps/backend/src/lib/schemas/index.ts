@@ -434,3 +434,30 @@ export const NotificationLogQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(200).default(50),
   offset: z.coerce.number().min(0).default(0),
 });
+
+export const TestsQuerySchema = z.object({
+  project: z.string().optional(),
+  status: z.enum(['all', 'quarantined', 'not-quarantined']).optional(),
+  tiers: z.string().optional(), // comma-separated: stable|flaky|critical
+  sort: z.enum(['slowest', 'stale', 'regression-age']).optional(),
+  failureCategory: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  search: z.string().optional(),
+  regressedOnly: z.string().optional(),
+  regressedSince: z.string().optional(),
+  resolvedSince: z.string().optional(),
+  slim: z.string().optional(),
+});
+
+export const QuarantineUpdateSchema = z
+  .object({
+    isQuarantined: z.boolean(),
+    reason: z.string().max(500, 'Reason must be less than 500 characters').optional(),
+  })
+  .refine((b) => !b.isQuarantined || !!b.reason?.trim(), {
+    message: 'Reason is required when quarantining a test',
+    path: ['reason'],
+  });
