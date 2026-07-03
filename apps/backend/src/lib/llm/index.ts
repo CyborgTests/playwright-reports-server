@@ -1,4 +1,5 @@
 import type { DiscoveredModel } from '@playwright-reports/shared';
+import { withProbeSlot } from './probeThrottle.js';
 import { AnthropicProvider } from './providers/anthropic.js';
 import { OpenAIProvider } from './providers/openai.js';
 import type {
@@ -264,7 +265,8 @@ export class LLMService {
         config.provider === 'anthropic'
           ? new AnthropicProvider(config)
           : new OpenAIProvider(config);
-      return { success: true, models: await provider.discoverModels() };
+      const models = await withProbeSlot(config.baseUrl, () => provider.discoverModels());
+      return { success: true, models };
     } catch (err) {
       return {
         success: false,
@@ -311,24 +313,25 @@ export class LLMService {
     }
 
     try {
-      const ok = await provider.validateConfig();
-      if (!ok) {
-        return {
-          success: false,
-          error:
-            'Provider rejected the request. Check the base URL and API key (the /models endpoint must be reachable).',
-        };
-      }
-      // Skip the /models GET when a model is already named - the probe covers it.
-      const models = merged.model ? [] : await provider.getAvailableModels();
-      if (merged.provider === 'openai') {
-        const probe = await this.probeOpenAIChatCompletions(merged, models);
-        if (!probe.ok) {
-          return { success: false, error: probe.error };
+      return await withProbeSlot(merged.baseUrl, async () => {
+        const ok = await provider.validateConfig();
+        if (!ok) {
+          return {
+            success: false,
+            error:
+              'Provider rejected the request. Check the base URL and API key (the /models endpoint must be reachable).',
+          };
         }
-      }
-
-      return { success: true, models };
+        // Skip the /models GET when a model is already named - the probe covers it.
+        const models = merged.model ? [] : await provider.getAvailableModels();
+        if (merged.provider === 'openai') {
+          const probe = await this.probeOpenAIChatCompletions(merged, models);
+          if (!probe.ok) {
+            return { success: false, error: probe.error };
+          }
+        }
+        return { success: true, models };
+      });
     } catch (err) {
       return {
         success: false,
