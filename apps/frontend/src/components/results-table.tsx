@@ -1,6 +1,6 @@
 import type { DateRange, ReadResultsOutput, Result } from '@playwright-reports/shared';
 import { keepPreviousData } from '@tanstack/react-query';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -214,6 +214,16 @@ export default function ResultsTable({
 
   const { results, total } = resultsResponse ?? { results: [], total: 0 };
 
+  const seenResults = useRef(new Map<string, Result>());
+  useEffect(() => {
+    for (const r of results ?? []) seenResults.current.set(r.resultID, r);
+  }, [results]);
+  const resolveSelected = useCallback(
+    (ids: Set<string>): Result[] =>
+      [...ids].map((id) => seenResults.current.get(id)).filter((r): r is Result => !!r),
+    []
+  );
+
   const rowsWithTags = useMemo(
     () =>
       (results ?? []).map((item) => ({
@@ -263,14 +273,13 @@ export default function ResultsTable({
 
   const handleSelectAll = useCallback(
     (checked: boolean | string) => {
-      const isChecked = checked === true;
-      const newSelectedIds = isChecked
-        ? new Set(results?.map((r) => r.resultID) ?? [])
-        : new Set<string>();
-      const selectedResults = results?.filter((r) => newSelectedIds.has(r.resultID)) ?? [];
-      onSelect?.(selectedResults);
+      const newSelectedIds = new Set(selectedIds);
+      const pageIds = results?.map((r) => r.resultID) ?? [];
+      if (checked === true) for (const id of pageIds) newSelectedIds.add(id);
+      else for (const id of pageIds) newSelectedIds.delete(id);
+      onSelect?.(resolveSelected(newSelectedIds));
     },
-    [results, onSelect]
+    [selectedIds, results, onSelect, resolveSelected]
   );
 
   const handleSelectRow = useCallback(
@@ -281,10 +290,9 @@ export default function ResultsTable({
       } else {
         newSelectedIds.delete(resultId);
       }
-      const selectedResults = results?.filter((r) => newSelectedIds.has(r.resultID)) ?? [];
-      onSelect?.(selectedResults);
+      onSelect?.(resolveSelected(newSelectedIds));
     },
-    [selectedIds, results, onSelect]
+    [selectedIds, onSelect, resolveSelected]
   );
 
   const isAllSelected = results?.length > 0 && results.every((r) => selectedIds.has(r.resultID));

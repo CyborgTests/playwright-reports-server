@@ -18,12 +18,6 @@ interface HealthGridProps {
   isLoadingPrevious?: boolean;
 }
 
-const chartColors = {
-  passed: CHART_COLORS.passed,
-  failed: CHART_COLORS.failed,
-  flaky: CHART_COLORS.flaky,
-};
-
 const BAR_PX = 36;
 const PREVIOUS_LOAD_THRESHOLD_PX = 400;
 const CHART_HEIGHT = 300;
@@ -121,7 +115,7 @@ interface BarShapeProps {
 }
 
 function RegressionMarkBar(props: BarShapeProps) {
-  const { x = 0, y = 0, width = 0, height = 0, fill = chartColors.failed, payload } = props;
+  const { x = 0, y = 0, width = 0, height = 0, fill = CHART_COLORS.failed, payload } = props;
   const opened = payload?.newRegressions ?? 0;
   const closed = payload?.resolvedRegressions ?? 0;
   const hasMark = opened > 0 || closed > 0;
@@ -208,21 +202,21 @@ function chartChildren(animate: boolean) {
       <Bar
         dataKey="passed"
         stackId="a"
-        fill={chartColors.passed}
+        fill={CHART_COLORS.passed}
         isAnimationActive={animate}
         animationDuration={BAR_ANIMATION_MS}
       />
       <Bar
         dataKey="flaky"
         stackId="a"
-        fill={chartColors.flaky}
+        fill={CHART_COLORS.flaky}
         isAnimationActive={animate}
         animationDuration={BAR_ANIMATION_MS}
       />
       <Bar
         dataKey="failed"
         stackId="a"
-        fill={chartColors.failed}
+        fill={CHART_COLORS.failed}
         shape={RegressionMarkBar}
         isAnimationActive={animate}
         animationDuration={BAR_ANIMATION_MS}

@@ -87,7 +87,6 @@ export default function SettingsPage() {
       const sectionName = {
         server: 'Server',
         cron: 'Cron',
-        llm: 'LLM',
         testManagement: 'Test Management',
         access: 'Access Control',
       };

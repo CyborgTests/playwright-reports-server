@@ -218,11 +218,13 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
           limits: { files: 32, fileSize: BRANDING_FILE_SIZE_LIMIT },
         });
 
-        const config = await service.getConfig();
+        const currentConfig = await service.getConfig();
 
-        if (!config) {
+        if (!currentConfig) {
           return reply.status(500).send({ error: 'failed to get config' });
         }
+
+        const config = structuredClone(currentConfig);
 
         const previousLogoPath = config.logoPath;
         const previousFaviconPath = config.faviconPath;

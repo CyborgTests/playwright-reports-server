@@ -1,7 +1,7 @@
 import type { DateRange, ReadReportsHistory, ReportHistory } from '@playwright-reports/shared';
 import { keepPreviousData } from '@tanstack/react-query';
 import { MoreHorizontal } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -398,6 +398,16 @@ export default function ReportsTable({
   const total = reportResponse?.total ?? 0;
   const pages = useMemo(() => (total ? Math.ceil(total / rowsPerPage) : 0), [total, rowsPerPage]);
 
+  const seenReports = useRef(new Map<string, ReportHistory>());
+  useEffect(() => {
+    for (const r of reports ?? []) seenReports.current.set(r.reportID, r);
+  }, [reports]);
+  const resolveSelected = useCallback(
+    (ids: Set<string>): ReportHistory[] =>
+      [...ids].map((id) => seenReports.current.get(id)).filter((r): r is ReportHistory => !!r),
+    []
+  );
+
   const sortedRows = useMemo(() => {
     if (!reports) return [];
     return [...reports]
@@ -417,9 +427,13 @@ export default function ReportsTable({
 
   const handleSelectAll = useCallback(
     (checked: boolean | string) => {
-      onSelect?.(checked === true ? (reports ?? []) : []);
+      const next = new Set(selected ?? []);
+      const pageIds = reports?.map((r) => r.reportID) ?? [];
+      if (checked === true) for (const id of pageIds) next.add(id);
+      else for (const id of pageIds) next.delete(id);
+      onSelect?.(resolveSelected(next));
     },
-    [reports, onSelect]
+    [selected, reports, onSelect, resolveSelected]
   );
 
   const handleSelectRow = useCallback(
@@ -427,9 +441,9 @@ export default function ReportsTable({
       const next = new Set(selected ?? []);
       if (checked) next.add(reportId);
       else next.delete(reportId);
-      onSelect?.(reports?.filter((r) => next.has(r.reportID)) ?? []);
+      onSelect?.(resolveSelected(next));
     },
-    [selected, reports, onSelect]
+    [selected, onSelect, resolveSelected]
   );
 
   const isAllSelected =

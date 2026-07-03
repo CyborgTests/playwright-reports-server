@@ -144,10 +144,7 @@ export function TopFailuresWidget({ errors, isLoading }: Readonly<TopFailuresWid
                     >
                       {formatCategoryName(error.category)}
                     </Badge>
-                    <span className="text-sm text-muted-foreground truncate">
-                      {error.message.substring(0, 100)}
-                      {error.message.length > 100 ? '...' : ''}
-                    </span>
+                    <span className="text-sm text-muted-foreground truncate">{error.message}</span>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     {error.regressedTestCount !== undefined && error.regressedTestCount > 0 && (

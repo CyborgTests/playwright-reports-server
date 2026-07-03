@@ -156,6 +156,14 @@ export default function FailureClusters() {
         <div className="flex items-center justify-center py-12">
           <Spinner size="lg" />
         </div>
+      ) : error && clusters.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Users className="h-10 w-10 mx-auto mb-3 opacity-50" />
+            <div className="text-lg">Failed to load failure clusters</div>
+            <div className="text-sm mt-2 max-w-md mx-auto">{error.message}</div>
+          </CardContent>
+        </Card>
       ) : clusters.length === 0 ? (
         <EmptyState reportScoped={!!reportId} />
       ) : (

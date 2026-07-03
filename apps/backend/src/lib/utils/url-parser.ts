@@ -14,10 +14,3 @@ export function extractReportIdFromPath(filePath: string): string | undefined {
 
   return undefined;
 }
-
-/**
- * Check if a file path represents a Playwright report index.html
- */
-export function isPlaywrightReport(filePath: string): boolean {
-  return filePath.includes('/index.html') && extractReportIdFromPath(filePath) !== undefined;
-}

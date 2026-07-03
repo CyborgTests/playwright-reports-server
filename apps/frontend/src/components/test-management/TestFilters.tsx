@@ -32,8 +32,6 @@ const CATEGORY_OPTIONS = Array.from(
 );
 
 export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersProps>) {
-  const categories = CATEGORY_OPTIONS;
-
   const { data: config } = useConfig();
   const warningThreshold =
     config?.testManagement?.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
@@ -108,27 +106,25 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
           </SelectContent>
         </Select>
       </div>
-      {categories.length > 0 && (
-        <div className="space-y-2">
-          <Label htmlFor="category-filter">Failure Category</Label>
-          <Select
-            value={filters.failureCategory ?? 'all'}
-            onValueChange={handleFailureCategoryChange}
-          >
-            <SelectTrigger id="category-filter">
-              <SelectValue placeholder="Filter by category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {categories.map((cat) => (
-                <SelectItem key={cat} value={cat}>
-                  {formatCategoryName(cat)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+      <div className="space-y-2">
+        <Label htmlFor="category-filter">Failure Category</Label>
+        <Select
+          value={filters.failureCategory ?? 'all'}
+          onValueChange={handleFailureCategoryChange}
+        >
+          <SelectTrigger id="category-filter">
+            <SelectValue placeholder="Filter by category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Categories</SelectItem>
+            {CATEGORY_OPTIONS.map((cat) => (
+              <SelectItem key={cat} value={cat}>
+                {formatCategoryName(cat)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <div className="space-y-2">
         <Label>Sort</Label>
         <Select value={sort} onValueChange={handleSortChange}>

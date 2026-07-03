@@ -54,10 +54,14 @@ interface ReportMetadataExtras {
   ci?: { buildHref?: string };
 }
 
-async function streamToBuffer(stream: Readable): Promise<Buffer> {
+async function streamToBuffer(stream: Readable, maxBytes = 32 * 1024 * 1024): Promise<Buffer> {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buf.length;
+    if (total > maxBytes) throw new Error(`streamToBuffer: payload exceeds ${maxBytes} bytes`);
+    chunks.push(buf);
   }
   return Buffer.concat(chunks);
 }
@@ -626,9 +630,9 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
               continue;
             }
 
-            const heuristicCategory = run.failureDetails
-              ? detectFailureCategory(JSON.parse(run.failureDetails)?.message ?? '')
-              : detectFailureCategory('');
+            const heuristicCategory = detectFailureCategory(
+              parseFailureDetails(run.failureDetails)?.message ?? ''
+            );
             const reuseSource = findReuseSource(
               run.testId,
               run.fileId,

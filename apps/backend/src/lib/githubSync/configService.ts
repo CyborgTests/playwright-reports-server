@@ -170,19 +170,4 @@ export const githubSyncConfigService = {
     githubSyncEvents.emitChanged();
     return true;
   },
-
-  status(id: string, nextRun?: string): GithubSyncStatus | undefined {
-    const row = githubSyncDb.getConfig(id);
-    if (!row) return undefined;
-    const latest = githubSyncDb.getLatestRun(id);
-    const isRunning = latest?.status === 'running';
-    return {
-      configId: id,
-      isRunning,
-      lastRun: latest ? runRowToPublic(latest) : undefined,
-      nextRun,
-      syncedArtifacts: githubSyncDb.countSyncedArtifacts(id),
-      progress: isRunning ? (getSyncProgress(id) ?? undefined) : undefined,
-    };
-  },
 };

@@ -209,7 +209,7 @@ export default function AnalyticsDashboard() {
 
   if (!isLoading && !analyticsData) {
     return (
-      <div className="w-[min(100%, 1200px)] mx-auto">
+      <div className="w-full">
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <div className="text-muted-foreground text-lg">No analytics yet.</div>
           <div className="text-muted-foreground/80 text-sm mt-2">
@@ -231,7 +231,7 @@ export default function AnalyticsDashboard() {
   const totalFailures = failureCategories?.totalFailures ?? 0;
 
   return (
-    <div className="w-[min(100%, 1200px)] mx-auto space-y-6">
+    <div className="w-full space-y-6">
       <DashboardSectionNav
         failedOnly={failedOnly}
         onFailedOnlyChange={setFailedOnly}

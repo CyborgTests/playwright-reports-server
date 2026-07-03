@@ -3,18 +3,11 @@ import { formatRelativeTime } from '@playwright-reports/shared';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 
-import { aggregateHome, type WorstStatus } from './status';
+import { aggregateHome, CARD_BORDER_CLASS } from './status';
 
 interface HomeSummaryProps {
   snapshots: QualityDashboardSnapshot[];
 }
-
-const BORDER_CLASS: Record<WorstStatus, string> = {
-  ok: 'border-l-emerald-500',
-  stale: 'border-l-amber-500',
-  notOk: 'border-l-red-500',
-  empty: 'border-l-muted-foreground/40',
-};
 
 export function HomeSummary({ snapshots }: HomeSummaryProps) {
   const agg = aggregateHome(snapshots);
@@ -31,7 +24,7 @@ export function HomeSummary({ snapshots }: HomeSummaryProps) {
     <div
       className={cn(
         'flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-l-4 bg-card px-4 py-2 text-sm shadow-sm',
-        BORDER_CLASS[agg.worst]
+        CARD_BORDER_CLASS[agg.worst]
       )}
     >
       <Stat value={agg.dashboards} label={agg.dashboards === 1 ? 'dashboard' : 'dashboards'} />

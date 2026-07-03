@@ -1,7 +1,6 @@
 import { API_ENDPOINTS, type ReportCompareResponse } from '@playwright-reports/shared';
 import { ArrowLeft, ArrowLeftRight, ArrowRight } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
-import FormattedDate from '@/components/date-format';
 import { title } from '@/components/primitives';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -391,5 +390,3 @@ function DurationDeltaTable({
     </Card>
   );
 }
-
-export { FormattedDate };

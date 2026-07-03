@@ -104,7 +104,8 @@ export async function resolveBaseline(ctx: {
 
   for (const cand of candidates) {
     if (persisted && cand.reportId === persisted.sourceReportId) {
-      return fromPersisted();
+      const evidence = fromPersisted();
+      if (evidence) return evidence;
     }
     const parsed = await parseCandidateBaseline(cand.reportId, testId);
     if (parsed) {

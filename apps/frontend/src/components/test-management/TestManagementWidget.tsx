@@ -139,13 +139,13 @@ export default function TestManagementWidget({
   }, []);
 
   const latestReportByProject = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, { createdAt: string; reportId: string }>();
     for (const test of tests) {
       const latestRun = test.runs?.at(0);
       if (!latestRun?.createdAt) continue;
       const current = map.get(test.project);
-      if (!current || latestRun.createdAt > current) {
-        map.set(test.project, latestRun.reportId);
+      if (!current || latestRun.createdAt > current.createdAt) {
+        map.set(test.project, { createdAt: latestRun.createdAt, reportId: latestRun.reportId });
       }
     }
     return map;
@@ -154,8 +154,8 @@ export default function TestManagementWidget({
   const isStale = (test: TestWithQuarantineInfo) => {
     const latestRun = test.runs?.at(0);
     if (!latestRun) return true;
-    const latestReportId = latestReportByProject.get(test.project);
-    return latestReportId ? latestRun.reportId !== latestReportId : false;
+    const latest = latestReportByProject.get(test.project);
+    return latest ? latestRun.reportId !== latest.reportId : false;
   };
 
   const handleDeleteAction = useCallback((test: TestWithQuarantineInfo) => {

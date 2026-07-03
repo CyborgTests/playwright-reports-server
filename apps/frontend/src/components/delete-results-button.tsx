@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import useMutation from '../hooks/useMutation';
 import { invalidateCache } from '../lib/query-cache';
@@ -40,13 +40,13 @@ export default function DeleteResultsButton({
         queryKeys: ['/api/info'],
         predicate: '/api/result',
       });
-      toast.success(`result${resultIds.length ? '' : 's'} deleted`);
+      toast.success(`result${resultIds.length === 1 ? '' : 's'} deleted`);
       setOpen(false);
       onDeletedResult?.();
     },
   });
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!resultIds?.length) {
       return;
     }
@@ -54,7 +54,9 @@ export default function DeleteResultsButton({
     deleteResult({ body: { resultsIds: resultIds } });
   };
 
-  error && toast.error(error.message);
+  useEffect(() => {
+    if (error) toast.error(error.message);
+  }, [error]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

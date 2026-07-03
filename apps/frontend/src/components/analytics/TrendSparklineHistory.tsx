@@ -80,7 +80,9 @@ const SparklineChart = ({
             </Tooltip>
           );
         })}
-        {recentRunsSlice.length === 0 && <div className="text-xs text-gray-400">No data</div>}
+        {recentRunsSlice.length === 0 && (
+          <div className="text-xs text-muted-foreground">No data</div>
+        )}
       </div>
     </TooltipProvider>
   );

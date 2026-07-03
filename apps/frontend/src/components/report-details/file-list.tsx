@@ -1,4 +1,4 @@
-import type { ReportHistory } from '@playwright-reports/shared';
+import type { ReadReportsHistory, ReportHistory } from '@playwright-reports/shared';
 import { type FC, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import InlineStatsCircle from '@/components/inline-stats-circle';
@@ -13,6 +13,7 @@ import {
 import { Alert } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import useQuery from '@/hooks/useQuery';
+import { withQueryParams } from '@/lib/network';
 import FileSuitesTree, { StatsBadges } from './suite-tree';
 import ReportFilters from './tests-filters';
 
@@ -26,9 +27,12 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
     data: history,
     isLoading: isHistoryLoading,
     error: historyError,
-  } = useQuery<ReportHistory[]>(`/api/report/list?limit=10&project=${report?.project ?? ''}`, {
-    dependencies: [report?.reportID],
-  });
+  } = useQuery<ReadReportsHistory>(
+    withQueryParams('/api/report/list', { limit: '10', project: report?.project ?? '' }),
+    {
+      dependencies: [report?.reportID],
+    }
+  );
 
   const [filteredTests, setFilteredTests] = useState<ReportHistory | undefined>(
     report ?? undefined
@@ -104,7 +108,7 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
                     <h4 className={subtitle()}>Tests</h4>
                     <FileSuitesTree
                       file={file}
-                      history={history ?? []}
+                      history={history?.reports ?? []}
                       reportId={report?.reportID}
                       project={report?.project}
                       newRegressionTestIds={newRegressionTestIds}

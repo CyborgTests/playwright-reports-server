@@ -166,11 +166,9 @@ export function EditTree({
     [childrenMap, rootInheritance, projectStats]
   );
 
-  const update = (next: EditorNode[]) => onChange(next);
-
   const addNode = (parentNodeId: string | null, kind: 'group' | 'project') => {
     const siblings = nodes.filter((n) => (n.parentNodeId ?? null) === parentNodeId);
-    const sortOrder = siblings.length;
+    const sortOrder = siblings.reduce((max, n) => Math.max(max, n.sortOrder + 1), 0);
     const id = newId();
     const fresh: EditorNode =
       kind === 'group'
@@ -191,7 +189,7 @@ export function EditTree({
             weight: 1,
             sortOrder,
           };
-    update([...nodes, fresh]);
+    onChange([...nodes, fresh]);
     onSelectNode(id);
   };
 
@@ -207,7 +205,7 @@ export function EditTree({
         }
       }
     }
-    update(nodes.filter((n) => !toRemove.has(n.id)));
+    onChange(nodes.filter((n) => !toRemove.has(n.id)));
     if (selectedNodeId && toRemove.has(selectedNodeId)) onSelectNode(null);
   };
 
@@ -222,7 +220,7 @@ export function EditTree({
     const bId = siblings[swapIdx].id;
     const aOrder = siblings[idx].sortOrder;
     const bOrder = siblings[swapIdx].sortOrder;
-    update(
+    onChange(
       nodes.map((n) => {
         if (n.id === aId) return { ...n, sortOrder: bOrder };
         if (n.id === bId) return { ...n, sortOrder: aOrder };

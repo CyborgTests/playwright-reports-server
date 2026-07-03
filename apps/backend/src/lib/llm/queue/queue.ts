@@ -1,6 +1,7 @@
 import { type LlmTaskRow, llmModelsDb, llmTasksDb } from '../../service/db/index.js';
 import type { ClaimCandidate } from '../../service/db/llmTasks.sqlite.js';
 import { llmTaskEvents } from '../../service/llmTaskEvents.js';
+import { circuitFor } from '../circuitBreaker.js';
 import { llmService } from '../index.js';
 import { type GateReservation, modelGate, reservationStore } from '../modelGate.js';
 import { anyModelCircuitAvailable, isLlmFeatureEnabled, resolveGate } from '../registry.js';
@@ -92,8 +93,8 @@ class LlmAnalysisQueue {
       const canProcess = isLlmFeatureEnabled() && llmService.isConfigured();
       if (canProcess && llmTasksDb.hasQueued()) {
         pending = true;
+        this.maxParallel = this.getBudget();
         if (anyModelCircuitAvailable()) {
-          this.maxParallel = this.getBudget();
           while (this.running && this.activeTasks < this.maxParallel) {
             if (!this.fillSlot()) break;
           }
@@ -128,6 +129,7 @@ class LlmAnalysisQueue {
   private decideStart(task: ClaimCandidate): { run: boolean; reservation?: GateSlot } {
     const effective = resolveOneShotModelRow(task.type);
     if (!effective) return { run: true };
+    if (circuitFor(effective.id, effective.label).isBlocking()) return { run: false };
     const gate = resolveGate(effective);
     if (task.type === 'test_analysis') {
       const screenshot = resolveScreenshotModel();

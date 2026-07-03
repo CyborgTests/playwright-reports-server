@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import useMutation from '../hooks/useMutation';
 import { invalidateCache } from '../lib/query-cache';
@@ -57,7 +57,9 @@ export default function DeleteReportButton({
     deleteReport({ body: { reportsIds: ids } });
   };
 
-  error && toast.error(error.message);
+  useEffect(() => {
+    if (error) toast.error(error.message);
+  }, [error]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

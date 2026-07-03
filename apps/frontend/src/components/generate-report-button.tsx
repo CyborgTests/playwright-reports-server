@@ -19,7 +19,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Spinner } from './ui/spinner';
 
-interface DeleteProjectButtonProps {
+interface GenerateReportButtonProps {
   results: Result[];
   projects: string[];
   onGeneratedReport?: () => void;
@@ -29,7 +29,7 @@ export default function GenerateReportButton({
   results,
   projects,
   onGeneratedReport,
-}: Readonly<DeleteProjectButtonProps>) {
+}: Readonly<GenerateReportButtonProps>) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -41,10 +41,7 @@ export default function GenerateReportButton({
         queryKeys: ['/api/info'],
         predicate: '/api/report',
       });
-      invalidateCache(queryClient, {
-        queryKeys: ['/api/info'],
-        predicate: '/api/result',
-      });
+      invalidateCache(queryClient, { predicate: '/api/result' });
       toast.success(`report ${data?.reportId} is generated`);
       setProjectName('');
       setCustomName('');
