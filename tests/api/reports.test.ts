@@ -32,7 +32,7 @@ test('/api/report/list page per row return proper data count', async ({ request 
   for (const limit of limits) {
     const { response, json } = await api.list({ limit });
     expect(response.status()).toBe(200);
-    expect((json.report ?? []).length).toBeLessThanOrEqual(limit);
+    expect((json.reports ?? []).length).toBeLessThanOrEqual(limit);
   }
 });
 

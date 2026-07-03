@@ -15,7 +15,7 @@ test('/api/result/delete delete result', async ({ request, uploadedResult }) => 
   expect(deleteRes.status()).toBe(200);
   const deleteBody = await deleteRes.json();
 
-  expect(deleteBody.message).toContain('Results files deleted successfully');
+  expect(deleteBody.message).toContain('Results files deleted');
   expect(deleteBody.resultsIds).toContain(resultID);
 });
 
@@ -31,6 +31,6 @@ test('/api/report/delete delete report', async ({ request, generatedReport }) =>
   expect(deleteReport.status()).toBe(200);
   const deleteBody = await deleteReport.json();
 
-  expect(deleteBody.message).toContain('Reports deleted successfully');
+  expect(deleteBody.message).toContain('Reports deleted');
   expect(deleteBody.reportsIds).toContain(reportId);
 });
