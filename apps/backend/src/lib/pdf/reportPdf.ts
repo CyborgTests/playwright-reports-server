@@ -90,6 +90,27 @@ function formatDuration(ms: number | undefined): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }
 
+// The StandardFonts can only encode WinAnsi (CP-1252);
+// any other code point makes pdf-lib throw in widthOfTextAtSize/drawText
+// Printable high code points WinAnsi does support are kept
+const WIN_ANSI_HIGH = new Set([
+  0x20ac, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152,
+  0x017d, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a,
+  0x0153, 0x017e, 0x0178,
+]);
+function sanitizeWinAnsi(value: string): string {
+  let out = '';
+  for (const ch of String(value)) {
+    const cp = ch.codePointAt(0) ?? 0;
+    if (cp === 0x09) out += '  ';
+    else if (cp < 0x20) out += ' ';
+    else if ((cp >= 0x20 && cp <= 0x7e) || (cp >= 0xa0 && cp <= 0xff) || WIN_ANSI_HIGH.has(cp))
+      out += ch;
+    else out += '?';
+  }
+  return out;
+}
+
 export async function buildReportPdf(input: ReportPdfInput): Promise<Uint8Array> {
   const { report } = input;
   const doc = await PDFDocument.create();
@@ -128,7 +149,7 @@ export async function buildReportPdf(input: ReportPdfInput): Promise<Uint8Array>
   }
 
   function wrap(text: string, font: PDFFont, size: number, width: number): string[] {
-    const words = String(text).split(/\s+/);
+    const words = sanitizeWinAnsi(text).split(/\s+/);
     const out: string[] = [];
     for (const word of words) {
       if (out.length === 0) {
@@ -228,14 +249,17 @@ export async function buildReportPdf(input: ReportPdfInput): Promise<Uint8Array>
     font: bold,
     color: color.white,
   });
-  page.drawText(report.title ?? `${report.project} #${report.displayNumber ?? ''}`, {
-    x: MARGIN,
-    y: A4[1] - 58,
-    size: 11,
-    font: reg,
-    color: rgb(0.8, 0.83, 0.9),
-  });
-  page.drawText(`${report.project}  ·  run #${report.displayNumber ?? '—'}`, {
+  page.drawText(
+    sanitizeWinAnsi(report.title ?? `${report.project} #${report.displayNumber ?? ''}`),
+    {
+      x: MARGIN,
+      y: A4[1] - 58,
+      size: 11,
+      font: reg,
+      color: rgb(0.8, 0.83, 0.9),
+    }
+  );
+  page.drawText(sanitizeWinAnsi(`${report.project}  ·  run #${report.displayNumber ?? '—'}`), {
     x: MARGIN,
     y: A4[1] - 76,
     size: 9,
@@ -243,7 +267,7 @@ export async function buildReportPdf(input: ReportPdfInput): Promise<Uint8Array>
     color: rgb(0.65, 0.7, 0.8),
   });
   if (input.structured?.verdict) {
-    const verdict = input.structured.verdict.toUpperCase();
+    const verdict = sanitizeWinAnsi(input.structured.verdict.toUpperCase());
     const width = bold.widthOfTextAtSize(verdict, 9) + 16;
     page.drawRectangle({
       x: A4[0] - MARGIN - width,
@@ -393,7 +417,7 @@ export async function buildReportPdf(input: ReportPdfInput): Promise<Uint8Array>
     need(40);
     y -= 4;
     const badgeWidth = badge(failure.outcome, MARGIN, y);
-    page.drawText(failure.title, {
+    page.drawText(sanitizeWinAnsi(failure.title), {
       x: MARGIN + badgeWidth + 8,
       y: y - 9,
       size: 10.5,
@@ -485,14 +509,14 @@ export async function buildReportPdf(input: ReportPdfInput): Promise<Uint8Array>
     for (const testRow of input.allTests) {
       need(13);
       const badgeWidth = badge(testRow.outcome, MARGIN, y);
-      page.drawText(testRow.title.slice(0, 80), {
+      page.drawText(sanitizeWinAnsi(testRow.title.slice(0, 80)), {
         x: MARGIN + badgeWidth + 8,
         y: y - 9,
         size: 8.5,
         font: reg,
         color: color.ink,
       });
-      page.drawText(testRow.file.slice(0, 60), {
+      page.drawText(sanitizeWinAnsi(testRow.file.slice(0, 60)), {
         x: MARGIN + 260,
         y: y - 9,
         size: 7.5,
@@ -521,7 +545,9 @@ export async function buildReportPdf(input: ReportPdfInput): Promise<Uint8Array>
       color: color.line,
     });
     footerPage.drawText(
-      `${report.project} · run #${report.displayNumber ?? '—'} · ${report.reportID}`,
+      sanitizeWinAnsi(
+        `${report.project} · run #${report.displayNumber ?? '—'} · ${report.reportID}`
+      ),
       {
         x: MARGIN,
         y: 19,
