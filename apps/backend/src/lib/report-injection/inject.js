@@ -97,6 +97,9 @@ function markdownToHtml(text) {
       .replaceAll('\\"', '"');
   }
 
+  // Escape the raw text BEFORE applying markdown formatting
+  html = escapeHtml(html);
+
   const codeBlocks = [];
   html = html.replaceAll(/```(\w*)\n([\s\S]*?)```/g, (_, language, code) => {
     const langClass = language ? ` language-${language}` : '';
