@@ -15,7 +15,8 @@
       "!**/*.min.js",
       "!**/*.d.ts",
       "!**/packages/shared/dist",
-      "!**/memory"
+      "!**/memory",
+      "!**/website"
     ]
   },
   "formatter": {

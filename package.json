@@ -28,6 +28,9 @@
     "format:check": "pnpm -r --filter './packages/**' --filter './apps/**' run format:check",
     "format:reporter": "pnpm --filter @playwright-reports/reporter format:check",
     "typecheck": "pnpm -r --filter './packages/**' --filter './apps/**' run typecheck",
+    "docs:dev": "pnpm -C website install && pnpm -C website dev",
+    "docs:build": "pnpm -C website install && pnpm -C website build",
+    "docs:preview": "pnpm -C website preview",
     "clean": "pnpm -r --filter './packages/**' --filter './apps/**' run clean && rm -rf node_modules",
     "clean:modules": "rm -rf node_modules apps/*/node_modules packages/*/node_modules"
   },

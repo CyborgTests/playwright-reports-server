@@ -75,6 +75,9 @@ playwright.config.ts
 snapshots/
 **/snapshots/
 
+# Docs site
+website/
+
 # Developer-local notes and sync scripts not needed at runtime
 RPDS.txt
 sync-state.json
