@@ -113,9 +113,12 @@ function unionAdjacentFrames(uf: UnionFind): void {
   for (const list of byFile.values()) {
     if (list.length < 2) continue;
     list.sort((a, b) => a.line - b.line);
+    let anchor = list[0];
     for (let i = 1; i < list.length; i++) {
-      if (list[i].line - list[i - 1].line <= ADJACENT_FRAME_LINE_GAP) {
-        uf.union(list[i - 1].key, list[i].key);
+      if (list[i].line - anchor.line <= ADJACENT_FRAME_LINE_GAP) {
+        uf.union(anchor.key, list[i].key);
+      } else {
+        anchor = list[i];
       }
     }
   }
