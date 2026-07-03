@@ -153,11 +153,18 @@ export abstract class BaseLLMProvider {
 export class LLMProviderError extends Error {
   public readonly code: string;
   public readonly statusCode?: number;
+  public readonly retryAfterMs?: number;
 
-  constructor(message: string, code: string = 'unknown', statusCode?: number) {
+  constructor(
+    message: string,
+    code: string = 'unknown',
+    statusCode?: number,
+    retryAfterMs?: number
+  ) {
     super(message);
     this.name = 'LLMProviderError';
     this.code = code;
     this.statusCode = statusCode;
+    this.retryAfterMs = retryAfterMs;
   }
 }

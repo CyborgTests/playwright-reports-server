@@ -177,6 +177,7 @@ export interface QueueEtaEstimate {
 export interface LlmCircuitStatus {
   state: 'closed' | 'open' | 'half-open';
   retryInMs: number | null; // ms until the open circuit next probes; null unless open
+  reason?: 'failures' | 'rate_limit'; // why the circuit opened, when not closed
 }
 
 export interface LlmTaskStats {
