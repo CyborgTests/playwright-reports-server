@@ -506,18 +506,19 @@ export class S3 implements Storage {
 
         if (copyError) {
           console.error(
-            `[s3] failed to copy existing result file for ${resultId}: ${copyError.message}`
+            `[s3] failed to copy cached result file for ${resultId}, falling back to download: ${copyError.message}`
           );
-          break;
-        }
+        } else {
+          // Cache entry served its purpose - drop it now instead of waiting for the cron sweep.
+          const { error: unlinkError } = await withError(fs.unlink(temporaryPath));
+          if (unlinkError) {
+            console.warn(
+              `[s3] failed to clear cache entry for ${resultId}: ${unlinkError.message}`
+            );
+          }
 
-        // Cache entry served its purpose - drop it now instead of waiting for the cron sweep.
-        const { error: unlinkError } = await withError(fs.unlink(temporaryPath));
-        if (unlinkError) {
-          console.warn(`[s3] failed to clear cache entry for ${resultId}: ${unlinkError.message}`);
+          continue;
         }
-
-        continue;
       }
 
       const objectKey = path.join(RESULTS_BUCKET, fileName);

@@ -357,19 +357,18 @@ export class AzureBlob implements Storage {
 
         if (copyError) {
           console.error(
-            `[azure] failed to copy existing result file for ${resultId}: ${copyError.message}`
+            `[azure] failed to copy cached result file for ${resultId}, falling back to download: ${copyError.message}`
           );
-          break;
-        }
+        } else {
+          const { error: unlinkError } = await withError(fs.unlink(temporaryPath));
+          if (unlinkError) {
+            console.warn(
+              `[azure] failed to clear cache entry for ${resultId}: ${unlinkError.message}`
+            );
+          }
 
-        const { error: unlinkError } = await withError(fs.unlink(temporaryPath));
-        if (unlinkError) {
-          console.warn(
-            `[azure] failed to clear cache entry for ${resultId}: ${unlinkError.message}`
-          );
+          continue;
         }
-
-        continue;
       }
 
       const blobKey = path.posix.join(RESULTS_BUCKET, fileName);
