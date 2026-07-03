@@ -1,4 +1,3 @@
-import type { ReadReportsHistory } from '@playwright-reports/shared';
 import { CAPABILITIES } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { DatabaseBackup } from 'lucide-react';
@@ -59,21 +58,17 @@ export default function MigrateLegacyData() {
   const [open, setOpen] = useState(false);
   const canConfigure = useHasCapability()(CAPABILITIES.configServer);
 
-  const { data } = useQuery<{ status: LegacyImportStatus }>(STATUS_PATH, {
+  const { data, isLoading: statusLoading } = useQuery<{
+    status: LegacyImportStatus;
+    reportsExist: boolean;
+  }>(STATUS_PATH, {
     enabled: canConfigure,
     refetchInterval: (query) => (query.state.data?.status.phase === 'running' ? 2000 : false),
   });
   const status = data?.status;
   const phase = status?.phase ?? 'idle';
   const running = phase === 'running';
-
-  const { data: reports } = useQuery<ReadReportsHistory>('/api/report/list?limit=1', {
-    enabled: canConfigure,
-  });
-  const newestCreatedAt = reports?.reports[0]?.createdAt;
-  const hasNewReports =
-    !!newestCreatedAt &&
-    (!status?.finishedAt || Date.parse(newestCreatedAt) > Date.parse(status.finishedAt));
+  const reportsExist = data?.reportsExist ?? false;
 
   const { mutate: startImport, isPending } = useMutation(START_PATH, {
     onSuccess: () => {
@@ -83,7 +78,11 @@ export default function MigrateLegacyData() {
     },
   });
 
-  if (!canConfigure || (!running && hasNewReports)) return null;
+  // Migration only available for a fresh instance (no reports at all), or while a run
+  // is in progress (to show status). Once reports exist, never display the widget.
+  if (!canConfigure || statusLoading) return null;
+  const showWidget = running || !reportsExist;
+  if (!showWidget) return null;
 
   return (
     <Card className="mb-6 p-4 scroll-mt-20" id="migrate">

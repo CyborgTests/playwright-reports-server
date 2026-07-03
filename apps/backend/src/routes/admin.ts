@@ -29,6 +29,10 @@ export async function registerAdminRoutes(fastify: FastifyInstance) {
   fastify.get(
     '/api/admin/migrate-legacy/status',
     { preHandler: authorize(CAPABILITIES.configServer) },
-    async () => ({ success: true, status: getLegacyImportStatus() })
+    async () => ({
+      success: true,
+      status: getLegacyImportStatus(),
+      reportsExist: reportDb.getCount() > 0,
+    })
   );
 }
