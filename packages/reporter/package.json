@@ -1,6 +1,6 @@
 {
-  "name": "@shelex/playwright-reporter",
-  "version": "1.0.0",
+  "name": "@playwright-reports/reporter",
+  "version": "3.0.0",
   "description": "Reporter that uploads your blob reports to playwright reports server",
   "main": "dist/index.js",
   "types": "./dist/index.d.ts",

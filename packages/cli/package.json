@@ -1,6 +1,6 @@
 {
   "name": "pwrs-cli",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "CLI exposing Playwright Reports Server data to coding agents (Claude Code, Codex, Copilot).",
   "type": "module",
   "bin": {
@@ -29,12 +29,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shelex/playwright-reports-server.git",
+    "url": "git+https://github.com/CyborgTests/playwright-reports-server.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://github.com/shelex/playwright-reports-server/tree/main/packages/cli#readme",
+  "homepage": "https://github.com/CyborgTests/playwright-reports-server/tree/main/packages/cli#readme",
   "bugs": {
-    "url": "https://github.com/shelex/playwright-reports-server/issues"
+    "url": "https://github.com/CyborgTests/playwright-reports-server/issues"
   },
   "keywords": [
     "playwright",

@@ -11,12 +11,12 @@ importers:
       '@biomejs/biome':
         specifier: ^2.3.8
         version: 2.3.10
+      '@playwright-reports/reporter':
+        specifier: workspace:*
+        version: link:packages/reporter
       '@playwright/test':
         specifier: ^1.46.0
         version: 1.57.0
-      '@shelex/playwright-reporter':
-        specifier: workspace:*
-        version: link:packages/reporter
       '@types/node':
         specifier: ^22.19.17
         version: 22.19.17

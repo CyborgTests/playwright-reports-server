@@ -59,7 +59,7 @@ jobs:
         run: |
           ORIGINAL_NAME=$(node -p "require('./packages/cli/package.json').name")
           echo "ORIGINAL_NAME=$ORIGINAL_NAME" >> $GITHUB_ENV
-          node -e "const pkg=require('./packages/cli/package.json'); pkg.name='@shelex/pwrs-cli'; require('fs').writeFileSync('./packages/cli/package.json', JSON.stringify(pkg, null, 2));"
+          node -e "const pkg=require('./packages/cli/package.json'); pkg.name='@cyborgtests/pwrs-cli'; require('fs').writeFileSync('./packages/cli/package.json', JSON.stringify(pkg, null, 2));"
 
       - name: Publish to npm
         run: cd packages/cli && pnpm publish --access public --no-git-checks

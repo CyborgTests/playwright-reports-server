@@ -2,21 +2,21 @@
 
 CLI exposing Playwright Reports Server data to coding agents (Claude Code, Codex, GitHub Copilot, etc.). Outputs compact JSON tuned for agent context budgets.
 
-Published on npm as [`@shelex/pwrs-cli`](https://www.npmjs.com/package/@shelex/pwrs-cli). The installed binary is `pwrs-cli`.
+Published on npm as [`@cyborgtests/pwrs-cli`](https://www.npmjs.com/package/@cyborgtests/pwrs-cli). The installed binary is `pwrs-cli`.
 
 **Zero runtime dependencies.** Uses Node 20+ built-ins only.  
 
 ## Install
 
 ```bash
-npm install -g @shelex/pwrs-cli
+npm install -g @cyborgtests/pwrs-cli
 pwrs-cli --help
 ```
 
 Or use without installing globally:
 
 ```bash
-npx --package=@shelex/pwrs-cli pwrs-cli --help
+npx --package=@cyborgtests/pwrs-cli pwrs-cli --help
 ```
 
 ### From source (contributors)
