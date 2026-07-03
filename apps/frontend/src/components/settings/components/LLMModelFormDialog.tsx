@@ -34,6 +34,7 @@ export function LLMModelFormDialog({
   saving,
   onSubmit,
   groups,
+  onAddMoreFromProvider,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -43,19 +44,27 @@ export function LLMModelFormDialog({
   saving: boolean;
   onSubmit: () => void;
   groups: LlmConcurrencyGroup[];
+  onAddMoreFromProvider?: () => void;
 }>) {
   const selectedGroup = groups.find((g) => g.id === form.concurrencyGroupId) ?? null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editingId ? 'Edit model' : 'Add model'}</DialogTitle>
+          <div className="flex items-center justify-between gap-2 pr-6">
+            <DialogTitle>{editingId ? 'Edit model' : 'Add model'}</DialogTitle>
+            {editingId && onAddMoreFromProvider && (
+              <Button size="sm" onClick={onAddMoreFromProvider} disabled={saving}>
+                Add more models from this provider
+              </Button>
+            )}
+          </div>
           <DialogDescription>
             New models start as drafts. Test the connection, enable, then set as primary.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className="space-y-2">
           <div className="space-y-1">
             <Label htmlFor="lm-label">Label</Label>
             <Input
@@ -65,7 +74,7 @@ export function LLMModelFormDialog({
               placeholder="e.g. Claude Opus - primary"
             />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div className="space-y-1">
               <Label htmlFor="lm-provider">Provider</Label>
               <Select
@@ -135,11 +144,10 @@ export function LLMModelFormDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Models in a group share one concurrency budget - for shared rate limits or hardware.
-              Manage groups below.
+              Shared concurrency budget for models on one rate limit or GPU. Manage groups below.
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div className="space-y-1">
               <Label htmlFor="lm-parallel">Parallel requests</Label>
               <Input
@@ -188,7 +196,7 @@ export function LLMModelFormDialog({
               />
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div className="space-y-1">
               <Label htmlFor="lm-mm">Multimodal mode</Label>
               <Select
@@ -236,9 +244,9 @@ export function LLMModelFormDialog({
             Reference only - used for cost estimates, never sent with requests.
           </p>
 
-          <div className="space-y-2 border-t pt-3">
+          <div className="space-y-1 border-t pt-2">
             <Label className="text-sm font-medium">Temperature per task (0–2)</Label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div className="space-y-1">
                 <Label htmlFor="lm-temp-test" className="text-xs text-muted-foreground">
                   Test analysis

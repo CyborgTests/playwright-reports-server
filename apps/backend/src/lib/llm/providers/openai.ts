@@ -1,3 +1,5 @@
+import type { DiscoveredModel } from '@playwright-reports/shared';
+import { parseOpenAiCompatibleModels } from '../discovery.js';
 import type { LLMRequest, LLMResponse, PromptSegment } from '../types/index.js';
 import { LLMProvider } from './base.js';
 import type {
@@ -114,6 +116,10 @@ export class OpenAIProvider extends LLMProvider {
 
   protected extractModelIds(data: OpenAIModelList): string[] {
     return data.data?.map((model) => model.id) || [];
+  }
+
+  protected parseDiscoveredModels(data: unknown): DiscoveredModel[] {
+    return parseOpenAiCompatibleModels(data);
   }
 
   /**

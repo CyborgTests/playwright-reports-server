@@ -15,12 +15,13 @@ import {
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
-import { useLlmGroups } from '@/hooks/useLlmGroups';
+import { LLM_GROUPS_PATH, useLlmGroups } from '@/hooks/useLlmGroups';
 import { LLM_MODELS_PATH, useLlmModels } from '@/hooks/useLlmModels';
 import useMutation from '@/hooks/useMutation';
 import { SERVER_CONFIG_KEY, useServerConfig } from '@/hooks/useServerConfig';
 import { errorMessage } from '@/lib/api';
 import LLMConcurrencyGroups from './LLMConcurrencyGroups';
+import { LLMImportModelsDialog } from './LLMImportModelsDialog';
 import { LLMModelFormDialog } from './LLMModelFormDialog';
 import { LLMModelRow } from './LLMModelRow';
 import {
@@ -50,12 +51,29 @@ export default function LLMModelsConfiguration({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<LlmModel | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importMode, setImportMode] = useState<'fresh' | 'reuse'>('fresh');
+  const [importReuseId, setImportReuseId] = useState<string | null>(null);
+
+  const openImport = (mode: 'fresh' | 'reuse', reuseId: string | null = null) => {
+    setImportMode(mode);
+    setImportReuseId(reuseId);
+    setImportOpen(true);
+  };
+
+  const onImported = () => {
+    invalidateModels();
+    setFormOpen(false); // close the edit dialog when import was launched from it
+  };
 
   useEffect(() => {
     if (config?.llm) setUseFallbackChain(!!config.llm.useFallbackChain);
   }, [config]);
 
-  const invalidateModels = () => queryClient.invalidateQueries({ queryKey: [LLM_MODELS_PATH] });
+  const invalidateModels = () => {
+    queryClient.invalidateQueries({ queryKey: [LLM_MODELS_PATH] });
+    queryClient.invalidateQueries({ queryKey: [LLM_GROUPS_PATH] });
+  };
   const createModel = useMutation<LlmModel, Record<string, unknown>>(LLM_MODELS_PATH, {
     method: 'POST',
     silent: true,
@@ -255,7 +273,14 @@ export default function LLMModelsConfiguration({
             {models.length} configured
           </Badge>
         </div>
-        {canEdit && <Button onClick={openCreate}>Add model</Button>}
+        {canEdit && (
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => openImport('fresh')}>
+              Bulk-import
+            </Button>
+            <Button onClick={openCreate}>Add model</Button>
+          </div>
+        )}
       </div>
       <div className="space-y-4">
         {canEdit && (
@@ -317,6 +342,16 @@ export default function LLMModelsConfiguration({
         saving={saving}
         onSubmit={submitForm}
         groups={groups}
+        onAddMoreFromProvider={editingId ? () => openImport('reuse', editingId) : undefined}
+      />
+
+      <LLMImportModelsDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        mode={importMode}
+        reuseModelId={importReuseId}
+        existingModels={models}
+        onImported={onImported}
       />
 
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>

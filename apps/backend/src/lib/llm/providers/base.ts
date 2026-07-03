@@ -1,3 +1,4 @@
+import type { DiscoveredModel } from '@playwright-reports/shared';
 import { withError } from '../../withError.js';
 import type { LLMRequest, LLMResponse, SegmentedPrompt } from '../types/index.js';
 import { BaseLLMProvider as BaseProvider, LLMProviderError } from '../types/index.js';
@@ -14,6 +15,16 @@ interface CachedValue<T> {
 }
 
 const CONTEXT_WINDOW_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** Parse a Retry-After header (seconds or HTTP-date) into ms from now. */
+function parseRetryAfterMs(headerValue: string | null): number | undefined {
+  if (!headerValue) return undefined;
+  const seconds = Number(headerValue);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(headerValue);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  return undefined;
+}
 
 export abstract class LLMProvider extends BaseProvider {
   protected abstract getApiEndpoint(): string;
@@ -127,6 +138,7 @@ export abstract class LLMProvider extends BaseProvider {
           status: response.status,
           statusText: response.statusText,
           message: errorBody || response.statusText,
+          retryAfterMs: parseRetryAfterMs(response.headers.get('retry-after')),
         });
       }
 
@@ -191,6 +203,25 @@ export abstract class LLMProvider extends BaseProvider {
     }
   }
 
+  async discoverModels(): Promise<DiscoveredModel[]> {
+    const response = await this.withTimeout((signal) =>
+      fetch(this.getModelsEndpoint(), {
+        method: 'GET',
+        headers: this.getHeaders(),
+        signal,
+      })
+    );
+    if (!response.ok) {
+      throw new LLMProviderError(
+        `The /models endpoint returned ${response.status}. Check the base URL and API key.`,
+        'network'
+      );
+    }
+    return this.parseDiscoveredModels(await response.json());
+  }
+
+  protected abstract parseDiscoveredModels(data: unknown): DiscoveredModel[];
+
   protected async sendRequest(request: LLMRequest, signal?: AbortSignal): Promise<Response> {
     const { result, error } = await withError(
       fetch(this.getApiEndpoint(), {
@@ -243,6 +274,7 @@ export abstract class LLMProvider extends BaseProvider {
     message?: string;
     statusText?: string;
     code?: string;
+    retryAfterMs?: number;
   }): LLMProviderError {
     const statusCode = error.status || error.statusCode;
 
@@ -258,7 +290,8 @@ export abstract class LLMProvider extends BaseProvider {
       return new LLMProviderError(
         'Rate limit exceeded. Please try again later.',
         'rate_limit',
-        statusCode
+        statusCode,
+        error.retryAfterMs
       );
     }
 

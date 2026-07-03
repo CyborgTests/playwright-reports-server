@@ -99,6 +99,16 @@ export interface LlmModel {
   updatedAt: string;
 }
 
+export interface DiscoveredModel {
+  id: string;
+  name?: string;
+  contextLength?: number;
+  inputCostPerMTok?: number;
+  outputCostPerMTok?: number;
+  isFree?: boolean;
+  modality?: string;
+}
+
 export interface LlmConcurrencyGroup {
   id: string;
   name: string;

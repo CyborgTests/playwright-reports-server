@@ -1,3 +1,4 @@
+import type { DiscoveredModel } from '@playwright-reports/shared';
 import { AnthropicProvider } from './providers/anthropic.js';
 import { OpenAIProvider } from './providers/openai.js';
 import type {
@@ -243,6 +244,35 @@ export class LLMService {
     }
   }
 
+  async discoverModels(
+    overrides: Pick<LLMProviderConfig, 'provider' | 'baseUrl'> & { apiKey?: string }
+  ): Promise<{ success: boolean; error?: string; models?: DiscoveredModel[] }> {
+    if (!overrides.baseUrl) return { success: false, error: 'Base URL is required' };
+
+    const config: LLMProviderConfig = {
+      provider: overrides.provider,
+      baseUrl: overrides.baseUrl,
+      apiKey: overrides.apiKey ?? '',
+      model: '',
+      requestTimeoutMs: this.config?.requestTimeoutMs ?? 60_000,
+      maxRetries: 0,
+      retryDelayMs: 0,
+    };
+
+    try {
+      const provider =
+        config.provider === 'anthropic'
+          ? new AnthropicProvider(config)
+          : new OpenAIProvider(config);
+      return { success: true, models: await provider.discoverModels() };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Model discovery failed',
+      };
+    }
+  }
+
   async testConnection(
     overrides?: Partial<LLMProviderConfig>
   ): Promise<{ success: boolean; error?: string; models?: string[] }> {
@@ -289,7 +319,8 @@ export class LLMService {
             'Provider rejected the request. Check the base URL and API key (the /models endpoint must be reachable).',
         };
       }
-      const models = await provider.getAvailableModels();
+      // Skip the /models GET when a model is already named - the probe covers it.
+      const models = merged.model ? [] : await provider.getAvailableModels();
       if (merged.provider === 'openai') {
         const probe = await this.probeOpenAIChatCompletions(merged, models);
         if (!probe.ok) {

@@ -1,3 +1,5 @@
+import type { DiscoveredModel } from '@playwright-reports/shared';
+import { parseAnthropicModels } from '../discovery.js';
 import type { LLMRequest, LLMResponse, PromptSegment, SegmentedPrompt } from '../types/index.js';
 import { LLMProvider } from './base.js';
 import type {
@@ -8,6 +10,8 @@ import type {
   AnthropicResponse,
   AnthropicTextBlock,
 } from './types.js';
+
+const ANTHROPIC_VERSION = '2023-06-01';
 
 const DEFAULT_ANTHROPIC_MAX_TOKENS = 8000;
 
@@ -44,6 +48,7 @@ export class AnthropicProvider extends LLMProvider {
   protected getDefaultHeaders(): Record<string, string> {
     return {
       'x-api-key': this.config.apiKey,
+      'anthropic-version': ANTHROPIC_VERSION,
     };
   }
 
@@ -153,6 +158,10 @@ export class AnthropicProvider extends LLMProvider {
 
   protected extractModelIds(data: AnthropicModelList): string[] {
     return data.data?.map((model) => model.id) || [];
+  }
+
+  protected parseDiscoveredModels(data: unknown): DiscoveredModel[] {
+    return parseAnthropicModels(data);
   }
 
   protected async detectContextWindow(): Promise<number | null> {

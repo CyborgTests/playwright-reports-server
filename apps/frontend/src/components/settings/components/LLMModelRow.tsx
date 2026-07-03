@@ -70,9 +70,21 @@ export function LLMModelRow({
               <Badge
                 variant="destructive"
                 className="text-xs"
-                title={m.lastError ?? 'Disabled after repeated failures, retrying'}
+                title={
+                  m.circuit.reason === 'rate_limit'
+                    ? 'Provider rate limit hit - backing off before retrying'
+                    : (m.lastError ?? 'Disabled after repeated failures, retrying')
+                }
               >
-                {m.circuit.state === 'open' ? 'Circuit open' : 'Recovering'}
+                {m.circuit.reason === 'rate_limit'
+                  ? `Rate limited${
+                      m.circuit.retryInMs
+                        ? ` (retry ${Math.ceil(m.circuit.retryInMs / 1000)}s)`
+                        : ''
+                    }`
+                  : m.circuit.state === 'open'
+                    ? 'Circuit open'
+                    : 'Recovering'}
               </Badge>
             ) : m.lastError ? (
               <Badge variant="destructive" className="text-xs" title={m.lastError}>

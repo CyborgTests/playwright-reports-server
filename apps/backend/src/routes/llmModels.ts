@@ -27,6 +27,7 @@ const ModelBodySchema = z.object({
   inputCostPerMTok: z.number().nonnegative().nullable().optional(),
   outputCostPerMTok: z.number().nonnegative().nullable().optional(),
   concurrencyGroupId: z.string().nullable().optional(),
+  sourceModelId: z.string().optional(),
 });
 
 const UpdateBodySchema = ModelBodySchema.partial().extend({
@@ -36,6 +37,15 @@ const UpdateBodySchema = ModelBodySchema.partial().extend({
 const ReorderSchema = z.object({
   orderedIds: z.array(z.string()).min(1).max(100),
 });
+
+const DiscoverSchema = z.union([
+  z.object({ modelId: z.string().min(1) }),
+  z.object({
+    provider: z.enum(['openai', 'anthropic']),
+    baseUrl: z.string().min(1),
+    apiKey: z.string().optional(),
+  }),
+]);
 
 function nextSortOrder(): number {
   const rows = llmModelsDb.list();
@@ -69,12 +79,19 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: 'concurrency group not found' });
       }
       const now = new Date().toISOString();
+      let apiKeyCipher: string | null = null;
+      if (b.apiKey && !MASK_RE.test(b.apiKey)) {
+        apiKeyCipher = encryptToken(b.apiKey);
+      } else if (b.sourceModelId) {
+        const sourceRow = llmModelsDb.get(b.sourceModelId);
+        if (sourceRow && sourceRow.baseUrl === b.baseUrl) apiKeyCipher = sourceRow.apiKeyCipher;
+      }
       const row: LlmModelRow = {
         id: randomUUID(),
         label: b.label,
         provider: b.provider,
         baseUrl: b.baseUrl,
-        apiKeyCipher: b.apiKey && !MASK_RE.test(b.apiKey) ? encryptToken(b.apiKey) : null,
+        apiKeyCipher,
         model: b.model,
         parallelRequests: b.parallelRequests ?? 1,
         maxTokens: b.maxTokens ?? null,
@@ -96,6 +113,29 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
       };
       llmModelsDb.insert(row);
       return reply.status(201).send(toLlmModel(row));
+    });
+
+    fastify.post('/api/config/llm-models/discover', llmConfig, async (request, reply) => {
+      const parsed = DiscoverSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply
+          .status(400)
+          .send({ success: false, error: parsed.error.issues[0]?.message ?? 'invalid' });
+      }
+      const body = parsed.data;
+      let creds: { provider: 'openai' | 'anthropic'; baseUrl: string; apiKey?: string };
+      if ('modelId' in body) {
+        const source = llmModelsDb.get(body.modelId);
+        if (!source) return reply.status(404).send({ success: false, error: 'model not found' });
+        creds = {
+          provider: source.provider as 'openai' | 'anthropic',
+          baseUrl: source.baseUrl,
+          apiKey: decryptToken(source.apiKeyCipher) ?? '',
+        };
+      } else {
+        creds = { provider: body.provider, baseUrl: body.baseUrl, apiKey: body.apiKey };
+      }
+      return llmService.discoverModels(creds);
     });
 
     fastify.post<{ Params: { id: string } }>(
