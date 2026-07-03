@@ -7,6 +7,14 @@ import PaginatedControls from '@/components/paginated-controls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -52,6 +60,7 @@ export default function UsersManagement({ currentUserId }: { currentUserId: stri
   );
   const { data: config } = useConfig();
   const [resetToken, setResetToken] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<User | null>(null);
 
   const users = data?.data;
   const totalPages = data?.pagination.totalPages ?? 1;
@@ -162,7 +171,7 @@ export default function UsersManagement({ currentUserId }: { currentUserId: stri
                         variant="ghost"
                         size="icon"
                         aria-label="Delete user"
-                        onClick={() => deleteUser.mutate({ path: `${USERS_PATH}/${u.id}` })}
+                        onClick={() => setPendingDelete(u)}
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
@@ -191,6 +200,33 @@ export default function UsersManagement({ currentUserId }: { currentUserId: stri
         description="Share this one-time link with the user out-of-band. Shown once."
         onClose={() => setResetToken(null)}
       />
+
+      <Dialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete user?</DialogTitle>
+            <DialogDescription>
+              This permanently removes{' '}
+              <span className="font-medium">{pendingDelete?.username}</span> and revokes their
+              sessions. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingDelete(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (pendingDelete) deleteUser.mutate({ path: `${USERS_PATH}/${pendingDelete.id}` });
+                setPendingDelete(null);
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
