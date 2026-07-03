@@ -1,3 +1,5 @@
+import type { ReadReportsHistory } from '@playwright-reports/shared';
+import { CAPABILITIES } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { DatabaseBackup } from 'lucide-react';
 import { useState } from 'react';
@@ -14,6 +16,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Spinner } from '@/components/ui/spinner';
+import { useHasCapability } from '@/hooks/useHasCapability';
 import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
 
@@ -54,13 +57,23 @@ function ProgressLine({
 export default function MigrateLegacyData() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const canConfigure = useHasCapability()(CAPABILITIES.configServer);
 
   const { data } = useQuery<{ status: LegacyImportStatus }>(STATUS_PATH, {
+    enabled: canConfigure,
     refetchInterval: (query) => (query.state.data?.status.phase === 'running' ? 2000 : false),
   });
   const status = data?.status;
   const phase = status?.phase ?? 'idle';
   const running = phase === 'running';
+
+  const { data: reports } = useQuery<ReadReportsHistory>('/api/report/list?limit=1', {
+    enabled: canConfigure,
+  });
+  const newestCreatedAt = reports?.reports[0]?.createdAt;
+  const hasNewReports =
+    !!newestCreatedAt &&
+    (!status?.finishedAt || Date.parse(newestCreatedAt) > Date.parse(status.finishedAt));
 
   const { mutate: startImport, isPending } = useMutation(START_PATH, {
     onSuccess: () => {
@@ -69,6 +82,8 @@ export default function MigrateLegacyData() {
       queryClient.invalidateQueries({ queryKey: [STATUS_PATH] });
     },
   });
+
+  if (!canConfigure || (!running && hasNewReports)) return null;
 
   return (
     <Card className="mb-6 p-4 scroll-mt-20" id="migrate">

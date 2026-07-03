@@ -13,7 +13,6 @@ import EnvironmentInfo from '@/components/settings/components/EnvironmentInfo';
 import GithubSyncConfiguration from '@/components/settings/components/GithubSyncConfiguration';
 import InvitesManagement from '@/components/settings/components/InvitesManagement';
 import LLMConfiguration from '@/components/settings/components/LLMConfiguration';
-import MigrateLegacyData from '@/components/settings/components/MigrateLegacyData';
 import NotificationsConfiguration from '@/components/settings/components/NotificationsConfiguration';
 import OAuthConfiguration from '@/components/settings/components/OAuthConfiguration';
 import ServerConfiguration from '@/components/settings/components/ServerConfiguration';
@@ -194,9 +193,6 @@ export default function SettingsPage() {
       ? [{ id: 'access', label: 'Access Control' }]
       : []),
     ...(authEnabled && isAdmin ? [{ id: 'audit', label: 'Audit Log' }] : []),
-    ...(hasCapability(CAPABILITIES.configServer)
-      ? [{ id: 'migrate', label: 'Data Migration' }]
-      : []),
   ];
 
   return (
@@ -298,7 +294,6 @@ export default function SettingsPage() {
             />
           )}
           {authEnabled && isAdmin && <AuditLogPanel />}
-          {hasCapability(CAPABILITIES.configServer) && <MigrateLegacyData />}
         </div>
       </div>
 

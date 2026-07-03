@@ -27,6 +27,7 @@ import {
 } from '@/components/quality/status';
 import { StatusBadge } from '@/components/quality/status-badge';
 import { TrendArrow } from '@/components/quality/trend-arrow';
+import MigrateLegacyData from '@/components/settings/components/MigrateLegacyData';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { useHasCapability } from '@/hooks/useHasCapability';
@@ -140,6 +141,8 @@ export default function QualityOverviewPage() {
           )}
         </div>
       </header>
+
+      <MigrateLegacyData />
 
       {isLoading && (
         <div className="flex justify-center py-20">
