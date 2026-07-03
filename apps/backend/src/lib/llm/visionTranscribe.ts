@@ -37,6 +37,19 @@ export async function transcribeScreenshots(
   logPrefix?: string
 ): Promise<ScreenshotTranscription | null> {
   if (images.length === 0) return null;
+
+  // reuse (if possible) previous transcribe successful attempt
+  const completed = llmTasksDb
+    .getRoleChildren(parentTaskId)
+    .filter(
+      (c) => c.role === 'screenshot_parser' && c.status === 'completed' && !!c.result?.trim()
+    );
+  const prior = completed[completed.length - 1];
+  if (prior?.result) {
+    if (logPrefix) console.log(`${logPrefix}: reusing prior screenshot transcription`);
+    return { text: prior.result.trim(), model: prior.model ?? '' };
+  }
+
   const row = resolveScreenshotModel();
   if (!row) return null;
 
