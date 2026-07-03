@@ -3,6 +3,7 @@ import type { LlmConcurrencyGroup } from '@playwright-reports/shared';
 import { CAPABILITIES } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { llmAnalysisQueue } from '../lib/llm/queue/index.js';
 import { type LlmConcurrencyGroupRow, llmGroupsDb } from '../lib/service/db/index.js';
 import { authorize } from './auth.js';
 
@@ -71,6 +72,7 @@ export async function registerLlmGroupsRoutes(fastify: FastifyInstance) {
           return reply.status(409).send({ error: 'a group with that name already exists' });
         }
         llmGroupsDb.update(existing.id, { name, concurrencyLimit: parsed.data.concurrencyLimit });
+        llmAnalysisQueue.notifyConfigChanged();
         const counts = llmGroupsDb.memberCounts();
         const updated = llmGroupsDb.get(existing.id) as LlmConcurrencyGroupRow;
         return toGroup(updated, counts.get(updated.id) ?? 0);
@@ -84,6 +86,7 @@ export async function registerLlmGroupsRoutes(fastify: FastifyInstance) {
         const existing = llmGroupsDb.get(request.params.id);
         if (!existing) return reply.status(404).send({ error: 'group not found' });
         llmGroupsDb.delete(existing.id);
+        llmAnalysisQueue.notifyConfigChanged();
         return { id: existing.id, deleted: true };
       }
     );

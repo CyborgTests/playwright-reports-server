@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { decryptToken, encryptToken } from '../lib/githubSync/encryption.js';
 import { deleteCircuit, resetCircuit } from '../lib/llm/circuitBreaker.js';
 import { llmService } from '../lib/llm/index.js';
+import { llmAnalysisQueue } from '../lib/llm/queue/index.js';
 import { applyPrimaryModel, toLlmModel } from '../lib/llm/registry.js';
 import { type LlmModelRow, llmGroupsDb, llmModelsDb } from '../lib/service/db/index.js';
 import { authorize } from './auth.js';
@@ -112,6 +113,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
         updatedAt: now,
       };
       llmModelsDb.insert(row);
+      llmAnalysisQueue.notifyConfigChanged();
       return reply.status(201).send(toLlmModel(row));
     });
 
@@ -230,6 +232,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
           lastError: existing.lastError,
         };
         llmModelsDb.update(request.params.id, next);
+        llmAnalysisQueue.notifyConfigChanged();
 
         if (connectionChanged || willEnable) resetCircuit(request.params.id);
         if (existing.isPrimary === 1) await applyPrimaryModel();
@@ -282,6 +285,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
         }
         llmModelsDb.delete(request.params.id);
         deleteCircuit(request.params.id);
+        llmAnalysisQueue.notifyConfigChanged();
         return { id: request.params.id, deleted: true };
       }
     );
