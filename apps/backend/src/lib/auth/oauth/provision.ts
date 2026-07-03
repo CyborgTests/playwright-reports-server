@@ -39,6 +39,24 @@ export function findOrProvision(
     return { ok: true, userId: user.id, isNew: false, linked: false };
   }
 
+  // Gate BEFORE any provisioning or auto-linking of a not-yet-linked identity.
+  // In open mode the domain allowlist applies; in invite_only a valid invite is
+  // required. Without this, the verified-email auto-link below would absorb an
+  // existing account with no invite and no domain check (auth bypass).
+  if (mode === 'open') {
+    const allowed = siteConfigDb.get().oauth?.[providerId]?.allowedEmailDomains ?? [];
+    if (
+      allowed.length > 0 &&
+      !(profile.emailVerified && emailDomainAllowed(profile.email, allowed))
+    ) {
+      return { ok: false, reason: 'email_domain_not_allowed' };
+    }
+  } else if (mode === 'invite_only' && !inviteCode) {
+    return { ok: false, reason: 'no_invite' };
+  }
+
+  // Auto-link a verified email to an existing local account (now that the mode
+  // gate above has passed).
   if (profile.emailVerified && profile.email) {
     const match = usersDb.getUserByEmail(profile.email);
     if (match) {
@@ -53,16 +71,6 @@ export function findOrProvision(
         displayName: profile.displayName,
       });
       return { ok: true, userId: match.id, isNew: false, linked: true };
-    }
-  }
-
-  if (mode === 'open') {
-    const allowed = siteConfigDb.get().oauth?.[providerId]?.allowedEmailDomains ?? [];
-    if (
-      allowed.length > 0 &&
-      !(profile.emailVerified && emailDomainAllowed(profile.email, allowed))
-    ) {
-      return { ok: false, reason: 'email_domain_not_allowed' };
     }
   }
 
