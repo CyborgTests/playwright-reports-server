@@ -1,0 +1,69 @@
+@import "highlight.js/styles/github.css";
+@import "highlight.js/styles/github-dark.css" (prefers-color-scheme: dark);
+
+.dark .markdown-renderer pre {
+  background-color: #0d1117 !important;
+}
+
+.dark .markdown-renderer code {
+  background-color: #161b22 !important;
+  color: #e6edf3;
+}
+
+.markdown-renderer {
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.markdown-renderer pre {
+  background-color: #f6f8fa;
+  border-radius: 6px;
+  padding: 16px;
+  overflow-x: auto;
+  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.markdown-renderer code {
+  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+  font-size: 85%;
+}
+
+.markdown-renderer .toc {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.dark .markdown-renderer .toc {
+  background-color: #1a1a1a;
+  border-color: #333;
+}
+
+.markdown-renderer .task-list-item {
+  list-style: none;
+  margin-left: -24px;
+}
+
+.markdown-renderer .task-list-item input {
+  margin-right: 8px;
+}
+
+.markdown-renderer .emoji {
+  width: 20px;
+  height: 20px;
+  vertical-align: middle;
+}
+
+.markdown-renderer .footnote-ref {
+  font-size: 0.8em;
+  vertical-align: super;
+  color: #6b7280;
+}
+
+.dark .markdown-renderer .footnote-ref {
+  color: #9ca3af;
+}

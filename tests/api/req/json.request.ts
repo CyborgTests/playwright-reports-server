@@ -1,11 +1,11 @@
-import { APIRequestContext } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
 
 export class JsonRequest {
   constructor(private request: APIRequestContext) {}
 
   async send<T>(
     urlOrRequest: Parameters<APIRequestContext['fetch']>[0],
-    options?: Parameters<APIRequestContext['fetch']>[1],
+    options?: Parameters<APIRequestContext['fetch']>[1]
   ) {
     const response = await this.request.fetch(urlOrRequest, options);
     try {

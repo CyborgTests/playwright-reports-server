@@ -1,0 +1,13 @@
+{
+  "name": "playwright-reports-server",
+  "owner": {
+    "name": "CyborgTests"
+  },
+  "plugins": [
+    {
+      "name": "playwright-reports",
+      "source": "./packages/skill",
+      "description": "Access Playwright Reports Server data (failures, flakiness, Failure clusters) via the pwrs-cli."
+    }
+  ]
+}

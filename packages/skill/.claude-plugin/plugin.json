@@ -1,0 +1,20 @@
+{
+  "name": "playwright-reports",
+  "displayName": "Playwright Reports",
+  "description": "Access Playwright Reports Server data (failures, flakiness, clusters) via the pwrs-cli.",
+  "version": "1.0.0",
+  "author": {
+    "name": "CyborgTests"
+  },
+  "homepage": "https://github.com/CyborgTests/playwright-reports-server",
+  "repository": "https://github.com/CyborgTests/playwright-reports-server",
+  "license": "MIT",
+  "keywords": [
+    "playwright",
+    "testing",
+    "test-reports",
+    "flakiness",
+    "failure-analysis",
+    "pwrs-cli"
+  ]
+}

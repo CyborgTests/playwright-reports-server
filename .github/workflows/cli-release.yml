@@ -1,0 +1,71 @@
+name: CLI Release
+
+on:
+  push:
+    tags:
+      - 'pwrs-cli@*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.1.0)'
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build CLI
+        run: pnpm run build:cli
+
+      - name: Extract version from tag or input
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=${GITHUB_REF#refs/tags/pwrs-cli@}
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update package.json version
+        run: cd packages/cli && pnpm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version --allow-same-version
+
+      - name: Rename package for publish
+        run: |
+          ORIGINAL_NAME=$(node -p "require('./packages/cli/package.json').name")
+          echo "ORIGINAL_NAME=$ORIGINAL_NAME" >> $GITHUB_ENV
+          node -e "const pkg=require('./packages/cli/package.json'); pkg.name='@cyborgtests/pwrs-cli'; require('fs').writeFileSync('./packages/cli/package.json', JSON.stringify(pkg, null, 2));"
+
+      - name: Publish to npm
+        run: cd packages/cli && pnpm publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Restore original package name
+        if: always()
+        run: node -e "const pkg=require('./packages/cli/package.json'); pkg.name='${{ env.ORIGINAL_NAME }}'; require('fs').writeFileSync('./packages/cli/package.json', JSON.stringify(pkg, null, 2));"

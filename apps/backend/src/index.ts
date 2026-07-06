@@ -1,0 +1,133 @@
+import { join, resolve } from 'node:path';
+import fastifyCookie from '@fastify/cookie';
+import fastifyCors from '@fastify/cors';
+import fastifyMultipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
+import Fastify from 'fastify';
+import { env } from './config/env.js';
+import { llmAnalysisQueue } from './lib/llm/queue/index.js';
+import { lifecycle } from './lib/service/lifecycle.js';
+import { registerApiRoutes } from './routes/index.js';
+
+const logByEnv = {
+  dev: {
+    transport: {
+      target: 'pino-pretty',
+      options: {
+        translateTime: 'HH:MM:ss Z',
+        ignore: 'pid,hostname',
+      },
+    },
+  },
+  prod: {
+    level: process.env.LOG_LEVEL || 'info',
+  },
+};
+
+function resolveCorsOrigin(): false | string[] {
+  const configured = process.env.CORS_ORIGIN?.trim();
+  if (!configured) return false;
+  return configured
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+async function start() {
+  const fastify = Fastify({
+    logger: logByEnv[env.isDev ? 'dev' : 'prod'],
+    bodyLimit: 4294967294, // ~4GB, effectively unlimited
+  });
+
+  const corsOrigin = resolveCorsOrigin();
+  console.log(
+    corsOrigin === false
+      ? '[server] CORS: same-origin only (set CORS_ORIGIN to allow cross-origin clients)'
+      : `[server] CORS: allowing origins ${corsOrigin.join(', ')}`
+  );
+  await fastify.register(fastifyCors, {
+    origin: corsOrigin,
+    credentials: true,
+  });
+
+  await fastify.register(fastifyCookie, {
+    secret: env.AUTH_SECRET || 'playwright-reports-server-default-dev-key',
+  });
+
+  await fastify.register(fastifyMultipart, {
+    limits: {
+      // 0 disables the file-size limit entirely.
+      fileSize: 0,
+      files: 1,
+    },
+    attachFieldsToBody: false,
+  });
+
+  fastify.get('/api/ping', async () => {
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+    };
+  });
+
+  fastify.get('/api/health', async () => {
+    return {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+    };
+  });
+
+  await registerApiRoutes(fastify);
+
+  const dataDir = resolve(process.env.DATA_DIR || join(process.cwd(), 'data'));
+  await fastify.register(fastifyStatic, {
+    root: dataDir,
+    prefix: '/data/',
+    decorateReply: false,
+  });
+
+  if (process.env.NODE_ENV === 'production') {
+    const frontendDistPath = resolve(
+      process.env.FRONTEND_DIST || join(process.cwd(), '..', '..', 'apps', 'frontend', 'dist')
+    );
+
+    await fastify.register(fastifyStatic, {
+      root: frontendDistPath,
+      decorateReply: true,
+    });
+
+    // SPA fallback: serve index.html for any non-/api, non-/data path so the React router can take over.
+    fastify.setNotFoundHandler(async (request, reply) => {
+      if (!request.url.startsWith('/api') && !request.url.startsWith('/data')) {
+        return reply.sendFile('index.html');
+      }
+      return reply.code(404).send({ error: 'Not Found' });
+    });
+  }
+
+  console.log('[server] Initializing databases and services...');
+  await lifecycle.initialize();
+  llmAnalysisQueue.start();
+  console.log('[server] Initialization complete');
+
+  const closeGracefully = async (signal: string) => {
+    fastify.log.info(`Received signal to terminate: ${signal}`);
+    llmAnalysisQueue.stop();
+    await lifecycle.cleanup();
+    await fastify.close();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', () => closeGracefully('SIGINT'));
+  process.on('SIGTERM', () => closeGracefully('SIGTERM'));
+
+  try {
+    await fastify.listen({ port: env.PORT, host: env.HOST });
+    fastify.log.info(`Server listening on http://${env.HOST}:${env.PORT}`);
+  } catch (err) {
+    fastify.log.error(err);
+    process.exit(1);
+  }
+}
+
+await start();

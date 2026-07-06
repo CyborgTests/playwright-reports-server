@@ -1,0 +1,57 @@
+{
+  "name": "@playwright-reports/reporter",
+  "version": "3.0.0",
+  "description": "Reporter that uploads your blob reports to playwright reports server",
+  "main": "dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "playwright-reporter-cli": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./quarantineCheck": {
+      "types": "./dist/quarantineCheck.d.ts",
+      "default": "./dist/quarantineCheck.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "test": "echo 'No tests configured for reporter'",
+    "lint": "biome check *.ts",
+    "lint:fix": "biome check *.ts --write",
+    "format": "biome format *.ts --write",
+    "format:check": "biome format *.ts",
+    "clean": "rm -rf dist"
+  },
+  "author": "Oleksandr Shevtsov <ovr.shevtsov@gmail.com>",
+  "license": "MIT",
+  "files": [
+    "dist/**",
+    "readme.md",
+    "LICENSE",
+    "package.json"
+  ],
+  "peerDependencies": {
+    "@playwright/test": "^1.59.1"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/archiver": "^6.0.3",
+    "@types/node": "^22.19.17"
+  },
+  "directories": {
+    "test": "tests"
+  },
+  "keywords": [
+    "playwright",
+    "reporter",
+    "playwright-reports-server"
+  ]
+}

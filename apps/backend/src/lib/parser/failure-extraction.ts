@@ -1,0 +1,603 @@
+import { stripAnsi } from '../ansi.js';
+import { reportObjectKey } from '../storage/constants.js';
+import { storage } from '../storage/index.js';
+import {
+  extractFromReportPayload,
+  loadReportPayload,
+  type PerFileStep,
+  type ReportJsonMetadata,
+} from './report-payload.js';
+import { openTraceZip, readTraceLines, type TraceZip } from './trace-zip.js';
+
+const CONSOLE_MAX_TEXT_CHARS = 500;
+const CONSOLE_RECENT_LOGS_KEEP = 5;
+const CONSOLE_MAX_TOTAL = 25;
+const NETWORK_BODY_MAX_CHARS = 1024;
+const NETWORK_PRE_FAILURE_KEEP = 5;
+const NETWORK_MAX_TOTAL = 20;
+const ACTION_LOG_KEEP = 10;
+
+/** Header names whose values must be replaced with `[redacted]` before the
+ *  evidence is persisted or sent to the LLM. Matched case-insensitively. */
+const SENSITIVE_HEADER_PATTERNS: RegExp[] = [
+  /^authorization$/i,
+  /^proxy-authorization$/i,
+  /^cookie$/i,
+  /^set-cookie$/i,
+  /^x-auth/i,
+  /^x-api-key$/i,
+  /^x-api-token$/i,
+];
+
+interface AttachmentLike {
+  name?: string;
+  path?: string;
+}
+
+interface ConsoleEvent {
+  level: 'error' | 'warning' | 'log' | 'info' | 'debug' | 'trace';
+  text: string;
+  timestamp?: number;
+  location?: { url?: string; lineNumber?: number };
+}
+
+export interface NetworkEvent {
+  method: string;
+  url: string;
+  status?: number;
+  requestHeaders?: Record<string, string>;
+  responseHeaders?: Record<string, string>;
+  requestBody?: string;
+  responseBody?: string;
+  failureText?: string;
+  pending?: boolean;
+  timestamp?: number;
+}
+
+interface ActionEvent {
+  action: string;
+  namespace?: string;
+  target?: string;
+  startTime?: number;
+  endTime?: number;
+  error?: string;
+}
+
+interface EnvironmentContext {
+  browserName?: string;
+  browserChannel?: string;
+  viewport?: { width: number; height: number };
+  baseURL?: string;
+  userAgent?: string;
+  locale?: string;
+  timezone?: string;
+  sdkLanguage?: string;
+  playwrightVersion?: string;
+}
+
+interface TestMeta {
+  titlePath?: string[];
+  tags?: string[];
+  annotations?: Array<{ type?: string; description?: string }>;
+}
+
+interface GitCommitInfo {
+  hash?: string;
+  shortHash?: string;
+  branch?: string;
+  subject?: string;
+}
+
+interface CiBuildInfo {
+  buildHref?: string;
+  commitHref?: string;
+  commitHash?: string;
+}
+
+export interface FailureEvidence {
+  errorMessage: string;
+  stackTrace?: string;
+  pageSnapshot?: string;
+  testSourceFrame?: string;
+  stepTree?: PerFileStep[];
+  stdout?: string;
+  stderr?: string;
+  testMeta?: TestMeta;
+  gitCommit?: GitCommitInfo;
+  ciBuild?: CiBuildInfo;
+  gitDiff?: string;
+  consoleEvents: ConsoleEvent[];
+  networkEvents: NetworkEvent[];
+  actionLog: ActionEvent[];
+  environment?: EnvironmentContext;
+}
+
+async function readErrorContext(
+  reportId: string,
+  attachments?: AttachmentLike[],
+  storagePath?: string | null
+): Promise<string> {
+  if (!attachments) return '';
+  for (const att of attachments) {
+    if (att.name !== 'error-context' || !att.path) continue;
+    const raw = await storage.readToString(reportObjectKey(reportId, storagePath, att.path));
+    if (raw) return raw;
+  }
+  return '';
+}
+
+function sanitizeHeaders(
+  headers: Record<string, string> | Array<{ name?: string; value?: string }> | undefined
+): Record<string, string> | undefined {
+  if (!headers) return undefined;
+  const entries: Array<[string, string]> = Array.isArray(headers)
+    ? headers
+        .filter((h): h is { name: string; value: string } => !!h.name)
+        .map((h) => [h.name, h.value ?? ''])
+    : Object.entries(headers);
+  if (entries.length === 0) return undefined;
+  const out: Record<string, string> = {};
+  for (const [name, value] of entries) {
+    out[name] = SENSITIVE_HEADER_PATTERNS.some((p) => p.test(name)) ? '[redacted]' : String(value);
+  }
+  return out;
+}
+
+function truncateBody(body: unknown): string | undefined {
+  if (body === undefined || body === null) return undefined;
+  let text: string;
+  if (typeof body === 'string') {
+    text = body;
+  } else if (Buffer.isBuffer(body)) {
+    text = body.toString('utf-8');
+  } else {
+    try {
+      text = JSON.stringify(body);
+    } catch {
+      return undefined;
+    }
+  }
+  if (text.length <= NETWORK_BODY_MAX_CHARS) return text;
+  const omitted = text.length - NETWORK_BODY_MAX_CHARS;
+  return `${text.substring(0, NETWORK_BODY_MAX_CHARS)}\n[… ${omitted} chars omitted …]`;
+}
+
+export function collectHarEntry(snapshot: unknown): { key: string; event: NetworkEvent } | null {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+  const snap = snapshot as Record<string, unknown>;
+  const req = snap.request as Record<string, unknown> | undefined;
+  const resp = snap.response as Record<string, unknown> | undefined;
+  const url = typeof req?.url === 'string' ? req.url : '';
+  if (!url) return null;
+  const method = typeof req?.method === 'string' ? req.method : 'GET';
+  const statusRaw = typeof resp?.status === 'number' ? resp.status : undefined;
+  const status = statusRaw && statusRaw > 0 ? statusRaw : undefined;
+  const pending = status === undefined;
+  const failureText =
+    typeof snap._failureText === 'string'
+      ? snap._failureText
+      : typeof resp?._failureText === 'string'
+        ? (resp._failureText as string)
+        : undefined;
+  const postData = (req?.postData as { text?: string } | undefined)?.text;
+  const respContent = (resp?.content as { text?: string } | undefined)?.text;
+  const monotonic =
+    typeof snap._monotonicTime === 'number'
+      ? snap._monotonicTime
+      : typeof snap.startedDateTime === 'string'
+        ? Date.parse(snap.startedDateTime)
+        : undefined;
+  const timestamp =
+    typeof monotonic === 'number' && !Number.isNaN(monotonic) ? monotonic : undefined;
+  const event: NetworkEvent = {
+    method,
+    url,
+    status,
+    requestHeaders: sanitizeHeaders(
+      req?.headers as Array<{ name?: string; value?: string }> | undefined
+    ),
+    responseHeaders: sanitizeHeaders(
+      resp?.headers as Array<{ name?: string; value?: string }> | undefined
+    ),
+    requestBody: truncateBody(postData),
+    responseBody: truncateBody(respContent),
+    failureText,
+    pending,
+    timestamp,
+  };
+  return { key: `${method} ${url} ${timestamp ?? ''}`, event };
+}
+
+const CONSOLE_LEVELS = new Set<ConsoleEvent['level']>([
+  'error',
+  'warning',
+  'log',
+  'info',
+  'debug',
+  'trace',
+]);
+
+function normalizeConsoleLevel(raw: unknown): ConsoleEvent['level'] {
+  const s = typeof raw === 'string' ? raw.toLowerCase() : '';
+  if (s === 'warn') return 'warning';
+  return CONSOLE_LEVELS.has(s as ConsoleEvent['level']) ? (s as ConsoleEvent['level']) : 'log';
+}
+
+/** Accumulators a single trace-line parse appends into. */
+interface RawCollectors {
+  console: ConsoleEvent[];
+  network: Map<string, NetworkEvent>;
+  actions: ActionEvent[];
+  lastActionEndTime?: number;
+  environment?: EnvironmentContext;
+}
+
+function collectFromTraceEntry(entry: unknown, c: RawCollectors): void {
+  if (!entry || typeof entry !== 'object') return;
+  const e = entry as Record<string, unknown>;
+  const type = typeof e.type === 'string' ? e.type : undefined;
+
+  if (type === 'context-options') {
+    const opts = (e.options as Record<string, unknown> | undefined) ?? {};
+    const viewport = opts.viewport as { width?: number; height?: number } | undefined;
+    const browserName = typeof e.browserName === 'string' ? e.browserName : undefined;
+    const channel = typeof opts.channel === 'string' ? opts.channel : undefined;
+    c.environment = {
+      browserName,
+      browserChannel: channel && channel !== browserName ? channel : undefined,
+      viewport:
+        viewport && typeof viewport.width === 'number' && typeof viewport.height === 'number'
+          ? { width: viewport.width, height: viewport.height }
+          : undefined,
+      baseURL: typeof opts.baseURL === 'string' ? opts.baseURL : undefined,
+      userAgent: typeof opts.userAgent === 'string' ? opts.userAgent : undefined,
+      locale: typeof opts.locale === 'string' ? opts.locale : undefined,
+      timezone: typeof opts.timezoneId === 'string' ? opts.timezoneId : undefined,
+      sdkLanguage: typeof e.sdkLanguage === 'string' ? e.sdkLanguage : undefined,
+    };
+    return;
+  }
+
+  if (
+    type === 'console' ||
+    (type === 'event' && typeof e.method === 'string' && e.method.toLowerCase().includes('console'))
+  ) {
+    const text =
+      typeof e.text === 'string'
+        ? e.text
+        : typeof (e.params as { text?: string } | undefined)?.text === 'string'
+          ? (e.params as { text: string }).text
+          : '';
+    if (!text) return;
+    const levelRaw =
+      e.messageType ?? (e.params as { messageType?: string } | undefined)?.messageType;
+    const loc = (e.location ?? (e.params as { location?: unknown } | undefined)?.location) as
+      | { url?: string; lineNumber?: number }
+      | undefined;
+    c.console.push({
+      level: normalizeConsoleLevel(levelRaw),
+      text,
+      timestamp: typeof e.timestamp === 'number' ? e.timestamp : undefined,
+      location:
+        loc && (loc.url || typeof loc.lineNumber === 'number')
+          ? { url: loc.url, lineNumber: loc.lineNumber }
+          : undefined,
+    });
+    return;
+  }
+
+  if (type === 'resource-snapshot') {
+    const har = collectHarEntry(e.snapshot);
+    if (har) c.network.set(har.key, har.event);
+    return;
+  }
+
+  // Error message + stack are NOT pulled from the trace - those live in the
+  // report payload (`result.errors[]`), the canonical source.
+  if (type === 'before' || type === 'action') {
+    const title = typeof e.title === 'string' && e.title.trim() ? e.title.trim() : undefined;
+    const method =
+      typeof e.method === 'string'
+        ? e.method
+        : typeof (e.params as { method?: string } | undefined)?.method === 'string'
+          ? (e.params as { method: string }).method
+          : typeof e.apiName === 'string'
+            ? e.apiName
+            : 'unknown';
+    const klass = typeof e.class === 'string' ? e.class : undefined;
+    const selector =
+      typeof (e.params as { selector?: string } | undefined)?.selector === 'string'
+        ? (e.params as { selector: string }).selector
+        : typeof (e.params as { url?: string } | undefined)?.url === 'string'
+          ? (e.params as { url: string }).url
+          : typeof (e.params as { text?: string } | undefined)?.text === 'string'
+            ? (e.params as { text: string }).text
+            : undefined;
+    c.actions.push({
+      action: title || method,
+      target: selector,
+      namespace: klass,
+      startTime: typeof e.startTime === 'number' ? e.startTime : undefined,
+      endTime: typeof e.endTime === 'number' ? e.endTime : undefined,
+    });
+    if (typeof e.endTime === 'number') {
+      c.lastActionEndTime = Math.max(c.lastActionEndTime ?? 0, e.endTime);
+    }
+    return;
+  }
+  if (type === 'after') {
+    const errorMsg =
+      typeof (e.error as { message?: string } | undefined)?.message === 'string'
+        ? (e.error as { message: string }).message
+        : undefined;
+    if (errorMsg && c.actions.length > 0) {
+      c.actions[c.actions.length - 1].error = errorMsg;
+    }
+    if (typeof e.endTime === 'number') {
+      c.lastActionEndTime = Math.max(c.lastActionEndTime ?? 0, e.endTime);
+    }
+  }
+}
+
+async function collectFromTraceZip(directory: TraceZip): Promise<RawCollectors> {
+  const collectors: RawCollectors = { console: [], network: new Map(), actions: [] };
+  const files = directory.files.filter(
+    (f) => f.type === 'File' && /\.(trace|network)$/.test(f.path)
+  );
+  for (const file of files) {
+    try {
+      for await (const line of readTraceLines(file)) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          collectFromTraceEntry(JSON.parse(trimmed), collectors);
+        } catch {
+          // best-effort JSONL: skip unparseable lines
+        }
+      }
+    } catch {
+      // skip unreadable trace entries
+    }
+  }
+  return collectors;
+}
+
+function prioritizeConsole(events: ConsoleEvent[]): ConsoleEvent[] {
+  if (events.length === 0) return events;
+  const sorted = [...events].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+  const errorsAndWarnings: ConsoleEvent[] = [];
+  const others: ConsoleEvent[] = [];
+  for (const ev of sorted) {
+    (ev.level === 'error' || ev.level === 'warning' ? errorsAndWarnings : others).push(ev);
+  }
+  const kept = [...errorsAndWarnings, ...others.slice(-CONSOLE_RECENT_LOGS_KEEP)];
+  const truncated = kept.map((ev) => ({
+    ...ev,
+    text:
+      ev.text.length > CONSOLE_MAX_TEXT_CHARS
+        ? `${ev.text.substring(0, CONSOLE_MAX_TEXT_CHARS)}…`
+        : ev.text,
+  }));
+  if (truncated.length <= CONSOLE_MAX_TOTAL) return truncated;
+  const errs = truncated.filter((e) => e.level === 'error' || e.level === 'warning');
+  const oth = truncated.filter((e) => e.level !== 'error' && e.level !== 'warning');
+  const errBudget = Math.min(errs.length, CONSOLE_MAX_TOTAL - Math.min(oth.length, 5));
+  return [...errs.slice(-errBudget), ...oth.slice(-(CONSOLE_MAX_TOTAL - errBudget))];
+}
+
+function prioritizeNetwork(events: NetworkEvent[], anchorTime?: number): NetworkEvent[] {
+  if (events.length === 0) return events;
+  const sorted = [...events].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+  // "Notable" = failed, error status, OR pending (in-flight at failure)
+  const isNotable = (ev: NetworkEvent) =>
+    !!ev.failureText || ev.pending === true || (typeof ev.status === 'number' && ev.status >= 400);
+  const failed = sorted.filter(isNotable);
+  const successes = sorted.filter((ev) => !isNotable(ev));
+  const beforeAnchor =
+    anchorTime !== undefined
+      ? successes.filter((ev) => (ev.timestamp ?? 0) <= anchorTime)
+      : successes;
+  const contextSuccesses = beforeAnchor.slice(-NETWORK_PRE_FAILURE_KEEP);
+  const merged = [...failed, ...contextSuccesses].sort(
+    (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
+  );
+  if (merged.length <= NETWORK_MAX_TOTAL) return merged;
+  const failedKeep = Math.min(failed.length, NETWORK_MAX_TOTAL);
+  return [
+    ...failed.slice(-failedKeep),
+    ...contextSuccesses.slice(-(NETWORK_MAX_TOTAL - failedKeep)),
+  ].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+}
+
+// Framework-marker action names that carry no actionable detail.
+const ACTION_FRAMEWORK_MARKERS = new Set(['hook', 'fixture', 'test.step']);
+
+function isNoiseAction(a: ActionEvent): boolean {
+  if (a.error) return false;
+  if (a.target) return false;
+  return ACTION_FRAMEWORK_MARKERS.has(a.action.toLowerCase());
+}
+
+function prioritizeActions(actions: ActionEvent[]): ActionEvent[] {
+  if (actions.length === 0) return actions;
+  // Drop framework-marker entries (`hook`/`fixture`/`test.step` with no
+  // target and no error)
+  const filtered = actions.filter((a) => !isNoiseAction(a));
+  if (filtered.length === 0) return filtered;
+  const erroredIdx = filtered.findIndex((a) => !!a.error);
+  if (erroredIdx === -1) return filtered.slice(-ACTION_LOG_KEEP);
+  const start = Math.max(0, erroredIdx - ACTION_LOG_KEEP + 1);
+  return filtered.slice(start, erroredIdx + 1);
+}
+
+async function extractEvidenceFromTrace(
+  reportId: string,
+  tracePath: string,
+  storagePath?: string | null
+): Promise<{
+  consoleEvents: ConsoleEvent[];
+  networkEvents: NetworkEvent[];
+  actionLog: ActionEvent[];
+  environment?: EnvironmentContext;
+} | null> {
+  const directory = await openTraceZip(reportId, tracePath, storagePath);
+  if (!directory) return null;
+  const collectors = await collectFromTraceZip(directory);
+  return {
+    consoleEvents: prioritizeConsole(collectors.console),
+    networkEvents: prioritizeNetwork(
+      Array.from(collectors.network.values()),
+      collectors.lastActionEndTime
+    ),
+    actionLog: prioritizeActions(collectors.actions),
+    environment: collectors.environment,
+  };
+}
+
+export async function parseTraceNetwork(directory: TraceZip): Promise<NetworkEvent[]> {
+  const collectors = await collectFromTraceZip(directory);
+  return Array.from(collectors.network.values());
+}
+
+function splitMessageAndStack(raw: string): { message: string; stack?: string } {
+  const cleaned = stripAnsi(raw);
+  if (!cleaned) return { message: '' };
+  const stackIndex = cleaned.indexOf('\n    at ');
+  if (stackIndex > 0) {
+    return { message: cleaned.substring(0, stackIndex), stack: cleaned.substring(stackIndex) };
+  }
+  return { message: cleaned };
+}
+
+function compactStringFields<T extends Record<string, string | undefined>>(obj: T): T | undefined {
+  return Object.values(obj).some((v) => typeof v === 'string' && v.length > 0) ? obj : undefined;
+}
+
+function metadataToGitCommit(
+  meta: ReportJsonMetadata['gitCommit'] | undefined
+): GitCommitInfo | undefined {
+  if (!meta) return undefined;
+  return compactStringFields({
+    hash: meta.hash,
+    shortHash: meta.shortHash,
+    branch: meta.branch,
+    subject: meta.subject,
+  });
+}
+
+function metadataToCiBuild(meta: ReportJsonMetadata['ci'] | undefined): CiBuildInfo | undefined {
+  if (!meta) return undefined;
+  return compactStringFields({
+    buildHref: meta.buildHref,
+    commitHref: meta.commitHref,
+    commitHash: meta.commitHash,
+  });
+}
+
+function buildTestMeta(slice: {
+  test: {
+    path?: string[];
+    tags?: string[];
+    annotations?: Array<{ type?: string; description?: string }>;
+  };
+}): TestMeta | undefined {
+  const titlePath = slice.test.path && slice.test.path.length > 0 ? slice.test.path : undefined;
+  const tags = slice.test.tags && slice.test.tags.length > 0 ? slice.test.tags : undefined;
+  const annotations =
+    slice.test.annotations && slice.test.annotations.length > 0
+      ? slice.test.annotations
+      : undefined;
+  if (!titlePath && !tags && !annotations) return undefined;
+  return { titlePath, tags, annotations };
+}
+
+export async function extractFailureEvidence(
+  reportId: string,
+  test: { testId?: string; title?: string; outcome?: string },
+  result: {
+    status?: string;
+    message?: string;
+    attachments?: Array<{ name?: string; path?: string; contentType?: string }>;
+  },
+  storagePath?: string | null
+): Promise<FailureEvidence> {
+  let testSourceFrame: string | undefined;
+  let stepTree: PerFileStep[] | undefined;
+  let stdoutText: string | undefined;
+  let stderrText: string | undefined;
+  let testMeta: TestMeta | undefined;
+  let gitCommit: GitCommitInfo | undefined;
+  let ciBuild: CiBuildInfo | undefined;
+  let gitDiff: string | undefined;
+
+  let payloadMessage: string | undefined;
+  let payloadStack: string | undefined;
+  if (test.testId) {
+    const payload = await loadReportPayload(reportId, storagePath);
+    if (payload) {
+      const slice = extractFromReportPayload(payload, test.testId);
+      if (slice) {
+        if (slice.richestError?.message) {
+          payloadMessage = slice.richestError.message;
+          payloadStack = slice.richestError.stack;
+        }
+        testSourceFrame = slice.richestError?.codeframe || undefined;
+        stepTree = slice.steps;
+        stdoutText = slice.stdoutText;
+        stderrText = slice.stderrText;
+        testMeta = buildTestMeta(slice);
+        gitCommit = metadataToGitCommit(slice.metadata.gitCommit);
+        ciBuild = metadataToCiBuild(slice.metadata.ci);
+        gitDiff = slice.metadata.gitDiff;
+      }
+    }
+  }
+
+  let message = payloadMessage ?? '';
+  let stackTrace = payloadStack;
+  if (!message) {
+    const split = splitMessageAndStack(result.message ?? '');
+    message = split.message;
+    if (!stackTrace) stackTrace = split.stack;
+  }
+
+  let consoleEvents: ConsoleEvent[] = [];
+  let networkEvents: NetworkEvent[] = [];
+  let actionLog: ActionEvent[] = [];
+  let environment: EnvironmentContext | undefined;
+  const traceAtt = result.attachments?.find((a) => a.name === 'trace' && a.path);
+  if (traceAtt?.path) {
+    const evidence = await extractEvidenceFromTrace(reportId, traceAtt.path, storagePath);
+    if (evidence) {
+      consoleEvents = evidence.consoleEvents;
+      networkEvents = evidence.networkEvents;
+      actionLog = evidence.actionLog;
+      environment = evidence.environment;
+    }
+  }
+
+  const pageSnapshot =
+    (await readErrorContext(reportId, result.attachments, storagePath)) || undefined;
+
+  if (!message) {
+    message = `Test ${test.outcome ?? result.status ?? 'failed'}: ${test.title ?? 'Unknown Test'}`;
+  }
+
+  return {
+    errorMessage: message,
+    stackTrace,
+    pageSnapshot,
+    testSourceFrame,
+    stepTree,
+    stdout: stdoutText,
+    stderr: stderrText,
+    testMeta,
+    gitCommit,
+    ciBuild,
+    gitDiff,
+    consoleEvents,
+    networkEvents,
+    actionLog,
+    environment,
+  };
+}

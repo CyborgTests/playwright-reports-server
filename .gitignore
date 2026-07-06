@@ -1,23 +1,22 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # data
-/data
-.tmp
+**/data
+**/.tmp
 
 # dependencies
-/node_modules
+**/node_modules
 /.pnp
 .pnp.js
+**/package-lock.json
 
 # testing
 /coverage
-
-# next.js
-.next/
-/out/
+**/test-results
 
 # production
-/build
+**/build
+**/dist
 
 # misc
 .DS_Store
@@ -38,11 +37,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-data/reports
-data/results
 
 # vscode
 .vscode
+memory/**
 
 # Playwright
 node_modules/
@@ -50,8 +48,3 @@ node_modules/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
-
-## all docker files (local)
-docker-compose**.**yml
-!docker-compose.yml
-!Dockerfile

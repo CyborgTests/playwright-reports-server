@@ -1,7 +1,8 @@
-import { test as base, type APIResponse } from '@playwright/test';
-import type { UploadResultResponse } from '../types/result';
-import { GenerateReportResponse } from '../types/report';
+import type { APIResponse } from '@playwright/test';
+import { test as base } from '@playwright-reports/reporter';
 import { API } from '../controllers';
+import type { GenerateReportResponse } from '../types/report';
+import type { UploadResultResponse } from '../types/result';
 
 export const test = base.extend<{
   uploadedResult: { response: APIResponse; body: UploadResultResponse };

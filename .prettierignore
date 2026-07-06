@@ -1,6 +1,0 @@
-.npm/
-node_modules/
-.eslintignore
-.prettierignore
-package.json
-package-lock.json

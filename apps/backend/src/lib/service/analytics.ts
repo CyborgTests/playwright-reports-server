@@ -1,0 +1,483 @@
+import type {
+  AnalyticsData,
+  OverviewStats,
+  RunHealthMetric,
+  StatDelta,
+  TrendMetrics,
+} from '@playwright-reports/shared';
+import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
+import {
+  failureSummaryDb,
+  type ReportAnalyticsRow,
+  regressionsDb,
+  reportDb,
+  testAnalyticsDb,
+} from './db/index.js';
+import { service } from './index.js';
+import { testManagementService } from './test-management/index.js';
+
+const RUN_HEALTH_PAGE_SIZE = 100;
+const RUN_HEALTH_MAX_PAGE_SIZE = 500;
+
+type Window = { from?: string; to?: string };
+
+/** minimal aggregate used by trend-delta calculations */
+interface TrendAggregate {
+  count: number;
+  totalPassed: number;
+  totalExecuted: number;
+  totalFlaky: number;
+  sumDuration: number;
+}
+
+const EMPTY_TREND_AGGREGATE: TrendAggregate = {
+  count: 0,
+  totalPassed: 0,
+  totalExecuted: 0,
+  totalFlaky: 0,
+  sumDuration: 0,
+};
+
+type ReportAggregate = ReturnType<typeof reportDb.aggregateForAnalytics>;
+type DurationAggregate = ReturnType<typeof testAnalyticsDb.getDurationAggregates>;
+
+function reportAggregateFromRows(reports: ReportAnalyticsRow[]): ReportAggregate {
+  let totalTests = 0;
+  let totalPassed = 0;
+  let totalFailed = 0;
+  let totalFlaky = 0;
+  let sumDuration = 0;
+  for (const r of reports) {
+    totalTests += r.stats?.total ?? 0;
+    totalPassed += r.stats?.expected ?? 0;
+    totalFailed += r.stats?.unexpected ?? 0;
+    totalFlaky += r.stats?.flaky ?? 0;
+    sumDuration += r.duration ?? 0;
+  }
+  return {
+    count: reports.length,
+    totalTests,
+    totalPassed,
+    totalFailed,
+    totalFlaky,
+    totalExecuted: totalPassed + totalFailed + totalFlaky,
+    sumDuration,
+  };
+}
+
+function passRateOf(agg: TrendAggregate): number {
+  return agg.totalExecuted > 0 ? (agg.totalPassed / agg.totalExecuted) * 100 : 0;
+}
+
+function avgDurationOf(agg: TrendAggregate): number {
+  return agg.count > 0 ? agg.sumDuration / agg.count : 0;
+}
+
+function windowFromReports(reports: ReportAnalyticsRow[]): Window {
+  if (reports.length === 0) return {};
+  const newest = reports[0]?.createdAt;
+  const oldest = reports[reports.length - 1]?.createdAt;
+  return {
+    from: oldest ? new Date(oldest).toISOString() : undefined,
+    to: newest ? new Date(new Date(newest).getTime() + 1).toISOString() : undefined,
+  };
+}
+
+export class AnalyticsService {
+  async getAnalyticsData(
+    project?: string,
+    from?: string,
+    to?: string,
+    failedOnly = false
+  ): Promise<AnalyticsData> {
+    const fetchScope = await this.fetchReportsForScope(project, from, to, failedOnly);
+    const { displayReports, recentForTrend, olderTrendAggregate, olderRange, isBounded } =
+      this.partitionReports(
+        fetchScope.reports,
+        from,
+        to,
+        fetchScope.olderRange,
+        fetchScope.olderAggregate
+      );
+
+    const config = await service.getConfig();
+    const warningThreshold =
+      config.testManagement?.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
+    const projectKey = project && project !== 'all' ? project : undefined;
+
+    const recentRange = isBounded
+      ? { from: from ?? undefined, to: to ?? undefined }
+      : windowFromReports(recentForTrend);
+    const previousRange = olderRange ?? {};
+
+    const recentAgg = testAnalyticsDb.getDurationAggregates(
+      projectKey,
+      recentRange.from,
+      recentRange.to
+    );
+
+    const [
+      overviewStats,
+      runHealthMetrics,
+      trendMetrics,
+      testsSummary,
+      previousTestsSummary,
+      failureCategories,
+      regressions,
+    ] = await Promise.all([
+      this.calculateOverviewStats(
+        fetchScope.displayAggregate,
+        recentForTrend,
+        olderTrendAggregate,
+        projectKey,
+        recentRange,
+        previousRange,
+        recentAgg
+      ),
+      this.calculateRunHealthMetrics(displayReports),
+      this.calculateTrendMetrics(displayReports, projectKey, recentRange, recentAgg),
+      testManagementService.getTestsSummary(projectKey, warningThreshold, { from, to }),
+      olderRange
+        ? testManagementService.getTestsSummary(projectKey, warningThreshold, olderRange)
+        : Promise.resolve({ total: 0, flakyCount: 0 }),
+      Promise.resolve(failureSummaryDb.getAggregatedCategories(projectKey, 10, { from, to })),
+      Promise.resolve(
+        regressionsDb.aggregateForAnalytics({ project: projectKey, since: from, until: to })
+      ),
+    ]);
+
+    if (olderRange) {
+      overviewStats.flakyTestsTrend = this.calculateTrend(
+        testsSummary.flakyCount,
+        previousTestsSummary.flakyCount,
+        warningThreshold
+      );
+      overviewStats.deltas = {
+        ...overviewStats.deltas,
+        flakyTests: this.computeDelta(
+          testsSummary.flakyCount,
+          previousTestsSummary.flakyCount,
+          warningThreshold
+        ),
+      };
+    }
+
+    return {
+      overviewStats,
+      runHealthMetrics,
+      trendMetrics,
+      testsSummary,
+      failureCategories,
+      regressions,
+    };
+  }
+
+  private async fetchReportsForScope(
+    project: string | undefined,
+    from: string | undefined,
+    to: string | undefined,
+    failedOnly: boolean
+  ): Promise<{
+    reports: ReportAnalyticsRow[];
+    displayAggregate: ReportAggregate;
+    olderAggregate: TrendAggregate | null;
+    olderRange: { from: string; to: string } | null;
+  }> {
+    if (!from && !to) {
+      const reports = reportDb.getByProjectForAnalytics(project, { failedOnly });
+      return {
+        reports,
+        displayAggregate: reportAggregateFromRows(reports),
+        olderAggregate: null,
+        olderRange: null,
+      };
+    }
+
+    const reports = reportDb.getByProjectForAnalytics(project, { from, to, failedOnly });
+    const displayAggregate = reportAggregateFromRows(reports);
+
+    const fromMs = from ? new Date(from).getTime() : Number.NEGATIVE_INFINITY;
+    const toMs = to ? new Date(to).getTime() : Number.POSITIVE_INFINITY;
+    const duration = Number.isFinite(toMs) && Number.isFinite(fromMs) ? toMs - fromMs : null;
+    if (duration === null || duration <= 0) {
+      return {
+        reports,
+        displayAggregate,
+        olderAggregate: EMPTY_TREND_AGGREGATE,
+        olderRange: null,
+      };
+    }
+    const compFrom = new Date(fromMs - duration).toISOString();
+    const compTo = new Date(fromMs).toISOString();
+    const olderAggregate = reportDb.aggregateForAnalytics(project, compFrom, compTo, {
+      failedOnly,
+    });
+    return {
+      reports,
+      displayAggregate,
+      olderAggregate,
+      olderRange: { from: compFrom, to: compTo },
+    };
+  }
+
+  /**
+   * Split reports into `displayReports` (dashboard aggregates) and the
+   * `recentForTrend`/`olderForTrend` pair the trend arrows compare.
+   * Bounded window [from, to]: display & recent are the in-window reports;
+   * older is the equal-duration period immediately before it.
+   * All-time: display is everything; recent/older are the newer/older halves
+   * split at the date midpoint.
+   */
+  private partitionReports(
+    allReports: ReportAnalyticsRow[],
+    from?: string,
+    to?: string,
+    preFetchedOlderRange?: { from: string; to: string } | null,
+    preFetchedOlderAggregate?: TrendAggregate | null
+  ): {
+    displayReports: ReportAnalyticsRow[];
+    recentForTrend: ReportAnalyticsRow[];
+    olderTrendAggregate: TrendAggregate;
+    olderRange: { from: string; to: string } | null;
+    isBounded: boolean;
+  } {
+    if (from || to) {
+      return {
+        displayReports: allReports,
+        recentForTrend: allReports,
+        olderTrendAggregate: preFetchedOlderAggregate ?? EMPTY_TREND_AGGREGATE,
+        olderRange: preFetchedOlderRange ?? null,
+        isBounded: true,
+      };
+    }
+
+    if (allReports.length < 2) {
+      return {
+        displayReports: allReports,
+        recentForTrend: allReports,
+        olderTrendAggregate: EMPTY_TREND_AGGREGATE,
+        olderRange: null,
+        isBounded: false,
+      };
+    }
+    const mid = Math.floor(allReports.length / 2);
+    const olderRows = allReports.slice(mid);
+    const olderRange = windowFromReports(olderRows);
+    return {
+      displayReports: allReports,
+      recentForTrend: allReports.slice(0, mid),
+      olderTrendAggregate: reportAggregateFromRows(olderRows),
+      olderRange:
+        olderRange.from && olderRange.to ? { from: olderRange.from, to: olderRange.to } : null,
+      isBounded: false,
+    };
+  }
+
+  private async calculateOverviewStats(
+    displayAggregate: ReportAggregate,
+    recentForTrend: ReportAnalyticsRow[],
+    olderTrendAggregate: TrendAggregate,
+    project: string | undefined,
+    recentRange: Window,
+    previousRange: Window,
+    recentAgg: DurationAggregate
+  ): Promise<OverviewStats> {
+    const totalTests = displayAggregate.totalTests;
+    const totalPassed = displayAggregate.totalPassed;
+    // Skipped tests are excluded from pass rate - they aren't pass/fail outcomes.
+    const totalExecuted = displayAggregate.totalExecuted;
+    const passRate = totalExecuted > 0 ? (totalPassed / totalExecuted) * 100 : 0;
+
+    const olderAgg = testAnalyticsDb.getDurationAggregates(
+      project,
+      previousRange.from,
+      previousRange.to
+    );
+    const slowestSteps = testAnalyticsDb.getSlowestTests(
+      project,
+      recentRange.from,
+      recentRange.to,
+      10
+    );
+    const averageTestDuration = recentAgg.avgDuration;
+    const olderAverageTestDuration = olderAgg.avgDuration;
+
+    const averageTestRunDuration =
+      displayAggregate.count > 0 ? displayAggregate.sumDuration / displayAggregate.count : 0;
+
+    const recentPassRate = await this.calculatePreviousPassRate(recentForTrend);
+    const olderPassRate = passRateOf(olderTrendAggregate);
+    const passRateTrend = this.calculateTrend(recentPassRate, olderPassRate, 2);
+
+    const config = await service.getConfig();
+    const flakinessThreshold =
+      config.testManagement?.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
+
+    const recentFlakyOccurrences = recentForTrend.reduce(
+      (sum, report) => sum + (report.stats?.flaky || 0),
+      0
+    );
+    const olderFlakyOccurrences = olderTrendAggregate.totalFlaky;
+    const flakyTestsTrend = this.calculateTrend(
+      recentFlakyOccurrences,
+      olderFlakyOccurrences,
+      flakinessThreshold
+    );
+
+    const olderAverageRunDuration = avgDurationOf(olderTrendAggregate);
+
+    const deltas = {
+      passRate: this.computeDelta(recentPassRate, olderPassRate, 2),
+      flakyTests: this.computeDelta(
+        recentFlakyOccurrences,
+        olderFlakyOccurrences,
+        flakinessThreshold
+      ),
+      averageTestDuration: this.computeDelta(averageTestDuration, olderAverageTestDuration, 5),
+      averageTestRunDuration: this.computeDelta(averageTestRunDuration, olderAverageRunDuration, 5),
+    };
+
+    return {
+      totalRuns: displayAggregate.count,
+      totalTests,
+      passRate: Math.round(passRate * 100) / 100,
+      averageTestDuration: Math.round(averageTestDuration),
+      slowestSteps,
+      averageTestRunDuration,
+      passRateTrend,
+      flakyTestsTrend,
+      deltas,
+    };
+  }
+
+  private computeDelta(current: number, previous: number, thresholdPercent: number): StatDelta {
+    if (previous === 0) {
+      if (current === 0) return { percent: 0, trend: 'stable' };
+      return { percent: null, trend: 'up' };
+    }
+    const percent = ((current - previous) / previous) * 100;
+    const trend: 'up' | 'down' | 'stable' =
+      Math.abs(percent) < thresholdPercent ? 'stable' : percent > 0 ? 'up' : 'down';
+    return { percent: Math.round(percent * 10) / 10, trend };
+  }
+
+  private async calculateRunHealthMetrics(
+    reports: ReportAnalyticsRow[]
+  ): Promise<RunHealthMetric[]> {
+    return this.reportsToRunHealth(reports.slice(0, RUN_HEALTH_PAGE_SIZE));
+  }
+
+  async getRunHealthPage(
+    project: string | undefined,
+    opts: {
+      from?: string;
+      to?: string;
+      failedOnly?: boolean;
+      before?: string;
+      limit?: number;
+    }
+  ): Promise<RunHealthMetric[]> {
+    const limit = Math.min(
+      Math.max(opts.limit ?? RUN_HEALTH_PAGE_SIZE, 1),
+      RUN_HEALTH_MAX_PAGE_SIZE
+    );
+    const reports = reportDb.getByProjectForAnalytics(project, {
+      from: opts.from,
+      to: opts.to,
+      failedOnly: opts.failedOnly ?? false,
+      before: opts.before,
+      limit,
+    });
+    return this.reportsToRunHealth(reports);
+  }
+
+  private reportsToRunHealth(reports: ReportAnalyticsRow[]): RunHealthMetric[] {
+    const regressionCounts = regressionsDb.countsForReports(reports.map((r) => r.reportID));
+    return reports.map((report) => {
+      const stats = report.stats;
+      const counts = regressionCounts.get(report.reportID);
+      const newRegressions = counts?.newHere ?? 0;
+      const resolvedRegressions = counts?.resolvedHere ?? 0;
+
+      return {
+        runId: report.reportID,
+        timestamp: new Date(report.createdAt),
+        totalTests: stats?.total || 0,
+        passed: stats?.expected || 0,
+        failed: stats?.unexpected || 0,
+        flaky: stats?.flaky || 0,
+        duration: report.duration || 0,
+        title: report.title,
+        displayNumber: report.displayNumber,
+        newRegressions: newRegressions > 0 ? newRegressions : undefined,
+        resolvedRegressions: resolvedRegressions > 0 ? resolvedRegressions : undefined,
+      };
+    });
+  }
+
+  private async calculateTrendMetrics(
+    displayReports: ReportAnalyticsRow[],
+    project: string | undefined,
+    recentRange: Window,
+    recentAgg: DurationAggregate
+  ): Promise<TrendMetrics> {
+    const durationTrend = displayReports.map((report) => ({
+      date: new Date(report.createdAt).toISOString(),
+      duration: report.duration || 0,
+    }));
+
+    const flakyCountTrend = displayReports.map((report) => ({
+      date: new Date(report.createdAt).toISOString(),
+      count: report.stats?.flaky || 0,
+    }));
+
+    const slowThreshold = recentAgg.p95Duration > 0 ? recentAgg.p95Duration : 1000;
+    const slowCountsByReport = testAnalyticsDb.getSlowCountsByReport(
+      project,
+      recentRange.from,
+      recentRange.to,
+      slowThreshold
+    );
+    const slowCountTrend = displayReports.map((report) => ({
+      date: new Date(report.createdAt).toISOString(),
+      count: slowCountsByReport.get(report.reportID) ?? 0,
+    }));
+
+    return {
+      durationTrend,
+      flakyCountTrend,
+      slowCountTrend,
+    };
+  }
+
+  private async calculatePreviousPassRate(reports: ReportAnalyticsRow[]): Promise<number> {
+    if (reports.length === 0) return 0;
+
+    let totalExecuted = 0;
+    let totalPassed = 0;
+    for (const report of reports) {
+      const expected = report.stats?.expected || 0;
+      totalPassed += expected;
+      totalExecuted += expected + (report.stats?.unexpected || 0) + (report.stats?.flaky || 0);
+    }
+
+    return totalExecuted > 0 ? (totalPassed / totalExecuted) * 100 : 0;
+  }
+
+  private calculateTrend(
+    current: number,
+    previous: number,
+    thresholdPercent: number
+  ): 'up' | 'down' | 'stable' {
+    if (previous === 0) {
+      return current === 0 ? 'stable' : 'up';
+    }
+    const percentChange = ((current - previous) / previous) * 100;
+    if (Math.abs(percentChange) < thresholdPercent) {
+      return 'stable';
+    }
+    return percentChange > 0 ? 'up' : 'down';
+  }
+}
+
+export const analyticsService = new AnalyticsService();

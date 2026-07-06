@@ -1,90 +1,145 @@
-FROM node:22-alpine AS base
+FROM node:24-alpine AS build-base
 
-# Install dependencies only when needed
-FROM base AS deps
-# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
-RUN apk add --no-cache libc6-compat
+# Pin pnpm to match repo
+RUN npm install -g pnpm@10
+
+# Build tools for native dependencies (better-sqlite3, esbuild)
+RUN apk add --no-cache python3 make g++ libc6-compat
+
+# CI=true silences pnpm prompts; skip browsers - we only run `merge-reports`.
+ENV CI=true \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+# Litestream binary fetched in a throwaway stage so curl never lands in the runtime image.
+FROM node:24-alpine AS litestream-dl
+ARG TARGETPLATFORM
+ENV LITESTREAM_VERSION=0.3.13
+RUN apk add --no-cache curl && \
+    TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64} && \
+    LITESTREAM_ARCH=$(echo "${TARGETPLATFORM##*/}" | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/') && \
+    curl -fsSL "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-v${LITESTREAM_VERSION}-linux-${LITESTREAM_ARCH}.tar.gz" \
+      | tar -xz -C /usr/local/bin litestream && \
+    chmod +x /usr/local/bin/litestream
+
+# Runner base: minimal runtime image with Node and Litestream. Healthcheck uses busybox wget.
+FROM node:24-alpine AS runner-base
+COPY --from=litestream-dl /usr/local/bin/litestream /usr/local/bin/litestream
+ENV NODE_ENV=production \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+# Install all workspace deps (including dev) from the monorepo root so the
+# build stages have everything they need.
+FROM build-base AS deps
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
-COPY package.json package-lock.json* ./
-RUN npm ci
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./.npmrc ./
+COPY packages/ ./packages/
+COPY apps/ ./apps/
 
-# Rebuild the source code only when needed
-FROM base AS builder
+RUN pnpm install --frozen-lockfile --prefer-offline
+
+# Build shared package first (backend + frontend depend on its dist output).
+FROM build-base AS shared-builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY --from=deps /app/ ./
+RUN pnpm --filter @playwright-reports/shared build
 
-ARG API_BASE_PATH=""
-ENV API_BASE_PATH=$API_BASE_PATH
-
-ARG ASSETS_BASE_PATH=""
-ENV ASSETS_BASE_PATH=$ASSETS_BASE_PATH
-
-# Next.js collects completely anonymous telemetry data about general usage.
-# Learn more here: https://nextjs.org/telemetry
-# Uncomment the following line in case you want to disable telemetry during the build.
-ENV NEXT_TELEMETRY_DISABLED=1
-
-RUN npm run build
-
-# Production image, copy all the files and run next
-FROM base AS runner
+# Build frontend
+FROM build-base AS frontend-builder
 WORKDIR /app
+COPY --from=deps /app/ ./
+COPY --from=shared-builder /app/packages/shared/dist ./packages/shared/dist
 
-ENV NODE_ENV=production
+# DOCKER_BUILD=true makes Vite resolve ./packages/shared inside the frontend dir; symlink it in.
+RUN mkdir -p /app/apps/frontend/packages && \
+    ln -sf /app/packages/shared /app/apps/frontend/packages/shared
 
-# Install Chromium for PDF export feature
-RUN apk add --no-cache curl chromium
+ENV DOCKER_BUILD=true
+RUN pnpm --filter @playwright-reports/frontend build:vite
 
-ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+# Bundle backend with esbuild - produces dist/index.js + inject.js + inject.css.
+# All prod deps except externals get folded and tree-shaken.
+FROM build-base AS backend-bundler
+WORKDIR /app
+COPY --from=deps /app/ ./
+COPY --from=shared-builder /app/packages/shared/dist ./packages/shared/dist
+RUN pnpm --filter @playwright-reports/backend bundle
 
-# Uncomment the following line in case you want to disable telemetry during runtime.
-# ENV NEXT_TELEMETRY_DISABLED 1
+# Runtime deps stage - fresh install of ONLY the externals into a flat node_modules tree.
+# The bundle (esbuild) folds every pure-JS dep into dist/index.js; only its
+# `external` list (apps/backend/scripts/bundle.mjs) needs real node_modules at
+# runtime. Install exactly those externals - keep this in sync with that list:
+#   better-sqlite3   -> native binding
+#   @playwright/test -> merge-reports CLI
+FROM build-base AS runtime-deps
+WORKDIR /runtime
+COPY apps/backend/package.json ./backend-package.json
+RUN node -e "const fs=require('fs');const src=JSON.parse(fs.readFileSync('backend-package.json'));const pkg={name:'playwright-reports-runtime',version:'0.0.0',private:true,dependencies:{'better-sqlite3':src.dependencies['better-sqlite3'],'@playwright/test':src.dependencies['@playwright/test']}};fs.writeFileSync('package.json',JSON.stringify(pkg,null,2));" && \
+    rm backend-package.json
+RUN npm install --omit=dev --no-audit --no-fund
+# Strip docs/tests/typings/sourcemaps
+RUN find node_modules \
+      -not -path '*/@playwright/test*' \
+      \( \
+        -name '*.md' -o -name '*.markdown' \
+        -o -name 'LICENSE*' -o -name 'license*' -o -name 'CHANGELOG*' \
+        -o -name '*.d.ts' -o -name '*.d.ts.map' -o -name '*.js.map' \
+        -o -name 'tests' -o -name '__tests__' \
+        -o -name 'example' -o -name 'examples' -o -name 'docs' \
+        -o -name '.github' \
+      \) -prune -exec rm -rf {} + 2>/dev/null || true
+# strip better-sqlite3 down to the runtime essentials: the prebuilt .node binding
+# and its JS wrapper. Drops the bundled SQLite C source (deps/) and build
+# intermediates (object files, makefiles).
+RUN find node_modules/better-sqlite3 -mindepth 1 -maxdepth 1 \
+      ! -name lib ! -name build ! -name package.json -exec rm -rf {} + && \
+    find node_modules/better-sqlite3/build -mindepth 1 -maxdepth 1 \
+      ! -name Release -exec rm -rf {} + && \
+    find node_modules/better-sqlite3/build/Release -type f ! -name '*.node' -delete
+
+# Production image
+FROM runner-base AS runner
+WORKDIR /app
 
 RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 --ingroup nodejs nextjs
+    adduser --system --uid 1001 --ingroup nodejs appuser
 
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+# Bundled backend and its package.json so node treats the bundle as ESM
+COPY --from=backend-bundler --chown=appuser:nodejs /app/apps/backend/dist ./apps/backend/dist
+COPY --from=backend-bundler --chown=appuser:nodejs /app/apps/backend/package.json ./apps/backend/package.json
 
-# Set the correct permission for prerender cache
-RUN mkdir .next && \
-    chown nextjs:nodejs .next
+# Backend static assets (favicon, logo) served at /api/static; resolved as dist/../public.
+COPY --from=backend-bundler --chown=appuser:nodejs /app/apps/backend/public ./apps/backend/public
 
-# Automatically leverage output traces to reduce image size
-# https://nextjs.org/docs/advanced-features/output-file-tracing
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Runtime externals - better-sqlite3 native binding + playwright CLI.
+COPY --from=runtime-deps --chown=appuser:nodejs /runtime/node_modules ./apps/backend/node_modules
 
-# Copy playwright packages - standalone tracing omits node_modules/.bin symlinks
-# so npx playwright (used for merge-reports + PDF export) would fail without this.
-# All three packages are needed: @playwright/test CLI delegates to playwright which
-# requires playwright-core.
-COPY --from=builder /app/node_modules/@playwright ./node_modules/@playwright
-COPY --from=builder /app/node_modules/playwright ./node_modules/playwright
-COPY --from=builder /app/node_modules/playwright-core ./node_modules/playwright-core
-RUN mkdir -p node_modules/.bin && \
-    ln -sf /app/node_modules/@playwright/test/cli.js node_modules/.bin/playwright && \
-    chmod +x node_modules/@playwright/test/cli.js && \
-    chown -R nextjs:nodejs node_modules/@playwright node_modules/playwright node_modules/playwright-core node_modules/.bin/playwright
+# Frontend static assets served by @fastify/static.
+COPY --from=frontend-builder --chown=appuser:nodejs /app/apps/frontend/dist ./apps/frontend/dist
 
-# Create folders required for storing results and reports
+# Root metadata and Litestream config.
+COPY --chown=appuser:nodejs package.json ./package.json
+COPY --chown=appuser:nodejs .env.example /app/.env.example
+COPY --chown=appuser:nodejs litestream.yml /app/litestream.yml
+
+RUN touch /app/.env && \
+    chown appuser:nodejs /app/.env
+
 ARG DATA_DIR=/app/data
 ARG RESULTS_DIR=${DATA_DIR}/results
 ARG REPORTS_DIR=${DATA_DIR}/reports
 ARG TEMP_DIR=/app/.tmp
 RUN mkdir -p ${DATA_DIR} ${RESULTS_DIR} ${REPORTS_DIR} ${TEMP_DIR} && \
-    chown -R nextjs:nodejs ${DATA_DIR} ${TEMP_DIR}
+    chown -R appuser:nodejs ${DATA_DIR} ${TEMP_DIR}
 
-USER nextjs
+USER appuser
 
-EXPOSE 3000
+EXPOSE 3001
 
-ENV PORT=3000
+ENV PORT=3001
+ENV FRONTEND_DIST=/app/apps/frontend/dist
 
-# server.js is created by next build from the standalone output
-# https://nextjs.org/docs/pages/api-reference/next-config-js/output
-CMD ["sh", "-c", "HOSTNAME=0.0.0.0 node server.js"]
+CMD ["node", "apps/backend/dist/index.js"]
 
-HEALTHCHECK --interval=3m --timeout=3s CMD curl -f http://localhost:$PORT/api/ping || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD wget -q -O /dev/null http://localhost:$PORT/api/ping || exit 1

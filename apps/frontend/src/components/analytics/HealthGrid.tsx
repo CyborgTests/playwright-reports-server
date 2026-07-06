@@ -1,0 +1,427 @@
+import type { RunHealthMetric } from '@playwright-reports/shared';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
+import { ChartTooltip } from '@/components/analytics/chart-tooltip';
+import { niceAxisTicks, StickyYAxis } from '@/components/sticky-y-axis';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { CHART_COLORS } from '@/lib/chart-colors';
+import { formatDate } from '@/lib/date';
+
+interface HealthGridProps {
+  metrics: RunHealthMetric[];
+  isLoading?: boolean;
+  totalRuns?: number;
+  scopeKey?: string;
+  onLoadPrevious?: () => void;
+  hasMorePrevious?: boolean;
+  isLoadingPrevious?: boolean;
+}
+
+const BAR_PX = 36;
+const PREVIOUS_LOAD_THRESHOLD_PX = 400;
+const CHART_HEIGHT = 300;
+const CHART_MARGIN_TOP = 40;
+const XAXIS_HEIGHT = 80;
+const PLOT_TOP = CHART_MARGIN_TOP;
+const PLOT_BOTTOM = CHART_HEIGHT - XAXIS_HEIGHT;
+const STICKY_AXIS_W = 48;
+const WINDOW_OVERSCAN = 8;
+
+const formatReportHeading = (
+  displayNumber: number | undefined,
+  title: string | undefined,
+  date: string
+): string => {
+  const parts: string[] = [];
+  if (typeof displayNumber === 'number') parts.push(`#${displayNumber}`);
+  if (title) parts.push(parts.length ? `- ${title}` : title);
+  return parts.length ? `${parts.join(' ')} (${date})` : date;
+};
+
+function CustomTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{
+    payload: {
+      name: string;
+      heading: string;
+      runId: string;
+      passed: number;
+      failed: number;
+      flaky: number;
+      total: number;
+      newRegressions: number;
+      resolvedRegressions: number;
+    };
+  }>;
+}) {
+  if (active && payload?.length) {
+    const data = payload[0].payload;
+    const hasRegressionInfo = data.newRegressions > 0 || data.resolvedRegressions > 0;
+    return (
+      <ChartTooltip>
+        <p className="font-medium">{data.heading}</p>
+        <p className="text-sm text-muted-foreground">Run ID: {data.runId}</p>
+        <div className="mt-2 space-y-1">
+          <div className="flex justify-between text-sm">
+            <span className="text-success">Passed:</span>
+            <span>{data.passed}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-danger">Failed:</span>
+            <span>{data.failed}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-warning">Flaky:</span>
+            <span>{data.flaky}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span>Total:</span>
+            <span>{data.total}</span>
+          </div>
+          {hasRegressionInfo && (
+            <div className="border-t border-border/40 pt-1 mt-1 space-y-0.5">
+              {data.newRegressions > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-danger">↓ New regressions:</span>
+                  <span className="text-danger font-medium">{data.newRegressions}</span>
+                </div>
+              )}
+              {data.resolvedRegressions > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-success">↑ Resolved here:</span>
+                  <span className="text-success font-medium">{data.resolvedRegressions}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </ChartTooltip>
+    );
+  }
+  return null;
+}
+
+interface BarShapeProps {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  payload?: { newRegressions?: number; resolvedRegressions?: number };
+  fill?: string;
+}
+
+function RegressionMarkBar(props: BarShapeProps) {
+  const { x = 0, y = 0, width = 0, height = 0, fill = CHART_COLORS.failed, payload } = props;
+  const opened = payload?.newRegressions ?? 0;
+  const closed = payload?.resolvedRegressions ?? 0;
+  const hasMark = opened > 0 || closed > 0;
+  // cap at "99+" so an unusually-broken run can't blow out the chip width
+  // and run into the next bar.
+  const fmt = (n: number) => (n > 99 ? '99+' : String(n));
+  const segments: Array<{ text: string; bg: string; fg: string }> = [];
+  if (opened > 0) {
+    segments.push({ text: `↓${fmt(opened)}`, bg: CHART_COLORS.failed, fg: 'white' });
+  }
+  if (closed > 0) {
+    segments.push({ text: `↑${fmt(closed)}`, bg: CHART_COLORS.passed, fg: 'white' });
+  }
+  const CHIP_H = 14;
+  const CHIP_PADDING = 6;
+  const CHIP_ROW_GAP = 2;
+  const CHIP_FONT = 10;
+  const charWidth = (ch: string) => (ch === '↑' || ch === '↓' ? 9 : 6.5);
+  const chipWidths = segments.map((s) => {
+    const inner = [...s.text].reduce((sum, c) => sum + charWidth(c), 0);
+    return Math.max(20, Math.ceil(inner) + CHIP_PADDING * 2);
+  });
+  const stackHeight = segments.length * CHIP_H + Math.max(0, segments.length - 1) * CHIP_ROW_GAP;
+  const baseChipY = y - stackHeight - 2;
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height} fill={fill} />
+      {hasMark &&
+        segments.map((s, i) => {
+          const w = chipWidths[i];
+          const cx = x + (width - w) / 2;
+          const cy = baseChipY + i * (CHIP_H + CHIP_ROW_GAP);
+          return (
+            <g key={s.text}>
+              <rect x={cx} y={cy} width={w} height={CHIP_H} rx={4} ry={4} fill={s.bg} />
+              <text
+                x={cx + w / 2}
+                y={cy + CHIP_H / 2 + 1}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontSize={CHIP_FONT}
+                fontWeight={600}
+                fill={s.fg}
+              >
+                {s.text}
+              </text>
+            </g>
+          );
+        })}
+    </g>
+  );
+}
+
+type ChartDatum = {
+  name: string;
+  heading: string;
+  runId: string;
+  total: number;
+  passed: number;
+  failed: number;
+  flaky: number;
+  newRegressions: number;
+  resolvedRegressions: number;
+};
+
+const BAR_ANIMATION_MS = 500;
+
+function chartChildren(animate: boolean) {
+  return (
+    <>
+      <CartesianGrid strokeDasharray="3 3" />
+      <XAxis
+        dataKey="name"
+        tick={{ fontSize: 12 }}
+        angle={-45}
+        textAnchor="end"
+        height={XAXIS_HEIGHT}
+      />
+      <Tooltip
+        content={<CustomTooltip />}
+        wrapperStyle={{ pointerEvents: 'auto' }}
+        isAnimationActive={false}
+      />
+      <Bar
+        dataKey="passed"
+        stackId="a"
+        fill={CHART_COLORS.passed}
+        isAnimationActive={animate}
+        animationDuration={BAR_ANIMATION_MS}
+      />
+      <Bar
+        dataKey="flaky"
+        stackId="a"
+        fill={CHART_COLORS.flaky}
+        isAnimationActive={animate}
+        animationDuration={BAR_ANIMATION_MS}
+      />
+      <Bar
+        dataKey="failed"
+        stackId="a"
+        fill={CHART_COLORS.failed}
+        shape={RegressionMarkBar}
+        isAnimationActive={animate}
+        animationDuration={BAR_ANIMATION_MS}
+      />
+    </>
+  );
+}
+
+function HealthGridImpl({
+  metrics,
+  isLoading,
+  totalRuns,
+  scopeKey,
+  onLoadPrevious,
+  hasMorePrevious = false,
+  isLoadingPrevious = false,
+}: Readonly<HealthGridProps>) {
+  const chartData = useMemo<ChartDatum[]>(
+    () =>
+      metrics
+        .map((metric) => {
+          const date = formatDate(metric.timestamp, 'date');
+          return {
+            name: date,
+            heading: formatReportHeading(metric.displayNumber, metric.title, date),
+            runId: metric.runId,
+            total: metric.totalTests,
+            passed: metric.passed,
+            failed: metric.failed,
+            flaky: metric.flaky,
+            newRegressions: metric.newRegressions ?? 0,
+            resolvedRegressions: metric.resolvedRegressions ?? 0,
+          };
+        })
+        .reverse(),
+    [metrics]
+  );
+
+  const axisMax = useMemo(() => {
+    let m = 0;
+    for (const d of chartData) m = Math.max(m, d.passed + d.flaky + d.failed);
+    const ticks = niceAxisTicks(m);
+    return ticks[ticks.length - 1] || 1;
+  }, [chartData]);
+
+  const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const rafRef = useRef(0);
+
+  // Animate bars only briefly after the dataset changes;
+  const [animateBars, setAnimateBars] = useState(true);
+  useEffect(() => {
+    if (chartData.length === 0) return;
+    setAnimateBars(true);
+    const t = setTimeout(() => setAnimateBars(false), BAR_ANIMATION_MS + 200);
+    return () => clearTimeout(t);
+  }, [chartData]);
+
+  const scrollContainerRef = useCallback((node: HTMLDivElement | null) => {
+    setScrollContainer(node);
+    if (node) setContainerWidth(node.clientWidth);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!scrollContainer || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const next = entries[0]?.contentRect.width ?? 0;
+      if (next > 0) setContainerWidth((prev) => (prev === next ? prev : next));
+    });
+    observer.observe(scrollContainer);
+    return () => observer.disconnect();
+  }, [scrollContainer]);
+
+  const scrollSyncRef = useRef<{ scopeKey?: string; newestRunId?: string; length: number }>({
+    length: 0,
+  });
+
+  const onScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const left = e.currentTarget.scrollLeft;
+      if (
+        left < PREVIOUS_LOAD_THRESHOLD_PX &&
+        hasMorePrevious &&
+        !isLoadingPrevious &&
+        scrollSyncRef.current.scopeKey === scopeKey
+      ) {
+        onLoadPrevious?.();
+      }
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        setScrollLeft(left);
+      });
+    },
+    [hasMorePrevious, isLoadingPrevious, onLoadPrevious, scopeKey]
+  );
+
+  const totalWidth = chartData.length * BAR_PX;
+  const measured = containerWidth > 0;
+  const overflow = measured && totalWidth > containerWidth;
+
+  const visibleCount = Math.ceil(containerWidth / BAR_PX) + 2 * WINDOW_OVERSCAN;
+  const maxStart = Math.max(0, chartData.length - visibleCount);
+  const start = overflow
+    ? Math.min(Math.max(0, Math.floor(scrollLeft / BAR_PX) - WINDOW_OVERSCAN), maxStart)
+    : 0;
+  const end = overflow ? Math.min(chartData.length, start + visibleCount) : chartData.length;
+  const windowData = overflow ? chartData.slice(start, end) : chartData;
+  const windowWidth = overflow ? windowData.length * BAR_PX : Math.max(containerWidth, totalWidth);
+  const offsetX = overflow ? start * BAR_PX : 0;
+
+  useLayoutEffect(() => {
+    if (!scrollContainer || isLoading || chartData.length === 0) return;
+    const newestRunId = chartData[chartData.length - 1]?.runId;
+    const prev = scrollSyncRef.current;
+    const scopeChanged = prev.scopeKey !== scopeKey;
+    if (scopeChanged || prev.newestRunId !== newestRunId) {
+      scrollContainer.scrollLeft = scrollContainer.scrollWidth;
+      setScrollLeft(scrollContainer.scrollLeft);
+    } else if (chartData.length > prev.length) {
+      const added = chartData.length - prev.length;
+      scrollContainer.scrollLeft += added * BAR_PX;
+      setScrollLeft(scrollContainer.scrollLeft);
+    }
+    scrollSyncRef.current = { scopeKey, newestRunId, length: chartData.length };
+  }, [scrollContainer, chartData, isLoading, scopeKey]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <h3 className="text-lg font-semibold">Test Health Grid</h3>
+        <p className="text-sm text-muted-foreground">
+          Stacked bar chart for{' '}
+          {totalRuns && totalRuns > metrics.length
+            ? `${metrics.length}/${totalRuns}`
+            : metrics.length}{' '}
+          {(totalRuns ?? metrics.length) === 1 ? 'run' : 'runs'} in the selected period
+          {isLoadingPrevious ? ' · loading previous…' : ''}
+        </p>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-[300px] w-full" />
+        ) : metrics.length === 0 ? (
+          <div className="flex items-center justify-center h-64 text-muted-foreground">
+            No health data available
+          </div>
+        ) : (
+          <div className="flex">
+            {overflow && (
+              <StickyYAxis
+                axisMax={axisMax}
+                width={STICKY_AXIS_W}
+                chartHeight={CHART_HEIGHT}
+                plotTop={PLOT_TOP}
+                plotBottom={PLOT_BOTTOM}
+              />
+            )}
+            <div
+              ref={scrollContainerRef}
+              onScroll={onScroll}
+              className="overflow-x-auto flex-1 min-w-0"
+            >
+              {!measured ? (
+                <div style={{ height: CHART_HEIGHT }} />
+              ) : overflow ? (
+                <div style={{ width: totalWidth, height: CHART_HEIGHT, position: 'relative' }}>
+                  <div style={{ position: 'absolute', left: offsetX, top: 0 }}>
+                    <BarChart
+                      width={windowWidth}
+                      height={CHART_HEIGHT}
+                      data={windowData}
+                      margin={{ top: CHART_MARGIN_TOP, right: 0, bottom: 0, left: 0 }}
+                      onClick={(ev) => {
+                        const reportId = ev.activePayload?.[0]?.payload?.runId;
+                        if (reportId) window.open(`/report/${reportId}`, '_blank');
+                      }}
+                    >
+                      <YAxis hide domain={[0, axisMax]} />
+                      {chartChildren(animateBars)}
+                    </BarChart>
+                  </div>
+                </div>
+              ) : (
+                <BarChart
+                  width={windowWidth}
+                  height={CHART_HEIGHT}
+                  data={windowData}
+                  margin={{ top: CHART_MARGIN_TOP, right: 0, bottom: 0, left: 0 }}
+                  onClick={(ev) => {
+                    const reportId = ev.activePayload?.[0]?.payload?.runId;
+                    if (reportId) window.open(`/report/${reportId}`, '_blank');
+                  }}
+                >
+                  <YAxis domain={[0, axisMax]} />
+                  {chartChildren(animateBars)}
+                </BarChart>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export const HealthGrid = memo(HealthGridImpl);

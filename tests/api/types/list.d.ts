@@ -4,8 +4,4 @@ export type ListParams = {
   tags?: string;
   limit?: number;
   page?: number;
-  dateFrom?: string;
-  dateTo?: string;
-  order?: 'asc' | 'desc' | string;
-  sortBy?: string;
 };

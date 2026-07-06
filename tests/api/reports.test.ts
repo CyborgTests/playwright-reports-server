@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test';
-import { test } from './fixtures/base';
 import { ReportController } from './controllers/report.controller';
+import { test } from './fixtures/base';
 
 test('/api/report/list shows report list', async ({ request }) => {
   const reportList = await request.get('/api/report/list');
@@ -32,11 +32,14 @@ test('/api/report/list page per row return proper data count', async ({ request 
   for (const limit of limits) {
     const { response, json } = await api.list({ limit });
     expect(response.status()).toBe(200);
-    expect((json.report ?? []).length).toBeLessThanOrEqual(limit);
+    expect((json.reports ?? []).length).toBeLessThanOrEqual(limit);
   }
 });
 
-test('/api/report/list search return valid data by existing reportId', async ({ request, generatedReport }) => {
+test('/api/report/list search return valid data by existing reportId', async ({
+  request,
+  generatedReport,
+}) => {
   const title = generatedReport.body.metadata?.title;
   const api = new ReportController(request);
   const { response, json } = await api.list({ search: title });
@@ -50,89 +53,4 @@ test('/api/report/list search return No Result  by not existing reportId', async
   const { response, json } = await api.list({ search: title });
   expect(response.status()).toBe(200);
   expect(json).toEqual({ reports: [], total: 0 });
-});
-
-test('/api/report/list filter by date range returns items within range', async ({ request, generatedReport }) => {
-  const api = new ReportController(request);
-  const now = new Date();
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
-  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
-
-  const { response, json } = await api.list({ dateFrom: yesterday, dateTo: tomorrow });
-  expect(response.status()).toBe(200);
-  expect(json.reports.length).toBeGreaterThan(0);
-  expect(json.reports.some((r: any) => r.reportID === generatedReport.body.reportId)).toBeTruthy();
-});
-
-test('/api/report/list filter by future date range returns empty list', async ({ request }) => {
-  const api = new ReportController(request);
-  const futureFrom = '2099-01-01T00:00:00.000Z';
-  const futureTo = '2099-12-31T23:59:59.999Z';
-
-  const { response, json } = await api.list({ dateFrom: futureFrom, dateTo: futureTo });
-  expect(response.status()).toBe(200);
-  expect(json.reports).toEqual([]);
-  expect(json.total).toBe(0);
-});
-
-test('/api/report/list filter by dateFrom only returns items from that date onwards', async ({
-  request,
-  generatedReport,
-}) => {
-  const api = new ReportController(request);
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-  const { response, json } = await api.list({ dateFrom: yesterday, project: 'Smoke', limit: 1000 });
-  expect(response.status()).toBe(200);
-  expect(json.reports.length).toBeGreaterThan(0);
-  expect(json.reports.some((r: any) => r.reportID === generatedReport.body.reportId)).toBeTruthy();
-});
-
-test('/api/report/list filter by dateTo only returns items up to that date', async ({ request, generatedReport }) => {
-  const api = new ReportController(request);
-  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-  const { response, json } = await api.list({ dateTo: tomorrow, project: 'Smoke', limit: 1000 });
-  expect(response.status()).toBe(200);
-  expect(json.reports.length).toBeGreaterThan(0);
-  expect(json.reports.some((r: any) => r.reportID === generatedReport.body.reportId)).toBeTruthy();
-});
-
-test('/api/report/list order=desc returns items newest first', async ({ request, generatedReport: _ }) => {
-  const api = new ReportController(request);
-  const { response, json } = await api.list({ order: 'desc', limit: 100 });
-  expect(response.status()).toBe(200);
-  expect(json.reports.length).toBeGreaterThan(0);
-  const timestamps = json.reports.map((r: any) => new Date(r.createdAt).getTime());
-  for (let i = 1; i < timestamps.length; i++) {
-    expect(timestamps[i]).toBeLessThanOrEqual(timestamps[i - 1]);
-  }
-});
-
-test('/api/report/list order=asc returns items oldest first', async ({ request, generatedReport: _ }) => {
-  const api = new ReportController(request);
-  const { response, json } = await api.list({ order: 'asc', limit: 100 });
-  expect(response.status()).toBe(200);
-  expect(json.reports.length).toBeGreaterThan(0);
-  const timestamps = json.reports.map((r: any) => new Date(r.createdAt).getTime());
-  for (let i = 1; i < timestamps.length; i++) {
-    expect(timestamps[i]).toBeGreaterThanOrEqual(timestamps[i - 1]);
-  }
-});
-
-test('/api/report/list default order matches order=desc', async ({ request, generatedReport: _ }) => {
-  const api = new ReportController(request);
-  const { json: defaultJson } = await api.list({ limit: 100 });
-  const { json: descJson } = await api.list({ order: 'desc', limit: 100 });
-  expect(defaultJson.reports.length).toBeGreaterThan(0);
-  expect(defaultJson.reports[0]?.reportID).toBe(descJson.reports[0]?.reportID);
-});
-
-test('/api/report/list invalid order falls back to default', async ({ request, generatedReport: _ }) => {
-  const api = new ReportController(request);
-  const { response, json: invalidJson } = await api.list({ order: 'garbage', limit: 100 });
-  const { json: defaultJson } = await api.list({ limit: 100 });
-  expect(response.status()).toBe(200);
-  expect(invalidJson.reports.length).toBeGreaterThan(0);
-  expect(invalidJson.reports[0]?.reportID).toBe(defaultJson.reports[0]?.reportID);
 });

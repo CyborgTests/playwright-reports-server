@@ -1,0 +1,331 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial");
+  ascent-override: 90.44%;
+  descent-override: 22.52%;
+  line-gap-override: 0.00%;
+  size-adjust: 107.12%;
+}
+@font-face {
+  font-family: "JetBrains Mono Fallback";
+  src: local("Courier New");
+  ascent-override: 102.02%;
+  descent-override: 30.00%;
+  line-gap-override: 0.00%;
+  size-adjust: 99.98%;
+}
+@font-face {
+  font-family: "Space Grotesk Fallback";
+  src: local("Arial");
+  ascent-override: 89.71%;
+  descent-override: 26.62%;
+  line-gap-override: 0.00%;
+  size-adjust: 109.69%;
+}
+
+@layer base {
+  :root {
+    /* Base colors - Light mode */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 221 83% 53%; /* Vivid blue */
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 221 83% 53%;
+    --radius: 0.5rem;
+
+    /* Test status colors - Light mode */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --success-50: 142 76% 97%;
+    --success-100: 142 76% 90%;
+    --success-500: 142 76% 36%;
+    --success-900: 142 76% 20%;
+
+    --failure: 0 84% 60%;
+    --failure-foreground: 0 0% 100%;
+    --failure-50: 0 84% 97%;
+    --failure-100: 0 84% 90%;
+    --failure-500: 0 84% 60%;
+    --failure-900: 0 84% 30%;
+
+    --skipped: 240 5% 65%;
+    --skipped-foreground: 0 0% 100%;
+
+    --flaky: 43 96% 56%;
+    --flaky-foreground: 0 0% 100%;
+    --flaky-50: 43 96% 97%;
+    --flaky-100: 43 96% 90%;
+    --flaky-500: 43 96% 56%;
+    --flaky-900: 43 96% 30%;
+
+    --running: 217 91% 60%;
+    --running-foreground: 0 0% 100%;
+    --running-50: 217 91% 97%;
+    --running-100: 217 91% 90%;
+    --running-500: 217 91% 60%;
+    --running-900: 217 91% 30%;
+
+    /* Semantic status colors - Light mode */
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --warning-50: 38 92% 97%;
+    --warning-100: 38 92% 90%;
+    --warning-900: 38 92% 30%;
+
+    --danger: 0 84% 60%;
+    --danger-foreground: 0 0% 100%;
+    --danger-50: 0 84% 97%;
+    --danger-100: 0 84% 90%;
+    --danger-900: 0 84% 30%;
+
+    --info: 217 91% 60%;
+    --info-foreground: 0 0% 100%;
+    --info-50: 217 91% 97%;
+    --info-100: 217 91% 90%;
+    --info-900: 217 91% 30%;
+
+    /* Glow colors */
+    --glow-success: 142 76% 36%;
+    --glow-failure: 0 84% 60%;
+    --glow-flaky: 43 96% 56%;
+    --glow-running: 217 91% 60%;
+
+    /* Chart colors - Light mode */
+    --chart-1: 142 76% 36%; /* Green - Passed */
+    --chart-2: 0 84% 60%; /* Red - Failed */
+    --chart-3: 43 96% 56%; /* Orange - Flaky */
+    --chart-4: 240 5% 65%; /* Gray - Skipped */
+    --chart-5: 217 91% 60%; /* Blue - Running */
+
+    /* Fonts */
+    --font-inter: "Inter Variable", "Inter Fallback", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", "JetBrains Mono Fallback", "Fira Code", monospace;
+    --font-display: "Space Grotesk", "Space Grotesk Fallback", system-ui, sans-serif;
+  }
+
+  .dark {
+    /* Base colors - Dark mode */
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 7%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 7%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 217 91% 60%;
+    --radius: 0.5rem;
+
+    /* Test status colors - Dark mode */
+    --success: 142 70% 50%;
+    --success-foreground: 0 0% 100%;
+    --success-50: 142 70% 15%;
+    --success-100: 142 70% 25%;
+    --success-500: 142 70% 50%;
+    --success-900: 142 70% 80%;
+
+    --failure: 0 72% 51%;
+    --failure-foreground: 0 0% 100%;
+    --failure-50: 0 72% 15%;
+    --failure-100: 0 72% 25%;
+    --failure-500: 0 72% 51%;
+    --failure-900: 0 72% 80%;
+
+    --skipped: 240 5% 45%;
+    --skipped-foreground: 0 0% 100%;
+
+    --flaky: 38 92% 50%;
+    --flaky-foreground: 0 0% 100%;
+    --flaky-50: 38 92% 15%;
+    --flaky-100: 38 92% 25%;
+    --flaky-500: 38 92% 50%;
+    --flaky-900: 38 92% 80%;
+
+    --running: 199 89% 48%;
+    --running-foreground: 0 0% 100%;
+    --running-50: 199 89% 15%;
+    --running-100: 199 89% 25%;
+    --running-500: 199 89% 48%;
+    --running-900: 199 89% 80%;
+
+    /* Semantic status colors - Dark mode */
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --warning-50: 38 92% 15%;
+    --warning-100: 38 92% 25%;
+    --warning-900: 38 92% 80%;
+
+    --danger: 0 72% 51%;
+    --danger-foreground: 0 0% 100%;
+    --danger-50: 0 72% 15%;
+    --danger-100: 0 72% 25%;
+    --danger-900: 0 72% 80%;
+
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+    --info-50: 199 89% 15%;
+    --info-100: 199 89% 25%;
+    --info-900: 199 89% 80%;
+
+    /* Glow colors */
+    --glow-success: 142 70% 50%;
+    --glow-failure: 0 72% 51%;
+    --glow-flaky: 38 92% 50%;
+    --glow-running: 199 89% 48%;
+
+    /* Chart colors - Dark mode */
+    --chart-1: 142 70% 50%; /* Green - Passed */
+    --chart-2: 0 72% 51%; /* Red - Failed */
+    --chart-3: 38 92% 50%; /* Orange - Flaky */
+    --chart-4: 240 5% 45%; /* Gray - Skipped */
+    --chart-5: 199 89% 48%; /* Blue - Running */
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: var(--font-inter);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
+  }
+
+  /* Mono font for tabular data */
+  .font-mono {
+    font-feature-settings:
+      "tnum" 1,
+      "zero" 1;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/20 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/30;
+  }
+
+  /* Selection */
+  ::selection {
+    @apply bg-primary/20;
+  }
+}
+
+@layer components {
+  /* Glassmorphism utility */
+  .glass {
+    @apply bg-card/80 backdrop-blur-md border border-border/50;
+  }
+
+  /* Subtle gradient background */
+  .bg-gradient-subtle {
+    background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(var(--muted) / 0.3) 100%);
+  }
+
+  /* Status badges with glow */
+  .badge-success {
+    @apply bg-success text-success-foreground shadow-glow;
+    --glow-color: var(--glow-success);
+  }
+
+  .badge-failure {
+    @apply bg-failure text-failure-foreground shadow-glow;
+    --glow-color: var(--glow-failure);
+  }
+
+  .badge-flaky {
+    @apply bg-flaky text-flaky-foreground shadow-glow;
+    --glow-color: var(--glow-flaky);
+  }
+
+  .badge-running {
+    @apply bg-running text-running-foreground animate-pulse-glow;
+    --glow-color: var(--glow-running);
+  }
+
+  .badge-skipped {
+    @apply bg-muted text-muted-foreground;
+  }
+
+  /* Shimmer loading effect */
+  .shimmer {
+    @apply animate-shimmer bg-gradient-shimmer bg-[length:200%_100%];
+  }
+
+  /* Focus visible styles */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+}
+
+@layer utilities {
+  /* Text balance for headings */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Gradient text */
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary via-purple-500 to-pink-500 bg-clip-text text-transparent;
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
