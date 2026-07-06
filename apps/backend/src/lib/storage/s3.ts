@@ -147,12 +147,23 @@ export class S3 implements Storage {
       ? targetPath
       : `${REPORTS_BUCKET}/${targetPath}`;
 
+    // Build the Range header. S3 natively supports suffix ranges (bytes=-N) and
+    // open-ended ranges (bytes=X-), as well as closed ranges (bytes=X-Y).
+    let rangeHeader: string | undefined;
+    if (range) {
+      if (range.suffixLength !== undefined) {
+        rangeHeader = `bytes=-${range.suffixLength}`;
+      } else {
+        rangeHeader = `bytes=${range.start ?? 0}-${range.end ?? ''}`;
+      }
+    }
+
     const { result: response, error } = await withError(
       this.client.send(
         new GetObjectCommand({
           Bucket: this.bucket,
           Key: remotePath,
-          Range: range ? `bytes=${range.start}-${range.end ?? ''}` : undefined,
+          Range: rangeHeader,
         })
       )
     );

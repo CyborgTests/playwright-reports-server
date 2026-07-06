@@ -1,7 +1,7 @@
 import { randomUUID, type UUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { PassThrough, type Readable } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 import {
   BlobServiceClient,
   type ContainerClient,
@@ -27,6 +27,7 @@ import type {
   ReportUploadMetadata,
   Storage,
 } from './types.js';
+import { resolveFileRange } from './types.js';
 
 const createClient = (): {
   serviceClient: BlobServiceClient;
@@ -89,10 +90,48 @@ export class AzureBlob implements Storage {
       ? targetPath
       : `${REPORTS_BUCKET}/${targetPath}`;
 
+    // Fetch blob properties to resolve suffix ranges against the actual file size.
     const blobClient = this.container.getBlobClient(remotePath);
-    const count = range?.end !== undefined ? range.end - range.start + 1 : undefined;
+
+    if (range?.suffixLength !== undefined) {
+      // Suffix range: resolve against actual blob size before issuing download.
+      const properties = await blobClient.getProperties();
+      const totalSize = properties.contentLength ?? 0;
+      const resolved = resolveFileRange(totalSize, range);
+
+      if (resolved.contentLength <= 0) {
+        // Unsatisfiable: start past EOF.
+        return {
+          body: Readable.from([]),
+          size: 0,
+          totalSize,
+          contentRange: { start: resolved.start, end: resolved.end, total: totalSize },
+        };
+      }
+
+      const { result: response, error } = await withError(
+        blobClient.download(resolved.start, resolved.contentLength)
+      );
+
+      if (error || !response?.readableStreamBody) {
+        if (error) console.error(`[azure] failed to read file ${targetPath}: ${error.message}`);
+        return null;
+      }
+
+      return {
+        body: response.readableStreamBody as unknown as Readable,
+        size: resolved.contentLength,
+        totalSize,
+        contentRange: { start: resolved.start, end: resolved.end, total: totalSize },
+      };
+    }
+
+    // Standard (non-suffix) range: pass range bounds directly to Azure.
+    // `start` is guaranteed to be defined here because prefix ranges from
+    // parseRangeHeader always include start, and suffixLength was handled above.
+    const count = range?.end !== undefined ? range.end - (range.start ?? 0) + 1 : undefined;
     const { result: response, error } = await withError(
-      range ? blobClient.download(range.start, count) : blobClient.download()
+      range ? blobClient.download(range.start ?? 0, count) : blobClient.download()
     );
 
     if (error || !response?.readableStreamBody) {

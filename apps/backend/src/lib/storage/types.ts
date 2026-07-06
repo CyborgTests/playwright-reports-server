@@ -5,8 +5,59 @@ import type { Pagination } from '../pagination.js';
 export type { ReportPath, ServerDataInfo };
 
 export interface ByteRange {
-  start: number;
+  /** First byte offset to serve (defaults to 0). Mutually exclusive with suffixLength. */
+  start?: number;
+  /** Inclusive end byte offset (defaults to the last byte). */
   end?: number;
+  /** Serve the last N bytes; resolved against the file size by the backend. */
+  suffixLength?: number;
+}
+
+/** Resolve a (possibly partial or suffix) range request against a known file size. */
+export function resolveFileRange(
+  totalSize: number,
+  range?: ByteRange
+): { start: number; end: number; contentLength: number } {
+  let start = range?.start ?? 0;
+  let end = range?.end ?? totalSize - 1;
+
+  if (range?.suffixLength !== undefined) {
+    start = totalSize - range.suffixLength;
+    end = totalSize - 1;
+  }
+
+  start = Math.max(0, start);
+  end = Math.min(end, totalSize - 1);
+
+  return { start, end, contentLength: end - start + 1 };
+}
+
+/**
+ * Parse an HTTP Range header (e.g. "bytes=0-1023", "bytes=512-", "bytes=-256")
+ * into a {@link ByteRange}. The backend resolves open-ended and suffix ranges
+ * against the file size. Returns undefined for a malformed / non-bytes range.
+ */
+export function parseRangeHeader(rangeHeader: string): ByteRange | undefined {
+  const match = rangeHeader.match(/^bytes=(\d*)-(\d*)$/);
+
+  if (!match) return undefined;
+
+  const [, rawStart, rawEnd] = match;
+
+  if (rawStart === '' && rawEnd === '') return undefined;
+
+  if (rawStart === '') {
+    const suffixLength = parseInt(rawEnd, 10);
+    if (suffixLength <= 0) return undefined;
+    return { suffixLength };
+  }
+
+  const start = parseInt(rawStart, 10);
+  if (rawEnd === '') return { start };
+
+  const end = parseInt(rawEnd, 10);
+  if (end < start) return undefined;
+  return { start, end };
 }
 
 export interface ReadFileResult {
