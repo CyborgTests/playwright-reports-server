@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { PassThrough, Readable } from 'node:stream';
+import type { PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import getFolderSize from 'get-folder-size';
 import { Open } from 'unzipper';
@@ -31,7 +31,7 @@ import type {
   ReportUploadMetadata,
   Storage,
 } from './types.js';
-import { resolveFileRange } from './types.js';
+import { resolveFileRange, unsatisfiableRangeResult } from './types.js';
 
 async function createDirectoriesIfMissing() {
   await createDirectory(RESULTS_FOLDER);
@@ -54,12 +54,7 @@ async function readFile(
     if (resolved.contentLength <= 0) {
       // Unsatisfiable range (e.g. start past EOF) — empty stream so the caller
       // can respond 416 Range Not Satisfiable.
-      return {
-        body: Readable.from([]),
-        size: 0,
-        totalSize: total,
-        contentRange: { start: resolved.start, end: resolved.end, total },
-      };
+      return unsatisfiableRangeResult(resolved, total);
     }
     return {
       body: createReadStream(fullPath, { start: resolved.start, end: resolved.end }),

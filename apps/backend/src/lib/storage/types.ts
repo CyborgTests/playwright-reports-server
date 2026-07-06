@@ -1,4 +1,4 @@
-import type { PassThrough, Readable } from 'node:stream';
+import { type PassThrough, Readable } from 'node:stream';
 import type { ReportInfo, ReportPath, ServerDataInfo, UUID } from '@playwright-reports/shared';
 import type { Pagination } from '../pagination.js';
 
@@ -18,12 +18,14 @@ export function resolveFileRange(
   totalSize: number,
   range?: ByteRange
 ): { start: number; end: number; contentLength: number } {
-  let start = range?.start ?? 0;
-  let end = range?.end ?? totalSize - 1;
-
+  let start: number;
+  let end: number;
   if (range?.suffixLength !== undefined) {
     start = totalSize - range.suffixLength;
     end = totalSize - 1;
+  } else {
+    start = range?.start ?? 0;
+    end = range?.end ?? totalSize - 1;
   }
 
   start = Math.max(0, start);
@@ -60,11 +62,33 @@ export function parseRangeHeader(rangeHeader: string): ByteRange | undefined {
   return { start, end };
 }
 
+/** Parse a storage-response Content-Range header ("bytes 0-1023/4096") into bounds. */
+export function parseContentRange(
+  header: string | undefined
+): { start: number; end: number; total: number } | undefined {
+  const m = header ? /bytes (\d+)-(\d+)\/(\d+)/.exec(header) : null;
+  if (!m) return undefined;
+  return { start: Number(m[1]), end: Number(m[2]), total: Number(m[3]) };
+}
+
 export interface ReadFileResult {
   body: Readable;
   size?: number;
   totalSize?: number;
   contentRange?: { start: number; end: number; total: number };
+}
+
+/** Build the empty ReadFileResult a backend returns for an unsatisfiable range (→ 416). */
+export function unsatisfiableRangeResult(
+  resolved: { start: number; end: number },
+  totalSize: number
+): ReadFileResult {
+  return {
+    body: Readable.from([]),
+    size: 0,
+    totalSize,
+    contentRange: { start: resolved.start, end: resolved.end, total: totalSize },
+  };
 }
 
 export interface Storage {

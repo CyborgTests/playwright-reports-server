@@ -1,7 +1,7 @@
 import { randomUUID, type UUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { PassThrough, Readable } from 'node:stream';
+import { PassThrough, type Readable } from 'node:stream';
 import {
   BlobServiceClient,
   type ContainerClient,
@@ -27,7 +27,7 @@ import type {
   ReportUploadMetadata,
   Storage,
 } from './types.js';
-import { resolveFileRange } from './types.js';
+import { parseContentRange, resolveFileRange, unsatisfiableRangeResult } from './types.js';
 
 const createClient = (): {
   serviceClient: BlobServiceClient;
@@ -101,12 +101,7 @@ export class AzureBlob implements Storage {
 
       if (resolved.contentLength <= 0) {
         // Unsatisfiable: start past EOF.
-        return {
-          body: Readable.from([]),
-          size: 0,
-          totalSize,
-          contentRange: { start: resolved.start, end: resolved.end, total: totalSize },
-        };
+        return unsatisfiableRangeResult(resolved, totalSize);
       }
 
       const { result: response, error } = await withError(
@@ -143,10 +138,10 @@ export class AzureBlob implements Storage {
       body: response.readableStreamBody as unknown as Readable,
       size: typeof response.contentLength === 'number' ? response.contentLength : undefined,
     };
-    const m = response.contentRange ? /bytes (\d+)-(\d+)\/(\d+)/.exec(response.contentRange) : null;
-    if (m) {
-      result.contentRange = { start: Number(m[1]), end: Number(m[2]), total: Number(m[3]) };
-      result.totalSize = Number(m[3]);
+    const parsed = parseContentRange(response.contentRange);
+    if (parsed) {
+      result.contentRange = parsed;
+      result.totalSize = parsed.total;
     }
     return result;
   }

@@ -15,7 +15,7 @@ import { reportDb } from '../lib/service/db/index.js';
 import { DATA_FOLDER, REPORTS_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';
 import { streamToString } from '../lib/storage/streamUtils.js';
-import { parseRangeHeader, type ByteRange } from '../lib/storage/types.js';
+import { type ByteRange, parseRangeHeader } from '../lib/storage/types.js';
 import { extractReportIdFromPath } from '../lib/utils/url-parser.js';
 import { withError } from '../lib/withError.js';
 
@@ -135,11 +135,11 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
 
       const isIndexHtml = contentType === 'text/html' && targetPath.endsWith('index.html');
       // no Range for index.html: it's mutated (LLM button injection) and served whole.
-      const range: ByteRange | undefined = isIndexHtml
-        ? undefined
-        : typeof request.headers.range === 'string'
-          ? parseRangeHeader(request.headers.range.trim())
+      const rangeHeader =
+        !isIndexHtml && typeof request.headers.range === 'string'
+          ? request.headers.range.trim()
           : undefined;
+      const range: ByteRange | undefined = rangeHeader ? parseRangeHeader(rangeHeader) : undefined;
 
       // one indexed point-lookup per served file;
       // add a reportId->prefix memo cache only if serve throughput needs.
