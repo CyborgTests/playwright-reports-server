@@ -15,7 +15,7 @@ import { reportDb } from '../lib/service/db/index.js';
 import { DATA_FOLDER, REPORTS_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';
 import { streamToString } from '../lib/storage/streamUtils.js';
-import type { ByteRange } from '../lib/storage/types.js';
+import { type ByteRange, parseRangeHeader } from '../lib/storage/types.js';
 import { extractReportIdFromPath } from '../lib/utils/url-parser.js';
 import { withError } from '../lib/withError.js';
 
@@ -89,16 +89,6 @@ function sendServeDenied(request: FastifyRequest, reply: FastifyReply): FastifyR
   return reply.code(403).send({ error: 'Forbidden' });
 }
 
-function parseRange(header: string | string[] | undefined): ByteRange | undefined {
-  if (typeof header !== 'string') return undefined;
-  const m = /^bytes=(\d+)-(\d*)$/.exec(header.trim());
-  if (!m) return undefined;
-  const start = Number(m[1]);
-  const end = m[2] ? Number(m[2]) : undefined;
-  if (end !== undefined && end < start) return undefined;
-  return { start, end };
-}
-
 export async function registerServeRoutes(fastify: FastifyInstance) {
   fastify.get('/api/serve/*', async (request, reply) => {
     try {
@@ -145,7 +135,11 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
 
       const isIndexHtml = contentType === 'text/html' && targetPath.endsWith('index.html');
       // no Range for index.html: it's mutated (LLM button injection) and served whole.
-      const range = isIndexHtml ? undefined : parseRange(request.headers.range);
+      const rangeHeader =
+        !isIndexHtml && typeof request.headers.range === 'string'
+          ? request.headers.range.trim()
+          : undefined;
+      const range: ByteRange | undefined = rangeHeader ? parseRangeHeader(rangeHeader) : undefined;
 
       // one indexed point-lookup per served file;
       // add a reportId->prefix memo cache only if serve throughput needs.
@@ -182,11 +176,22 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       if (!isIndexHtml) {
         headers['Accept-Ranges'] = 'bytes';
         if (result.size !== undefined) headers['Content-Length'] = String(result.size);
+
         if (result.contentRange) {
           const { start, end, total } = result.contentRange;
+
+          // Unsatisfiable range (start past EOF) — 416 Range Not Satisfiable.
+          if (result.size !== undefined && result.size <= 0) {
+            return reply
+              .code(416)
+              .headers({ ...headers, 'Content-Range': `bytes */${total}` })
+              .send();
+          }
+
           headers['Content-Range'] = `bytes ${start}-${end}/${total}`;
           return reply.code(206).headers(headers).send(result.body);
         }
+
         return reply.code(200).headers(headers).send(result.body);
       }
 

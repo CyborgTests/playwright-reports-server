@@ -36,6 +36,7 @@ import type {
   ReportUploadMetadata,
   Storage,
 } from './types.js';
+import { parseContentRange } from './types.js';
 
 const createClient = () => {
   const endPoint = env.S3_ENDPOINT;
@@ -147,12 +148,23 @@ export class S3 implements Storage {
       ? targetPath
       : `${REPORTS_BUCKET}/${targetPath}`;
 
+    // Build the Range header. S3 natively supports suffix ranges (bytes=-N) and
+    // open-ended ranges (bytes=X-), as well as closed ranges (bytes=X-Y).
+    let rangeHeader: string | undefined;
+    if (range) {
+      if (range.suffixLength !== undefined) {
+        rangeHeader = `bytes=-${range.suffixLength}`;
+      } else {
+        rangeHeader = `bytes=${range.start ?? 0}-${range.end ?? ''}`;
+      }
+    }
+
     const { result: response, error } = await withError(
       this.client.send(
         new GetObjectCommand({
           Bucket: this.bucket,
           Key: remotePath,
-          Range: range ? `bytes=${range.start}-${range.end ?? ''}` : undefined,
+          Range: rangeHeader,
         })
       )
     );
@@ -166,10 +178,10 @@ export class S3 implements Storage {
       body: response.Body as Readable,
       size: typeof response.ContentLength === 'number' ? response.ContentLength : undefined,
     };
-    const m = response.ContentRange ? /bytes (\d+)-(\d+)\/(\d+)/.exec(response.ContentRange) : null;
-    if (m) {
-      result.contentRange = { start: Number(m[1]), end: Number(m[2]), total: Number(m[3]) };
-      result.totalSize = Number(m[3]);
+    const parsed = parseContentRange(response.ContentRange);
+    if (parsed) {
+      result.contentRange = parsed;
+      result.totalSize = parsed.total;
     }
     return result;
   }

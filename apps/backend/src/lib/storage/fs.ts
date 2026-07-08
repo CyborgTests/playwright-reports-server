@@ -31,6 +31,7 @@ import type {
   ReportUploadMetadata,
   Storage,
 } from './types.js';
+import { resolveFileRange, unsatisfiableRangeResult } from './types.js';
 
 async function createDirectoriesIfMissing() {
   await createDirectory(RESULTS_FOLDER);
@@ -47,18 +48,22 @@ async function readFile(
   const { result: stat, error: statErr } = await withError(fs.stat(fullPath));
   if (statErr || !stat?.isFile()) return null;
   const total = stat.size;
+
   if (range) {
-    const start = Math.max(0, Math.floor(range.start));
-    const end = range.end !== undefined ? Math.min(Math.floor(range.end), total - 1) : total - 1;
-    if (start < total && start <= end) {
-      return {
-        body: createReadStream(fullPath, { start, end }),
-        size: end - start + 1,
-        totalSize: total,
-        contentRange: { start, end, total },
-      };
+    const resolved = resolveFileRange(total, range);
+    if (resolved.contentLength <= 0) {
+      // Unsatisfiable range (e.g. start past EOF) — empty stream so the caller
+      // can respond 416 Range Not Satisfiable.
+      return unsatisfiableRangeResult(resolved, total);
     }
+    return {
+      body: createReadStream(fullPath, { start: resolved.start, end: resolved.end }),
+      size: resolved.contentLength,
+      totalSize: total,
+      contentRange: { start: resolved.start, end: resolved.end, total },
+    };
   }
+
   return { body: createReadStream(fullPath), size: total, totalSize: total };
 }
 
