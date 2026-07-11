@@ -73,11 +73,11 @@ export function useQualityDashboardSnapshot(slug: string | undefined) {
   );
 }
 
-export function useQualityProjects() {
-  const enabled = useAuthEnabled();
+export function useQualityProjects(active = true) {
+  const authEnabled = useAuthEnabled();
   return useQuery<string[], ApiEnvelope<string[]>>('/api/quality/projects', {
     queryKey: PROJECTS_KEY,
-    enabled,
+    enabled: authEnabled && active,
     staleTime: 60_000,
     select: (envelope) => envelope.data ?? [],
   });
