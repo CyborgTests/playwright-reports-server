@@ -415,6 +415,17 @@ export class TestCrudDatabase extends TestDbBase {
     return rows.map((row) => convertDbRowToTestRun(row));
   }
 
+  public reportHasFailures(reportId: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT 1 FROM test_runs
+         WHERE reportId = ? AND outcome IN ('unexpected', 'failed', 'flaky')
+         LIMIT 1`
+      )
+      .get(reportId);
+    return row !== undefined;
+  }
+
   public updateFailureCategory(
     runId: string,
     category: string,

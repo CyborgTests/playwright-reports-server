@@ -5,6 +5,7 @@ import { invalidateFailureClustersCache } from '../lib/failure-clustering/index.
 import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
 import { getTaskEtaMs } from '../lib/llm/queueEta.js';
 import { QuarantineUpdateSchema, TestsQuerySchema } from '../lib/schemas/index.js';
+import { invalidateAnalyticsCache } from '../lib/service/analytics.js';
 import {
   llmTasksDb,
   regressionsDb,
@@ -481,6 +482,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
 
           testDb.updateFailureCategoryByTest(testId, reportId, category, 'manual');
           invalidateFailureClustersCache();
+          invalidateAnalyticsCache();
 
           return reply.send({ success: true, data: { testId, reportId, category } });
         } catch (error) {

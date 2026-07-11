@@ -553,10 +553,7 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         const { id } = (request as { params: { id: string } }).params;
         const summary = failureSummaryDb.getSummary(id);
 
-        const runs = testDb.getTestRunsByReport(id);
-        const hasFailures = runs.some(
-          (r) => r.outcome === 'unexpected' || r.outcome === 'failed' || r.outcome === 'flaky'
-        );
+        const hasFailures = testDb.reportHasFailures(id);
 
         const pendingAnalysisCount = llmTasksDb.getInflightCountForReport(id);
 
