@@ -91,7 +91,7 @@ export default function QualityOverviewPage() {
   const configQ = useQualityDashboardConfig(activeSlug);
   const snapshotQ = useQualityDashboardSnapshot(activeSlug);
   const homeQ = useQualityHomeSnapshots();
-  const projectsQ = useQualityProjects();
+  const projectsQ = useQualityProjects(mode === 'edit');
 
   const createMutation = useCreateDashboard();
   const updateMutation = useUpdateDashboard();

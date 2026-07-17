@@ -1,4 +1,5 @@
 import { join, resolve } from 'node:path';
+import fastifyCompress from '@fastify/compress';
 import fastifyCookie from '@fastify/cookie';
 import fastifyCors from '@fastify/cors';
 import fastifyMultipart from '@fastify/multipart';
@@ -38,6 +39,8 @@ async function start() {
     logger: logByEnv[env.isDev ? 'dev' : 'prod'],
     bodyLimit: 4294967294, // ~4GB, effectively unlimited
   });
+
+  await fastify.register(fastifyCompress, { global: true, threshold: 1024 });
 
   const corsOrigin = resolveCorsOrigin();
   console.log(
@@ -94,6 +97,13 @@ async function start() {
     await fastify.register(fastifyStatic, {
       root: frontendDistPath,
       decorateReply: true,
+    });
+
+    // add cache header for assets
+    fastify.addHook('onSend', async (request, reply) => {
+      if (request.url.startsWith('/assets/')) {
+        reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+      }
     });
 
     // SPA fallback: serve index.html for any non-/api, non-/data path so the React router can take over.

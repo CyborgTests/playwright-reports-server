@@ -451,10 +451,12 @@ export function getDurationAggregates(
   if (count === 0) {
     return { avgDuration: 0, p95Duration: 0, count: 0 };
   }
-  const offset = Math.min(count - 1, Math.floor(count * 0.95));
+  // traverse p95 from desc offset as we display slowest records only.
+  const ascOffset = Math.min(count - 1, Math.floor(count * 0.95));
+  const descOffset = count - 1 - ascOffset;
   const p95Row = db
-    .prepare(`SELECT duration FROM test_runs ${where} ORDER BY duration ASC LIMIT 1 OFFSET ?`)
-    .get(...params, offset) as { duration: number | null } | undefined;
+    .prepare(`SELECT duration FROM test_runs ${where} ORDER BY duration DESC LIMIT 1 OFFSET ?`)
+    .get(...params, descOffset) as { duration: number | null } | undefined;
   return {
     avgDuration: agg.avg ?? 0,
     p95Duration: p95Row?.duration ?? 0,

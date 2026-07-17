@@ -23,6 +23,7 @@ import { getPresignedUploadUrl, uploadResult } from '../storage/resultUpload.js'
 import type { Report } from '../storage/types.js';
 import { processWithConcurrency } from '../utils/semaphore.js';
 import { withError } from '../withError.js';
+import { invalidateAnalyticsCache } from './analytics.js';
 import { configCache } from './cache/config.js';
 import { reportDb, reportResultsDb, resultDb, siteConfigDb } from './db/index.js';
 import { lifecycle } from './lifecycle.js';
@@ -177,6 +178,7 @@ class Service {
     // report can add tests, change occurrence counts, and form new clusters,
     // so drop the cache rather than wait for the 60s TTL.
     invalidateFailureClustersCache();
+    invalidateAnalyticsCache();
 
     const { error: cleanupErr } = await withError(storage.cleanupGeneratedReport(reportId));
     if (cleanupErr) {
@@ -194,7 +196,9 @@ class Service {
     reportIDs: string[],
     patch: { project?: string; tags?: Record<string, string>; removeTags?: string[] }
   ): Promise<{ updated: number; missing: string[] }> {
-    return reportDb.updateMetadata(reportIDs, patch);
+    const result = reportDb.updateMetadata(reportIDs, patch);
+    if (patch.project !== undefined) invalidateAnalyticsCache();
+    return result;
   }
 
   public async deleteReports(reportIDs: string[]) {
@@ -214,6 +218,7 @@ class Service {
 
     reportDb.onDeleted(reportIDs);
     invalidateFailureClustersCache();
+    invalidateAnalyticsCache();
   }
 
   public async getReportsProjects(): Promise<string[]> {

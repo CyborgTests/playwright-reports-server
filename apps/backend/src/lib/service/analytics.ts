@@ -19,6 +19,20 @@ import { testManagementService } from './test-management/index.js';
 const RUN_HEALTH_PAGE_SIZE = 100;
 const RUN_HEALTH_MAX_PAGE_SIZE = 500;
 
+const TREND_MAX_POINTS = 90;
+
+const ANALYTICS_CACHE_TTL_MS = 15_000;
+const ANALYTICS_CACHE_MAX_ENTRIES = 32;
+interface AnalyticsCacheEntry {
+  expires: number;
+  value: AnalyticsData;
+}
+const analyticsCache = new Map<string, AnalyticsCacheEntry>();
+
+export function invalidateAnalyticsCache(): void {
+  analyticsCache.clear();
+}
+
 type Window = { from?: string; to?: string };
 
 /** minimal aggregate used by trend-delta calculations */
@@ -85,6 +99,27 @@ function windowFromReports(reports: ReportAnalyticsRow[]): Window {
 
 export class AnalyticsService {
   async getAnalyticsData(
+    project?: string,
+    from?: string,
+    to?: string,
+    failedOnly = false
+  ): Promise<AnalyticsData> {
+    const cacheKey = [project ?? 'all', from ?? '', to ?? '', failedOnly ? '1' : '0'].join('|');
+    const cached = analyticsCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) return cached.value;
+
+    const value = await this.computeAnalyticsData(project, from, to, failedOnly);
+
+    analyticsCache.set(cacheKey, { expires: Date.now() + ANALYTICS_CACHE_TTL_MS, value });
+    while (analyticsCache.size > ANALYTICS_CACHE_MAX_ENTRIES) {
+      const oldest = analyticsCache.keys().next().value;
+      if (oldest === undefined) break;
+      analyticsCache.delete(oldest);
+    }
+    return value;
+  }
+
+  private async computeAnalyticsData(
     project?: string,
     from?: string,
     to?: string,
@@ -421,12 +456,14 @@ export class AnalyticsService {
     recentRange: Window,
     recentAgg: DurationAggregate
   ): Promise<TrendMetrics> {
-    const durationTrend = displayReports.map((report) => ({
+    const trendReports = displayReports.slice(-TREND_MAX_POINTS);
+
+    const durationTrend = trendReports.map((report) => ({
       date: new Date(report.createdAt).toISOString(),
       duration: report.duration || 0,
     }));
 
-    const flakyCountTrend = displayReports.map((report) => ({
+    const flakyCountTrend = trendReports.map((report) => ({
       date: new Date(report.createdAt).toISOString(),
       count: report.stats?.flaky || 0,
     }));
@@ -438,7 +475,7 @@ export class AnalyticsService {
       recentRange.to,
       slowThreshold
     );
-    const slowCountTrend = displayReports.map((report) => ({
+    const slowCountTrend = trendReports.map((report) => ({
       date: new Date(report.createdAt).toISOString(),
       count: slowCountsByReport.get(report.reportID) ?? 0,
     }));

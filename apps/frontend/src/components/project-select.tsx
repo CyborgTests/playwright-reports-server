@@ -118,7 +118,9 @@ export default function ProjectSelect({
     }
   };
 
-  error && toast.error(error.message);
+  useEffect(() => {
+    if (error) toast.error(error.message);
+  }, [error]);
 
   const selectId = `project-select-${entity}`;
 

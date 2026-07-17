@@ -23,11 +23,7 @@ interface FileListProps {
 }
 
 const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
-  const {
-    data: history,
-    isLoading: isHistoryLoading,
-    error: historyError,
-  } = useQuery<ReadReportsHistory>(
+  const { data: history, error: historyError } = useQuery<ReadReportsHistory>(
     withQueryParams('/api/report/list', { limit: '10', project: report?.project ?? '' }),
     {
       dependencies: [report?.reportID],
@@ -75,11 +71,7 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
     );
   }
 
-  return isHistoryLoading ? (
-    <div className="flex items-center justify-center">
-      <Spinner size="lg" />
-    </div>
-  ) : (
+  return (
     <div>
       <div className="flex flex-row justify-between">
         <h2 className={subtitle()}>File list</h2>
