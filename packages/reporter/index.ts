@@ -9,7 +9,7 @@ import type { PublicReporterOptions, ReporterOptions } from './types.js';
 /*
 Usage in playwright.config.ts:
 reporter: [
-  ['@playwright-reports/reporter', {
+  ['@cyborgtests/reporter', {
     url: 'http://localhost:3000/',
     resultDetails: { browser: 'chromium', foo: 'bar' },
     triggerReportGeneration: true,

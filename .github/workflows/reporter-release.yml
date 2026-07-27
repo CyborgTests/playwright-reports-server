@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # Required for npm trusted publishing (OIDC) and provenance attestation.
       id-token: write
     steps:
       - name: Checkout repository
@@ -29,12 +30,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
-        with:
-          version: 10
 
       - name: Install dependencies
         run: pnpm install
@@ -55,17 +53,6 @@ jobs:
       - name: Update package.json version
         run: cd packages/reporter && pnpm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version --allow-same-version
 
-      - name: Update package name for publish
-        run: |
-          ORIGINAL_NAME=$(node -p "require('./packages/reporter/package.json').name")
-          echo "ORIGINAL_NAME=$ORIGINAL_NAME" >> $GITHUB_ENV
-          node -e "const pkg=require('./packages/reporter/package.json'); pkg.name='@cyborgtests/reporter'; require('fs').writeFileSync('./packages/reporter/package.json', JSON.stringify(pkg, null, 2));"
-
+      # No token: pnpm exchanges the Actions OIDC token for a short-lived publish token.
       - name: Publish to npm
-        run: cd packages/reporter && pnpm publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Restore original package name
-        if: always()
-        run: node -e "const pkg=require('./packages/reporter/package.json'); pkg.name='${{ env.ORIGINAL_NAME }}'; require('fs').writeFileSync('./packages/reporter/package.json', JSON.stringify(pkg, null, 2));"
+        run: cd packages/reporter && pnpm publish --provenance --access public --no-git-checks

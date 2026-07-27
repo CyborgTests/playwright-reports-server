@@ -1,5 +1,5 @@
 {
-  "name": "@playwright-reports/reporter",
+  "name": "@cyborgtests/reporter",
   "version": "3.0.0",
   "description": "Reporter that uploads your blob reports to playwright reports server",
   "main": "dist/index.js",
@@ -29,12 +29,24 @@
   },
   "author": "Oleksandr Shevtsov <ovr.shevtsov@gmail.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CyborgTests/playwright-reports-server.git",
+    "directory": "packages/reporter"
+  },
+  "homepage": "https://github.com/CyborgTests/playwright-reports-server/tree/main/packages/reporter#readme",
+  "bugs": {
+    "url": "https://github.com/CyborgTests/playwright-reports-server/issues"
+  },
   "files": [
     "dist/**",
-    "readme.md",
+    "README.md",
     "LICENSE",
     "package.json"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "@playwright/test": "^1.59.1"
   },

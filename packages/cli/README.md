@@ -23,7 +23,7 @@ npx --package=@cyborgtests/pwrs-cli pwrs-cli --help
 
 ```bash
 pnpm install
-pnpm --filter pwrs-cli run build
+pnpm --filter @cyborgtests/pwrs-cli run build
 node packages/cli/dist/bin.js --help
 ```
 
