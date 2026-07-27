@@ -53,7 +53,9 @@ export async function resolvePlaywrightCli(version?: string): Promise<string> {
 const isStaleMetadataError = (message: string): boolean =>
   message.includes('ETARGET') || message.includes('No matching version found');
 
-async function npmInstall(cacheDir: string, version: string, freshness: string): Promise<void> {
+export type NpmInstaller = (cacheDir: string, version: string, freshness: string) => Promise<void>;
+
+const npmInstall: NpmInstaller = async (cacheDir, version, freshness) => {
   await execFileAsync(
     'npm',
     [
@@ -67,9 +69,12 @@ async function npmInstall(cacheDir: string, version: string, freshness: string):
     ],
     { cwd: cacheDir, timeout: INSTALL_TIMEOUT_MS }
   );
-}
+};
 
-async function installPlaywrightVersion(version: string): Promise<string> {
+export async function installPlaywrightVersion(
+  version: string,
+  runInstall: NpmInstaller = npmInstall
+): Promise<string> {
   const cacheDir = path.join(PW_VERSIONS_FOLDER, version);
   const cliPath = cachedCliPath(version);
 
@@ -86,7 +91,7 @@ async function installPlaywrightVersion(version: string): Promise<string> {
 
   try {
     try {
-      await npmInstall(cacheDir, version, '--prefer-offline');
+      await runInstall(cacheDir, version, '--prefer-offline');
     } catch (error) {
       const message = (error as Error).message;
       if (!isStaleMetadataError(message)) {
@@ -95,7 +100,7 @@ async function installPlaywrightVersion(version: string): Promise<string> {
       console.warn(
         `[pw-cache] playwright@${version} not found in cached registry metadata, refetching`
       );
-      await npmInstall(cacheDir, version, '--prefer-online');
+      await runInstall(cacheDir, version, '--prefer-online');
     }
   } catch (error) {
     await fs.rm(cacheDir, { recursive: true, force: true });
