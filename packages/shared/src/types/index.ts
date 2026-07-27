@@ -399,6 +399,7 @@ export interface ReportTestFilters {
 }
 
 export interface ServerDataInfo {
+  version: string;
   dataFolderSizeinMB: string;
   numOfResults: number;
   resultsFolderSizeinMB: string;

@@ -9,6 +9,7 @@ import {
   Lock,
   LockOpen,
   Server,
+  Tag,
 } from 'lucide-react';
 import type { ComponentType, ReactNode } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -78,6 +79,12 @@ export default function EnvironmentInfo() {
   // Groups: Database, Reports, Results, Storage. Chips render only when their
   // value is meaningful - empty groups stay hidden instead of showing a header
   // with no facts under it.
+  const serverChips: ReactNode[] = [];
+  if (serverInfo?.version)
+    serverChips.push(
+      <FactChip key="version" icon={Tag} label="Version" value={serverInfo.version} />
+    );
+
   const dbChips: ReactNode[] = [];
   if (dbStats?.sizeOnDisk)
     dbChips.push(
@@ -173,6 +180,7 @@ export default function EnvironmentInfo() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {serverChips.length > 0 && <FactGroup title="Server">{serverChips}</FactGroup>}
         {dbChips.length > 0 && <FactGroup title="Database">{dbChips}</FactGroup>}
         {reportsChips.length > 0 && <FactGroup title="Reports">{reportsChips}</FactGroup>}
         {resultsChips.length > 0 && <FactGroup title="Results">{resultsChips}</FactGroup>}
