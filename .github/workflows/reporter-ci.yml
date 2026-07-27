@@ -28,8 +28,6 @@ jobs:
           node-version: '24'
       - name: Install pnpm
         uses: pnpm/action-setup@v6
-        with:
-          version: 10
       - name: Get pnpm store directory
         id: pnpm-cache
         shell: bash
@@ -58,8 +56,6 @@ jobs:
           node-version: '24'
       - name: Install pnpm
         uses: pnpm/action-setup@v6
-        with:
-          version: 10
       - name: Get pnpm store directory
         id: pnpm-cache
         shell: bash
@@ -88,8 +84,6 @@ jobs:
           node-version: '24'
       - name: Install pnpm
         uses: pnpm/action-setup@v6
-        with:
-          version: 10
       - name: Get pnpm store directory
         id: pnpm-cache
         shell: bash
@@ -119,8 +113,6 @@ jobs:
           node-version: '24'
       - name: Install pnpm
         uses: pnpm/action-setup@v6
-        with:
-          version: 10
       - name: Get pnpm store directory
         id: pnpm-cache
         shell: bash
@@ -136,7 +128,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install
       - name: Install Playwright Browsers
-        run: pnpm --filter @playwright-reports/reporter exec playwright install --with-deps
+        run: pnpm --filter @cyborgtests/reporter exec playwright install --with-deps
       - name: Run Playwright tests
         run: pnpm run test:reporter
       - uses: actions/upload-artifact@v7

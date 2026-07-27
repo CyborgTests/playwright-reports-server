@@ -2,6 +2,7 @@ import { stat, statfs } from 'node:fs/promises';
 import path from 'node:path';
 import type { PassThrough } from 'node:stream';
 import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
+import { APP_VERSION } from '../../version.js';
 import { serveReportRoute } from '../constants.js';
 import { invalidateFailureClustersCache } from '../failure-clustering/index.js';
 import { isValidPlaywrightVersion } from '../pw-cache.js';
@@ -305,6 +306,7 @@ class Service {
     }
 
     return {
+      version: APP_VERSION,
       dataFolderSizeinMB: bytesToString(dataBytes),
       numOfResults: results.count,
       resultsFolderSizeinMB: bytesToString(results.totalSizeBytes),

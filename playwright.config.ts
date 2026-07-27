@@ -9,7 +9,7 @@ export default defineConfig({
   reporter: [
     ['blob', { outputFile: 'test-results/blob.zip' }],
     [
-      '@playwright-reports/reporter',
+      '@cyborgtests/reporter',
       {
         enabled: process.env.CI === 'true',
         url: 'https://demo-playwright-reports-server.koyeb.app',

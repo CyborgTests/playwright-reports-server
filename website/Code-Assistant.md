@@ -64,7 +64,7 @@ And symlink the local CLI build onto `$PATH`:
 
 ```bash
 pnpm install
-pnpm --filter pwrs-cli run build
+pnpm --filter @cyborgtests/pwrs-cli run build
 sudo ln -sf "$(pwd)/packages/cli/dist/bin.js" /usr/local/bin/pwrs-cli
 ```
 

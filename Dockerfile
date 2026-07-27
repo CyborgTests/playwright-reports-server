@@ -1,7 +1,7 @@
 FROM node:24-alpine AS build-base
 
 # Pin pnpm to match repo
-RUN npm install -g pnpm@10
+RUN npm install -g pnpm@11
 
 # Build tools for native dependencies (better-sqlite3, esbuild)
 RUN apk add --no-cache python3 make g++ libc6-compat

@@ -1,5 +1,5 @@
 import type { APIResponse } from '@playwright/test';
-import { test as base } from '@playwright-reports/reporter';
+import { test as base } from '@cyborgtests/reporter';
 import { API } from '../controllers';
 import type { GenerateReportResponse } from '../types/report';
 import type { UploadResultResponse } from '../types/result';
