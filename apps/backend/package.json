@@ -1,6 +1,6 @@
 {
 	"name": "@playwright-reports/backend",
-	"version": "6.0.0",
+	"version": "6.0.1",
 	"description": "Playwright Reports Server Backend",
 	"type": "module",
 	"files": [
@@ -13,8 +13,8 @@
 		"build": "tsc && cp src/lib/report-injection/inject.js src/lib/report-injection/inject.css dist/lib/report-injection/",
 		"bundle": "node scripts/bundle.mjs",
 		"start": "NODE_ENV=production node dist/index.js",
-		"typecheck": "tsc --noEmit",
-		"test": "echo 'No tests configured for backend'",
+		"typecheck": "tsc --noEmit -p tsconfig.test.json",
+		"test": "tsx --test \"src/**/*.test.ts\"",
 		"lint": "biome check src/",
 		"lint:fix": "biome check src/ --write",
 		"format": "biome format src/ --write",

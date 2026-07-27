@@ -97,6 +97,36 @@ jobs:
       - name: Run Biome lint
         run: pnpm run lint
 
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+      - name: Setup pnpm cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      - name: Install dependencies
+        run: pnpm install
+      - name: Build shared package (required for backend imports)
+        run: pnpm --filter @playwright-reports/shared build
+      - name: Execute unit tests
+        run: pnpm run test
+
   api-tests:
     needs: [biome-format, biome-lint]
     runs-on: ubuntu-latest

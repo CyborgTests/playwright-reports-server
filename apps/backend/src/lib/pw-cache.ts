@@ -47,7 +47,34 @@ export async function resolvePlaywrightCli(version?: string): Promise<string> {
   return promise;
 }
 
-async function installPlaywrightVersion(version: string): Promise<string> {
+// A cached packument predating the requested release makes npm fail with
+// ETARGET even though the version exists upstream, so the freshness flag has
+// to be dropped on retry.
+const isStaleMetadataError = (message: string): boolean =>
+  message.includes('ETARGET') || message.includes('No matching version found');
+
+export type NpmInstaller = (cacheDir: string, version: string, freshness: string) => Promise<void>;
+
+const npmInstall: NpmInstaller = async (cacheDir, version, freshness) => {
+  await execFileAsync(
+    'npm',
+    [
+      'install',
+      `playwright@${version}`,
+      '--no-save',
+      '--no-audit',
+      '--no-fund',
+      '--no-package-lock',
+      freshness,
+    ],
+    { cwd: cacheDir, timeout: INSTALL_TIMEOUT_MS }
+  );
+};
+
+export async function installPlaywrightVersion(
+  version: string,
+  runInstall: NpmInstaller = npmInstall
+): Promise<string> {
   const cacheDir = path.join(PW_VERSIONS_FOLDER, version);
   const cliPath = cachedCliPath(version);
 
@@ -63,19 +90,18 @@ async function installPlaywrightVersion(version: string): Promise<string> {
   );
 
   try {
-    await execFileAsync(
-      'npm',
-      [
-        'install',
-        `playwright@${version}`,
-        '--no-save',
-        '--no-audit',
-        '--no-fund',
-        '--no-package-lock',
-        '--prefer-offline',
-      ],
-      { cwd: cacheDir, timeout: INSTALL_TIMEOUT_MS }
-    );
+    try {
+      await runInstall(cacheDir, version, '--prefer-offline');
+    } catch (error) {
+      const message = (error as Error).message;
+      if (!isStaleMetadataError(message)) {
+        throw error;
+      }
+      console.warn(
+        `[pw-cache] playwright@${version} not found in cached registry metadata, refetching`
+      );
+      await runInstall(cacheDir, version, '--prefer-online');
+    }
   } catch (error) {
     await fs.rm(cacheDir, { recursive: true, force: true });
     const reason = (error as Error).message;
