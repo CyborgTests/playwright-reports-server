@@ -176,6 +176,20 @@ function parseReportAnalysisFromMarkdown(text: string): ReportAnalysisStructured
   return { verdict, summary, sections: enriched };
 }
 
+export function pruneInvalidReportCodeRefs(
+  s: ReportAnalysisStructured,
+  validTestIds: ReadonlySet<string>
+): ReportAnalysisStructured {
+  const cleanSections = s.sections.map((section): ReportAnalysisSection => {
+    if (!section.codeRefs || section.codeRefs.length === 0) return section;
+    const kept = section.codeRefs.filter(
+      (ref) => !(ref.kind === 'test' && ref.testId && !validTestIds.has(ref.testId))
+    );
+    return { ...section, codeRefs: kept.length > 0 ? kept : undefined };
+  });
+  return { ...s, sections: cleanSections };
+}
+
 export function renderReportAnalysisAsMarkdown(s: ReportAnalysisStructured): string {
   let out = '';
   out += `**Verdict:** ${s.verdict[0].toUpperCase()}${s.verdict.slice(1)}\n\n`;
