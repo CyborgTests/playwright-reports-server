@@ -37,10 +37,7 @@ import {
 } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { compareReports } from '../lib/service/reportCompare.js';
-import {
-  detectFailureCategory,
-  testManagementService,
-} from '../lib/service/test-management/index.js';
+import { testManagementService } from '../lib/service/test-management/index.js';
 import { storage } from '../lib/storage/index.js';
 import { ValidationError, validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
@@ -600,7 +597,6 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
             fileId: string,
             proj: string,
             errorSignature: string | undefined,
-            heuristicCategory: string,
             currentReportId: string
           ) => {
             if (!errorSignature) return null;
@@ -609,7 +605,6 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
               fileId,
               proj,
               errorSignature,
-              heuristicCategory,
               currentReportId
             );
           };
@@ -627,15 +622,11 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
               continue;
             }
 
-            const heuristicCategory = detectFailureCategory(
-              parseFailureDetails(run.failureDetails)?.message ?? ''
-            );
             const reuseSource = findReuseSource(
               run.testId,
               run.fileId,
               run.project,
               run.errorSignature,
-              heuristicCategory,
               id
             );
 
