@@ -314,8 +314,11 @@ function buildNetworkActivityBlock(evidence: FailureEvidence | undefined): strin
   const events = evidence.networkEvents;
   const pendingCount = events.filter((n) => n.pending).length;
   let block = `## Network (failed + pending + recent successful)\n`;
+  if (evidence.environment?.baseURL) {
+    block += `Test base_url: ${evidence.environment.baseURL} - the app's own API, CDN, or regional hosts may sit on other domains.\n`;
+  }
   if (pendingCount > 0) {
-    block += `${pendingCount} request(s) never got a response (in-flight/aborted at failure) - marked [PENDING]; a likely cause if the page hung loading.\n`;
+    block += `${pendingCount} request(s) never got a response (in-flight/aborted at failure) - marked [PENDING]; a likely cause if the page hung waiting on one.\n`;
   }
   for (const ev of events) {
     const isError = !!ev.failureText || (typeof ev.status === 'number' && ev.status >= 400);

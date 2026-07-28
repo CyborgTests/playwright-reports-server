@@ -20,7 +20,7 @@ Analyze the failure of test {{testTitle}} - project "{{project}}", {{filePath}}.
 Sections 1 and 2 are required, section 3 is optional, and the closing Decision and Category lines are required. Use these exact headings:
 
 ## Root Cause
-What broke and why, tied to specific evidence: line numbers from the test source, step tree, or stack; console errors; failed requests and their status codes; differences between attempts.
+What broke and why, tied to specific evidence: line numbers from the test source, step tree, or stack; console errors; failed requests and their status codes; differences between attempts. Whenever you cite a failed, blocked, or pending request, name the role you assigned it - product API, depended-on integration, or fire-and-forget - so the reader can check that call.
 
 ## What to Verify
 2-3 runnable checks that confirm or rule out the root cause - a log query, an env flag to toggle, a code path to inspect, a repro step.
@@ -38,6 +38,8 @@ The Category must equal the category chosen by the FIRST "yes" in your Decision 
 
 <category_ladder>
 Choose the category by answering D1-D4 in order. The FIRST "yes" decides it - stop there and do not re-open earlier answers. Every label answers one question: what has to change to make this test pass?
+
+Apply the dependency check in <reading_network_activity> first: a failed request or console error the failing action never needed carries no category at all.
 
 D1. Broken precondition? Did it fail because of auth (an expired or invalid stored session, 401/403 from auth endpoints, a redirect to a sign-in page), missing or stale data/fixtures, an unavailable dependency, or a runner/browser/network outage?
     yes → environment
@@ -60,6 +62,16 @@ The Error block is from the first failing attempt; Attempt History holds the ful
 - Same error every attempt → persistent defect: focus on code or state.
 - Different error per attempt → state leakage between attempts: suspect fixtures or shared state.
 </reading_attempt_history>
+
+<reading_network_activity>
+Not every failed, blocked, or pending request - and not every console error - affects the test. Classify each one by what it does for the app, from the URL path, the method, and the body when shown. Never from the domain alone: an app's own API often sits on a separate API domain, CDN, or regional host, and the app's own domain also serves telemetry.
+
+- Product API - the app's own backend: REST/GraphQL-shaped paths, credentialed calls (a cookie or authorization request header, shown as [redacted]), responses the page renders. Can support D1 when it is unreachable, or D4 when it answers a valid request wrongly.
+- Depended-on integration - auth/SSO, payments, feature flags, maps, chat: the flow cannot continue until it responds. Can support D1 when it is unavailable, or D4 when the app mishandles a valid response.
+- Fire-and-forget - analytics, tracking, telemetry, logging and beacon endpoints, session replay, ads, and the vendor scripts a CSP blocks. These fail on healthy pages constantly, on the app's own domain as readily as a vendor's, and support NO category on their own.
+
+Dependency check: did the failing action need this response to proceed? Only requests that pass it may carry your root cause. When every failed, blocked, or pending entry is fire-and-forget, the network and console blocks support NEITHER environment NOR app_bug - decide from the remaining evidence or answer unknown. When a request's role is unclear from the evidence, say so rather than assume it broke the app.
+</reading_network_activity>
 `;
 
 export const TEST_ANALYSIS_VARS = new Set([
