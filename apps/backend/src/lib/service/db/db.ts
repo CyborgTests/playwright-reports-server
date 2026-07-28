@@ -91,24 +91,6 @@ export function getDatabaseStats(): {
   };
 }
 
-export function clearAll(): void {
-  const db = getDatabase();
-
-  db.exec(`
-    DELETE FROM results;
-    DELETE FROM reports;
-    DELETE FROM test_runs;
-    DELETE FROM tests;
-    DELETE FROM llm_tasks;
-    DELETE FROM report_failure_summaries;
-    DELETE FROM test_llm_analyses;
-    DELETE FROM project_llm_summaries;
-    DELETE FROM analysis_feedback;
-  `);
-
-  db.exec('VACUUM;');
-}
-
 export function optimizeDB(): void {
   const db = getDatabase();
 

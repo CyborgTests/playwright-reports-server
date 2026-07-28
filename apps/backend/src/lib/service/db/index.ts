@@ -11,7 +11,6 @@ export type {
 } from './clusterResolutions.sqlite.js';
 export { clusterResolutionsDb } from './clusterResolutions.sqlite.js';
 export {
-  clearAll,
   closeDatabase,
   createDatabase,
   getDatabase,

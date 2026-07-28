@@ -6,12 +6,11 @@ import { useConfig } from '@/hooks/useConfig';
 export function StrategyBadge({
   taskType,
   className,
-  showOneShot = false,
-}: Readonly<{ taskType: LlmTaskType; className?: string; showOneShot?: boolean }>) {
+}: Readonly<{ taskType: LlmTaskType; className?: string }>) {
   const { data: config } = useConfig();
   const routing = config?.llm?.routing?.[taskType];
   const strategy = routing?.strategy ?? 'one_shot';
-  if (strategy === 'one_shot' && !showOneShot) return null;
+  if (strategy === 'one_shot') return null;
   return (
     <Badge
       variant="outline"
