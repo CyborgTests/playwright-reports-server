@@ -435,16 +435,19 @@ export const TaskRow = memo(function TaskRow({
           {formatRelativeTime(task.createdAt)}
         </TableCell>
         <TableCell className="text-sm">
-          {task.status === 'processing' ? (
+          {task.status === 'processing' || task.status === 'queued' ? (
             <TaskProgress
               startedAt={task.startedAt}
               estimate={
-                multi
-                  ? estimates?.parentsByStrategy[strategyEstimateKey(task.type, task.strategy)]
-                  : estimates?.parents[
-                      parentEstimateKey(task.type, task.strategy, task.model, task.baseUrl)
-                    ]
+                task.status !== 'processing'
+                  ? undefined
+                  : multi
+                    ? estimates?.parentsByStrategy[strategyEstimateKey(task.type, task.strategy)]
+                    : estimates?.parents[
+                        parentEstimateKey(task.type, task.strategy, task.model, task.baseUrl)
+                      ]
               }
+              etaMs={task.etaMs}
             />
           ) : (
             formatDuration(task.startedAt, task.completedAt)

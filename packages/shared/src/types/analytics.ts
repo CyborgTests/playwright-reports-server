@@ -159,6 +159,7 @@ export interface LlmTask {
   parentTaskId?: string | null;
   childCount?: number;
   childUsage?: LlmTaskChildUsage[];
+  etaMs?: number | null; // concurrency/position-aware ms until finish (queue simulator); null if not scheduled
 }
 
 export interface LlmTaskChildUsage {

@@ -15,7 +15,7 @@ import {
   DEFAULT_SCORER_DIRECTIVE,
   DEFAULT_SYNTHESIZER_DIRECTIVE,
 } from '../lib/llm/prompts/routing.js';
-import { computeQueueEta } from '../lib/llm/queueEta.js';
+import { computeQueueEta, getTaskEtaMs } from '../lib/llm/queueEta.js';
 import { aggregateCircuitStatus, isLlmFeatureEnabled } from '../lib/llm/registry.js';
 import { abortRunningTask } from '../lib/llm/taskSignal.js';
 import { DEFAULT_SCREENSHOT_PARSE_PROMPT } from '../lib/llm/visionTranscribe.js';
@@ -68,7 +68,9 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
         offset: parsedOffset,
       });
 
-      return { success: true, data, total };
+      const withEta = data.map((task) => ({ ...task, etaMs: getTaskEtaMs(task.id) }));
+
+      return { success: true, data: withEta, total };
     } catch (error) {
       fastify.log.error(error);
       return reply.status(500).send({
