@@ -163,8 +163,8 @@ function simulate(now: number): QueueEtas {
 
   const remainingMsFor = (task: ScheduledEtaTask, meanMs: number): number =>
     task.status === 'processing' && task.startedAt
-    // use 10% as floor because next items see eta is 0 and treat slot as free
-      ? Math.max(meanMs - (now - Date.parse(task.startedAt)), meanMs * 0.1)
+      ? // use 10% as floor because next items see eta is 0 and treat slot as free
+        Math.max(meanMs - (now - Date.parse(task.startedAt)), meanMs * 0.1)
       : meanMs;
 
   const dependencyTier = (task: ScheduledEtaTask): number =>
