@@ -213,30 +213,31 @@ export async function registerOAuthRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.get('/api/auth/identities', async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!AUTH_ENABLED) return reply.code(404).send({ error: 'Not found' });
-    const guard = await authorize(CAPABILITIES.view)(request, reply);
-    if (guard) return;
-    const identity = request.auth;
-    if (identity?.via !== 'session' || !identity.userId) {
-      return reply.code(400).send({ error: 'Not a session user' });
+  fastify.get(
+    '/api/auth/identities',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!AUTH_ENABLED) return reply.code(404).send({ error: 'Not found' });
+      const identity = request.auth;
+      if (identity?.via !== 'session' || !identity.userId) {
+        return reply.code(400).send({ error: 'Not a session user' });
+      }
+      const user = usersDb.getUserById(identity.userId);
+      const identities = userIdentitiesDb.listByUserId(identity.userId).map((i) => ({
+        provider: i.provider,
+        email: i.email,
+        displayName: i.displayName,
+        createdAt: i.createdAt,
+      }));
+      return { hasPassword: !!user?.passwordHash, identities };
     }
-    const user = usersDb.getUserById(identity.userId);
-    const identities = userIdentitiesDb.listByUserId(identity.userId).map((i) => ({
-      provider: i.provider,
-      email: i.email,
-      displayName: i.displayName,
-      createdAt: i.createdAt,
-    }));
-    return { hasPassword: !!user?.passwordHash, identities };
-  });
+  );
 
   fastify.post(
     '/api/auth/oauth/:provider/unlink',
+    { preHandler: authorize(CAPABILITIES.view) },
     async (request: FastifyRequest, reply: FastifyReply) => {
       if (!AUTH_ENABLED) return reply.code(404).send({ error: 'Not found' });
-      const guard = await authorize(CAPABILITIES.view)(request, reply);
-      if (guard) return;
       const id = parseProviderId(request.params);
       if (!id) return reply.code(404).send({ error: 'Not found' });
       const identity = request.auth;

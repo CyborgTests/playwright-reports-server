@@ -101,262 +101,271 @@ function enqueueOrReuseTestAnalysis(args: {
 }
 
 export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
-  fastify.post('/api/llm/analyze-failed-test', async (request, reply) => {
-    try {
-      const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
-      if (authResult) return;
+  fastify.post(
+    '/api/llm/analyze-failed-test',
+    { preHandler: authorize(CAPABILITIES.contentLlm) },
+    async (request, reply) => {
+      try {
+        const { testId, reportId } = request.body as { testId: string; reportId: string };
 
-      const { testId, reportId } = request.body as { testId: string; reportId: string };
+        if (!testId || !reportId) {
+          return reply.status(400).send({ success: false, error: 'Missing testId or reportId' });
+        }
 
-      if (!testId || !reportId) {
-        return reply.status(400).send({ success: false, error: 'Missing testId or reportId' });
-      }
+        if (!llmService.isConfigured()) {
+          return reply.status(400).send({
+            success: false,
+            error:
+              'LLM service is not enabled. Configure the base URL and API key in Settings → LLM.',
+          });
+        }
 
-      if (!llmService.isConfigured()) {
-        return reply.status(400).send({
-          success: false,
-          error:
-            'LLM service is not enabled. Configure the base URL and API key in Settings → LLM.',
+        const tr = resolveTestRun(testId, reportId);
+        if (!tr) {
+          return reply.status(404).send({
+            success: false,
+            error: `No test_run for testId=${testId} in report=${reportId}`,
+          });
+        }
+
+        const { taskId, deduped } = enqueueOrReuseTestAnalysis({
+          testId,
+          reportId,
+          fileId: tr.fileId,
+          project: tr.project,
         });
+
+        return reply.send({ success: true, data: { taskId, deduped } });
+      } catch (error) {
+        fastify.log.error({
+          error: 'LLM analyze-failed-test enqueue error',
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return reply.status(500).send({ success: false, error: 'Failed to enqueue analysis task' });
+      }
+    }
+  );
+
+  fastify.get(
+    '/api/llm/feedback',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (request, reply) => {
+      const parsed = GetFeedbackQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(400).send({ success: false, error: parsed.error.message });
+      }
+      const q = parsed.data;
+      const keys = await resolveTestKeys(q.testId, q.fileId, q.project, q.reportId);
+      if (!keys.ok) return reply.status(keys.status).send({ success: false, error: keys.error });
+
+      return reply.send({
+        success: true,
+        data: feedbackRowToShared(
+          analysisFeedbackDb.getByTest(q.testId, keys.fileId, keys.project)
+        ),
+      });
+    }
+  );
+
+  fastify.put(
+    '/api/llm/feedback',
+    { preHandler: authorize(CAPABILITIES.contentFeedback) },
+    async (request, reply) => {
+      const parsed = UpsertFeedbackRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ success: false, error: parsed.error.message });
+      }
+      const body = parsed.data;
+      const keys = await resolveTestKeys(body.testId, body.fileId, body.project, body.reportId);
+      if (!keys.ok) return reply.status(keys.status).send({ success: false, error: keys.error });
+
+      const existing = analysisFeedbackDb.getByTest(body.testId, keys.fileId, keys.project);
+      let errorSignature: string | undefined;
+      let originReportId: string | undefined;
+      if (!existing) {
+        if (keys.signature !== undefined || body.reportId) {
+          errorSignature = keys.signature;
+          originReportId = body.reportId;
+        } else {
+          const runs = testDb.getTestRuns(body.testId, keys.fileId, keys.project);
+          const sourceRun = runs[0];
+          errorSignature = sourceRun?.errorSignature;
+          originReportId = sourceRun?.reportId;
+        }
       }
 
-      const tr = resolveTestRun(testId, reportId);
-      if (!tr) {
-        return reply.status(404).send({
-          success: false,
-          error: `No test_run for testId=${testId} in report=${reportId}`,
-        });
+      const row = analysisFeedbackDb.upsertTest({
+        testId: body.testId,
+        fileId: keys.fileId,
+        project: keys.project,
+        comment: body.comment,
+        originReportId,
+        errorSignature,
+      });
+      return reply.send({ success: true, data: feedbackRowToShared(row) });
+    }
+  );
+
+  fastify.delete(
+    '/api/llm/feedback',
+    { preHandler: authorize(CAPABILITIES.contentFeedback) },
+    async (request, reply) => {
+      const parsed = DeleteFeedbackRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ success: false, error: parsed.error.message });
       }
+      const body = parsed.data;
+      const keys = await resolveTestKeys(body.testId, body.fileId, body.project, body.reportId);
+      if (!keys.ok) return reply.status(keys.status).send({ success: false, error: keys.error });
+
+      analysisFeedbackDb.deleteByTest(body.testId, keys.fileId, keys.project);
+      return reply.send({ success: true });
+    }
+  );
+
+  fastify.post(
+    '/api/llm/regenerate',
+    { preHandler: authorize(CAPABILITIES.contentFeedback) },
+    async (request, reply) => {
+      const parsed = FeedbackRegenerateRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ success: false, error: parsed.error.message });
+      }
+      const body = parsed.data;
+      const keys = await resolveTestKeys(body.testId, body.fileId, body.project, body.reportId);
+      if (!keys.ok) return reply.status(keys.status).send({ success: false, error: keys.error });
 
       const { taskId, deduped } = enqueueOrReuseTestAnalysis({
-        testId,
-        reportId,
-        fileId: tr.fileId,
-        project: tr.project,
+        testId: body.testId,
+        reportId: body.reportId,
+        fileId: keys.fileId,
+        project: keys.project,
       });
 
-      return reply.send({ success: true, data: { taskId, deduped } });
-    } catch (error) {
-      fastify.log.error({
-        error: 'LLM analyze-failed-test enqueue error',
-        message: error instanceof Error ? error.message : String(error),
-      });
-      return reply.status(500).send({ success: false, error: 'Failed to enqueue analysis task' });
-    }
-  });
-
-  fastify.get('/api/llm/feedback', async (request, reply) => {
-    const authResult = await authorize(CAPABILITIES.view)(request, reply);
-    if (authResult) return;
-
-    const parsed = GetFeedbackQuerySchema.safeParse(request.query);
-    if (!parsed.success) {
-      return reply.status(400).send({ success: false, error: parsed.error.message });
-    }
-    const q = parsed.data;
-    const keys = await resolveTestKeys(q.testId, q.fileId, q.project, q.reportId);
-    if (!keys.ok) return reply.status(keys.status).send({ success: false, error: keys.error });
-
-    return reply.send({
-      success: true,
-      data: feedbackRowToShared(analysisFeedbackDb.getByTest(q.testId, keys.fileId, keys.project)),
-    });
-  });
-
-  fastify.put('/api/llm/feedback', async (request, reply) => {
-    const authResult = await authorize(CAPABILITIES.contentFeedback)(request, reply);
-    if (authResult) return;
-
-    const parsed = UpsertFeedbackRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ success: false, error: parsed.error.message });
-    }
-    const body = parsed.data;
-    const keys = await resolveTestKeys(body.testId, body.fileId, body.project, body.reportId);
-    if (!keys.ok) return reply.status(keys.status).send({ success: false, error: keys.error });
-
-    const existing = analysisFeedbackDb.getByTest(body.testId, keys.fileId, keys.project);
-    let errorSignature: string | undefined;
-    let originReportId: string | undefined;
-    if (!existing) {
-      if (keys.signature !== undefined || body.reportId) {
-        errorSignature = keys.signature;
-        originReportId = body.reportId;
-      } else {
-        const runs = testDb.getTestRuns(body.testId, keys.fileId, keys.project);
-        const sourceRun = runs[0];
-        errorSignature = sourceRun?.errorSignature;
-        originReportId = sourceRun?.reportId;
+      let cascadedReportTaskId: string | undefined;
+      if (body.cascadeReportSummary && body.reportId) {
+        const inflightReport = llmTasksDb.findInflightReportSummary(body.reportId);
+        if (inflightReport) {
+          cascadedReportTaskId = inflightReport.id;
+        } else {
+          const reportTask = llmTasksDb.createTask('report_summary', {
+            reportId: body.reportId,
+            project: keys.project,
+          });
+          cascadedReportTaskId = reportTask.id;
+        }
       }
+
+      return reply.send({
+        success: true,
+        data: { taskId, deduped, cascadedReportTaskId },
+      });
     }
+  );
 
-    const row = analysisFeedbackDb.upsertTest({
-      testId: body.testId,
-      fileId: keys.fileId,
-      project: keys.project,
-      comment: body.comment,
-      originReportId,
-      errorSignature,
-    });
-    return reply.send({ success: true, data: feedbackRowToShared(row) });
-  });
+  fastify.get(
+    '/api/llm/feedback/related',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (request, reply) => {
+      const parsed = GetRelatedFeedbackQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(400).send({ success: false, error: parsed.error.message });
+      }
+      const q = parsed.data;
 
-  fastify.delete('/api/llm/feedback', async (request, reply) => {
-    const authResult = await authorize(CAPABILITIES.contentFeedback)(request, reply);
-    if (authResult) return;
-
-    const parsed = DeleteFeedbackRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ success: false, error: parsed.error.message });
-    }
-    const body = parsed.data;
-    const keys = await resolveTestKeys(body.testId, body.fileId, body.project, body.reportId);
-    if (!keys.ok) return reply.status(keys.status).send({ success: false, error: keys.error });
-
-    analysisFeedbackDb.deleteByTest(body.testId, keys.fileId, keys.project);
-    return reply.send({ success: true });
-  });
-
-  fastify.post('/api/llm/regenerate', async (request, reply) => {
-    const authResult = await authorize(CAPABILITIES.contentFeedback)(request, reply);
-    if (authResult) return;
-
-    const parsed = FeedbackRegenerateRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ success: false, error: parsed.error.message });
-    }
-    const body = parsed.data;
-    const keys = await resolveTestKeys(body.testId, body.fileId, body.project, body.reportId);
-    if (!keys.ok) return reply.status(keys.status).send({ success: false, error: keys.error });
-
-    const { taskId, deduped } = enqueueOrReuseTestAnalysis({
-      testId: body.testId,
-      reportId: body.reportId,
-      fileId: keys.fileId,
-      project: keys.project,
-    });
-
-    let cascadedReportTaskId: string | undefined;
-    if (body.cascadeReportSummary && body.reportId) {
-      const inflightReport = llmTasksDb.findInflightReportSummary(body.reportId);
-      if (inflightReport) {
-        cascadedReportTaskId = inflightReport.id;
-      } else {
-        const reportTask = llmTasksDb.createTask('report_summary', {
-          reportId: body.reportId,
-          project: keys.project,
+      let fileId = q.fileId;
+      let excludeProject = q.excludeProject;
+      let currentSignature: string | undefined;
+      if ((!fileId || !excludeProject) && q.reportId) {
+        const resolved = resolveTestRun(q.testId, q.reportId);
+        if (!resolved) {
+          return reply
+            .status(404)
+            .send({ success: false, error: 'No test_run found for testId+reportId' });
+        }
+        fileId = fileId ?? resolved.fileId;
+        excludeProject = excludeProject ?? resolved.project;
+        currentSignature = resolved.errorSignature;
+      }
+      if (!fileId || !excludeProject) {
+        return reply.status(400).send({
+          success: false,
+          error: '/related requires (fileId + excludeProject) or reportId',
         });
-        cascadedReportTaskId = reportTask.id;
       }
-    }
 
-    return reply.send({
-      success: true,
-      data: { taskId, deduped, cascadedReportTaskId },
-    });
-  });
+      const rows = analysisFeedbackDb.getRelatedByTest(q.testId, fileId, excludeProject);
 
-  fastify.get('/api/llm/feedback/related', async (request, reply) => {
-    const authResult = await authorize(CAPABILITIES.view)(request, reply);
-    if (authResult) return;
-
-    const parsed = GetRelatedFeedbackQuerySchema.safeParse(request.query);
-    if (!parsed.success) {
-      return reply.status(400).send({ success: false, error: parsed.error.message });
-    }
-    const q = parsed.data;
-
-    let fileId = q.fileId;
-    let excludeProject = q.excludeProject;
-    let currentSignature: string | undefined;
-    if ((!fileId || !excludeProject) && q.reportId) {
-      const resolved = resolveTestRun(q.testId, q.reportId);
-      if (!resolved) {
-        return reply
-          .status(404)
-          .send({ success: false, error: 'No test_run found for testId+reportId' });
-      }
-      fileId = fileId ?? resolved.fileId;
-      excludeProject = excludeProject ?? resolved.project;
-      currentSignature = resolved.errorSignature;
-    }
-    if (!fileId || !excludeProject) {
-      return reply.status(400).send({
-        success: false,
-        error: '/related requires (fileId + excludeProject) or reportId',
-      });
-    }
-
-    const rows = analysisFeedbackDb.getRelatedByTest(q.testId, fileId, excludeProject);
-
-    const entries = rows.map((r) => ({
-      project: r.project,
-      feedback: {
-        id: r.id,
-        testId: r.testId ?? undefined,
-        fileId: r.fileId ?? undefined,
+      const entries = rows.map((r) => ({
         project: r.project,
-        reportId: r.reportId ?? undefined,
-        errorSignature: r.errorSignature ?? undefined,
-        comment: r.comment,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      },
-      latestAnalysis: r.latestAnalysis
-        ? {
-            analysis: r.latestAnalysis,
-            updatedAt: r.latestAnalysisUpdatedAt ?? r.updatedAt,
-            model: r.latestAnalysisModel ?? undefined,
-          }
-        : undefined,
-      errorSignatureMatchesCurrent:
-        !!currentSignature && !!r.errorSignature && r.errorSignature === currentSignature,
-    }));
+        feedback: {
+          id: r.id,
+          testId: r.testId ?? undefined,
+          fileId: r.fileId ?? undefined,
+          project: r.project,
+          reportId: r.reportId ?? undefined,
+          errorSignature: r.errorSignature ?? undefined,
+          comment: r.comment,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+        },
+        latestAnalysis: r.latestAnalysis
+          ? {
+              analysis: r.latestAnalysis,
+              updatedAt: r.latestAnalysisUpdatedAt ?? r.updatedAt,
+              model: r.latestAnalysisModel ?? undefined,
+            }
+          : undefined,
+        errorSignatureMatchesCurrent:
+          !!currentSignature && !!r.errorSignature && r.errorSignature === currentSignature,
+      }));
 
-    return reply.send({ success: true, data: entries });
-  });
-
-  fastify.get('/api/llm/test-history', async (request, reply) => {
-    const authResult = await authorize(CAPABILITIES.view)(request, reply);
-    if (authResult) return;
-
-    const { testId, reportId, fileId, errorSignature } = request.query as {
-      testId?: string;
-      reportId?: string;
-      fileId?: string;
-      errorSignature?: string;
-    };
-    if (!testId) {
-      return reply.status(400).send({ success: false, error: 'testId is required' });
+      return reply.send({ success: true, data: entries });
     }
+  );
 
-    let resolvedFileId = fileId;
-    let resolvedSignature = errorSignature;
-    const excludeReportId = reportId ?? '';
-    if ((!resolvedFileId || !resolvedSignature) && reportId) {
-      const resolved = resolveTestRun(testId, reportId);
-      if (!resolved) {
+  fastify.get(
+    '/api/llm/test-history',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (request, reply) => {
+      const { testId, reportId, fileId, errorSignature } = request.query as {
+        testId?: string;
+        reportId?: string;
+        fileId?: string;
+        errorSignature?: string;
+      };
+      if (!testId) {
+        return reply.status(400).send({ success: false, error: 'testId is required' });
+      }
+
+      let resolvedFileId = fileId;
+      let resolvedSignature = errorSignature;
+      const excludeReportId = reportId ?? '';
+      if ((!resolvedFileId || !resolvedSignature) && reportId) {
+        const resolved = resolveTestRun(testId, reportId);
+        if (!resolved) {
+          return reply.send({
+            success: true,
+            data: { priorOccurrenceCount: 0, firstOccurrence: null },
+          });
+        }
+        resolvedFileId = resolvedFileId ?? resolved.fileId;
+        resolvedSignature = resolvedSignature ?? resolved.errorSignature;
+      }
+      if (!resolvedFileId || !resolvedSignature) {
         return reply.send({
           success: true,
           data: { priorOccurrenceCount: 0, firstOccurrence: null },
         });
       }
-      resolvedFileId = resolvedFileId ?? resolved.fileId;
-      resolvedSignature = resolvedSignature ?? resolved.errorSignature;
-    }
-    if (!resolvedFileId || !resolvedSignature) {
-      return reply.send({
-        success: true,
-        data: { priorOccurrenceCount: 0, firstOccurrence: null },
-      });
-    }
 
-    const history = testAnalyticsDb.getFailureHistory(
-      testId,
-      resolvedFileId,
-      resolvedSignature,
-      excludeReportId
-    );
-    return reply.send({ success: true, data: history });
-  });
+      const history = testAnalyticsDb.getFailureHistory(
+        testId,
+        resolvedFileId,
+        resolvedSignature,
+        excludeReportId
+      );
+      return reply.send({ success: true, data: history });
+    }
+  );
 }

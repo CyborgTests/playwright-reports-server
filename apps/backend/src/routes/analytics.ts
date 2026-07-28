@@ -15,86 +15,86 @@ import { authorize } from './auth.js';
 const STALENESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
-  fastify.get('/api/analytics', async (request, reply) => {
-    const authResult = await authorize(CAPABILITIES.view)(request, reply);
-    if (authResult) return;
-
-    const {
-      project = 'all',
-      from,
-      to,
-      failedOnly,
-    } = request.query as {
-      project?: string;
-      from?: string;
-      to?: string;
-      failedOnly?: string;
-    };
-    const failedOnlyFlag = failedOnly === 'true' || failedOnly === '1';
-    const { result: analyticsData, error } = await withError(
-      analyticsService.getAnalyticsData(project, from, to, failedOnlyFlag)
-    );
-
-    if (error) {
-      return reply.status(500).send({
-        success: false,
-        error: `Failed to fetch analytics data: ${error.message}`,
-      });
-    }
-
-    return { success: true, data: analyticsData };
-  });
-
-  fastify.get('/api/analytics/run-health', async (request, reply) => {
-    const authResult = await authorize(CAPABILITIES.view)(request, reply);
-    if (authResult) return;
-
-    const {
-      project = 'all',
-      from,
-      to,
-      failedOnly,
-      before,
-      limit,
-    } = request.query as {
-      project?: string;
-      from?: string;
-      to?: string;
-      failedOnly?: string;
-      before?: string;
-      limit?: string;
-    };
-    const failedOnlyFlag = failedOnly === 'true' || failedOnly === '1';
-    const parsedLimit = limit ? Number.parseInt(limit, 10) : 100;
-    const pageLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 100;
-
-    const { result: metrics, error } = await withError(
-      analyticsService.getRunHealthPage(project, {
+  fastify.get(
+    '/api/analytics',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (request, reply) => {
+      const {
+        project = 'all',
         from,
         to,
-        failedOnly: failedOnlyFlag,
-        before,
-        limit: pageLimit,
-      })
-    );
+        failedOnly,
+      } = request.query as {
+        project?: string;
+        from?: string;
+        to?: string;
+        failedOnly?: string;
+      };
+      const failedOnlyFlag = failedOnly === 'true' || failedOnly === '1';
+      const { result: analyticsData, error } = await withError(
+        analyticsService.getAnalyticsData(project, from, to, failedOnlyFlag)
+      );
 
-    if (error) {
-      return reply.status(500).send({
-        success: false,
-        error: `Failed to fetch run health: ${error.message}`,
-      });
+      if (error) {
+        return reply.status(500).send({
+          success: false,
+          error: `Failed to fetch analytics data: ${error.message}`,
+        });
+      }
+
+      return { success: true, data: analyticsData };
     }
+  );
 
-    return { success: true, data: { metrics, hasMore: (metrics?.length ?? 0) >= pageLimit } };
-  });
+  fastify.get(
+    '/api/analytics/run-health',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (request, reply) => {
+      const {
+        project = 'all',
+        from,
+        to,
+        failedOnly,
+        before,
+        limit,
+      } = request.query as {
+        project?: string;
+        from?: string;
+        to?: string;
+        failedOnly?: string;
+        before?: string;
+        limit?: string;
+      };
+      const failedOnlyFlag = failedOnly === 'true' || failedOnly === '1';
+      const parsedLimit = limit ? Number.parseInt(limit, 10) : 100;
+      const pageLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 100;
+
+      const { result: metrics, error } = await withError(
+        analyticsService.getRunHealthPage(project, {
+          from,
+          to,
+          failedOnly: failedOnlyFlag,
+          before,
+          limit: pageLimit,
+        })
+      );
+
+      if (error) {
+        return reply.status(500).send({
+          success: false,
+          error: `Failed to fetch run health: ${error.message}`,
+        });
+      }
+
+      return { success: true, data: { metrics, hasMore: (metrics?.length ?? 0) >= pageLimit } };
+    }
+  );
 
   fastify.get(
     '/api/analytics/project-summary',
+    { preHandler: authorize(CAPABILITIES.view) },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const authResult = await authorize(CAPABILITIES.view)(request, reply);
-        if (authResult) return;
-
         const { project } = request.query as { project?: string };
         const projectKey = project ?? 'all';
 
@@ -162,11 +162,9 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     '/api/analytics/failure-categories/llm',
+    { preHandler: authorize(CAPABILITIES.contentLlm) },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
-        if (authResult) return;
-
         const { project } = request.query as { project?: string };
         const body = (request.body ?? {}) as { reportIds?: unknown };
         const explicitReportIds: string[] | undefined = Array.isArray(body.reportIds)

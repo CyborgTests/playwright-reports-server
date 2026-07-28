@@ -40,144 +40,153 @@ const BULK_REQUEUE_LIMIT = 5000;
 const getFailedTestsWithoutAnalysis = () => testAnalyticsDb.getFailedTestsWithoutAnalysis();
 
 export async function registerLlmRoutes(fastify: FastifyInstance) {
-  fastify.get('/api/llm/tasks', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.view)(request, reply);
-    if (authResult) return;
+  fastify.get(
+    '/api/llm/tasks',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { status, type, reportId, model, limit, offset } = request.query as {
+          status?: LlmTaskStatus;
+          type?: LlmTaskType;
+          reportId?: string;
+          model?: string;
+          limit?: string;
+          offset?: string;
+        };
 
-    try {
-      const { status, type, reportId, model, limit, offset } = request.query as {
-        status?: LlmTaskStatus;
-        type?: LlmTaskType;
-        reportId?: string;
-        model?: string;
-        limit?: string;
-        offset?: string;
-      };
+        const rawLimit = limit ? Number.parseInt(limit, 10) : 50;
+        const parsedLimit =
+          Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 25;
+        const rawOffset = offset ? Number.parseInt(offset, 10) : 0;
+        const parsedOffset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
 
-      const rawLimit = limit ? Number.parseInt(limit, 10) : 50;
-      const parsedLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 25;
-      const rawOffset = offset ? Number.parseInt(offset, 10) : 0;
-      const parsedOffset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
+        const { data, total } = llmTasksDb.getTasksPaginated({
+          status,
+          type,
+          reportId,
+          model: model && model.length > 0 ? model : undefined,
+          limit: parsedLimit,
+          offset: parsedOffset,
+        });
 
-      const { data, total } = llmTasksDb.getTasksPaginated({
-        status,
-        type,
-        reportId,
-        model: model && model.length > 0 ? model : undefined,
-        limit: parsedLimit,
-        offset: parsedOffset,
-      });
+        const withEta = data.map((task) => ({ ...task, etaMs: getTaskEtaMs(task.id) }));
 
-      const withEta = data.map((task) => ({ ...task, etaMs: getTaskEtaMs(task.id) }));
-
-      return { success: true, data: withEta, total };
-    } catch (error) {
-      fastify.log.error(error);
-      return reply.status(500).send({
-        success: false,
-        error: 'Failed to fetch LLM tasks',
-      });
+        return { success: true, data: withEta, total };
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({
+          success: false,
+          error: 'Failed to fetch LLM tasks',
+        });
+      }
     }
-  });
+  );
 
-  fastify.get('/api/llm/usage-stats', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.view)(request, reply);
-    if (authResult) return;
+  fastify.get(
+    '/api/llm/usage-stats',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { days: daysRaw } = request.query as { days?: string };
+        const parsed = daysRaw ? Number.parseInt(daysRaw, 10) : 7;
+        const days = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 365) : 7;
+        const windowFrom = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+        const cfg = await service.getConfig();
+        const fromDate =
+          cfg.llmUsageResetAt && cfg.llmUsageResetAt > windowFrom
+            ? cfg.llmUsageResetAt
+            : windowFrom;
 
-    try {
-      const { days: daysRaw } = request.query as { days?: string };
-      const parsed = daysRaw ? Number.parseInt(daysRaw, 10) : 7;
-      const days = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 365) : 7;
-      const windowFrom = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-      const cfg = await service.getConfig();
-      const fromDate =
-        cfg.llmUsageResetAt && cfg.llmUsageResetAt > windowFrom ? cfg.llmUsageResetAt : windowFrom;
+        const { totals, byType, reuse } = getUsageStats(fromDate);
 
-      const { totals, byType, reuse } = getUsageStats(fromDate);
+        const data: LlmUsageStats = {
+          days,
+          fromDate,
+          totals,
+          byType,
+          reuse: {
+            analyses: reuse.analyses ?? 0,
+            reused: reuse.reused ?? 0,
+            rate: reuse.analyses && reuse.analyses > 0 ? (reuse.reused ?? 0) / reuse.analyses : 0,
+          },
+        };
 
-      const data: LlmUsageStats = {
-        days,
-        fromDate,
-        totals,
-        byType,
-        reuse: {
-          analyses: reuse.analyses ?? 0,
-          reused: reuse.reused ?? 0,
-          rate: reuse.analyses && reuse.analyses > 0 ? (reuse.reused ?? 0) / reuse.analyses : 0,
-        },
-      };
-
-      return { success: true, data };
-    } catch (error) {
-      fastify.log.error(error);
-      return reply.status(500).send({
-        success: false,
-        error: 'Failed to fetch LLM usage stats',
-      });
+        return { success: true, data };
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({
+          success: false,
+          error: 'Failed to fetch LLM usage stats',
+        });
+      }
     }
-  });
+  );
 
-  fastify.get('/api/llm/usage-by-model', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.view)(request, reply);
-    if (authResult) return;
+  fastify.get(
+    '/api/llm/usage-by-model',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { days: daysRaw } = request.query as { days?: string };
+        const parsed = daysRaw ? Number.parseInt(daysRaw, 10) : 7;
+        const days = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 365) : 7;
+        const windowFrom = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+        const cfg = await service.getConfig();
+        const fromDate =
+          cfg.llmUsageResetAt && cfg.llmUsageResetAt > windowFrom
+            ? cfg.llmUsageResetAt
+            : windowFrom;
 
-    try {
-      const { days: daysRaw } = request.query as { days?: string };
-      const parsed = daysRaw ? Number.parseInt(daysRaw, 10) : 7;
-      const days = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 365) : 7;
-      const windowFrom = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-      const cfg = await service.getConfig();
-      const fromDate =
-        cfg.llmUsageResetAt && cfg.llmUsageResetAt > windowFrom ? cfg.llmUsageResetAt : windowFrom;
+        const rows = getUsageByModel(fromDate);
 
-      const rows = getUsageByModel(fromDate);
+        const data: LlmUsageByModel = { days, fromDate, rows };
 
-      const data: LlmUsageByModel = { days, fromDate, rows };
-
-      return { success: true, data };
-    } catch (error) {
-      fastify.log.error(error);
-      return reply.status(500).send({
-        success: false,
-        error: 'Failed to fetch LLM usage-by-model breakdown',
-      });
+        return { success: true, data };
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({
+          success: false,
+          error: 'Failed to fetch LLM usage-by-model breakdown',
+        });
+      }
     }
-  });
+  );
 
-  fastify.post('/api/llm/usage/reset', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
-    if (authResult) return;
-
-    try {
-      const next = await service.updateConfig({ llmUsageResetAt: new Date().toISOString() });
-      return { success: true, llmUsageResetAt: next.llmUsageResetAt };
-    } catch (error) {
-      fastify.log.error(error);
-      return reply.status(500).send({ success: false, error: 'Failed to reset usage counters' });
+  fastify.post(
+    '/api/llm/usage/reset',
+    { preHandler: authorize(CAPABILITIES.contentLlm) },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const next = await service.updateConfig({ llmUsageResetAt: new Date().toISOString() });
+        return { success: true, llmUsageResetAt: next.llmUsageResetAt };
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({ success: false, error: 'Failed to reset usage counters' });
+      }
     }
-  });
+  );
 
-  fastify.get('/api/llm/tasks/models', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.view)(request, reply);
-    if (authResult) return;
-
-    try {
-      const models = llmTasksDb.getDistinctModels();
-      return { success: true, models };
-    } catch (error) {
-      fastify.log.error(error);
-      return reply.status(500).send({
-        success: false,
-        error: 'Failed to fetch LLM task models',
-      });
+  fastify.get(
+    '/api/llm/tasks/models',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const models = llmTasksDb.getDistinctModels();
+        return { success: true, models };
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({
+          success: false,
+          error: 'Failed to fetch LLM task models',
+        });
+      }
     }
-  });
+  );
 
   fastify.get<{ Params: { id: string } }>(
     '/api/llm/tasks/:id/roles',
+    { preHandler: authorize(CAPABILITIES.view) },
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-      const authResult = await authorize(CAPABILITIES.view)(request, reply);
-      if (authResult) return;
       try {
         const rows = llmTasksDb.getRoleChildren(request.params.id);
         return { success: true, data: rows };
@@ -188,101 +197,104 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.get('/api/llm/estimates', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.view)(request, reply);
-    if (authResult) return;
-
-    try {
-      const data = llmTasksDb.getDurationEstimates(MIN_ESTIMATE_SAMPLES);
-      return { success: true, data };
-    } catch (error) {
-      fastify.log.error(error);
-      return reply.status(500).send({ success: false, error: 'Failed to fetch LLM estimates' });
+  fastify.get(
+    '/api/llm/estimates',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const data = llmTasksDb.getDurationEstimates(MIN_ESTIMATE_SAMPLES);
+        return { success: true, data };
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({ success: false, error: 'Failed to fetch LLM estimates' });
+      }
     }
-  });
+  );
 
-  fastify.get('/api/llm/tasks/stats', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.view)(request, reply);
-    if (authResult) return;
-
-    try {
-      const stats = llmTasksDb.getStats();
-      const eta = computeQueueEta();
-      const circuit = aggregateCircuitStatus();
-      return { success: true, ...stats, eta, circuit };
-    } catch (error) {
-      fastify.log.error(error);
-      return reply.status(500).send({
-        success: false,
-        error: 'Failed to fetch LLM task stats',
-      });
-    }
-  });
-
-  fastify.delete('/api/llm/tasks', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
-    if (authResult) return;
-
-    try {
-      const { ids } = request.body as { ids: string[] };
-
-      if (!ids || !Array.isArray(ids) || ids.length === 0) {
-        return reply.status(400).send({
+  fastify.get(
+    '/api/llm/tasks/stats',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const stats = llmTasksDb.getStats();
+        const eta = computeQueueEta();
+        const circuit = aggregateCircuitStatus();
+        return { success: true, ...stats, eta, circuit };
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({
           success: false,
-          error: 'ids array is required',
+          error: 'Failed to fetch LLM task stats',
         });
       }
-
-      llmTasksDb.bulkDelete(ids);
-      return { success: true };
-    } catch (error) {
-      fastify.log.error(error);
-      return reply.status(500).send({
-        success: false,
-        error: 'Failed to delete LLM tasks',
-      });
     }
-  });
+  );
 
-  fastify.delete('/api/llm/tasks/:id', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
-    if (authResult) return;
+  fastify.delete(
+    '/api/llm/tasks',
+    { preHandler: authorize(CAPABILITIES.contentLlm) },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { ids } = request.body as { ids: string[] };
 
-    try {
-      const { id } = request.params as { id: string };
-      llmTasksDb.bulkDelete([id]);
-      return { success: true };
-    } catch (error) {
-      fastify.log.error(error);
-      return reply.status(500).send({
-        success: false,
-        error: 'Failed to delete LLM task',
-      });
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+          return reply.status(400).send({
+            success: false,
+            error: 'ids array is required',
+          });
+        }
+
+        llmTasksDb.bulkDelete(ids);
+        return { success: true };
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({
+          success: false,
+          error: 'Failed to delete LLM tasks',
+        });
+      }
     }
-  });
+  );
 
-  fastify.delete('/api/llm/tasks/clear', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
-    if (authResult) return;
-
-    try {
-      llmTasksDb.clearQueue();
-      return { success: true };
-    } catch (error) {
-      fastify.log.error(error);
-      return reply.status(500).send({
-        success: false,
-        error: 'Failed to clear LLM task queue',
-      });
+  fastify.delete(
+    '/api/llm/tasks/:id',
+    { preHandler: authorize(CAPABILITIES.contentLlm) },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { id } = request.params as { id: string };
+        llmTasksDb.bulkDelete([id]);
+        return { success: true };
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({
+          success: false,
+          error: 'Failed to delete LLM task',
+        });
+      }
     }
-  });
+  );
+
+  fastify.delete(
+    '/api/llm/tasks/clear',
+    { preHandler: authorize(CAPABILITIES.contentLlm) },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        llmTasksDb.clearQueue();
+        return { success: true };
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({
+          success: false,
+          error: 'Failed to clear LLM task queue',
+        });
+      }
+    }
+  );
 
   fastify.patch(
     '/api/llm/tasks/:id/cancel',
+    { preHandler: authorize(CAPABILITIES.contentLlm) },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
-      if (authResult) return;
-
       try {
         const { id } = request.params as { id: string };
         abortRunningTask(id);
@@ -298,28 +310,28 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.post('/api/llm/tasks/:id/retry', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
-    if (authResult) return;
-
-    try {
-      const { id } = request.params as { id: string };
-      llmTasksDb.retry(id);
-      return { success: true };
-    } catch (error) {
-      fastify.log.error(error);
-      return reply.status(500).send({
-        success: false,
-        error: 'Failed to retry LLM task',
-      });
+  fastify.post(
+    '/api/llm/tasks/:id/retry',
+    { preHandler: authorize(CAPABILITIES.contentLlm) },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { id } = request.params as { id: string };
+        llmTasksDb.retry(id);
+        return { success: true };
+      } catch (error) {
+        fastify.log.error(error);
+        return reply.status(500).send({
+          success: false,
+          error: 'Failed to retry LLM task',
+        });
+      }
     }
-  });
+  );
 
   fastify.post(
     '/api/llm/generate-existing',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const authResult = await authorize(CAPABILITIES.contentLlm)(request, reply);
-      if (authResult) return;
+    { preHandler: authorize(CAPABILITIES.contentLlm) },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
       if (!isLlmFeatureEnabled()) {
         return reply.status(403).send({ success: false, error: 'LLM features are disabled' });
       }
@@ -343,10 +355,8 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     '/api/llm/task-progress/:taskId',
+    { preHandler: authorize(CAPABILITIES.view) },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const authResult = await authorize(CAPABILITIES.view)(request, reply);
-      if (authResult || reply.sent) return;
-
       const { taskId } = request.params as { taskId: string };
       const initialRow = llmTasksDb.getById(taskId);
       if (!initialRow) {
@@ -374,69 +384,71 @@ export async function registerLlmRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.get('/api/llm/queue-events', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.view)(request, reply);
-    if (authResult || reply.sent) return;
+  fastify.get(
+    '/api/llm/queue-events',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const stream = openSseStream(fastify, request, reply, 'queue-events');
+      let coalesce: NodeJS.Timeout | undefined;
 
-    const stream = openSseStream(fastify, request, reply, 'queue-events');
-    let coalesce: NodeJS.Timeout | undefined;
+      const onChange = () => {
+        if (stream.closed || coalesce) return;
+        coalesce = setTimeout(() => {
+          coalesce = undefined;
+          stream.event('changed', {});
+        }, 500);
+      };
 
-    const onChange = () => {
-      if (stream.closed || coalesce) return;
-      coalesce = setTimeout(() => {
-        coalesce = undefined;
-        stream.event('changed', {});
-      }, 500);
-    };
+      stream.onClose(() => {
+        if (coalesce) clearTimeout(coalesce);
+        llmTaskEvents.off('task', onChange);
+        llmTaskEvents.off('enqueue', onChange);
+      });
 
-    stream.onClose(() => {
-      if (coalesce) clearTimeout(coalesce);
-      llmTaskEvents.off('task', onChange);
-      llmTaskEvents.off('enqueue', onChange);
-    });
+      if (!stream.event('changed', {})) return;
+      llmTaskEvents.on('task', onChange);
+      llmTaskEvents.on('enqueue', onChange);
+    }
+  );
 
-    if (!stream.event('changed', {})) return;
-    llmTaskEvents.on('task', onChange);
-    llmTaskEvents.on('enqueue', onChange);
-  });
+  fastify.get(
+    '/api/llm/default-prompts',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (_request: FastifyRequest, _reply: FastifyReply) => {
+      const data: LlmDefaultPrompts = {
+        systemPrompt: {
+          content: TEST_ANALYSIS_SYSTEM_PROMPT,
+          vars: [],
+        },
+        testAnalysisSystemPrompt: {
+          content: TEST_ANALYSIS_SYSTEM_PROMPT,
+          vars: [],
+        },
+        projectSummarySystemPrompt: {
+          content: PROJECT_SUMMARY_SYSTEM_PROMPT,
+          vars: [],
+        },
+        testAnalysisInstructions: {
+          content: TEST_ANALYSIS_TASK_INSTRUCTIONS,
+          vars: ['project', 'testTitle', 'filePath'],
+        },
+        reportSummaryPrompt: {
+          content: REPORT_SUMMARY_TASK_INSTRUCTIONS,
+          vars: ['reportId', 'project', 'totalFailures'],
+        },
+        projectSummaryInstructions: {
+          content: PROJECT_SUMMARY_TASK_INSTRUCTIONS,
+          vars: ['project', 'totalRuns', 'passingRuns'],
+        },
+        synthesizerDirective: { content: DEFAULT_SYNTHESIZER_DIRECTIVE, vars: [] },
+        judgeDirective: { content: DEFAULT_JUDGE_DIRECTIVE, vars: [] },
+        critiqueDirective: { content: DEFAULT_CRITIQUE_DIRECTIVE, vars: [] },
+        reviseDirective: { content: DEFAULT_REVISE_DIRECTIVE, vars: [] },
+        scorerDirective: { content: DEFAULT_SCORER_DIRECTIVE, vars: [] },
+        screenshotParsePrompt: { content: DEFAULT_SCREENSHOT_PARSE_PROMPT, vars: [] },
+      };
 
-  fastify.get('/api/llm/default-prompts', async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await authorize(CAPABILITIES.view)(request, reply);
-    if (authResult) return;
-
-    const data: LlmDefaultPrompts = {
-      systemPrompt: {
-        content: TEST_ANALYSIS_SYSTEM_PROMPT,
-        vars: [],
-      },
-      testAnalysisSystemPrompt: {
-        content: TEST_ANALYSIS_SYSTEM_PROMPT,
-        vars: [],
-      },
-      projectSummarySystemPrompt: {
-        content: PROJECT_SUMMARY_SYSTEM_PROMPT,
-        vars: [],
-      },
-      testAnalysisInstructions: {
-        content: TEST_ANALYSIS_TASK_INSTRUCTIONS,
-        vars: ['project', 'testTitle', 'filePath'],
-      },
-      reportSummaryPrompt: {
-        content: REPORT_SUMMARY_TASK_INSTRUCTIONS,
-        vars: ['reportId', 'project', 'totalFailures'],
-      },
-      projectSummaryInstructions: {
-        content: PROJECT_SUMMARY_TASK_INSTRUCTIONS,
-        vars: ['project', 'totalRuns', 'passingRuns'],
-      },
-      synthesizerDirective: { content: DEFAULT_SYNTHESIZER_DIRECTIVE, vars: [] },
-      judgeDirective: { content: DEFAULT_JUDGE_DIRECTIVE, vars: [] },
-      critiqueDirective: { content: DEFAULT_CRITIQUE_DIRECTIVE, vars: [] },
-      reviseDirective: { content: DEFAULT_REVISE_DIRECTIVE, vars: [] },
-      scorerDirective: { content: DEFAULT_SCORER_DIRECTIVE, vars: [] },
-      screenshotParsePrompt: { content: DEFAULT_SCREENSHOT_PARSE_PROMPT, vars: [] },
-    };
-
-    return { success: true, data };
-  });
+      return { success: true, data };
+    }
+  );
 }
