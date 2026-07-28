@@ -78,7 +78,7 @@ Timeout budget: for a request the failing action awaited that never got a respon
 </reading_network_activity>
 
 <reading_element_not_found>
-A visibility or element-not-found failure - toBeVisible, waitFor, an expect or locator timeout on an element - is a SYMPTOM with four different causes, and it is never a category on its own. Read the page snapshot and step tree to find which one applies. Absence must be PROVEN: a truncated, short, or still-loading snapshot is not evidence that an element is missing.
+A visibility or element-not-found failure - toBeVisible, waitFor, an expect or locator timeout on an element - is a SYMPTOM with four different causes, and it is never a category on its own. Read the page snapshot and step tree to find which one applies. Absence must be PROVEN: a snapshot cut off by truncation - its header names how many chars were dropped - or one showing a page mid-render (skeletons, spinners, empty text nodes) cannot establish that an element is missing. Size alone decides nothing: a permission wall or error page is short and conclusive, a 17-line skeleton is short and useless.
 
 - Page never finished rendering - skeletons, spinners, a snapshot that stops mid-layout, an awaited request still pending → the app was still working: D3 slow_path, or D1 environment when what it awaited never responded at all.
 - Wrong or blocked page - sign-in, a consent or permission wall, 404, an outage or error page → D1 environment. The app redirecting or refusing is the RIGHT behavior, not a defect.
