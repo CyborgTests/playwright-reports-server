@@ -84,6 +84,22 @@ export const RESERVED_REPORT_FIELDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * `resultDetails` keys that describe the upload itself rather than the run, so
+ * they are dropped when a result's metadata is carried over to the report it
+ * triggers. Everything else becomes report metadata and therefore a filterable
+ * tag (see RESERVED_REPORT_FIELDS and extractReportTags).
+ *
+ * - `triggerReportGeneration` is a control flag for the upload endpoint.
+ * - `shardCurrent` / `shardTotal` describe a single blob, while a report is
+ *   merged from every shard of the run - they are meaningless on the report.
+ */
+export const NON_REPORT_RESULT_FIELDS: ReadonlySet<string> = new Set([
+  'triggerReportGeneration',
+  'shardCurrent',
+  'shardTotal',
+]);
+
+/**
  * Canonical failure-category enum used by the LLM classifier, UI filters, and
  * analytics. Order matters: it's the display order for filters and the order
  * presented to the LLM in the classification prompt.

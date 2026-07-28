@@ -16,4 +16,9 @@ export class ReportController extends BaseController {
     const response = await this.request.get('/api/report/list', { params });
     return { response, json: await response.json() };
   }
+
+  async get(reportId: string) {
+    const response = await this.request.get(`/api/report/${reportId}`);
+    return { response, json: (await response.json()) as Record<string, unknown> };
+  }
 }

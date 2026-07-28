@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { Result } from '@playwright-reports/shared';
-import { CAPABILITIES } from '@playwright-reports/shared';
+import { CAPABILITIES, NON_REPORT_RESULT_FIELDS } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { parseOffsetQuery } from '../lib/pagination.js';
 import { DeleteResultsRequestSchema, ListResultsQuerySchema } from '../lib/schemas/index.js';
@@ -298,11 +298,7 @@ async function maybeGenerateReport(
   console.log(`[upload] triggering report generation for ${resultDetails.testRun}`);
 
   const { result, error } = await withError(
-    service.generateReport(ids, {
-      project: resultDetails.project,
-      testRun: resultDetails.testRun,
-      playwrightVersion: resultDetails.playwrightVersion,
-    })
+    service.generateReport(ids, toReportMetadata(resultDetails))
   );
 
   if (error) {
@@ -310,4 +306,24 @@ async function maybeGenerateReport(
   }
 
   return result;
+}
+
+/**
+ * Carry the custom fields the client sent with the result (branch, tag,
+ * username, whatever else) over to the report generated from it, so the report
+ * is filterable by the same tags as the result it came from.
+ *
+ * For sharded runs the details come from the shard that completed the run; a
+ * key missing on that shard is simply absent rather than an empty tag.
+ */
+function toReportMetadata(resultDetails: Record<string, string>): Record<string, string> {
+  const metadata: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(resultDetails)) {
+    if (NON_REPORT_RESULT_FIELDS.has(key)) continue;
+    if (typeof value !== 'string') continue;
+    metadata[key] = value;
+  }
+
+  return metadata;
 }

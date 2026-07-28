@@ -15,6 +15,8 @@ export class ResultController extends BaseController {
       shardCurrent?: number;
       shardTotal?: number;
       triggerReportGeneration?: boolean;
+      // the endpoint takes arbitrary multipart fields as result metadata
+      [field: string]: string | number | boolean | undefined;
     }
   ) {
     const absPath = path.resolve(process.cwd(), filePath);
