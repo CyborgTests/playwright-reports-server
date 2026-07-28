@@ -81,6 +81,10 @@ export const RESERVED_REPORT_FIELDS: ReadonlySet<string> = new Set([
   'projectNames',
   'options',
   'playwrightVersion',
+  // derived or response-only fields the API adds on top of the stored report
+  'previousReportId',
+  'regressions',
+  'storagePath',
 ]);
 
 /**
