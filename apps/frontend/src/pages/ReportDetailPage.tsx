@@ -7,6 +7,7 @@ import FormattedDate from '@/components/date-format';
 import { subtitle, title } from '@/components/primitives';
 import FileList from '@/components/report-details/file-list';
 import ReportFailureSummary from '@/components/report-details/ReportFailureSummary';
+import ReportMetadata from '@/components/report-details/report-metadata';
 import ReportStatistics from '@/components/report-details/report-stats';
 import { CompareToPicker } from '@/components/reports-compare/compare-to-picker';
 import { Button } from '@/components/ui/button';
@@ -175,6 +176,7 @@ function ReportDetailPage() {
           </span>
         </span>
       )}
+      {report && <ReportMetadata report={report} />}
       {id && <ReportFailureSummary reportId={id} />}
       <div className="flex md:flex-row flex-col gap-2">
         <div className="flex flex-col items-center md:w-1/4 max-w-full gap-2">

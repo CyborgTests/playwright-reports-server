@@ -1,4 +1,9 @@
-import type { DateRange, ReadReportsHistory, ReportHistory } from '@playwright-reports/shared';
+import {
+  type DateRange,
+  RESERVED_REPORT_FIELDS,
+  type ReadReportsHistory,
+  type ReportHistory,
+} from '@playwright-reports/shared';
 import { keepPreviousData } from '@tanstack/react-query';
 import { MoreHorizontal } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -37,26 +42,6 @@ const columns = [
   { name: 'Created at', uid: 'createdAt' },
   { name: 'Size', uid: 'size' },
   { name: '', uid: 'actions' },
-];
-
-const coreFields = [
-  'reportID',
-  'title',
-  'displayNumber',
-  'project',
-  'createdAt',
-  'size',
-  'sizeBytes',
-  'options',
-  'reportUrl',
-  'metadata',
-  'startTime',
-  'duration',
-  'files',
-  'projectNames',
-  'stats',
-  'errors',
-  'playwrightVersion',
 ];
 
 const isPrimitive = (value: unknown): value is string | number | boolean =>
@@ -139,7 +124,7 @@ const getMetadataItems = (item: ReportHistory): MetadataItem[] => {
 
   // Add any other metadata fields - skip null/undefined/objects/arrays to avoid `[object Object]`
   Object.entries(itemWithMetadata).forEach(([key, value]) => {
-    if (coreFields.includes(key)) return;
+    if (RESERVED_REPORT_FIELDS.has(key)) return;
     if (['environment', 'workingDir', 'branch', 'machines'].includes(key)) return;
     if (!isPrimitive(value)) return;
     metadata.push({ key, value: typeof value === 'boolean' ? String(value) : value });

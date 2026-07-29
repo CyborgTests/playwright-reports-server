@@ -1,4 +1,4 @@
-import { RESERVED_REPORT_FIELDS, type ReportHistory } from '@playwright-reports/shared';
+import type { ReportHistory } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import useMutation from '../hooks/useMutation';
 import useQuery from '../hooks/useQuery';
 import { invalidateCache } from '../lib/query-cache';
+import { extractReportTags } from '../lib/report-tags';
 import { buildUrl } from '../lib/url';
 import { Button } from './ui/button';
 import {
@@ -20,19 +21,6 @@ import {
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Spinner } from './ui/spinner';
-
-const isPrimitive = (v: unknown): v is string | number | boolean =>
-  typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
-
-function extractTags(report: ReportHistory): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(report as ReportHistory & Record<string, unknown>)) {
-    if (RESERVED_REPORT_FIELDS.has(key)) continue;
-    if (!isPrimitive(value)) continue;
-    out[key] = String(value);
-  }
-  return out;
-}
 
 type TagRow = { id: number; key: string; value: string };
 
@@ -60,7 +48,7 @@ export default function EditReportButton({
   const { data: reportProjects } = useQuery<string[]>(buildUrl('/api/report/projects'));
 
   const initialProject = report?.project ?? '';
-  const initialTags = useMemo(() => (report ? extractTags(report) : {}), [report]);
+  const initialTags = useMemo(() => (report ? extractReportTags(report) : {}), [report]);
 
   const [project, setProject] = useState(initialProject);
   const [rows, setRows] = useState<TagRow[]>([]);

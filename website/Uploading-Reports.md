@@ -47,6 +47,8 @@ export default defineConfig({
 });
 ```
 
+With `triggerReportGeneration: true`, every `resultDetails` field is copied onto the generated report as well, so `?tags=branch:main` filters reports and results alike, and the fields show up on the report detail page. The only exceptions are `triggerReportGeneration` itself and the `shardCurrent` / `shardTotal` pair, which describe a single blob rather than the merged report.
+
 Bumping defaults when CI is slow or blobs are large: `requestTimeout` (60s) and `blobUploadTimeout` (10min). Setting `enabled: false` disables the reporter for local runs you don't want cluttering the dashboard.
 
 Full reporter docs: [`packages/reporter/README.md`](https://github.com/CyborgTests/playwright-reports-server/blob/main/packages/reporter/README.md).
