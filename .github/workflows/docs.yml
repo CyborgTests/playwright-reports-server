@@ -1,5 +1,9 @@
 name: docs
 
+# Build the VitePress site from website/ and publish it to GitHub Pages.
+# The build job creates the Pages site if absent (configure-pages) and forces
+# the source to "GitHub Actions" via the API so legacy branch/Jekyll builds
+# cannot overwrite the docs site with the raw README.
 on:
   push:
     branches: [main]
@@ -8,11 +12,6 @@ on:
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -20,11 +19,38 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: website
+    # Pages scopes are needed here (not just in deploy) so configure-pages can
+    # enable Pages with build_type=workflow on the very first run.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v7
+      - name: Enable GitHub Pages (source = GitHub Actions)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      # configure-pages `enablement` only CREATES a Pages site - it does not
+      # flip an existing site off "Deploy from a branch". In branch mode GitHub
+      # runs its built-in Jekyll build on every push to main, which re-publishes
+      # the raw README over the VitePress site. Force build_type to "workflow"
+      # via the API so the legacy build stops for good. Idempotent - a no-op
+      # once the source is already GitHub Actions.
+      - name: Force Pages build_type to "workflow" (stop the legacy Jekyll build)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          status=$(curl -sS -o /tmp/pages.json -w "%{http_code}" -X PUT \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pages" \
+            -d '{"build_type":"workflow"}')
+          echo "PUT /pages -> HTTP $status"
+          cat /tmp/pages.json
+          if [ "$status" != "204" ]; then
+            echo "::warning::Could not set Pages source to GitHub Actions (HTTP $status). Set it manually: Settings -> Pages -> Source: GitHub Actions."
+          fi
       - uses: pnpm/action-setup@v6.0.9
       - uses: actions/setup-node@v7
         with:
@@ -32,7 +58,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: website/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+        working-directory: website
       - run: pnpm build
+        working-directory: website
       - uses: actions/upload-pages-artifact@v5
         with:
           path: website/.vitepress/dist
@@ -40,6 +68,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
