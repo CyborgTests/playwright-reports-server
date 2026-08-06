@@ -51,7 +51,7 @@ jobs:
           if [ "$status" != "204" ]; then
             echo "::warning::Could not set Pages source to GitHub Actions (HTTP $status). Set it manually: Settings -> Pages -> Source: GitHub Actions."
           fi
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.9
       - uses: actions/setup-node@v7
         with:
           node-version: 24
