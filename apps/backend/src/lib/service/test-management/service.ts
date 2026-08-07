@@ -5,6 +5,7 @@ import type {
   TestDurationStats,
   TestFailureGroup,
   TestManagementConfig,
+  TestReportRef,
 } from '@playwright-reports/shared';
 import { FLAKINESS_THRESHOLDS, ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import { llmService } from '../../llm/index.js';
@@ -13,6 +14,7 @@ import type { ReportHistory } from '../../storage/types.js';
 import {
   llmTasksDb,
   regressionsDb,
+  reportDb,
   type Test,
   type TestDetailStatsAggregate,
   type TestRunRow,
@@ -26,6 +28,28 @@ import { service } from '../index.js';
 import { computeErrorSignature } from './error-signature.js';
 import { classifyFailure } from './failure-classifier.js';
 import { computeFlakinessFromOutcomes } from './flakiness.js';
+
+function exponentialMovingAverageDuration(runs: TestRunRow[]): number {
+  if (runs.length === 0) return 0;
+  const alpha = 0.4;
+  let average = runs.at(-1)?.duration ?? 0;
+  for (let i = runs.length - 2; i >= 0; i--) {
+    average = alpha * (runs[i]?.duration || 0) + (1 - alpha) * average;
+  }
+  return Number(average.toFixed(2));
+}
+
+/** Skipped runs are not a pass/fail outcome, so they leave the denominator. */
+function historyPassRate(runs: TestRunRow[]): number {
+  let executed = 0;
+  let passed = 0;
+  for (const run of runs) {
+    if (run.outcome === ReportTestOutcomeEnum.Skipped) continue;
+    executed++;
+    if (run.outcome === ReportTestOutcomeEnum.Expected) passed++;
+  }
+  return executed === 0 ? 0 : Number(((passed / executed) * 100).toFixed(2));
+}
 
 function toTestDetailStats(row: TestDetailStatsAggregate): TestDetailStats {
   const totalRuns = row.totalRuns ?? 0;
@@ -552,7 +576,11 @@ export class TestManagementService {
       resolvedSince?: string;
       slim?: boolean;
     }
-  ): Promise<{ data: TestWithQuarantineInfoRow[]; total: number }> {
+  ): Promise<{
+    data: TestWithQuarantineInfoRow[];
+    total: number;
+    reportRefs: TestReportRef[];
+  }> {
     let tierOpt:
       | {
           warningThreshold: number;
@@ -585,19 +613,44 @@ export class TestManagementService {
       resolvedSince: options?.resolvedSince,
     });
 
-    if (rows.length === 0) return { data: [], total };
+    if (rows.length === 0) return { data: [], total, reportRefs: [] };
 
-    const skipRuns = options?.slim === true;
-    const runsByKey = skipRuns
+    const skipHistory = options?.slim === true;
+    const runsByKey = skipHistory
       ? undefined
       : testQueriesDb.getRunsForLanes(
           rows.map((r) => ({ testId: r.testId, fileId: r.fileId, project: r.project })),
           options?.from || options?.to ? { from: options?.from, to: options?.to } : undefined
         );
 
+    const reportRefs: TestReportRef[] = [];
+    const refIndexByReportId = new Map<string, number>();
+    if (runsByKey) {
+      const createdAtByReportId = new Map<string, string>();
+      for (const runs of runsByKey.values()) {
+        for (const run of runs) {
+          if (!createdAtByReportId.has(run.reportId)) {
+            createdAtByReportId.set(run.reportId, run.createdAt);
+          }
+        }
+      }
+      const labels = reportDb.getLabelsByIds([...createdAtByReportId.keys()]);
+      for (const [reportId, createdAt] of createdAtByReportId) {
+        const label = labels.get(reportId);
+        refIndexByReportId.set(reportId, reportRefs.length);
+        reportRefs.push({
+          reportId,
+          createdAt,
+          displayNumber: label?.displayNumber ?? undefined,
+          title: label?.title ?? undefined,
+        });
+      }
+    }
+
     const data: TestWithQuarantineInfoRow[] = rows.map((row) => {
       const key = `${row.testId}::${row.fileId}::${row.project}`;
       const isQuarantined = Boolean(row.quarantined);
+      const runs = runsByKey?.get(key);
       return {
         testId: row.testId,
         fileId: row.fileId,
@@ -612,11 +665,20 @@ export class TestManagementService {
         isQuarantined,
         quarantinedAt: isQuarantined && row.latestNonSkippedAt ? row.latestNonSkippedAt : undefined,
         quarantineReason: isQuarantined && row.quarantineReason ? row.quarantineReason : undefined,
-        runs: runsByKey?.get(key) ?? [],
+        ...(runs
+          ? {
+              history: runs.map((run) => ({
+                report: refIndexByReportId.get(run.reportId) ?? 0,
+                outcome: run.outcome,
+              })),
+              historyPassRate: historyPassRate(runs),
+              emaDuration: exponentialMovingAverageDuration(runs),
+            }
+          : {}),
       };
     });
 
-    return { data, total };
+    return { data, total, reportRefs };
   }
 
   async getTestsSummary(

@@ -1,4 +1,3 @@
-import type { TestWithQuarantineInfo } from '@playwright-reports/shared';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -9,11 +8,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import type { TestRowItem } from './useTestManagement';
 
 interface QuarantineDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  test: TestWithQuarantineInfo | null;
+  test: TestRowItem | null;
   reason: string;
   onReasonChange: (reason: string) => void;
   onSubmit: () => void;
@@ -86,7 +86,7 @@ export function QuarantineDialog({
 interface DeleteTestDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  test: TestWithQuarantineInfo | null;
+  test: TestRowItem | null;
   onSubmit: () => void;
   isPending: boolean;
 }

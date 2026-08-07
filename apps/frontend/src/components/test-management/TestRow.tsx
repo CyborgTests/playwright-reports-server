@@ -1,4 +1,4 @@
-import { formatDuration, type TestWithQuarantineInfo } from '@playwright-reports/shared';
+import { formatDuration } from '@playwright-reports/shared';
 import { AlertTriangle, Clock, RotateCcw } from 'lucide-react';
 import { forwardRef, memo } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
@@ -19,20 +19,20 @@ import { TableCell, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatDate } from '@/lib/date';
 import { formatRegressionAge, getStatusBadge } from './badges';
-import { exponentialMovingAverageDuration } from './calculations/ema';
+import type { TestRowItem } from './useTestManagement';
 
 interface TestRowProps {
-  item: TestWithQuarantineInfo;
+  item: TestRowItem;
   warningThreshold: number;
   quarantineThreshold: number;
   stale: boolean;
   regressionHighlightMode: 'opened' | 'closed' | null;
   isResetFlakinessPending: boolean;
   isClearFlakinessResetPending: boolean;
-  onQuarantine: (test: TestWithQuarantineInfo) => void;
-  onResetFlakiness: (test: TestWithQuarantineInfo) => void;
-  onClearFlakinessReset: (test: TestWithQuarantineInfo) => void;
-  onDelete: (test: TestWithQuarantineInfo) => void;
+  onQuarantine: (test: TestRowItem) => void;
+  onResetFlakiness: (test: TestRowItem) => void;
+  onClearFlakinessReset: (test: TestRowItem) => void;
+  onDelete: (test: TestRowItem) => void;
 }
 
 export const TestRow = memo(
@@ -88,7 +88,7 @@ export const TestRow = memo(
           <p className="text-sm break-words">{item.project}</p>
         </TableCell>
         <TableCell className="whitespace-nowrap w-px">
-          {outcomeBadge(item.runs?.at(0)?.outcome)}
+          {outcomeBadge(item.history?.at(0)?.outcome)}
         </TableCell>
         <TableCell className="whitespace-nowrap w-px">
           {getStatusBadge(item, warningThreshold, quarantineThreshold)}
@@ -115,12 +115,16 @@ export const TestRow = memo(
           <Badge variant="outline">{item.totalRuns || 0}</Badge>
         </TableCell>
         <TableCell className="whitespace-nowrap w-px">
-          <TrendSparklineHistory runs={item.runs ?? []} highlights={highlights} />
+          <TrendSparklineHistory
+            runs={item.history ?? []}
+            passRate={item.historyPassRate ?? 0}
+            highlights={highlights}
+          />
         </TableCell>
         <TableCell className="whitespace-nowrap w-px">
           <span className="flex items-center">
             <Clock className="h-4 w-4 mr-1" />
-            {formatDuration(exponentialMovingAverageDuration(item.runs))}
+            {formatDuration(item.emaDuration ?? 0)}
           </span>
         </TableCell>
         <TableCell>

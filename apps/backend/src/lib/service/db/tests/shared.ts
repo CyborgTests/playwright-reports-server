@@ -1,4 +1,4 @@
-import type { FailureCategorySource } from '@playwright-reports/shared';
+import type { FailureCategorySource, TestHistoryPoint } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import { getDatabase } from '../db.js';
 import { decodeFailureDetails } from '../failureDetailsCodec.js';
@@ -49,7 +49,9 @@ export interface TestWithQuarantineInfoRow extends Test {
   flakinessResetAt?: string;
   totalRuns?: number;
   lastRunAt?: string;
-  runs?: TestRunRow[];
+  history?: TestHistoryPoint[];
+  historyPassRate?: number;
+  emaDuration?: number;
 }
 
 export interface DerivedPageRow {

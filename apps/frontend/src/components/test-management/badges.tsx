@@ -1,5 +1,5 @@
-import type { TestWithQuarantineInfo } from '@playwright-reports/shared';
 import { Badge } from '@/components/ui/badge';
+import type { TestRowItem } from './useTestManagement';
 
 export function formatRegressionAge(days: number): string {
   if (days < 1) return `${Math.round(days * 24)}h`;
@@ -7,7 +7,7 @@ export function formatRegressionAge(days: number): string {
 }
 
 export function getStatusBadge(
-  test: TestWithQuarantineInfo,
+  test: TestRowItem,
   warningThreshold: number,
   quarantineThreshold: number
 ) {

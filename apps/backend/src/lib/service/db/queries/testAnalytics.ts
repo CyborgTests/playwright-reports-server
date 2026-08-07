@@ -1,6 +1,6 @@
 // Intentionally NOT migrated to the Kysely.compile().
 // Uses complex analytics queries with:
-//   - dynamic CTEs (agg_w / recent_w) whose WHERE conditions vary by call site
+//   - dynamic CTEs (window_w / cat_w) whose WHERE conditions vary by call site
 //   - window functions (ROW_NUMBER OVER PARTITION BY) inside subqueries
 //   - dynamic ORDER BY clauses with several CASE/COALESCE switches
 //   - UNION ALL VALUES tuple lists for lane lookup
@@ -12,7 +12,6 @@ import type {
   TestWithQuarantineInfoRow,
 } from '../tests.sqlite.js';
 import { convertDbRowToTestRun, type TestRunDbRow } from '../tests.sqlite.js';
-import { chunk } from '../utils.js';
 
 export interface DerivedPageOptions {
   status?: 'all' | 'quarantined' | 'not-quarantined';
@@ -70,8 +69,8 @@ export function getDerivedPage(
   const ctes: string[] = [];
   const cteParams: Array<string | number> = [];
   if (windowed) {
-    // Build the window filter's SQL and its bind params together so the three
-    // reuses (agg_w / recent_w / cat_w) can't desync: each CTE appends exactly
+    // Build the window filter's SQL and its bind params together so the two
+    // reuses (window_w / cat_w) can't desync: each CTE appends exactly
     // the params for the `?` placeholders it just emitted.
     const windowFilter = (
       failureCategory?: string
@@ -97,24 +96,18 @@ export function getDerivedPage(
       return { sql: conds.join(' AND '), params };
     };
 
-    const aggFilter = windowFilter();
-    ctes.push(`agg_w AS (
-      SELECT testId, fileId, project, COUNT(*) AS totalRuns, MAX(createdAt) AS lastRunAt
-      FROM test_runs WHERE ${aggFilter.sql}
-      GROUP BY testId, fileId, project
-    )`);
-    cteParams.push(...aggFilter.params);
-
-    const recentFilter = windowFilter();
-    ctes.push(`recent_w AS (
+    const windowAggregateFilter = windowFilter();
+    ctes.push(`window_w AS (
       SELECT testId, fileId, project,
+             COUNT(*) AS totalRuns,
+             MAX(createdAt) AS lastRunAt,
              CAST(SUM(CASE WHEN outcome IN ('expected', 'passed') THEN 1 ELSE 0 END) AS REAL)
                / NULLIF(COUNT(*), 0) AS recentPassRate,
              AVG(CASE WHEN duration >= 0 THEN duration END) AS avgDuration
-      FROM test_runs WHERE ${recentFilter.sql}
+      FROM test_runs WHERE ${windowAggregateFilter.sql}
       GROUP BY testId, fileId, project
     )`);
-    cteParams.push(...recentFilter.params);
+    cteParams.push(...windowAggregateFilter.params);
 
     if (options.failureCategory) {
       const catFilter = windowFilter(options.failureCategory);
@@ -126,12 +119,12 @@ export function getDerivedPage(
     }
   }
 
-  const totalRunsExpr = windowed ? 'COALESCE(agg_w.totalRuns, 0)' : 'COALESCE(t.totalRuns, 0)';
-  const lastRunAtExpr = windowed ? 'agg_w.lastRunAt' : 't.latestRunAt';
+  const totalRunsExpr = windowed ? 'COALESCE(window_w.totalRuns, 0)' : 'COALESCE(t.totalRuns, 0)';
+  const lastRunAtExpr = windowed ? 'window_w.lastRunAt' : 't.latestRunAt';
   const passRateExpr = windowed
-    ? 'COALESCE(recent_w.recentPassRate, 1.0)'
+    ? 'COALESCE(window_w.recentPassRate, 1.0)'
     : 'COALESCE(t.recentPassRate, 1.0)';
-  const avgDurationExpr = windowed ? 'recent_w.avgDuration' : 't.avgDuration';
+  const avgDurationExpr = windowed ? 'window_w.avgDuration' : 't.avgDuration';
 
   const whereConds: string[] = [];
   const whereParams: Array<string | number> = [];
@@ -141,7 +134,7 @@ export function getDerivedPage(
     whereParams.push(project as string);
   }
   if (windowed && !options.resolvedSince && !options.regressedSince) {
-    whereConds.push('agg_w.totalRuns IS NOT NULL AND agg_w.totalRuns > 0');
+    whereConds.push('window_w.totalRuns IS NOT NULL AND window_w.totalRuns > 0');
   }
   if (options.status === 'quarantined') {
     whereConds.push('COALESCE(t.quarantined, 0) = 1');
@@ -251,11 +244,9 @@ export function getDerivedPage(
   const whereSql = whereConds.length ? `WHERE ${whereConds.join(' AND ')}` : '';
   const windowJoins = windowed
     ? `
-      LEFT JOIN agg_w
-        ON agg_w.testId = t.testId AND agg_w.fileId = t.fileId AND agg_w.project = t.project
-      LEFT JOIN recent_w
-        ON recent_w.testId = t.testId AND recent_w.fileId = t.fileId
-          AND recent_w.project = t.project`
+      LEFT JOIN window_w
+        ON window_w.testId = t.testId AND window_w.fileId = t.fileId
+          AND window_w.project = t.project`
     : '';
   const baseFrom = `FROM tests t ${windowJoins} ${whereSql}`;
 
@@ -303,100 +294,56 @@ export function getDerivedPage(
   return { rows, total };
 }
 
-const LANE_CHUNK_SIZE = 5000;
+export const LANE_HISTORY_LIMIT = 30;
 
 export function getRunsForLanes(
   db: Database.Database,
   lanes: Array<{ testId: string; fileId: string; project: string }>,
   opts?: { from?: string; to?: string }
 ): Map<string, TestRunRow[]> {
-  if (lanes.length === 0) return new Map();
-
   const map = new Map<string, TestRunRow[]>();
-  for (const batch of chunk(lanes, LANE_CHUNK_SIZE)) {
-    runsForLaneChunk(db, batch, opts, map);
-  }
-  return map;
-}
+  if (lanes.length === 0) return map;
 
-function runsForLaneChunk(
-  db: Database.Database,
-  lanes: Array<{ testId: string; fileId: string; project: string }>,
-  opts: { from?: string; to?: string } | undefined,
-  out: Map<string, TestRunRow[]>
-): void {
-  const windowed = !!(opts?.from || opts?.to);
-  const laneRows = lanes
-    .map(() => 'SELECT ? AS testId, ? AS fileId, ? AS project')
-    .join(' UNION ALL ');
-  const params: Array<string | number> = lanes.flatMap((l) => [l.testId, l.fileId, l.project]);
-
-  let sql: string;
-  if (windowed) {
-    const winConds = ["tr.outcome != 'skipped'"];
-    if (opts?.from) {
-      winConds.push('tr.createdAt >= ?');
-      params.push(opts.from);
-    }
-    if (opts?.to) {
-      winConds.push('tr.createdAt < ?');
-      params.push(opts.to);
-    }
-    sql = `
-      WITH lanes(testId, fileId, project) AS (${laneRows})
-      SELECT tr.testId, tr.fileId, tr.project, tr.runId, tr.outcome,
-             tr.duration, tr.createdAt, tr.failure_category, tr.reportId
-      FROM test_runs tr
-      JOIN lanes l
-        ON l.testId = tr.testId AND l.fileId = tr.fileId AND l.project = tr.project
-      WHERE ${winConds.join(' AND ')}
-      ORDER BY tr.testId, tr.fileId, tr.project, tr.createdAt DESC
-    `;
-  } else {
-    sql = `
-      WITH lanes(testId, fileId, project) AS (${laneRows})
-      SELECT testId, fileId, project, runId, outcome, duration, createdAt,
-             failure_category, reportId
-      FROM (
-        SELECT tr.testId, tr.fileId, tr.project, tr.runId, tr.outcome,
-               tr.duration, tr.createdAt, tr.failure_category, tr.reportId,
-               ROW_NUMBER() OVER (
-                 PARTITION BY tr.testId, tr.fileId, tr.project
-                 ORDER BY tr.createdAt DESC
-               ) AS rn
-        FROM test_runs tr
-        JOIN lanes l
-          ON l.testId = tr.testId AND l.fileId = tr.fileId AND l.project = tr.project
-      )
-      WHERE rn <= 50
-      ORDER BY testId, fileId, project, createdAt DESC
-    `;
-  }
+  const conditions = ['testId = ?', 'fileId = ?', 'project = ?'];
+  if (opts?.from) conditions.push('createdAt >= ?');
+  if (opts?.to) conditions.push('createdAt < ?');
+  const statement = db.prepare(
+    `SELECT runId, outcome, duration, createdAt, failure_category, reportId
+     FROM test_runs
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY createdAt DESC
+     LIMIT ${LANE_HISTORY_LIMIT}`
+  );
+  const windowParameters = [opts?.from, opts?.to].filter((v): v is string => !!v);
 
   type LaneRunRow = Pick<
     TestRunDbRow,
-    'testId' | 'fileId' | 'project' | 'runId' | 'outcome' | 'duration' | 'createdAt' | 'reportId'
+    'runId' | 'outcome' | 'duration' | 'createdAt' | 'reportId'
   > & { failure_category: string | null };
-  const runRows = db.prepare(sql).all(...params) as LaneRunRow[];
-  for (const row of runRows) {
-    const key = `${row.testId}::${row.fileId}::${row.project}`;
-    let bucket = out.get(key);
-    if (!bucket) {
-      bucket = [];
-      out.set(key, bucket);
-    }
-    bucket.push({
-      runId: row.runId,
-      testId: row.testId,
-      fileId: row.fileId,
-      project: row.project,
-      reportId: row.reportId,
-      outcome: row.outcome,
-      duration: row.duration ?? undefined,
-      createdAt: row.createdAt,
-      failureCategory: row.failure_category || undefined,
-    });
+
+  for (const lane of lanes) {
+    const rows = statement.all(
+      lane.testId,
+      lane.fileId,
+      lane.project,
+      ...windowParameters
+    ) as LaneRunRow[];
+    map.set(
+      `${lane.testId}::${lane.fileId}::${lane.project}`,
+      rows.map((row) => ({
+        runId: row.runId,
+        testId: lane.testId,
+        fileId: lane.fileId,
+        project: lane.project,
+        reportId: row.reportId,
+        outcome: row.outcome,
+        duration: row.duration ?? undefined,
+        createdAt: row.createdAt,
+        failureCategory: row.failure_category || undefined,
+      }))
+    );
   }
+  return map;
 }
 
 export function getTestsSummary(

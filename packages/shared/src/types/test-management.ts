@@ -11,13 +11,33 @@ export interface TestWithQuarantineInfo {
   flakinessScore?: number;
   flakinessResetAt?: string;
   totalRuns?: number;
-  runs?: TestRun[];
+  history?: TestHistoryPoint[];
+  historyPassRate?: number;
+  emaDuration?: number;
   lastRunAt?: string;
   regression?: TestDetailRegression;
   regressionHighlights?: {
     newAtReportId?: string;
     resolvedAtReportId?: string;
   };
+}
+
+export interface TestHistoryPoint {
+  report: number;
+  outcome: string;
+}
+
+export interface TestReportRef {
+  reportId: string;
+  createdAt: string;
+  displayNumber?: number;
+  title?: string;
+}
+
+export interface TestsPageResponse {
+  data: TestWithQuarantineInfo[];
+  total: number;
+  reportRefs: TestReportRef[];
 }
 
 export type FailureCategorySource = 'heuristic' | 'llm' | 'manual' | 'consensus';

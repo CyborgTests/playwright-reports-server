@@ -696,6 +696,29 @@ export class ReportDatabase {
     return out;
   }
 
+  public getLabelsByIds(
+    ids: string[]
+  ): Map<string, { displayNumber: number | null; title: string | null }> {
+    const out = new Map<string, { displayNumber: number | null; title: string | null }>();
+    if (ids.length === 0) return out;
+    for (const idChunk of chunk(ids, 500)) {
+      const compiled = this.k
+        .selectFrom('reports')
+        .select(['reportID', 'displayNumber', 'title'])
+        .where('reportID', 'in', idChunk)
+        .compile();
+      const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+        reportID: string;
+        displayNumber: number | null;
+        title: string | null;
+      }>;
+      for (const row of rows) {
+        out.set(row.reportID, { displayNumber: row.displayNumber, title: row.title });
+      }
+    }
+    return out;
+  }
+
   public getCount(): number {
     const compiled = this.k
       .selectFrom('reports')
