@@ -105,7 +105,7 @@ export default function QualityOverviewPage() {
     (!!activeSlug && (configQ.isLoading || snapshotQ.isLoading));
 
   return (
-    <div className="container mx-auto max-w-5xl space-y-6 px-4 py-6">
+    <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className={title()}>Overview</h1>

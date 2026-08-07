@@ -183,7 +183,30 @@ type ChartDatum = {
 
 const BAR_ANIMATION_MS = 500;
 
-function chartChildren(animate: boolean) {
+const SERIES = [
+  { label: 'Passed', color: CHART_COLORS.passed },
+  { label: 'Flaky', color: CHART_COLORS.flaky },
+  { label: 'Failed', color: CHART_COLORS.failed },
+] as const;
+
+function SeriesLegend() {
+  return (
+    <ul className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+      {SERIES.map((series) => (
+        <li key={series.label} className="flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="h-2.5 w-2.5 rounded-sm"
+            style={{ backgroundColor: series.color }}
+          />
+          {series.label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function chartChildren(animate: boolean, windowData: ChartDatum[]) {
   return (
     <>
       <CartesianGrid strokeDasharray="3 3" />
@@ -193,6 +216,12 @@ function chartChildren(animate: boolean) {
         angle={-45}
         textAnchor="end"
         height={XAXIS_HEIGHT}
+        interval={0}
+        // One tick per run means the same date repeats for every run that day;
+        // label only the first bar of each date.
+        tickFormatter={(value: string, index: number) =>
+          index > 0 && windowData[index - 1]?.name === value ? '' : value
+        }
       />
       <Tooltip
         content={<CustomTooltip />}
@@ -348,15 +377,20 @@ function HealthGridImpl({
   return (
     <Card>
       <CardHeader>
-        <h3 className="text-lg font-semibold">Test Health Grid</h3>
-        <p className="text-sm text-muted-foreground">
-          Stacked bar chart for{' '}
-          {totalRuns && totalRuns > metrics.length
-            ? `${metrics.length}/${totalRuns}`
-            : metrics.length}{' '}
-          {(totalRuns ?? metrics.length) === 1 ? 'run' : 'runs'} in the selected period
-          {isLoadingPrevious ? ' · loading previous…' : ''}
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">Test Health Grid</h3>
+            <p className="text-sm text-muted-foreground">
+              Stacked bar chart for{' '}
+              {totalRuns && totalRuns > metrics.length
+                ? `${metrics.length}/${totalRuns}`
+                : metrics.length}{' '}
+              {(totalRuns ?? metrics.length) === 1 ? 'run' : 'runs'} in the selected period
+              {isLoadingPrevious ? ' · loading previous…' : ''}
+            </p>
+          </div>
+          <SeriesLegend />
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -397,7 +431,7 @@ function HealthGridImpl({
                       }}
                     >
                       <YAxis hide domain={[0, axisMax]} />
-                      {chartChildren(animateBars)}
+                      {chartChildren(animateBars, windowData)}
                     </BarChart>
                   </div>
                 </div>
@@ -413,7 +447,7 @@ function HealthGridImpl({
                   }}
                 >
                   <YAxis domain={[0, axisMax]} />
-                  {chartChildren(animateBars)}
+                  {chartChildren(animateBars, windowData)}
                 </BarChart>
               )}
             </div>

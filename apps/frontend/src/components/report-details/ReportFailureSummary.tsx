@@ -39,24 +39,35 @@ interface AnalyzeResponse {
   queued: number;
 }
 
+const CATEGORY_HUES: Record<string, string> = {
+  timeout: 'amber',
+  assertion_error: 'red',
+  network_error: 'blue',
+  element_not_found: 'purple',
+  navigation_error: 'cyan',
+  javascript_error: 'orange',
+  permission_error: 'pink',
+  setup_teardown: 'gray',
+  browser_crash: 'red',
+  api_error: 'blue',
+  snapshot_mismatch: 'purple',
+  unknown: 'slate',
+};
+
 const CATEGORY_COLORS: Record<string, string> = {
-  timeout: 'bg-amber-100 text-amber-800',
-  assertion_error: 'bg-red-100 text-red-800',
-  network_error: 'bg-blue-100 text-blue-800',
-  element_not_found: 'bg-purple-100 text-purple-800',
-  navigation_error: 'bg-cyan-100 text-cyan-800',
-  javascript_error: 'bg-orange-100 text-orange-800',
-  permission_error: 'bg-pink-100 text-pink-800',
-  setup_teardown: 'bg-gray-100 text-gray-800',
-  browser_crash: 'bg-red-100 text-red-800',
-  api_error: 'bg-blue-100 text-blue-800',
-  snapshot_mismatch: 'bg-purple-100 text-purple-800',
-  unknown: 'bg-slate-100 text-slate-800',
+  amber: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200',
+  red: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200',
+  blue: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200',
+  purple: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-200',
+  cyan: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200',
+  orange: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-200',
+  pink: 'bg-pink-100 text-pink-800 dark:bg-pink-950 dark:text-pink-200',
+  gray: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
+  slate: 'bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-200',
 };
 
 function getCategoryColor(category: string): string {
-  const key = category.toLowerCase();
-  return CATEGORY_COLORS[key] ?? 'bg-slate-100 text-slate-800';
+  return CATEGORY_COLORS[CATEGORY_HUES[category.toLowerCase()] ?? 'slate'];
 }
 
 export default function ReportFailureSummary({ reportId }: Readonly<ReportFailureSummaryProps>) {
