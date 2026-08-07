@@ -1,3 +1,5 @@
+import type { SourceLocation } from './index.js';
+
 export interface StatDelta {
   percent: number | null;
   trend: 'up' | 'down' | 'stable';
@@ -252,11 +254,7 @@ export interface FailureDetails {
   stackTrace?: string;
   testTitle: string;
   filePath: string;
-  location?: {
-    file: string;
-    line: number;
-    column: number;
-  };
+  location?: SourceLocation;
   attachments?: Array<{
     name: string;
     path: string;

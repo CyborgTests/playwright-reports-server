@@ -73,7 +73,6 @@ export interface ReportsRow {
   size: string | null;
   sizeBytes: number;
   metadata: string;
-  files: string | null;
   passRate: number | null;
   statTotal: number | null;
   statExpected: number | null;
@@ -254,6 +253,10 @@ export interface TestsRow {
   latestFailureCategory: string | null;
   flakinessResetAt: string | null;
   quarantineFixedAt: string | null;
+  // Test-definition fields, last-write-wins per ingest (migration 0004).
+  projectName: string | null;
+  suitePath: string | null; // JSON string[]
+  tags: string | null; // JSON string[]
 }
 
 export interface TestRunsRow {
@@ -270,6 +273,7 @@ export interface TestRunsRow {
   failure_category_source: string | null;
   error_signature: string | null;
   has_trace: number;
+  annotations: string | null; // JSON [{ type, description? }]
 }
 
 export interface TestTraceBaselinesRow {

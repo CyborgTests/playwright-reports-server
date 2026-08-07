@@ -6,7 +6,7 @@ import path from 'node:path';
 import type { SyncProgress } from '@playwright-reports/shared';
 import { serveReportRoute } from '../constants.js';
 import { githubSyncDb, reportDb } from '../service/db/index.js';
-import { testManagementService } from '../service/test-management/index.js';
+import { processReportOrRollback } from '../service/index.js';
 import { storage } from '../storage/index.js';
 import { withError } from '../withError.js';
 import type { GithubSyncConfigResolved } from './configService.js';
@@ -419,13 +419,7 @@ async function uploadArtifactFromTmp(args: {
       args.onUploadProgress
     );
     reportDb.onCreated(report);
-
-    const { error: testsErr } = await withError(testManagementService.processReport(report));
-    if (testsErr) {
-      console.error(
-        `[github-sync] processReport failed for ${reportId}: ${testsErr instanceof Error ? testsErr.message : String(testsErr)}`
-      );
-    }
+    await processReportOrRollback(report);
 
     githubSyncDb.recordSyncedArtifact({
       artifactId: String(args.artifact.id),

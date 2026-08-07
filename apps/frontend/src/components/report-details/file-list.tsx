@@ -1,6 +1,5 @@
-import type { ReadReportsHistory, ReportHistory } from '@playwright-reports/shared';
+import type { ReportHistory } from '@playwright-reports/shared';
 import { type FC, useEffect, useMemo, useState } from 'react';
-import { toast } from 'sonner';
 import InlineStatsCircle from '@/components/inline-stats-circle';
 import { subtitle } from '@/components/primitives';
 import { StatChart } from '@/components/stat-chart';
@@ -12,8 +11,6 @@ import {
 } from '@/components/ui/accordion';
 import { Alert } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
-import useQuery from '@/hooks/useQuery';
-import { withQueryParams } from '@/lib/network';
 import FileSuitesTree, { StatsBadges } from './suite-tree';
 import ReportFilters from './tests-filters';
 
@@ -23,23 +20,10 @@ interface FileListProps {
 }
 
 const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
-  const { data: history, error: historyError } = useQuery<ReadReportsHistory>(
-    withQueryParams('/api/report/list', { limit: '10', project: report?.project ?? '' }),
-    {
-      dependencies: [report?.reportID],
-    }
-  );
-
   const [filteredTests, setFilteredTests] = useState<ReportHistory | undefined>(
     report ?? undefined
   );
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (historyError) {
-      toast.error(historyError.message);
-    }
-  }, [historyError]);
 
   const newRegressionTestIds = useMemo(
     () => new Set((report?.regressions?.newTests ?? []).map((t) => t.testId)),
@@ -100,7 +84,6 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
                     <h4 className={subtitle()}>Tests</h4>
                     <FileSuitesTree
                       file={file}
-                      history={history?.reports ?? []}
                       reportId={report?.reportID}
                       project={report?.project}
                       newRegressionTestIds={newRegressionTestIds}

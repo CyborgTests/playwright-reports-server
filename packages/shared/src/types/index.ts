@@ -282,19 +282,20 @@ export enum ReportTestOutcomeEnum {
   Failed = 'failed',
 }
 
+export interface SourceLocation {
+  file: string;
+  line?: number;
+  column?: number;
+}
+
 export interface ReportTest {
   testId: string;
   title: string;
   projectName?: string;
   project?: string;
-  location?: {
-    file: string;
-    line: number;
-    column: number;
-  };
+  location?: SourceLocation;
   duration: number;
   outcome: ReportTestOutcome;
-  ok: boolean;
   path?: string[];
   attachments?: Array<{
     name: string;
@@ -312,7 +313,7 @@ export interface ReportTest {
   }>;
   tags?: string[];
   annotations?: Array<{
-    type?: string;
+    type: string;
     description?: string;
   }>;
   createdAt?: string;
@@ -323,10 +324,8 @@ export interface ReportTest {
 }
 
 export interface ReportFile {
-  name: string;
   fileId: string;
   fileName: string;
-  path: string;
   stats: ReportStats;
   tests: ReportTest[];
 }
@@ -385,12 +384,6 @@ export interface ReportHistory {
     newTests?: RegressionTestRef[];
     resolvedTests?: RegressionTestRef[];
   };
-}
-
-export interface TestHistory extends ReportTest {
-  createdAt: string;
-  reportID: string;
-  reportUrl: string;
 }
 
 export interface ReportTestFilters {

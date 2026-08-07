@@ -2,9 +2,7 @@ import type { ReportStats } from '@playwright-reports/shared';
 import { type ExpressionBuilder, type SelectQueryBuilder, sql } from 'kysely';
 import { defaultProjectName } from '../../constants.js';
 import type { ReadReportsInput, ReadReportsOutput, ReportHistory } from '../../storage/types.js';
-import { withError } from '../../withError.js';
 import { dataEvents } from '../dataEvents.js';
-import { testManagementService } from '../test-management/index.js';
 import { getDatabase } from './db.js';
 import { type Database, getKysely, type ReportsRow } from './kysely.js';
 import { projectSummaryDb } from './projectSummary.sqlite.js';
@@ -69,10 +67,7 @@ type ReportSummaryRow = Pick<
   'reportID' | 'project' | 'title' | 'displayNumber' | 'createdAt' | 'reportUrl'
 >;
 
-// every `reports` column except `files` - the full test-file tree.
-// list/analytics paths that never read `.files` use this to avoid
-// transferring and JSON.parsing it per row.
-const REPORT_COLUMNS_WITHOUT_FILES = [
+const REPORT_LIST_COLUMNS = [
   'reportID',
   'project',
   'title',
@@ -155,55 +150,6 @@ export class ReportDatabase {
     console.log(`[report db] initialized (${this.getCount()} reports)`);
   }
 
-  public async populateTestRuns(): Promise<void> {
-    if (!this.initialized) {
-      console.warn('[report db] Reports database not initialized, skipping processing');
-      return;
-    }
-
-    try {
-      const unprocessedCompiled = this.k
-        .selectFrom('reports')
-        .select('reportID')
-        .where('reportID', 'not in', this.k.selectFrom('test_runs').select('reportId').distinct())
-        .orderBy('createdAt', 'asc')
-        .compile();
-      const unprocessedRows = this.db
-        .prepare(unprocessedCompiled.sql)
-        .all(...unprocessedCompiled.parameters) as Array<{ reportID: string }>;
-
-      if (!unprocessedRows.length) {
-        console.log('[report db] All reports have already been parsed');
-        return;
-      }
-
-      console.log(`[report db] Processing ${unprocessedRows.length} unprocessed reports`);
-
-      let processedCount = 0;
-      let errorCount = 0;
-
-      for (const { reportID } of unprocessedRows) {
-        const report = this.getByID(reportID);
-        if (!report) continue;
-        const { error } = await withError(testManagementService.processReport(report));
-
-        if (error) {
-          console.error(`[report db] Error processing report ${reportID}:`, error);
-          errorCount++;
-        }
-
-        processedCount++;
-      }
-
-      console.log(
-        `[report db] Processing complete: ${processedCount} reports processed, ${errorCount} errors`
-      );
-    } catch (error) {
-      console.error('[report db] Failed to process existing reports:', error);
-      throw error;
-    }
-  }
-
   private insertReport(report: ReportHistory): void {
     const {
       reportID,
@@ -242,7 +188,6 @@ export class ReportDatabase {
         size: size || null,
         sizeBytes: sizeBytes || 0,
         metadata: JSON.stringify(metadata),
-        files: files ? JSON.stringify(files) : null,
         passRate: computePassRateFromStats(stats),
         statTotal: stats?.total ?? null,
         statExpected: stats?.expected ?? null,
@@ -268,7 +213,6 @@ export class ReportDatabase {
           size: eb.ref('excluded.size'),
           sizeBytes: eb.ref('excluded.sizeBytes'),
           metadata: eb.ref('excluded.metadata'),
-          files: eb.ref('excluded.files'),
           passRate: eb.ref('excluded.passRate'),
           statTotal: eb.ref('excluded.statTotal'),
           statExpected: eb.ref('excluded.statExpected'),
@@ -576,10 +520,7 @@ export class ReportDatabase {
     opts?: { from?: string; to?: string; failedOnly?: boolean; before?: string; limit?: number }
   ): ReportHistory[] {
     const q = applyReportFilters(
-      this.k
-        .selectFrom('reports')
-        .select(REPORT_COLUMNS_WITHOUT_FILES)
-        .orderBy('createdAt', 'desc'),
+      this.k.selectFrom('reports').select(REPORT_LIST_COLUMNS).orderBy('createdAt', 'desc'),
       project,
       opts
     );
@@ -907,8 +848,7 @@ export class ReportDatabase {
 
     const hasScanFilter = !!input?.search?.trim() || (input?.tags?.length ?? 0) > 0;
 
-    // skip the `files` column, only the detail by id query needs it.
-    let listSelect = applyWhere(this.k.selectFrom('reports').select(REPORT_COLUMNS_WITHOUT_FILES));
+    let listSelect = applyWhere(this.k.selectFrom('reports').select(REPORT_LIST_COLUMNS));
     if (hasScanFilter) {
       listSelect = listSelect.select(sql<number>`COUNT(*) OVER()`.as('__total'));
     }
@@ -980,9 +920,6 @@ export class ReportDatabase {
       parseCache.set(key, baseDecoded);
     }
 
-    if (row.files != null) {
-      return { ...baseDecoded, files: parseJsonColumn<ReportHistory['files']>(row.files, []) };
-    }
     return baseDecoded;
   }
 

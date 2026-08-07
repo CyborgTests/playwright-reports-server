@@ -12,6 +12,9 @@ export interface Test {
   title: string;
   createdAt: string;
   flakinessResetAt?: string;
+  projectName?: string | null;
+  suitePath?: string | null;
+  tags?: string | null;
 }
 
 export interface TestRunRow {
@@ -30,6 +33,7 @@ export interface TestRunRow {
   reportTitle?: string;
   reportDisplayNumber?: number;
   hasTrace?: boolean;
+  annotations?: string | null;
 }
 
 export interface TestState {

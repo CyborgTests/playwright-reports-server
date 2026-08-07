@@ -1,9 +1,4 @@
-import type {
-  ReportFile,
-  ReportHistory,
-  ReportStats,
-  ReportTest,
-} from '@playwright-reports/shared';
+import type { ReportFile, ReportStats, ReportTest } from '@playwright-reports/shared';
 import { memo, useMemo } from 'react';
 import {
   Accordion,
@@ -71,8 +66,8 @@ export function StatsBadges({ stats }: { stats: ReportStats }) {
   );
 }
 
-function buildTestTree(rootName: string, tests: ReportTest[]): SuiteNode {
-  const root: SuiteNode = { name: rootName, children: [], tests: [] };
+function buildTestTree(tests: ReportTest[]): SuiteNode {
+  const root: SuiteNode = { name: '', children: [], tests: [] };
 
   tests.forEach((test) => {
     const path = test.path || [];
@@ -117,7 +112,6 @@ function buildTestTree(rootName: string, tests: ReportTest[]): SuiteNode {
 
 interface SuiteNodeComponentProps {
   suite: SuiteNode;
-  history: ReportHistory[];
   reportId?: string;
   project?: string;
   newRegressionTestIds?: Set<string>;
@@ -126,7 +120,6 @@ interface SuiteNodeComponentProps {
 
 const SuiteNodeComponent = ({
   suite,
-  history,
   reportId,
   project,
   newRegressionTestIds,
@@ -152,7 +145,6 @@ const SuiteNodeComponent = ({
               </AccordionTrigger>
               <AccordionContent>
                 <SuiteNodeComponent
-                  history={history}
                   reportId={reportId}
                   suite={child}
                   project={project}
@@ -201,7 +193,7 @@ const SuiteNodeComponent = ({
                 </span>
               </AccordionTrigger>
               <AccordionContent>
-                <TestInfo history={history} test={test} project={project} reportId={reportId} />
+                <TestInfo test={test} project={project} reportId={reportId} />
               </AccordionContent>
             </AccordionItem>
           );
@@ -213,7 +205,6 @@ const SuiteNodeComponent = ({
 
 interface FileSuitesTreeProps {
   file: ReportFile;
-  history: ReportHistory[];
   reportId?: string;
   project?: string;
   newRegressionTestIds?: Set<string>;
@@ -222,20 +213,15 @@ interface FileSuitesTreeProps {
 
 const FileSuitesTreeImpl = ({
   file,
-  history,
   reportId,
   project,
   newRegressionTestIds,
   resolvedRegressionTestIds,
 }: FileSuitesTreeProps) => {
-  const suiteTree = useMemo(
-    () => buildTestTree(file.fileName || file.name || 'unknown', file.tests || []),
-    [file]
-  );
+  const suiteTree = useMemo(() => buildTestTree(file.tests || []), [file]);
 
   return (
     <SuiteNodeComponent
-      history={history}
       reportId={reportId}
       suite={suiteTree}
       project={project}

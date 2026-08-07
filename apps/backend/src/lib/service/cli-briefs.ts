@@ -1,4 +1,8 @@
-import type { ClusterAnchor, ClusterRegressionContext } from '@playwright-reports/shared';
+import type {
+  ClusterAnchor,
+  ClusterRegressionContext,
+  SourceLocation,
+} from '@playwright-reports/shared';
 import { defaultConfig } from '../config.js';
 import { parseFailureDetails } from '../failure-clustering/extractors/failure-details.js';
 import { extractFrameFromFailure } from '../failure-clustering/extractors/stack-trace.js';
@@ -26,12 +30,6 @@ const CLUSTER_OTHER_TESTS_MAX = 5;
 const SAMPLE_FAILED_TESTS_PER_CLUSTER = 3;
 const SAMPLE_UNCLUSTERED_FAILURES = 5;
 const ERROR_FIRST_LINE_MAX_CHARS = 240;
-
-interface FailureLocation {
-  file: string;
-  line: number;
-  column?: number;
-}
 
 type NormalizedOutcome = 'passed' | 'failed' | 'flaky' | 'skipped';
 
@@ -61,7 +59,7 @@ export interface TestBrief {
     error: string;
     category?: string;
     signature?: string;
-    location?: FailureLocation;
+    location?: SourceLocation;
     appFrame?: string;
     reportId: string;
     reportUrl?: string;

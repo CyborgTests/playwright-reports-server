@@ -35,9 +35,8 @@ import {
   testAnalysisDb,
   testDb,
 } from '../lib/service/db/index.js';
-import { service } from '../lib/service/index.js';
+import { processReportOrRollback, service } from '../lib/service/index.js';
 import { compareReports } from '../lib/service/reportCompare.js';
-import { testManagementService } from '../lib/service/test-management/index.js';
 import { storage } from '../lib/storage/index.js';
 import { ValidationError, validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
@@ -249,11 +248,10 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         const allTests: PdfTestRow[] = [];
         for (const file of report.files ?? []) {
           for (const test of file.tests) {
-            const fileName = test.location?.file ?? file.fileName;
-            testMeta.set(test.testId, { title: test.title, file: fileName });
+            testMeta.set(test.testId, { title: test.title, file: file.fileName });
             allTests.push({
               title: test.title,
-              file: fileName,
+              file: file.fileName,
               outcome: test.outcome,
               durationMs: test.duration,
             });
@@ -270,9 +268,9 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
 
           const details = parseFailureDetails(run.failureDetails);
           const fallback = testMeta.get(run.testId);
-          const location = details?.location
-            ? `${details.location.file}:${details.location.line}`
-            : (details?.filePath ?? fallback?.file ?? '');
+          const specFile = fallback?.file ?? details?.location?.file ?? details?.filePath ?? '';
+          const line = details?.location?.line;
+          const location = specFile && line != null ? `${specFile}:${line}` : specFile;
 
           const card: PdfFailureCard = {
             testId: run.testId,
@@ -720,14 +718,7 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
 
             const report = uploaded.report;
             reportDb.onCreated(report);
-
-            const { error: testsError } = await withError(
-              testManagementService.processReport(report)
-            );
-
-            if (testsError) {
-              console.error('[routes] upload report - process tests error:', testsError);
-            }
+            await processReportOrRollback(report);
 
             const reportUrl = `${serveReportRoute}/${reportId}/index.html`;
             return { reportId, reportUrl, metadata: validatedMetadata };

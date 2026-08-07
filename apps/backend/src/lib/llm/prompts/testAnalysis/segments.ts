@@ -1,3 +1,4 @@
+import type { SourceLocation } from '@playwright-reports/shared';
 import {
   type DomDiff,
   formatRelativeTime,
@@ -29,7 +30,7 @@ export interface FailureDetailsForPrompt {
   stackTrace?: string;
   testTitle: string;
   filePath: string;
-  location?: { file: string; line: number; column: number };
+  location?: SourceLocation;
   attachments?: Array<{ name: string; path: string; contentType: string }>;
   attempt: number;
   status: string;

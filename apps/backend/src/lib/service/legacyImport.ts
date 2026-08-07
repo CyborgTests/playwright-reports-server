@@ -192,6 +192,8 @@ async function importLegacyReports(summary: LegacyImportSummary): Promise<void> 
     const { error: processError } = await withError(testManagementService.processReport(report));
     if (processError) {
       summary.errors.push(`report ${reportID} processReport: ${processError.message}`);
+      reportDb.onDeleted([reportID]);
+      continue;
     }
     summary.reports.imported++;
   }

@@ -1,4 +1,5 @@
 import type {
+  SourceLocation,
   TestCrossProjectOccurrence,
   TestDetail,
   TestDetailStats,
@@ -11,6 +12,7 @@ import { FLAKINESS_THRESHOLDS, ReportTestOutcomeEnum } from '@playwright-reports
 import { llmService } from '../../llm/index.js';
 import { extractFailureEvidence } from '../../parser/failure-extraction.js';
 import type { ReportHistory } from '../../storage/types.js';
+import { withError } from '../../withError.js';
 import {
   llmTasksDb,
   regressionsDb,
@@ -24,6 +26,7 @@ import {
   testQueriesDb,
   toRegressionContext,
 } from '../db/index.js';
+import { normalizeAnnotations, normalizeStringArray } from '../db/tests/definition.js';
 import { service } from '../index.js';
 import { computeErrorSignature } from './error-signature.js';
 import { classifyFailure } from './failure-classifier.js';
@@ -199,7 +202,11 @@ export class TestManagementService {
     console.log(
       `[testManagement] Processing report ${report.reportID} for project ${report.project}`
     );
-    if (!report.files) return;
+    if (!report.files) {
+      throw new Error(
+        `report ${report.reportID} has no files - report.json is missing or malformed`
+      );
+    }
 
     const config = await this.getConfig();
 
@@ -271,14 +278,23 @@ export class TestManagementService {
           const testId = test.testId ?? '';
           const fileId = file.fileId ?? '';
           const filePath = file.fileName ?? 'unknown';
+          const runCreatedAt =
+            test.createdAt ??
+            (report.startTime ? new Date(report.startTime).toISOString() : report.createdAt);
 
-          testDb.createTest({
-            testId,
-            fileId,
-            filePath,
-            project: report.project,
-            title: test.title || 'Unknown Test',
-          });
+          testDb.createTest(
+            {
+              testId,
+              fileId,
+              filePath,
+              project: report.project,
+              title: test.title || 'Unknown Test',
+              projectName: test.projectName ?? null,
+              suitePath: normalizeStringArray(test.path),
+              tags: normalizeStringArray(test.tags),
+            },
+            runCreatedAt
+          );
 
           const state = testDb.getTestState(testId, fileId, report.project);
           const stayQuarantined = state
@@ -304,14 +320,13 @@ export class TestManagementService {
             reportId: report.reportID,
             outcome: test.outcome || 'unknown',
             duration: test.duration,
-            createdAt:
-              test.createdAt ??
-              (report.startTime ? new Date(report.startTime).toISOString() : report.createdAt),
+            createdAt: runCreatedAt,
             failureDetails: failureDetails ?? undefined,
             failureCategory: classification?.category,
             failureCategorySource: classification?.source,
             errorSignature: errorSignature ?? undefined,
             hasTrace,
+            annotations: normalizeAnnotations(test.annotations),
           };
 
           const flakinessScore = this.computeFlakiness(
@@ -357,11 +372,19 @@ export class TestManagementService {
       );
     }
 
-    if (llmService.isConfigured()) {
-      const cfg = await service.getConfig();
-      if (cfg.llm?.featureEnabled !== false && cfg.llm?.autoAnalyzeNewReports) {
-        this.queueLlmAnalysis(report.reportID, report.project);
-      }
+    const { error: llmError } = await withError(
+      (async () => {
+        if (!llmService.isConfigured()) return;
+        const cfg = await service.getConfig();
+        if (cfg.llm?.featureEnabled !== false && cfg.llm?.autoAnalyzeNewReports) {
+          this.queueLlmAnalysis(report.reportID, report.project);
+        }
+      })()
+    );
+    if (llmError) {
+      console.error(
+        `[testManagement] failed to queue LLM analysis for ${report.reportID}: ${llmError.message}`
+      );
     }
   }
 
@@ -412,7 +435,7 @@ export class TestManagementService {
         duration?: number;
         attachments?: Array<{ name: string; contentType: string; path: string }>;
       }>;
-      location?: { file: string; line: number; column: number };
+      location?: SourceLocation;
       attachments?: Array<{ name: string; path: string; contentType: string }>;
     },
     filePath: string,

@@ -1,7 +1,9 @@
+import type { ReportFile, ReportStats, ReportTest } from '@playwright-reports/shared';
 import { sql } from 'kysely';
 import type { DerivedPageOptions } from '../queries/testAnalytics.js';
 import * as testQueries from '../queries/testAnalytics.js';
 import { singletonOf } from '../singleton.js';
+import { parseJsonColumn } from '../utils.js';
 import { testDb } from './crud.sqlite.js';
 import {
   type DerivedPageRow,
@@ -199,6 +201,88 @@ export class TestQueriesDatabase extends TestDbBase {
   ): { total: number; flakyTests: TestWithQuarantineInfoRow[] } {
     return testQueries.getTestsSummary(this.db, project, warningThreshold);
   }
+
+  public getReportFileTree(reportId: string): ReportFile[] {
+    const rows = this.db
+      .prepare(
+        `SELECT tr.testId, tr.fileId, tr.outcome, tr.duration, tr.annotations,
+                t.filePath, t.title, t.projectName, t.suitePath, t.tags
+           FROM test_runs tr
+           LEFT JOIN tests t
+             ON t.testId = tr.testId AND t.fileId = tr.fileId AND t.project = tr.project
+          WHERE tr.reportId = ?
+          ORDER BY COALESCE(t.filePath, tr.fileId), t.title, tr.testId`
+      )
+      .all(reportId) as Array<{
+      testId: string;
+      fileId: string;
+      outcome: string;
+      duration: number | null;
+      annotations: string | null;
+      filePath: string | null;
+      title: string | null;
+      projectName: string | null;
+      suitePath: string | null;
+      tags: string | null;
+    }>;
+
+    const byFile = new Map<string, ReportFile & { stats: Required<Omit<ReportStats, 'ok'>> }>();
+    for (const row of rows) {
+      let file = byFile.get(row.fileId);
+      if (!file) {
+        file = {
+          fileId: row.fileId,
+          fileName: row.filePath ?? 'unknown',
+          stats: { total: 0, expected: 0, unexpected: 0, flaky: 0, skipped: 0 },
+          tests: [],
+        };
+        byFile.set(row.fileId, file);
+      }
+
+      const { stats } = file;
+      stats.total++;
+      if (row.outcome === 'expected' || row.outcome === 'passed') stats.expected++;
+      else if (row.outcome === 'flaky') stats.flaky++;
+      else if (row.outcome === 'skipped') stats.skipped++;
+      else stats.unexpected++;
+
+      file.tests.push({
+        testId: row.testId,
+        title: row.title ?? 'Unknown Test',
+        projectName: row.projectName ?? undefined,
+        duration: row.duration ?? 0,
+        outcome: row.outcome as ReportTest['outcome'],
+        path: parseJsonColumn<string[] | undefined>(row.suitePath, undefined),
+        tags: parseJsonColumn<string[] | undefined>(row.tags, undefined),
+        annotations: parseJsonColumn<ReportTest['annotations']>(row.annotations, undefined),
+      });
+    }
+    return [...byFile.values()].sort(compareBySeverity);
+  }
+}
+
+type FileStats = Required<Omit<ReportStats, 'ok'>>;
+
+function passRate(stats: FileStats): number {
+  const executed = stats.expected + stats.unexpected + stats.flaky;
+  return executed === 0 ? 0 : stats.expected / executed;
+}
+
+function severityRank(stats: FileStats): number {
+  if (stats.unexpected > 0) return 0;
+  if (stats.flaky > 0) return 1;
+  return stats.expected > 0 ? 2 : 3;
+}
+
+function compareBySeverity(
+  a: ReportFile & { stats: FileStats },
+  b: ReportFile & { stats: FileStats }
+) {
+  const byRank = severityRank(a.stats) - severityRank(b.stats);
+  if (byRank !== 0) return byRank;
+  const byRate = passRate(a.stats) - passRate(b.stats);
+  if (byRate !== 0) return byRate;
+  return a.fileName.localeCompare(b.fileName);
 }
 
 export const testQueriesDb = singletonOf('testQueries', () => new TestQueriesDatabase());

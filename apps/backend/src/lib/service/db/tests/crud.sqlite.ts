@@ -43,20 +43,16 @@ export class TestCrudDatabase extends TestDbBase {
     }>;
   }
 
-  public createTest(test: Omit<Test, 'createdAt'>): Test {
-    const testWithCreatedAt = {
-      ...test,
-      createdAt: new Date().toISOString(),
-    };
+  public createTest(test: Omit<Test, 'createdAt'>, definitionSeenAt: string): void {
     const compiled = this.k
       .insertInto('tests')
       .values({
-        testId: String(testWithCreatedAt.testId),
-        fileId: String(testWithCreatedAt.fileId),
-        filePath: String(testWithCreatedAt.filePath),
-        project: String(testWithCreatedAt.project),
-        title: String(testWithCreatedAt.title),
-        createdAt: String(testWithCreatedAt.createdAt),
+        testId: String(test.testId),
+        fileId: String(test.fileId),
+        filePath: String(test.filePath),
+        project: String(test.project),
+        title: String(test.title),
+        createdAt: new Date().toISOString(),
         latestRunAt: null,
         latestOutcome: null,
         latestNonSkippedAt: null,
@@ -69,11 +65,39 @@ export class TestCrudDatabase extends TestDbBase {
         latestFailureCategory: null,
         flakinessResetAt: null,
         quarantineFixedAt: null,
+        projectName: test.projectName ?? null,
+        suitePath: test.suitePath ?? null,
+        tags: test.tags ?? null,
       })
-      .onConflict((oc) => oc.doNothing())
+      // definition columns must refresh on re-ingest
+      .onConflict((oc) =>
+        oc
+          .columns(['testId', 'fileId', 'project'])
+          .doUpdateSet((eb) => ({
+            filePath: eb.ref('excluded.filePath'),
+            title: eb.ref('excluded.title'),
+            projectName: eb.ref('excluded.projectName'),
+            suitePath: eb.ref('excluded.suitePath'),
+            tags: eb.ref('excluded.tags'),
+          }))
+          .where((eb) =>
+            eb.and([
+              eb.or([
+                eb('tests.latestRunAt', 'is', null),
+                eb('tests.latestRunAt', '<=', definitionSeenAt),
+              ]),
+              eb.or([
+                eb('tests.filePath', 'is not', eb.ref('excluded.filePath')),
+                eb('tests.title', 'is not', eb.ref('excluded.title')),
+                eb('tests.projectName', 'is not', eb.ref('excluded.projectName')),
+                eb('tests.suitePath', 'is not', eb.ref('excluded.suitePath')),
+                eb('tests.tags', 'is not', eb.ref('excluded.tags')),
+              ]),
+            ])
+          )
+      )
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);
-    return testWithCreatedAt;
   }
 
   public getTest(testId: string, fileId: string, project: string): Test | undefined {
@@ -218,6 +242,7 @@ export class TestCrudDatabase extends TestDbBase {
         failure_category_source: testRunWithId.failureCategorySource || null,
         error_signature: testRunWithId.errorSignature || null,
         has_trace: testRunWithId.hasTrace ? 1 : 0,
+        annotations: testRunWithId.annotations ?? null,
       })
       .compile();
     this.db.prepare(compiled.sql).run(...compiled.parameters);

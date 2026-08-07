@@ -49,7 +49,7 @@ export class Lifecycle {
       await initStorage();
 
       await litestreamService.preflight();
-      const restored = await litestreamService.restoreIfNeeded();
+      await litestreamService.restoreIfNeeded();
 
       // Build/upgrade the schema and run seed migrations.
       // Must happen after any Litestream restore (which swaps the DB file) and before the first query.
@@ -60,9 +60,6 @@ export class Lifecycle {
       await initAuthBootstrap();
 
       await Promise.all([configCache.init(), reportDb.init(), resultDb.init()]);
-      if (!restored) {
-        await reportDb.populateTestRuns();
-      }
       console.log('[lifecycle] Databases initialized successfully');
 
       await applyPrimaryModel();
