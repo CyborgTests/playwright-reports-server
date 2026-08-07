@@ -12,10 +12,26 @@ type ReportFiltersProps = {
 };
 
 const STATUSES = [
-  { outcome: 'unexpected', label: 'failed', active: 'bg-danger text-danger-foreground' },
-  { outcome: 'flaky', label: 'flaky', active: 'bg-warning text-warning-foreground' },
-  { outcome: 'expected', label: 'passed', active: 'bg-success text-success-foreground' },
-  { outcome: 'skipped', label: 'skipped', active: 'bg-secondary text-secondary-foreground' },
+  {
+    outcome: 'unexpected',
+    label: 'failed',
+    active: 'border border-danger/30 bg-danger-50 text-danger-900',
+  },
+  {
+    outcome: 'flaky',
+    label: 'flaky',
+    active: 'border border-warning/30 bg-warning-50 text-warning-900',
+  },
+  {
+    outcome: 'expected',
+    label: 'passed',
+    active: 'border border-success/30 bg-success-50 text-success-900',
+  },
+  {
+    outcome: 'skipped',
+    label: 'skipped',
+    active: 'border border-transparent bg-secondary text-secondary-foreground',
+  },
 ] as const;
 
 const ALL_OUTCOMES: ReportTestOutcome[] = STATUSES.map((status) => status.outcome);

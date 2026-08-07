@@ -91,7 +91,11 @@ export const TestRow = memo(
                 </Badge>
               ))}
               {item.tags?.map((tag) => (
-                <Badge key={tag} variant="outline" className="text-[10px] px-1.5 py-0">
+                <Badge
+                  key={tag}
+                  variant="outline"
+                  className="text-[10px] px-1.5 py-0 font-normal text-muted-foreground border border-border"
+                >
                   {tag}
                 </Badge>
               ))}

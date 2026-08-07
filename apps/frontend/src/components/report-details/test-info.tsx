@@ -52,7 +52,11 @@ const TestInfo: FC<TestInfoProps> = ({
         </span>
         {test.projectName && <Badge variant="secondary">{test.projectName}</Badge>}
         {test.tags?.map((tag) => (
-          <Badge key={tag} variant="outline">
+          <Badge
+            key={tag}
+            variant="outline"
+            className="font-normal text-muted-foreground border border-border"
+          >
             {tag}
           </Badge>
         ))}
