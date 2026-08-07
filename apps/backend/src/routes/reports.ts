@@ -8,7 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import { CAPABILITIES, type FailureDetails } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import { serveReportRoute } from '../lib/constants.js';
-import { getReportEtaMs } from '../lib/llm/queueEta.js';
+import { getReportEtaFinishAt } from '../lib/llm/queueEta.js';
 import { parseOffsetQuery } from '../lib/pagination.js';
 import {
   buildReportPdf,
@@ -559,7 +559,7 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
           data: summary ?? null,
           hasFailures,
           pendingAnalysisCount,
-          pendingEtaMs: getReportEtaMs(id),
+          pendingEtaFinishAt: getReportEtaFinishAt(id),
         });
       } catch (error) {
         fastify.log.error(error);

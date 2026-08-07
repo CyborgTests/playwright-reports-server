@@ -29,6 +29,10 @@ export class LLMCircuitBreaker {
     return false;
   }
 
+  retryAt(): string | null {
+    return this.state === 'open' ? new Date(this.openedAt + this.cooldownMs).toISOString() : null;
+  }
+
   msUntilRetry(): number {
     if (this.state !== 'open') return 0;
     return Math.max(0, this.cooldownMs - (Date.now() - this.openedAt));
@@ -75,12 +79,12 @@ export class LLMCircuitBreaker {
 
   getStatus(): LlmCircuitStatus {
     if (this.state === 'open' && this.isBlocking()) {
-      return { state: 'open', retryInMs: this.msUntilRetry(), reason: this.reason };
+      return { state: 'open', retryAt: this.retryAt(), reason: this.reason };
     }
     if (this.state !== 'closed') {
-      return { state: 'half-open', retryInMs: null, reason: this.reason };
+      return { state: 'half-open', retryAt: null, reason: this.reason };
     }
-    return { state: 'closed', retryInMs: null };
+    return { state: 'closed', retryAt: null };
   }
 
   private trip(cooldownMs: number, reason: CircuitReason): void {
@@ -117,7 +121,7 @@ export function circuitFor(modelId: string, label = modelId): LLMCircuitBreaker 
 }
 
 export function circuitStatusFor(modelId: string): LlmCircuitStatus {
-  return breakers.get(modelId)?.getStatus() ?? { state: 'closed', retryInMs: null };
+  return breakers.get(modelId)?.getStatus() ?? { state: 'closed', retryAt: null };
 }
 
 export function resetCircuit(modelId: string): void {

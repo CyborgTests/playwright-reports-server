@@ -1,24 +1,48 @@
 import {
+  type LlmDurationEstimate,
   type LlmTaskType,
   MIN_ESTIMATE_SAMPLES,
   parentEstimateKey,
   type QueueEtaEstimate,
   strategyEstimateKey,
+  strategyPeakConcurrency,
+  strategySerialDepth,
 } from '@playwright-reports/shared';
 import { llmModelsDb, llmTasksDb } from '../service/db/index.js';
 import type { ScheduledEtaTask } from '../service/db/llmTasks.sqlite.js';
+import { type LaneGate, packGates } from './etaLanes.js';
+import type { Gate } from './modelGate.js';
 import { llmAnalysisQueue } from './queue/queue.js';
-import { resolveGate } from './registry.js';
+import { resolveGates } from './registry.js';
 import { resolveOneShotModelRow, resolveRouting } from './routing/index.js';
 
 interface EtaTypePlan {
   meanMs: number;
-  gateKey: string;
-  gateLimit: number;
+  measured: boolean;
+  gates: Gate[];
+  slots: number;
+}
+
+const DEFAULT_CALL_MS = 60_000;
+const OVERRUN_REMAINDER_RATIO = 0.25;
+
+function meanOverPrefix(
+  table: Record<string, LlmDurationEstimate>,
+  prefix: string
+): number | undefined {
+  let sum = 0;
+  let count = 0;
+  for (const [key, estimate] of Object.entries(table)) {
+    if (!key.startsWith(prefix)) continue;
+    sum += estimate.meanMs;
+    count++;
+  }
+  return count > 0 ? sum / count : undefined;
 }
 
 export interface QueueEtas {
   overall: QueueEtaEstimate;
+  computedAt: number; // the simulation's clock; every ms below is relative to it
   perTask: Map<string, number>; // taskId  -> ms until that task finishes
   byReport: Map<string, number>; // reportId -> ms until its last in-flight task finishes
   byProject: Map<string, number>; // project -> same, per project
@@ -35,26 +59,34 @@ export function computeQueueEtas(): QueueEtas {
   return value;
 }
 
+function finishAt(etas: QueueEtas, ms: number | undefined): string | null {
+  return ms == null ? null : new Date(etas.computedAt + ms).toISOString();
+}
+
 export function computeQueueEta(): QueueEtaEstimate {
   return computeQueueEtas().overall;
 }
 
-export function getTaskEtaMs(taskId: string): number | null {
-  return computeQueueEtas().perTask.get(taskId) ?? null;
+export function getTaskEtaFinishAt(taskId: string): string | null {
+  const etas = computeQueueEtas();
+  return finishAt(etas, etas.perTask.get(taskId));
 }
 
-export function getReportEtaMs(reportId: string): number | null {
-  return computeQueueEtas().byReport.get(reportId) ?? null;
+export function getReportEtaFinishAt(reportId: string): string | null {
+  const etas = computeQueueEtas();
+  return finishAt(etas, etas.byReport.get(reportId));
 }
 
-export function getProjectEtaMs(project: string): number | null {
-  return computeQueueEtas().byProject.get(project) ?? null;
+export function getProjectEtaFinishAt(project: string): string | null {
+  const etas = computeQueueEtas();
+  return finishAt(etas, etas.byProject.get(project));
 }
 
 function simulate(now: number): QueueEtas {
   const scheduled = llmTasksDb.getScheduledForEta();
   const empty: QueueEtas = {
-    overall: { etaMs: null, estimatedTasks: 0, totalScheduled: scheduled.length },
+    overall: { etaFinishAt: null, estimatedTasks: 0, totalScheduled: scheduled.length },
+    computedAt: now,
     perTask: new Map(),
     byReport: new Map(),
     byProject: new Map(),
@@ -64,10 +96,10 @@ function simulate(now: number): QueueEtas {
   const estimates = llmTasksDb.getDurationEstimates(MIN_ESTIMATE_SAMPLES);
   const parallelism = Math.max(1, llmAnalysisQueue.parallelism());
 
-  const planByType = new Map<LlmTaskType, EtaTypePlan | null>();
-  const planFor = (type: LlmTaskType): EtaTypePlan | null => {
+  const planByType = new Map<LlmTaskType, EtaTypePlan>();
+  const planFor = (type: LlmTaskType): EtaTypePlan => {
     const cached = planByType.get(type);
-    if (cached !== undefined) return cached;
+    if (cached) return cached;
     const routing = resolveRouting(type);
     const oneShot = routing.strategy === 'one_shot';
     const model = oneShot ? resolveOneShotModelRow(type) : (llmModelsDb.getPrimary() ?? null);
@@ -78,12 +110,23 @@ function simulate(now: number): QueueEtas {
         estimates.parents[parentEstimateKey(type, 'one_shot', model.model, model.baseUrl)]?.meanMs;
     }
     meanMs ??= estimates.parentsByStrategy[strategyEstimateKey(type, routing.strategy)]?.meanMs;
+    const measured = meanMs != null;
+    meanMs ??=
+      strategySerialDepth(routing) *
+      (meanOverPrefix(estimates.roles, `${type}|`) ??
+        meanOverPrefix(estimates.parents, `${type}|one_shot|`) ??
+        DEFAULT_CALL_MS);
 
-    let plan: EtaTypePlan | null = null;
-    if (meanMs != null) {
-      const gate = model ? resolveGate(model) : { key: '__default__', limit: parallelism };
-      plan = { meanMs, gateKey: gate.key, gateLimit: Math.max(1, gate.limit) };
-    }
+    const gates: Gate[] = model
+      ? resolveGates(model).map((gate) => ({ key: gate.key, limit: Math.max(1, gate.limit) }))
+      : [{ key: '__default__', limit: parallelism }];
+    const tightest = Math.min(...gates.map((gate) => gate.limit));
+    const plan: EtaTypePlan = {
+      meanMs,
+      measured,
+      gates,
+      slots: Math.min(strategyPeakConcurrency(routing), tightest),
+    };
     planByType.set(type, plan);
     return plan;
   };
@@ -100,31 +143,24 @@ function simulate(now: number): QueueEtas {
   let estimatedTasks = 0;
   let overallMs = 0;
 
-  const place = (
-    gateKey: string,
-    gateLimit: number,
-    remainingMs: number,
-    earliestStartMs: number
-  ): number => {
-    let lanes = lanesByGate.get(gateKey);
-    if (!lanes) {
-      lanes = new Array<number>(gateLimit).fill(0);
-      lanesByGate.set(gateKey, lanes);
-    } else {
-      while (lanes.length < gateLimit) lanes.push(0);
-    }
-    let earliestLaneIndex = 0;
-    for (let index = 1; index < lanes.length; index++) {
-      if (lanes[index] < lanes[earliestLaneIndex]) earliestLaneIndex = index;
-    }
-    const finish = Math.max(lanes[earliestLaneIndex], earliestStartMs) + remainingMs;
-    lanes[earliestLaneIndex] = finish;
+  const place = (plan: EtaTypePlan, remainingMs: number, earliestStartMs: number): number => {
+    const laneGates: LaneGate[] = plan.gates.map((gate) => {
+      let lanes = lanesByGate.get(gate.key);
+      if (!lanes) {
+        lanes = new Array<number>(gate.limit).fill(0);
+        lanesByGate.set(gate.key, lanes);
+      } else {
+        while (lanes.length < gate.limit) lanes.push(0);
+      }
+      return { lanes, slots: plan.slots };
+    });
+    const finish = packGates(laneGates, remainingMs, earliestStartMs);
     if (finish > overallMs) overallMs = finish;
     return finish;
   };
 
-  const record = (task: ScheduledEtaTask, finish: number) => {
-    estimatedTasks++;
+  const record = (task: ScheduledEtaTask, finish: number, measured: boolean) => {
+    if (measured) estimatedTasks++;
     perTask.set(task.id, finish);
     if (task.reportId) {
       byReport.set(task.reportId, Math.max(byReport.get(task.reportId) ?? 0, finish));
@@ -161,11 +197,12 @@ function simulate(now: number): QueueEtas {
     return 0;
   };
 
-  const remainingMsFor = (task: ScheduledEtaTask, meanMs: number): number =>
-    task.status === 'processing' && task.startedAt
-      ? // use 10% as floor because next items see eta is 0 and treat slot as free
-        Math.max(meanMs - (now - Date.parse(task.startedAt)), meanMs * 0.1)
-      : meanMs;
+  const remainingMsFor = (task: ScheduledEtaTask, meanMs: number): number => {
+    if (task.status !== 'processing' || !task.startedAt) return meanMs;
+    const elapsed = now - Date.parse(task.startedAt);
+    // 10% of the mean is the floor so the next items don't see eta 0 and treat the slot as free.
+    return Math.max(meanMs - elapsed, meanMs * 0.1, elapsed * OVERRUN_REMAINDER_RATIO);
+  };
 
   const dependencyTier = (task: ScheduledEtaTask): number =>
     task.type === 'test_analysis' ? 0 : task.type === 'report_summary' ? 1 : 2;
@@ -184,20 +221,17 @@ function simulate(now: number): QueueEtas {
 
   for (const task of placementOrder) {
     const plan = planFor(task.type);
-    if (!plan) continue;
     const earliestStartMs = task.status === 'processing' ? 0 : earliestStartFor(task);
-    record(
-      task,
-      place(plan.gateKey, plan.gateLimit, remainingMsFor(task, plan.meanMs), earliestStartMs)
-    );
+    record(task, place(plan, remainingMsFor(task, plan.meanMs), earliestStartMs), plan.measured);
   }
 
   return {
     overall: {
-      etaMs: estimatedTasks === 0 ? null : Math.round(overallMs),
+      etaFinishAt: new Date(now + Math.round(overallMs)).toISOString(),
       estimatedTasks,
       totalScheduled: scheduled.length,
     },
+    computedAt: now,
     perTask,
     byReport,
     byProject,

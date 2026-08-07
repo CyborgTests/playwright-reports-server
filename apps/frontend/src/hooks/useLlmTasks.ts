@@ -22,10 +22,19 @@ export type {
   LlmUsageStats,
 };
 
+const PENDING_REFETCH_MS = 10_000;
+
+function refetchWhilePending(stats: LlmTaskStats | undefined): number | false {
+  const pending = (stats?.queued ?? 0) + (stats?.processing ?? 0);
+  return pending > 0 ? PENDING_REFETCH_MS : false;
+}
+
 export function useLlmTaskStats() {
-  return useQuery<{ success: boolean } & LlmTaskStats>('/api/llm/tasks/stats', {
+  const query = useQuery<{ success: boolean } & LlmTaskStats>('/api/llm/tasks/stats', {
     staleTime: 5000,
+    refetchInterval: (q) => refetchWhilePending(q.state.data),
   });
+  return query;
 }
 
 export function useLlmDefaultPrompts(options: { enabled?: boolean } = {}) {
@@ -81,6 +90,10 @@ export function useLlmTasks(filters: {
       ],
       staleTime: 5000,
       placeholderData: keepPreviousData,
+      refetchInterval: (q) =>
+        q.state.data?.data?.some((t) => t.status === 'queued' || t.status === 'processing')
+          ? PENDING_REFETCH_MS
+          : false,
     }
   );
 }

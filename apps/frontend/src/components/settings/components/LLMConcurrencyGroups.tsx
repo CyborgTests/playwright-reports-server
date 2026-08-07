@@ -85,8 +85,8 @@ export default function LLMConcurrencyGroups({ disabled }: Readonly<{ disabled: 
         <div>
           <p className="text-sm font-medium">Concurrency groups</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Limit concurrent requests across models that share a rate limit or GPU. Members ignore
-            their own "parallel requests" and use the group's limit instead.
+            A max number of concurrent requests across models that share a rate limit or GPU.
+            A request would start if the model and the group both have a free slot.
           </p>
         </div>
         <Button size="sm" variant="outline" disabled={adding} onClick={() => setAdding(true)}>

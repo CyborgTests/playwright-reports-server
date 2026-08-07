@@ -6,17 +6,36 @@ interface ModelState {
   waiters: Array<() => void>;
 }
 
+export interface Gate {
+  key: string;
+  limit: number;
+}
+
 export interface GateReservation {
-  gateKey: string;
+  gateKeys: string[];
+  release: () => void;
   consumed: boolean;
 }
 
 export const reservationStore = new AsyncLocalStorage<GateReservation>();
 
+export function sameGateKeys(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((key, i) => key === b[i]);
+}
+
+export function combineReleases(releases: Array<() => void>): () => void {
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    for (const release of [...releases].reverse()) release();
+  };
+}
+
 class ModelGate {
   private readonly state = new Map<string, ModelState>();
 
-  acquire(key: string, limit: number): Promise<() => void> {
+  private stateFor(key: string, limit: number): ModelState {
     const max = Math.max(1, Math.floor(limit) || 1);
     let s = this.state.get(key);
     if (!s) {
@@ -25,7 +44,11 @@ class ModelGate {
     } else {
       s.limit = max; // pick up live config changes
     }
+    return s;
+  }
 
+  acquire(key: string, limit: number): Promise<() => void> {
+    const s = this.stateFor(key, limit);
     const release = this.makeRelease(key);
     if (s.active < s.limit) {
       s.active++;
@@ -39,19 +62,25 @@ class ModelGate {
   }
 
   tryAcquire(key: string, limit: number): (() => void) | null {
-    const max = Math.max(1, Math.floor(limit) || 1);
-    let s = this.state.get(key);
-    if (!s) {
-      s = { active: 0, limit: max, waiters: [] };
-      this.state.set(key, s);
-    } else {
-      s.limit = max;
-    }
+    const s = this.stateFor(key, limit);
     if (s.active < s.limit) {
       s.active++;
       return this.makeRelease(key);
     }
     return null;
+  }
+
+  tryAcquireAll(gates: readonly Gate[]): (() => void) | null {
+    const held: Array<() => void> = [];
+    for (const gate of gates) {
+      const release = this.tryAcquire(gate.key, gate.limit);
+      if (!release) {
+        for (const undo of held) undo();
+        return null;
+      }
+      held.push(release);
+    }
+    return combineReleases(held);
   }
 
   async run<T>(
@@ -60,12 +89,21 @@ class ModelGate {
     fn: () => Promise<T>,
     onAcquire?: () => void
   ): Promise<T> {
-    const release = await this.acquire(key, limit);
+    return this.runAll([{ key, limit }], fn, onAcquire);
+  }
+
+  async runAll<T>(
+    gates: readonly Gate[],
+    fn: () => Promise<T>,
+    onAcquire?: () => void
+  ): Promise<T> {
+    const held: Array<() => void> = [];
     try {
+      for (const gate of gates) held.push(await this.acquire(gate.key, gate.limit));
       onAcquire?.();
       return await fn();
     } finally {
-      release();
+      for (const release of held.reverse()) release();
     }
   }
 

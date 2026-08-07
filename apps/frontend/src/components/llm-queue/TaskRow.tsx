@@ -447,7 +447,7 @@ export const TaskRow = memo(function TaskRow({
                         parentEstimateKey(task.type, task.strategy, task.model, task.baseUrl)
                       ]
               }
-              etaMs={task.etaMs}
+              etaFinishAt={task.etaFinishAt}
             />
           ) : (
             formatDuration(task.startedAt, task.completedAt)

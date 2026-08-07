@@ -159,7 +159,7 @@ export interface LlmTask {
   parentTaskId?: string | null;
   childCount?: number;
   childUsage?: LlmTaskChildUsage[];
-  etaMs?: number | null; // concurrency/position-aware ms until finish (queue simulator); null if not scheduled
+  etaFinishAt?: string | null; // concurrency/position-aware timestamp of projected finish (queue simulator); null if not scheduled
 }
 
 export interface LlmTaskChildUsage {
@@ -170,14 +170,14 @@ export interface LlmTaskChildUsage {
 }
 
 export interface QueueEtaEstimate {
-  etaMs: number | null; // estimated time to drain queued+processing work; null if nothing estimable
+  etaFinishAt: string | null;
   estimatedTasks: number; // scheduled tasks we had a duration estimate for
   totalScheduled: number; // all queued+processing parent tasks
 }
 
 export interface LlmCircuitStatus {
   state: 'closed' | 'open' | 'half-open';
-  retryInMs: number | null; // ms until the open circuit next probes; null unless open
+  retryAt: string | null;
   reason?: 'failures' | 'rate_limit'; // why the circuit opened, when not closed
 }
 

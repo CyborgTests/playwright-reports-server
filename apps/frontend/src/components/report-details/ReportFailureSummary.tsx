@@ -16,9 +16,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useConfig } from '@/hooks/useConfig';
-import { useCountdown } from '@/hooks/useCountdown';
 import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
+import { useTimeUntil } from '@/hooks/useTimeUntil';
 import { ReportAnalysisRenderer, ReportVerdictBadge } from './ReportAnalysisRenderer';
 
 interface ReportFailureSummaryProps {
@@ -30,7 +30,7 @@ interface FailureSummaryResponse {
   data?: FailureSummary;
   hasFailures?: boolean;
   pendingAnalysisCount?: number;
-  pendingEtaMs?: number | null;
+  pendingEtaFinishAt?: string | null;
   error?: string;
 }
 
@@ -87,7 +87,7 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
   );
 
   const llmConfigured = !!config?.llm?.configured;
-  const liveEtaMs = useCountdown(summaryResponse?.pendingEtaMs ?? null);
+  const liveEtaMs = useTimeUntil(summaryResponse?.pendingEtaFinishAt);
 
   if (isLoading) {
     return null;

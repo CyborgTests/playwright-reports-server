@@ -1,21 +1,20 @@
-import { type LlmTaskRow, llmModelsDb, llmTasksDb } from '../../service/db/index.js';
+import { type LlmTaskRow, llmGroupsDb, llmModelsDb, llmTasksDb } from '../../service/db/index.js';
 import type { ClaimCandidate } from '../../service/db/llmTasks.sqlite.js';
 import { llmTaskEvents } from '../../service/llmTaskEvents.js';
 import { circuitFor } from '../circuitBreaker.js';
 import { llmService } from '../index.js';
 import { type GateReservation, modelGate, reservationStore } from '../modelGate.js';
-import { anyModelCircuitAvailable, isLlmFeatureEnabled, resolveGate } from '../registry.js';
+import { anyModelCircuitAvailable, isLlmFeatureEnabled, resolveGates } from '../registry.js';
 import { resolveOneShotModelRow } from '../routing/index.js';
 import { registerRunningTask, runWithTaskSignal, unregisterRunningTask } from '../taskSignal.js';
 import { LLMProviderError } from '../types/index.js';
-import { resolveScreenshotModel } from '../visionTranscribe.js';
 import { processProjectSummary } from './tasks/projectSummary.js';
 import { processReportSummary } from './tasks/reportSummary.js';
 import { processTestAnalysis } from './tasks/testAnalysis.js';
 
 const CIRCUIT_OPEN_MAX_REQUEUES = 20;
 
-type GateSlot = { gateKey: string; release: () => void };
+type GateSlot = { gateKeys: string[]; release: () => void };
 
 class LlmAnalysisQueue {
   private static instance: LlmAnalysisQueue;
@@ -36,12 +35,22 @@ class LlmAnalysisQueue {
 
   private getParallelRequests(): number {
     const enabled = llmModelsDb.list().filter((m) => m.enabled === 1);
-    const budgets = new Map<string, number>();
+    let total = 0;
+    const groupCeiling = new Map<string, number>();
+    const groupMemberSum = new Map<string, number>();
     for (const m of enabled) {
-      const gate = resolveGate(m);
-      budgets.set(gate.key, Math.max(1, gate.limit));
+      const own = Math.max(1, m.parallelRequests);
+      const group = m.concurrencyGroupId ? llmGroupsDb.get(m.concurrencyGroupId) : undefined;
+      if (!group) {
+        total += own;
+        continue;
+      }
+      groupCeiling.set(group.id, Math.max(1, group.concurrencyLimit));
+      groupMemberSum.set(group.id, (groupMemberSum.get(group.id) ?? 0) + own);
     }
-    const total = [...budgets.values()].reduce((sum, n) => sum + n, 0);
+    for (const [id, ceiling] of groupCeiling) {
+      total += Math.min(ceiling, groupMemberSum.get(id) ?? ceiling);
+    }
     return Math.max(1, total);
   }
 
@@ -130,15 +139,11 @@ class LlmAnalysisQueue {
     const effective = resolveOneShotModelRow(task.type);
     if (!effective) return { run: true };
     if (circuitFor(effective.id, effective.label).isBlocking()) return { run: false };
-    const gate = resolveGate(effective);
-    if (task.type === 'test_analysis') {
-      const screenshot = resolveScreenshotModel();
-      if (screenshot && resolveGate(screenshot).key === gate.key) {
-        return { run: true };
-      }
-    }
-    const release = modelGate.tryAcquire(gate.key, gate.limit);
-    return release ? { run: true, reservation: { gateKey: gate.key, release } } : { run: false };
+    const gates = resolveGates(effective);
+    const release = modelGate.tryAcquireAll(gates);
+    return release
+      ? { run: true, reservation: { gateKeys: gates.map((g) => g.key), release } }
+      : { run: false };
   }
 
   private dispatch(task: LlmTaskRow, reservation?: GateSlot): void {
@@ -146,7 +151,7 @@ class LlmAnalysisQueue {
     if (effective) llmTasksDb.setInFlightModel(task.id, effective.model, effective.baseUrl);
 
     const ctx: GateReservation | null = reservation
-      ? { gateKey: reservation.gateKey, consumed: false }
+      ? { gateKeys: reservation.gateKeys, release: reservation.release, consumed: false }
       : null;
     const controller = registerRunningTask(task.id);
     const core = () => runWithTaskSignal(controller.signal, () => this.processTask(task));

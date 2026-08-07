@@ -3,7 +3,7 @@ import { CAPABILITIES, ROOT_CAUSE_CATEGORIES } from '@playwright-reports/shared'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { invalidateFailureClustersCache } from '../lib/failure-clustering/index.js';
 import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
-import { getTaskEtaMs } from '../lib/llm/queueEta.js';
+import { getTaskEtaFinishAt } from '../lib/llm/queueEta.js';
 import { QuarantineUpdateSchema, TestsQuerySchema } from '../lib/schemas/index.js';
 import { invalidateAnalyticsCache } from '../lib/service/analytics.js';
 import {
@@ -61,7 +61,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
           slim: slimRaw === '1',
         };
 
-        const { data, total } = await testManagementService.getTests(project, options);
+        const { data, total, reportRefs } = await testManagementService.getTests(project, options);
 
         const isSlim = slimRaw === '1';
         if (!isSlim && data.length > 0) {
@@ -87,7 +87,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
           }
         }
 
-        return reply.send({ success: true, data, total });
+        return reply.send({ success: true, data, total, reportRefs });
       } catch (error) {
         fastify.log.error(error);
         return reply.status(500).send({
@@ -394,7 +394,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
               pending: {
                 taskId: retryPending.id,
                 status: retryPending.status,
-                etaMs: getTaskEtaMs(retryPending.id),
+                etaFinishAt: getTaskEtaFinishAt(retryPending.id),
               },
             });
           }
@@ -422,7 +422,11 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
             success: true,
             data: null,
             pending: pending
-              ? { taskId: pending.id, status: pending.status, etaMs: getTaskEtaMs(pending.id) }
+              ? {
+                  taskId: pending.id,
+                  status: pending.status,
+                  etaFinishAt: getTaskEtaFinishAt(pending.id),
+                }
               : null,
           });
         } catch (error) {

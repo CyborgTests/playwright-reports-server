@@ -665,19 +665,20 @@ function renderLoadingInto(testId, rid, anchor, askBtn, errorsSection, taskId = 
     if (total < 60) return `${total}s`;
     return `${Math.floor(total / 60)}m ${total % 60}s`;
   };
-  let etaAnchor = null;
+  let etaFinishAtMs = null;
   const etaEl = section.querySelector('#llm-eta');
   const renderEta = () => {
     if (!etaEl) return;
-    if (!etaAnchor) {
+    if (etaFinishAtMs === null) {
       etaEl.textContent = '';
       return;
     }
-    const left = Math.max(0, etaAnchor.ms - (Date.now() - etaAnchor.at));
+    const left = Math.max(0, etaFinishAtMs - Date.now());
     etaEl.textContent = left > 0 ? `~${formatEtaMs(left)} left` : 'finishing…';
   };
-  const setEta = (ms) => {
-    if (typeof ms === 'number' && ms > 0) etaAnchor = { ms, at: Date.now() };
+  const setEta = (finishAt) => {
+    const parsed = finishAt ? Date.parse(finishAt) : Number.NaN;
+    if (Number.isFinite(parsed)) etaFinishAtMs = parsed;
     renderEta();
   };
   const etaTimer = setInterval(() => {
@@ -689,7 +690,7 @@ function renderLoadingInto(testId, rid, anchor, askBtn, errorsSection, taskId = 
   }, 1000);
   getAnalysis(testId, rid)
     .then((data) => {
-      if (data?.success && data?.pending) setEta(data.pending.etaMs);
+      if (data?.success && data?.pending) setEta(data.pending.etaFinishAt);
     })
     .catch(() => {
       // best-effort: leave the panel without an ETA if the prime fetch fails
@@ -757,7 +758,7 @@ function renderLoadingInto(testId, rid, anchor, askBtn, errorsSection, taskId = 
         .then((data) => {
           if (renderIfResolved(data)) return;
           if (data?.success && data?.pending && attempts < MAX_ATTEMPTS) {
-            setEta(data.pending.etaMs);
+            setEta(data.pending.etaFinishAt);
             setTimeout(tick, 3000);
             return;
           }

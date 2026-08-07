@@ -103,40 +103,64 @@ const FRESH_SAMPLE_PREDICATE = `
 `;
 
 const DURATION_MS_EXPR = '(julianday(t.completedAt) - julianday(t.startedAt)) * 86400000.0';
+const RECENT_SAMPLE_WINDOW = 10;
+const WEIGHTED_MEAN_EXPR = 'SUM(ms * 1.0 / rn) / SUM(1.0 / rn)';
 
 const PARENT_ESTIMATES_SQL = `
-  SELECT t.type AS type, COALESCE(t.strategy, 'one_shot') AS strategy, t.model AS model,
-    COALESCE(t.baseUrl, '') AS baseUrl,
-    AVG(${DURATION_MS_EXPR}) AS meanMs, COUNT(*) AS samples
-  FROM llm_tasks t
-  WHERE t.status = 'completed' AND t.parentTaskId IS NULL
-    AND t.startedAt IS NOT NULL AND t.completedAt IS NOT NULL AND t.model IS NOT NULL
-    AND ${FRESH_SAMPLE_PREDICATE}
-  GROUP BY t.type, COALESCE(t.strategy, 'one_shot'), t.model, COALESCE(t.baseUrl, '')
+  WITH ranked AS (
+    SELECT t.type AS type, COALESCE(t.strategy, 'one_shot') AS strategy, t.model AS model,
+      COALESCE(t.baseUrl, '') AS baseUrl, ${DURATION_MS_EXPR} AS ms,
+      ROW_NUMBER() OVER (
+        PARTITION BY t.type, COALESCE(t.strategy, 'one_shot'), t.model, COALESCE(t.baseUrl, '')
+        ORDER BY t.completedAt DESC
+      ) AS rn
+    FROM llm_tasks t
+    WHERE t.status = 'completed' AND t.parentTaskId IS NULL
+      AND t.startedAt IS NOT NULL AND t.completedAt IS NOT NULL AND t.model IS NOT NULL
+      AND ${FRESH_SAMPLE_PREDICATE}
+  )
+  SELECT type, strategy, model, baseUrl, ${WEIGHTED_MEAN_EXPR} AS meanMs, COUNT(*) AS samples
+  FROM ranked WHERE rn <= ${RECENT_SAMPLE_WINDOW}
+  GROUP BY type, strategy, model, baseUrl
   HAVING samples >= ?
 `;
 
 const PARENT_BY_STRATEGY_ESTIMATES_SQL = `
-  SELECT t.type AS type, COALESCE(t.strategy, 'one_shot') AS strategy,
-    AVG(${DURATION_MS_EXPR}) AS meanMs, COUNT(*) AS samples
-  FROM llm_tasks t
-  WHERE t.status = 'completed' AND t.parentTaskId IS NULL
-    AND t.startedAt IS NOT NULL AND t.completedAt IS NOT NULL AND t.model IS NOT NULL
-    AND ${FRESH_SAMPLE_PREDICATE}
-  GROUP BY t.type, COALESCE(t.strategy, 'one_shot')
+  WITH ranked AS (
+    SELECT t.type AS type, COALESCE(t.strategy, 'one_shot') AS strategy, ${DURATION_MS_EXPR} AS ms,
+      ROW_NUMBER() OVER (
+        PARTITION BY t.type, COALESCE(t.strategy, 'one_shot')
+        ORDER BY t.completedAt DESC
+      ) AS rn
+    FROM llm_tasks t
+    WHERE t.status = 'completed' AND t.parentTaskId IS NULL
+      AND t.startedAt IS NOT NULL AND t.completedAt IS NOT NULL AND t.model IS NOT NULL
+      AND ${FRESH_SAMPLE_PREDICATE}
+  )
+  SELECT type, strategy, ${WEIGHTED_MEAN_EXPR} AS meanMs, COUNT(*) AS samples
+  FROM ranked WHERE rn <= ${RECENT_SAMPLE_WINDOW}
+  GROUP BY type, strategy
   HAVING samples >= ?
 `;
 
 const ROLE_ESTIMATES_SQL = `
-  SELECT t.type AS type, COALESCE(p.strategy, 'one_shot') AS strategy, t.role AS role,
-    t.model AS model, COALESCE(t.baseUrl, '') AS baseUrl,
-    AVG(${DURATION_MS_EXPR}) AS meanMs, COUNT(*) AS samples
-  FROM llm_tasks t
-  JOIN llm_tasks p ON p.id = t.parentTaskId
-  WHERE t.status = 'completed' AND t.parentTaskId IS NOT NULL AND t.role IS NOT NULL
-    AND t.startedAt IS NOT NULL AND t.completedAt IS NOT NULL AND t.model IS NOT NULL
-    AND ${FRESH_SAMPLE_PREDICATE}
-  GROUP BY t.type, COALESCE(p.strategy, 'one_shot'), t.role, t.model, COALESCE(t.baseUrl, '')
+  WITH ranked AS (
+    SELECT t.type AS type, COALESCE(p.strategy, 'one_shot') AS strategy, t.role AS role,
+      t.model AS model, COALESCE(t.baseUrl, '') AS baseUrl, ${DURATION_MS_EXPR} AS ms,
+      ROW_NUMBER() OVER (
+        PARTITION BY t.type, COALESCE(p.strategy, 'one_shot'), t.role, t.model,
+          COALESCE(t.baseUrl, '')
+        ORDER BY t.completedAt DESC
+      ) AS rn
+    FROM llm_tasks t
+    JOIN llm_tasks p ON p.id = t.parentTaskId
+    WHERE t.status = 'completed' AND t.parentTaskId IS NOT NULL AND t.role IS NOT NULL
+      AND t.startedAt IS NOT NULL AND t.completedAt IS NOT NULL AND t.model IS NOT NULL
+      AND ${FRESH_SAMPLE_PREDICATE}
+  )
+  SELECT type, strategy, role, model, baseUrl, ${WEIGHTED_MEAN_EXPR} AS meanMs, COUNT(*) AS samples
+  FROM ranked WHERE rn <= ${RECENT_SAMPLE_WINDOW}
+  GROUP BY type, strategy, role, model, baseUrl
   HAVING samples >= ?
 `;
 
@@ -455,9 +479,9 @@ export class LlmTasksDatabase {
   public claimNextRunnable(
     decide: (task: ClaimCandidate) => {
       run: boolean;
-      reservation?: { gateKey: string; release: () => void };
+      reservation?: { gateKeys: string[]; release: () => void };
     }
-  ): { task: LlmTaskRow; reservation?: { gateKey: string; release: () => void } } | null {
+  ): { task: LlmTaskRow; reservation?: { gateKeys: string[]; release: () => void } } | null {
     const hasQueuedCompiled = this.k
       .selectFrom('llm_tasks')
       .select('id')

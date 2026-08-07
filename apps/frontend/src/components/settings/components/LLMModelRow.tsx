@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
+import { useTimeUntil } from '@/hooks/useTimeUntil';
 
 export function LLMModelRow({
   model: m,
@@ -35,6 +36,7 @@ export function LLMModelRow({
   onEdit: () => void;
   onDelete: () => void;
 }>) {
+  const retryInMs = useTimeUntil(m.circuit?.state === 'open' ? m.circuit.retryAt : null);
   return (
     <div className="border rounded-md p-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex items-start gap-2 min-w-0 flex-1">
@@ -78,9 +80,7 @@ export function LLMModelRow({
               >
                 {m.circuit.reason === 'rate_limit'
                   ? `Rate limited${
-                      m.circuit.retryInMs
-                        ? ` (retry ${Math.ceil(m.circuit.retryInMs / 1000)}s)`
-                        : ''
+                      retryInMs && retryInMs > 0 ? ` (retry ${Math.ceil(retryInMs / 1000)}s)` : ''
                     }`
                   : m.circuit.state === 'open'
                     ? 'Circuit open'
@@ -107,15 +107,13 @@ export function LLMModelRow({
             </div>
             <div className="font-mono truncate">{m.baseUrl}</div>
             <div>
+              {m.parallelRequests} parallel request{m.parallelRequests === 1 ? '' : 's'}
               {group ? (
                 <>
-                  group: {group.name} (limit {group.concurrencyLimit})
+                  {' '}
+                  · group: {group.name} (shared limit {group.concurrencyLimit})
                 </>
-              ) : (
-                <>
-                  {m.parallelRequests} parallel request{m.parallelRequests === 1 ? '' : 's'}
-                </>
-              )}
+              ) : null}
               {m.maxTokens ? <> · max {m.maxTokens} tok</> : null}
             </div>
           </div>

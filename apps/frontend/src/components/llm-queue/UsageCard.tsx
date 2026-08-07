@@ -20,7 +20,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useCountdown } from '@/hooks/useCountdown';
 import { useLlmModels } from '@/hooks/useLlmModels';
 import {
   type LlmTaskStats,
@@ -29,6 +28,7 @@ import {
   useLlmUsageStats,
 } from '@/hooks/useLlmTasks';
 import useMutation from '@/hooks/useMutation';
+import { useTimeUntil } from '@/hooks/useTimeUntil';
 import {
   buildRateMap,
   computeCost,
@@ -139,7 +139,7 @@ function UsageByModelBreakdown({ days }: { days: number }) {
 
 export function StatsBar({ stats }: Readonly<{ stats: LlmTaskStats | undefined }>) {
   const eta = stats?.eta;
-  const liveEtaMs = useCountdown(eta?.etaMs ?? null);
+  const liveEtaMs = useTimeUntil(eta?.etaFinishAt);
   const statCards = [
     { label: 'Queued', count: stats?.queued ?? 0, variant: 'secondary' as const },
     { label: 'Processing', count: stats?.processing ?? 0, variant: 'running' as const },

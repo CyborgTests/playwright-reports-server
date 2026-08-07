@@ -2,7 +2,7 @@ import type { LlmDurationEstimate } from '@playwright-reports/shared';
 import { formatDuration, parseSqliteTimestamp } from '@playwright-reports/shared';
 import { useEffect, useState } from 'react';
 import { Progress } from '@/components/ui/progress';
-import { useCountdown } from '@/hooks/useCountdown';
+import { useTimeUntil } from '@/hooks/useTimeUntil';
 
 function useTicker(intervalMs = 1000): number {
   const [now, setNow] = useState(() => Date.now());
@@ -16,14 +16,14 @@ function useTicker(intervalMs = 1000): number {
 export function TaskProgress({
   startedAt,
   estimate,
-  etaMs,
+  etaFinishAt,
 }: Readonly<{
   startedAt?: string;
   estimate?: LlmDurationEstimate;
-  etaMs?: number | null;
+  etaFinishAt?: string | null;
 }>) {
   const now = useTicker();
-  const countdown = useCountdown(etaMs ?? null);
+  const countdown = useTimeUntil(etaFinishAt);
 
   const elapsedMs = startedAt ? Math.max(0, now - parseSqliteTimestamp(startedAt)) : 0;
   const remainingMs = countdown ?? (estimate ? estimate.meanMs - elapsedMs : null);
