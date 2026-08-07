@@ -15,7 +15,6 @@ import InlineStatsCircle from '@/components/inline-stats-circle';
 import { title } from '@/components/primitives';
 import FileList from '@/components/report-details/file-list';
 import ReportFailureSummary from '@/components/report-details/ReportFailureSummary';
-import { StatsBadges } from '@/components/report-details/suite-tree';
 import { CompareToPicker } from '@/components/reports-compare/compare-to-picker';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -130,73 +129,67 @@ function ReportDetailPage() {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-6">
+        {report?.stats && <InlineStatsCircle stats={report.stats} />}
         <h1 className={title()}>
           {report?.displayNumber ? `#${report.displayNumber} ` : ''} {report?.title ?? ''}
         </h1>
-        {id &&
-          (report?.previousReportId ? (
-            <Link
-              to={withBase(`/reports/compare?a=${report.previousReportId}&b=${id}`)}
-              target="_blank"
-            >
-              <Button variant="outline" size="sm" className="gap-2">
-                <GitCompare className="h-4 w-4" />
-                Compare with previous
-              </Button>
-            </Link>
-          ) : (
-            <CompareToPicker
-              excludeReportIds={[id]}
-              defaultProject={report?.project}
-              buildHref={(otherId) => withBase(`/reports/compare?a=${otherId}&b=${id}`)}
-            />
-          ))}
-        {id && (
-          <Link
-            to={withBase(
-              `/failures/clusters?reportId=${id}${
-                report?.project ? `&project=${encodeURIComponent(report.project)}` : ''
-              }`
-            )}
-          >
-            <Button variant="outline" size="sm" className="gap-2">
-              <Users className="h-4 w-4" />
-              Failure clusters
-            </Button>
-          </Link>
-        )}
-        {id && (
-          <a href={withBase(`/api/report/${id}/export.pdf?scope=all&compare=previous`)} download>
-            <Button variant="outline" size="sm" className="gap-2">
-              <Download className="h-4 w-4" />
-              Download PDF
-            </Button>
-          </a>
-        )}
-        {report?.reportUrl && (
-          <a href={withBase(report.reportUrl)} target="_blank" rel="noreferrer">
-            <Button size="sm" className="gap-2">
-              <ExternalLink className="h-4 w-4" />
-              Open report
-            </Button>
-          </a>
-        )}
-        <RegressionHeaderChips regressions={report?.regressions} />
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3 mt-3 mb-6">
-        {report?.stats && (
-          <>
-            <InlineStatsCircle stats={report.stats} />
-            <StatsBadges stats={report.stats} />
-          </>
-        )}
         {report?.createdAt && (
           <span className="text-sm text-muted-foreground">
             <FormattedDate date={report.createdAt} />
           </span>
         )}
+        <RegressionHeaderChips regressions={report?.regressions} />
+        <div className="flex flex-wrap items-center gap-2 ml-auto">
+          {id &&
+            (report?.previousReportId ? (
+              <Link
+                to={withBase(`/reports/compare?a=${report.previousReportId}&b=${id}`)}
+                target="_blank"
+              >
+                <Button variant="outline" size="sm" className="gap-2">
+                  <GitCompare className="h-4 w-4" />
+                  Compare with previous
+                </Button>
+              </Link>
+            ) : (
+              <CompareToPicker
+                excludeReportIds={[id]}
+                defaultProject={report?.project}
+                buildHref={(otherId) => withBase(`/reports/compare?a=${otherId}&b=${id}`)}
+              />
+            ))}
+          {id && (
+            <Link
+              to={withBase(
+                `/failures/clusters?reportId=${id}${
+                  report?.project ? `&project=${encodeURIComponent(report.project)}` : ''
+                }`
+              )}
+            >
+              <Button variant="outline" size="sm" className="gap-2">
+                <Users className="h-4 w-4" />
+                Failure clusters
+              </Button>
+            </Link>
+          )}
+          {id && (
+            <a href={withBase(`/api/report/${id}/export.pdf?scope=all&compare=previous`)} download>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Download className="h-4 w-4" />
+                Download PDF
+              </Button>
+            </a>
+          )}
+          {report?.reportUrl && (
+            <a href={withBase(report.reportUrl)} target="_blank" rel="noreferrer">
+              <Button size="sm" className="gap-2">
+                <ExternalLink className="h-4 w-4" />
+                Open report
+              </Button>
+            </a>
+          )}
+        </div>
       </div>
 
       {id && <ReportFailureSummary reportId={id} />}

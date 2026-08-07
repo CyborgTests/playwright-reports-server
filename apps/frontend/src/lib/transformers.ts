@@ -31,7 +31,11 @@ export const filterReportHistory = (
       filteredFileTests = filteredFileTests.filter(
         (test) =>
           test.title?.toLowerCase().includes(searchLower) ||
-          file.fileName?.toLowerCase()?.includes(searchLower)
+          file.fileName?.toLowerCase()?.includes(searchLower) ||
+          test.tags?.some((tag) => tag.toLowerCase().includes(searchLower)) ||
+          test.annotations?.some((annotation) =>
+            annotation.type.toLowerCase().startsWith(searchLower)
+          )
       );
     }
 

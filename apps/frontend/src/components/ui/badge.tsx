@@ -1,5 +1,6 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import type * as React from 'react';
+import { forwardRef } from 'react';
 import { cn } from '@/lib/utils';
 
 const badgeVariants = cva(
@@ -35,10 +36,17 @@ export interface BadgeProps
   glow?: boolean;
 }
 
-function Badge({ className, variant, glow, ...props }: BadgeProps) {
+const Badge = forwardRef<HTMLDivElement, BadgeProps>(function Badge(
+  { className, variant, glow, ...props },
+  ref
+) {
   return (
-    <div className={cn(badgeVariants({ variant }), glow && 'shadow-glow', className)} {...props} />
+    <div
+      ref={ref}
+      className={cn(badgeVariants({ variant }), glow && 'shadow-glow', className)}
+      {...props}
+    />
   );
-}
+});
 
 export { Badge, badgeVariants };

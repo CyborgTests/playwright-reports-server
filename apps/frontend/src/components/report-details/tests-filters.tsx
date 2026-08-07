@@ -57,11 +57,11 @@ const ReportFilters: FC<ReportFiltersProps> = ({ report, onChangeFilters }) => {
       <div className="relative">
         <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
-          aria-label="Filter tests by title"
+          aria-label="Filter tests by title, file path, tag or annotation"
           value={byName}
           onChange={(event) => setByName(event.target.value)}
-          placeholder="Filter tests…"
-          className="h-8 w-44 pl-7 text-sm"
+          placeholder="Title, tag, annotation…"
+          className="h-8 w-56 pl-7 text-sm"
         />
       </div>
 
