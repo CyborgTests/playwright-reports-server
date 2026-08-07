@@ -74,7 +74,7 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
 
   return (
     <div>
-      <div className="flex flex-row justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 className={subtitle()}>File list</h2>
         <ReportFilters report={report} onChangeFilters={setFilteredTests} />
       </div>
@@ -139,6 +139,7 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
                 reportId={report.reportID}
                 fileName={selection.fileName}
                 suitePath={selection.suitePath}
+                reportUrl={report.reportUrl}
               />
             ) : (
               <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">

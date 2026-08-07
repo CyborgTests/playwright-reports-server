@@ -1,104 +1,124 @@
 import type { ReportHistory, ReportTestOutcome } from '@playwright-reports/shared';
+import { countOutcomes } from '@playwright-reports/shared';
+import { Search, X } from 'lucide-react';
 import { type FC, useEffect, useMemo, useState } from 'react';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { testStatusToColor } from '@/lib/tailwind';
-import { filterReportHistory, pluralize } from '@/lib/transformers';
+import { filterReportHistory } from '@/lib/transformers';
+import { cn } from '@/lib/utils';
 
 type ReportFiltersProps = {
   report: ReportHistory;
   onChangeFilters: (report: ReportHistory) => void;
 };
 
-const testOutcomes: ReportTestOutcome[] = ['expected', 'unexpected', 'skipped', 'flaky'];
+const STATUSES = [
+  {
+    outcome: 'unexpected',
+    label: 'failed',
+    key: 'unexpected',
+    active: 'bg-danger text-danger-foreground',
+  },
+  { outcome: 'flaky', label: 'flaky', key: 'flaky', active: 'bg-warning text-warning-foreground' },
+  {
+    outcome: 'expected',
+    label: 'passed',
+    key: 'expected',
+    active: 'bg-success text-success-foreground',
+  },
+  {
+    outcome: 'skipped',
+    label: 'skipped',
+    key: 'skipped',
+    active: 'bg-secondary text-secondary-foreground',
+  },
+] as const;
+
+const ALL_OUTCOMES = STATUSES.map((status) => status.outcome) as ReportTestOutcome[];
 
 const ReportFilters: FC<ReportFiltersProps> = ({ report, onChangeFilters }) => {
   const [byName, setByName] = useState('');
-  const [byOutcomes, setByOutcomes] = useState<ReportTestOutcome[]>(testOutcomes);
+  const [byOutcomes, setByOutcomes] = useState<ReportTestOutcome[]>(ALL_OUTCOMES);
 
-  const onNameChange = (name: string) => {
-    setByName(name);
-  };
+  // Counts come from the unfiltered report, so the chips stay stable as you filter.
+  const counts = useMemo(
+    () =>
+      countOutcomes((report.files ?? []).flatMap((file) => file.tests ?? []).map((t) => t.outcome)),
+    [report.files]
+  );
 
-  const onOutcomeChange = (outcomes: ReportTestOutcome[]) => {
-    setByOutcomes(outcomes?.length ? outcomes : testOutcomes);
-  };
-
-  const currentState = useMemo(() => {
-    return filterReportHistory(report, {
-      search: byName,
-      status: byOutcomes,
-    });
-  }, [byName, byOutcomes, report]);
+  const currentState = useMemo(
+    () => filterReportHistory(report, { search: byName, status: byOutcomes }),
+    [byName, byOutcomes, report]
+  );
 
   useEffect(() => {
     onChangeFilters(currentState);
   }, [currentState, onChangeFilters]);
 
-  return (
-    <Accordion type="single" collapsible className="mb-5">
-      <AccordionItem value="filter">
-        <AccordionTrigger>
-          <div className="flex flex-row gap-2 justify-between w-full pr-4">
-            <p>Showing</p>
-            <span className="text-muted-foreground">
-              {currentState.testCount}/{currentState.totalTestCount}{' '}
-              {pluralize(currentState.testCount || 0, 'test')}
-            </span>
-          </div>
-        </AccordionTrigger>
-        <AccordionContent>
-          <div className="space-y-4 pt-4">
-            <div>
-              <Label>Status</Label>
-              <div className="flex flex-wrap gap-4 mt-2">
-                {testOutcomes.map((outcome) => {
-                  const status = testStatusToColor(outcome);
+  const toggle = (outcome: ReportTestOutcome) => {
+    const next = byOutcomes.includes(outcome)
+      ? byOutcomes.filter((entry) => entry !== outcome)
+      : [...byOutcomes, outcome];
+    // Turning the last one off reads as "clear the filter" rather than "show nothing".
+    setByOutcomes(next.length ? next : ALL_OUTCOMES);
+  };
 
-                  return (
-                    <div key={outcome} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={outcome}
-                        checked={byOutcomes.includes(outcome)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            onOutcomeChange([...byOutcomes, outcome]);
-                          } else {
-                            onOutcomeChange(byOutcomes.filter((o) => o !== outcome));
-                          }
-                        }}
-                      />
-                      <label
-                        htmlFor={outcome}
-                        className={`text-sm font-medium ${status.colorName}`}
-                      >
-                        {status.title}
-                      </label>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="title-filter">Title</Label>
-              <Input
-                id="title-filter"
-                value={byName}
-                onChange={(e) => onNameChange(e.target.value)}
-                placeholder="Filter by title..."
-              />
-            </div>
-          </div>
-        </AccordionContent>
-      </AccordionItem>
-    </Accordion>
+  const isFiltered = byName !== '' || byOutcomes.length !== ALL_OUTCOMES.length;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div className="relative">
+        <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          aria-label="Filter tests by title"
+          value={byName}
+          onChange={(event) => setByName(event.target.value)}
+          placeholder="Filter tests…"
+          className="h-8 w-44 pl-7 text-sm"
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        {STATUSES.filter((status) => counts[status.key] > 0).map((status) => {
+          const on = byOutcomes.includes(status.outcome);
+          return (
+            <button
+              key={status.outcome}
+              type="button"
+              aria-pressed={on}
+              onClick={() => toggle(status.outcome)}
+              className={cn(
+                'rounded-md px-2 py-0.5 text-xs font-semibold transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                on
+                  ? status.active
+                  : 'border border-dashed border-muted-foreground/40 text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {counts[status.key]} {status.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <span className="text-xs text-muted-foreground">
+        {currentState.testCount}/{currentState.totalTestCount} shown
+      </span>
+
+      {isFiltered && (
+        <button
+          type="button"
+          onClick={() => {
+            setByName('');
+            setByOutcomes(ALL_OUTCOMES);
+          }}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <X className="h-3 w-3" />
+          Reset
+        </button>
+      )}
+    </div>
   );
 };
 

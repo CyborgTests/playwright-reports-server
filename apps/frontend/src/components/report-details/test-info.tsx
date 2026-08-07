@@ -5,6 +5,7 @@ import type { FC } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { testStatusToColor } from '@/lib/tailwind';
+import { withBase } from '@/lib/url';
 import RootCauseCategoryEditor from './RootCauseCategoryEditor';
 
 interface TestInfoProps {
@@ -13,13 +14,27 @@ interface TestInfoProps {
   reportId?: string;
   suitePath?: string[];
   fileName?: string;
+  reportUrl?: string;
 }
 
-const TestInfo: FC<TestInfoProps> = ({ test, project, reportId, suitePath, fileName }) => {
+const TestInfo: FC<TestInfoProps> = ({
+  test,
+  project,
+  reportId,
+  suitePath,
+  fileName,
+  reportUrl,
+}) => {
   const formatted = testStatusToColor(test.outcome || 'expected');
   const detailHref =
     test.testId && project
       ? `/test/${test.testId}?project=${encodeURIComponent(project)}`
+      : undefined;
+  // Playwright's own HTML report routes to a test through `#?testId=`, which
+  // inject.js also reads to attach the LLM panel.
+  const reportHref =
+    reportUrl && test.testId
+      ? withBase(`${reportUrl}#?testId=${encodeURIComponent(test.testId)}`)
       : undefined;
   const showRootCause =
     reportId &&
@@ -76,15 +91,28 @@ const TestInfo: FC<TestInfoProps> = ({ test, project, reportId, suitePath, fileN
         </div>
       )}
 
-      {detailHref && (
-        <RouterLink
-          to={detailHref}
-          className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-        >
-          Open full test page
-          <ArrowUpRight className="h-3.5 w-3.5" />
-        </RouterLink>
-      )}
+      <div className="flex flex-wrap items-center gap-4 pt-1">
+        {detailHref && (
+          <RouterLink
+            to={detailHref}
+            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+          >
+            Open test details
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </RouterLink>
+        )}
+        {reportHref && (
+          <a
+            href={reportHref}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+          >
+            Open in Playwright report
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </a>
+        )}
+      </div>
     </div>
   );
 };

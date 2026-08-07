@@ -1,5 +1,5 @@
 import type { ReportFile, ReportHistory } from '@playwright-reports/shared';
-import { countOutcomes } from '@playwright-reports/shared';
+import { canonicalOutcome, countOutcomes } from '@playwright-reports/shared';
 
 export const filterReportHistory = (
   report: ReportHistory,
@@ -22,7 +22,7 @@ export const filterReportHistory = (
 
     if (filters.status && filters.status.length > 0) {
       filteredFileTests = filteredFileTests.filter((test) =>
-        filters.status?.includes(test.outcome || 'passed')
+        filters.status?.includes(canonicalOutcome(test.outcome))
       );
     }
 
