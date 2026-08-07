@@ -4,7 +4,7 @@
 
 @font-face {
   font-family: "Inter Fallback";
-  src: local("Arial");
+  src: local("Arial"), local("Liberation Sans"), local("Helvetica");
   ascent-override: 90.44%;
   descent-override: 22.52%;
   line-gap-override: 0.00%;
@@ -12,21 +12,12 @@
 }
 @font-face {
   font-family: "JetBrains Mono Fallback";
-  src: local("Courier New");
+  src: local("Courier New"), local("Liberation Mono");
   ascent-override: 102.02%;
   descent-override: 30.00%;
   line-gap-override: 0.00%;
   size-adjust: 99.98%;
 }
-@font-face {
-  font-family: "Space Grotesk Fallback";
-  src: local("Arial");
-  ascent-override: 89.71%;
-  descent-override: 26.62%;
-  line-gap-override: 0.00%;
-  size-adjust: 109.69%;
-}
-
 @layer base {
   :root {
     /* Base colors - Light mode */
@@ -117,8 +108,9 @@
 
     /* Fonts */
     --font-inter: "Inter Variable", "Inter Fallback", system-ui, sans-serif;
-    --font-mono: "JetBrains Mono", "JetBrains Mono Fallback", "Fira Code", monospace;
-    --font-display: "Space Grotesk", "Space Grotesk Fallback", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono Variable", "JetBrains Mono Fallback", "Fira Code", monospace;
+    /* Headings share the body face; Inter is variable, so every weight is free. */
+    --font-display: var(--font-inter);
   }
 
   .dark {
