@@ -1,4 +1,5 @@
-import type { ReportHistory, ReportTest } from '@playwright-reports/shared';
+import type { ReportFile, ReportHistory } from '@playwright-reports/shared';
+import { countOutcomes } from '@playwright-reports/shared';
 
 export const filterReportHistory = (
   report: ReportHistory,
@@ -9,10 +10,11 @@ export const filterReportHistory = (
 ): ReportHistory & { testCount: number; totalTestCount: number } => {
   if (!report.files) return { ...report, testCount: 0, totalTestCount: 0 };
 
-  let filteredTests: ReportTest[] = [];
+  let testCount = 0;
   let totalTestCount = 0;
+  const filteredFiles: ReportFile[] = [];
 
-  const filteredFiles = report.files.map((file) => {
+  for (const file of report.files) {
     const fileTests = file.tests || [];
     totalTestCount += fileTests.length;
 
@@ -33,18 +35,20 @@ export const filterReportHistory = (
       );
     }
 
-    filteredTests = [...filteredTests, ...filteredFileTests];
+    if (filteredFileTests.length === 0) continue;
 
-    return {
+    testCount += filteredFileTests.length;
+    filteredFiles.push({
       ...file,
       tests: filteredFileTests,
-    };
-  });
+      stats: countOutcomes(filteredFileTests.map((test) => test.outcome)),
+    });
+  }
 
   return {
     ...report,
     files: filteredFiles,
-    testCount: filteredTests.length,
+    testCount,
     totalTestCount,
   } as ReportHistory & { testCount: number; totalTestCount: number };
 };

@@ -1,4 +1,5 @@
 import type { ReportFile, ReportStats, ReportTest } from '@playwright-reports/shared';
+import { countOutcomes } from '@playwright-reports/shared';
 import { sql } from 'kysely';
 import type { DerivedPageOptions } from '../queries/testAnalytics.js';
 import * as testQueries from '../queries/testAnalytics.js';
@@ -239,13 +240,6 @@ export class TestQueriesDatabase extends TestDbBase {
         byFile.set(row.fileId, file);
       }
 
-      const { stats } = file;
-      stats.total++;
-      if (row.outcome === 'expected' || row.outcome === 'passed') stats.expected++;
-      else if (row.outcome === 'flaky') stats.flaky++;
-      else if (row.outcome === 'skipped') stats.skipped++;
-      else stats.unexpected++;
-
       file.tests.push({
         testId: row.testId,
         title: row.title ?? 'Unknown Test',
@@ -256,6 +250,10 @@ export class TestQueriesDatabase extends TestDbBase {
         tags: parseJsonColumn<string[] | undefined>(row.tags, undefined),
         annotations: parseJsonColumn<ReportTest['annotations']>(row.annotations, undefined),
       });
+    }
+
+    for (const file of byFile.values()) {
+      file.stats = countOutcomes(file.tests.map((test) => test.outcome));
     }
     return [...byFile.values()].sort(compareBySeverity);
   }
