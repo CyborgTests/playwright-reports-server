@@ -156,7 +156,7 @@ export default function ReportFailureSummary({ reportId }: Readonly<ReportFailur
           <CardTitle className="flex items-center gap-2 text-base">
             <AlertTriangle className="h-4 w-4 text-destructive" />
             Failure Summary
-            <Badge variant="destructive" className="ml-1">
+            <Badge variant="danger" className="ml-1">
               {summary.totalFailures} {summary.totalFailures === 1 ? 'failure' : 'failures'}
             </Badge>
             {summary.llmSummaryStructured && (
