@@ -34,10 +34,12 @@ import { BranchIcon, FolderIcon, LinkIcon } from './icons';
 import PaginatedControls from './paginated-controls';
 import PassRateBar from './pass-rate-bar';
 import TablePaginationOptions, { type PassRateFilter } from './table-pagination-options';
+import { Badge } from './ui/badge';
 
 const columns = [
   { name: 'Title', uid: 'title' },
   { name: 'Project', uid: 'project' },
+  { name: 'Env', uid: 'environment' },
   { name: 'Pass Rate', uid: 'passRate' },
   { name: 'Created at', uid: 'createdAt' },
   { name: 'Size', uid: 'size' },
@@ -64,13 +66,23 @@ type ReportMetadataFields = {
   [key: string]: unknown;
 };
 
+const UNKNOWN_ENV_VALUES = new Set(['', 'unknown', 'n/a', 'na', 'none', 'null', 'undefined']);
+
+function getEnvironmentLabel(item: ReportHistory): string | null {
+  const raw = (item as ReportHistory & ReportMetadataFields).environment;
+  if (raw === undefined || raw === null) return null;
+  const value = String(raw).trim();
+  if (!value || UNKNOWN_ENV_VALUES.has(value.toLowerCase())) return null;
+  return value;
+}
+
 const getMetadataItems = (item: ReportHistory): MetadataItem[] => {
   const metadata: MetadataItem[] = [];
 
   // Access dynamic properties that come from resultDetails
   const itemWithMetadata = item as ReportHistory & ReportMetadataFields;
 
-  // Primary fields - shown inline up to a small cap
+  // Primary fields - shown inline up to a small cap (environment has its own column)
   if (itemWithMetadata.branch) {
     metadata.push({
       key: 'branch',
@@ -78,10 +90,6 @@ const getMetadataItems = (item: ReportHistory): MetadataItem[] => {
       icon: <BranchIcon width={12} height={12} />,
       primary: true,
     });
-  }
-
-  if (itemWithMetadata.environment) {
-    metadata.push({ key: 'environment', value: itemWithMetadata.environment, primary: true });
   }
 
   if (itemWithMetadata.playwrightVersion) {
@@ -133,6 +141,22 @@ const getMetadataItems = (item: ReportHistory): MetadataItem[] => {
   return metadata;
 };
 
+function ReportEnvCell({ report }: Readonly<{ report: ReportHistory }>) {
+  const environment = getEnvironmentLabel(report);
+  if (!environment) {
+    return (
+      <span className="inline-flex items-center rounded-md border border-dashed border-border/70 px-2 py-0.5 text-xs italic text-muted-foreground/80">
+        no env
+      </span>
+    );
+  }
+  return (
+    <Badge variant="secondary" className="font-medium normal-case tracking-wide">
+      {environment}
+    </Badge>
+  );
+}
+
 const MAX_INLINE_META = 3;
 
 function RegressionChip({
@@ -164,8 +188,7 @@ function RegressionChip({
 }
 
 const renderMetaValue = (item: MetadataItem) => {
-  const labelless =
-    item.key === 'branch' || item.key === 'workingDir' || item.key === 'environment';
+  const labelless = item.key === 'branch' || item.key === 'workingDir';
   const text = labelless ? `${item.value}` : `${item.key}: ${item.value}`;
   return (
     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
@@ -263,6 +286,9 @@ const ReportRow = memo(function ReportRow({
         </div>
       </TableCell>
       <TableCell className="w-1/6 py-2">{item.project}</TableCell>
+      <TableCell className="w-[7rem] py-2">
+        <ReportEnvCell report={item} />
+      </TableCell>
       <TableCell className="w-1/12 py-2">
         <PassRateBar
           stats={
