@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { withBase } from '@/lib/url';
+import { servedTestUrl } from '@/lib/url';
 
 interface Props {
   entries: Array<DiffTestEntry | DurationDeltaEntry>;
@@ -18,9 +18,6 @@ interface Props {
   reportBUrl: string;
   showDelta?: boolean;
 }
-
-const servedTestUrl = (reportUrl: string, testId: string): string =>
-  `${withBase(reportUrl)}#?testId=${encodeURIComponent(testId)}`;
 
 const outcomeVariant: Record<
   DiffOutcome,

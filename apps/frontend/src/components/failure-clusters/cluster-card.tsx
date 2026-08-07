@@ -17,11 +17,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { withBase } from '@/lib/url';
+import { servedTestUrl } from '@/lib/url';
 
 function buildTestLink(reportUrl: string | undefined, testId: string): string | undefined {
   if (!reportUrl) return undefined;
-  return `${withBase(reportUrl)}#?testId=${testId}`;
+  return servedTestUrl(reportUrl, testId);
 }
 
 export function ClusterCard({

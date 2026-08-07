@@ -339,6 +339,33 @@ export interface ReportStats {
   ok?: boolean;
 }
 
+export interface ReportTestFailure {
+  message: string | null;
+  stackTrace: string | null;
+  location: SourceLocation | null;
+  artifactsAvailable: boolean;
+  attachments: Array<{ name: string; contentType: string; url: string }>;
+  traceViewerBase: string;
+  history: {
+    priorOccurrenceCount: number | null;
+    firstOccurrence: {
+      reportId: string;
+      createdAt: string;
+      displayNumber: number | null;
+      title: string | null;
+    } | null;
+    distinctErrors: number;
+    totalFailures: number;
+    previousFailure: { at: string; sameError: boolean | null } | null;
+  };
+  crossProject: Array<{
+    project: string;
+    isQuarantined: boolean;
+    lastRunAt: string | null;
+    stats: Required<Omit<ReportStats, 'ok'>>;
+  }>;
+}
+
 export interface ReportInfo {
   metadata: ReportMetadata;
   startTime: number;

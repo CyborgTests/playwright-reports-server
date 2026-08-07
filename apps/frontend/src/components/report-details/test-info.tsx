@@ -3,10 +3,12 @@ import { formatDuration } from '@playwright-reports/shared';
 import { ArrowUpRight, Clock } from 'lucide-react';
 import type { FC } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
+import { outcomeBadge } from '@/components/outcome-badge';
 import { Badge } from '@/components/ui/badge';
-import { testStatusToColor } from '@/lib/tailwind';
-import { withBase } from '@/lib/url';
+import { isProblemTest } from '@/lib/test-groups';
+import { servedTestUrl } from '@/lib/url';
 import RootCauseCategoryEditor from './RootCauseCategoryEditor';
+import TestDebugPanel from './test-debug-panel';
 
 interface TestInfoProps {
   test: ReportTest;
@@ -25,22 +27,11 @@ const TestInfo: FC<TestInfoProps> = ({
   fileName,
   reportUrl,
 }) => {
-  const formatted = testStatusToColor(test.outcome || 'expected');
+  const { testId } = test;
   const detailHref =
-    test.testId && project
-      ? `/test/${test.testId}?project=${encodeURIComponent(project)}`
-      : undefined;
-  // Playwright's own HTML report routes to a test through `#?testId=`, which
-  // inject.js also reads to attach the LLM panel.
-  const reportHref =
-    reportUrl && test.testId
-      ? withBase(`${reportUrl}#?testId=${encodeURIComponent(test.testId)}`)
-      : undefined;
-  const showRootCause =
-    reportId &&
-    test.testId &&
-    project &&
-    (test.outcome === 'unexpected' || test.outcome === 'flaky');
+    testId && project ? `/test/${testId}?project=${encodeURIComponent(project)}` : undefined;
+  const reportHref = reportUrl && testId ? servedTestUrl(reportUrl, testId) : undefined;
+  const isFailing = isProblemTest(test);
 
   return (
     <div className="rounded-lg border bg-card p-5 space-y-4">
@@ -54,9 +45,7 @@ const TestInfo: FC<TestInfoProps> = ({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <Badge variant="outline" className={formatted.colorName}>
-          {formatted.title}
-        </Badge>
+        {outcomeBadge(test.outcome)}
         <span className="flex items-center gap-1 text-muted-foreground">
           <Clock className="h-3.5 w-3.5" />
           {formatDuration(test.duration || 0)}
@@ -69,14 +58,10 @@ const TestInfo: FC<TestInfoProps> = ({
         ))}
       </div>
 
-      {showRootCause && (
+      {isFailing && testId && reportId && project && (
         <div className="flex items-center gap-2 text-sm">
           <span className="text-muted-foreground">Root cause</span>
-          <RootCauseCategoryEditor
-            testId={test.testId as string}
-            reportId={reportId as string}
-            project={project as string}
-          />
+          <RootCauseCategoryEditor testId={testId} reportId={reportId} project={project} />
         </div>
       )}
 
@@ -89,6 +74,10 @@ const TestInfo: FC<TestInfoProps> = ({
             </p>
           ))}
         </div>
+      )}
+
+      {isFailing && testId && reportId && (
+        <TestDebugPanel reportId={reportId} testId={testId} project={project} />
       )}
 
       <div className="flex flex-wrap items-center gap-4 pt-1">

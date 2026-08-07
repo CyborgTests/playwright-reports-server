@@ -1,4 +1,9 @@
-import type { ReportFile, ReportStats, ReportTest } from '@playwright-reports/shared';
+import type {
+  ReportFile,
+  ReportStats,
+  ReportTest,
+  ReportTestFailure,
+} from '@playwright-reports/shared';
 import { countOutcomes } from '@playwright-reports/shared';
 import { sql } from 'kysely';
 import type { DerivedPageOptions } from '../queries/testAnalytics.js';
@@ -14,6 +19,19 @@ import {
   type TestRunRow,
   type TestWithQuarantineInfoRow,
 } from './shared.js';
+
+export interface CrossProjectOccurrenceRow {
+  project: string;
+  fileId: string;
+  flakinessScore: number | null;
+  quarantined: number;
+  totalRuns: number;
+  lastRunAt: string | null;
+  expected: number;
+  unexpected: number;
+  flaky: number;
+  skipped: number;
+}
 
 export class TestQueriesDatabase extends TestDbBase {
   private readonly testDetailStatsStmt = this.db.prepare(TEST_DETAIL_STATS_SQL);
@@ -145,14 +163,7 @@ export class TestQueriesDatabase extends TestDbBase {
   public getCrossProjectOccurrences(
     testId: string,
     excludeProject: string
-  ): Array<{
-    project: string;
-    fileId: string;
-    flakinessScore: number | null;
-    quarantined: number;
-    totalRuns: number;
-    lastRunAt: string | null;
-  }> {
+  ): CrossProjectOccurrenceRow[] {
     const compiled = this.k
       .selectFrom('tests as t')
       .leftJoin('test_runs as tr', (join) =>
@@ -168,19 +179,20 @@ export class TestQueriesDatabase extends TestDbBase {
         't.quarantined as quarantined',
         eb.fn.count<number>('tr.runId').as('totalRuns'),
         eb.fn.max<string | null>('tr.createdAt').as('lastRunAt'),
+        sql<number>`SUM(CASE WHEN tr.outcome IN ('expected','passed') THEN 1 ELSE 0 END)`.as(
+          'expected'
+        ),
+        sql<number>`SUM(CASE WHEN tr.outcome = 'flaky' THEN 1 ELSE 0 END)`.as('flaky'),
+        sql<number>`SUM(CASE WHEN tr.outcome = 'skipped' THEN 1 ELSE 0 END)`.as('skipped'),
+        sql<number>`SUM(CASE WHEN tr.outcome NOT IN ('expected','passed','flaky','skipped') THEN 1 ELSE 0 END)`.as(
+          'unexpected'
+        ),
       ])
       .where('t.testId', '=', testId)
       .where('t.project', '!=', excludeProject)
       .groupBy(['t.project', 't.fileId', 't.flakinessScore', 't.quarantined'])
       .compile();
-    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
-      project: string;
-      fileId: string;
-      flakinessScore: number | null;
-      quarantined: number;
-      totalRuns: number;
-      lastRunAt: string | null;
-    }>;
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as CrossProjectOccurrenceRow[];
   }
 
   // Delegate to testQueries (kept as raw SQL by design - see file header).
@@ -201,6 +213,70 @@ export class TestQueriesDatabase extends TestDbBase {
     warningThreshold: number
   ): { total: number; flakyTests: TestWithQuarantineInfoRow[] } {
     return testQueries.getTestsSummary(this.db, project, warningThreshold);
+  }
+
+  public getLaneFailureHistory(
+    testId: string,
+    fileId: string,
+    project: string,
+    errorSignature: string | null,
+    excludeReportId: string,
+    before: string
+  ): ReportTestFailure['history'] {
+    const lane = [testId, fileId, project] as const;
+    const counts = this.db
+      .prepare(
+        `SELECT COUNT(*) AS totalFailures,
+                COUNT(DISTINCT error_signature) AS distinctErrors,
+                SUM(CASE WHEN error_signature = ? AND reportId <> ? THEN 1 ELSE 0 END) AS priorOccurrenceCount
+           FROM test_runs
+          WHERE testId = ? AND fileId = ? AND project = ? AND error_signature IS NOT NULL`
+      )
+      .get(errorSignature, excludeReportId, ...lane) as {
+      totalFailures: number;
+      distinctErrors: number;
+      priorOccurrenceCount: number | null;
+    };
+
+    const previous = this.db
+      .prepare(
+        `SELECT error_signature AS signature, createdAt
+           FROM test_runs
+          WHERE testId = ? AND fileId = ? AND project = ?
+            AND createdAt < ? AND error_signature IS NOT NULL
+          ORDER BY createdAt DESC
+          LIMIT 1`
+      )
+      .get(...lane, before) as { signature: string; createdAt: string } | undefined;
+
+    const firstOccurrence = errorSignature
+      ? ((this.db
+          .prepare(
+            `SELECT tr.reportId, tr.createdAt, r.displayNumber, r.title
+               FROM test_runs tr
+               JOIN reports r ON r.reportID = tr.reportId
+              WHERE tr.testId = ? AND tr.fileId = ? AND tr.project = ?
+                AND tr.error_signature = ? AND tr.reportId <> ?
+              ORDER BY tr.createdAt ASC
+              LIMIT 1`
+          )
+          .get(...lane, errorSignature, excludeReportId) as
+          | ReportTestFailure['history']['firstOccurrence']
+          | undefined) ?? null)
+      : null;
+
+    return {
+      priorOccurrenceCount: errorSignature ? (counts.priorOccurrenceCount ?? 0) : null,
+      firstOccurrence,
+      distinctErrors: counts.distinctErrors,
+      totalFailures: counts.totalFailures,
+      previousFailure: previous
+        ? {
+            at: previous.createdAt,
+            sameError: errorSignature ? previous.signature === errorSignature : null,
+          }
+        : null,
+    };
   }
 
   public getReportFileTree(reportId: string): ReportFile[] {

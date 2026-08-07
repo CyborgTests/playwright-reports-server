@@ -12,28 +12,13 @@ type ReportFiltersProps = {
 };
 
 const STATUSES = [
-  {
-    outcome: 'unexpected',
-    label: 'failed',
-    key: 'unexpected',
-    active: 'bg-danger text-danger-foreground',
-  },
-  { outcome: 'flaky', label: 'flaky', key: 'flaky', active: 'bg-warning text-warning-foreground' },
-  {
-    outcome: 'expected',
-    label: 'passed',
-    key: 'expected',
-    active: 'bg-success text-success-foreground',
-  },
-  {
-    outcome: 'skipped',
-    label: 'skipped',
-    key: 'skipped',
-    active: 'bg-secondary text-secondary-foreground',
-  },
+  { outcome: 'unexpected', label: 'failed', active: 'bg-danger text-danger-foreground' },
+  { outcome: 'flaky', label: 'flaky', active: 'bg-warning text-warning-foreground' },
+  { outcome: 'expected', label: 'passed', active: 'bg-success text-success-foreground' },
+  { outcome: 'skipped', label: 'skipped', active: 'bg-secondary text-secondary-foreground' },
 ] as const;
 
-const ALL_OUTCOMES = STATUSES.map((status) => status.outcome) as ReportTestOutcome[];
+const ALL_OUTCOMES: ReportTestOutcome[] = STATUSES.map((status) => status.outcome);
 
 const ReportFilters: FC<ReportFiltersProps> = ({ report, onChangeFilters }) => {
   const [byName, setByName] = useState('');
@@ -55,12 +40,14 @@ const ReportFilters: FC<ReportFiltersProps> = ({ report, onChangeFilters }) => {
     onChangeFilters(currentState);
   }, [currentState, onChangeFilters]);
 
+  const visibleStatuses = STATUSES.filter((status) => counts[status.outcome] > 0);
+
   const toggle = (outcome: ReportTestOutcome) => {
     const next = byOutcomes.includes(outcome)
       ? byOutcomes.filter((entry) => entry !== outcome)
       : [...byOutcomes, outcome];
-    // Turning the last one off reads as "clear the filter" rather than "show nothing".
-    setByOutcomes(next.length ? next : ALL_OUTCOMES);
+    const keptVisible = visibleStatuses.some((status) => next.includes(status.outcome));
+    setByOutcomes(keptVisible ? next : ALL_OUTCOMES);
   };
 
   const isFiltered = byName !== '' || byOutcomes.length !== ALL_OUTCOMES.length;
@@ -79,7 +66,7 @@ const ReportFilters: FC<ReportFiltersProps> = ({ report, onChangeFilters }) => {
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
-        {STATUSES.filter((status) => counts[status.key] > 0).map((status) => {
+        {visibleStatuses.map((status) => {
           const on = byOutcomes.includes(status.outcome);
           return (
             <button
@@ -95,7 +82,7 @@ const ReportFilters: FC<ReportFiltersProps> = ({ report, onChangeFilters }) => {
                   : 'border border-dashed border-muted-foreground/40 text-muted-foreground hover:text-foreground'
               )}
             >
-              {counts[status.key]} {status.label}
+              {counts[status.outcome]} {status.label}
             </button>
           );
         })}

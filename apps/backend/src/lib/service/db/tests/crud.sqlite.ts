@@ -440,6 +440,21 @@ export class TestCrudDatabase extends TestDbBase {
     return rows.map((row) => convertDbRowToTestRun(row));
   }
 
+  public getRunByReportAndTest(reportId: string, testId: string): TestRunRow | undefined {
+    const compiled = this.k
+      .selectFrom('test_runs')
+      .selectAll()
+      .where('reportId', '=', reportId)
+      .where('testId', '=', testId)
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .compile();
+    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
+      | TestRunDbRow
+      | undefined;
+    return row ? convertDbRowToTestRun(row) : undefined;
+  }
+
   public reportHasFailures(reportId: string): boolean {
     const row = this.db
       .prepare(
@@ -488,24 +503,6 @@ export class TestCrudDatabase extends TestDbBase {
       .limit(1);
     if (project) q = q.where('project', '=', project);
     const compiled = q.compile();
-    const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
-      | { fileId: string; project: string }
-      | undefined;
-    return row ?? null;
-  }
-
-  public findRunLaneByReport(
-    testId: string,
-    reportId: string
-  ): { fileId: string; project: string } | null {
-    const compiled = this.k
-      .selectFrom('test_runs')
-      .select(['fileId', 'project'])
-      .where('testId', '=', testId)
-      .where('reportId', '=', reportId)
-      .orderBy('createdAt', 'desc')
-      .limit(1)
-      .compile();
     const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as
       | { fileId: string; project: string }
       | undefined;

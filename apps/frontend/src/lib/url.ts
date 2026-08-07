@@ -67,3 +67,6 @@ export const withBase = (path: string): string => {
   const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
   return path.startsWith('/') ? `${cleanBaseUrl}${path}` : `${cleanBaseUrl}/${path}`;
 };
+
+export const servedTestUrl = (reportUrl: string, testId: string): string =>
+  `${withBase(reportUrl)}#?testId=${encodeURIComponent(testId)}`;

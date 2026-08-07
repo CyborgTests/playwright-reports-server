@@ -233,8 +233,7 @@ export function resolveTestRun(
   testId: string,
   reportId: string
 ): { fileId: string; project: string; errorSignature?: string } | null {
-  const runs = testDb.getTestRunsByReport(reportId);
-  const run = runs.find((r) => r.testId === testId);
+  const run = testDb.getRunByReportAndTest(reportId, testId);
   if (!run) return null;
   return {
     fileId: run.fileId,

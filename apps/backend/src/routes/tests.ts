@@ -537,7 +537,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         // No completed task - build a fresh would-be prompt. Resolve
         // (fileId, project) from `test_runs` so the shared builder has
         // everything it needs.
-        const row = testDb.findRunLaneByReport(testId, reportId);
+        const row = testDb.getRunByReportAndTest(reportId, testId);
         if (!row) {
           return reply.status(404).send({
             success: false,

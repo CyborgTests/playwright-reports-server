@@ -1,7 +1,6 @@
-import type { ReportHistory, ReportTest } from '@playwright-reports/shared';
-import { type FC, useEffect, useMemo, useState } from 'react';
+import type { ReportHistory } from '@playwright-reports/shared';
+import { type FC, useEffect, useMemo, useRef, useState } from 'react';
 import InlineStatsCircle from '@/components/inline-stats-circle';
-import { subtitle } from '@/components/primitives';
 import {
   Accordion,
   AccordionContent,
@@ -21,18 +20,13 @@ interface FileListProps {
   highlightTestId?: string;
 }
 
-interface Selection {
-  test: ReportTest;
-  fileName: string;
-  suitePath: string[];
-}
-
 const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
   const [filteredTests, setFilteredTests] = useState<ReportHistory | undefined>(
     report ?? undefined
   );
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
+  const detailPaneRef = useRef<HTMLDivElement>(null);
 
   const fileGroups = useMemo(() => buildFileGroups(filteredTests?.files), [filteredTests?.files]);
 
@@ -47,22 +41,39 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
 
   useEffect(() => {
     setExpandedKeys(
-      fileGroups.filter((group) => group.problems > 0).map((group) => group.file.fileId)
+      (report?.files ?? [])
+        .filter((file) => (file.stats.unexpected ?? 0) + (file.stats.flaky ?? 0) > 0)
+        .map((file) => file.fileId)
     );
-  }, [fileGroups]);
+  }, [report?.files]);
 
   useEffect(() => {
     if (!highlightTestId) return;
-    for (const group of fileGroups) {
-      const test = (group.file.tests ?? []).find((entry) => entry.testId === highlightTestId);
-      if (!test) continue;
-      setSelection({ test, fileName: group.file.fileName, suitePath: group.prefix });
-      setExpandedKeys((prev) =>
-        prev.includes(group.file.fileId) ? prev : [...prev, group.file.fileId]
-      );
-      return;
+    setSelectedTestId(highlightTestId);
+    const file = (report?.files ?? []).find((entry) =>
+      (entry.tests ?? []).some((test) => test.testId === highlightTestId)
+    );
+    if (file) {
+      setExpandedKeys((prev) => (prev.includes(file.fileId) ? prev : [...prev, file.fileId]));
     }
-  }, [highlightTestId, fileGroups]);
+  }, [highlightTestId, report?.files]);
+
+  useEffect(() => {
+    if (!selectedTestId) return;
+    const pane = detailPaneRef.current;
+    if (!pane) return;
+    pane.scrollTop = 0;
+    pane.scrollIntoView({ block: 'nearest' });
+  }, [selectedTestId]);
+
+  const selection = useMemo(() => {
+    if (!selectedTestId) return null;
+    for (const group of fileGroups) {
+      const test = (group.file.tests ?? []).find((entry) => entry.testId === selectedTestId);
+      if (test) return { test, fileName: group.file.fileName };
+    }
+    return null;
+  }, [selectedTestId, fileGroups]);
 
   if (!report) {
     return (
@@ -74,14 +85,13 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h2 className={subtitle()}>File list</h2>
+      <div className="mb-4">
         <ReportFilters report={report} onChangeFilters={setFilteredTests} />
       </div>
 
       {fileGroups.length ? (
         <div className="flex flex-col lg:flex-row gap-4 items-start">
-          <div className="w-full lg:w-1/2 xl:w-[55%]">
+          <div className="w-full lg:flex-1 lg:min-w-0">
             <Accordion
               type="multiple"
               value={expandedKeys}
@@ -109,16 +119,10 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
                     <TestGroupList
                       groups={group.groups}
                       fileHasProblems={group.problems > 0}
-                      selectedTestId={selection?.test.testId}
+                      selectedTestId={selectedTestId ?? undefined}
                       newRegressionTestIds={newRegressionTestIds}
                       resolvedRegressionTestIds={resolvedRegressionTestIds}
-                      onSelect={(test) =>
-                        setSelection({
-                          test,
-                          fileName: group.file.fileName,
-                          suitePath: group.prefix,
-                        })
-                      }
+                      onSelect={(test) => setSelectedTestId(test.testId ?? null)}
                     />
                   </AccordionContent>
                 </AccordionItem>
@@ -127,8 +131,10 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
           </div>
 
           <div
+            ref={detailPaneRef}
             className={cn(
-              'w-full lg:w-1/2 xl:w-[45%] lg:sticky lg:top-4',
+              'w-full lg:flex-1 lg:min-w-0 lg:sticky lg:top-4',
+              'lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto',
               !selection && 'hidden lg:block'
             )}
           >
@@ -138,12 +144,12 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
                 project={report.project}
                 reportId={report.reportID}
                 fileName={selection.fileName}
-                suitePath={selection.suitePath}
+                suitePath={selection.test.path}
                 reportUrl={report.reportUrl}
               />
             ) : (
               <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                Select a test to see its outcome, root cause and tags.
+                Select a test to see details and links.
               </div>
             )}
           </div>

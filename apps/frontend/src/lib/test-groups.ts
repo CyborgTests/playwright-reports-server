@@ -1,9 +1,8 @@
-import type { ReportFile, ReportTest } from '@playwright-reports/shared';
+import { canonicalOutcome, type ReportFile, type ReportTest } from '@playwright-reports/shared';
 
 export interface TestGroup {
   label: string;
   tests: ReportTest[];
-  problems: number;
 }
 
 export interface FileGroup {
@@ -13,11 +12,10 @@ export interface FileGroup {
   problems: number;
 }
 
-export function testSeverityRank(outcome: ReportTest['outcome'] | undefined): number {
-  if (outcome === 'unexpected' || outcome === 'failed') return 0;
-  if (outcome === 'flaky') return 1;
-  if (outcome === 'skipped') return 3;
-  return 2;
+const SEVERITY_RANK = { unexpected: 0, flaky: 1, expected: 2, skipped: 3 };
+
+function testSeverityRank(outcome: ReportTest['outcome'] | undefined): number {
+  return SEVERITY_RANK[canonicalOutcome(outcome)];
 }
 
 export function isProblemTest(test: ReportTest): boolean {
@@ -43,7 +41,7 @@ function compareTests(a: ReportTest, b: ReportTest): number {
   return bySeverity !== 0 ? bySeverity : (a.title ?? '').localeCompare(b.title ?? '');
 }
 
-export function buildFileGroup(file: ReportFile): FileGroup {
+function buildFileGroup(file: ReportFile): FileGroup {
   const tests = file.tests ?? [];
   const prefix = commonPrefix(tests.map((test) => test.path ?? []));
 
@@ -56,17 +54,12 @@ export function buildFileGroup(file: ReportFile): FileGroup {
   }
 
   const groups: TestGroup[] = [...byLabel.entries()]
-    .map(([label, groupTests]) => ({
-      label,
-      tests: [...groupTests].sort(compareTests),
-      problems: groupTests.filter(isProblemTest).length,
-    }))
-    .sort((a, b) => {
-      const rankOf = (group: TestGroup) =>
-        Math.min(...group.tests.map((test) => testSeverityRank(test.outcome)));
-      const byRank = rankOf(a) - rankOf(b);
-      return byRank !== 0 ? byRank : a.label.localeCompare(b.label);
-    });
+    .map(([label, groupTests]) => ({ label, tests: groupTests.sort(compareTests) }))
+    .sort(
+      (a, b) =>
+        testSeverityRank(a.tests[0].outcome) - testSeverityRank(b.tests[0].outcome) ||
+        a.label.localeCompare(b.label)
+    );
 
   return { file, prefix, groups, problems: tests.filter(isProblemTest).length };
 }

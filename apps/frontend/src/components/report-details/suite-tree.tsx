@@ -1,18 +1,18 @@
 import type { ReportStats, ReportTest } from '@playwright-reports/shared';
 import { ChevronRight } from 'lucide-react';
-import { memo, useState } from 'react';
+import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { testStatusToColor } from '@/lib/tailwind';
 import { isProblemTest, type TestGroup } from '@/lib/test-groups';
 import { pluralize } from '@/lib/transformers';
 import { cn } from '@/lib/utils';
 
-export function StatsBadges({ stats }: { stats: ReportStats }) {
+export function StatsBadges({ stats, noun = 'test' }: { stats: ReportStats; noun?: string }) {
   if (!stats.total) return null;
   return (
     <span className="flex items-center gap-2 text-xs text-muted-foreground font-normal flex-wrap">
       <span>
-        {stats.total} {pluralize(stats.total, 'test')}
+        {stats.total} {pluralize(stats.total, noun)}
       </span>
       {(stats.unexpected ?? 0) > 0 && <Badge variant="danger">{stats.unexpected} failed</Badge>}
       {(stats.flaky ?? 0) > 0 && <Badge variant="warning">{stats.flaky} flaky</Badge>}
@@ -42,7 +42,7 @@ const TestRow = ({
     <button
       type="button"
       onClick={() => onSelect(test)}
-      aria-current={selected}
+      aria-pressed={selected}
       className={cn(
         'w-full text-left flex items-start gap-2 rounded-md px-2 py-1.5 text-sm',
         'hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
@@ -52,14 +52,23 @@ const TestRow = ({
       <span className={cn('shrink-0 leading-5', status.color)} aria-hidden>
         ●
       </span>
+      <span className="sr-only">{status.title}</span>
       <span className="flex-1 min-w-0 truncate">{test.title}</span>
       {isNewRegression && (
-        <Badge variant="outline" className="border-danger/40 text-danger shrink-0">
+        <Badge
+          variant="outline"
+          className="border-danger/40 text-danger shrink-0"
+          title="This test newly regressed in this report"
+        >
           regression
         </Badge>
       )}
       {isResolvedRegression && (
-        <Badge variant="outline" className="border-success/40 text-success shrink-0">
+        <Badge
+          variant="outline"
+          className="border-success/40 text-success shrink-0"
+          title="A prior regression for this test was resolved here"
+        >
           resolved
         </Badge>
       )}
@@ -76,7 +85,7 @@ interface TestGroupListProps {
   onSelect: (test: ReportTest) => void;
 }
 
-const TestGroupListImpl = ({
+const TestGroupList = ({
   groups,
   fileHasProblems,
   selectedTestId,
@@ -99,9 +108,13 @@ const TestGroupListImpl = ({
         const foldHealthy = fileHasProblems && healthy.length > 0;
         const healthyOpen = expandedHealthy.includes(group.label);
         const visible = foldHealthy && !healthyOpen ? problems : group.tests;
-        const foldLabel = `${healthy.length} passing${
-          healthy.some((test) => test.outcome === 'skipped') ? ' and skipped' : ''
-        }`;
+        const skipped = healthy.filter((test) => test.outcome === 'skipped').length;
+        const foldLabel = [
+          healthy.length - skipped > 0 ? `${healthy.length - skipped} passing` : '',
+          skipped > 0 ? `${skipped} skipped` : '',
+        ]
+          .filter(Boolean)
+          .join(' and ');
 
         if (problems.length === 0 && foldHealthy && !healthyOpen) {
           return (
@@ -154,5 +167,4 @@ const TestGroupListImpl = ({
   );
 };
 
-const TestGroupList = memo(TestGroupListImpl);
 export default TestGroupList;

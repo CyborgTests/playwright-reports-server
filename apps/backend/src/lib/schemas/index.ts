@@ -98,6 +98,10 @@ export const GetReportParamsSchema = z.object({
   id: z.string(),
 });
 
+export const GetReportTestParamsSchema = GetReportParamsSchema.extend({
+  testId: z.string(),
+});
+
 export const ExportReportPdfQuerySchema = z.object({
   scope: z.enum(['failures', 'all']).default('all'),
   compare: z.string().min(1).optional(),

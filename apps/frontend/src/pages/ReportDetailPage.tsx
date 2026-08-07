@@ -1,14 +1,21 @@
 import type { RegressionTestRef, ReportHistory } from '@playwright-reports/shared';
-import { AlertOctagon, CheckCircle2, Download, GitCompare, Users } from 'lucide-react';
+import {
+  AlertOctagon,
+  CheckCircle2,
+  Download,
+  ExternalLink,
+  GitCompare,
+  Users,
+} from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import FormattedDate from '@/components/date-format';
-import { subtitle, title } from '@/components/primitives';
+import InlineStatsCircle from '@/components/inline-stats-circle';
+import { title } from '@/components/primitives';
 import FileList from '@/components/report-details/file-list';
 import ReportFailureSummary from '@/components/report-details/ReportFailureSummary';
-import ReportMetadata from '@/components/report-details/report-metadata';
-import ReportStatistics from '@/components/report-details/report-stats';
+import { StatsBadges } from '@/components/report-details/suite-tree';
 import { CompareToPicker } from '@/components/reports-compare/compare-to-picker';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -167,28 +174,33 @@ function ReportDetailPage() {
             </Button>
           </a>
         )}
+        {report?.reportUrl && (
+          <a href={withBase(report.reportUrl)} target="_blank" rel="noreferrer">
+            <Button size="sm" className="gap-2">
+              <ExternalLink className="h-4 w-4" />
+              Open report
+            </Button>
+          </a>
+        )}
         <RegressionHeaderChips regressions={report?.regressions} />
       </div>
-      {report?.createdAt && (
-        <span className={`${subtitle()} mt-4 mb-6 text-right`}>
-          <span className="text-sm">
+
+      <div className="flex flex-wrap items-center gap-3 mt-3 mb-6">
+        {report?.stats && (
+          <>
+            <InlineStatsCircle stats={report.stats} />
+            <StatsBadges stats={report.stats} />
+          </>
+        )}
+        {report?.createdAt && (
+          <span className="text-sm text-muted-foreground">
             <FormattedDate date={report.createdAt} />
           </span>
-        </span>
-      )}
-      {report && <ReportMetadata report={report} />}
-      {id && <ReportFailureSummary reportId={id} />}
-      <div className="flex md:flex-row flex-col gap-2">
-        <div className="flex flex-col items-center md:w-1/4 max-w-full gap-2">
-          <ReportStatistics stats={report?.stats} />
-          <Link to={withBase(report?.reportUrl ?? '')} target="_blank">
-            <Button>Open report</Button>
-          </Link>
-        </div>
-        <div className="md:w-3/4 max-w-full">
-          {report && <FileList report={report} highlightTestId={highlightTestId} />}
-        </div>
+        )}
       </div>
+
+      {id && <ReportFailureSummary reportId={id} />}
+      {report && <FileList report={report} highlightTestId={highlightTestId} />}
     </>
   );
 }
