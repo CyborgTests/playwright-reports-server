@@ -21,6 +21,15 @@ const DISPLAY_NUMBER_RE = /(^|[\s([{,;:.!?])#(\d+)\b/g;
  */
 const MARKER_RE = /\[(testId|reportId|clusterId):\s*([^\]\s]+)\s*\]/g;
 
+const MARKER_KINDS: Record<string, 'test' | 'report' | 'cluster'> = {
+  testId: 'test',
+  reportId: 'report',
+  clusterId: 'cluster',
+};
+
+const CODE_SPAN_MARKER_RE =
+  /^`\s*(.*?)\s*\[(testId|reportId|clusterId):\s*([^\]\s]+)\s*\]\s*(.*?)\s*`$/;
+
 /** Short label for the produced link. Long opaque IDs (40-char Playwright
  *  testIds, full UUIDs) read poorly inline; truncate to a recognizable
  *  prefix while preserving the full ID inside the link target. */
@@ -63,23 +72,28 @@ function rewriteMarkers(text: string): string {
   if (!text.includes('[')) return text; // micro-opt: no markers possible
   const parts = text.split(SKIP_TOKEN_RE);
   for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 1) continue; // skip-token, leave alone
+    if (i % 2 === 1) {
+      parts[i] = rewriteCodeSpanMarker(parts[i]);
+      continue;
+    }
     parts[i] = parts[i].replace(MARKER_RE, (full, kind: string, id: string) => {
       const cleanId = id.trim();
-      if (!cleanId) return full;
-      switch (kind) {
-        case 'testId':
-          return `[${shortLabel('test', cleanId)}](pwrs:test/${cleanId})`;
-        case 'reportId':
-          return `[${shortLabel('report', cleanId)}](pwrs:report/${cleanId})`;
-        case 'clusterId':
-          return `[${shortLabel('cluster', cleanId)}](pwrs:cluster/${cleanId})`;
-        default:
-          return full;
-      }
+      const scheme = MARKER_KINDS[kind];
+      if (!cleanId || !scheme) return full;
+      return `[${shortLabel(scheme, cleanId)}](pwrs:${scheme}/${cleanId})`;
     });
   }
   return parts.join('');
+}
+
+function rewriteCodeSpanMarker(token: string): string {
+  const match = token.match(CODE_SPAN_MARKER_RE);
+  if (!match) return token;
+  const [, before, kind, id, after] = match;
+  const scheme = MARKER_KINDS[kind];
+  if (!scheme) return token;
+  const label = [before, after].filter(Boolean).join(' ').trim();
+  return `[${label || shortLabel(scheme, id)}](pwrs:${scheme}/${id})`;
 }
 
 function linkifySegment(text: string, ctx: LinkifyContext): string {

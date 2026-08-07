@@ -90,6 +90,7 @@ Linkable tests are tagged \`[testId: TEST_ID]\` and runs \`[reportId: REPORT_ID]
 - test → \`[test title](pwrs:test/TEST_ID?project={{project}})\`
 - run → \`[run #N](pwrs:report/REPORT_ID)\`
 Link only mentions that carry an inline tag.
+Never copy a data line as-is: no backticks around a test title or run label, and never leave a [testId: …] / [reportId: …] tag in your output.
 </linking>
 `;
 
