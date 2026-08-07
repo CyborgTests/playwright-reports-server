@@ -7,16 +7,21 @@ export function normalizeStringArray(value: string[] | undefined): string | null
   return entries.length > 0 ? JSON.stringify(entries) : null;
 }
 
+export function normalizeTags(tags: string[] | undefined): string | null {
+  return normalizeStringArray(Array.isArray(tags) ? [...new Set(tags)] : tags);
+}
+
 export function normalizeAnnotations(
   annotations: ReportTest['annotations'] | undefined
 ): string | null {
   if (!Array.isArray(annotations)) return null;
-  const trimmed = annotations
-    .filter((annotation) => typeof annotation?.type === 'string' && annotation.type !== '')
-    .map((annotation) => {
-      const description =
-        typeof annotation.description === 'string' ? annotation.description : undefined;
-      return description ? { type: annotation.type, description } : { type: annotation.type };
-    });
-  return trimmed.length > 0 ? JSON.stringify(trimmed) : null;
+  const byKey = new Map<string, { type: string; description?: string }>();
+  for (const annotation of annotations) {
+    if (typeof annotation?.type !== 'string' || annotation.type === '') continue;
+    const description =
+      typeof annotation.description === 'string' ? annotation.description : undefined;
+    const entry = description ? { type: annotation.type, description } : { type: annotation.type };
+    byKey.set(`${entry.type}:${description ?? ''}`, entry);
+  }
+  return byKey.size > 0 ? JSON.stringify([...byKey.values()]) : null;
 }

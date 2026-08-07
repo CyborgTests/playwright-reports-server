@@ -80,6 +80,21 @@ export const TestRow = memo(
                   Regression · {formatRegressionAge(item.regression.daysOpen)}
                 </Badge>
               )}
+              {item.annotations?.map((annotation) => (
+                <Badge
+                  key={`${annotation.type}:${annotation.description ?? ''}`}
+                  variant="warning"
+                  title={annotation.description}
+                  className="text-[10px] px-1.5 py-0"
+                >
+                  {annotation.type}
+                </Badge>
+              ))}
+              {item.tags?.map((tag) => (
+                <Badge key={tag} variant="outline" className="text-[10px] px-1.5 py-0">
+                  {tag}
+                </Badge>
+              ))}
             </div>
             <p className="text-sm text-muted-foreground break-words">{item.filePath}</p>
           </div>

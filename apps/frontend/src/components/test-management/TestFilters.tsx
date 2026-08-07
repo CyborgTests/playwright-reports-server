@@ -88,7 +88,7 @@ export function TestFilters({ filters, onFiltersChange }: Readonly<TestFiltersPr
         <Input
           id="search-filter"
           type="text"
-          placeholder="Search by test title or file path..."
+          placeholder="Search by title, file path, tag or annotation (skip, slow, etc.)..."
           value={filters.search ?? ''}
           onChange={(e) => onFiltersChange({ ...filters, search: e.target.value || undefined })}
         />

@@ -1,4 +1,3 @@
-import type { TestWithQuarantineInfo } from '@playwright-reports/shared';
 import { CAPABILITIES, ROOT_CAUSE_CATEGORIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { invalidateFailureClustersCache } from '../lib/failure-clustering/index.js';
@@ -78,7 +77,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
             onlyActiveFilter ? undefined : from,
             onlyActiveFilter ? undefined : to
           );
-          for (const t of data as TestWithQuarantineInfo[]) {
+          for (const t of data) {
             const k = `${t.testId}::${t.fileId}::${t.project}`;
             const reg = openMap.get(k);
             if (reg) t.regression = toRegressionContext(reg);

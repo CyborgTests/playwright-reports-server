@@ -288,6 +288,11 @@ export interface SourceLocation {
   column?: number;
 }
 
+export interface TestAnnotation {
+  type: string;
+  description?: string;
+}
+
 export interface ReportTest {
   testId: string;
   title: string;
@@ -312,10 +317,7 @@ export interface ReportTest {
     }>;
   }>;
   tags?: string[];
-  annotations?: Array<{
-    type: string;
-    description?: string;
-  }>;
+  annotations?: TestAnnotation[];
   createdAt?: string;
   // test management fields
   flakinessScore?: number;

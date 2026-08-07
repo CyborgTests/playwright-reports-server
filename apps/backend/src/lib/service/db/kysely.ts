@@ -253,10 +253,10 @@ export interface TestsRow {
   latestFailureCategory: string | null;
   flakinessResetAt: string | null;
   quarantineFixedAt: string | null;
-  // Test-definition fields, last-write-wins per ingest (migration 0004).
   projectName: string | null;
   suitePath: string | null; // JSON string[]
   tags: string | null; // JSON string[]
+  latestAnnotations: string | null; // JSON TestAnnotation[]
 }
 
 export interface TestRunsRow {
@@ -354,6 +354,8 @@ export interface TestsFtsRow {
   project: string;
   title: string;
   filePath: string;
+  tags: string | null;
+  latestAnnotations: string | null;
 }
 
 export interface ReportTagsRow {

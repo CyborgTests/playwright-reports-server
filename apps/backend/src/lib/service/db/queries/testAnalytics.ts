@@ -32,6 +32,10 @@ export interface DerivedPageOptions {
   resolvedSince?: string;
 }
 
+function escapeLikeTerm(term: string): string {
+  return term.replace(/[\\%_]/g, '\\$&');
+}
+
 function scopedRunFilter(
   project: string | undefined,
   from?: string,
@@ -173,23 +177,19 @@ export function getDerivedPage(
   if (options.search) {
     const term = options.search.trim();
     if (term.length >= 3) {
-      // FTS5 with the trigram tokenizer accelerates substring search
-      // ("contains" anywhere in title or filePath) via an inverted index.
-      // The user's input is quoted as a phrase so any FTS5 query-syntax
-      // metacharacters (-, :, (, NEAR, etc.) are treated as literal text.
-      const phrase = `"${term.replace(/"/g, '""')}"`;
       whereConds.push(
         `(t.testId, t.fileId, t.project) IN (
           SELECT testId, fileId, project FROM tests_fts WHERE tests_fts MATCH ?
         )`
       );
-      whereParams.push(phrase);
+      whereParams.push(`"${term.replace(/"/g, '""')}"`);
     } else if (term.length > 0) {
-      // Trigram FTS can't tokenize inputs shorter than 3 chars, so fall
-      // back to a LIKE scan for very short search prefixes.
-      const like = `%${term.toLowerCase()}%`;
-      whereConds.push('(LOWER(t.title) LIKE ? OR LOWER(t.filePath) LIKE ?)');
-      whereParams.push(like, like);
+      const like = `%${escapeLikeTerm(term.toLowerCase())}%`;
+      whereConds.push(
+        `(LOWER(t.title) LIKE ? ESCAPE '\\' OR LOWER(t.filePath) LIKE ? ESCAPE '\\'
+          OR LOWER(t.tags) LIKE ? ESCAPE '\\')`
+      );
+      whereParams.push(like, like, like);
     }
   }
 
@@ -261,7 +261,7 @@ export function getDerivedPage(
 
   const rowsSql = `${cteHead}
     SELECT
-      t.testId, t.fileId, t.filePath, t.project, t.title, t.createdAt,
+      t.testId, t.fileId, t.filePath, t.project, t.title, t.createdAt, t.tags, t.latestAnnotations,
       ${totalRunsExpr} AS totalRuns,
       ${lastRunAtExpr} AS lastRunAt,
       t.latestOutcome AS latestOutcome,

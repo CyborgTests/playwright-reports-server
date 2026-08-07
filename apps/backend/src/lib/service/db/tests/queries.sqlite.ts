@@ -3,6 +3,7 @@ import type {
   ReportStats,
   ReportTest,
   ReportTestFailure,
+  TestAnnotation,
 } from '@playwright-reports/shared';
 import { countOutcomes } from '@playwright-reports/shared';
 import { sql } from 'kysely';
@@ -148,8 +149,12 @@ export class TestQueriesDatabase extends TestDbBase {
     const state = testDb.getTestState(testId, fileId, project);
     const isQuarantined = Boolean(state?.quarantined);
 
+    const { tags, latestAnnotations, ...rest } = test;
+
     return {
-      ...test,
+      ...rest,
+      tags: parseJsonColumn<string[] | undefined>(tags, undefined),
+      annotations: parseJsonColumn<TestAnnotation[] | undefined>(latestAnnotations, undefined),
       totalRuns: stats.totalRuns || 0,
       lastRunAt: stats.lastRunAt || undefined,
       flakinessScore: state?.flakinessScore ?? undefined,

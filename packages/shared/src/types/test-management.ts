@@ -1,3 +1,5 @@
+import type { TestAnnotation } from './index.js';
+
 export interface TestWithQuarantineInfo {
   testId: string;
   fileId: string;
@@ -15,6 +17,8 @@ export interface TestWithQuarantineInfo {
   historyPassRate?: number;
   emaDuration?: number;
   lastRunAt?: string;
+  tags?: string[];
+  annotations?: TestAnnotation[];
   regression?: TestDetailRegression;
   regressionHighlights?: {
     newAtReportId?: string;

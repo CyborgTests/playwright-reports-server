@@ -1,5 +1,6 @@
 import type {
   SourceLocation,
+  TestAnnotation,
   TestCrossProjectOccurrence,
   TestDetail,
   TestDetailStats,
@@ -26,7 +27,12 @@ import {
   testQueriesDb,
   toRegressionContext,
 } from '../db/index.js';
-import { normalizeAnnotations, normalizeStringArray } from '../db/tests/definition.js';
+import {
+  normalizeAnnotations,
+  normalizeStringArray,
+  normalizeTags,
+} from '../db/tests/definition.js';
+import { parseJsonColumn } from '../db/utils.js';
 import { service } from '../index.js';
 import { computeErrorSignature } from './error-signature.js';
 import { classifyFailure } from './failure-classifier.js';
@@ -291,7 +297,7 @@ export class TestManagementService {
               title: test.title || 'Unknown Test',
               projectName: test.projectName ?? null,
               suitePath: normalizeStringArray(test.path),
-              tags: normalizeStringArray(test.tags),
+              tags: normalizeTags(test.tags),
             },
             runCreatedAt
           );
@@ -685,6 +691,11 @@ export class TestManagementService {
         lastRunAt: row.lastRunAt ?? undefined,
         flakinessScore: row.flakinessScore ?? undefined,
         flakinessResetAt: row.flakinessResetAt ?? undefined,
+        tags: parseJsonColumn<string[] | undefined>(row.tags, undefined),
+        annotations: parseJsonColumn<TestAnnotation[] | undefined>(
+          row.latestAnnotations,
+          undefined
+        ),
         isQuarantined,
         quarantinedAt: isQuarantined && row.latestNonSkippedAt ? row.latestNonSkippedAt : undefined,
         quarantineReason: isQuarantined && row.quarantineReason ? row.quarantineReason : undefined,
