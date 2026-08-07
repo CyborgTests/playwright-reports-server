@@ -5,6 +5,7 @@ import { useEffect, useMemo } from 'react';
 import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import FormattedDate from '@/components/date-format';
+import { title } from '@/components/primitives';
 import { DurationTrend } from '@/components/test-detail/DurationTrend';
 import { FailurePatternsWithClusters } from '@/components/test-detail/FailurePatterns';
 import {
@@ -87,7 +88,7 @@ export default function TestDetailPage() {
         </RouterLink>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold break-words">{detail.title}</h1>
+            <h1 className={title({ className: 'break-words' })}>{detail.title}</h1>
             <p className="text-sm text-muted-foreground break-all mt-1">{detail.filePath}</p>
           </div>
           <div className="flex flex-wrap gap-2 items-center">

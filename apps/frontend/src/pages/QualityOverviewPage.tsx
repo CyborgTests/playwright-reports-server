@@ -9,6 +9,7 @@ import { Pencil, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { title } from '@/components/primitives';
 import { CreateDashboardDialog } from '@/components/quality/create-dashboard-dialog';
 import { DashboardMetaForm } from '@/components/quality/dashboard-meta-form';
 import { DashboardSelector } from '@/components/quality/dashboard-selector';
@@ -107,7 +108,7 @@ export default function QualityOverviewPage() {
     <div className="container mx-auto max-w-5xl space-y-6 px-4 py-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Overview</h1>
+          <h1 className={title()}>Overview</h1>
           <p className="text-sm text-muted-foreground">
             {showHome
               ? 'Pinned dashboards'
