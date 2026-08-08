@@ -97,7 +97,7 @@ export function TaskTable({
   }, [tasks, expanded, fetchChildren]);
 
   const cancelTaskMutation = useMutation('/api/llm/tasks', {
-    method: 'POST',
+    method: 'PATCH',
     onSuccess: () => {
       toast.success('Task cancelled');
       onInvalidate();
