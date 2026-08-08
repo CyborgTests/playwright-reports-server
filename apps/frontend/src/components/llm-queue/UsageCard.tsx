@@ -185,6 +185,7 @@ export function UsageCard() {
   const usage = usageData?.data;
 
   const resetUsageMutation = useMutation('/api/llm/usage/reset', {
+    method: 'POST',
     onSuccess: () => {
       toast.success('Usage counters reset');
       refetchUsage();

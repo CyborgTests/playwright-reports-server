@@ -75,6 +75,7 @@ export default function LlmQueuePage() {
   });
 
   const generateExistingMutation = useMutation('/api/llm/generate-existing', {
+    method: 'POST',
     onSuccess: () => {
       toast.success('Generation started for existing reports');
       invalidateLlmQueries();
@@ -94,7 +95,10 @@ export default function LlmQueuePage() {
     method: 'PATCH',
     silent: true,
   });
-  const { mutateAsync: retryTask } = useMutation('/api/llm/tasks', { silent: true });
+  const { mutateAsync: retryTask } = useMutation('/api/llm/tasks', {
+    method: 'POST',
+    silent: true,
+  });
   const [isBulkCancelling, setIsBulkCancelling] = useState(false);
   const [isBulkRerunning, setIsBulkRerunning] = useState(false);
 
