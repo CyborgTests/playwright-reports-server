@@ -49,6 +49,8 @@ export default defineConfig({
 
 With `triggerReportGeneration: true`, every `resultDetails` field is copied onto the generated report as well, so `?tags=branch:main` filters reports and results alike, and the fields show up on the report detail page. The only exceptions are `triggerReportGeneration` itself and the `shardCurrent` / `shardTotal` pair, which describe a single blob rather than the merged report.
 
+`environment` is the conventional field for the deployment target (`qa`, `staging`, `prod`, …). Pass it in `resultDetails` (or as `--meta environment=qa` on a CLI upload) and the reports list shows it in a dedicated **Env** column; filter with `?tags=environment:qa` like any other tag. Reports uploaded without it show a muted *no env* placeholder.
+
 Bumping defaults when CI is slow or blobs are large: `requestTimeout` (60s) and `blobUploadTimeout` (10min). Setting `enabled: false` disables the reporter for local runs you don't want cluttering the dashboard.
 
 Full reporter docs: [`packages/reporter/README.md`](https://github.com/CyborgTests/playwright-reports-server/blob/main/packages/reporter/README.md).
@@ -91,6 +93,7 @@ npx --package=@cyborgtests/reporter playwright-reporter-cli upload ./playwright-
   --title "Nightly Run 2026-05-29" \
   --tags ci,nightly \
   --meta branch=main \
+  --meta environment=qa \
   --meta build=12345
 ```
 
