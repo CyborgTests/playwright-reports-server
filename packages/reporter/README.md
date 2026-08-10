@@ -33,6 +33,7 @@ In your `playwright.config.ts` or `playwright.config.js`:
         // Any custom metadata to attach to this blob (strings)
         resultDetails: {
           branch: process.env.CI_COMMIT_BRANCH,
+          environment: process.env.DEPLOY_ENV, // qa, staging, prod - shown in the Env column
           foo: 'bar',
           bar: 'baz'
         },
@@ -44,6 +45,8 @@ In your `playwright.config.ts` or `playwright.config.js`:
 ```
 
 Then run your tests, if you see `[ReporterPlaywrightReportsServer] 🎭 HTML Report is available at: ...` - your blob results were successfully sent to server!
+
+Pass `environment` in `resultDetails` to label the deployment target (`qa`, `staging`, `prod`, …). The server shows it in a dedicated **Env** column on the reports list and you can filter with `?tags=environment:qa`.
 
 ## Shards
 
