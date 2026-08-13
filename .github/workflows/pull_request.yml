@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: "24"
       - name: Install pnpm
-        uses: pnpm/action-setup@v6.0.9
+        uses: pnpm/action-setup@v6.0.10
       - name: Get pnpm store directory
         id: pnpm-cache
         shell: bash
@@ -51,7 +51,7 @@ jobs:
         with:
           node-version: "24"
       - name: Install pnpm
-        uses: pnpm/action-setup@v6.0.9
+        uses: pnpm/action-setup@v6.0.10
       - name: Get pnpm store directory
         id: pnpm-cache
         shell: bash
@@ -79,7 +79,7 @@ jobs:
         with:
           node-version: "24"
       - name: Install pnpm
-        uses: pnpm/action-setup@v6.0.9
+        uses: pnpm/action-setup@v6.0.10
       - name: Get pnpm store directory
         id: pnpm-cache
         shell: bash
@@ -107,7 +107,7 @@ jobs:
         with:
           node-version: "24"
       - name: Install pnpm
-        uses: pnpm/action-setup@v6.0.9
+        uses: pnpm/action-setup@v6.0.10
       - name: Get pnpm store directory
         id: pnpm-cache
         shell: bash
@@ -138,7 +138,7 @@ jobs:
         with:
           node-version: "24"
       - name: Install pnpm
-        uses: pnpm/action-setup@v6.0.9
+        uses: pnpm/action-setup@v6.0.10
       - name: Get pnpm store directory
         id: pnpm-cache
         shell: bash

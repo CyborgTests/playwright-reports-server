@@ -28,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Enable GitHub Pages (source = GitHub Actions)
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
         with:
           enablement: true
       # configure-pages `enablement` only CREATES a Pages site - it does not
@@ -51,7 +51,7 @@ jobs:
           if [ "$status" != "204" ]; then
             echo "::warning::Could not set Pages source to GitHub Actions (HTTP $status). Set it manually: Settings -> Pages -> Source: GitHub Actions."
           fi
-      - uses: pnpm/action-setup@v6.0.9
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 24
