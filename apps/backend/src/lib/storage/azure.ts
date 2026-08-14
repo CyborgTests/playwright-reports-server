@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PassThrough, type Readable } from 'node:stream';
 import {
+  BlobSASPermissions,
   BlobServiceClient,
   type ContainerClient,
   StorageSharedKeyCredential,
@@ -460,7 +461,14 @@ export class AzureBlob implements Storage {
     const srcBlobs = await this.listBlobsUnderPrefix(srcPrefix);
     await processWithConcurrency(srcBlobs, this.batchSize, async (srcKey) => {
       const dstKey = `${dstPrefix}${srcKey.slice(srcPrefix.length)}`;
-      const srcUrl = this.container.getBlobClient(srcKey).url;
+      // Azure authenticates the copy *source* independently of the request's
+      // shared-key signature, so a bare blob URL to a private container has no
+      // credentials and the copy fails. Sign the source with a short-lived read
+      // SAS so `syncCopyFromURL` can read it.
+      const srcUrl = await this.container.getBlobClient(srcKey).generateSasUrl({
+        permissions: BlobSASPermissions.parse('r'),
+        expiresOn: new Date(Date.now() + 10 * 60 * 1000),
+      });
       await this.container.getBlobClient(dstKey).syncCopyFromURL(srcUrl);
     });
     await this.clearPrefix(srcPrefix);
