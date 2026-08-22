@@ -1,7 +1,18 @@
 import { stat, statfs } from 'node:fs/promises';
 import path from 'node:path';
 import type { PassThrough } from 'node:stream';
-import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
+import {
+  type AttachmentCleanupKind,
+  CLEANUP_KINDS,
+  CLEANUP_RULES,
+  type CleanupEstimate,
+  type CleanupKind,
+  cleanupDays,
+  type FailureCategorySource,
+  formatBytes,
+  isCleanupConfirmed,
+  type SiteWhiteLabelConfig,
+} from '@playwright-reports/shared';
 import { APP_VERSION } from '../../version.js';
 import { serveReportRoute } from '../constants.js';
 import { invalidateFailureClustersCache } from '../failure-clustering/index.js';
@@ -26,10 +37,21 @@ import { processWithConcurrency } from '../utils/semaphore.js';
 import { withError } from '../withError.js';
 import { invalidateAnalyticsCache } from './analytics.js';
 import { configCache } from './cache/config.js';
-import { reportDb, reportResultsDb, resultDb, siteConfigDb, testQueriesDb } from './db/index.js';
+import {
+  reportDb,
+  reportResultsDb,
+  resultDb,
+  siteConfigDb,
+  testDb,
+  testQueriesDb,
+} from './db/index.js';
+import { type CleanupCursor, cursorOf, type ReportStorageRow } from './db/reports.sqlite.js';
 import { lifecycle } from './lifecycle.js';
 import { dispatchReportUploaded } from './notifications/dispatcher.js';
 import { testManagementService } from './test-management/index.js';
+
+export const CLEANUP_BATCH_SIZE = 200;
+export const CLEANUP_MAX_PER_RUN = 5000;
 
 async function dataDbFileBytes(): Promise<number> {
   let total = 0;
@@ -41,6 +63,22 @@ async function dataDbFileBytes(): Promise<number> {
     }
   }
   return total;
+}
+
+export function retentionCutoff(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+export function setFailureCategory(
+  testId: string,
+  reportId: string,
+  category: string,
+  source: FailureCategorySource
+): number {
+  const changed = testDb.updateFailureCategoryByTest(testId, reportId, category, source);
+  invalidateFailureClustersCache();
+  invalidateAnalyticsCache();
+  return changed;
 }
 
 export async function processReportOrRollback(report: ReportHistory): Promise<void> {
@@ -58,7 +96,9 @@ export async function processReportOrRollback(report: ReportHistory): Promise<vo
     );
   }
   const { error: storageError } = await withError(
-    storage.deleteReports([{ reportID: report.reportID, project: report.project }])
+    storage.deleteReports([
+      { reportID: report.reportID, project: report.project, storagePath: report.storagePath },
+    ])
   );
   if (storageError) {
     console.error(
@@ -165,7 +205,11 @@ class Service {
 
     const rollbackStorage = async (reason: string): Promise<void> => {
       console.error(`[service] generateReport - rolling back storage for ${reportId}: ${reason}`);
-      await withError(storage.deleteReports([{ reportID: reportId, project: report.project }]));
+      await withError(
+        storage.deleteReports([
+          { reportID: reportId, project: report.project, storagePath: report.storagePath },
+        ])
+      );
     };
 
     const { error: onCreatedErr } = await withError(
@@ -223,7 +267,7 @@ class Service {
       const report = reportDb.getByID(id);
       if (!report) throw new Error(`report ${id} not found`);
 
-      entries.push({ reportID: id, project: report.project });
+      entries.push({ reportID: id, project: report.project, storagePath: report.storagePath });
     }
 
     const { error } = await withError(storage.deleteReports(entries));
@@ -331,12 +375,188 @@ class Service {
     };
   }
 
-  public async reconcileStorageSizes(): Promise<{ reportsZeroed: number; resultsZeroed: number }> {
-    const reportIds = reportDb.listSizedIds();
+  public async getCleanupEstimates(
+    windows?: Partial<Record<CleanupKind, number>>
+  ): Promise<CleanupEstimate[]> {
+    const cron = (await this.getConfig()).cron ?? {};
+    const estimates: CleanupEstimate[] = [];
+
+    for (const kind of CLEANUP_KINDS) {
+      const days = windows?.[kind] ?? cleanupDays(cron, kind);
+      if (days === undefined) continue;
+      const cutoff = retentionCutoff(days);
+
+      switch (kind) {
+        case 'trace':
+        case 'video':
+        case 'screenshot':
+          estimates.push({ kind, days, ...reportDb.estimateAttachmentCleanup(kind, cutoff) });
+          break;
+        case 'reportFiles':
+          estimates.push({ kind, days, ...reportDb.estimateReportFilesCleanup(cutoff) });
+          break;
+        case 'reports':
+          estimates.push({ kind, days, ...reportDb.estimateReportRecordCleanup(cutoff) });
+          break;
+        case 'results':
+          estimates.push({ kind, days, ...resultDb.estimateResultCleanup(cutoff) });
+          break;
+      }
+    }
+
+    return estimates;
+  }
+
+  public async confirmCleanup(
+    kind: CleanupKind,
+    days: number
+  ): Promise<{ confirmed: boolean; error?: string }> {
+    const fresh = siteConfigDb.get().cron ?? {};
+    const current = cleanupDays(fresh, kind);
+
+    if (current === undefined) {
+      return { confirmed: false, error: `${CLEANUP_RULES[kind].label} retention is not enabled.` };
+    }
+    if (current !== days) {
+      return {
+        confirmed: false,
+        error: `${CLEANUP_RULES[kind].label} retention changed to ${current} days - review the new estimate.`,
+      };
+    }
+
+    const merged = {
+      ...fresh,
+      cleanupConfirmations: {
+        ...fresh.cleanupConfirmations,
+        [kind]: { confirmedAt: new Date().toISOString(), confirmedDays: days },
+      },
+    };
+    configCache.onChanged(siteConfigDb.set({ cron: merged }));
+    return { confirmed: true };
+  }
+
+  private async *cleanupBatches<T extends CleanupCursor>(
+    kind: CleanupKind,
+    fetch: (limit: number, after: CleanupCursor | null) => T[]
+  ): AsyncGenerator<T[]> {
+    let cursor: CleanupCursor | null = null;
+    let attempted = 0;
+
+    while (attempted < CLEANUP_MAX_PER_RUN) {
+      if (!isCleanupConfirmed((await this.getConfig()).cron ?? {}, kind)) {
+        console.log(`[cleanup] ${kind} stopped mid-run: no longer confirmed`);
+        return;
+      }
+      const batch = fetch(CLEANUP_BATCH_SIZE, cursor);
+      if (batch.length === 0) return;
+      cursor = cursorOf(batch);
+      attempted += batch.length;
+
+      yield batch;
+
+      if (batch.length < CLEANUP_BATCH_SIZE) return;
+    }
+  }
+
+  public async deleteExpiredAttachments(
+    kind: AttachmentCleanupKind,
+    cutoffISO: string
+  ): Promise<void> {
+    let failed = 0;
+    let deleted = 0;
+    let freedTotal = 0;
+
+    const fetch = (limit: number, after: CleanupCursor | null) =>
+      reportDb.getAttachmentCleanupCandidates(kind, cutoffISO, limit, after);
+
+    for await (const candidates of this.cleanupBatches(kind, fetch)) {
+      const results = await processWithConcurrency(candidates, 10, async (candidate) => {
+        const { result: present } = await withError(
+          storage.reportExists(candidate.reportID, candidate.storagePath)
+        );
+        if (!present) return null;
+        const { result: removal, error } = await withError(
+          storage.deleteReportAttachments(candidate.reportID, candidate.storagePath, [kind])
+        );
+        if (error || !removal || removal.failed > 0) return null;
+        return { reportID: candidate.reportID, freedBytes: removal.freed };
+      });
+
+      const done = results.filter((row): row is NonNullable<typeof row> => row !== null);
+      failed += candidates.length - done.length;
+      reportDb.markAttachmentDeleted(kind, done);
+      deleted += done.length;
+      freedTotal += done.reduce((total, row) => total + row.freedBytes, 0);
+    }
+
+    if (deleted > 0 || failed > 0) {
+      console.log(
+        `[cleanup] ${kind}: ${deleted} row(s) marked, ${formatBytes(freedTotal)} freed` +
+          (failed > 0 ? `, ${failed} failed` : '') +
+          ` (cutoff=${cutoffISO})`
+      );
+      invalidateAnalyticsCache();
+    }
+  }
+
+  public async deleteExpiredReportFiles(cutoffISO: string): Promise<void> {
+    let skipped = 0;
+    let removedCount = 0;
+
+    const fetch = (limit: number, after: CleanupCursor | null) =>
+      reportDb.getReportFilesCleanupCandidates(cutoffISO, limit, after);
+
+    for await (const candidates of this.cleanupBatches('reportFiles', fetch)) {
+      const present = await processWithConcurrency(candidates, 10, async (candidate) => {
+        const { result: exists } = await withError(
+          storage.reportExists(candidate.reportID, candidate.storagePath ?? null)
+        );
+        return exists ? candidate : null;
+      });
+      const deletable = present.filter((row): row is (typeof candidates)[number] => row !== null);
+      skipped += candidates.length - deletable.length;
+      if (deletable.length === 0) continue;
+
+      const { result: removedIds, error } = await withError(storage.deleteReports(deletable));
+      if (error || !removedIds) {
+        console.error(
+          `[cleanup] report files batch failed after ${removedCount}: ${error?.message}`
+        );
+        return;
+      }
+      if (removedIds.length === 0) {
+        console.warn('[cleanup] report files: whole batch failed to delete, stopping');
+        break;
+      }
+      reportDb.markStoragePruned(removedIds);
+      removedCount += removedIds.length;
+    }
+
+    if (removedCount > 0 || skipped > 0) {
+      console.log(
+        `[cleanup] report files: ${removedCount} report(s)` +
+          (skipped > 0 ? `, ${skipped} skipped (files not found)` : '') +
+          ` (cutoff=${cutoffISO})`
+      );
+    }
+    if (removedCount > 0) {
+      invalidateFailureClustersCache();
+      invalidateAnalyticsCache();
+    }
+  }
+
+  public async reconcileStorageSizes(): Promise<void> {
+    const RECONCILE_SCAN_LIMIT = 10_000;
+    const candidates = reportDb.listReportStorageRows(RECONCILE_SCAN_LIMIT);
     const missingReports: string[] = [];
-    await processWithConcurrency(reportIds, 10, async (id) => {
-      const { result: exists, error } = await withError(storage.reportExists(id));
-      if (!error && exists === false) missingReports.push(id);
+    const presentReports = new Set<string>();
+    await processWithConcurrency(candidates, 10, async (candidate) => {
+      const { result: exists, error } = await withError(
+        storage.reportExists(candidate.reportID, candidate.storagePath)
+      );
+      if (error) return;
+      if (exists) presentReports.add(candidate.reportID);
+      else missingReports.push(candidate.reportID);
     });
 
     const resultIds = resultDb.listSizedIds();
@@ -346,15 +566,64 @@ class Service {
       if (!error && exists === false) missingResults.push(id);
     });
 
-    const reportsZeroed = this.applyStoragePruneGuarded('report', reportIds.length, missingReports);
+    reportDb.clearArtifactsMissing(
+      candidates
+        .filter(
+          (candidate) => candidate.artifactsMissingAt && presentReports.has(candidate.reportID)
+        )
+        .map((candidate) => candidate.reportID)
+    );
+
+    const alreadyMarked = new Set(
+      candidates.filter((candidate) => candidate.artifactsMissingAt).map((c) => c.reportID)
+    );
+    const probed = presentReports.size + missingReports.length;
+    const reportsFlagged = this.applyStoragePruneGuarded(
+      'report',
+      probed,
+      missingReports.filter((id) => !alreadyMarked.has(id))
+    );
     const resultsZeroed = this.applyStoragePruneGuarded('result', resultIds.length, missingResults);
 
-    if (reportsZeroed || resultsZeroed) {
+    if (reportsFlagged || resultsZeroed) {
       console.log(
-        `[storage-reconcile] zeroed size for ${reportsZeroed} report(s) + ${resultsZeroed} result(s) with missing files`
+        `[storage-reconcile] flagged ${reportsFlagged} report(s) as missing files + zeroed ${resultsZeroed} result(s)`
       );
     }
-    return { reportsZeroed, resultsZeroed };
+
+    await this.backfillAttachmentSizes(candidates, presentReports);
+  }
+
+  private async backfillAttachmentSizes(
+    candidates: ReportStorageRow[],
+    present: Set<string>
+  ): Promise<void> {
+    const MAX_PER_RUN = 5000;
+    const pending = candidates
+      .filter((candidate) => candidate.attachmentSizes === null && present.has(candidate.reportID))
+      .slice(0, MAX_PER_RUN);
+    if (pending.length === 0) return;
+
+    let failed = 0;
+    const measured = await processWithConcurrency(pending, 10, async (candidate) => {
+      const { result: sizes, error } = await withError(
+        storage.reportAttachmentSizes(candidate.reportID, candidate.storagePath)
+      );
+      if (error || !sizes) {
+        failed += 1;
+        return null;
+      }
+      return { reportID: candidate.reportID, sizes };
+    });
+
+    const recorded = measured.filter((row): row is NonNullable<typeof row> => row !== null);
+    reportDb.setAttachmentSizes(recorded);
+
+    console.log(
+      `[storage-reconcile] recorded attachment sizes for ${recorded.length} report(s)` +
+        (failed ? `, ${failed} unreadable` : '') +
+        (pending.length === MAX_PER_RUN ? ' (run cap reached, resuming next run)' : '')
+    );
   }
 
   private applyStoragePruneGuarded(

@@ -2,7 +2,7 @@
   "name": "playwright-reports",
   "displayName": "Playwright Reports",
   "description": "Access Playwright Reports Server data (failures, flakiness, clusters) via the pwrs-cli.",
-  "version": "1.0.0",
+  "version": "1.5.0",
   "author": {
     "name": "CyborgTests"
   },

@@ -7,6 +7,7 @@ import {
   type ContainerClient,
   StorageSharedKeyCredential,
 } from '@azure/storage-blob';
+import type { AttachmentCleanupKind } from '@playwright-reports/shared';
 import getFolderSize from 'get-folder-size';
 import mime from 'mime';
 import { Open } from 'unzipper';
@@ -15,17 +16,25 @@ import { withError } from '../../lib/withError.js';
 import { generatePlaywrightReport } from '../pw.js';
 import { resultDb } from '../service/db/index.js';
 import { processWithConcurrency, Semaphore } from '../utils/semaphore.js';
+import { collectAttachments, deleteEntries, summarizeAttachments } from './attachments.js';
 import { REPORTS_BUCKET, REPORTS_FOLDER, RESULTS_BUCKET, TMP_FOLDER } from './constants.js';
 import { bytesToString } from './format.js';
-import { parseRemoteReportMetadata, resolveBrandingAssetPaths } from './remoteShared.js';
+import {
+  deleteReportsByPrefix,
+  parseRemoteReportMetadata,
+  resolveBrandingAssetPaths,
+} from './remoteShared.js';
 import { safeZipEntryPath } from './streamUtils.js';
 import type {
+  AttachmentDeleteResult,
+  AttachmentSizes,
   ByteRange,
   ReadFileResult,
   ReportHistory,
   ReportPath,
   ReportUploadMetadata,
   Storage,
+  StorageEntry,
 } from './types.js';
 import { parseContentRange, resolveFileRange, unsatisfiableRangeResult } from './types.js';
 
@@ -199,8 +208,8 @@ export class AzureBlob implements Storage {
     return this.container.getBlobClient(key).exists();
   }
 
-  async reportExists(reportId: string): Promise<boolean> {
-    return this.blobExists(path.posix.join(REPORTS_BUCKET, reportId, 'index.html'));
+  async reportExists(reportId: string, storagePath?: string | null): Promise<boolean> {
+    return this.blobExists(path.posix.join(REPORTS_BUCKET, storagePath || reportId, 'index.html'));
   }
 
   async resultExists(resultId: string): Promise<boolean> {
@@ -218,6 +227,35 @@ export class AzureBlob implements Storage {
   async listKeys(prefix: string): Promise<string[]> {
     await this.ensureContainerExists();
     return this.listBlobsUnderPrefix(prefix);
+  }
+
+  async reportAttachmentSizes(
+    reportId: string,
+    storagePath: string | null
+  ): Promise<AttachmentSizes> {
+    await this.ensureContainerExists();
+    return summarizeAttachments(
+      (prefix) => this.listEntriesUnderPrefix(prefix),
+      reportId,
+      storagePath
+    );
+  }
+
+  async deleteReportAttachments(
+    reportId: string,
+    storagePath: string | null,
+    kinds: AttachmentCleanupKind[]
+  ): Promise<AttachmentDeleteResult> {
+    await this.ensureContainerExists();
+    const { entries } = await collectAttachments(
+      (prefix) => this.listEntriesUnderPrefix(prefix),
+      reportId,
+      storagePath,
+      kinds
+    );
+    return deleteEntries(entries, this.batchSize, 'azure', (key) =>
+      this.container.getBlobClient(key).deleteIfExists()
+    );
   }
 
   async readToString(key: string): Promise<string | null> {
@@ -240,28 +278,14 @@ export class AzureBlob implements Storage {
     await withError(this.clear(...objects));
   }
 
-  private async getReportObjects(reportsIDs: string[]): Promise<string[]> {
-    const files: string[] = [];
-    const ids = new Set(reportsIDs);
-
-    for await (const blob of this.container.listBlobsFlat({ prefix: REPORTS_BUCKET })) {
-      if (!blob.name) continue;
-
-      const reportID = path.basename(path.dirname(blob.name));
-
-      if (ids.has(reportID)) {
-        files.push(blob.name);
-      }
-    }
-
-    return files;
-  }
-
-  async deleteReports(reports: ReportPath[]): Promise<void> {
-    const ids = reports.map((r) => r.reportID);
-    const objects = await this.getReportObjects(ids);
-
-    await withError(this.clear(...objects));
+  async deleteReports(reports: ReportPath[]): Promise<string[]> {
+    await this.ensureContainerExists();
+    return deleteReportsByPrefix(
+      reports,
+      'azure',
+      (prefix) => this.listEntriesUnderPrefix(prefix),
+      (keys) => this.clear(...keys)
+    );
   }
 
   async saveResult(filename: string, stream: PassThrough): Promise<void> {
@@ -472,12 +496,16 @@ export class AzureBlob implements Storage {
   }
 
   private async listBlobsUnderPrefix(prefix: string): Promise<string[]> {
-    const keys: string[] = [];
+    return (await this.listEntriesUnderPrefix(prefix)).map((entry) => entry.key);
+  }
+
+  private async listEntriesUnderPrefix(prefix: string): Promise<StorageEntry[]> {
+    const entries: StorageEntry[] = [];
     const normalized = prefix.endsWith('/') ? prefix : `${prefix}/`;
     for await (const blob of this.container.listBlobsFlat({ prefix: normalized })) {
-      keys.push(blob.name);
+      entries.push({ key: blob.name, size: blob.properties?.contentLength ?? 0 });
     }
-    return keys;
+    return entries;
   }
 
   async uploadReportFromZipFile(

@@ -1,6 +1,6 @@
 export type GenerateReportResponse = {
   reportId: string;
-  reportUrl: string;
+  reportUrl: string | null;
   metadata?: {
     title?: string;
     project?: string;

@@ -11,6 +11,7 @@ import { resolveApiKey } from '../lib/auth/apiKeys.js';
 import { resolveIdentity } from '../lib/auth/resolve.js';
 import { llmService } from '../lib/llm/index.js';
 import { injectTestAnalysis } from '../lib/report-injection/html-injector.js';
+import { classifyServeMiss, renderNoticePage, storageUnreachable } from '../lib/report-notice.js';
 import { reportDb } from '../lib/service/db/index.js';
 import { DATA_FOLDER, REPORTS_FOLDER } from '../lib/storage/constants.js';
 import { storage } from '../lib/storage/index.js';
@@ -50,43 +51,21 @@ function resolveShareAccess(request: FastifyRequest, reply: FastifyReply): boole
   return true;
 }
 
-// A served report is opened directly in a browser (no SPA to catch a 401), so a denied
-// viewer (typically a revoked/expired share link) - should see a page, not raw JSON.
-const ACCESS_DENIED_HTML = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Access denied</title>
-<style>
-  :root { color-scheme: dark light; }
-  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    background: radial-gradient(1200px 600px at 50% -10%, #1f2937, #0b0f17); color: #e5e7eb; padding: 24px; }
-  .card { max-width: 460px; text-align: center; }
-  .emoji { font-size: 72px; line-height: 1; margin-bottom: 16px; }
-  h1 { font-size: 24px; margin: 0 0 8px; font-weight: 700; }
-  p { margin: 0 0 8px; color: #9ca3af; font-size: 15px; line-height: 1.5; }
-  .hint { margin-top: 20px; font-size: 13px; color: #6b7280; }
-  a { color: #60a5fa; text-decoration: none; }
-</style>
-</head>
-<body>
-  <div class="card">
-    <div class="emoji">🕵️</div>
-    <h1>This link is in witness protection</h1>
-    <p>Report may not exist, share link has expired, been revoked, or just a product of imagination.</p>
-    <p class="hint">Ask whoever sent it for a fresh link - or <a href="/">sign in</a> if you have an account.</p>
-  </div>
-</body>
-</html>`;
+// A denied viewer (typically a revoked/expired share link) should see a page, not raw JSON.
+const ACCESS_DENIED_HTML = renderNoticePage({
+  emoji: '🕵️',
+  title: 'This link is in witness protection',
+  message:
+    'Report may not exist, share link has expired, been revoked, or just a product of imagination.',
+  hint: 'Ask whoever sent it for a fresh link - or <a href="/">sign in</a> if you have an account.',
+});
 
 function sendServeDenied(request: FastifyRequest, reply: FastifyReply): FastifyReply {
   const acceptsHtml = (request.headers.accept ?? '').includes('text/html');
   if (acceptsHtml) {
     return reply.code(403).type('text/html').send(ACCESS_DENIED_HTML);
   }
-  return reply.code(403).send({ error: 'Forbidden' });
+  return reply.code(403).send({ success: false, error: 'Forbidden' });
 }
 
 export async function registerServeRoutes(fastify: FastifyInstance) {
@@ -97,19 +76,19 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       try {
         rawPath = decodeURIComponent(filePath);
       } catch {
-        return reply.code(400).send({ error: 'Invalid path' });
+        return reply.code(400).send({ success: false, error: 'Invalid path' });
       }
 
       // Normalize and strip leading separators so the path is interpreted as a
       // descendant of the reports namespace.
       const safeRelative = path.normalize(rawPath).replace(/^([/\\])+/, '');
       if (safeRelative === '..' || safeRelative.startsWith(`..${sep}`)) {
-        return reply.code(400).send({ error: 'Invalid path' });
+        return reply.code(400).send({ success: false, error: 'Invalid path' });
       }
       const reportsRoot = resolve(REPORTS_FOLDER);
       const resolved = resolve(reportsRoot, safeRelative);
       if (resolved !== reportsRoot && !resolved.startsWith(reportsRoot + sep)) {
-        return reply.code(400).send({ error: 'Invalid path' });
+        return reply.code(400).send({ success: false, error: 'Invalid path' });
       }
       const targetPath = safeRelative;
 
@@ -130,7 +109,7 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       const contentType = mime.getType(targetPath.split('/').pop() || '');
 
       if (!contentType && !targetPath.includes('.')) {
-        return reply.code(404).send({ error: 'Not Found' });
+        return reply.code(404).send({ success: false, error: 'Not Found' });
       }
 
       const isIndexHtml = contentType === 'text/html' && targetPath.endsWith('index.html');
@@ -159,9 +138,19 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       );
 
       if (error || !result) {
-        return reply.code(404).send({
-          error: `Could not read file: ${error?.message || 'File not found'}`,
-        });
+        const miss = error
+          ? storageUnreachable(error.message)
+          : classifyServeMiss(
+              targetPath,
+              reportSegment ? reportDb.getArtifactState(reportSegment) : undefined,
+              'File not found',
+              viaShare
+            );
+        reply.header('Cache-Control', 'no-store');
+        if ((request.headers.accept ?? '').includes('text/html')) {
+          return reply.code(miss.status).type('text/html').send(renderNoticePage(miss.notice));
+        }
+        return reply.code(miss.status).send({ success: false, error: miss.error });
       }
 
       const headers: Record<string, string> = {
@@ -258,13 +247,13 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
     try {
       targetPath = decodeURIComponent(filePath);
     } catch {
-      return reply.code(400).send({ error: 'Invalid path' });
+      return reply.code(400).send({ success: false, error: 'Invalid path' });
     }
 
     const contentType = mime.getType(targetPath.split('/').pop() || '');
 
     if (!contentType && !targetPath.includes('.')) {
-      return reply.code(404).send({ error: 'Not Found' });
+      return reply.code(404).send({ success: false, error: 'Not Found' });
     }
 
     const dataRoot = resolve(DATA_FOLDER);
@@ -277,7 +266,7 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       child === parent || child.startsWith(parent + sep);
 
     if (!isInside(candidateInData, dataRoot) && !isInside(candidateInPublic, publicRoot)) {
-      return reply.code(400).send({ error: 'Invalid path' });
+      return reply.code(400).send({ success: false, error: 'Invalid path' });
     }
 
     const { error: dataAccessError } = await withError(access(candidateInData));

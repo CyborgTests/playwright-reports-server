@@ -24,7 +24,7 @@ export interface ReportRef {
   displayNumber?: number;
   project: string;
   createdAt: string;
-  reportUrl: string;
+  reportUrl: string | null;
   stats?: ReportStats;
 }
 

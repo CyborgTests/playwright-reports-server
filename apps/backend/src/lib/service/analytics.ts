@@ -31,6 +31,7 @@ const analyticsCache = new Map<string, AnalyticsCacheEntry>();
 
 export function invalidateAnalyticsCache(): void {
   analyticsCache.clear();
+  failureSummaryDb.invalidateAggregatedCategories();
 }
 
 type Window = { from?: string; to?: string };

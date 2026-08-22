@@ -19,11 +19,6 @@ import { Card, CardTitle } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { servedTestUrl } from '@/lib/url';
 
-function buildTestLink(reportUrl: string | undefined, testId: string): string | undefined {
-  if (!reportUrl) return undefined;
-  return servedTestUrl(reportUrl, testId);
-}
-
 export function ClusterCard({
   cluster,
   reportId,
@@ -266,10 +261,10 @@ function TestTitleLink({
 }: {
   title: string;
   testId: string;
-  reportUrl?: string;
+  reportUrl?: string | null;
   className?: string;
 }) {
-  const href = buildTestLink(reportUrl, testId);
+  const href = servedTestUrl(reportUrl, testId);
   if (!href) {
     return <span className={className}>{title}</span>;
   }

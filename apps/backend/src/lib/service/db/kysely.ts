@@ -86,6 +86,11 @@ export interface ReportsRow {
   gitCommitSubject: string | null;
   ciBuildHref: string | null;
   storagePath: string | null;
+  tracesDeletedAt: string | null;
+  videosDeletedAt: string | null;
+  screenshotsDeletedAt: string | null;
+  artifactsMissingAt: string | null;
+  attachmentSizes: string | null;
   updatedAt: WithDefault<string | null>;
 }
 

@@ -171,7 +171,7 @@ export function invalidateFailureClustersCache(): void {
 }
 
 function makeReportUrlResolver(): ReportUrlLookup {
-  const memo = new Map<string, string | undefined>();
+  const memo = new Map<string, string | null | undefined>();
   return (reportId) => {
     if (memo.has(reportId)) return memo.get(reportId);
     const url = reportDb.getByID(reportId)?.reportUrl;

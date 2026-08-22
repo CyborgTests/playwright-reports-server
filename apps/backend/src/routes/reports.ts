@@ -33,6 +33,7 @@ import {
   failureSummaryDb,
   llmTasksDb,
   regressionsDb,
+  removedAttachmentKinds,
   reportDb,
   testAnalysisDb,
   testDb,
@@ -40,6 +41,7 @@ import {
 } from '../lib/service/db/index.js';
 import { processReportOrRollback, service } from '../lib/service/index.js';
 import { compareReports } from '../lib/service/reportCompare.js';
+import { attachmentKindOf } from '../lib/storage/attachments.js';
 import { storage } from '../lib/storage/index.js';
 import { ValidationError, validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
@@ -571,20 +573,17 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         }
 
         const parsed = parseFailureDetails(run.failureDetails);
-        const { result: reportPresent, error: storageError } = await withError(
-          storage.reportExists(reportDb.getStoragePath(params.id) ?? params.id)
-        );
-        if (storageError) {
-          fastify.log.warn(
-            { err: storageError, reportId: params.id },
-            'reportExists failed - assuming artifacts are available'
-          );
-        }
-        const artifactsAvailable = reportPresent ?? true;
+        const artifactState = reportDb.getArtifactState(params.id);
+        const artifactsAvailable = !artifactState?.artifactsMissingAt;
+        const removedKinds = artifactState ? removedAttachmentKinds(artifactState) : [];
         const base = `${serveReportRoute}/${params.id}`;
         const attachments = artifactsAvailable
           ? (parsed?.attachments ?? [])
               .filter((attachment) => attachment?.path && attachment.contentType)
+              .filter((attachment) => {
+                const kind = attachmentKindOf(attachment.path);
+                return !kind || !removedKinds.includes(kind);
+              })
               .map((attachment) => ({
                 name: attachment.name,
                 contentType: attachment.contentType,
@@ -597,8 +596,12 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
           stackTrace: parsed?.stackTrace ?? null,
           location: parsed?.location ?? null,
           artifactsAvailable,
+          removedAttachmentKinds: removedKinds,
           attachments,
-          traceViewerBase: `${base}/trace/index.html`,
+          traceViewerBase:
+            artifactsAvailable && !removedKinds.includes('trace')
+              ? `${base}/trace/index.html`
+              : null,
           history: testQueriesDb.getLaneFailureHistory(
             params.testId,
             run.fileId,

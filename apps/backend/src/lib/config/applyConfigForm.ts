@@ -4,7 +4,15 @@ import type {
   LlmTaskType,
   SiteWhiteLabelConfig,
 } from '@playwright-reports/shared';
-import { SCREENSHOTS_MAX_CAP } from '@playwright-reports/shared';
+import {
+  CLEANUP_KINDS,
+  CLEANUP_RULES,
+  CLEANUP_SCHEDULE_KEYS,
+  type CleanupWindowIssue,
+  isCleanupConfirmed,
+  SCREENSHOTS_MAX_CAP,
+  validateCleanupWindows,
+} from '@playwright-reports/shared';
 import { validateRouting } from '../llm/routing/index.js';
 import { CronService } from '../service/cron.js';
 import { llmModelsDb } from '../service/db/index.js';
@@ -24,6 +32,10 @@ export interface ConfigFormData {
   resultExpireCronSchedule?: string;
   reportExpireDays?: string;
   reportExpireCronSchedule?: string;
+  reportFilesExpireDays?: string;
+  traceExpireDays?: string;
+  videoExpireDays?: string;
+  screenshotExpireDays?: string;
   llmFeatureEnabled?: string;
   llmUseFallbackChain?: string;
   llmRouting?: string;
@@ -73,6 +85,10 @@ export const ALLOWED_CONFIG_FIELDS: ReadonlySet<keyof ConfigFormData> = new Set<
   'resultExpireCronSchedule',
   'reportExpireDays',
   'reportExpireCronSchedule',
+  'reportFilesExpireDays',
+  'traceExpireDays',
+  'videoExpireDays',
+  'screenshotExpireDays',
   'llmFeatureEnabled',
   'llmUseFallbackChain',
   'llmRouting',
@@ -136,6 +152,7 @@ const CUSTOM_PROMPT_FIELDS: Array<[keyof ConfigFormData, PromptKey]> = [
 export interface ApplyConfigError {
   status: number;
   error: string;
+  issues?: CleanupWindowIssue[];
 }
 
 // Applies the LLM / cron / test-management form fields onto `config` in place.
@@ -261,33 +278,31 @@ export function applyConfigFormData(
     return trimmed;
   };
 
-  if (formData.resultExpireDays !== undefined) {
-    const parsed = parseExpireDays(formData.resultExpireDays);
+  for (const kind of CLEANUP_KINDS) {
+    const field = CLEANUP_RULES[kind].daysKey;
+    if (formData[field] === undefined) continue;
+    const parsed = parseExpireDays(formData[field]);
     if (parsed && typeof parsed === 'object') {
-      return { status: 400, error: `resultExpireDays ${parsed.error}` };
+      return { status: 400, error: `${field} ${parsed.error}` };
     }
-    cron.resultExpireDays = parsed;
+    cron[field] = parsed;
+    if (!isCleanupConfirmed(cron, kind) && cron.cleanupConfirmations) {
+      delete cron.cleanupConfirmations[kind];
+    }
   }
-  if (formData.reportExpireDays !== undefined) {
-    const parsed = parseExpireDays(formData.reportExpireDays);
+
+  for (const field of CLEANUP_SCHEDULE_KEYS) {
+    if (formData[field] === undefined) continue;
+    const parsed = parseCronSchedule(formData[field]);
     if (parsed && typeof parsed === 'object') {
-      return { status: 400, error: `reportExpireDays ${parsed.error}` };
+      return { status: 400, error: `${field} ${parsed.error}` };
     }
-    cron.reportExpireDays = parsed;
+    cron[field] = parsed;
   }
-  if (formData.resultExpireCronSchedule !== undefined) {
-    const parsed = parseCronSchedule(formData.resultExpireCronSchedule);
-    if (parsed && typeof parsed === 'object') {
-      return { status: 400, error: `resultExpireCronSchedule ${parsed.error}` };
-    }
-    cron.resultExpireCronSchedule = parsed;
-  }
-  if (formData.reportExpireCronSchedule !== undefined) {
-    const parsed = parseCronSchedule(formData.reportExpireCronSchedule);
-    if (parsed && typeof parsed === 'object') {
-      return { status: 400, error: `reportExpireCronSchedule ${parsed.error}` };
-    }
-    cron.reportExpireCronSchedule = parsed;
+
+  const windowIssues = validateCleanupWindows(cron);
+  if (windowIssues.length > 0) {
+    return { status: 400, error: windowIssues[0].message, issues: windowIssues };
   }
 
   config.testManagement ??= {};

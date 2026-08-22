@@ -332,6 +332,7 @@ export class FailureSummaryDatabase {
         .selectFrom('reports')
         .select(['reportID', 'reportUrl'])
         .where('reportID', 'in', Array.from(reportIds))
+        .where('artifactsMissingAt', 'is', null)
         .compile();
       const reportRows = this.db.prepare(urlCompiled.sql).all(...urlCompiled.parameters) as Array<{
         reportID: string;
@@ -421,6 +422,10 @@ export class FailureSummaryDatabase {
       expiresAt: Date.now() + AGGREGATED_CATEGORIES_TTL_MS,
     });
     return result;
+  }
+
+  public invalidateAggregatedCategories(): void {
+    this.aggregatedCategoriesCache.clear();
   }
 
   private pruneAggregatedCategoriesCache(): void {

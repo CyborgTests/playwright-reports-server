@@ -8,7 +8,7 @@ export interface CompareReportRef {
   displayNumber?: number;
   project: string;
   createdAt: string;
-  reportUrl: string;
+  reportUrl: string | null;
   stats?: ReportStats;
 }
 

@@ -1,10 +1,8 @@
 import { CAPABILITIES, ROOT_CAUSE_CATEGORIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { invalidateFailureClustersCache } from '../lib/failure-clustering/index.js';
 import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
 import { getTaskEtaFinishAt } from '../lib/llm/queueEta.js';
 import { QuarantineUpdateSchema, TestsQuerySchema } from '../lib/schemas/index.js';
-import { invalidateAnalyticsCache } from '../lib/service/analytics.js';
 import {
   llmTasksDb,
   regressionsDb,
@@ -12,6 +10,7 @@ import {
   testDb,
   toRegressionContext,
 } from '../lib/service/db/index.js';
+import { setFailureCategory } from '../lib/service/index.js';
 import {
   isRootCauseCategory,
   testManagementService,
@@ -483,9 +482,7 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
             );
           }
 
-          testDb.updateFailureCategoryByTest(testId, reportId, category, 'manual');
-          invalidateFailureClustersCache();
-          invalidateAnalyticsCache();
+          setFailureCategory(testId, reportId, category, 'manual');
 
           return reply.send({ success: true, data: { testId, reportId, category } });
         } catch (error) {

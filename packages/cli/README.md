@@ -91,8 +91,10 @@ or correct an analysis; the server refuses with `409 Conflict` when an
 analysis/summary already exists unless `--force` is passed):
 
 ```
-pwrs-cli test analysis-submit <testId> --report-id <id> --analysis-file <path|-> --model <name>
+pwrs-cli test analysis-submit <testId> --report-id <id> --analysis-file <path|-> --model <name> [--category <c>]
                                               POST a fresh test analysis (--analysis-file `-` reads from stdin)
+                                              --category = root cause: app_bug | test_bug | environment | slow_path | unknown
+                                              (not a `category list` value; without it the run keeps its heuristic label)
 pwrs-cli test feedback <testId> --comment "..." [--report-id <id>]
                                               Persist a dissent/correction note on an existing analysis
 pwrs-cli test feedback-clear <testId> [--report-id <id>]
@@ -192,6 +194,8 @@ ISO timestamps) - there is no `--since` flag.
 ```
 
 `screenshotUrl`, `errorContextUrl`, and `reportUrl` are server-relative paths. To fetch them via `WebFetch`, prepend `$PWRS_SERVER_URL` and send `Authorization: Bearer $PWRS_API_TOKEN`.
+
+Any of them may be `null` or absent when the report's files have been deleted by cleanup - the run's stats and analysis are still returned. Skip the fetch rather than requesting the server root.
 
 ### `report brief` shape
 

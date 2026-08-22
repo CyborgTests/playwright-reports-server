@@ -9,7 +9,6 @@ import { MoreHorizontal } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Spinner } from '@/components/ui/spinner';
@@ -33,6 +32,7 @@ import EditReportButton from './edit-report-button';
 import { BranchIcon, FolderIcon, LinkIcon } from './icons';
 import PaginatedControls from './paginated-controls';
 import PassRateBar from './pass-rate-bar';
+import { ServedReportLink } from './served-report-link';
 import TablePaginationOptions, { type PassRateFilter } from './table-pagination-options';
 import { Badge } from './ui/badge';
 
@@ -309,9 +309,7 @@ const ReportRow = memo(function ReportRow({
       <TableCell className="w-1/12 py-2">{item.size}</TableCell>
       <TableCell className="w-1/6 py-2">
         <div className="flex gap-2 justify-end">
-          <Link to={withBase(item.reportUrl)} target="_blank">
-            <Button size="sm">Open report</Button>
-          </Link>
+          <ServedReportLink reportUrl={item.reportUrl} />
           <EditReportButton report={item} onUpdated={onChanged} />
           <DeleteReportButton reportId={item.reportID} onDeleted={onChanged} />
         </div>

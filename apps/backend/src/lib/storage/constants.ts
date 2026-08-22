@@ -17,10 +17,14 @@ export const PW_VERSIONS_FOLDER = path.join(DATA_FOLDER, 'playwright-versions');
 
 export const DEFAULT_STREAM_CHUNK_SIZE = 512 * 1024; // 512KB
 
+export function reportPrefix(reportId: string, storagePath: string | null | undefined): string {
+  return `${REPORTS_BUCKET}/${storagePath || reportId}`;
+}
+
 export function reportObjectKey(
   reportId: string,
   storagePath: string | null | undefined,
   subPath: string
 ): string {
-  return `${REPORTS_BUCKET}/${storagePath || reportId}/${subPath}`;
+  return `${reportPrefix(reportId, storagePath)}/${subPath}`;
 }

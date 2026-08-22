@@ -48,8 +48,12 @@ export { computeProjectCoverageScope } from './queries/projectCoverage.js';
 export type { RegressionSummary } from './regressions.sqlite.js';
 export { regressionsDb, toRegressionContext } from './regressions.sqlite.js';
 export { reportResultsDb } from './reportResults.sqlite.js';
-export type { ReportAnalyticsRow, ReportHistoryLite } from './reports.sqlite.js';
-export { reportDb } from './reports.sqlite.js';
+export type {
+  ArtifactState,
+  ReportAnalyticsRow,
+  ReportHistoryLite,
+} from './reports.sqlite.js';
+export { removedAttachmentKinds, reportDb } from './reports.sqlite.js';
 export type { ResetTokenRecord } from './resetTokens.sqlite.js';
 export { resetTokensDb } from './resetTokens.sqlite.js';
 export { resultDb } from './results.sqlite.js';

@@ -62,7 +62,7 @@ export interface TestBrief {
     location?: SourceLocation;
     appFrame?: string;
     reportId: string;
-    reportUrl?: string;
+    reportUrl?: string | null;
     createdAt: string;
     attachments?: {
       screenshotUrl?: string;
@@ -130,7 +130,7 @@ interface ReportBriefBase {
   title?: string;
   project: string;
   createdAt: string;
-  reportUrl: string;
+  reportUrl: string | null;
   stats: { total: number; passed: number; failed: number; flaky: number; skipped: number };
   clusterSummary: ReportBriefCluster[];
   unclusteredFailures: number;
@@ -753,7 +753,7 @@ export async function buildFailureCategories(project?: string) {
 }
 
 export function buildAttachmentUrls(
-  reportUrl: string | undefined,
+  reportUrl: string | null | undefined,
   attachments: { name: string; path: string; contentType: string }[] | undefined
 ): { screenshotUrl?: string; errorContextUrl?: string } | undefined {
   if (!reportUrl || !attachments || attachments.length === 0) return undefined;

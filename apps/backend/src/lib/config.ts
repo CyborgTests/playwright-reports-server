@@ -1,12 +1,11 @@
 import type { SiteWhiteLabelConfig } from '@playwright-reports/shared';
-import { FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
+import { DEFAULT_CLEANUP_SCHEDULES, FLAKINESS_THRESHOLDS } from '@playwright-reports/shared';
 import { defaultLinks } from '../config/site.js';
 
 export const defaultCronConfig = {
   resultExpireDays: undefined as number | undefined,
-  resultExpireCronSchedule: '33 3 * * *',
   reportExpireDays: undefined as number | undefined,
-  reportExpireCronSchedule: '44 4 * * *',
+  ...DEFAULT_CLEANUP_SCHEDULES,
 };
 
 export const defaultConfig: SiteWhiteLabelConfig = {

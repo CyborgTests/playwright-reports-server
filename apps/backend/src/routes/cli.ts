@@ -39,6 +39,8 @@ import {
   testAnalysisDb,
   testDb,
 } from '../lib/service/db/index.js';
+import { setFailureCategory } from '../lib/service/index.js';
+import { zodErrorResponse } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
 import { authorize } from './auth.js';
 
@@ -457,7 +459,7 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
         const { testId } = request.params as { testId: string };
         const parsed = SubmitTestAnalysisRequestSchema.safeParse(request.body);
         if (!parsed.success) {
-          return reply.status(400).send({ success: false, error: parsed.error.message });
+          return reply.status(400).send(zodErrorResponse(parsed.error));
         }
         const body = parsed.data;
         const tr = resolveTestRun(testId, body.reportId);
@@ -489,6 +491,9 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
           body.model,
           existing?.attempt ?? 1
         );
+        if (body.category) {
+          setFailureCategory(testId, body.reportId, body.category, 'llm');
+        }
         return reply.send({
           success: true,
           data: {
@@ -512,7 +517,7 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
         const { id: reportId } = request.params as { id: string };
         const parsed = SubmitReportSummaryRequestSchema.safeParse(request.body);
         if (!parsed.success) {
-          return reply.status(400).send({ success: false, error: parsed.error.message });
+          return reply.status(400).send(zodErrorResponse(parsed.error));
         }
         const body = parsed.data;
         const report = reportDb.getByID(reportId);
@@ -571,7 +576,7 @@ export async function registerCliRoutes(fastify: FastifyInstance): Promise<void>
         const { project } = request.params as { project: string };
         const parsed = SubmitProjectSummaryRequestSchema.safeParse(request.body);
         if (!parsed.success) {
-          return reply.status(400).send({ success: false, error: parsed.error.message });
+          return reply.status(400).send(zodErrorResponse(parsed.error));
         }
         const body = parsed.data;
         const existing = projectSummaryDb.get(project);

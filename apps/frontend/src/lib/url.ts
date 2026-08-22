@@ -68,5 +68,15 @@ export const withBase = (path: string): string => {
   return path.startsWith('/') ? `${cleanBaseUrl}${path}` : `${cleanBaseUrl}/${path}`;
 };
 
-export const servedTestUrl = (reportUrl: string, testId: string): string =>
+export const servedReportPath = (reportId: string): string => `/api/serve/${reportId}/index.html`;
+
+const testAnchor = (reportUrl: string, testId: string): string =>
   `${withBase(reportUrl)}#?testId=${encodeURIComponent(testId)}`;
+
+export const servedTestUrl = (
+  reportUrl: string | null | undefined,
+  testId: string
+): string | undefined => (reportUrl ? testAnchor(reportUrl, testId) : undefined);
+
+export const servedTestHref = (reportId: string, testId: string): string =>
+  testAnchor(servedReportPath(reportId), testId);

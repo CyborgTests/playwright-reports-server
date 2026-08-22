@@ -31,6 +31,14 @@ export class ResultDatabase {
     return rows.map((row) => row.resultID);
   }
 
+  public estimateResultCleanup(cutoffISO: string): { affectedRows: number; bytes: number } {
+    return this.db
+      .prepare(
+        'SELECT count(*) AS affectedRows, COALESCE(SUM(sizeBytes), 0) AS bytes FROM results WHERE createdAt < ?'
+      )
+      .get(cutoffISO) as { affectedRows: number; bytes: number };
+  }
+
   public async init() {
     if (this.initialized) return;
     this.initialized = true;

@@ -16,7 +16,7 @@ interface TestInfoProps {
   reportId?: string;
   suitePath?: string[];
   fileName?: string;
-  reportUrl?: string;
+  reportUrl?: string | null;
 }
 
 const TestInfo: FC<TestInfoProps> = ({
@@ -30,7 +30,7 @@ const TestInfo: FC<TestInfoProps> = ({
   const { testId } = test;
   const detailHref =
     testId && project ? `/test/${testId}?project=${encodeURIComponent(project)}` : undefined;
-  const reportHref = reportUrl && testId ? servedTestUrl(reportUrl, testId) : undefined;
+  const reportHref = testId ? servedTestUrl(reportUrl, testId) : undefined;
   const isFailing = isProblemTest(test);
 
   return (

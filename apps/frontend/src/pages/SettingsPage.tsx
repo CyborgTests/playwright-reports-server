@@ -31,7 +31,7 @@ import { cn } from '@/lib/utils';
 const SECTION_NAV: Array<{ id: string; label: string }> = [
   { id: 'environment', label: 'Environment' },
   { id: 'server', label: 'General' },
-  { id: 'cron', label: 'Schedules' },
+  { id: 'cron', label: 'Cleanup' },
   { id: 'github', label: 'GitHub Sync' },
   { id: 'llm', label: 'LLM Configuration' },
   { id: 'testManagement', label: 'Test Management' },

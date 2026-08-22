@@ -14,8 +14,8 @@ import { servedTestUrl } from '@/lib/url';
 
 interface Props {
   entries: Array<DiffTestEntry | DurationDeltaEntry>;
-  reportAUrl: string;
-  reportBUrl: string;
+  reportAUrl: string | null;
+  reportBUrl: string | null;
   showDelta?: boolean;
 }
 
@@ -40,25 +40,28 @@ function OutcomeCell({
 }: {
   outcome?: DiffOutcome;
   raw?: string;
-  reportUrl: string;
+  reportUrl: string | null;
   testId: string;
 }) {
   if (!outcome) {
     return <span className="text-muted-foreground text-xs">-</span>;
   }
+  const href = servedTestUrl(reportUrl, testId);
   return (
     <div className="inline-flex items-center gap-1.5">
       <Badge variant={outcomeVariant[outcome]}>{outcomeLabel(raw, outcome)}</Badge>
-      <a
-        href={servedTestUrl(reportUrl, testId)}
-        target="_blank"
-        rel="noreferrer"
-        className="text-muted-foreground hover:text-foreground transition-colors"
-        title="Open this test in the Playwright report"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <ExternalLink className="h-3 w-3" />
-      </a>
+      {href && (
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          title="Open this test in the Playwright report"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
     </div>
   );
 }
@@ -104,10 +107,23 @@ function DeltaDisplay({ deltaMs, deltaPct }: { deltaMs: number; deltaPct: number
   );
 }
 
-const titleTarget = (entry: DiffTestEntry, reportAUrl: string, reportBUrl: string): string => {
-  const url = entry.outcomeB ? reportBUrl : reportAUrl;
-  return servedTestUrl(url, entry.testId);
-};
+const titleTarget = (entry: DiffTestEntry, reportAUrl: string | null, reportBUrl: string | null) =>
+  servedTestUrl(entry.outcomeB ? reportBUrl : reportAUrl, entry.testId);
+
+function TestTitle({ title, href }: { title: string; href?: string }) {
+  if (!href) return <span>{title}</span>;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="hover:underline inline-flex items-center gap-1"
+    >
+      {title}
+      <ExternalLink className="h-3 w-3 opacity-60" />
+    </a>
+  );
+}
 
 export function TestEntryTable({ entries, reportAUrl, reportBUrl, showDelta = false }: Props) {
   return (
@@ -127,15 +143,7 @@ export function TestEntryTable({ entries, reportAUrl, reportBUrl, showDelta = fa
           {entries.map((entry) => (
             <TableRow key={`${entry.testId}::${entry.fileId}::${entry.project}`}>
               <TableCell className="font-medium">
-                <a
-                  href={titleTarget(entry, reportAUrl, reportBUrl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:underline inline-flex items-center gap-1"
-                >
-                  {entry.title}
-                  <ExternalLink className="h-3 w-3 opacity-60" />
-                </a>
+                <TestTitle title={entry.title} href={titleTarget(entry, reportAUrl, reportBUrl)} />
               </TableCell>
               <TableCell className="text-xs text-muted-foreground font-mono truncate max-w-[280px]">
                 {entry.filePath}

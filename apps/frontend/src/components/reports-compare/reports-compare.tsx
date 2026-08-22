@@ -325,8 +325,8 @@ function Section({
   title: string;
   entries: ReportCompareResponse['newlyFailed'];
   tone: Tone;
-  reportAUrl: string;
-  reportBUrl: string;
+  reportAUrl: string | null;
+  reportBUrl: string | null;
   showDelta?: boolean;
 }) {
   const toneClass: Record<Tone, string> = {
@@ -367,8 +367,8 @@ function DurationDeltaTable({
   reportBUrl,
 }: {
   entries: ReportCompareResponse['durationDeltas'];
-  reportAUrl: string;
-  reportBUrl: string;
+  reportAUrl: string | null;
+  reportBUrl: string | null;
 }) {
   return (
     <Card>

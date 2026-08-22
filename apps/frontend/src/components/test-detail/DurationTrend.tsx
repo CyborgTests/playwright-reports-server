@@ -16,7 +16,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { CHART_COLORS } from '@/lib/chart-colors';
 import { formatDate } from '@/lib/date';
-import { dotColor, outcomeBadge, servedReportUrl } from './test-detail-widgets';
+import { servedTestHref } from '@/lib/url';
+import { dotColor, outcomeBadge } from './test-detail-widgets';
 
 const POINT_PX = 36;
 const PREVIOUS_LOAD_THRESHOLD_PX = 400;
@@ -213,7 +214,7 @@ export function DurationTrend({
   const handleChartClick = (state: { activePayload?: Array<{ payload?: DurationPoint }> }) => {
     const point = state?.activePayload?.[0]?.payload;
     if (!point?.reportId) return;
-    window.open(servedReportUrl(point.reportId, testId), '_blank', 'noopener,noreferrer');
+    window.open(servedTestHref(point.reportId, testId), '_blank', 'noopener,noreferrer');
   };
 
   const plotWidth = Math.max(containerWidth, data.length * POINT_PX);

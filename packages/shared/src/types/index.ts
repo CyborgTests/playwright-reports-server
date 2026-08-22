@@ -1,5 +1,6 @@
 import type { AccessMatrixOverrides, Role } from '../access.js';
 import type { LlmCircuitStatus } from './analytics.js';
+import type { AttachmentCleanupKind, CronConfig } from './cleanup.js';
 
 export type UUID = `${string}-${string}-${string}-${string}-${string}`;
 
@@ -173,12 +174,7 @@ export interface SiteWhiteLabelConfig {
   s3Bucket?: string;
   azureAccountName?: string;
   azureContainer?: string;
-  cron?: {
-    resultExpireDays?: number;
-    resultExpireCronSchedule?: string;
-    reportExpireDays?: number;
-    reportExpireCronSchedule?: string;
-  };
+  cron?: CronConfig;
   llm?: LLMConfig;
   testManagement?: TestManagementConfig;
   notifications?: NotificationsConfig;
@@ -242,7 +238,7 @@ export interface Report {
   title?: string;
   displayNumber?: number;
   project: string;
-  reportUrl: string;
+  reportUrl: string | null;
   createdAt: string;
   size: string;
   sizeBytes: number;
@@ -346,8 +342,9 @@ export interface ReportTestFailure {
   stackTrace: string | null;
   location: SourceLocation | null;
   artifactsAvailable: boolean;
+  removedAttachmentKinds: AttachmentCleanupKind[];
   attachments: Array<{ name: string; contentType: string; url: string }>;
-  traceViewerBase: string;
+  traceViewerBase: string | null;
   history: {
     priorOccurrenceCount: number | null;
     firstOccurrence: {
@@ -398,7 +395,7 @@ export interface ReportHistory {
   title?: string;
   displayNumber?: number;
   project: string;
-  reportUrl: string;
+  reportUrl: string | null;
   createdAt: string;
   size: string;
   sizeBytes: number;
@@ -428,11 +425,6 @@ export interface ServerDataInfo {
   numOfReports: number;
   reportsFolderSizeinMB: string;
   availableSizeinMB: string;
-}
-
-export interface ReportPath {
-  reportID: string;
-  project?: string;
 }
 
 export interface ResultDetails {
@@ -499,12 +491,7 @@ export interface ServerConfig {
   allowOpenRegistration?: boolean;
   defaultUserRole?: Role;
   accessMatrix?: AccessMatrixOverrides;
-  cron?: {
-    resultExpireDays?: number;
-    resultExpireCronSchedule?: string;
-    reportExpireDays?: number;
-    reportExpireCronSchedule?: string;
-  };
+  cron?: CronConfig;
   llm?: LLMConfig;
   testManagement?: TestManagementConfig;
   notifications?: NotificationsConfig;

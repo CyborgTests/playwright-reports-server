@@ -16,6 +16,7 @@ import {
   testAnalyticsDb,
   testDb,
 } from '../lib/service/db/index.js';
+import { zodErrorResponse } from '../lib/validation/index.js';
 import { authorize } from './auth.js';
 
 function feedbackRowToShared(
@@ -152,7 +153,7 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const parsed = GetFeedbackQuerySchema.safeParse(request.query);
       if (!parsed.success) {
-        return reply.status(400).send({ success: false, error: parsed.error.message });
+        return reply.status(400).send(zodErrorResponse(parsed.error));
       }
       const q = parsed.data;
       const keys = await resolveTestKeys(q.testId, q.fileId, q.project, q.reportId);
@@ -173,7 +174,7 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const parsed = UpsertFeedbackRequestSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.status(400).send({ success: false, error: parsed.error.message });
+        return reply.status(400).send(zodErrorResponse(parsed.error));
       }
       const body = parsed.data;
       const keys = await resolveTestKeys(body.testId, body.fileId, body.project, body.reportId);
@@ -212,7 +213,7 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const parsed = DeleteFeedbackRequestSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.status(400).send({ success: false, error: parsed.error.message });
+        return reply.status(400).send(zodErrorResponse(parsed.error));
       }
       const body = parsed.data;
       const keys = await resolveTestKeys(body.testId, body.fileId, body.project, body.reportId);
@@ -229,7 +230,7 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const parsed = FeedbackRegenerateRequestSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.status(400).send({ success: false, error: parsed.error.message });
+        return reply.status(400).send(zodErrorResponse(parsed.error));
       }
       const body = parsed.data;
       const keys = await resolveTestKeys(body.testId, body.fileId, body.project, body.reportId);
@@ -269,7 +270,7 @@ export async function registerLlmFeedbackRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const parsed = GetRelatedFeedbackQuerySchema.safeParse(request.query);
       if (!parsed.success) {
-        return reply.status(400).send({ success: false, error: parsed.error.message });
+        return reply.status(400).send(zodErrorResponse(parsed.error));
       }
       const q = parsed.data;
 

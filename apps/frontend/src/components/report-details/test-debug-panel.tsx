@@ -1,4 +1,4 @@
-import type { ReportTestFailure } from '@playwright-reports/shared';
+import { CLEANUP_RULES, type ReportTestFailure } from '@playwright-reports/shared';
 import { ArrowUpRight, Film, Image as ImageIcon } from 'lucide-react';
 import { type FC, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
@@ -130,13 +130,23 @@ const TestDebugPanel: FC<TestDebugPanelProps> = ({ reportId, testId, project }) 
 
   const trace = details?.attachments.find((attachment) => attachment.name === 'trace');
   const traceViewerUrl =
-    trace && details
+    trace && details?.traceViewerBase
       ? `${withBase(details.traceViewerBase)}?trace=${encodeURIComponent(new URL(withBase(trace.url), window.location.href).toString())}`
       : null;
+  const removedLabels = (details?.removedAttachmentKinds ?? [])
+    .map((kind) => CLEANUP_RULES[kind].label.toLowerCase())
+    .join(', ');
 
   const tabs: string[] = [];
   if (details) tabs.push('error');
-  if (details && (screenshot || video || traceViewerUrl || !details.artifactsAvailable)) {
+  if (
+    details &&
+    (screenshot ||
+      video ||
+      traceViewerUrl ||
+      removedLabels.length > 0 ||
+      !details.artifactsAvailable)
+  ) {
     tabs.push('media');
   }
   if (analysisText || analysis?.pending) tabs.push('analysis');
@@ -192,7 +202,10 @@ const TestDebugPanel: FC<TestDebugPanelProps> = ({ reportId, testId, project }) 
             no longer available.
           </p>
         )}
-        {details?.artifactsAvailable && !screenshot && !video && (
+        {details?.artifactsAvailable && removedLabels.length > 0 && (
+          <p className="text-sm text-muted-foreground">Removed {removedLabels} for this run.</p>
+        )}
+        {details?.artifactsAvailable && removedLabels.length === 0 && !screenshot && !video && (
           <p className="text-sm text-muted-foreground">No screenshot or video for this run.</p>
         )}
         {screenshot && (

@@ -7,6 +7,8 @@ import { pipeline } from 'node:stream/promises';
 import {
   type AccessMatrixOverrides,
   CAPABILITIES,
+  CLEANUP_DAYS_KEYS,
+  CLEANUP_SCHEDULE_KEYS,
   EDITABLE_ROLES,
   ROLES,
   type Role,
@@ -143,7 +145,10 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
     const isAuthed = isAuthenticated(request as AuthRequest);
 
-    reply.header('Cache-Control', 'private, max-age=10, must-revalidate');
+    reply.header(
+      'Cache-Control',
+      isAuthed ? 'private, no-store' : 'private, max-age=10, must-revalidate'
+    );
 
     const publicConfig = {
       title: config.title,
@@ -433,14 +438,18 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
 
         const applyError = applyConfigFormData(config, formData);
         if (applyError) {
-          return reply.status(applyError.status).send({ error: applyError.error });
+          return reply.status(applyError.status).send({
+            success: false,
+            error: applyError.error,
+            issues: applyError.issues,
+          });
         }
 
-        const cronConfigChanged =
-          formData.resultExpireDays !== undefined ||
-          formData.resultExpireCronSchedule !== undefined ||
-          formData.reportExpireDays !== undefined ||
-          formData.reportExpireCronSchedule !== undefined;
+        const cronFields: ReadonlyArray<keyof ConfigFormData> = [
+          ...CLEANUP_DAYS_KEYS,
+          ...CLEANUP_SCHEDULE_KEYS,
+        ];
+        const cronConfigChanged = cronFields.some((field) => formData[field] !== undefined);
 
         if (logoFileSaved && isCustomBrandingPath(logoFileSaved)) {
           const { error } = await withError(storage.uploadBrandingAsset(logoFileSaved));

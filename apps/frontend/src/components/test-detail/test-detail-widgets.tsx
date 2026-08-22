@@ -7,15 +7,10 @@ import {
 } from '@/components/ui/accordion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { withBase } from '@/lib/url';
 
 export function formatDaysOpen(days: number): string {
   if (days < 1) return `${Math.round(days * 24)}h open`;
   return `${Math.round(days * 10) / 10}d open`;
-}
-
-export function servedReportUrl(reportId: string, testId: string): string {
-  return `${withBase(`/api/serve/${reportId}/index.html`)}#?testId=${testId}`;
 }
 
 export { outcomeBadge } from '../outcome-badge';

@@ -1,12 +1,5 @@
 import type { RegressionTestRef, ReportHistory } from '@playwright-reports/shared';
-import {
-  AlertOctagon,
-  CheckCircle2,
-  Download,
-  ExternalLink,
-  GitCompare,
-  Users,
-} from 'lucide-react';
+import { AlertOctagon, CheckCircle2, Download, GitCompare, Users } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -16,6 +9,7 @@ import { title } from '@/components/primitives';
 import FileList from '@/components/report-details/file-list';
 import ReportFailureSummary from '@/components/report-details/ReportFailureSummary';
 import { CompareToPicker } from '@/components/reports-compare/compare-to-picker';
+import { ServedReportLink } from '@/components/served-report-link';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Spinner } from '@/components/ui/spinner';
@@ -181,14 +175,7 @@ function ReportDetailPage() {
               </Button>
             </a>
           )}
-          {report?.reportUrl && (
-            <a href={withBase(report.reportUrl)} target="_blank" rel="noreferrer">
-              <Button size="sm" className="gap-2">
-                <ExternalLink className="h-4 w-4" />
-                Open report
-              </Button>
-            </a>
-          )}
+          {report && <ServedReportLink reportUrl={report.reportUrl} />}
         </div>
       </div>
 

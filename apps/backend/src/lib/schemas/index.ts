@@ -1,7 +1,9 @@
 import {
+  CLEANUP_KINDS,
   isOpaqueMaskSentinel,
   isUrlMaskSentinel,
   RESERVED_REPORT_FIELDS,
+  ROOT_CAUSE_CATEGORIES,
   SECRET_MASK,
 } from '@playwright-reports/shared';
 import { z } from 'zod';
@@ -12,11 +14,23 @@ function notMaskGarbage(s: string): boolean {
 
 export const UUIDSchema = z.uuid();
 
+const serverOwnedReportFields = { storagePath: z.undefined() };
+
 export const GenerateReportRequestSchema = z.looseObject({
   resultsIds: z.array(z.string()).min(1),
   project: z.string().optional(),
   playwrightVersion: z.string().optional(),
   title: z.string().optional(),
+  ...serverOwnedReportFields,
+});
+
+const cleanupWindow = z.coerce.number().int().positive().max(36500).optional();
+
+export const CleanupEstimatesQuerySchema = z.partialRecord(z.enum(CLEANUP_KINDS), cleanupWindow);
+
+export const CleanupConfirmRequestSchema = z.object({
+  kind: z.enum(CLEANUP_KINDS),
+  days: z.number().int().positive().max(36500),
 });
 
 export const ListReportsQuerySchema = z.object({
@@ -114,6 +128,7 @@ export const UploadReportRequestSchema = z.looseObject({
   project: z.string().optional(),
   title: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  ...serverOwnedReportFields,
 });
 
 const testKeyShape = {
@@ -220,7 +235,7 @@ const ProjectAnalysisStructuredSchema = z.object({
 export const SubmitTestAnalysisRequestSchema = z.object({
   reportId: z.string().min(1),
   analysis: z.string().trim().min(1, 'analysis must be non-empty'),
-  category: z.string().optional(),
+  category: z.enum(ROOT_CAUSE_CATEGORIES).optional(),
   model: z.string().trim().min(1, 'model must be non-empty'),
   force: z.boolean().optional(),
 });
