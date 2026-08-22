@@ -209,7 +209,8 @@ export async function registerConfigRoutes(fastify: FastifyInstance) {
       maxScreenshots: config.llm?.maxScreenshots,
     };
 
-    return { ...config, ...envInfo, llm: llmInfo };
+    const { notifications: _notifications, oauth: _oauth, ...safeConfig } = config;
+    return { ...safeConfig, ...envInfo, llm: llmInfo };
   });
 
   fastify.patch(
