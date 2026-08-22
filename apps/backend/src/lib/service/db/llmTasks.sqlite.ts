@@ -926,9 +926,13 @@ export class LlmTasksDatabase {
         retryCount: eb('retryCount', '+', 1),
       }))
       .where('id', '=', id)
+      .where('status', 'in', ['queued', 'processing'])
       .compile();
-    this.db.prepare(compiled.sql).run(...compiled.parameters);
-    llmTaskEvents.emitEnqueue();
+    const res = this.db.prepare(compiled.sql).run(...compiled.parameters);
+    if (Number(res.changes ?? 0) > 0) {
+      llmTaskEvents.emitEnqueue();
+      this.fireUpdateEvent(id);
+    }
   }
 
   public findInflightTestAnalysis(
