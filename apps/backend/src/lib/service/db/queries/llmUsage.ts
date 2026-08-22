@@ -94,6 +94,18 @@ export function getUsageByModel(fromDate: string): UsageByModel[] {
     ])
     .where('status', '=', 'completed')
     .where('completedAt', '>=', fromDate)
+    .where((eb) =>
+      eb.not(
+        eb.exists(
+          eb
+            .selectFrom('llm_tasks as c')
+            .select('c.id')
+            .whereRef('c.parentTaskId', '=', 'llm_tasks.id')
+            .where('c.status', '=', 'completed')
+            .where('c.totalTokens', 'is not', null)
+        )
+      )
+    )
     .groupBy(sql`COALESCE(baseUrl, ''), COALESCE(model, '')`)
     .orderBy('totalTokens', 'desc')
     .compile();
