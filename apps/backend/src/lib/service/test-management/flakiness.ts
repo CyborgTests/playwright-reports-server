@@ -1,8 +1,8 @@
-import { ReportTestOutcomeEnum } from '@playwright-reports/shared';
+import { FLAKINESS_THRESHOLDS, ReportTestOutcomeEnum } from '@playwright-reports/shared';
 
 export function computeFlakinessFromOutcomes(
   runs: Array<{ outcome: ReportTestOutcomeEnum | string }>,
-  minRuns = 1
+  minRuns: number = FLAKINESS_THRESHOLDS.MIN_RUNS
 ): number {
   if (runs.length < minRuns || runs.length <= 1) return 0;
 
@@ -14,20 +14,22 @@ export function computeFlakinessFromOutcomes(
   let seenPass = false;
 
   for (const { outcome } of runs) {
+    if (isPass(outcome)) {
+      if (inFailStreak) events++;
+      seenPass = true;
+      inFailStreak = false;
+      continue;
+    }
+
     if (outcome === ReportTestOutcomeEnum.Flaky) {
+      if (inFailStreak) events++;
       events++;
       seenPass = true;
       inFailStreak = false;
       continue;
     }
 
-    if (isPass(outcome)) {
-      seenPass = true;
-      inFailStreak = false;
-    } else if (seenPass && !inFailStreak) {
-      events++;
-      inFailStreak = true;
-    }
+    if (seenPass && !inFailStreak) inFailStreak = true;
   }
 
   return (events / runs.length) * 100;

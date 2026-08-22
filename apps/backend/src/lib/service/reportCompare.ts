@@ -265,8 +265,8 @@ export const compareReports = (
     passToFlakyCount: passToFlaky.length,
     newTestsCount: newTests.length,
     removedTestsCount: removedTests.length,
-    durationRegressionsCount: trimmedDeltas.filter((d) => d.deltaMs > 0).length,
-    durationImprovementsCount: trimmedDeltas.filter((d) => d.deltaMs < 0).length,
+    durationRegressionsCount: durationDeltas.filter((d) => d.deltaMs > 0).length,
+    durationImprovementsCount: durationDeltas.filter((d) => d.deltaMs < 0).length,
     regressionsOpenedBetween: regressionWindow.opened,
     regressionsResolvedBetween: regressionWindow.resolved,
   };

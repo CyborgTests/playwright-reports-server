@@ -193,7 +193,7 @@ export class TestManagementService {
       warningThresholdPercentage:
         testManagementCfg.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE,
       autoQuarantineEnabled: testManagementCfg.autoQuarantineEnabled ?? false,
-      flakinessMinRuns: testManagementCfg.flakinessMinRuns ?? 1,
+      flakinessMinRuns: testManagementCfg.flakinessMinRuns ?? FLAKINESS_THRESHOLDS.MIN_RUNS,
       flakinessEvaluationWindowDays: testManagementCfg.flakinessEvaluationWindowDays ?? 30,
     };
 
@@ -335,6 +335,7 @@ export class TestManagementService {
             annotations: normalizeAnnotations(test.annotations),
           };
 
+          testDb.createTestRun(testRun);
           const flakinessScore = this.computeFlakiness(
             testId,
             fileId,
@@ -342,7 +343,6 @@ export class TestManagementService {
             state?.flakinessResetAt,
             config
           );
-          testDb.createTestRun(testRun);
           testDb.refreshTestStatCols(testId, fileId, report.project);
           testDb.setFlakinessScore(testId, fileId, report.project, flakinessScore);
 
@@ -491,7 +491,7 @@ export class TestManagementService {
     config: TestManagementConfig
   ): number {
     const windowDays = config.flakinessEvaluationWindowDays ?? 30;
-    const minRuns = config.flakinessMinRuns ?? 1;
+    const minRuns = config.flakinessMinRuns ?? FLAKINESS_THRESHOLDS.MIN_RUNS;
 
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - windowDays);

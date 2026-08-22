@@ -60,6 +60,7 @@ export type StorageType = (typeof STORAGE_TYPES)[keyof typeof STORAGE_TYPES];
 export const FLAKINESS_THRESHOLDS = {
   WARNING_PERCENTAGE: 2,
   QUARANTINE_PERCENTAGE: 5,
+  MIN_RUNS: 5,
 } as const;
 
 // top-level keys that come from playwright report
