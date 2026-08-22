@@ -5,6 +5,7 @@
 //   - dynamic ORDER BY clauses with several CASE/COALESCE switches
 //   - UNION ALL VALUES tuple lists for lane lookup
 import type Database from 'better-sqlite3';
+import { FAILED_OUTCOMES } from '../../../failure-clustering/types.js';
 import type {
   DerivedPageRow,
   Test,
@@ -12,6 +13,8 @@ import type {
   TestWithQuarantineInfoRow,
 } from '../tests.sqlite.js';
 import { convertDbRowToTestRun, type TestRunDbRow } from '../tests.sqlite.js';
+
+const FAILED_OUTCOMES_SQL = [...FAILED_OUTCOMES].map((o) => `'${o}'`).join(', ');
 
 export interface DerivedPageOptions {
   status?: 'all' | 'quarantined' | 'not-quarantined';
@@ -579,13 +582,13 @@ export function getFlakiestTestsInWindow(
   }>;
 }
 
-export function getTestRunsInWindow(
+export function getFailedTestRunsInWindow(
   db: Database.Database,
   project: string | undefined,
   from: string,
   to: string
 ): TestRunRow[] {
-  const conditions: string[] = ["tr.outcome != 'skipped'"];
+  const conditions: string[] = [`tr.outcome IN (${FAILED_OUTCOMES_SQL})`];
   const params: string[] = [];
 
   conditions.push('tr.createdAt >= ?');

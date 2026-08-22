@@ -47,6 +47,10 @@ export const env = cleanEnv(process.env, {
     default: 'fs',
     choices: Object.values(STORAGE_TYPES),
   }),
+  FAILURE_CLUSTER_WINDOW_DAYS: num({
+    desc: 'Default lookback window (days) for failure clustering when no explicit date range is given',
+    default: 90,
+  }),
   // s3
   S3_ENDPOINT: str({ desc: 'S3 endpoint', default: undefined }),
   S3_ACCESS_KEY: str({ desc: 'S3 access key', default: undefined }),

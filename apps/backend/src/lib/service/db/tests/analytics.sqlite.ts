@@ -34,8 +34,12 @@ export class TestAnalyticsDatabase extends TestDbBase {
   ): { total: number; flakyCount: number } {
     return testQueries.getFlakySummaryInWindow(this.db, project, from, to, warningThreshold);
   }
-  public getTestRunsInWindow(project: string | undefined, from: string, to: string): TestRunRow[] {
-    return testQueries.getTestRunsInWindow(this.db, project, from, to);
+  public getFailedTestRunsInWindow(
+    project: string | undefined,
+    from: string,
+    to: string
+  ): TestRunRow[] {
+    return testQueries.getFailedTestRunsInWindow(this.db, project, from, to);
   }
   public getTopFailingTestsInWindow(
     project: string | undefined,

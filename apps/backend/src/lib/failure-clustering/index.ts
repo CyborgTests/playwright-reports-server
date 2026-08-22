@@ -1,4 +1,5 @@
 import type { ClusterOptions, ClusterReport, FailureCluster } from '@playwright-reports/shared';
+import { env } from '../../config/env.js';
 import {
   clusterResolutionsDb,
   type RegressionSummary,
@@ -12,6 +13,7 @@ import { FAILED_OUTCOMES, type FailedTestRun, type TestMeta, testKey } from './t
 
 const CACHE_TTL_MS = 20_000;
 const CACHE_MAX_ENTRIES = 32;
+const DEFAULT_WINDOW_DAYS = Math.max(1, Math.floor(env.FAILURE_CLUSTER_WINDOW_DAYS));
 
 interface CacheEntry {
   expires: number;
@@ -56,7 +58,9 @@ export async function getFailureClusters(opts: ClusterOptions): Promise<ClusterR
   const cached = cacheGet(key);
   if (cached) return cached;
 
-  const failedRuns = loadFailedRuns(opts);
+  const window = resolveWindow(opts);
+  const projectKey = opts.project && opts.project !== 'all' ? opts.project : undefined;
+  const failedRuns = testAnalyticsDb.getFailedTestRunsInWindow(projectKey, window.from, window.to);
   const metaByKey = loadTestMeta(failedRuns);
   const resolveReportUrl = makeReportUrlResolver();
 
@@ -88,7 +92,7 @@ export async function getFailureClusters(opts: ClusterOptions): Promise<ClusterR
   const report: ClusterReport = {
     clusters,
     totalFailures: failedRuns.length,
-    windowDays: computeWindowDays(opts.from, opts.to),
+    windowDays: computeWindowDays(window.from, window.to),
   };
   cacheSet(key, report);
   return report;
@@ -180,17 +184,11 @@ function makeReportUrlResolver(): ReportUrlLookup {
   };
 }
 
-function loadFailedRuns(opts: ClusterOptions): FailedTestRun[] {
-  const from = opts.from ?? '1970-01-01T00:00:00.000Z';
-  const to = opts.to ?? new Date(Date.now() + 60_000).toISOString();
-  const projectKey = opts.project && opts.project !== 'all' ? opts.project : undefined;
-
-  const runs = testAnalyticsDb.getTestRunsInWindow(projectKey, from, to);
-  const result: FailedTestRun[] = [];
-  for (const run of runs) {
-    if (FAILED_OUTCOMES.has(run.outcome)) result.push(run as FailedTestRun);
-  }
-  return result;
+function resolveWindow(opts: ClusterOptions): { from: string; to: string } {
+  return {
+    from: opts.from ?? new Date(Date.now() - DEFAULT_WINDOW_DAYS * 86_400_000).toISOString(),
+    to: opts.to ?? new Date(Date.now() + 60_000).toISOString(),
+  };
 }
 
 function loadTestMeta(runs: FailedTestRun[]): Map<string, TestMeta> {
