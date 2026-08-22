@@ -256,21 +256,31 @@ export async function registerServeRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ success: false, error: 'Not Found' });
     }
 
-    const dataRoot = resolve(DATA_FOLDER);
+    const brandingRoot = resolve(DATA_FOLDER, 'branding');
     const publicRoot = BACKEND_PUBLIC_DIR;
     const safeRelative = path.normalize(targetPath).replace(/^([/\\])+/, '');
-    const candidateInData = resolve(dataRoot, safeRelative);
+    const candidateInBranding = resolve(DATA_FOLDER, safeRelative);
     const candidateInPublic = resolve(publicRoot, safeRelative);
 
     const isInside = (child: string, parent: string) =>
       child === parent || child.startsWith(parent + sep);
 
-    if (!isInside(candidateInData, dataRoot) && !isInside(candidateInPublic, publicRoot)) {
+    const inBranding = isInside(candidateInBranding, brandingRoot);
+    const inPublic = isInside(candidateInPublic, publicRoot);
+    if (!inBranding && !inPublic) {
       return reply.code(400).send({ success: false, error: 'Invalid path' });
     }
 
-    const { error: dataAccessError } = await withError(access(candidateInData));
-    const imagePath = dataAccessError ? candidateInPublic : candidateInData;
+    let imagePath: string | null = null;
+    if (inBranding) {
+      const { error: brandingAccessError } = await withError(access(candidateInBranding));
+      if (!brandingAccessError) imagePath = candidateInBranding;
+    }
+    if (!imagePath && inPublic) imagePath = candidateInPublic;
+
+    if (!imagePath) {
+      return reply.code(404).send({ error: 'File not found' });
+    }
 
     const { result: imageBuffer, error: readError } = await withError(readFile(imagePath));
 

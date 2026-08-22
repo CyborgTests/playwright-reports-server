@@ -82,12 +82,6 @@ async function start() {
 
   await registerApiRoutes(fastify);
 
-  const dataDir = resolve(process.env.DATA_DIR || join(process.cwd(), 'data'));
-  await fastify.register(fastifyStatic, {
-    root: dataDir,
-    prefix: '/data/',
-    decorateReply: false,
-  });
 
   if (process.env.NODE_ENV === 'production') {
     const frontendDistPath = resolve(
