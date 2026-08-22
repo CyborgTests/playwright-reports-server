@@ -13,6 +13,7 @@ What you get:
 - **Code-agent integration**: the [`pwrs-cli`](https://www.npmjs.com/package/@cyborgtests/pwrs-cli) plus Claude Code skill exposes failure context to Claude Code, Codex, Cursor, and the LLM-driven code assistant that drops next week.
 - **Notifications**: send report details and summaries to Slack or any webhook. Event rules on upload, schedule rules on cron, delivery log. See [notifications docs](https://cyborgtests.github.io/playwright-reports-server/Notifications).
 - **Pluggable storage**: local filesystem, S3-compatible, or Azure Blob, see [storage docs](https://cyborgtests.github.io/playwright-reports-server/Storage).
+- **Granular cleanup**: retention rules per artifact type - traces, videos, screenshots, whole report folders, or records and history. See [cleanup docs](https://cyborgtests.github.io/playwright-reports-server/Cleanup).
 - **Accounts, roles, and SSO**: optional auth, off by default; set `API_TOKEN` to turn it on. Cookie sessions with scrypt-hashed passwords, three roles (admin / reader / readonly), invite-only onboarding, scoped API keys for CI and the CLI, and optional single sign-on via GitHub, Google, or any OIDC provider (Okta and friends). See [Authentication](https://cyborgtests.github.io/playwright-reports-server/Authentication).
 - **Persistent state** with SQLite and [Litestream](https://litestream.io) replication for S3 and Azure Blob storages. See [storage](https://cyborgtests.github.io/playwright-reports-server/Storage).
 
@@ -67,7 +68,7 @@ Full deployment options: see **[Deployment](https://cyborgtests.github.io/playwr
 The detailed docs live in the **[docs site](https://cyborgtests.github.io/playwright-reports-server/)**:
 
 | Topic | Page |
-|-------|------|
+| ------- | ------ |
 | Every env var | [Configuration](https://cyborgtests.github.io/playwright-reports-server/Configuration) |
 | Accounts, roles, sessions, API keys, SSO | [Authentication](https://cyborgtests.github.io/playwright-reports-server/Authentication) |
 | `fs` / `s3` / `azure` backends and Litestream replication | [Storage](https://cyborgtests.github.io/playwright-reports-server/Storage) |

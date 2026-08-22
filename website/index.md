@@ -7,6 +7,7 @@ The stuff that didn't fit in the main README without turning it into a novel. Ju
 - **[Configuration](./Configuration)**: every env var used for configuration.
 - **[Authentication](./Authentication)**: login, roles, users, invites, API keys, SSO.
 - **[Storage](./Storage)**: `fs`, `s3`, `azure`. Litestream replication.
+- **[Cleanup](./Cleanup)**: retention rules for reports and other artifacts.
 - **[Deployment](./Deployment)**: Docker basics.
 - **[Notifications](./Notifications)**: ship report outcomes and summaries to Slack or any webhook. Event rules on upload, schedule rules on cron, delivery log.
 - **[UI white-label](./White-label)**: title, logo, favicon, header links. Make it look like your team's tool rather than someone else's.

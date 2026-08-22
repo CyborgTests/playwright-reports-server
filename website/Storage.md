@@ -14,6 +14,8 @@ Reports and raw results are blobs. The SQLite metadata DB (`metadata.db`) is the
 
 In Docker the data folder is `/app/data/`. Outside Docker it's `apps/backend/data/`.
 
+There are also retention rules available to cleanup old traces, videos, whole report folders, and records on a schedule you can configure. See [Cleanup](./Cleanup).
+
 ---
 
 ## Litestream and SQLite replication

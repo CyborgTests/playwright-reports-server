@@ -74,7 +74,7 @@ triggerReportGeneration: true,
 The reporter fills in `shardCurrent` and `shardTotal` from Playwright's `--shard=N/M` flag.
 
 **!NB**:
-- **A missing shard means no report.** If a runner dies and shard 3 of 4 never arrives, the merge never happens. The orphan blobs sit there until [expiration](./Configuration#expiration) sweeps them.
+- **A missing shard means no report.** If a runner dies and shard 3 of 4 never arrives, the merge never happens. The orphan blobs sit there until [cleanup](./Cleanup) deletes them.
 - **`testRun` must be unique per actual run.** Reuse it across CI runs and you get a report that looks correct but is silently merged from blobs you didn't intend. Use a timestamp, GitHub run ID, anything unique.
 
 For non-sharded runs, leave `shardTotal` empty (or `1`). `triggerReportGeneration: true` generates the report from the single blob immediately.
@@ -125,4 +125,5 @@ Use this when:
 ## See also
 
 - [LLM analysis](./LLM-Analysis): what auto-runs once a report uploads, assuming you bothered to configure a provider
-- [Configuration](./Configuration): `API_TOKEN`, expiration, S3 chunk size
+- [Configuration](./Configuration): `API_TOKEN`, S3 chunk size
+- [Cleanup](./Cleanup): configurable to remove obsolete artifacts
