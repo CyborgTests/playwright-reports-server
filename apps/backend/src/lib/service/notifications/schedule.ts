@@ -95,12 +95,12 @@ export function activeProjectsForWindow(
   return [...seen].sort();
 }
 
-export function buildSummaryForProject(args: {
+export async function buildSummaryForProject(args: {
   rule: ScheduleRule;
   project: string;
   window: WindowRange;
   cache?: ReportsWindowCache;
-}): ScheduleSummary {
+}): Promise<ScheduleSummary> {
   const { rule, project, window, cache } = args;
   const fromISO = new Date(window.start).toISOString();
   const toISO = new Date(window.end).toISOString();
@@ -133,14 +133,18 @@ export function buildSummaryForProject(args: {
     FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE;
   const scopedProject = project === 'all' ? undefined : project;
 
-  const failureAgg = failureSummaryDb.getAggregatedCategories(
+  const failureAgg = await failureSummaryDb.getAggregatedCategories(
     scopedProject,
     TOP_FAILURE_CATEGORIES_LIMIT,
     { from: fromISO, to: toISO }
   );
   const topFailureCategories = failureAgg.categories
     .slice(0, TOP_FAILURE_CATEGORIES_LIMIT)
-    .map((c) => ({ name: c.category, count: c.count, percentage: c.percentage }));
+    .map((c: { category: string; count: number; percentage: number }) => ({
+      name: c.category,
+      count: c.count,
+      percentage: c.percentage,
+    }));
 
   const topFailingTests = testAnalyticsDb
     .getTopFailingTestsInWindow(scopedProject, fromISO, toISO, TOP_FAILING_TESTS_LIMIT)

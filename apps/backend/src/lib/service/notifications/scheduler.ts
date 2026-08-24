@@ -121,7 +121,12 @@ class NotificationScheduler {
 
       for (const project of projects) {
         const window = resolveWindow(rule, channel.id, project, now);
-        const summary = buildSummaryForProject({ rule, project, window, cache: reportsCache });
+        const summary = await buildSummaryForProject({
+          rule,
+          project,
+          window,
+          cache: reportsCache,
+        });
 
         if (!scheduleConditionMatches(rule.condition, summary)) {
           const skipped: DispatchResult = {

@@ -45,6 +45,8 @@ await build({
 
 // html-injector reads inject.js/inject.css relative to import.meta.url.
 // After bundling, that URL resolves to dist/ - copy both files there.
+// The failure-categories worker is resolved the same way: plain .mjs next to
+// the bundle (workers must not be bundled - they need a real file on disk).
 await copyFile(
   resolve(backendRoot, 'src/lib/report-injection/inject.js'),
   resolve(outdir, 'inject.js')
@@ -52,4 +54,8 @@ await copyFile(
 await copyFile(
   resolve(backendRoot, 'src/lib/report-injection/inject.css'),
   resolve(outdir, 'inject.css')
+);
+await copyFile(
+  resolve(backendRoot, 'src/lib/service/workers/failureAggregateWorker.mjs'),
+  resolve(outdir, 'failureAggregateWorker.mjs')
 );

@@ -119,7 +119,7 @@ async function testSchedule(
   const now = Date.now();
   const window: WindowRange = { start: now - DAY_MS, end: now, label: 'Last 24h (test)' };
   const scheduleRule = rule as ScheduleRule;
-  const summary = buildSummaryForProject({ rule: scheduleRule, project, window });
+  const summary = await buildSummaryForProject({ rule: scheduleRule, project, window });
 
   const context = buildScheduleContext({
     summary,
