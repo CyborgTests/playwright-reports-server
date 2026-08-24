@@ -11,6 +11,7 @@ import { initStorage, storage } from '../storage/index.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
 import { cronService } from './cron.js';
+import { dailyTotalsDb } from './db/dailyTotals.sqlite.js';
 import { githubSyncDb, llmTasksDb, reportDb, resultDb, siteConfigDb } from './db/index.js';
 import { getKysely } from './db/kysely.js';
 import { migrateToLatest } from './db/migrations/index.js';
@@ -61,6 +62,13 @@ export class Lifecycle {
 
       await Promise.all([configCache.init(), reportDb.init(), resultDb.init()]);
       console.log('[lifecycle] Databases initialized successfully');
+
+      // Fill the daily summary table (daily_test_totals) from historical test_runs
+      try {
+        dailyTotalsDb.ensureBackfilled();
+      } catch (dailyTotalsError) {
+        console.error(`[lifecycle] filling daily totals failed: ${String(dailyTotalsError)}`);
+      }
 
       await applyPrimaryModel();
 

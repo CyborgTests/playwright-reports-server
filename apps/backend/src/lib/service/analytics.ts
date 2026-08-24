@@ -21,6 +21,8 @@ const RUN_HEALTH_MAX_PAGE_SIZE = 500;
 
 const TREND_MAX_POINTS = 90;
 
+const ANALYTICS_FETCH_CAP = TREND_MAX_POINTS + RUN_HEALTH_PAGE_SIZE + 1;
+
 const ANALYTICS_CACHE_TTL_MS = 15_000;
 const ANALYTICS_CACHE_MAX_ENTRIES = 32;
 interface AnalyticsCacheEntry {
@@ -36,7 +38,6 @@ export function invalidateAnalyticsCache(): void {
 
 type Window = { from?: string; to?: string };
 
-/** minimal aggregate used by trend-delta calculations */
 interface TrendAggregate {
   count: number;
   totalPassed: number;
@@ -158,7 +159,6 @@ export class AnalyticsService {
       trendMetrics,
       testsSummary,
       previousTestsSummary,
-      failureCategories,
       regressions,
     ] = await Promise.all([
       this.calculateOverviewStats(
@@ -166,7 +166,6 @@ export class AnalyticsService {
         recentForTrend,
         olderTrendAggregate,
         projectKey,
-        recentRange,
         previousRange,
         recentAgg
       ),
@@ -176,7 +175,6 @@ export class AnalyticsService {
       olderRange
         ? testManagementService.getTestsSummary(projectKey, warningThreshold, olderRange)
         : Promise.resolve({ total: 0, flakyCount: 0 }),
-      Promise.resolve(failureSummaryDb.getAggregatedCategories(projectKey, 10, { from, to })),
       Promise.resolve(
         regressionsDb.aggregateForAnalytics({ project: projectKey, since: from, until: to })
       ),
@@ -203,7 +201,6 @@ export class AnalyticsService {
       runHealthMetrics,
       trendMetrics,
       testsSummary,
-      failureCategories,
       regressions,
     };
   }
@@ -220,10 +217,20 @@ export class AnalyticsService {
     olderRange: { from: string; to: string } | null;
   }> {
     if (!from && !to) {
-      const reports = reportDb.getByProjectForAnalytics(project, { failedOnly });
+      const [reports, displayAggregate] = await Promise.all([
+        Promise.resolve(
+          reportDb.getByProjectForAnalytics(project, {
+            failedOnly,
+            limit: ANALYTICS_FETCH_CAP,
+          })
+        ),
+        Promise.resolve(
+          reportDb.aggregateForAnalytics(project, undefined, undefined, { failedOnly })
+        ),
+      ]);
       return {
         reports,
-        displayAggregate: reportAggregateFromRows(reports),
+        displayAggregate,
         olderAggregate: null,
         olderRange: null,
       };
@@ -314,7 +321,6 @@ export class AnalyticsService {
     recentForTrend: ReportAnalyticsRow[],
     olderTrendAggregate: TrendAggregate,
     project: string | undefined,
-    recentRange: Window,
     previousRange: Window,
     recentAgg: DurationAggregate
   ): Promise<OverviewStats> {
@@ -328,12 +334,6 @@ export class AnalyticsService {
       project,
       previousRange.from,
       previousRange.to
-    );
-    const slowestSteps = testAnalyticsDb.getSlowestTests(
-      project,
-      recentRange.from,
-      recentRange.to,
-      10
     );
     const averageTestDuration = recentAgg.avgDuration;
     const olderAverageTestDuration = olderAgg.avgDuration;
@@ -378,7 +378,6 @@ export class AnalyticsService {
       totalTests,
       passRate: Math.round(passRate * 100) / 100,
       averageTestDuration: Math.round(averageTestDuration),
-      slowestSteps,
       averageTestRunDuration,
       passRateTrend,
       flakyTestsTrend,

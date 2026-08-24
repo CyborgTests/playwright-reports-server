@@ -1,5 +1,5 @@
 import type { DateRange, RegressionsAggregate } from '@playwright-reports/shared';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import DateRangeSelect, { readStoredDateRange } from '@/components/date-range-select';
@@ -13,16 +13,11 @@ import { useRunHealthLazy } from '@/hooks/useRunHealthLazy';
 import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
 import { defaultProjectName } from '@/lib/constants';
 import { cn } from '@/lib/utils';
-import { FailureCategoryChart } from './FailureCategoryChart';
+import { FailureCategoriesSection } from './FailureCategoriesSection';
 import { HealthGrid } from './HealthGrid';
 import { OverviewStatsCard } from './OverviewStats';
 import { RegressionsStrip } from './RegressionsStrip';
-import { TopFailuresWidget } from './TopFailuresWidget';
 import { TrendSparklines } from './TrendSparklines';
-
-const FailureAnalysisSummary = lazy(() =>
-  import('./FailureAnalysisSummary').then((m) => ({ default: m.FailureAnalysisSummary }))
-);
 
 const DASHBOARD_SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'stats', label: 'Stats' },
@@ -225,10 +220,8 @@ export default function AnalyticsDashboard() {
     runHealthMetrics = [],
     trendMetrics,
     testsSummary,
-    failureCategories,
     regressions,
   } = analyticsData ?? {};
-  const totalFailures = failureCategories?.totalFailures ?? 0;
 
   return (
     <div className="w-full space-y-6">
@@ -272,29 +265,14 @@ export default function AnalyticsDashboard() {
         />
       </section>
 
-      <section id="failures" className="scroll-mt-32 space-y-6">
-        {totalFailures > 0 && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <FailureCategoryChart
-              categories={failureCategories?.categories}
-              totalFailures={totalFailures}
-              isLoading={isLoading}
-              onCategoryClick={handleCategoryClick}
-            />
-            <TopFailuresWidget errors={failureCategories?.topErrors} isLoading={isLoading} />
-          </div>
-        )}
-
-        <LazyVisible rootMargin="200px 0px">
-          <Suspense fallback={null}>
-            <FailureAnalysisSummary
-              project={project}
-              reportIds={runHealthMetrics.map((m) => m.runId)}
-              totalFailures={totalFailures}
-            />
-          </Suspense>
-        </LazyVisible>
-      </section>
+      <LazyVisible rootMargin="200px 0px">
+        <FailureCategoriesSection
+          project={project}
+          dateRange={dateRange}
+          onCategoryClick={handleCategoryClick}
+          reportIds={runHealthMetrics.map((m) => m.runId)}
+        />
+      </LazyVisible>
 
       <section id="tests" className="scroll-mt-32">
         <LazyVisible rootMargin="200px 0px" minHeight={320}>

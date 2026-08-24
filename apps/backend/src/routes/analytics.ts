@@ -7,6 +7,7 @@ import {
 } from '../lib/llm/queue/index.js';
 import { getProjectEtaFinishAt } from '../lib/llm/queueEta.js';
 import { analyticsService } from '../lib/service/analytics.js';
+import { failureSummaryDb } from '../lib/service/db/failureSummary.sqlite.js';
 import { llmTasksDb, projectSummaryDb, reportDb } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { withError } from '../lib/withError.js';
@@ -43,6 +44,33 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
       }
 
       return { success: true, data: analyticsData };
+    }
+  );
+
+  fastify.get(
+    '/api/analytics/failure-categories',
+    { preHandler: authorize(CAPABILITIES.view) },
+    async (request) => {
+      const {
+        project = 'all',
+        from,
+        to,
+      } = request.query as {
+        project?: string;
+        from?: string;
+        to?: string;
+      };
+      const projectKey = project && project !== 'all' ? project : undefined;
+      const cats = await failureSummaryDb.getAggregatedCategories(projectKey, 10, { from, to });
+      // UI renders 5 top errors and 5 examples each — trim server-side.
+      const data = {
+        ...cats,
+        topErrors: cats.topErrors.slice(0, 5).map((e: (typeof cats.topErrors)[0]) => ({
+          ...e,
+          affectedTests: e.affectedTests?.slice(0, 5),
+        })),
+      };
+      return { success: true as const, data };
     }
   );
 

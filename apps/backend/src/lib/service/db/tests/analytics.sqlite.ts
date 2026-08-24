@@ -10,14 +10,6 @@ export class TestAnalyticsDatabase extends TestDbBase {
   ): { avgDuration: number; p95Duration: number; count: number } {
     return testQueries.getDurationAggregates(this.db, project, from, to);
   }
-  public getSlowestTests(
-    project: string | undefined,
-    from: string | undefined,
-    to: string | undefined,
-    limit: number
-  ): Array<{ step: string; duration: number; testId: string }> {
-    return testQueries.getSlowestTests(this.db, project, from, to, limit);
-  }
   public getSlowCountsByReport(
     project: string | undefined,
     from: string | undefined,

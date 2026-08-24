@@ -8,18 +8,24 @@ const instance = globalThis as typeof globalThis & {
   [initiatedDb]?: Database.Database;
 };
 
+/** Absolute path of the metadata.db file (same resolution as createDatabase). */
+export function getDatabasePath(): string {
+  const dbDir = process.env.DATA_FOLDER ?? path.join(process.cwd(), 'data');
+  return path.join(dbDir, 'metadata.db');
+}
+
 export function createDatabase(): Database.Database {
   if (instance[initiatedDb]) {
     return instance[initiatedDb];
   }
 
-  const dbDir = process.env.DATA_FOLDER ?? path.join(process.cwd(), 'data');
+  const dbDir = path.dirname(getDatabasePath());
 
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  const dbPath = path.join(dbDir, 'metadata.db');
+  const dbPath = getDatabasePath();
 
   console.log(`[db] creating database at ${dbPath}`);
 

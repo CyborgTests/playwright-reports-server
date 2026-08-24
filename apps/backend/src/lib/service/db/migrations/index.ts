@@ -8,6 +8,7 @@ import * as testDefinitionColumns from './0004_test_definition_columns.js';
 import * as dropReportsFiles from './0005_drop_reports_files.js';
 import * as testsFtsTagsAnnotations from './0006_tests_fts_tags_annotations.js';
 import * as reportCleanupState from './0007_report_cleanup_state.js';
+import * as dailyTestTotals from './0008_daily_test_totals.js';
 
 const MIGRATIONS: Record<string, Migration> = {
   '0001_baseline': { up: baseline.up, down: baseline.down },
@@ -26,6 +27,7 @@ const MIGRATIONS: Record<string, Migration> = {
   '0005_drop_reports_files': { up: dropReportsFiles.up, down: dropReportsFiles.down },
   '0006_tests_fts_tags_annotations': { up: testsFtsTagsAnnotations.up },
   '0007_report_cleanup_state': { up: reportCleanupState.up },
+  '0008_daily_test_totals': { up: dailyTestTotals.up, down: dailyTestTotals.down },
 };
 
 export async function migrateToLatest(db: Kysely<Database>): Promise<void> {

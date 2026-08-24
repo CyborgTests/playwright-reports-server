@@ -13,6 +13,7 @@ import type {
   ReportPath,
 } from '../../storage/types.js';
 import { dataEvents } from '../dataEvents.js';
+import { dailyTotalsDb } from './dailyTotals.sqlite.js';
 import { getDatabase } from './db.js';
 import { type Database, getKysely, type ReportsRow } from './kysely.js';
 import { projectSummaryDb } from './projectSummary.sqlite.js';
@@ -392,6 +393,7 @@ export class ReportDatabase {
         if (setProject && nextProject !== row.project) {
           const oldProject = row.project;
           const movedAt = new Date().toISOString();
+          dailyTotalsDb.moveReport(id, oldProject, nextProject);
           this.db
             .prepare(
               `INSERT OR IGNORE INTO tests (
@@ -496,6 +498,10 @@ export class ReportDatabase {
 
       const compiled = this.k.deleteFrom('reports').where('reportID', 'in', ids).compile();
       this.db.prepare(compiled.sql).run(...compiled.parameters);
+
+      for (const id of ids) {
+        dailyTotalsDb.reverseReport(id);
+      }
 
       // no FK can cascade reports -> project_llm_summaries
       // when a project loses its last report, drop its summary.

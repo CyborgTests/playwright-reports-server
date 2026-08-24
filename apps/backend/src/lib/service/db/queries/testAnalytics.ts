@@ -6,6 +6,7 @@
 //   - UNION ALL VALUES tuple lists for lane lookup
 import type Database from 'better-sqlite3';
 import { FAILED_OUTCOMES } from '../../../failure-clustering/types.js';
+import { dailyTotalsDb } from '../dailyTotals.sqlite.js';
 import type {
   DerivedPageRow,
   Test,
@@ -393,53 +394,7 @@ export function getDurationAggregates(
   from?: string,
   to?: string
 ): { avgDuration: number; p95Duration: number; count: number } {
-  const { where, params } = scopedRunFilter(project, from, to);
-  const agg = db
-    .prepare(`SELECT AVG(duration) AS avg, COUNT(*) AS count FROM test_runs ${where}`)
-    .get(...params) as { avg: number | null; count: number };
-  const count = agg?.count ?? 0;
-  if (count === 0) {
-    return { avgDuration: 0, p95Duration: 0, count: 0 };
-  }
-  // traverse p95 from desc offset as we display slowest records only.
-  const ascOffset = Math.min(count - 1, Math.floor(count * 0.95));
-  const descOffset = count - 1 - ascOffset;
-  const p95Row = db
-    .prepare(`SELECT duration FROM test_runs ${where} ORDER BY duration DESC LIMIT 1 OFFSET ?`)
-    .get(...params, descOffset) as { duration: number | null } | undefined;
-  return {
-    avgDuration: agg.avg ?? 0,
-    p95Duration: p95Row?.duration ?? 0,
-    count,
-  };
-}
-
-export function getSlowestTests(
-  db: Database.Database,
-  project: string | undefined,
-  from: string | undefined,
-  to: string | undefined,
-  limit: number
-): Array<{ step: string; duration: number; testId: string }> {
-  const { where, params } = scopedRunFilter(project, from, to, { alias: 'tr' });
-  const sql = `
-    SELECT t.title AS step, tr.duration AS duration, tr.testId AS testId
-    FROM test_runs tr
-    JOIN tests t ON t.testId = tr.testId AND t.fileId = tr.fileId AND t.project = tr.project
-    ${where}
-    ORDER BY tr.duration DESC
-    LIMIT ?
-  `;
-  const rows = db.prepare(sql).all(...params, limit) as Array<{
-    step: string | null;
-    duration: number;
-    testId: string;
-  }>;
-  return rows.map((r) => ({
-    step: r.step ?? 'Unknown Test',
-    duration: r.duration,
-    testId: r.testId,
-  }));
+  return dailyTotalsDb.getDurationAggregates(project, from, to);
 }
 
 export function getSlowCountsByReport(

@@ -1,3 +1,4 @@
+export type { RunDeltaInput } from '../dailyTotals/deltas.js';
 export type { AnalysisFeedbackRow } from './analysisFeedback.sqlite.js';
 export { analysisFeedbackDb } from './analysisFeedback.sqlite.js';
 export type { ApiKeyRecord } from './apiKeys.sqlite.js';
@@ -10,6 +11,7 @@ export type {
   ClusterResolutionRow,
 } from './clusterResolutions.sqlite.js';
 export { clusterResolutionsDb } from './clusterResolutions.sqlite.js';
+export { dailyTotalsDb } from './dailyTotals.sqlite.js';
 export {
   closeDatabase,
   createDatabase,

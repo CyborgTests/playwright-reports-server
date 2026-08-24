@@ -15,7 +15,9 @@ import { extractFailureEvidence } from '../../parser/failure-extraction.js';
 import type { ReportHistory } from '../../storage/types.js';
 import { withError } from '../../withError.js';
 import {
+  dailyTotalsDb,
   llmTasksDb,
+  type RunDeltaInput,
   regressionsDb,
   reportDb,
   type Test,
@@ -276,6 +278,7 @@ export class TestManagementService {
     const currentReportCommit: string | null = reportMetadata?.gitCommit?.hash ?? null;
 
     const files = report.files;
+    const dailyTotals: RunDeltaInput[] = [];
     const transaction = () => {
       for (const file of files) {
         if (!file.tests) continue;
@@ -336,6 +339,14 @@ export class TestManagementService {
           };
 
           testDb.createTestRun(testRun);
+          dailyTotals.push({
+            project: report.project,
+            outcome: testRun.outcome,
+            duration: testRun.duration ?? null,
+            createdAt: testRun.createdAt,
+            testId,
+            fileId,
+          });
           const flakinessScore = this.computeFlakiness(
             testId,
             fileId,
@@ -367,6 +378,7 @@ export class TestManagementService {
         }
       }
       regressionsDb.detectForReport(report.reportID, currentReportCommit);
+      dailyTotalsDb.applyReportRuns(report.reportID, report.project, dailyTotals);
     };
 
     try {

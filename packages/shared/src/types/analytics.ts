@@ -10,7 +10,6 @@ export interface OverviewStats {
   totalRuns: number;
   passRate: number;
   averageTestDuration: number;
-  slowestSteps: Array<{ step: string; duration: number; testId: string }>;
   averageTestRunDuration: number;
   passRateTrend: 'up' | 'down' | 'stable';
   flakyTestsTrend: 'up' | 'down' | 'stable';
@@ -60,7 +59,6 @@ export interface AnalyticsData {
   runHealthMetrics: RunHealthMetric[];
   trendMetrics: TrendMetrics;
   testsSummary: TestsSummary;
-  failureCategories: FailureCategoryAnalytics;
   regressions: RegressionsAggregate;
 }
 

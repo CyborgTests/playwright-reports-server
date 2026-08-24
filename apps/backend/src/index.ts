@@ -82,7 +82,6 @@ async function start() {
 
   await registerApiRoutes(fastify);
 
-
   if (process.env.NODE_ENV === 'production') {
     const frontendDistPath = resolve(
       process.env.FRONTEND_DIST || join(process.cwd(), '..', '..', 'apps', 'frontend', 'dist')
