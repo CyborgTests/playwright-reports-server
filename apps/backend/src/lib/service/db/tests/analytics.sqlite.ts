@@ -1,3 +1,4 @@
+import { dailyTotalsDb } from '../dailyTotals.sqlite.js';
 import * as testQueries from '../queries/testAnalytics.js';
 import { singletonOf } from '../singleton.js';
 import { TestDbBase, type TestRunRow } from './shared.js';
@@ -8,7 +9,7 @@ export class TestAnalyticsDatabase extends TestDbBase {
     from?: string,
     to?: string
   ): { avgDuration: number; p95Duration: number; count: number } {
-    return testQueries.getDurationAggregates(this.db, project, from, to);
+    return dailyTotalsDb.getDurationAggregates(project, from, to);
   }
   public getSlowCountsByReport(
     project: string | undefined,

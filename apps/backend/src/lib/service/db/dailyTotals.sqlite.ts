@@ -2,7 +2,6 @@ import type Database from 'better-sqlite3';
 import {
   collectRunDeltas,
   deserializeDelta,
-  newDayDelta,
   type RunDeltaInput,
   type SerializedDelta,
   serializeDelta,
@@ -383,11 +382,6 @@ function negateCounts(d: SerializedDelta): SerializedDelta {
     sumDuration: -d.sumDuration,
     durationCount: -d.durationCount,
   };
-}
-
-function nextDayStart(day: string): string {
-  const date = new Date(`${day}T00:00:00.000Z`);
-  return new Date(date.getTime() + 86_400_000).toISOString();
 }
 
 export const dailyTotalsDb = singletonOf('dailyTotals', () => new DailyTotalsDatabase());

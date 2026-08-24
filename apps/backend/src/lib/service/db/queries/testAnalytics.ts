@@ -388,14 +388,6 @@ export function getTestsSummary(
   return { total: totalRow?.total ?? 0, flakyTests };
 }
 
-export function getDurationAggregates(
-  db: Database.Database,
-  project: string | undefined,
-  from?: string,
-  to?: string
-): { avgDuration: number; p95Duration: number; count: number } {
-  return dailyTotalsDb.getDurationAggregates(project, from, to);
-}
 
 export function getSlowCountsByReport(
   db: Database.Database,
