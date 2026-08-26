@@ -8,6 +8,13 @@ export interface SseStream {
   onClose: (cb: () => void) => void;
 }
 
+// Track all SSE streams for graceful shutdown to close
+const liveStreams = new Set<() => void>();
+
+export function closeAllSseStreams(): void {
+  for (const close of liveStreams) close();
+}
+
 // Opens a Server-Sent Events stream: writes the SSE head, wires request
 // close/error to teardown, and (unless `keepaliveMs` is null) emits a comment
 // heartbeat. Route-specific subscriptions register their own teardown via
@@ -32,6 +39,7 @@ export function openSseStream(
   const close = (): void => {
     if (closed) return;
     closed = true;
+    liveStreams.delete(close);
     for (const fn of teardown) fn();
     try {
       reply.raw.end();
@@ -60,6 +68,8 @@ export function openSseStream(
 
   request.raw.on('close', close);
   request.raw.on('error', close);
+
+  liveStreams.add(close);
 
   return {
     write,
