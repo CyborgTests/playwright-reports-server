@@ -152,6 +152,23 @@ export interface GithubSyncConfigsRow {
   updatedAt: string;
 }
 
+export interface GithubSyncFailedArtifactsRow {
+  artifactId: string;
+  syncConfigId: string;
+  runId: string;
+  artifactName: string;
+  env: string | null;
+  runDate: string | null;
+  headBranch: string | null;
+  workflowName: string | null;
+  phase: string;
+  attempts: number;
+  lastError: string | null;
+  firstFailedAt: string;
+  lastAttemptAt: string;
+  abandonedReason: string | null;
+}
+
 export interface GithubSyncStateRow {
   artifactId: string;
   syncConfigId: string;
@@ -471,6 +488,7 @@ export interface Database {
   regressions: RegressionsRow;
   analysis_feedback: AnalysisFeedbackTableRow;
   github_sync_configs: GithubSyncConfigsRow;
+  github_sync_failed_artifacts: GithubSyncFailedArtifactsRow;
   github_sync_runs: GithubSyncRunsRow;
   github_sync_state: GithubSyncStateRow;
   llm_concurrency_groups: LlmConcurrencyGroupsRow;

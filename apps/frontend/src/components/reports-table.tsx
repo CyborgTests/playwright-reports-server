@@ -420,7 +420,7 @@ export default function ReportsTable({
   const sortedRows = useMemo(() => {
     if (!reports) return [];
     return [...reports]
-      .sort((a, b) => (b.displayNumber ?? 0) - (a.displayNumber ?? 0))
+      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
       .map((item) => {
         const metaItems = getMetadataItems(item);
         const primary = metaItems.filter((m) => m.primary).slice(0, MAX_INLINE_META);

@@ -15,7 +15,9 @@ export interface GithubSyncConfig {
   updatedAt: string;
 }
 
-export type GithubSyncRunStatus = 'running' | 'success' | 'failed' | 'cancelled';
+export type GithubSyncRunStatus = 'running' | 'success' | 'partial' | 'failed' | 'cancelled';
+
+export type GithubSyncRunOutcome = Exclude<GithubSyncRunStatus, 'running'>;
 
 export interface GithubSyncRun {
   id: string;
@@ -50,12 +52,28 @@ export interface SyncProgress {
   startedAt: string;
 }
 
+export interface GithubSyncFailedArtifact {
+  artifactId: string;
+  runId: string;
+  artifactName: string;
+  runDate?: string;
+  phase: 'download' | 'upload';
+  attempts: number;
+  lastError?: string;
+  lastAttemptAt: string;
+  abandonedReason?: 'expired';
+}
+
 export interface GithubSyncStatus {
   configId: string;
   isRunning: boolean;
   lastRun?: GithubSyncRun;
   nextRun?: string;
   syncedArtifacts: number;
+  pendingArtifacts: number;
+  abandonedArtifacts: number;
+  consecutiveFailures: number;
+  failingSince?: string;
   progress?: SyncProgress;
 }
 
@@ -64,7 +82,6 @@ export interface GithubSyncConfigInput {
   enabled?: boolean;
   repo: string;
   workflow: string;
-  // Plain token from form. Omit/blank to keep existing; explicit "" to clear.
   token?: string;
   startDate: string;
   artifactPattern: string;

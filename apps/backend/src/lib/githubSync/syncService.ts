@@ -3,17 +3,23 @@ import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { SyncProgress } from '@playwright-reports/shared';
+import type { GithubSyncRunOutcome, SyncProgress } from '@playwright-reports/shared';
 import { serveReportRoute } from '../constants.js';
 import { githubSyncDb, reportDb } from '../service/db/index.js';
-import { processReportOrRollback } from '../service/index.js';
+import { processReportOrRollback, retentionCutoff } from '../service/index.js';
 import { storage } from '../storage/index.js';
 import { withError } from '../withError.js';
 import type { GithubSyncConfigResolved } from './configService.js';
 import { githubSyncEvents } from './events.js';
-import { type GhArtifact, type GhWorkflowRun, GithubApiClient } from './githubApi.js';
+import { type GhArtifact, GithubApiClient, GithubApiError } from './githubApi.js';
+import { planScan, type ToUpload } from './scanPlanner.js';
 
 const MAX_RUNS_PER_SCAN = 200;
+const MAX_FAILURE_NOTES = 3;
+const MAX_MESSAGE_LENGTH = 1000;
+const MAX_ERROR_LENGTH = 500;
+const NOOP_RUN_RETENTION_DAYS = 30;
+const RUN_RETENTION_DAYS = 365;
 
 const TMP_DIR_PREFIX = 'gh-sync-';
 
@@ -34,13 +40,6 @@ export async function cleanupOrphanedTempDirs(): Promise<number> {
     console.log(`[github-sync] cleaned up ${removed} orphaned temp dir(s)`);
   }
   return removed;
-}
-
-interface ToUpload {
-  artifact: GhArtifact;
-  run: GhWorkflowRun;
-  envMatch: string;
-  runDate: string;
 }
 
 class CancelledError extends Error {
@@ -66,7 +65,7 @@ export function getSyncProgress(configId: string): SyncProgress | null {
 }
 
 export interface SyncResult {
-  status: 'success' | 'failed' | 'cancelled' | 'skipped';
+  status: GithubSyncRunOutcome | 'skipped';
   uploaded: number;
   skipped: number;
   failed: number;
@@ -105,7 +104,8 @@ function renderTemplate(
 
 export async function runSync(
   cfg: GithubSyncConfigResolved,
-  trigger: 'cron' | 'manual'
+  trigger: 'cron' | 'manual',
+  options: { fullScan?: boolean } = {}
 ): Promise<SyncResult> {
   if (running.has(cfg.id)) {
     return {
@@ -161,16 +161,54 @@ export async function runSync(
   const signal = controller.signal;
 
   let uploaded = 0;
-  let skippedExpired = 0;
-  let skippedSynced = 0;
+  let skippedTotal = 0;
   let failed = 0;
   let earlyExit: string | undefined;
-  let outcome: 'success' | 'failed' | 'cancelled' = 'success';
+  let outcome: GithubSyncRunOutcome = 'success';
   let message: string | undefined;
   let prefetched: { tmpDir: string; zipPath: string } | null = null;
+  let scanningRunId: number | undefined;
+  let pendingUpload: Promise<{ ok: boolean; item: ToUpload; error?: Error }> | null = null;
+  const failureNotes: string[] = [];
+
+  const recordFailure = (item: ToUpload, phase: 'download' | 'upload', error?: Error): void => {
+    const now = new Date().toISOString();
+    githubSyncDb.recordFailedArtifact({
+      artifactId: String(item.artifact.id),
+      syncConfigId: cfg.id,
+      runId: item.workflowRunId,
+      artifactName: item.artifact.name,
+      env: item.envMatch || null,
+      runDate: item.runDate,
+      headBranch: item.headBranch || null,
+      workflowName: item.workflowName || null,
+      phase,
+      lastError: error?.message.slice(0, MAX_ERROR_LENGTH) ?? null,
+      firstFailedAt: now,
+      lastAttemptAt: now,
+      abandonedReason: null,
+    });
+    failed++;
+    handle.progress.failed = failed;
+    const note = `artifact ${item.artifact.id} ${phase} failed: ${
+      error?.message ?? 'unknown error'
+    }`;
+    if (failureNotes.length < MAX_FAILURE_NOTES) failureNotes.push(note);
+    console.error(`[github-sync] ${cfg.name}: ${note}`);
+  };
 
   try {
-    console.log(`[github-sync] ${cfg.name} (${cfg.repo}/${cfg.workflow}) starting [${trigger}]`);
+    console.log(
+      `[github-sync] ${cfg.name} (${cfg.repo}/${cfg.workflow}) starting [${trigger}]${
+        options.fullScan ? ' [full rescan]' : ''
+      }`
+    );
+
+    const failureRows = githubSyncDb.listFailedArtifacts(cfg.id);
+    const skipped = new Set(
+      failureRows.filter((row) => row.abandonedReason).map((row) => row.artifactId)
+    );
+    const pendingFailures = failureRows.filter((row) => !row.abandonedReason);
 
     const runs = await api.listRunsSince({
       workflow: cfg.workflow,
@@ -178,45 +216,106 @@ export async function runSync(
       maxRuns: MAX_RUNS_PER_SCAN,
       signal,
     });
-
-    const toUpload: ToUpload[] = [];
-
-    for (const run of runs) {
-      if (handle.cancelled) throw new CancelledError();
-
-      const artifacts = await api.listArtifacts(run.id, signal);
-      const matching = artifacts.filter((a) => pattern.test(a.name));
-      if (matching.length === 0) continue;
-
-      const alreadySynced = matching.some((a) => githubSyncDb.hasArtifact(String(a.id)));
-      if (alreadySynced) {
-        skippedSynced += matching.length;
-        handle.progress.skipped = skippedSynced + skippedExpired;
-        earlyExit = `artifact already synced in run ${run.id}`;
-        break;
-      }
-
-      const allExpired = matching.every((a) => a.expired);
-      if (allExpired) {
-        skippedExpired += matching.length;
-        handle.progress.skipped = skippedSynced + skippedExpired;
-        earlyExit = `all artifacts expired in run ${run.id}`;
-        break;
-      }
-
-      const fresh = matching.filter((a) => !a.expired);
-      skippedExpired += matching.length - fresh.length;
-      handle.progress.skipped = skippedSynced + skippedExpired;
-      const runDate = run.created_at.slice(0, 10);
-      for (const artifact of fresh) {
-        const match = artifact.name.match(pattern);
-        const envMatch = match?.[1] ?? '';
-        toUpload.push({ artifact, run, envMatch, runDate });
-      }
-      handle.progress.total = toUpload.length;
+    if (runs.length >= MAX_RUNS_PER_SCAN) {
+      console.log(
+        `[github-sync] ${cfg.name}: scan capped at ${MAX_RUNS_PER_SCAN} runs - anything older than ${
+          runs[runs.length - 1]?.created_at
+        } was not inspected`
+      );
     }
 
-    toUpload.reverse();
+    const retryItems: ToUpload[] = [];
+    let expiredNow = 0;
+    let unresolvedRetries = 0;
+    const listingByRun = new Map<string, GhArtifact[]>();
+    for (const row of pendingFailures) {
+      if (handle.cancelled) throw new CancelledError();
+      let artifacts = listingByRun.get(row.runId);
+      if (!artifacts) {
+        const listing = await withError(api.listArtifacts(row.runId, signal));
+        if (listing.error) {
+          if (handle.cancelled || listing.error.name === 'AbortError') throw new CancelledError();
+          const status = listing.error instanceof GithubApiError ? listing.error.status : 0;
+          if (status === 404 || status === 410) {
+            githubSyncDb.abandonFailedArtifact(row.artifactId, 'expired');
+            skipped.add(row.artifactId);
+            expiredNow++;
+          } else {
+            githubSyncDb.noteRetryFailure(
+              row.artifactId,
+              listing.error.message.slice(0, MAX_ERROR_LENGTH)
+            );
+            unresolvedRetries++;
+            failed++;
+            handle.progress.failed = failed;
+            if (failureNotes.length < MAX_FAILURE_NOTES) {
+              failureNotes.push(
+                `artifact ${row.artifactId} could not be re-resolved: ${listing.error.message}`
+              );
+            }
+            console.error(
+              `[github-sync] ${cfg.name}: cannot re-resolve artifact ${row.artifactId} in run ${row.runId}: ${listing.error.message}`
+            );
+          }
+          continue;
+        }
+        artifacts = listing.result ?? [];
+        listingByRun.set(row.runId, artifacts);
+      }
+      const artifact = artifacts.find((candidate) => String(candidate.id) === row.artifactId);
+      if (!artifact || artifact.expired) {
+        githubSyncDb.abandonFailedArtifact(row.artifactId, 'expired');
+        skipped.add(row.artifactId);
+        expiredNow++;
+        continue;
+      }
+      retryItems.push({
+        artifact,
+        workflowRunId: row.runId,
+        runDate: row.runDate ?? artifact.created_at.slice(0, 10),
+        headBranch: row.headBranch ?? '',
+        workflowName: row.workflowName ?? '',
+        envMatch: row.env ?? '',
+      });
+    }
+    if (pendingFailures.length > 0) {
+      console.log(
+        `[github-sync] ${cfg.name}: retrying ${retryItems.length} failed artifact(s), ${expiredNow} expired, ${unresolvedRetries} unresolved`
+      );
+    }
+
+    const plan = await planScan({
+      runs,
+      artifactsOf: async (workflowRunId) => {
+        if (handle.cancelled) throw new CancelledError();
+        scanningRunId = workflowRunId;
+        const key = String(workflowRunId);
+        let artifacts = listingByRun.get(key);
+        if (!artifacts) {
+          artifacts = await api.listArtifacts(workflowRunId, signal);
+          listingByRun.set(key, artifacts);
+        }
+        return artifacts;
+      },
+      isSynced: (artifactId) => githubSyncDb.hasArtifact(artifactId),
+      isAbandoned: (artifactId) => skipped.has(artifactId),
+      pattern,
+      fullScan: options.fullScan,
+      onCounts: (counts) => {
+        skippedTotal = counts.skippedSynced + counts.skippedExpired + counts.skippedAbandoned;
+        handle.progress.skipped = skippedTotal;
+        handle.progress.total = retryItems.length + counts.planned;
+      },
+    });
+    earlyExit = plan.earlyExit;
+
+    const seenArtifacts = new Set<number>();
+    const toUpload = [...plan.toUpload, ...retryItems].filter((item) => {
+      if (seenArtifacts.has(item.artifact.id)) return false;
+      seenArtifacts.add(item.artifact.id);
+      return true;
+    });
+
     handle.progress.phase = 'downloading';
     handle.progress.total = toUpload.length;
     handle.progress.current = 0;
@@ -225,11 +324,9 @@ export async function runSync(
       console.log(`[github-sync] ${cfg.name}: early exit - ${earlyExit}`);
     }
 
-    let pendingUpload: Promise<{ ok: boolean; artifactId: number; error?: Error }> | null = null;
-
     const finishUpload = async (): Promise<void> => {
       if (!pendingUpload) return;
-      const { ok, artifactId, error } = await pendingUpload;
+      const { ok, item, error } = await pendingUpload;
       pendingUpload = null;
       handle.progress.upload = undefined;
       if (ok) {
@@ -238,9 +335,7 @@ export async function runSync(
         return;
       }
       if (handle.cancelled || error?.name === 'AbortError') throw new CancelledError();
-      failed++;
-      handle.progress.failed = failed;
-      console.error(`[github-sync] ${cfg.name}: artifact ${artifactId} failed: ${error?.message}`);
+      recordFailure(item, 'upload', error);
     };
 
     for (let i = 0; i < toUpload.length; i++) {
@@ -270,24 +365,20 @@ export async function runSync(
         if (dl.error && (handle.cancelled || dl.error.name === 'AbortError')) {
           throw new CancelledError();
         }
-        failed++;
-        handle.progress.failed = failed;
-        console.error(
-          `[github-sync] ${cfg.name}: artifact ${item.artifact.id} download failed: ${dl.error?.message}`
-        );
+        recordFailure(item, 'download', dl.error ?? undefined);
         continue;
       }
 
       const matchArr = item.artifact.name.match(pattern) ?? [];
       const ctx = {
         env: item.envMatch,
-        branch: item.run.head_branch ?? '',
+        branch: item.headBranch,
         runDate: item.runDate,
-        runId: String(item.run.id),
+        runId: item.workflowRunId,
         artifactName: item.artifact.name,
         repo: cfg.repo,
         workflowFile: cfg.workflow,
-        workflowName: item.run.name ?? cfg.workflow,
+        workflowName: item.workflowName || cfg.workflow,
       };
       const project = renderTemplate(cfg.projectTemplate, ctx, Array.from(matchArr));
       const title = renderTemplate(cfg.titleTemplate, ctx, Array.from(matchArr));
@@ -304,7 +395,7 @@ export async function runSync(
           zipPath: downloaded.zipPath,
           artifact: uploadItem.artifact,
           syncConfigId: cfg.id,
-          runId: String(uploadItem.run.id),
+          runId: uploadItem.workflowRunId,
           envMatch: uploadItem.envMatch,
           runDate: uploadItem.runDate,
           project,
@@ -315,7 +406,7 @@ export async function runSync(
         })
       ).then(({ error }) => ({
         ok: !error,
-        artifactId: uploadItem.artifact.id,
+        item: uploadItem,
         error: error ?? undefined,
       }));
     }
@@ -324,9 +415,9 @@ export async function runSync(
     handle.progress.download = undefined;
     handle.progress.upload = undefined;
 
-    if (failed > 0 && uploaded === 0) {
-      outcome = 'failed';
-      message = `${failed} artifact(s) failed to upload`;
+    if (failed > 0) {
+      outcome = uploaded > 0 ? 'partial' : 'failed';
+      message = `uploaded ${uploaded}, failed ${failed}`;
     } else {
       message =
         toUpload.length === 0
@@ -335,16 +426,33 @@ export async function runSync(
             : 'no matching artifacts found'
           : `uploaded ${uploaded}, failed ${failed}`;
     }
+    if (failureNotes.length > 0) {
+      message = `${message} (${failureNotes.join('; ')})`.slice(0, MAX_MESSAGE_LENGTH);
+    }
   } catch (err) {
     if (err instanceof CancelledError || handle.cancelled) {
       outcome = 'cancelled';
       message = 'cancelled by user';
     } else {
       outcome = 'failed';
-      message = err instanceof Error ? err.message : String(err);
+      const reason = err instanceof Error ? err.message : String(err);
+      message =
+        handle.progress.phase === 'scanning' && scanningRunId !== undefined
+          ? `scanning run ${scanningRunId}: ${reason}`
+          : reason;
       console.error(`[github-sync] ${cfg.name}: ${message}`);
     }
   } finally {
+    if (pendingUpload) {
+      const late = await pendingUpload;
+      pendingUpload = null;
+      if (late.ok) {
+        uploaded++;
+      } else if (late.error?.name !== 'AbortError') {
+        // ponytail: cancel mid-upload aborts with AbortError - not a real failure, next sync replans it
+        recordFailure(late.item, 'upload', late.error);
+      }
+    }
     if (prefetched) {
       await fs.rm(prefetched.tmpDir, { recursive: true, force: true }).catch(() => undefined);
     }
@@ -354,22 +462,24 @@ export async function runSync(
       status: outcome,
       finishedAt: new Date().toISOString(),
       uploaded,
-      skipped: skippedSynced + skippedExpired,
+      skipped: skippedTotal,
       failed,
       message,
     });
+    githubSyncDb.pruneRuns(cfg.id, {
+      noopBefore: retentionCutoff(NOOP_RUN_RETENTION_DAYS),
+      allBefore: retentionCutoff(RUN_RETENTION_DAYS),
+    });
     githubSyncEvents.emitChanged();
     console.log(
-      `[github-sync] ${cfg.name}: ${outcome} - uploaded=${uploaded} skipped=${
-        skippedSynced + skippedExpired
-      } failed=${failed}`
+      `[github-sync] ${cfg.name}: ${outcome} - uploaded=${uploaded} skipped=${skippedTotal} failed=${failed}`
     );
   }
 
   return {
     status: outcome,
     uploaded,
-    skipped: skippedSynced + skippedExpired,
+    skipped: skippedTotal,
     failed,
     message,
   };
@@ -430,6 +540,7 @@ async function uploadArtifactFromTmp(args: {
       runDate: args.runDate,
       uploadedAt: new Date().toISOString(),
     });
+    githubSyncDb.clearFailedArtifact(String(args.artifact.id));
 
     const reportUrl = `${serveReportRoute}/${reportId}/index.html`;
     console.log(`[github-sync] uploaded artifact ${args.artifact.id} → ${reportUrl}`);

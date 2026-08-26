@@ -388,7 +388,6 @@ export function getTestsSummary(
   return { total: totalRow?.total ?? 0, flakyTests };
 }
 
-
 export function getSlowCountsByReport(
   db: Database.Database,
   project: string | undefined,

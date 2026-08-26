@@ -23,8 +23,10 @@ export type { FailureSummaryRow } from './failureSummary.sqlite.js';
 export { failureSummaryDb } from './failureSummary.sqlite.js';
 export type {
   GithubSyncConfigRow,
+  GithubSyncFailedArtifactRow,
   GithubSyncRunRow,
   GithubSyncStateRow,
+  RunOutcomeRow,
 } from './githubSync.sqlite.js';
 export { githubSyncDb } from './githubSync.sqlite.js';
 export type { InviteRecord } from './invites.sqlite.js';

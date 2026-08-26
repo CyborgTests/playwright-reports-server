@@ -79,7 +79,7 @@ export function classifyServeMiss(
 
   const statsHint = viaShare
     ? 'Ask whoever sent it for a fresh link.'
-    : `The report's stats and history are still available — <a href="/report/${encodeURIComponent(reportId)}">view them here</a>.`;
+    : `The report's stats and history are still available - <a href="/report/${encodeURIComponent(reportId)}">view them here</a>.`;
 
   if (rest.length === 0) return notFound;
 

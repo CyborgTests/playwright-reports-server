@@ -5,6 +5,7 @@ import { githubSyncConfigService } from '../lib/githubSync/configService.js';
 import { githubSyncCron } from '../lib/githubSync/cronManager.js';
 import { githubSyncEvents } from '../lib/githubSync/events.js';
 import { hasActiveRun, isRunning, runSync, stopSync } from '../lib/githubSync/syncService.js';
+import { pageResponse, parsePageQuery } from '../lib/pagination.js';
 import { CronService } from '../lib/service/cron.js';
 import { openSseStream } from '../lib/sse.js';
 import { authorize } from './auth.js';
@@ -179,6 +180,48 @@ export async function registerGithubSyncRoutes(fastify: FastifyInstance) {
           console.error(`[github-sync] manual run for ${cfg.name} crashed:`, err);
         });
         return { status: 'started', id: cfg.id };
+      }
+    );
+
+    fastify.get<{
+      Params: { id: string };
+      Querystring: { page?: string; limit?: string; includeEmpty?: string };
+    }>('/api/config/github-sync/:id/runs', async (request, reply) => {
+      if (!githubSyncConfigService.get(request.params.id)) {
+        return reply.status(404).send({ success: false, error: 'sync config not found' });
+      }
+      const { page, limit, offset } = parsePageQuery(request.query);
+      const { runs, total } = githubSyncConfigService.listRuns(request.params.id, {
+        limit,
+        offset,
+        includeEmpty: request.query.includeEmpty === 'true',
+      });
+      return pageResponse(runs, total, page, limit);
+    });
+
+    fastify.get<{ Params: { id: string } }>(
+      '/api/config/github-sync/:id/failures',
+      async (request, reply) => {
+        if (!githubSyncConfigService.get(request.params.id)) {
+          return reply.status(404).send({ success: false, error: 'sync config not found' });
+        }
+        return githubSyncConfigService.listFailedArtifacts(request.params.id);
+      }
+    );
+
+    fastify.post<{ Params: { id: string } }>(
+      '/api/config/github-sync/:id/rescan',
+      runGuard,
+      async (request, reply) => {
+        const cfg = githubSyncConfigService.getResolved(request.params.id);
+        if (!cfg) return reply.status(404).send({ success: false, error: 'sync config not found' });
+        if (isRunning(cfg.id)) {
+          return reply.status(409).send({ success: false, error: 'sync already running' });
+        }
+        runSync(cfg, 'manual', { fullScan: true }).catch((err) => {
+          console.error(`[github-sync] rescan for ${cfg.name} crashed:`, err);
+        });
+        return { status: 'started', id: cfg.id, fullScan: true };
       }
     );
 
