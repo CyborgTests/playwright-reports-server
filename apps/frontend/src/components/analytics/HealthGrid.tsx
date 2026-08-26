@@ -364,8 +364,10 @@ function HealthGridImpl({
     const prev = scrollSyncRef.current;
     const scopeChanged = prev.scopeKey !== scopeKey;
     if (scopeChanged || prev.newestRunId !== newestRunId) {
-      scrollContainer.scrollLeft = scrollContainer.scrollWidth;
-      setScrollLeft(scrollContainer.scrollLeft);
+      if (prev.length > 0) {
+        scrollContainer.scrollLeft = scrollContainer.scrollWidth;
+        setScrollLeft(scrollContainer.scrollLeft);
+      }
     } else if (chartData.length > prev.length) {
       const added = chartData.length - prev.length;
       scrollContainer.scrollLeft += added * BAR_PX;
