@@ -8,6 +8,7 @@ import InlineStatsCircle from '@/components/inline-stats-circle';
 import { title } from '@/components/primitives';
 import FileList from '@/components/report-details/file-list';
 import ReportFailureSummary from '@/components/report-details/ReportFailureSummary';
+import ReportMetadata from '@/components/report-details/report-metadata';
 import { CompareToPicker } from '@/components/reports-compare/compare-to-picker';
 import { ServedReportLink } from '@/components/served-report-link';
 import { Button } from '@/components/ui/button';
@@ -179,6 +180,7 @@ function ReportDetailPage() {
         </div>
       </div>
 
+      {report && <ReportMetadata report={report} />}
       {id && <ReportFailureSummary reportId={id} />}
       {report && <FileList report={report} highlightTestId={highlightTestId} />}
     </>
