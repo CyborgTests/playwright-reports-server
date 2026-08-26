@@ -8,8 +8,8 @@ import Fastify from 'fastify';
 import { env } from './config/env.js';
 import { llmAnalysisQueue } from './lib/llm/queue/index.js';
 import { lifecycle } from './lib/service/lifecycle.js';
-import { registerApiRoutes } from './routes/index.js';
 import { closeAllSseStreams } from './lib/sse.js';
+import { registerApiRoutes } from './routes/index.js';
 
 const logByEnv = {
   dev: {

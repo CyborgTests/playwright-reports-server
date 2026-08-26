@@ -6,7 +6,6 @@
 //   - UNION ALL VALUES tuple lists for lane lookup
 import type Database from 'better-sqlite3';
 import { FAILED_OUTCOMES } from '../../../failure-clustering/types.js';
-import { dailyTotalsDb } from '../dailyTotals.sqlite.js';
 import type {
   DerivedPageRow,
   Test,
