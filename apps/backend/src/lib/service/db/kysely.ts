@@ -73,7 +73,6 @@ export interface ReportsRow {
   size: string | null;
   sizeBytes: number;
   metadata: string;
-  files: string | null;
   passRate: number | null;
   statTotal: number | null;
   statExpected: number | null;
@@ -87,6 +86,11 @@ export interface ReportsRow {
   gitCommitSubject: string | null;
   ciBuildHref: string | null;
   storagePath: string | null;
+  tracesDeletedAt: string | null;
+  videosDeletedAt: string | null;
+  screenshotsDeletedAt: string | null;
+  artifactsMissingAt: string | null;
+  attachmentSizes: string | null;
   updatedAt: WithDefault<string | null>;
 }
 
@@ -146,6 +150,23 @@ export interface GithubSyncConfigsRow {
   cronSchedule: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface GithubSyncFailedArtifactsRow {
+  artifactId: string;
+  syncConfigId: string;
+  runId: string;
+  artifactName: string;
+  env: string | null;
+  runDate: string | null;
+  headBranch: string | null;
+  workflowName: string | null;
+  phase: string;
+  attempts: number;
+  lastError: string | null;
+  firstFailedAt: string;
+  lastAttemptAt: string;
+  abandonedReason: string | null;
 }
 
 export interface GithubSyncStateRow {
@@ -254,6 +275,10 @@ export interface TestsRow {
   latestFailureCategory: string | null;
   flakinessResetAt: string | null;
   quarantineFixedAt: string | null;
+  projectName: string | null;
+  suitePath: string | null; // JSON string[]
+  tags: string | null; // JSON string[]
+  latestAnnotations: string | null; // JSON TestAnnotation[]
 }
 
 export interface TestRunsRow {
@@ -270,6 +295,7 @@ export interface TestRunsRow {
   failure_category_source: string | null;
   error_signature: string | null;
   has_trace: number;
+  annotations: string | null; // JSON [{ type, description? }]
 }
 
 export interface TestTraceBaselinesRow {
@@ -350,6 +376,8 @@ export interface TestsFtsRow {
   project: string;
   title: string;
   filePath: string;
+  tags: string | null;
+  latestAnnotations: string | null;
 }
 
 export interface ReportTagsRow {
@@ -460,6 +488,7 @@ export interface Database {
   regressions: RegressionsRow;
   analysis_feedback: AnalysisFeedbackTableRow;
   github_sync_configs: GithubSyncConfigsRow;
+  github_sync_failed_artifacts: GithubSyncFailedArtifactsRow;
   github_sync_runs: GithubSyncRunsRow;
   github_sync_state: GithubSyncStateRow;
   llm_concurrency_groups: LlmConcurrencyGroupsRow;

@@ -1,6 +1,14 @@
-import { ReportTestOutcomeEnum, type TestRun } from '@playwright-reports/shared';
+import { ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import FormattedDate from '@/components/date-format';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
+export interface SparklineRun {
+  reportId: string;
+  outcome: string;
+  createdAt: string;
+  reportDisplayNumber?: number;
+  reportTitle?: string;
+}
 
 const outcomeLabel = (outcome: string) => {
   if (outcome === ReportTestOutcomeEnum.Expected) return 'PASS';
@@ -8,7 +16,7 @@ const outcomeLabel = (outcome: string) => {
   return 'FAIL';
 };
 
-const reportLabel = (run: TestRun): string => {
+const reportLabel = (run: SparklineRun): string => {
   const parts: string[] = [];
   if (typeof run.reportDisplayNumber === 'number') parts.push(`#${run.reportDisplayNumber}`);
   if (run.reportTitle) parts.push(run.reportTitle);
@@ -24,11 +32,10 @@ const SparklineChart = ({
   recentRuns,
   highlights,
 }: {
-  recentRuns: Array<TestRun>;
+  recentRuns: Array<SparklineRun>;
   highlights?: RegressionHighlights;
 }) => {
-  const maxRuns = Math.min(recentRuns.length, 30);
-  const recentRunsSlice = recentRuns.slice(0, maxRuns).reverse();
+  const recentRunsSlice = [...recentRuns].reverse();
 
   const colorPerOutcome: Record<string, string> = {
     [ReportTestOutcomeEnum.Expected]: 'bg-success',
@@ -57,7 +64,7 @@ const SparklineChart = ({
               ? ' · regression resolved here'
               : '';
           return (
-            <Tooltip key={run.runId}>
+            <Tooltip key={run.reportId}>
               <TooltipTrigger asChild>
                 <a href={`/report/${run.reportId}`}>
                   <div
@@ -95,22 +102,16 @@ const getPassRateColor = (passRate: number) => {
 };
 
 interface TrendSparklinesProps {
-  runs: Array<TestRun>;
+  runs: Array<SparklineRun>;
+  passRate: number;
   highlights?: RegressionHighlights;
 }
 
-export function TrendSparklineHistory({ runs, highlights }: Readonly<TrendSparklinesProps>) {
-  const totalMeaningfulRuns = runs.reduce(
-    (sum, run) => sum + (run.outcome === ReportTestOutcomeEnum.Skipped ? 0 : 1),
-    0
-  );
-
-  const totalPassed = runs.reduce(
-    (sum, run) => sum + (run.outcome === ReportTestOutcomeEnum.Expected ? 1 : 0),
-    0
-  );
-  const passRate = totalMeaningfulRuns > 0 ? (totalPassed / totalMeaningfulRuns) * 100 : 0;
-
+export function TrendSparklineHistory({
+  runs,
+  passRate,
+  highlights,
+}: Readonly<TrendSparklinesProps>) {
   return (
     <div className="text-left">
       <div className="font-mono text-sm mb-1">

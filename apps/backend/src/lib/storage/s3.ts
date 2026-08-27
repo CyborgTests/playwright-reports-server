@@ -16,6 +16,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import type { AttachmentCleanupKind } from '@playwright-reports/shared';
 import getFolderSize from 'get-folder-size';
 import mime from 'mime';
 import { Open } from 'unzipper';
@@ -24,17 +25,25 @@ import { withError } from '../../lib/withError.js';
 import { generatePlaywrightReport } from '../pw.js';
 import { resultDb } from '../service/db/index.js';
 import { processWithConcurrency, Semaphore } from '../utils/semaphore.js';
+import { collectAttachments, deleteEntries, summarizeAttachments } from './attachments.js';
 import { REPORTS_BUCKET, REPORTS_FOLDER, RESULTS_BUCKET, TMP_FOLDER } from './constants.js';
 import { bytesToString } from './format.js';
-import { parseRemoteReportMetadata, resolveBrandingAssetPaths } from './remoteShared.js';
+import {
+  deleteReportsByPrefix,
+  parseRemoteReportMetadata,
+  resolveBrandingAssetPaths,
+} from './remoteShared.js';
 import { safeZipEntryPath } from './streamUtils.js';
 import type {
+  AttachmentDeleteResult,
+  AttachmentSizes,
   ByteRange,
   ReadFileResult,
   ReportHistory,
   ReportPath,
   ReportUploadMetadata,
   Storage,
+  StorageEntry,
 } from './types.js';
 import { parseContentRange } from './types.js';
 
@@ -276,8 +285,8 @@ export class S3 implements Storage {
     }
   }
 
-  async reportExists(reportId: string): Promise<boolean> {
-    return this.objectExists(path.join(REPORTS_BUCKET, reportId, 'index.html'));
+  async reportExists(reportId: string, storagePath?: string | null): Promise<boolean> {
+    return this.objectExists(path.join(REPORTS_BUCKET, storagePath || reportId, 'index.html'));
   }
 
   async resultExists(resultId: string): Promise<boolean> {
@@ -295,6 +304,35 @@ export class S3 implements Storage {
   async listKeys(prefix: string): Promise<string[]> {
     await this.ensureBucketExist();
     return this.listObjectsUnderPrefix(prefix);
+  }
+
+  async reportAttachmentSizes(
+    reportId: string,
+    storagePath: string | null
+  ): Promise<AttachmentSizes> {
+    await this.ensureBucketExist();
+    return summarizeAttachments(
+      (prefix) => this.listEntriesUnderPrefix(prefix),
+      reportId,
+      storagePath
+    );
+  }
+
+  async deleteReportAttachments(
+    reportId: string,
+    storagePath: string | null,
+    kinds: AttachmentCleanupKind[]
+  ): Promise<AttachmentDeleteResult> {
+    await this.ensureBucketExist();
+    const { entries } = await collectAttachments(
+      (prefix) => this.listEntriesUnderPrefix(prefix),
+      reportId,
+      storagePath,
+      kinds
+    );
+    return deleteEntries(entries, this.batchSize, 's3', (key) =>
+      this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }))
+    );
   }
 
   async readToString(key: string): Promise<string | null> {
@@ -319,43 +357,14 @@ export class S3 implements Storage {
     await withError(this.clear(...objects));
   }
 
-  private async getReportObjects(reportsIDs: string[]): Promise<string[]> {
-    const files: string[] = [];
-
-    let continuationToken: string | undefined;
-
-    do {
-      const response = await this.client.send(
-        new ListObjectsV2Command({
-          Bucket: this.bucket,
-          Prefix: REPORTS_BUCKET,
-          ContinuationToken: continuationToken,
-        })
-      );
-
-      for (const file of response.Contents ?? []) {
-        if (!file?.Key) {
-          continue;
-        }
-
-        const reportID = path.basename(path.dirname(file.Key));
-
-        if (reportsIDs.includes(reportID)) {
-          files.push(file.Key);
-        }
-      }
-
-      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
-    } while (continuationToken);
-
-    return files;
-  }
-
-  async deleteReports(reports: ReportPath[]): Promise<void> {
-    const ids = reports.map((r) => r.reportID);
-    const objects = await this.getReportObjects(ids);
-
-    await withError(this.clear(...objects));
+  async deleteReports(reports: ReportPath[]): Promise<string[]> {
+    await this.ensureBucketExist();
+    return deleteReportsByPrefix(
+      reports,
+      's3',
+      (prefix) => this.listEntriesUnderPrefix(prefix),
+      (keys) => this.clear(...keys)
+    );
   }
 
   async generatePresignedUploadUrl(fileName: string) {
@@ -641,7 +650,11 @@ export class S3 implements Storage {
   }
 
   private async listObjectsUnderPrefix(prefix: string): Promise<string[]> {
-    const keys: string[] = [];
+    return (await this.listEntriesUnderPrefix(prefix)).map((entry) => entry.key);
+  }
+
+  private async listEntriesUnderPrefix(prefix: string): Promise<StorageEntry[]> {
+    const entries: StorageEntry[] = [];
     let continuationToken: string | undefined;
     do {
       const response = await this.client.send(
@@ -652,11 +665,11 @@ export class S3 implements Storage {
         })
       );
       for (const obj of response.Contents ?? []) {
-        if (obj.Key) keys.push(obj.Key);
+        if (obj.Key) entries.push({ key: obj.Key, size: obj.Size ?? 0 });
       }
       continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
     } while (continuationToken);
-    return keys;
+    return entries;
   }
 
   async uploadReportFromZipFile(

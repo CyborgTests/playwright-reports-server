@@ -5,10 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { CAPABILITIES, type FailureDetails } from '@playwright-reports/shared';
+import { CAPABILITIES, type ReportTestFailure } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import { serveReportRoute } from '../lib/constants.js';
-import { getReportEtaMs } from '../lib/llm/queueEta.js';
+import { parseFailureDetails } from '../lib/failure-clustering/extractors/failure-details.js';
+import { getReportEtaFinishAt } from '../lib/llm/queueEta.js';
 import { parseOffsetQuery } from '../lib/pagination.js';
 import {
   buildReportPdf,
@@ -24,6 +25,7 @@ import {
   ExportReportPdfQuerySchema,
   GenerateReportRequestSchema,
   GetReportParamsSchema,
+  GetReportTestParamsSchema,
   ListReportsQuerySchema,
   UploadReportRequestSchema,
 } from '../lib/schemas/index.js';
@@ -31,16 +33,15 @@ import {
   failureSummaryDb,
   llmTasksDb,
   regressionsDb,
+  removedAttachmentKinds,
   reportDb,
   testAnalysisDb,
   testDb,
+  testQueriesDb,
 } from '../lib/service/db/index.js';
-import { service } from '../lib/service/index.js';
+import { processReportOrRollback, service } from '../lib/service/index.js';
 import { compareReports } from '../lib/service/reportCompare.js';
-import {
-  detectFailureCategory,
-  testManagementService,
-} from '../lib/service/test-management/index.js';
+import { attachmentKindOf } from '../lib/storage/attachments.js';
 import { storage } from '../lib/storage/index.js';
 import { ValidationError, validateSchema } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
@@ -64,15 +65,6 @@ async function streamToBuffer(stream: Readable, maxBytes = 32 * 1024 * 1024): Pr
     chunks.push(buf);
   }
   return Buffer.concat(chunks);
-}
-
-function parseFailureDetails(value: string | undefined): FailureDetails | undefined {
-  if (!value) return undefined;
-  try {
-    return JSON.parse(value) as FailureDetails;
-  } catch {
-    return undefined;
-  }
 }
 
 /**
@@ -252,11 +244,10 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
         const allTests: PdfTestRow[] = [];
         for (const file of report.files ?? []) {
           for (const test of file.tests) {
-            const fileName = test.location?.file ?? file.fileName;
-            testMeta.set(test.testId, { title: test.title, file: fileName });
+            testMeta.set(test.testId, { title: test.title, file: file.fileName });
             allTests.push({
               title: test.title,
-              file: fileName,
+              file: file.fileName,
               outcome: test.outcome,
               durationMs: test.duration,
             });
@@ -273,18 +264,18 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
 
           const details = parseFailureDetails(run.failureDetails);
           const fallback = testMeta.get(run.testId);
-          const location = details?.location
-            ? `${details.location.file}:${details.location.line}`
-            : (details?.filePath ?? fallback?.file ?? '');
+          const specFile = fallback?.file ?? details?.location?.file ?? details?.filePath ?? '';
+          const line = details?.location?.line;
+          const location = specFile && line != null ? `${specFile}:${line}` : specFile;
 
           const card: PdfFailureCard = {
             testId: run.testId,
-            title: details?.testTitle ?? fallback?.title ?? run.testId,
+            title: fallback?.title ?? run.testId,
             location,
             outcome: run.outcome,
             durationMs: run.duration,
             category: run.failureCategory,
-            errorMessage: details?.message,
+            errorMessage: details?.message || undefined,
           };
 
           if (wantAnalysis) {
@@ -562,7 +553,7 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
           data: summary ?? null,
           hasFailures,
           pendingAnalysisCount,
-          pendingEtaMs: getReportEtaMs(id),
+          pendingEtaFinishAt: getReportEtaFinishAt(id),
         });
       } catch (error) {
         fastify.log.error(error);
@@ -573,7 +564,79 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
       }
     });
 
-    // POST /api/report/:id/analyze - trigger analysis for a specific report
+    fastify.get('/api/report/:id/test/:testId/failure', async (request, reply) => {
+      try {
+        const params = validateSchema(GetReportTestParamsSchema, request.params);
+        const run = testDb.getRunByReportAndTest(params.id, params.testId);
+        if (!run) {
+          return reply.status(404).send({ success: false, error: 'Test run not found' });
+        }
+
+        const parsed = parseFailureDetails(run.failureDetails);
+        const artifactState = reportDb.getArtifactState(params.id);
+        const artifactsAvailable = !artifactState?.artifactsMissingAt;
+        const removedKinds = artifactState ? removedAttachmentKinds(artifactState) : [];
+        const base = `${serveReportRoute}/${params.id}`;
+        const attachments = artifactsAvailable
+          ? (parsed?.attachments ?? [])
+              .filter((attachment) => attachment?.path && attachment.contentType)
+              .filter((attachment) => {
+                const kind = attachmentKindOf(attachment.path);
+                return !kind || !removedKinds.includes(kind);
+              })
+              .map((attachment) => ({
+                name: attachment.name,
+                contentType: attachment.contentType,
+                url: `${base}/${attachment.path}`,
+              }))
+          : [];
+
+        const data: ReportTestFailure = {
+          message: parsed?.message ?? null,
+          stackTrace: parsed?.stackTrace ?? null,
+          location: parsed?.location ?? null,
+          artifactsAvailable,
+          removedAttachmentKinds: removedKinds,
+          attachments,
+          traceViewerBase:
+            artifactsAvailable && !removedKinds.includes('trace')
+              ? `${base}/trace/index.html`
+              : null,
+          history: testQueriesDb.getLaneFailureHistory(
+            params.testId,
+            run.fileId,
+            run.project,
+            run.errorSignature ?? null,
+            params.id,
+            run.createdAt
+          ),
+          crossProject: testQueriesDb
+            .getCrossProjectOccurrences(params.testId, run.project)
+            .map((row) => ({
+              project: row.project,
+              isQuarantined: Boolean(row.quarantined),
+              lastRunAt: row.lastRunAt ?? null,
+              stats: {
+                total: row.totalRuns ?? 0,
+                expected: row.expected ?? 0,
+                unexpected: row.unexpected ?? 0,
+                flaky: row.flaky ?? 0,
+                skipped: row.skipped ?? 0,
+              },
+            }))
+            .sort((a, b) => b.stats.total - a.stats.total || a.project.localeCompare(b.project)),
+        };
+
+        return reply.send({ success: true, data });
+      } catch (error) {
+        if (error instanceof ValidationError) {
+          return reply.status(400).send({ success: false, error: error.message });
+        }
+        fastify.log.error(error);
+        return reply.status(500).send({ success: false, error: 'Failed to fetch test failure' });
+      }
+    });
+
     fastify.post(
       '/api/report/:id/analyze',
       { preHandler: authorize(CAPABILITIES.contentLlm) },
@@ -600,7 +663,6 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
             fileId: string,
             proj: string,
             errorSignature: string | undefined,
-            heuristicCategory: string,
             currentReportId: string
           ) => {
             if (!errorSignature) return null;
@@ -609,7 +671,6 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
               fileId,
               proj,
               errorSignature,
-              heuristicCategory,
               currentReportId
             );
           };
@@ -627,15 +688,11 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
               continue;
             }
 
-            const heuristicCategory = detectFailureCategory(
-              parseFailureDetails(run.failureDetails)?.message ?? ''
-            );
             const reuseSource = findReuseSource(
               run.testId,
               run.fileId,
               run.project,
               run.errorSignature,
-              heuristicCategory,
               id
             );
 
@@ -729,14 +786,7 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
 
             const report = uploaded.report;
             reportDb.onCreated(report);
-
-            const { error: testsError } = await withError(
-              testManagementService.processReport(report)
-            );
-
-            if (testsError) {
-              console.error('[routes] upload report - process tests error:', testsError);
-            }
+            await processReportOrRollback(report);
 
             const reportUrl = `${serveReportRoute}/${reportId}/index.html`;
             return { reportId, reportUrl, metadata: validatedMetadata };

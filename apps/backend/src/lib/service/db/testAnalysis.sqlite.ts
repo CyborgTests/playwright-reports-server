@@ -200,7 +200,6 @@ export class TestAnalysisDatabase {
     fileId: string,
     project: string,
     errorSignature: string,
-    failureCategory: string,
     excludeReportId: string
   ): {
     id: string;
@@ -233,7 +232,6 @@ export class TestAnalysisDatabase {
       .where('tla.fileId', '=', fileId)
       .where('tla.project', '=', project)
       .where('tr.error_signature', '=', errorSignature)
-      .where('tr.failure_category', '=', failureCategory)
       .where('tla.analysis', 'is not', null)
       .where(sql`TRIM(tla.analysis)`, '!=', '')
       .where('tla.reportId', '!=', excludeReportId)

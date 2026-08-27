@@ -8,6 +8,7 @@ import Fastify from 'fastify';
 import { env } from './config/env.js';
 import { llmAnalysisQueue } from './lib/llm/queue/index.js';
 import { lifecycle } from './lib/service/lifecycle.js';
+import { closeAllSseStreams } from './lib/sse.js';
 import { registerApiRoutes } from './routes/index.js';
 
 const logByEnv = {
@@ -82,13 +83,6 @@ async function start() {
 
   await registerApiRoutes(fastify);
 
-  const dataDir = resolve(process.env.DATA_DIR || join(process.cwd(), 'data'));
-  await fastify.register(fastifyStatic, {
-    root: dataDir,
-    prefix: '/data/',
-    decorateReply: false,
-  });
-
   if (process.env.NODE_ENV === 'production') {
     const frontendDistPath = resolve(
       process.env.FRONTEND_DIST || join(process.cwd(), '..', '..', 'apps', 'frontend', 'dist')
@@ -124,6 +118,7 @@ async function start() {
     fastify.log.info(`Received signal to terminate: ${signal}`);
     llmAnalysisQueue.stop();
     await lifecycle.cleanup();
+    closeAllSseStreams();
     await fastify.close();
     process.exit(0);
   };

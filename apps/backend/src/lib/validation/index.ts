@@ -10,6 +10,22 @@ export class ValidationError extends Error {
   }
 }
 
+export function zodErrorResponse(error: z.ZodError): {
+  success: false;
+  error: string;
+  issues: Array<{ field: string; message: string }>;
+} {
+  const issues = error.issues.map((issue) => ({
+    field: issue.path.join('.'),
+    message: issue.message,
+  }));
+  return {
+    success: false,
+    error: issues.map((i) => (i.field ? `${i.field}: ${i.message}` : i.message)).join('; '),
+    issues,
+  };
+}
+
 export function validateSchema<T extends z.ZodType>(schema: T, data: unknown): z.infer<T> {
   const result = schema.safeParse(data);
   if (!result.success) {

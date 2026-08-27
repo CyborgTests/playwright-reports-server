@@ -15,7 +15,6 @@ export function useServerEvents(
     if (!enabled || typeof window === 'undefined' || typeof EventSource === 'undefined') {
       return;
     }
-    const source = new EventSource(withBase(path), { withCredentials: true });
     const handler = (event: Event) => {
       const raw = (event as MessageEvent).data;
       let data: unknown;
@@ -28,10 +27,31 @@ export function useServerEvents(
       }
       callbackRef.current(data);
     };
-    source.addEventListener('changed', handler);
+
+    // Each SSE permanently holds one HTTP/1.1 connection from the shared
+    // per-origin pool; an unfocused tab doesn't need live updates
+    // so release the slot while backgrounded.
+    let source: EventSource | null = null;
+    const open = () => {
+      if (source || document.visibilityState === 'hidden') return;
+      source = new EventSource(withBase(path), { withCredentials: true });
+      source.addEventListener('changed', handler);
+    };
+    const close = () => {
+      source?.removeEventListener('changed', handler);
+      source?.close();
+      source = null;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') close();
+      else open();
+    };
+
+    open();
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
-      source.removeEventListener('changed', handler);
-      source.close();
+      document.removeEventListener('visibilitychange', onVisibility);
+      close();
     };
   }, [path, enabled]);
 }

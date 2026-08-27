@@ -1,249 +1,170 @@
-import type {
-  ReportFile,
-  ReportHistory,
-  ReportStats,
-  ReportTest,
-} from '@playwright-reports/shared';
-import { memo, useMemo } from 'react';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
+import type { ReportStats, ReportTest } from '@playwright-reports/shared';
+import { ChevronRight } from 'lucide-react';
+import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { testStatusToColor } from '@/lib/tailwind';
+import { isProblemTest, type TestGroup } from '@/lib/test-groups';
 import { pluralize } from '@/lib/transformers';
-import TestInfo from './test-info';
+import { cn } from '@/lib/utils';
 
-interface SuiteNode {
-  name: string;
-  children: SuiteNode[];
-  tests: ReportTest[];
-}
-
-function computeSuiteStats(suite: SuiteNode): ReportStats {
-  const stats: Required<ReportStats> = {
-    total: 0,
-    expected: 0,
-    unexpected: 0,
-    flaky: 0,
-    skipped: 0,
-    ok: true,
-  };
-  const visit = (node: SuiteNode) => {
-    for (const test of node.tests) {
-      stats.total++;
-      switch (test.outcome) {
-        case 'expected':
-          stats.expected++;
-          break;
-        case 'flaky':
-          stats.flaky++;
-          break;
-        case 'skipped':
-          stats.skipped++;
-          break;
-        default:
-          stats.unexpected++;
-          stats.ok = false;
-          break;
-      }
-    }
-    for (const child of node.children) visit(child);
-  };
-  visit(suite);
-  return stats;
-}
-
-export function StatsBadges({ stats }: { stats: ReportStats }) {
+export function StatsBadges({ stats, noun = 'test' }: { stats: ReportStats; noun?: string }) {
   if (!stats.total) return null;
   return (
     <span className="flex items-center gap-2 text-xs text-muted-foreground font-normal flex-wrap">
       <span>
-        {stats.total} {pluralize(stats.total, 'test')}
+        {stats.total} {pluralize(stats.total, noun)}
       </span>
-      {(stats.expected ?? 0) > 0 && <Badge variant="success">{stats.expected} passed</Badge>}
       {(stats.unexpected ?? 0) > 0 && <Badge variant="danger">{stats.unexpected} failed</Badge>}
       {(stats.flaky ?? 0) > 0 && <Badge variant="warning">{stats.flaky} flaky</Badge>}
+      {(stats.expected ?? 0) > 0 && <Badge variant="success">{stats.expected} passed</Badge>}
       {(stats.skipped ?? 0) > 0 && <Badge variant="secondary">{stats.skipped} skipped</Badge>}
     </span>
   );
 }
 
-function buildTestTree(rootName: string, tests: ReportTest[]): SuiteNode {
-  const root: SuiteNode = { name: rootName, children: [], tests: [] };
-
-  tests.forEach((test) => {
-    const path = test.path || [];
-
-    const noSuites = path.length === 0;
-
-    if (noSuites) {
-      root.tests.push(test);
-
-      return;
-    }
-
-    const lastNodeIndex = path.length - 1;
-
-    path.reduce((currentNode: SuiteNode, suiteName: string, index: number) => {
-      const existingSuite = currentNode.children.find((child) => child.name === suiteName);
-
-      const noMoreSuites = index === lastNodeIndex;
-
-      if (noMoreSuites && existingSuite) {
-        existingSuite.tests.push(test);
-      }
-
-      if (existingSuite) {
-        return existingSuite;
-      }
-
-      const newSuite: SuiteNode = { name: suiteName, children: [], tests: [] };
-
-      currentNode.children.push(newSuite);
-
-      if (noMoreSuites) {
-        newSuite.tests.push(test);
-      }
-
-      return newSuite;
-    }, root);
-  });
-
-  return root;
+interface TestRowProps {
+  test: ReportTest;
+  selected: boolean;
+  isNewRegression?: boolean;
+  isResolvedRegression?: boolean;
+  onSelect: (test: ReportTest) => void;
 }
 
-interface SuiteNodeComponentProps {
-  suite: SuiteNode;
-  history: ReportHistory[];
-  reportId?: string;
-  project?: string;
+const TestRow = ({
+  test,
+  selected,
+  isNewRegression,
+  isResolvedRegression,
+  onSelect,
+}: TestRowProps) => {
+  const status = testStatusToColor(test.outcome || 'expected');
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(test)}
+      aria-pressed={selected}
+      className={cn(
+        'w-full text-left flex items-start gap-2 rounded-md px-2 py-1.5 text-sm',
+        'hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+        selected && 'bg-muted'
+      )}
+    >
+      <span className={cn('shrink-0 leading-5', status.color)} aria-hidden>
+        ●
+      </span>
+      <span className="sr-only">{status.title}</span>
+      <span className="flex-1 min-w-0 truncate">{test.title}</span>
+      {isNewRegression && (
+        <Badge
+          variant="outline"
+          className="border-danger/40 text-danger shrink-0"
+          title="This test newly regressed in this report"
+        >
+          regression
+        </Badge>
+      )}
+      {isResolvedRegression && (
+        <Badge
+          variant="outline"
+          className="border-success/40 text-success shrink-0"
+          title="A prior regression for this test was resolved here"
+        >
+          resolved
+        </Badge>
+      )}
+    </button>
+  );
+};
+
+interface TestGroupListProps {
+  groups: TestGroup[];
+  fileHasProblems: boolean;
+  selectedTestId?: string;
   newRegressionTestIds?: Set<string>;
   resolvedRegressionTestIds?: Set<string>;
+  onSelect: (test: ReportTest) => void;
 }
 
-const SuiteNodeComponent = ({
-  suite,
-  history,
-  reportId,
-  project,
+const TestGroupList = ({
+  groups,
+  fileHasProblems,
+  selectedTestId,
   newRegressionTestIds,
   resolvedRegressionTestIds,
-}: SuiteNodeComponentProps) => {
-  const childStats = useMemo(
-    () => suite.children.map((child) => computeSuiteStats(child)),
-    [suite]
-  );
+  onSelect,
+}: TestGroupListProps) => {
+  const [expandedHealthy, setExpandedHealthy] = useState<string[]>([]);
+
+  const toggle = (label: string) =>
+    setExpandedHealthy((prev) =>
+      prev.includes(label) ? prev.filter((entry) => entry !== label) : [...prev, label]
+    );
 
   return (
-    <Accordion type="multiple" className="pl-4">
-      {[
-        ...suite.children.map((child, idx) => {
-          const stats = childStats[idx];
+    <div className="space-y-3">
+      {groups.map((group) => {
+        const problems = group.tests.filter(isProblemTest);
+        const healthy = group.tests.filter((test) => !isProblemTest(test));
+        const foldHealthy = fileHasProblems && healthy.length > 0;
+        const healthyOpen = expandedHealthy.includes(group.label);
+        const visible = foldHealthy && !healthyOpen ? problems : group.tests;
+        const skipped = healthy.filter((test) => test.outcome === 'skipped').length;
+        const foldLabel = [
+          healthy.length - skipped > 0 ? `${healthy.length - skipped} passing` : '',
+          skipped > 0 ? `${skipped} skipped` : '',
+        ]
+          .filter(Boolean)
+          .join(' and ');
+
+        if (problems.length === 0 && foldHealthy && !healthyOpen) {
           return (
-            <AccordionItem key={child.name} value={child.name}>
-              <AccordionTrigger className="hover:no-underline">
-                <span className="flex flex-row gap-3 items-center w-full justify-between pr-4 flex-wrap">
-                  <span className="font-medium">{child.name}</span>
-                  <StatsBadges stats={stats} />
-                </span>
-              </AccordionTrigger>
-              <AccordionContent>
-                <SuiteNodeComponent
-                  history={history}
-                  reportId={reportId}
-                  suite={child}
-                  project={project}
-                  newRegressionTestIds={newRegressionTestIds}
-                  resolvedRegressionTestIds={resolvedRegressionTestIds}
+            <button
+              key={group.label || '__root__'}
+              type="button"
+              onClick={() => toggle(group.label)}
+              className="flex w-full items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{group.label || 'Tests'}</span>
+              <span className="ml-auto shrink-0">{foldLabel}</span>
+            </button>
+          );
+        }
+
+        return (
+          <div key={group.label || '__root__'} className="space-y-0.5">
+            {group.label && (
+              <p className="px-2 text-xs font-medium text-muted-foreground truncate">
+                {group.label}
+              </p>
+            )}
+            {visible.map((test, index) => (
+              <TestRow
+                key={test.testId || `${group.label}-${index}`}
+                test={test}
+                selected={!!test.testId && test.testId === selectedTestId}
+                isNewRegression={!!test.testId && newRegressionTestIds?.has(test.testId)}
+                isResolvedRegression={!!test.testId && resolvedRegressionTestIds?.has(test.testId)}
+                onSelect={onSelect}
+              />
+            ))}
+            {foldHealthy && (
+              <button
+                type="button"
+                onClick={() => toggle(group.label)}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <ChevronRight
+                  className={cn('h-3.5 w-3.5 transition-transform', healthyOpen && 'rotate-90')}
                 />
-              </AccordionContent>
-            </AccordionItem>
-          );
-        }),
-        ...suite.tests.map((test, testIdx) => {
-          const status = testStatusToColor(test.outcome || 'passed');
-          const isNewRegression = !!test.testId && newRegressionTestIds?.has(test.testId);
-          const isResolvedRegression = !!test.testId && resolvedRegressionTestIds?.has(test.testId);
-          const itemValue = test.testId || `test-${testIdx}`;
-
-          return (
-            <AccordionItem key={itemValue} value={itemValue}>
-              <AccordionTrigger className="hover:no-underline">
-                <span className="flex flex-row gap-4 flex-wrap items-center w-full justify-between pr-4">
-                  <span className="flex items-center gap-2">
-                    {`· ${test.title}`}
-                    <Badge variant="outline" className={status.colorName}>
-                      {status.title}
-                    </Badge>
-                    <Badge variant="secondary">{test.projectName || 'Unknown'}</Badge>
-                    {isNewRegression && (
-                      <Badge
-                        variant="outline"
-                        className="border-danger/40 text-danger"
-                        title="This test newly regressed in this report"
-                      >
-                        regression
-                      </Badge>
-                    )}
-                    {isResolvedRegression && (
-                      <Badge
-                        variant="outline"
-                        className="border-success/40 text-success"
-                        title="A prior regression for this test was resolved here"
-                      >
-                        resolved
-                      </Badge>
-                    )}
-                  </span>
-                </span>
-              </AccordionTrigger>
-              <AccordionContent>
-                <TestInfo history={history} test={test} project={project} reportId={reportId} />
-              </AccordionContent>
-            </AccordionItem>
-          );
-        }),
-      ]}
-    </Accordion>
+                {healthyOpen ? 'Hide' : 'Show'} {foldLabel}
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 };
 
-interface FileSuitesTreeProps {
-  file: ReportFile;
-  history: ReportHistory[];
-  reportId?: string;
-  project?: string;
-  newRegressionTestIds?: Set<string>;
-  resolvedRegressionTestIds?: Set<string>;
-}
-
-const FileSuitesTreeImpl = ({
-  file,
-  history,
-  reportId,
-  project,
-  newRegressionTestIds,
-  resolvedRegressionTestIds,
-}: FileSuitesTreeProps) => {
-  const suiteTree = useMemo(
-    () => buildTestTree(file.fileName || file.name || 'unknown', file.tests || []),
-    [file]
-  );
-
-  return (
-    <SuiteNodeComponent
-      history={history}
-      reportId={reportId}
-      suite={suiteTree}
-      project={project}
-      newRegressionTestIds={newRegressionTestIds}
-      resolvedRegressionTestIds={resolvedRegressionTestIds}
-    />
-  );
-};
-
-const FileSuitesTree = memo(FileSuitesTreeImpl);
-export default FileSuitesTree;
+export default TestGroupList;

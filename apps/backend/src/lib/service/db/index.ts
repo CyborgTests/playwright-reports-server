@@ -1,3 +1,4 @@
+export type { RunDeltaInput } from '../dailyTotals/deltas.js';
 export type { AnalysisFeedbackRow } from './analysisFeedback.sqlite.js';
 export { analysisFeedbackDb } from './analysisFeedback.sqlite.js';
 export type { ApiKeyRecord } from './apiKeys.sqlite.js';
@@ -10,8 +11,8 @@ export type {
   ClusterResolutionRow,
 } from './clusterResolutions.sqlite.js';
 export { clusterResolutionsDb } from './clusterResolutions.sqlite.js';
+export { dailyTotalsDb } from './dailyTotals.sqlite.js';
 export {
-  clearAll,
   closeDatabase,
   createDatabase,
   getDatabase,
@@ -22,8 +23,10 @@ export type { FailureSummaryRow } from './failureSummary.sqlite.js';
 export { failureSummaryDb } from './failureSummary.sqlite.js';
 export type {
   GithubSyncConfigRow,
+  GithubSyncFailedArtifactRow,
   GithubSyncRunRow,
   GithubSyncStateRow,
+  RunOutcomeRow,
 } from './githubSync.sqlite.js';
 export { githubSyncDb } from './githubSync.sqlite.js';
 export type { InviteRecord } from './invites.sqlite.js';
@@ -49,8 +52,12 @@ export { computeProjectCoverageScope } from './queries/projectCoverage.js';
 export type { RegressionSummary } from './regressions.sqlite.js';
 export { regressionsDb, toRegressionContext } from './regressions.sqlite.js';
 export { reportResultsDb } from './reportResults.sqlite.js';
-export type { ReportAnalyticsRow, ReportHistoryLite } from './reports.sqlite.js';
-export { reportDb } from './reports.sqlite.js';
+export type {
+  ArtifactState,
+  ReportAnalyticsRow,
+  ReportHistoryLite,
+} from './reports.sqlite.js';
+export { removedAttachmentKinds, reportDb } from './reports.sqlite.js';
 export type { ResetTokenRecord } from './resetTokens.sqlite.js';
 export { resetTokensDb } from './resetTokens.sqlite.js';
 export { resultDb } from './results.sqlite.js';

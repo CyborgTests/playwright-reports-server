@@ -13,9 +13,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardTitle } from '@/components/ui/card';
-import { withBase } from '@/lib/url';
+import { servedTestHref, withBase } from '@/lib/url';
 import { firstLine } from './failure-pattern-helpers';
-import { servedReportUrl } from './test-detail-widgets';
 
 function ClusterActions({
   cluster,
@@ -275,7 +274,7 @@ export function FailureGroupCard({
                     return (
                       <li key={ref.reportId}>
                         <a
-                          href={servedReportUrl(ref.reportId, testId)}
+                          href={servedTestHref(ref.reportId, testId)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-sm hover:underline inline-flex items-baseline gap-1"

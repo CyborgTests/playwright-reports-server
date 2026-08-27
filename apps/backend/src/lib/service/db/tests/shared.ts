@@ -1,4 +1,4 @@
-import type { FailureCategorySource } from '@playwright-reports/shared';
+import type { FailureCategorySource, TestWithQuarantineInfo } from '@playwright-reports/shared';
 import type Database from 'better-sqlite3';
 import { getDatabase } from '../db.js';
 import { decodeFailureDetails } from '../failureDetailsCodec.js';
@@ -12,6 +12,10 @@ export interface Test {
   title: string;
   createdAt: string;
   flakinessResetAt?: string;
+  projectName?: string | null;
+  suitePath?: string | null;
+  tags?: string | null;
+  latestAnnotations?: string | null;
 }
 
 export interface TestRunRow {
@@ -30,6 +34,7 @@ export interface TestRunRow {
   reportTitle?: string;
   reportDisplayNumber?: number;
   hasTrace?: boolean;
+  annotations?: string | null;
 }
 
 export interface TestState {
@@ -41,16 +46,7 @@ export interface TestState {
   flakinessResetAt: string | null;
 }
 
-export interface TestWithQuarantineInfoRow extends Test {
-  isQuarantined?: boolean;
-  quarantinedAt?: string;
-  quarantineReason?: string;
-  flakinessScore?: number;
-  flakinessResetAt?: string;
-  totalRuns?: number;
-  lastRunAt?: string;
-  runs?: TestRunRow[];
-}
+export type TestWithQuarantineInfoRow = TestWithQuarantineInfo;
 
 export interface DerivedPageRow {
   testId: string;
@@ -69,6 +65,8 @@ export interface DerivedPageRow {
   recentPassRate: number;
   avgDuration: number | null;
   flakinessResetAt: string | null;
+  tags: string | null;
+  latestAnnotations: string | null;
 }
 
 export interface TestRunDbRow {
@@ -111,7 +109,7 @@ export function convertDbRowToTestRun(row: TestRunDbRow): TestRunRow {
 
 export const REFRESH_TEST_STAT_SQL = `
   WITH recent AS (
-    SELECT outcome, duration, createdAt
+    SELECT outcome, duration, createdAt, annotations
     FROM test_runs
     WHERE testId=:testId AND fileId=:fileId AND project=:project
     ORDER BY createdAt DESC
@@ -145,7 +143,8 @@ export const REFRESH_TEST_STAT_SQL = `
     latestNonSkippedAt = (SELECT createdAt FROM latest_ns),
     latestFailureCategory = (SELECT failure_category FROM latest_ns),
     recentPassRate = (SELECT recentPassRate FROM recent_agg),
-    avgDuration = (SELECT avgDuration FROM recent_agg)
+    avgDuration = (SELECT avgDuration FROM recent_agg),
+    latestAnnotations = (SELECT annotations FROM recent ORDER BY createdAt DESC LIMIT 1)
   WHERE testId=:testId AND fileId=:fileId AND project=:project
 `;
 

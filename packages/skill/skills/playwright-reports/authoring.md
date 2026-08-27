@@ -8,7 +8,7 @@ This file is loaded **only** when the user explicitly asks you to author or subm
 
 - **`409 Conflict` on submit** → an analysis/summary already exists. Ask the user before passing `--force`; never overwrite silently.
 - **You haven't read the evidence first.** Authoring without running `failure-context` / `report brief` / `stats` is worse than no analysis.
-- **You're below "medium" confidence** in the root cause. Submit `--category investigate` + a one-line "needs human review" comment instead of a speculative full analysis.
+- **You're below "medium" confidence** in the root cause. Submit `--category unknown` + a one-line "needs human review" comment instead of a speculative full analysis.
 - **The user hasn't approved a dissent.** Always ask before posting `test feedback` - feedback is permanent and visible on the dashboard.
 
 ## Decision rule
@@ -47,10 +47,18 @@ pwrs-cli test analysis-submit <testId> \
     --report-id <reportId> \
     --analysis-file /tmp/analysis.md \
     --model <your-model-id>     # e.g. claude-opus-4-7
-    [--category <c>]            # optional; from `pwrs-cli category list`
+    [--category <c>]            # root cause: app_bug | test_bug | environment | slow_path | unknown
 ```
 
 Pass `--analysis-file -` to read from stdin instead of a file.
+
+**Always pass `--category`.** Without it the run keeps its heuristic label
+(`unknown`, `element_not_visible`, …) everywhere the category is displayed - the
+analytics dashboard, the report chips, `--failure-category` filters - while your
+analysis says something else. The five values above are the *root-cause* axis
+("what must change?"); they are **not** the `pwrs-cli category list` vocabulary,
+which enumerates heuristic symptom labels for `--failure-category` and is
+rejected here.
 
 On `409 Conflict`, an analysis already exists - switch to the dissent flow. Do not pass `--force` unless the user has explicitly approved overwriting.
 

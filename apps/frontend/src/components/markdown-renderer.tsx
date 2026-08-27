@@ -1,14 +1,12 @@
 import { isValidElement, memo, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link as RouterLink } from 'react-router-dom';
-import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import { rehypeHighlightMini } from '@/lib/rehype-highlight-mini';
-import { rehypeStripDangerous } from '@/lib/rehype-strip-dangerous';
 import { CopyButton } from './copy-button';
 import { Badge } from './ui/badge';
 
-const rehypePlugins = [rehypeHighlightMini, rehypeRaw, rehypeStripDangerous];
+const rehypePlugins = [rehypeHighlightMini];
 const remarkPlugins = [remarkGfm];
 
 /** Resolve a `pwrs:` URL (emitted by the LLM analyses for inline test/report

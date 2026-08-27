@@ -1,4 +1,8 @@
-import type { ClusterAnchor, ClusterRegressionContext } from '@playwright-reports/shared';
+import type {
+  ClusterAnchor,
+  ClusterRegressionContext,
+  SourceLocation,
+} from '@playwright-reports/shared';
 import { defaultConfig } from '../config.js';
 import { parseFailureDetails } from '../failure-clustering/extractors/failure-details.js';
 import { extractFrameFromFailure } from '../failure-clustering/extractors/stack-trace.js';
@@ -26,12 +30,6 @@ const CLUSTER_OTHER_TESTS_MAX = 5;
 const SAMPLE_FAILED_TESTS_PER_CLUSTER = 3;
 const SAMPLE_UNCLUSTERED_FAILURES = 5;
 const ERROR_FIRST_LINE_MAX_CHARS = 240;
-
-interface FailureLocation {
-  file: string;
-  line: number;
-  column?: number;
-}
 
 type NormalizedOutcome = 'passed' | 'failed' | 'flaky' | 'skipped';
 
@@ -61,10 +59,10 @@ export interface TestBrief {
     error: string;
     category?: string;
     signature?: string;
-    location?: FailureLocation;
+    location?: SourceLocation;
     appFrame?: string;
     reportId: string;
-    reportUrl?: string;
+    reportUrl?: string | null;
     createdAt: string;
     attachments?: {
       screenshotUrl?: string;
@@ -132,7 +130,7 @@ interface ReportBriefBase {
   title?: string;
   project: string;
   createdAt: string;
-  reportUrl: string;
+  reportUrl: string | null;
   stats: { total: number; passed: number; failed: number; flaky: number; skipped: number };
   clusterSummary: ReportBriefCluster[];
   unclusteredFailures: number;
@@ -235,8 +233,7 @@ export function resolveTestRun(
   testId: string,
   reportId: string
 ): { fileId: string; project: string; errorSignature?: string } | null {
-  const runs = testDb.getTestRunsByReport(reportId);
-  const run = runs.find((r) => r.testId === testId);
+  const run = testDb.getRunByReportAndTest(reportId, testId);
   if (!run) return null;
   return {
     fileId: run.fileId,
@@ -756,7 +753,7 @@ export async function buildFailureCategories(project?: string) {
 }
 
 export function buildAttachmentUrls(
-  reportUrl: string | undefined,
+  reportUrl: string | null | undefined,
   attachments: { name: string; path: string; contentType: string }[] | undefined
 ): { screenshotUrl?: string; errorContextUrl?: string } | undefined {
   if (!reportUrl || !attachments || attachments.length === 0) return undefined;

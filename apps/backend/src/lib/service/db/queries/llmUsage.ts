@@ -101,6 +101,8 @@ export function getUsageByModel(fromDate: string): UsageByModel[] {
             .selectFrom('llm_tasks as c')
             .select('c.id')
             .whereRef('c.parentTaskId', '=', 'llm_tasks.id')
+            .where('c.status', '=', 'completed')
+            .where('c.totalTokens', 'is not', null)
         )
       )
     )

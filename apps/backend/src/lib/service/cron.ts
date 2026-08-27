@@ -1,6 +1,16 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { STORAGE_TYPES } from '@playwright-reports/shared';
+import {
+  CLEANUP_KINDS,
+  CLEANUP_RULES,
+  CLEANUP_SCHEDULE_KEYS,
+  type CleanupKind,
+  type CleanupScheduleKey,
+  type CronConfig,
+  cleanupDays,
+  isCleanupConfirmed,
+  STORAGE_TYPES,
+} from '@playwright-reports/shared';
 import { Cron } from 'croner';
 import { env } from '../../config/env.js';
 import { defaultCronConfig } from '../../lib/config.js';
@@ -15,7 +25,7 @@ import {
   resetTokensDb,
   sessionsDb,
 } from './db/index.js';
-import { service } from './index.js';
+import { retentionCutoff, service } from './index.js';
 
 // Shared croner behavioural policy: `unref` so jobs never block process exit,
 // `protect` so an overrun is skipped rather than overlapped. Logging/naming stays
@@ -28,14 +38,6 @@ const runningCron = Symbol.for('playwright.reports.cron.service');
 const instance = globalThis as typeof globalThis & {
   [runningCron]?: CronService;
 };
-
-interface JobSpec {
-  name: 'reports' | 'results';
-  expireDays: number | undefined;
-  expression: string | undefined;
-  timeoutMs: number;
-  task: () => Promise<void>;
-}
 
 export class CronService {
   public initialized = false;
@@ -138,12 +140,6 @@ export class CronService {
 
   private async scheduleJobs() {
     const cfg = await service.getConfig();
-    const reportDays = cfg.cron?.reportExpireDays ?? defaultCronConfig.reportExpireDays;
-    const resultDays = cfg.cron?.resultExpireDays ?? defaultCronConfig.resultExpireDays;
-    const reportSchedule =
-      cfg.cron?.reportExpireCronSchedule ?? defaultCronConfig.reportExpireCronSchedule;
-    const resultSchedule =
-      cfg.cron?.resultExpireCronSchedule ?? defaultCronConfig.resultExpireCronSchedule;
 
     console.log('[cron-job] scheduling cron tasks...');
 
@@ -196,21 +192,10 @@ export class CronService {
       },
     ];
 
+    const cron = cfg.cron ?? {};
+
     const candidates: Array<Cron | undefined> = [
-      this.scheduleJob({
-        name: 'reports',
-        expireDays: reportDays,
-        expression: reportSchedule,
-        timeoutMs: CronService.CLEANUP_TIMEOUT_MS,
-        task: () => this.runCleanup('reports'),
-      }),
-      this.scheduleJob({
-        name: 'results',
-        expireDays: resultDays,
-        expression: resultSchedule,
-        timeoutMs: CronService.CLEANUP_TIMEOUT_MS,
-        task: () => this.runCleanup('results'),
-      }),
+      ...CLEANUP_SCHEDULE_KEYS.map((scheduleKey) => this.scheduleCleanupGroup(cron, scheduleKey)),
       ...fixed
         .filter((f) => f.enabled !== false)
         .map((f) => this.buildCron(f.name, f.expression, f.timeoutMs, f.task, f.detail)),
@@ -251,7 +236,7 @@ export class CronService {
     const nowIso = new Date().toISOString();
     const sessions = sessionsDb.pruneExpiredSessions(nowIso);
     const resetTokens = resetTokensDb.pruneResetTokens(nowIso);
-    const auditCutoff = this.cutoffISO(CronService.AUTH_AUDIT_RETENTION_DAYS);
+    const auditCutoff = retentionCutoff(CronService.AUTH_AUDIT_RETENTION_DAYS);
     const audit = authAuditDb.pruneAuditOlderThan(auditCutoff);
     if (sessions + resetTokens + audit > 0) {
       console.log(
@@ -260,31 +245,69 @@ export class CronService {
     }
   }
 
-  private scheduleJob(spec: JobSpec): Cron | undefined {
-    if (!spec.expireDays || spec.expireDays <= 0) {
-      console.log(`[cron-job] ${spec.name} cleanup disabled (expireDays not set), skipping`);
-      return undefined;
-    }
-    if (!spec.expression) {
+  private scheduleCleanupGroup(
+    cron: CronConfig,
+    scheduleKey: CleanupScheduleKey
+  ): Cron | undefined {
+    const kinds = CLEANUP_KINDS.filter((kind) => CLEANUP_RULES[kind].scheduleKey === scheduleKey);
+    const confirmedKinds = kinds.filter((kind) => {
+      const days = cleanupDays(cron, kind);
+      if (!days) {
+        console.log(`[cron-job] ${kind} cleanup disabled (expireDays not set), skipping`);
+        return false;
+      }
+      if (!isCleanupConfirmed(cron, kind)) {
+        console.log(
+          `[cron-job] ${kind} cleanup awaiting confirmation for its ${days}d window, skipping`
+        );
+        return false;
+      }
+      return true;
+    });
+    if (confirmedKinds.length === 0) return undefined;
+
+    const expression = cron[scheduleKey] ?? defaultCronConfig[scheduleKey];
+    if (!expression) {
       console.warn(
-        `[cron-job] ${spec.name} cleanup has expireDays=${spec.expireDays} but no schedule expression, skipping`
+        `[cron-job] ${scheduleKey} has confirmed cleanup rules but no schedule expression, skipping`
       );
       return undefined;
     }
+
     return this.buildCron(
-      spec.name,
-      spec.expression,
-      spec.timeoutMs,
-      spec.task,
-      ` cleanup (older than ${spec.expireDays}d)`
+      scheduleKey,
+      expression,
+      CronService.CLEANUP_TIMEOUT_MS * confirmedKinds.length,
+      async () => {
+        for (const kind of confirmedKinds) {
+          const { error } = await withError(this.runCleanupForKind(kind));
+          if (error) console.error(`[cron-job] ${kind} cleanup failed:`, error);
+        }
+        this.runDbMaintenance();
+      },
+      ` cleanup (${confirmedKinds.map((kind) => `${kind} ${cleanupDays(cron, kind)}d`).join(', ')})`
     );
   }
 
-  private cutoffISO(days: number): string {
-    return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  /** Routes one rule to its deleter. Every rule re-reads config so unconfirming mid-run stops it. */
+  private async runCleanupForKind(kind: CleanupKind): Promise<void> {
+    const cfg = await service.getConfig();
+    const cron = cfg.cron ?? {};
+    if (!isCleanupConfirmed(cron, kind)) {
+      console.log(`[cron-job] ${kind} cleanup skipped: no longer confirmed`);
+      return;
+    }
+    if (kind === 'reports' || kind === 'results') return this.runRecordCleanup(kind);
+
+    const days = cleanupDays(cron, kind);
+    if (!days) return;
+    const cutoff = retentionCutoff(days);
+
+    if (kind === 'reportFiles') return service.deleteExpiredReportFiles(cutoff);
+    return service.deleteExpiredAttachments(kind, cutoff);
   }
 
-  private async runCleanup(kind: 'reports' | 'results'): Promise<void> {
+  private async runRecordCleanup(kind: 'reports' | 'results'): Promise<void> {
     const cfg = await service.getConfig();
     const expireDays =
       kind === 'reports'
@@ -299,7 +322,7 @@ export class CronService {
     const deleteFn = (ids: string[]) =>
       kind === 'reports' ? service.deleteReports(ids) : service.deleteResults(ids);
 
-    const cutoff = this.cutoffISO(expireDays);
+    const cutoff = retentionCutoff(expireDays);
     const batchSize = CronService.CLEANUP_BATCH_SIZE;
     let totalDeleted = 0;
     console.log(`[cron-job] starting outdated ${kind} cleanup (cutoff=${cutoff})`);
@@ -362,7 +385,7 @@ export class CronService {
   }
 
   private runDbMaintenance() {
-    const cutoff = this.cutoffISO(CronService.LLM_TASKS_RETENTION_DAYS);
+    const cutoff = retentionCutoff(CronService.LLM_TASKS_RETENTION_DAYS);
     const prunedTasks = llmTasksDb.pruneCompletedOlderThan(cutoff);
     if (prunedTasks > 0) {
       console.log(`[cron-job] db-maintenance pruned ${prunedTasks} completed llm_tasks row(s)`);

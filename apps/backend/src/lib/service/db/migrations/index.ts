@@ -4,6 +4,12 @@ import type { Database } from '../kysely.js';
 import * as baseline from './0001_baseline.js';
 import * as testRunsDurationIndex from './0002_test_runs_duration_index.js';
 import * as llmAnalysesCreatedIndex from './0003_llm_analyses_created_index.js';
+import * as testDefinitionColumns from './0004_test_definition_columns.js';
+import * as dropReportsFiles from './0005_drop_reports_files.js';
+import * as testsFtsTagsAnnotations from './0006_tests_fts_tags_annotations.js';
+import * as reportCleanupState from './0007_report_cleanup_state.js';
+import * as dailyTestTotals from './0008_daily_test_totals.js';
+import * as githubSyncFailedArtifacts from './0009_github_sync_failed_artifacts.js';
 
 const MIGRATIONS: Record<string, Migration> = {
   '0001_baseline': { up: baseline.up, down: baseline.down },
@@ -14,6 +20,18 @@ const MIGRATIONS: Record<string, Migration> = {
   '0003_llm_analyses_created_index': {
     up: llmAnalysesCreatedIndex.up,
     down: llmAnalysesCreatedIndex.down,
+  },
+  '0004_test_definition_columns': {
+    up: testDefinitionColumns.up,
+    down: testDefinitionColumns.down,
+  },
+  '0005_drop_reports_files': { up: dropReportsFiles.up, down: dropReportsFiles.down },
+  '0006_tests_fts_tags_annotations': { up: testsFtsTagsAnnotations.up },
+  '0007_report_cleanup_state': { up: reportCleanupState.up },
+  '0008_daily_test_totals': { up: dailyTestTotals.up, down: dailyTestTotals.down },
+  '0009_github_sync_failed_artifacts': {
+    up: githubSyncFailedArtifacts.up,
+    down: githubSyncFailedArtifacts.down,
   },
 };
 

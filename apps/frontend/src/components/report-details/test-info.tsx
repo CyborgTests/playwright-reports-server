@@ -1,159 +1,111 @@
-import type {
-  ReportHistory,
-  ReportTest,
-  ReportTestOutcome,
-  TestHistory,
-} from '@playwright-reports/shared';
+import type { ReportTest } from '@playwright-reports/shared';
 import { formatDuration } from '@playwright-reports/shared';
-import { ExternalLink } from 'lucide-react';
+import { ArrowUpRight, Clock } from 'lucide-react';
 import type { FC } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import FormattedDate from '@/components/date-format';
-import { LinkIcon } from '@/components/icons';
-import { subtitle } from '@/components/primitives';
-import { Button } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { testStatusToColor } from '@/lib/tailwind';
-import { withBase } from '@/lib/url';
+import { outcomeBadge } from '@/components/outcome-badge';
+import { Badge } from '@/components/ui/badge';
+import { isProblemTest } from '@/lib/test-groups';
+import { servedTestUrl } from '@/lib/url';
 import RootCauseCategoryEditor from './RootCauseCategoryEditor';
+import TestDebugPanel from './test-debug-panel';
 
 interface TestInfoProps {
-  history: ReportHistory[];
   test: ReportTest;
   project?: string;
   reportId?: string;
+  suitePath?: string[];
+  fileName?: string;
+  reportUrl?: string | null;
 }
 
-const getTestHistory = (testId: string, history: ReportHistory[]) => {
-  if (!testId || !Array.isArray(history)) {
-    return [];
-  }
-
-  return history
-    .map((report) => {
-      if (!report?.files) {
-        return null;
-      }
-
-      const file = report.files.find((file) => file.tests?.some((test) => test.testId === testId));
-
-      if (!file) {
-        return null;
-      }
-
-      const test = file.tests?.find((test) => test.testId === testId);
-
-      if (!test) {
-        return null;
-      }
-
-      return {
-        ...test,
-        createdAt: report.createdAt,
-        reportID: report.reportID,
-        reportUrl: report.reportUrl,
-      } as TestHistory;
-    })
-    .filter((item): item is TestHistory => item !== null);
-};
-
-const TestInfo: FC<TestInfoProps> = ({ test, history, project, reportId }: TestInfoProps) => {
-  if (!test) {
-    return <div className="shadow-md rounded-lg p-6">No test data available</div>;
-  }
-
-  const formatted = testStatusToColor(test.outcome || 'expected');
-  const safeHistory = Array.isArray(history) ? history : [];
-  const testHistory = getTestHistory(test.testId || 'unknown', safeHistory);
+const TestInfo: FC<TestInfoProps> = ({
+  test,
+  project,
+  reportId,
+  suitePath,
+  fileName,
+  reportUrl,
+}) => {
+  const { testId } = test;
   const detailHref =
-    test.testId && project
-      ? `/test/${test.testId}?project=${encodeURIComponent(project)}`
-      : undefined;
+    testId && project ? `/test/${testId}?project=${encodeURIComponent(project)}` : undefined;
+  const reportHref = testId ? servedTestUrl(reportUrl, testId) : undefined;
+  const isFailing = isProblemTest(test);
 
   return (
-    <div className="shadow-md rounded-lg p-6">
-      <div className="mb-4 space-y-1">
-        <p>
-          Outcome: <span className={formatted.color}>{formatted.title}</span>
-        </p>
-        {reportId &&
-          test.testId &&
-          project &&
-          (test.outcome === 'unexpected' || test.outcome === 'flaky') && (
-            <div className="flex items-center gap-2">
-              <span>Root cause:</span>
-              <RootCauseCategoryEditor testId={test.testId} reportId={reportId} project={project} />
-            </div>
-          )}
-        <p>
-          Location:{' '}
-          {`${test.location?.file || 'unknown'}:${test.location?.line || 0}:${test.location?.column || 0}`}
-        </p>
-        <p>Duration: {formatDuration(test.duration || 0)}</p>
-        {test.annotations && test.annotations.length > 0 && (
-          <p>Annotations: {test.annotations.map((a) => JSON.stringify(a)).join(', ')}</p>
+    <div className="rounded-lg border bg-card p-5 space-y-4">
+      <div className="space-y-1">
+        {(fileName || suitePath?.length) && (
+          <p className="text-xs text-muted-foreground truncate">
+            {[fileName, ...(suitePath ?? [])].filter(Boolean).join(' › ')}
+          </p>
         )}
-        {test.tags && test.tags.length > 0 && <p>Tags: {test.tags.join(', ')}</p>}
-        {detailHref && (
-          <div className="pt-2">
-            <Button variant="outline" size="sm" asChild>
-              <RouterLink to={detailHref}>
-                <ExternalLink className="h-3.5 w-3.5 mr-1" />
-                View test details
-              </RouterLink>
-            </Button>
-          </div>
-        )}
+        <h3 className="font-medium leading-snug">{test.title}</h3>
       </div>
-      {!!testHistory?.length && (
-        <div>
-          <h3 className={subtitle()}>Results:</h3>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Created At</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {testHistory.filter(Boolean).map((item) => {
-                const itemOutcome = testStatusToColor(
-                  (item.outcome as ReportTestOutcome) || 'expected'
-                );
 
-                return (
-                  <TableRow key={`${item.reportID}-${item.testId}`}>
-                    <TableCell className="w-3/8">
-                      <FormattedDate date={item.createdAt || ''} />
-                    </TableCell>
-                    <TableCell className="w-2/8">
-                      <span className={itemOutcome.color}>{itemOutcome.title}</span>
-                    </TableCell>
-                    <TableCell className="w-2/8">{formatDuration(item.duration || 0)}</TableCell>
-                    <TableCell className="w-1/8">
-                      <RouterLink
-                        to={`${withBase(item.reportUrl || '')}#?testId=${item.testId || ''}`}
-                        target="_blank"
-                      >
-                        <LinkIcon />
-                      </RouterLink>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        {outcomeBadge(test.outcome)}
+        <span className="flex items-center gap-1 text-muted-foreground">
+          <Clock className="h-3.5 w-3.5" />
+          {formatDuration(test.duration || 0)}
+        </span>
+        {test.projectName && <Badge variant="secondary">{test.projectName}</Badge>}
+        {test.tags?.map((tag) => (
+          <Badge
+            key={tag}
+            variant="outline"
+            className="font-normal text-muted-foreground border border-border"
+          >
+            {tag}
+          </Badge>
+        ))}
+      </div>
+
+      {isFailing && testId && reportId && project && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Root cause</span>
+          <RootCauseCategoryEditor testId={testId} reportId={reportId} project={project} />
         </div>
       )}
+
+      {test.annotations && test.annotations.length > 0 && (
+        <div className="space-y-1 text-sm">
+          {test.annotations.map((annotation) => (
+            <p key={`${annotation.type}:${annotation.description ?? ''}`}>
+              <span className="text-muted-foreground">{annotation.type}</span>
+              {annotation.description ? `: ${annotation.description}` : ''}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {isFailing && testId && reportId && (
+        <TestDebugPanel reportId={reportId} testId={testId} project={project} />
+      )}
+
+      <div className="flex flex-wrap items-center gap-4 pt-1">
+        {detailHref && (
+          <RouterLink
+            to={detailHref}
+            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+          >
+            Open test details
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </RouterLink>
+        )}
+        {reportHref && (
+          <a
+            href={reportHref}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+          >
+            Open in Playwright report
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </a>
+        )}
+      </div>
     </div>
   );
 };

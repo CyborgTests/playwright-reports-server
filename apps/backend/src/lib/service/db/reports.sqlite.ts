@@ -1,10 +1,19 @@
-import type { ReportStats } from '@playwright-reports/shared';
+import {
+  ATTACHMENT_CLEANUP_KINDS,
+  type AttachmentCleanupKind,
+  type ReportStats,
+} from '@playwright-reports/shared';
 import { type ExpressionBuilder, type SelectQueryBuilder, sql } from 'kysely';
-import { defaultProjectName } from '../../constants.js';
-import type { ReadReportsInput, ReadReportsOutput, ReportHistory } from '../../storage/types.js';
-import { withError } from '../../withError.js';
+import { defaultProjectName, serveReportRoute } from '../../constants.js';
+import type {
+  AttachmentSizes,
+  ReadReportsInput,
+  ReadReportsOutput,
+  ReportHistory,
+  ReportPath,
+} from '../../storage/types.js';
 import { dataEvents } from '../dataEvents.js';
-import { testManagementService } from '../test-management/index.js';
+import { dailyTotalsDb } from './dailyTotals.sqlite.js';
 import { getDatabase } from './db.js';
 import { type Database, getKysely, type ReportsRow } from './kysely.js';
 import { projectSummaryDb } from './projectSummary.sqlite.js';
@@ -12,6 +21,69 @@ import { singletonOf } from './singleton.js';
 import { distinctTags, replaceReportTags } from './tagsSync.js';
 import { testDb } from './tests.sqlite.js';
 import { chunk, parseJsonColumn } from './utils.js';
+
+export interface ArtifactState {
+  artifactsMissingAt: string | null;
+  tracesDeletedAt: string | null;
+  videosDeletedAt: string | null;
+  screenshotsDeletedAt: string | null;
+}
+
+export interface ReportStorageRow {
+  reportID: string;
+  storagePath: string | null;
+  sizeBytes: number;
+  attachmentSizes: string | null;
+  artifactsMissingAt: string | null;
+}
+
+export interface CleanupCursor {
+  createdAt: string;
+  reportID: string;
+}
+
+export interface CleanupCandidate extends CleanupCursor {
+  storagePath: string | null;
+}
+
+const DELETED_COLUMN: Record<AttachmentCleanupKind, keyof ArtifactState> = {
+  trace: 'tracesDeletedAt',
+  video: 'videosDeletedAt',
+  screenshot: 'screenshotsDeletedAt',
+};
+
+const EXPIRED_EXCEPT_OPEN_REGRESSIONS = `createdAt < ?
+   AND reportID NOT IN (
+     SELECT regressedAtReportId FROM regressions WHERE recoveredAtReportId IS NULL
+   )`;
+
+const AFTER_CURSOR = 'AND (createdAt, reportID) > (?, ?)';
+
+const hasAttachmentsOfKind = (kind: AttachmentCleanupKind) =>
+  `(attachmentSizes IS NULL OR COALESCE(json_extract(attachmentSizes, '$.${kind}.bytes'), 0) > 0)`;
+
+const attachmentEstimateSql = (kind: AttachmentCleanupKind) => `
+  SELECT
+    COALESCE(SUM(CASE WHEN ${hasAttachmentsOfKind(kind)} THEN 1 ELSE 0 END), 0) AS affectedRows,
+    COALESCE(SUM(json_extract(attachmentSizes, '$.${kind}.count')), 0) AS items,
+    COALESCE(SUM(json_extract(attachmentSizes, '$.${kind}.bytes')), 0) AS bytes,
+    COALESCE(SUM(CASE WHEN attachmentSizes IS NULL THEN 1 ELSE 0 END), 0) AS unmeasured
+  FROM reports
+  WHERE ${EXPIRED_EXCEPT_OPEN_REGRESSIONS} AND ${DELETED_COLUMN[kind]} IS NULL AND artifactsMissingAt IS NULL`;
+
+const cursorParams = (after: CleanupCursor | null): [string, string] => [
+  after?.createdAt ?? '',
+  after?.reportID ?? '',
+];
+
+export const cursorOf = (rows: CleanupCursor[]): CleanupCursor | null =>
+  rows.length > 0
+    ? { createdAt: rows[rows.length - 1].createdAt, reportID: rows[rows.length - 1].reportID }
+    : null;
+
+export function removedAttachmentKinds(state: ArtifactState): AttachmentCleanupKind[] {
+  return ATTACHMENT_CLEANUP_KINDS.filter((kind) => state[DELETED_COLUMN[kind]] !== null);
+}
 
 function statsFromColumns(
   row: Pick<
@@ -47,7 +119,7 @@ export interface ReportHistoryLite {
   title?: string;
   displayNumber?: number;
   createdAt: string;
-  reportUrl: string;
+  reportUrl: string | null;
   size?: string;
   sizeBytes: number;
   stats?: ReportStats;
@@ -66,13 +138,22 @@ type ReportRow = ReportsRow;
 
 type ReportSummaryRow = Pick<
   ReportRow,
-  'reportID' | 'project' | 'title' | 'displayNumber' | 'createdAt' | 'reportUrl'
+  | 'reportID'
+  | 'project'
+  | 'title'
+  | 'displayNumber'
+  | 'createdAt'
+  | 'reportUrl'
+  | 'artifactsMissingAt'
 >;
 
-// every `reports` column except `files` - the full test-file tree.
-// list/analytics paths that never read `.files` use this to avoid
-// transferring and JSON.parsing it per row.
-const REPORT_COLUMNS_WITHOUT_FILES = [
+type ReportSummary = Omit<ReportSummaryRow, 'reportUrl'> & { reportUrl: string | null };
+
+function servedReportUrl(row: Pick<ReportRow, 'reportUrl' | 'artifactsMissingAt'>): string | null {
+  return row.artifactsMissingAt ? null : row.reportUrl;
+}
+
+const REPORT_LIST_COLUMNS = [
   'reportID',
   'project',
   'title',
@@ -90,6 +171,7 @@ const REPORT_COLUMNS_WITHOUT_FILES = [
   'statFlaky',
   'statSkipped',
   'storagePath',
+  'artifactsMissingAt',
 ] as const satisfies ReadonlyArray<keyof ReportsRow>;
 
 const REPORT_ANALYTICS_COLUMNS = [
@@ -133,15 +215,21 @@ export class ReportDatabase {
   private readonly k = getKysely();
   private readonly db = getDatabase();
 
+  private writeBatched<T>(sql: string, rows: T[], bind: (row: T, now: string) => unknown[]): void {
+    if (rows.length === 0) return;
+    const stmt = this.db.prepare(sql);
+    const now = new Date().toISOString();
+    const tx = this.db.transaction((batch: T[]) => {
+      for (const row of batch) stmt.run(...bind(row, now));
+    });
+    for (const batch of chunk(rows, 500)) tx(batch);
+  }
+
   public getExpiredIds(cutoffISO: string, limit: number): string[] {
     const rows = this.db
       .prepare(
         `SELECT reportID FROM reports
-         WHERE createdAt < ?
-           AND reportID NOT IN (
-             SELECT regressedAtReportId FROM regressions
-             WHERE recoveredAtReportId IS NULL
-           )
+         WHERE ${EXPIRED_EXCEPT_OPEN_REGRESSIONS}
          ORDER BY createdAt ASC
          LIMIT ?`
       )
@@ -153,55 +241,6 @@ export class ReportDatabase {
     if (this.initialized) return;
     this.initialized = true;
     console.log(`[report db] initialized (${this.getCount()} reports)`);
-  }
-
-  public async populateTestRuns(): Promise<void> {
-    if (!this.initialized) {
-      console.warn('[report db] Reports database not initialized, skipping processing');
-      return;
-    }
-
-    try {
-      const unprocessedCompiled = this.k
-        .selectFrom('reports')
-        .select('reportID')
-        .where('reportID', 'not in', this.k.selectFrom('test_runs').select('reportId').distinct())
-        .orderBy('createdAt', 'asc')
-        .compile();
-      const unprocessedRows = this.db
-        .prepare(unprocessedCompiled.sql)
-        .all(...unprocessedCompiled.parameters) as Array<{ reportID: string }>;
-
-      if (!unprocessedRows.length) {
-        console.log('[report db] All reports have already been parsed');
-        return;
-      }
-
-      console.log(`[report db] Processing ${unprocessedRows.length} unprocessed reports`);
-
-      let processedCount = 0;
-      let errorCount = 0;
-
-      for (const { reportID } of unprocessedRows) {
-        const report = this.getByID(reportID);
-        if (!report) continue;
-        const { error } = await withError(testManagementService.processReport(report));
-
-        if (error) {
-          console.error(`[report db] Error processing report ${reportID}:`, error);
-          errorCount++;
-        }
-
-        processedCount++;
-      }
-
-      console.log(
-        `[report db] Processing complete: ${processedCount} reports processed, ${errorCount} errors`
-      );
-    } catch (error) {
-      console.error('[report db] Failed to process existing reports:', error);
-      throw error;
-    }
   }
 
   private insertReport(report: ReportHistory): void {
@@ -238,11 +277,10 @@ export class ReportDatabase {
         title: title || null,
         displayNumber: displayNumber || null,
         createdAt: createdAtStr,
-        reportUrl,
+        reportUrl: reportUrl ?? `${serveReportRoute}/${reportID}/index.html`,
         size: size || null,
         sizeBytes: sizeBytes || 0,
         metadata: JSON.stringify(metadata),
-        files: files ? JSON.stringify(files) : null,
         passRate: computePassRateFromStats(stats),
         statTotal: stats?.total ?? null,
         statExpected: stats?.expected ?? null,
@@ -260,6 +298,11 @@ export class ReportDatabase {
       })
       .onConflict((oc) =>
         oc.column('reportID').doUpdateSet((eb) => ({
+          artifactsMissingAt: null,
+          attachmentSizes: null,
+          tracesDeletedAt: null,
+          videosDeletedAt: null,
+          screenshotsDeletedAt: null,
           project: eb.ref('excluded.project'),
           title: eb.ref('excluded.title'),
           displayNumber: eb.ref('excluded.displayNumber'),
@@ -268,7 +311,6 @@ export class ReportDatabase {
           size: eb.ref('excluded.size'),
           sizeBytes: eb.ref('excluded.sizeBytes'),
           metadata: eb.ref('excluded.metadata'),
-          files: eb.ref('excluded.files'),
           passRate: eb.ref('excluded.passRate'),
           statTotal: eb.ref('excluded.statTotal'),
           statExpected: eb.ref('excluded.statExpected'),
@@ -351,6 +393,7 @@ export class ReportDatabase {
         if (setProject && nextProject !== row.project) {
           const oldProject = row.project;
           const movedAt = new Date().toISOString();
+          dailyTotalsDb.moveReport(id, oldProject, nextProject);
           this.db
             .prepare(
               `INSERT OR IGNORE INTO tests (
@@ -455,6 +498,10 @@ export class ReportDatabase {
 
       const compiled = this.k.deleteFrom('reports').where('reportID', 'in', ids).compile();
       this.db.prepare(compiled.sql).run(...compiled.parameters);
+
+      for (const id of ids) {
+        dailyTotalsDb.reverseReport(id);
+      }
 
       // no FK can cascade reports -> project_llm_summaries
       // when a project loses its last report, drop its summary.
@@ -576,10 +623,7 @@ export class ReportDatabase {
     opts?: { from?: string; to?: string; failedOnly?: boolean; before?: string; limit?: number }
   ): ReportHistory[] {
     const q = applyReportFilters(
-      this.k
-        .selectFrom('reports')
-        .select(REPORT_COLUMNS_WITHOUT_FILES)
-        .orderBy('createdAt', 'desc'),
+      this.k.selectFrom('reports').select(REPORT_LIST_COLUMNS).orderBy('createdAt', 'desc'),
       project,
       opts
     );
@@ -662,7 +706,7 @@ export class ReportDatabase {
     const placeholders = projects.map(() => '?').join(',');
     const rows = this.db
       .prepare(
-        `SELECT reportID, project, title, displayNumber, createdAt, reportUrl,
+        `SELECT reportID, project, title, displayNumber, createdAt, reportUrl, artifactsMissingAt,
                 size, sizeBytes, statTotal, statExpected, statUnexpected, statFlaky, statSkipped
          FROM (
            SELECT *,
@@ -679,6 +723,7 @@ export class ReportDatabase {
       displayNumber: number | null;
       createdAt: string;
       reportUrl: string;
+      artifactsMissingAt: string | null;
       size: string | null;
       sizeBytes: number;
       statTotal: number | null;
@@ -692,6 +737,29 @@ export class ReportDatabase {
     for (const row of rows) {
       const bucket = out.get(row.project);
       if (bucket) bucket.push(this.rowToReportLite(row));
+    }
+    return out;
+  }
+
+  public getLabelsByIds(
+    ids: string[]
+  ): Map<string, { displayNumber: number | null; title: string | null }> {
+    const out = new Map<string, { displayNumber: number | null; title: string | null }>();
+    if (ids.length === 0) return out;
+    for (const idChunk of chunk(ids, 500)) {
+      const compiled = this.k
+        .selectFrom('reports')
+        .select(['reportID', 'displayNumber', 'title'])
+        .where('reportID', 'in', idChunk)
+        .compile();
+      const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
+        reportID: string;
+        displayNumber: number | null;
+        title: string | null;
+      }>;
+      for (const row of rows) {
+        out.set(row.reportID, { displayNumber: row.displayNumber, title: row.title });
+      }
     }
     return out;
   }
@@ -713,23 +781,140 @@ export class ReportDatabase {
       .get() as { count: number; totalSizeBytes: number };
   }
 
-  public listSizedIds(): string[] {
-    const rows = this.db
-      .prepare('SELECT reportID FROM reports WHERE sizeBytes > 0')
-      .all() as Array<{ reportID: string }>;
-    return rows.map((r) => r.reportID);
+  public listReportStorageRows(limit: number): ReportStorageRow[] {
+    return this.db
+      .prepare(
+        `SELECT reportID, storagePath, sizeBytes, attachmentSizes, artifactsMissingAt
+         FROM reports
+         WHERE sizeBytes > 0 OR attachmentSizes IS NULL OR artifactsMissingAt IS NOT NULL
+         ORDER BY createdAt DESC LIMIT ?`
+      )
+      .all(limit) as ReportStorageRow[];
+  }
+
+  public estimateAttachmentCleanup(
+    kind: AttachmentCleanupKind,
+    cutoffISO: string
+  ): { affectedRows: number; items: number; bytes: number; unmeasured: number } {
+    return this.db.prepare(attachmentEstimateSql(kind)).get(cutoffISO) as {
+      affectedRows: number;
+      items: number;
+      bytes: number;
+      unmeasured: number;
+    };
+  }
+
+  public estimateReportFilesCleanup(cutoffISO: string): { affectedRows: number; bytes: number } {
+    return this.db
+      .prepare(
+        `SELECT count(*) AS affectedRows,
+                COALESCE(SUM(CASE WHEN sizeBytes > 0 THEN sizeBytes ELSE 0 END), 0) AS bytes
+         FROM reports
+         WHERE ${EXPIRED_EXCEPT_OPEN_REGRESSIONS} AND artifactsMissingAt IS NULL`
+      )
+      .get(cutoffISO) as { affectedRows: number; bytes: number };
+  }
+
+  public estimateReportRecordCleanup(cutoffISO: string): {
+    affectedRows: number;
+    testRuns: number;
+    analyses: number;
+  } {
+    return this.db
+      .prepare(
+        `SELECT count(*) AS affectedRows,
+                COALESCE(SUM(
+                  (SELECT count(*) FROM test_runs WHERE test_runs.reportId = reports.reportID)
+                ), 0) AS testRuns
+                ,
+                COALESCE(SUM(
+                  (SELECT count(*) FROM test_llm_analyses
+                    WHERE test_llm_analyses.reportId = reports.reportID)
+                ), 0) AS analyses
+         FROM reports WHERE ${EXPIRED_EXCEPT_OPEN_REGRESSIONS}`
+      )
+      .get(cutoffISO) as { affectedRows: number; testRuns: number; analyses: number };
+  }
+
+  public getAttachmentCleanupCandidates(
+    kind: AttachmentCleanupKind,
+    cutoffISO: string,
+    limit: number,
+    after: CleanupCursor | null = null
+  ): CleanupCandidate[] {
+    return this.db
+      .prepare(
+        `SELECT reportID, storagePath, createdAt FROM reports
+         WHERE ${EXPIRED_EXCEPT_OPEN_REGRESSIONS} AND ${DELETED_COLUMN[kind]} IS NULL
+           AND artifactsMissingAt IS NULL
+           AND ${hasAttachmentsOfKind(kind)}
+           ${AFTER_CURSOR}
+         ORDER BY createdAt ASC, reportID ASC LIMIT ?`
+      )
+      .all(cutoffISO, ...cursorParams(after), limit) as CleanupCandidate[];
+  }
+
+  public markAttachmentDeleted(
+    kind: AttachmentCleanupKind,
+    rows: Array<{ reportID: string; freedBytes: number }>
+  ): void {
+    this.writeBatched(
+      `UPDATE reports
+       SET ${DELETED_COLUMN[kind]} = ?, updatedAt = ?, sizeBytes = MAX(0, sizeBytes - ?)
+       WHERE reportID = ? AND ${DELETED_COLUMN[kind]} IS NULL`,
+      rows,
+      (row, now) => [now, now, row.freedBytes, row.reportID]
+    );
+  }
+
+  public getReportFilesCleanupCandidates(
+    cutoffISO: string,
+    limit: number,
+    after: CleanupCursor | null = null
+  ): Array<ReportPath & CleanupCursor> {
+    return this.db
+      .prepare(
+        `SELECT reportID, project, storagePath, createdAt FROM reports
+         WHERE ${EXPIRED_EXCEPT_OPEN_REGRESSIONS} AND artifactsMissingAt IS NULL
+           ${AFTER_CURSOR}
+         ORDER BY createdAt ASC, reportID ASC LIMIT ?`
+      )
+      .all(cutoffISO, ...cursorParams(after), limit) as Array<ReportPath & CleanupCursor>;
+  }
+
+  public clearArtifactsMissing(ids: string[]): void {
+    this.writeBatched(
+      'UPDATE reports SET artifactsMissingAt = NULL, updatedAt = ? WHERE reportID = ? AND artifactsMissingAt IS NOT NULL',
+      ids,
+      (id, now) => [now, id]
+    );
+  }
+
+  public getArtifactState(reportID: string): ArtifactState | undefined {
+    return this.db
+      .prepare(
+        `SELECT artifactsMissingAt, tracesDeletedAt, videosDeletedAt, screenshotsDeletedAt
+         FROM reports WHERE reportID = ?`
+      )
+      .get(reportID) as ArtifactState | undefined;
+  }
+
+  public setAttachmentSizes(rows: Array<{ reportID: string; sizes: AttachmentSizes }>): void {
+    this.writeBatched(
+      'UPDATE reports SET attachmentSizes = ?, updatedAt = ? WHERE reportID = ?',
+      rows,
+      (row, now) => [JSON.stringify(row.sizes), now, row.reportID]
+    );
   }
 
   public markStoragePruned(ids: string[]): void {
-    if (ids.length === 0) return;
-    const stmt = this.db.prepare(
-      "UPDATE reports SET sizeBytes = 0, size = '0.00 B', updatedAt = ? WHERE reportID = ?"
+    this.writeBatched(
+      `UPDATE reports SET sizeBytes = 0, size = '0.00 B', attachmentSizes = NULL, updatedAt = ?,
+              artifactsMissingAt = COALESCE(artifactsMissingAt, ?)
+       WHERE reportID = ?`,
+      ids,
+      (id, now) => [now, now, id]
     );
-    const now = new Date().toISOString();
-    const tx = this.db.transaction((batch: string[]) => {
-      for (const id of batch) stmt.run(now, id);
-    });
-    for (const batch of chunk(ids, 500)) tx(batch);
   }
 
   public aggregateForAnalytics(
@@ -884,8 +1069,7 @@ export class ReportDatabase {
 
     const hasScanFilter = !!input?.search?.trim() || (input?.tags?.length ?? 0) > 0;
 
-    // skip the `files` column, only the detail by id query needs it.
-    let listSelect = applyWhere(this.k.selectFrom('reports').select(REPORT_COLUMNS_WITHOUT_FILES));
+    let listSelect = applyWhere(this.k.selectFrom('reports').select(REPORT_LIST_COLUMNS));
     if (hasScanFilter) {
       listSelect = listSelect.select(sql<number>`COUNT(*) OVER()`.as('__total'));
     }
@@ -943,7 +1127,7 @@ export class ReportDatabase {
         title: row.title || undefined,
         displayNumber: row.displayNumber || undefined,
         createdAt: row.createdAt,
-        reportUrl: row.reportUrl,
+        reportUrl: servedReportUrl(row),
         size: row.size || undefined,
         sizeBytes: row.sizeBytes,
         stats,
@@ -957,9 +1141,6 @@ export class ReportDatabase {
       parseCache.set(key, baseDecoded);
     }
 
-    if (row.files != null) {
-      return { ...baseDecoded, files: parseJsonColumn<ReportHistory['files']>(row.files, []) };
-    }
     return baseDecoded;
   }
 
@@ -979,6 +1160,7 @@ export class ReportDatabase {
       | 'statUnexpected'
       | 'statFlaky'
       | 'statSkipped'
+      | 'artifactsMissingAt'
     >
   ): ReportHistoryLite {
     return {
@@ -987,22 +1169,31 @@ export class ReportDatabase {
       title: row.title ?? undefined,
       displayNumber: row.displayNumber ?? undefined,
       createdAt: row.createdAt,
-      reportUrl: row.reportUrl,
+      reportUrl: servedReportUrl(row),
       size: row.size ?? undefined,
       sizeBytes: row.sizeBytes,
       stats: statsFromColumns(row),
     };
   }
 
-  public findByDisplayNumber(displayNumber: number, project?: string): Array<ReportSummaryRow> {
+  public findByDisplayNumber(displayNumber: number, project?: string): Array<ReportSummary> {
     let q = this.k
       .selectFrom('reports')
-      .select(['reportID', 'project', 'title', 'displayNumber', 'createdAt', 'reportUrl'])
+      .select([
+        'reportID',
+        'project',
+        'title',
+        'displayNumber',
+        'createdAt',
+        'reportUrl',
+        'artifactsMissingAt',
+      ])
       .where('displayNumber', '=', displayNumber)
       .orderBy('createdAt', 'desc');
     if (project) q = q.where('project', '=', project);
     const compiled = q.compile();
-    return this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportSummaryRow[];
+    const rows = this.db.prepare(compiled.sql).all(...compiled.parameters) as ReportSummaryRow[];
+    return rows.map((row) => ({ ...row, reportUrl: servedReportUrl(row) }));
   }
 
   public findPreviousInProject(

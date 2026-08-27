@@ -10,7 +10,7 @@
 	],
 	"scripts": {
 		"dev": "NODE_ENV=development tsx watch --clear-screen=false src/index.ts",
-		"build": "tsc && cp src/lib/report-injection/inject.js src/lib/report-injection/inject.css dist/lib/report-injection/",
+		"build": "tsc && mkdir -p dist/lib/service/workers && cp src/lib/service/workers/failureAggregateWorker.mjs dist/lib/service/workers/ && cp src/lib/report-injection/inject.js src/lib/report-injection/inject.css dist/lib/report-injection/",
 		"bundle": "node scripts/bundle.mjs",
 		"start": "NODE_ENV=production node dist/index.js",
 		"typecheck": "tsc --noEmit -p tsconfig.test.json",

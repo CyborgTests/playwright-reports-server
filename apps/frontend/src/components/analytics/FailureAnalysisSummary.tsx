@@ -11,9 +11,9 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useConfig } from '@/hooks/useConfig';
-import { useCountdown } from '@/hooks/useCountdown';
 import useMutation from '@/hooks/useMutation';
 import useQuery from '@/hooks/useQuery';
+import { useTimeUntil } from '@/hooks/useTimeUntil';
 import { defaultProjectName } from '@/lib/constants';
 import { LlmAnalysisRenderer, VerdictBadge } from './LlmAnalysisRenderer';
 
@@ -35,7 +35,7 @@ interface CachedSummaryResponse {
   success: boolean;
   data: CachedProjectSummary | null;
   pendingAnalysisCount?: number;
-  pendingEtaMs?: number | null;
+  pendingEtaFinishAt?: string | null;
 }
 
 interface EnqueueResponse {
@@ -85,7 +85,7 @@ export function FailureAnalysisSummary({
   const summary = cached?.data ?? null;
   const pendingAnalysisCount = cached?.pendingAnalysisCount ?? 0;
   const hasOngoingAnalysis = pendingAnalysisCount > 0 || isEnqueuing;
-  const liveEtaMs = useCountdown(cached?.pendingEtaMs ?? null);
+  const liveEtaMs = useTimeUntil(cached?.pendingEtaFinishAt);
   const etaText = liveEtaMs && liveEtaMs > 0 ? `~${formatDuration(liveEtaMs)} left` : null;
 
   if (isLoading) {

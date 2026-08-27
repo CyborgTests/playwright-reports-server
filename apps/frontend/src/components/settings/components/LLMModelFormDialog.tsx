@@ -135,7 +135,7 @@ export function LLMModelFormDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NONE_GROUP}>None (use model parallel requests)</SelectItem>
+                <SelectItem value={NONE_GROUP}>None</SelectItem>
                 {groups.map((g) => (
                   <SelectItem key={g.id} value={g.id}>
                     {g.name} (limit {g.concurrencyLimit})
@@ -144,7 +144,7 @@ export function LLMModelFormDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Shared concurrency budget for models on one rate limit or GPU. Manage groups below.
+              Group models that share rate limit or GPU.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -155,7 +155,6 @@ export function LLMModelFormDialog({
                 type="number"
                 min={1}
                 max={10}
-                disabled={!!selectedGroup}
                 value={form.parallelRequests}
                 onChange={(e) =>
                   setForm({
@@ -169,7 +168,9 @@ export function LLMModelFormDialog({
               />
               {selectedGroup && (
                 <p className="text-xs text-muted-foreground">
-                  Controlled by group {selectedGroup.name} (limit {selectedGroup.concurrencyLimit})
+                  Up to {Math.min(form.parallelRequests, selectedGroup.concurrencyLimit)} at once,
+                  and only while group {selectedGroup.name} has one of its{' '}
+                  {selectedGroup.concurrencyLimit} slots free.
                 </p>
               )}
             </div>

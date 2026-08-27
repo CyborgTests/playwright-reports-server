@@ -9,7 +9,7 @@ import { configCache } from '../service/cache/config.js';
 import { type LlmModelRow, llmGroupsDb, llmModelsDb } from '../service/db/index.js';
 import { circuitFor, circuitStatusFor } from './circuitBreaker.js';
 import { llmService, type SegmentedSendOptions } from './index.js';
-import { modelGate, reservationStore } from './modelGate.js';
+import { type Gate, modelGate, reservationStore, sameGateKeys } from './modelGate.js';
 import {
   type LLMProviderConfig,
   LLMProviderError,
@@ -78,12 +78,13 @@ export interface FallbackSendResult {
   baseUrl: string;
 }
 
-export function resolveGate(row: LlmModelRow): { key: string; limit: number } {
+export function resolveGates(row: LlmModelRow): Gate[] {
+  const gates: Gate[] = [{ key: `model:${row.id}`, limit: row.parallelRequests }];
   if (row.concurrencyGroupId) {
     const group = llmGroupsDb.get(row.concurrencyGroupId);
-    if (group) return { key: group.id, limit: group.concurrencyLimit };
+    if (group) gates.push({ key: `group:${group.id}`, limit: group.concurrencyLimit });
   }
-  return { key: row.id, limit: row.parallelRequests };
+  return gates;
 }
 
 export async function runOnModel<T>(
@@ -110,14 +111,25 @@ export async function runOnModel<T>(
       throw err;
     }
   };
-  const gate = resolveGate(row);
+  const gates = resolveGates(row);
   const held = reservationStore.getStore();
-  if (held && !held.consumed && held.gateKey === gate.key) {
+  if (
+    held &&
+    !held.consumed &&
+    sameGateKeys(
+      held.gateKeys,
+      gates.map((g) => g.key)
+    )
+  ) {
     held.consumed = true;
     onStart?.();
-    return guarded();
+    try {
+      return await guarded();
+    } finally {
+      held.release();
+    }
   }
-  return modelGate.run(gate.key, gate.limit, guarded, onStart);
+  return modelGate.runAll(gates, guarded, onStart);
 }
 
 export function anyModelCircuitAvailable(): boolean {
@@ -128,14 +140,18 @@ export function anyModelCircuitAvailable(): boolean {
 
 export function aggregateCircuitStatus(): LlmCircuitStatus {
   const enabled = llmModelsDb.list().filter((m) => m.enabled === 1);
-  if (enabled.length === 0) return { state: 'closed', retryInMs: null };
+  if (enabled.length === 0) return { state: 'closed', retryAt: null };
   const statuses = enabled.map((m) => circuitStatusFor(m.id));
-  if (statuses.some((s) => s.state === 'closed')) return { state: 'closed', retryInMs: null };
+  if (statuses.some((s) => s.state === 'closed')) return { state: 'closed', retryAt: null };
   const open = statuses.filter((s) => s.state === 'open');
   if (open.length > 0) {
-    return { state: 'open', retryInMs: Math.min(...open.map((s) => s.retryInMs ?? 0)) };
+    const soonest = Math.min(...open.map((s) => (s.retryAt ? Date.parse(s.retryAt) : Number.NaN)));
+    return {
+      state: 'open',
+      retryAt: Number.isFinite(soonest) ? new Date(soonest).toISOString() : null,
+    };
   }
-  return { state: 'half-open', retryInMs: null };
+  return { state: 'half-open', retryAt: null };
 }
 
 export interface FallbackHooks {

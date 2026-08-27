@@ -37,7 +37,7 @@ const RootCauseCategoryEditor: FC<Props> = ({ testId, reportId, project }) => {
 
   const { data } = useQuery<AnalysisResponse>(
     `/api/test-analysis/${encodeURIComponent(testId)}?reportId=${encodeURIComponent(reportId)}`,
-    { dependencies: [testId, reportId], enabled: !!testId && !!reportId }
+    { enabled: !!testId && !!reportId }
   );
   const category = data?.data?.category ?? null;
 

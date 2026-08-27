@@ -385,28 +385,39 @@ function prioritizeConsole(events: ConsoleEvent[]): ConsoleEvent[] {
   return [...errs.slice(-errBudget), ...oth.slice(-(CONSOLE_MAX_TOTAL - errBudget))];
 }
 
-function prioritizeNetwork(events: NetworkEvent[], anchorTime?: number): NetworkEvent[] {
+export function prioritizeNetwork(events: NetworkEvent[], anchorTime?: number): NetworkEvent[] {
   if (events.length === 0) return events;
-  const sorted = [...events].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+  const byTime = (a: NetworkEvent, b: NetworkEvent) => (a.timestamp ?? 0) - (b.timestamp ?? 0);
+  const sorted = [...events].sort(byTime);
   // "Notable" = failed, error status, OR pending (in-flight at failure)
   const isNotable = (ev: NetworkEvent) =>
     !!ev.failureText || ev.pending === true || (typeof ev.status === 'number' && ev.status >= 400);
-  const failed = sorted.filter(isNotable);
+  const notable = sorted.filter(isNotable);
   const successes = sorted.filter((ev) => !isNotable(ev));
   const beforeAnchor =
     anchorTime !== undefined
       ? successes.filter((ev) => (ev.timestamp ?? 0) <= anchorTime)
       : successes;
   const contextSuccesses = beforeAnchor.slice(-NETWORK_PRE_FAILURE_KEEP);
-  const merged = [...failed, ...contextSuccesses].sort(
-    (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
-  );
-  if (merged.length <= NETWORK_MAX_TOTAL) return merged;
-  const failedKeep = Math.min(failed.length, NETWORK_MAX_TOTAL);
-  return [
-    ...failed.slice(-failedKeep),
-    ...contextSuccesses.slice(-(NETWORK_MAX_TOTAL - failedKeep)),
-  ].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+  if (notable.length + contextSuccesses.length <= NETWORK_MAX_TOTAL) {
+    return [...notable, ...contextSuccesses].sort(byTime);
+  }
+  const proximity =
+    anchorTime === undefined
+      ? (ev: NetworkEvent) => -(ev.timestamp ?? 0)
+      : (ev: NetworkEvent) => Math.abs((ev.timestamp ?? 0) - anchorTime);
+  const nearestFirst = (a: NetworkEvent, b: NetworkEvent) => proximity(a) - proximity(b);
+  const keptPending = notable
+    .filter((ev) => ev.pending === true)
+    .sort(nearestFirst)
+    .slice(0, NETWORK_MAX_TOTAL);
+  const keptErrors = notable
+    .filter((ev) => ev.pending !== true)
+    .sort(nearestFirst)
+    .slice(0, NETWORK_MAX_TOTAL - keptPending.length);
+  const successBudget = NETWORK_MAX_TOTAL - keptPending.length - keptErrors.length;
+  const keptSuccesses = successBudget > 0 ? contextSuccesses.slice(-successBudget) : [];
+  return [...keptPending, ...keptErrors, ...keptSuccesses].sort(byTime);
 }
 
 // Framework-marker action names that carry no actionable detail.

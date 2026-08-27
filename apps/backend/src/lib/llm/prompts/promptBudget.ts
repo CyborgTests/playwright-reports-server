@@ -42,7 +42,7 @@ function shrinkFencedBlocks(content: string, blockMax: number): string {
  *  whose entries are ordered "most informative first." */
 function truncateTail(content: string, maxChars: number): string {
   if (content.length <= maxChars) return content;
-  return `${content.substring(0, maxChars)}\n[… truncated to fit budget …]`;
+  return `${content.substring(0, maxChars)}\n[… truncated to fit budget: showing first ${maxChars} of ${content.length} chars …]`;
 }
 
 /**

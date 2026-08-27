@@ -1,3 +1,4 @@
+import { dailyTotalsDb } from '../dailyTotals.sqlite.js';
 import * as testQueries from '../queries/testAnalytics.js';
 import { singletonOf } from '../singleton.js';
 import { TestDbBase, type TestRunRow } from './shared.js';
@@ -8,15 +9,7 @@ export class TestAnalyticsDatabase extends TestDbBase {
     from?: string,
     to?: string
   ): { avgDuration: number; p95Duration: number; count: number } {
-    return testQueries.getDurationAggregates(this.db, project, from, to);
-  }
-  public getSlowestTests(
-    project: string | undefined,
-    from: string | undefined,
-    to: string | undefined,
-    limit: number
-  ): Array<{ step: string; duration: number; testId: string }> {
-    return testQueries.getSlowestTests(this.db, project, from, to, limit);
+    return dailyTotalsDb.getDurationAggregates(project, from, to);
   }
   public getSlowCountsByReport(
     project: string | undefined,
@@ -34,8 +27,12 @@ export class TestAnalyticsDatabase extends TestDbBase {
   ): { total: number; flakyCount: number } {
     return testQueries.getFlakySummaryInWindow(this.db, project, from, to, warningThreshold);
   }
-  public getTestRunsInWindow(project: string | undefined, from: string, to: string): TestRunRow[] {
-    return testQueries.getTestRunsInWindow(this.db, project, from, to);
+  public getFailedTestRunsInWindow(
+    project: string | undefined,
+    from: string,
+    to: string
+  ): TestRunRow[] {
+    return testQueries.getFailedTestRunsInWindow(this.db, project, from, to);
   }
   public getTopFailingTestsInWindow(
     project: string | undefined,

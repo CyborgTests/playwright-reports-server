@@ -27,6 +27,30 @@ export function expectedStrategyCalls(routing: LlmTaskRouting | undefined): numb
   }
 }
 
+export function strategySerialDepth(routing: LlmTaskRouting | undefined): number {
+  switch (routing?.strategy) {
+    case 'fusion':
+    case 'council':
+      return 2; // authors run in parallel, then synthesizer / judges
+    case 'cascade':
+    case 'self_refine':
+      return expectedStrategyCalls(routing); // every call waits on the previous one
+    default:
+      return 1;
+  }
+}
+
+export function strategyPeakConcurrency(routing: LlmTaskRouting | undefined): number {
+  switch (routing?.strategy) {
+    case 'fusion':
+      return routing.authors?.length || 1;
+    case 'council':
+      return Math.max(routing.authors?.length || 1, routing.judges?.length || 1);
+    default:
+      return 1;
+  }
+}
+
 export function describeStrategy(routing: LlmTaskRouting | undefined): string {
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
   switch (routing?.strategy) {

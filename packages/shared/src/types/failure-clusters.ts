@@ -135,7 +135,7 @@ export interface ClusterTest {
   occurrences: number;
   lastSeen: string;
   lastReportId?: string;
-  lastReportUrl?: string;
+  lastReportUrl?: string | null;
 }
 
 export interface FailureCluster {

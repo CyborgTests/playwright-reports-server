@@ -1,9 +1,6 @@
-import type { ReadReportsHistory, ReportHistory } from '@playwright-reports/shared';
-import { type FC, useEffect, useMemo, useState } from 'react';
-import { toast } from 'sonner';
+import type { ReportHistory } from '@playwright-reports/shared';
+import { type FC, useEffect, useMemo, useRef, useState } from 'react';
 import InlineStatsCircle from '@/components/inline-stats-circle';
-import { subtitle } from '@/components/primitives';
-import { StatChart } from '@/components/stat-chart';
 import {
   Accordion,
   AccordionContent,
@@ -12,9 +9,10 @@ import {
 } from '@/components/ui/accordion';
 import { Alert } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
-import useQuery from '@/hooks/useQuery';
-import { withQueryParams } from '@/lib/network';
-import FileSuitesTree, { StatsBadges } from './suite-tree';
+import { buildFileGroups } from '@/lib/test-groups';
+import { cn } from '@/lib/utils';
+import TestGroupList, { StatsBadges } from './suite-tree';
+import TestInfo from './test-info';
 import ReportFilters from './tests-filters';
 
 interface FileListProps {
@@ -23,23 +21,14 @@ interface FileListProps {
 }
 
 const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
-  const { data: history, error: historyError } = useQuery<ReadReportsHistory>(
-    withQueryParams('/api/report/list', { limit: '10', project: report?.project ?? '' }),
-    {
-      dependencies: [report?.reportID],
-    }
-  );
-
   const [filteredTests, setFilteredTests] = useState<ReportHistory | undefined>(
     report ?? undefined
   );
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
+  const detailPaneRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (historyError) {
-      toast.error(historyError.message);
-    }
-  }, [historyError]);
+  const fileGroups = useMemo(() => buildFileGroups(filteredTests?.files), [filteredTests?.files]);
 
   const newRegressionTestIds = useMemo(
     () => new Set((report?.regressions?.newTests ?? []).map((t) => t.testId)),
@@ -51,17 +40,40 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
   );
 
   useEffect(() => {
-    if (highlightTestId && filteredTests?.files) {
-      const fileWithTest = filteredTests.files.find((file) =>
-        file.tests?.some((test) => test.testId === highlightTestId)
-      );
-      if (fileWithTest?.fileId) {
-        setExpandedKeys((prev) =>
-          prev.includes(fileWithTest.fileId) ? prev : [...prev, fileWithTest.fileId]
-        );
-      }
+    setExpandedKeys(
+      (report?.files ?? [])
+        .filter((file) => (file.stats.unexpected ?? 0) + (file.stats.flaky ?? 0) > 0)
+        .map((file) => file.fileId)
+    );
+  }, [report?.files]);
+
+  useEffect(() => {
+    if (!highlightTestId) return;
+    setSelectedTestId(highlightTestId);
+    const file = (report?.files ?? []).find((entry) =>
+      (entry.tests ?? []).some((test) => test.testId === highlightTestId)
+    );
+    if (file) {
+      setExpandedKeys((prev) => (prev.includes(file.fileId) ? prev : [...prev, file.fileId]));
     }
-  }, [highlightTestId, filteredTests]);
+  }, [highlightTestId, report?.files]);
+
+  useEffect(() => {
+    if (!selectedTestId) return;
+    const pane = detailPaneRef.current;
+    if (!pane) return;
+    pane.scrollTop = 0;
+    pane.scrollIntoView({ block: 'nearest' });
+  }, [selectedTestId]);
+
+  const selection = useMemo(() => {
+    if (!selectedTestId) return null;
+    for (const group of fileGroups) {
+      const test = (group.file.tests ?? []).find((entry) => entry.testId === selectedTestId);
+      if (test) return { test, fileName: group.file.fileName };
+    }
+    return null;
+  }, [selectedTestId, fileGroups]);
 
   if (!report) {
     return (
@@ -73,45 +85,75 @@ const FileList: FC<FileListProps> = ({ report, highlightTestId }) => {
 
   return (
     <div>
-      <div className="flex flex-row justify-between">
-        <h2 className={subtitle()}>File list</h2>
+      <div className="mb-4">
         <ReportFilters report={report} onChangeFilters={setFilteredTests} />
       </div>
-      {filteredTests?.files?.length ? (
-        <Accordion
-          type="multiple"
-          value={expandedKeys}
-          onValueChange={setExpandedKeys}
-          className="w-full"
-        >
-          {(filteredTests?.files ?? []).map((file) => (
-            <AccordionItem key={file.fileId} value={file.fileId}>
-              <AccordionTrigger className="hover:no-underline">
-                <div className="flex flex-row items-center gap-3 flex-1 flex-wrap pr-4">
-                  <InlineStatsCircle stats={file.stats} />
-                  <span className="font-medium">{file.fileName}</span>
-                  <StatsBadges stats={file.stats} />
-                </div>
-              </AccordionTrigger>
-              <AccordionContent>
-                <div className="file-details space-y-4">
-                  <StatChart stats={file.stats} />
-                  <div className="file-tests">
-                    <h4 className={subtitle()}>Tests</h4>
-                    <FileSuitesTree
-                      file={file}
-                      history={history?.reports ?? []}
-                      reportId={report?.reportID}
-                      project={report?.project}
+
+      {fileGroups.length ? (
+        <div className="flex flex-col lg:flex-row gap-4 items-start">
+          <div className="w-full lg:flex-1 lg:min-w-0">
+            <Accordion
+              type="multiple"
+              value={expandedKeys}
+              onValueChange={setExpandedKeys}
+              className="w-full"
+            >
+              {fileGroups.map((group) => (
+                <AccordionItem key={group.file.fileId} value={group.file.fileId}>
+                  <AccordionTrigger className="hover:no-underline">
+                    <div className="flex flex-row items-center gap-3 flex-1 flex-wrap pr-4 text-left">
+                      <InlineStatsCircle stats={group.file.stats} />
+                      <span className="font-medium">
+                        {group.file.fileName}
+                        {group.prefix.length > 0 && (
+                          <span className="text-muted-foreground font-normal">
+                            {' › '}
+                            {group.prefix.join(' › ')}
+                          </span>
+                        )}
+                      </span>
+                      <StatsBadges stats={group.file.stats} />
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <TestGroupList
+                      groups={group.groups}
+                      fileHasProblems={group.problems > 0}
+                      selectedTestId={selectedTestId ?? undefined}
                       newRegressionTestIds={newRegressionTestIds}
                       resolvedRegressionTestIds={resolvedRegressionTestIds}
+                      onSelect={(test) => setSelectedTestId(test.testId ?? null)}
                     />
-                  </div>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </div>
+
+          <div
+            ref={detailPaneRef}
+            className={cn(
+              'w-full lg:flex-1 lg:min-w-0 lg:sticky lg:top-4',
+              'lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto',
+              !selection && 'hidden lg:block'
+            )}
+          >
+            {selection ? (
+              <TestInfo
+                test={selection.test}
+                project={report.project}
+                reportId={report.reportID}
+                fileName={selection.fileName}
+                suitePath={selection.test.path}
+                reportUrl={report.reportUrl}
+              />
+            ) : (
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                Select a test to see details and links.
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
         <Alert>No files found</Alert>
       )}

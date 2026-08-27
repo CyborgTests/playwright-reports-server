@@ -1,3 +1,5 @@
+import type { SourceLocation } from './index.js';
+
 export interface StatDelta {
   percent: number | null;
   trend: 'up' | 'down' | 'stable';
@@ -8,7 +10,6 @@ export interface OverviewStats {
   totalRuns: number;
   passRate: number;
   averageTestDuration: number;
-  slowestSteps: Array<{ step: string; duration: number; testId: string }>;
   averageTestRunDuration: number;
   passRateTrend: 'up' | 'down' | 'stable';
   flakyTestsTrend: 'up' | 'down' | 'stable';
@@ -58,7 +59,6 @@ export interface AnalyticsData {
   runHealthMetrics: RunHealthMetric[];
   trendMetrics: TrendMetrics;
   testsSummary: TestsSummary;
-  failureCategories: FailureCategoryAnalytics;
   regressions: RegressionsAggregate;
 }
 
@@ -159,6 +159,7 @@ export interface LlmTask {
   parentTaskId?: string | null;
   childCount?: number;
   childUsage?: LlmTaskChildUsage[];
+  etaFinishAt?: string | null; // concurrency/position-aware timestamp of projected finish (queue simulator); null if not scheduled
 }
 
 export interface LlmTaskChildUsage {
@@ -169,14 +170,14 @@ export interface LlmTaskChildUsage {
 }
 
 export interface QueueEtaEstimate {
-  etaMs: number | null; // estimated time to drain queued+processing work; null if nothing estimable
+  etaFinishAt: string | null;
   estimatedTasks: number; // scheduled tasks we had a duration estimate for
   totalScheduled: number; // all queued+processing parent tasks
 }
 
 export interface LlmCircuitStatus {
   state: 'closed' | 'open' | 'half-open';
-  retryInMs: number | null; // ms until the open circuit next probes; null unless open
+  retryAt: string | null;
   reason?: 'failures' | 'rate_limit'; // why the circuit opened, when not closed
 }
 
@@ -251,11 +252,7 @@ export interface FailureDetails {
   stackTrace?: string;
   testTitle: string;
   filePath: string;
-  location?: {
-    file: string;
-    line: number;
-    column: number;
-  };
+  location?: SourceLocation;
   attachments?: Array<{
     name: string;
     path: string;

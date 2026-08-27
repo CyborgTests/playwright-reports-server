@@ -9,7 +9,7 @@ import {
 } from '@playwright-reports/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Github } from 'lucide-react';
-import { Fragment, useCallback, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import FormattedDate from '@/components/date-format';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +33,12 @@ import useQuery from '@/hooks/useQuery';
 import { useServerEvents } from '@/hooks/useServerEvents';
 import { cn } from '@/lib/utils';
 import { GithubSyncFormDialog } from './GithubSyncFormDialog';
+import {
+  FailedArtifactsBlock,
+  SYNC_FAILURES_KEY,
+  SYNC_RUNS_KEY,
+  SyncHistory,
+} from './GithubSyncHistoryPanel';
 
 type GithubSyncConfigWithStatus = GithubSyncConfig & { status?: GithubSyncStatus };
 
@@ -169,8 +175,17 @@ function statusBadge(cfg: GithubSyncConfigWithStatus) {
   if (!cfg.enabled) {
     return <Badge variant="secondary">Paused</Badge>;
   }
+  const pending = cfg.status?.pendingArtifacts ?? 0;
+  const abandoned = cfg.status?.abandonedArtifacts ?? 0;
+  if (pending > 0) {
+    return <Badge variant="destructive">{pending + abandoned} artifact(s) missing</Badge>;
+  }
+  if (abandoned > 0) {
+    return <Badge variant="warning">{abandoned} artifact(s) unrecoverable</Badge>;
+  }
   const last = cfg.status?.lastRun?.status;
   if (last === 'failed') return <Badge variant="destructive">Last run failed</Badge>;
+  if (last === 'partial') return <Badge variant="warning">Last run partial</Badge>;
   if (last === 'cancelled') return <Badge variant="secondary">Cancelled</Badge>;
   if (last === 'success') return <Badge variant="success">OK</Badge>;
   return <Badge variant="outline">Idle</Badge>;
@@ -178,7 +193,9 @@ function statusBadge(cfg: GithubSyncConfigWithStatus) {
 
 export default function GithubSyncConfiguration() {
   const session = useAuth();
-  const canEditSync = useHasCapability()(CAPABILITIES.configGithubSync);
+  const hasCapability = useHasCapability();
+  const canEditSync = hasCapability(CAPABILITIES.configGithubSync);
+  const canRunSync = hasCapability(CAPABILITIES.runGithubSync);
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery<GithubSyncConfigWithStatus[]>(LIST_PATH, {
@@ -186,23 +203,36 @@ export default function GithubSyncConfiguration() {
   });
   const configs = data ?? [];
 
-  const invalidate = useCallback(() => {
+  const invalidateConfigs = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: [LIST_PATH] });
   }, [queryClient]);
 
-  useServerEvents('/api/config/github-sync/events', invalidate, {
+  const invalidate = useCallback(() => {
+    invalidateConfigs();
+    queryClient.invalidateQueries({ queryKey: [SYNC_RUNS_KEY] });
+    queryClient.invalidateQueries({ queryKey: [SYNC_FAILURES_KEY] });
+  }, [invalidateConfigs, queryClient]);
+
+  useServerEvents('/api/config/github-sync/events', invalidateConfigs, {
     enabled: session.status === 'authenticated',
   });
+
+  const anyRunning = configs.some((cfg) => cfg.status?.isRunning);
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current && !anyRunning) invalidate();
+    wasRunning.current = anyRunning;
+  }, [anyRunning, invalidate]);
 
   const [formOpen, setFormOpen] = useState(false);
   const [formConfig, setFormConfig] = useState<GithubSyncConfig | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GithubSyncConfig | null>(null);
   const [deleteClearState, setDeleteClearState] = useState(false);
+  const [rescanTarget, setRescanTarget] = useState<GithubSyncConfig | null>(null);
 
   const enableMutation = useMutation(LIST_PATH, { method: 'PATCH', onSuccess: invalidate });
-  const runMutation = useMutation(LIST_PATH, { method: 'POST', onSuccess: invalidate });
-  const stopMutation = useMutation(LIST_PATH, { method: 'POST', onSuccess: invalidate });
+  const postMutation = useMutation(LIST_PATH, { method: 'POST', onSuccess: invalidate });
   const deleteMutation = useMutation(LIST_PATH, {
     method: 'DELETE',
     onSuccess: () => {
@@ -226,7 +256,7 @@ export default function GithubSyncConfiguration() {
   };
   const runNow = (cfg: GithubSyncConfig) => {
     setBusyId(cfg.id);
-    runMutation.mutate(
+    postMutation.mutate(
       { path: `${LIST_PATH}/${cfg.id}/run` },
       {
         onSuccess: () => toast.success(`Started sync for "${cfg.name}"`),
@@ -236,9 +266,22 @@ export default function GithubSyncConfiguration() {
   };
   const stopRun = (cfg: GithubSyncConfig) => {
     setBusyId(cfg.id);
-    stopMutation.mutate(
+    postMutation.mutate(
       { path: `${LIST_PATH}/${cfg.id}/stop` },
       { onSuccess: () => toast.success('Stop requested'), onSettled: () => setBusyId(null) }
+    );
+  };
+  const confirmRescan = () => {
+    if (!rescanTarget) return;
+    const cfg = rescanTarget;
+    setRescanTarget(null);
+    setBusyId(cfg.id);
+    postMutation.mutate(
+      { path: `${LIST_PATH}/${cfg.id}/rescan` },
+      {
+        onSuccess: () => toast.success(`Full rescan started for "${cfg.name}"`),
+        onSettled: () => setBusyId(null),
+      }
     );
   };
   const confirmDelete = () => {
@@ -298,32 +341,72 @@ export default function GithubSyncConfiguration() {
                       </Badge>
                     )}
                   </div>
-                  <div className="text-xs text-muted-foreground space-y-0.5">
-                    <div>
-                      <span className="font-mono">{cfg.repo}</span> /{' '}
-                      <span className="font-mono">{cfg.workflow}</span>
-                    </div>
-                    <div>
-                      Pattern <span className="font-mono">{cfg.artifactPattern}</span> → project{' '}
-                      <span className="font-mono">{cfg.projectTemplate}</span>
-                    </div>
-                    <div>
-                      Schedule <span className="font-mono">{cfg.cronSchedule}</span>
+                  <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+                    <dt className="text-muted-foreground/70">Repo</dt>
+                    <dd
+                      className="min-w-0 truncate font-mono"
+                      title={`${cfg.repo} / ${cfg.workflow}`}
+                    >
+                      {cfg.repo} / {cfg.workflow}
+                    </dd>
+                    <dt className="text-muted-foreground/70">Pattern</dt>
+                    <dd
+                      className="min-w-0 truncate font-mono"
+                      title={`${cfg.artifactPattern} → ${cfg.projectTemplate}`}
+                    >
+                      {cfg.artifactPattern} <span className="text-muted-foreground/70">→</span>{' '}
+                      {cfg.projectTemplate}
+                    </dd>
+                    <dt className="text-muted-foreground/70">Schedule</dt>
+                    <dd className="truncate font-mono">
+                      {cfg.cronSchedule}
                       {cfg.status?.nextRun && cfg.enabled && (
-                        <>
+                        <span className="font-sans text-muted-foreground">
                           {' '}
                           · next <FormattedDate date={cfg.status.nextRun} />
+                        </span>
+                      )}
+                    </dd>
+                    <dt className="text-muted-foreground/70">Synced</dt>
+                    <dd className="truncate">
+                      {cfg.status?.syncedArtifacts ?? 0} artifact(s)
+                      {cfg.status?.lastRun?.message && (
+                        <span
+                          className={cn(
+                            'text-muted-foreground',
+                            (cfg.status.lastRun.failed ?? 0) > 0 && 'text-destructive'
+                          )}
+                          title={cfg.status.lastRun.message}
+                        >
+                          {' '}
+                          · last: {cfg.status.lastRun.message}
+                        </span>
+                      )}
+                    </dd>
+                  </div>
+                  {(cfg.status?.consecutiveFailures ?? 0) >= 3 && cfg.enabled && (
+                    <div className="text-xs text-destructive">
+                      Failing for {cfg.status?.consecutiveFailures} runs
+                      {cfg.status?.failingSince && (
+                        <>
+                          {' '}
+                          since <FormattedDate date={cfg.status.failingSince} />
                         </>
                       )}
                     </div>
-                    <div>
-                      Synced {cfg.status?.syncedArtifacts ?? 0} artifact(s)
-                      {cfg.status?.lastRun?.message && <> · last: {cfg.status.lastRun.message}</>}
-                    </div>
-                  </div>
+                  )}
                   {cfg.status?.isRunning && cfg.status.progress && (
                     <SyncProgressPanel progress={cfg.status.progress} />
                   )}
+                  <FailedArtifactsBlock
+                    configId={cfg.id}
+                    pendingArtifacts={cfg.status?.pendingArtifacts ?? 0}
+                    abandonedArtifacts={cfg.status?.abandonedArtifacts ?? 0}
+                    onRetry={() => runNow(cfg)}
+                    retrying={busyId === cfg.id || !!cfg.status?.isRunning}
+                    canRetry={canRunSync}
+                  />
+                  <SyncHistory configId={cfg.id} />
                 </div>
                 <div className="flex gap-2 flex-wrap sm:flex-nowrap shrink-0">
                   {cfg.status?.isRunning ? (
@@ -345,6 +428,16 @@ export default function GithubSyncConfiguration() {
                     >
                       {busyId === cfg.id && <Spinner className="mr-2 h-4 w-4" />}
                       Run now
+                    </Button>
+                  )}
+                  {canRunSync && !cfg.status?.isRunning && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setRescanTarget(cfg)}
+                      disabled={busyId === cfg.id}
+                    >
+                      Rescan
                     </Button>
                   )}
                   {canEditSync && (
@@ -392,6 +485,33 @@ export default function GithubSyncConfiguration() {
         config={formConfig}
         onSaved={invalidate}
       />
+
+      <Dialog open={!!rescanTarget} onOpenChange={(open) => !open && setRescanTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Run a full rescan?</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  Scans every workflow run since{' '}
+                  <span className="font-mono">{rescanTarget?.startDate?.slice(0, 10)}</span> and
+                  uploads anything missing, including artifacts that were failed.
+                </p>
+                <p>
+                  It cannot recover artifacts GitHub has already expired or runs older than the
+                  github sync start date.
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRescanTarget(null)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmRescan}>Start rescan</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!deleteTarget}

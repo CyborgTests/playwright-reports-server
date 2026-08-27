@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 export function computeErrorSignature(message: string, filePath?: string): string {
   const normalized = message
     .replace(/\d+/g, 'N')
@@ -6,12 +8,6 @@ export function computeErrorSignature(message: string, filePath?: string): strin
     .trim()
     .substring(0, 500);
 
-  let hash = 0;
   const input = filePath !== undefined ? `${filePath}:${normalized}` : normalized;
-  for (let i = 0; i < input.length; i++) {
-    const char = input.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0;
-  }
-  return hash.toString(36);
+  return createHash('sha256').update(input).digest('hex').slice(0, 32);
 }

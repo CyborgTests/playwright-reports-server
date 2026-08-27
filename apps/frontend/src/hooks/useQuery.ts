@@ -8,10 +8,6 @@ import { authHeadersForSession, useAuth } from './useAuth';
 const UNAUTHORIZED_ERROR = 'Unauthorized';
 const FORBIDDEN_ERROR = 'Forbidden';
 
-export function isForbidden(error: unknown): boolean {
-  return error instanceof Error && error.message === FORBIDDEN_ERROR;
-}
-
 const useQuery = <TData, TQueryFnData = TData>(
   path: string,
   options?: Omit<UseQueryOptions<TQueryFnData, Error, TData>, 'queryKey' | 'queryFn'> & {

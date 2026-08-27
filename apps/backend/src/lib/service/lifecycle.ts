@@ -11,6 +11,7 @@ import { initStorage, storage } from '../storage/index.js';
 import { withError } from '../withError.js';
 import { configCache } from './cache/config.js';
 import { cronService } from './cron.js';
+import { dailyTotalsDb } from './db/dailyTotals.sqlite.js';
 import { githubSyncDb, llmTasksDb, reportDb, resultDb, siteConfigDb } from './db/index.js';
 import { getKysely } from './db/kysely.js';
 import { migrateToLatest } from './db/migrations/index.js';
@@ -49,7 +50,7 @@ export class Lifecycle {
       await initStorage();
 
       await litestreamService.preflight();
-      const restored = await litestreamService.restoreIfNeeded();
+      await litestreamService.restoreIfNeeded();
 
       // Build/upgrade the schema and run seed migrations.
       // Must happen after any Litestream restore (which swaps the DB file) and before the first query.
@@ -60,10 +61,14 @@ export class Lifecycle {
       await initAuthBootstrap();
 
       await Promise.all([configCache.init(), reportDb.init(), resultDb.init()]);
-      if (!restored) {
-        await reportDb.populateTestRuns();
-      }
       console.log('[lifecycle] Databases initialized successfully');
+
+      // Fill the daily summary table (daily_test_totals) from historical test_runs
+      try {
+        dailyTotalsDb.ensureBackfilled();
+      } catch (dailyTotalsError) {
+        console.error(`[lifecycle] filling daily totals failed: ${String(dailyTotalsError)}`);
+      }
 
       await applyPrimaryModel();
 

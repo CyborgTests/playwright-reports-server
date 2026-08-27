@@ -14,6 +14,7 @@ import type { ReportSummaryTrendContext } from '../../prompts/index.js';
 import { buildReportSummarySegments } from '../../prompts/index.js';
 import {
   parseReportAnalysisFromText,
+  pruneInvalidReportCodeRefs,
   renderReportAnalysisAsMarkdown,
 } from '../../reportAnalysis.js';
 import { runFittedTask } from '../../routing/index.js';
@@ -305,6 +306,12 @@ export async function processReportSummary(task: LlmTaskRow): Promise<void> {
   let structured = parseReportAnalysisFromText(response.content);
 
   if (structured) {
+    const validTestIds = new Set<string>();
+    for (const c of clusters) for (const m of c.members) validTestIds.add(m.testId);
+    for (const u of unclustered) validTestIds.add(u.testId);
+    for (const f of flakyTests) validTestIds.add(f.testId);
+
+    structured = pruneInvalidReportCodeRefs(structured, validTestIds);
     structured = {
       ...structured,
       reportId,

@@ -166,6 +166,8 @@ const GROUP_HELP: Record<string, string> = {
     '  test analysis-submit <testId> --report-id <id> --analysis-file <path|-> --model <name> [--category <c>] [--force]',
     '      POST a fresh analysis (use `-` to read from stdin). Refused with 409 when an',
     '      analysis already exists for (testId, reportId) - route to `test feedback` instead.',
+    '      --category is the root cause (app_bug | test_bug | environment | slow_path | unknown),',
+    '      NOT a `category list` value; pass it or the run keeps its heuristic label everywhere.',
     '      --force overwrites; only use after explicit user confirmation.',
     '  test feedback <testId> --comment "..." [--report-id <id> | --file-id <id> --project <p>]',
     '      Upsert a dissent/correction note on an existing analysis. The server requires either',

@@ -17,12 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { withBase } from '@/lib/url';
-
-function buildTestLink(reportUrl: string | undefined, testId: string): string | undefined {
-  if (!reportUrl) return undefined;
-  return `${withBase(reportUrl)}#?testId=${testId}`;
-}
+import { servedTestUrl } from '@/lib/url';
 
 export function ClusterCard({
   cluster,
@@ -266,10 +261,10 @@ function TestTitleLink({
 }: {
   title: string;
   testId: string;
-  reportUrl?: string;
+  reportUrl?: string | null;
   className?: string;
 }) {
-  const href = buildTestLink(reportUrl, testId);
+  const href = servedTestUrl(reportUrl, testId);
   if (!href) {
     return <span className={className}>{title}</span>;
   }

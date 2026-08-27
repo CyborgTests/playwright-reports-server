@@ -1,3 +1,4 @@
+import type { SourceLocation } from '@playwright-reports/shared';
 import {
   type DomDiff,
   formatRelativeTime,
@@ -29,7 +30,7 @@ export interface FailureDetailsForPrompt {
   stackTrace?: string;
   testTitle: string;
   filePath: string;
-  location?: { file: string; line: number; column: number };
+  location?: SourceLocation;
   attachments?: Array<{ name: string; path: string; contentType: string }>;
   attempt: number;
   status: string;
@@ -314,8 +315,11 @@ function buildNetworkActivityBlock(evidence: FailureEvidence | undefined): strin
   const events = evidence.networkEvents;
   const pendingCount = events.filter((n) => n.pending).length;
   let block = `## Network (failed + pending + recent successful)\n`;
+  if (evidence.environment?.baseURL) {
+    block += `Test base_url: ${evidence.environment.baseURL} - the app's own API, CDN, or regional hosts may sit on other domains.\n`;
+  }
   if (pendingCount > 0) {
-    block += `${pendingCount} request(s) never got a response (in-flight/aborted at failure) - marked [PENDING]; a likely cause if the page hung loading.\n`;
+    block += `${pendingCount} request(s) never got a response (in-flight/aborted at failure) - marked [PENDING]; a likely cause if the page hung waiting on one.\n`;
   }
   for (const ev of events) {
     const isError = !!ev.failureText || (typeof ev.status === 'number' && ev.status >= 400);
@@ -440,6 +444,13 @@ function buildActionDomEffectBlock(diff: DomDiff | null | undefined): string {
     return '';
   }
   return `## Failing Action DOM Effect\nHow the DOM changed across the failing action (before -> after). Little or no change means the action had no visible effect (e.g. target never appeared / not interactable) - weigh that against the error.\n${buildDomDiffBody(diff)}`;
+}
+
+function buildPageSnapshotBlock(evidence: FailureEvidence | undefined): string {
+  const snapshot = evidence?.pageSnapshot?.trim();
+  if (!snapshot) return '';
+  const lines = snapshot.split('\n').length;
+  return `## Page Snapshot (${lines} lines as captured)\n\n${snapshot}`;
 }
 
 function buildEnvironmentBlock(evidence: FailureEvidence | undefined): string {
@@ -677,12 +688,7 @@ export const buildTestFailureSegments = (args: {
     buildSegment('run_context', 'user', false, buildRunContextBlock(evidence)),
     buildSegment('test_metadata', 'user', false, buildTestMetadataBlock(evidence)),
     buildSegment('environment', 'user', false, buildEnvironmentBlock(evidence)),
-    buildSegment(
-      'page_snapshot',
-      'user',
-      false,
-      evidence?.pageSnapshot ? `## Page Snapshot\n\n${evidence.pageSnapshot}` : undefined
-    ),
+    buildSegment('page_snapshot', 'user', false, buildPageSnapshotBlock(evidence)),
     buildSegment('evidence_close', 'user', false, '</evidence>'),
   ]);
 };

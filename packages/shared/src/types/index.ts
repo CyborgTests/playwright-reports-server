@@ -1,5 +1,6 @@
 import type { AccessMatrixOverrides, Role } from '../access.js';
 import type { LlmCircuitStatus } from './analytics.js';
+import type { AttachmentCleanupKind, CronConfig } from './cleanup.js';
 
 export type UUID = `${string}-${string}-${string}-${string}-${string}`;
 
@@ -173,12 +174,7 @@ export interface SiteWhiteLabelConfig {
   s3Bucket?: string;
   azureAccountName?: string;
   azureContainer?: string;
-  cron?: {
-    resultExpireDays?: number;
-    resultExpireCronSchedule?: string;
-    reportExpireDays?: number;
-    reportExpireCronSchedule?: string;
-  };
+  cron?: CronConfig;
   llm?: LLMConfig;
   testManagement?: TestManagementConfig;
   notifications?: NotificationsConfig;
@@ -242,7 +238,7 @@ export interface Report {
   title?: string;
   displayNumber?: number;
   project: string;
-  reportUrl: string;
+  reportUrl: string | null;
   createdAt: string;
   size: string;
   sizeBytes: number;
@@ -282,19 +278,25 @@ export enum ReportTestOutcomeEnum {
   Failed = 'failed',
 }
 
+export interface SourceLocation {
+  file: string;
+  line?: number;
+  column?: number;
+}
+
+export interface TestAnnotation {
+  type: string;
+  description?: string;
+}
+
 export interface ReportTest {
   testId: string;
   title: string;
   projectName?: string;
   project?: string;
-  location?: {
-    file: string;
-    line: number;
-    column: number;
-  };
+  location?: SourceLocation;
   duration: number;
   outcome: ReportTestOutcome;
-  ok: boolean;
   path?: string[];
   attachments?: Array<{
     name: string;
@@ -311,10 +313,7 @@ export interface ReportTest {
     }>;
   }>;
   tags?: string[];
-  annotations?: Array<{
-    type?: string;
-    description?: string;
-  }>;
+  annotations?: TestAnnotation[];
   createdAt?: string;
   // test management fields
   flakinessScore?: number;
@@ -323,10 +322,8 @@ export interface ReportTest {
 }
 
 export interface ReportFile {
-  name: string;
   fileId: string;
   fileName: string;
-  path: string;
   stats: ReportStats;
   tests: ReportTest[];
 }
@@ -338,6 +335,34 @@ export interface ReportStats {
   flaky?: number;
   skipped?: number;
   ok?: boolean;
+}
+
+export interface ReportTestFailure {
+  message: string | null;
+  stackTrace: string | null;
+  location: SourceLocation | null;
+  artifactsAvailable: boolean;
+  removedAttachmentKinds: AttachmentCleanupKind[];
+  attachments: Array<{ name: string; contentType: string; url: string }>;
+  traceViewerBase: string | null;
+  history: {
+    priorOccurrenceCount: number | null;
+    firstOccurrence: {
+      reportId: string;
+      createdAt: string;
+      displayNumber: number | null;
+      title: string | null;
+    } | null;
+    distinctErrors: number;
+    totalFailures: number;
+    previousFailure: { at: string; sameError: boolean | null } | null;
+  };
+  crossProject: Array<{
+    project: string;
+    isQuarantined: boolean;
+    lastRunAt: string | null;
+    stats: Required<Omit<ReportStats, 'ok'>>;
+  }>;
 }
 
 export interface ReportInfo {
@@ -370,7 +395,7 @@ export interface ReportHistory {
   title?: string;
   displayNumber?: number;
   project: string;
-  reportUrl: string;
+  reportUrl: string | null;
   createdAt: string;
   size: string;
   sizeBytes: number;
@@ -387,12 +412,6 @@ export interface ReportHistory {
   };
 }
 
-export interface TestHistory extends ReportTest {
-  createdAt: string;
-  reportID: string;
-  reportUrl: string;
-}
-
 export interface ReportTestFilters {
   outcomes?: ReportTestOutcome[];
   name?: string;
@@ -406,11 +425,6 @@ export interface ServerDataInfo {
   numOfReports: number;
   reportsFolderSizeinMB: string;
   availableSizeinMB: string;
-}
-
-export interface ReportPath {
-  reportID: string;
-  project?: string;
 }
 
 export interface ResultDetails {
@@ -477,12 +491,7 @@ export interface ServerConfig {
   allowOpenRegistration?: boolean;
   defaultUserRole?: Role;
   accessMatrix?: AccessMatrixOverrides;
-  cron?: {
-    resultExpireDays?: number;
-    resultExpireCronSchedule?: string;
-    reportExpireDays?: number;
-    reportExpireCronSchedule?: string;
-  };
+  cron?: CronConfig;
   llm?: LLMConfig;
   testManagement?: TestManagementConfig;
   notifications?: NotificationsConfig;

@@ -86,7 +86,7 @@ const FAILING_OUTCOMES = new Set(['unexpected', 'failed', 'flaky', 'timedOut']);
 export const isFailingOutcome = (outcome: string): boolean => FAILING_OUTCOMES.has(outcome);
 
 function formatDuration(ms: number | undefined): string {
-  if (ms == null) return '—';
+  if (ms == null) return '-';
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }
 
@@ -259,7 +259,7 @@ export async function buildReportPdf(input: ReportPdfInput): Promise<Uint8Array>
       color: rgb(0.8, 0.83, 0.9),
     }
   );
-  page.drawText(sanitizeWinAnsi(`${report.project}  ·  run #${report.displayNumber ?? '—'}`), {
+  page.drawText(sanitizeWinAnsi(`${report.project}  ·  run #${report.displayNumber ?? '-'}`), {
     x: MARGIN,
     y: A4[1] - 76,
     size: 9,
@@ -286,7 +286,7 @@ export async function buildReportPdf(input: ReportPdfInput): Promise<Uint8Array>
   }
   y = A4[1] - 96 - 18;
 
-  text(`Commit: ${report.gitShortHash ?? '—'}  "${(report.gitSubject ?? '').slice(0, 70)}"`, {
+  text(`Commit: ${report.gitShortHash ?? '-'}  "${(report.gitSubject ?? '').slice(0, 70)}"`, {
     size: 8.5,
     color: color.muted,
     gap: 1,
@@ -313,7 +313,7 @@ export async function buildReportPdf(input: ReportPdfInput): Promise<Uint8Array>
     ['Failed', report.stats.unexpected, color.red],
     ['Flaky', report.stats.flaky, color.amber],
     ['Skipped', report.stats.skipped, color.muted],
-    ['Pass rate', report.passRate == null ? '—' : `${report.passRate.toFixed(1)}%`, color.blue],
+    ['Pass rate', report.passRate == null ? '-' : `${report.passRate.toFixed(1)}%`, color.blue],
   ];
   need(46);
   const cellWidth = CONTENT_WIDTH / stats.length;
@@ -381,9 +381,9 @@ export async function buildReportPdf(input: ReportPdfInput): Promise<Uint8Array>
   // ---------- 4. comparison vs previous ----------
   if (input.diff) {
     forceNewPage();
-    sectionTitle(`Comparison vs run #${input.diff.baselineDisplayNumber ?? '—'}`);
+    sectionTitle(`Comparison vs run #${input.diff.baselineDisplayNumber ?? '-'}`);
     text(
-      `Baseline: #${input.diff.baselineDisplayNumber ?? '—'} "${input.diff.baselineTitle ?? ''}"${
+      `Baseline: #${input.diff.baselineDisplayNumber ?? '-'} "${input.diff.baselineTitle ?? ''}"${
         input.diff.baselineCreatedAt ? ` (${input.diff.baselineCreatedAt})` : ''
       }`,
       { size: 8.5, color: color.muted, gap: 4 }
@@ -426,7 +426,7 @@ export async function buildReportPdf(input: ReportPdfInput): Promise<Uint8Array>
     });
     y -= 16;
     text(
-      `${failure.location}   ·   ${formatDuration(failure.durationMs)}   ·   category: ${failure.category ?? '—'}`,
+      `${failure.location}   ·   ${formatDuration(failure.durationMs)}   ·   category: ${failure.category ?? '-'}`,
       { size: 8.5, color: color.muted, gap: 4 }
     );
 
@@ -546,7 +546,7 @@ export async function buildReportPdf(input: ReportPdfInput): Promise<Uint8Array>
     });
     footerPage.drawText(
       sanitizeWinAnsi(
-        `${report.project} · run #${report.displayNumber ?? '—'} · ${report.reportID}`
+        `${report.project} · run #${report.displayNumber ?? '-'} · ${report.reportID}`
       ),
       {
         x: MARGIN,

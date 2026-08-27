@@ -46,7 +46,7 @@ export interface TestBrief {
     location?: FailureLocation;
     appFrame?: string;
     reportId: string;
-    reportUrl?: string;
+    reportUrl?: string | null;
     createdAt: string;
     attachments?: {
       screenshotUrl?: string;
@@ -115,7 +115,7 @@ interface ReportBriefBase {
   title?: string;
   project: string;
   createdAt: string;
-  reportUrl: string;
+  reportUrl: string | null;
   stats: { total: number; passed: number; failed: number; flaky: number; skipped: number };
   clusterSummary: ReportBriefCluster[];
   unclusteredFailures: number;
@@ -298,7 +298,7 @@ export interface ReportResolveResponse {
     title?: string;
     displayNumber: number;
     createdAt: string;
-    reportUrl: string;
+    reportUrl: string | null;
   }>;
 }
 
@@ -317,7 +317,7 @@ export interface ReportListRow {
   title?: string;
   displayNumber?: number;
   createdAt: string;
-  reportUrl?: string;
+  reportUrl?: string | null;
   sizeBytes?: number;
   stats?: ReportStats;
 }
@@ -437,7 +437,7 @@ export interface ReportCompareResponse {
     displayNumber?: number;
     project: string;
     createdAt: string;
-    reportUrl: string;
+    reportUrl: string | null;
     stats?: ReportStats;
   };
   reportB: {
@@ -446,7 +446,7 @@ export interface ReportCompareResponse {
     displayNumber?: number;
     project: string;
     createdAt: string;
-    reportUrl: string;
+    reportUrl: string | null;
     stats?: ReportStats;
   };
   summary: {

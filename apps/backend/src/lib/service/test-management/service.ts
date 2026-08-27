@@ -1,18 +1,25 @@
 import type {
+  SourceLocation,
+  TestAnnotation,
   TestCrossProjectOccurrence,
   TestDetail,
   TestDetailStats,
   TestDurationStats,
   TestFailureGroup,
   TestManagementConfig,
+  TestReportRef,
 } from '@playwright-reports/shared';
 import { FLAKINESS_THRESHOLDS, ReportTestOutcomeEnum } from '@playwright-reports/shared';
 import { llmService } from '../../llm/index.js';
 import { extractFailureEvidence } from '../../parser/failure-extraction.js';
 import type { ReportHistory } from '../../storage/types.js';
+import { withError } from '../../withError.js';
 import {
+  dailyTotalsDb,
   llmTasksDb,
+  type RunDeltaInput,
   regressionsDb,
+  reportDb,
   type Test,
   type TestDetailStatsAggregate,
   type TestRunRow,
@@ -22,10 +29,38 @@ import {
   testQueriesDb,
   toRegressionContext,
 } from '../db/index.js';
+import {
+  normalizeAnnotations,
+  normalizeStringArray,
+  normalizeTags,
+} from '../db/tests/definition.js';
+import { parseJsonColumn } from '../db/utils.js';
 import { service } from '../index.js';
 import { computeErrorSignature } from './error-signature.js';
 import { classifyFailure } from './failure-classifier.js';
 import { computeFlakinessFromOutcomes } from './flakiness.js';
+
+function exponentialMovingAverageDuration(runs: TestRunRow[]): number {
+  if (runs.length === 0) return 0;
+  const alpha = 0.4;
+  let average = runs.at(-1)?.duration ?? 0;
+  for (let i = runs.length - 2; i >= 0; i--) {
+    average = alpha * (runs[i]?.duration || 0) + (1 - alpha) * average;
+  }
+  return Number(average.toFixed(2));
+}
+
+/** Skipped runs are not a pass/fail outcome, so they leave the denominator. */
+function historyPassRate(runs: TestRunRow[]): number {
+  let executed = 0;
+  let passed = 0;
+  for (const run of runs) {
+    if (run.outcome === ReportTestOutcomeEnum.Skipped) continue;
+    executed++;
+    if (run.outcome === ReportTestOutcomeEnum.Expected) passed++;
+  }
+  return executed === 0 ? 0 : Number(((passed / executed) * 100).toFixed(2));
+}
 
 function toTestDetailStats(row: TestDetailStatsAggregate): TestDetailStats {
   const totalRuns = row.totalRuns ?? 0;
@@ -160,7 +195,7 @@ export class TestManagementService {
       warningThresholdPercentage:
         testManagementCfg.warningThresholdPercentage ?? FLAKINESS_THRESHOLDS.WARNING_PERCENTAGE,
       autoQuarantineEnabled: testManagementCfg.autoQuarantineEnabled ?? false,
-      flakinessMinRuns: testManagementCfg.flakinessMinRuns ?? 1,
+      flakinessMinRuns: testManagementCfg.flakinessMinRuns ?? FLAKINESS_THRESHOLDS.MIN_RUNS,
       flakinessEvaluationWindowDays: testManagementCfg.flakinessEvaluationWindowDays ?? 30,
     };
 
@@ -175,7 +210,11 @@ export class TestManagementService {
     console.log(
       `[testManagement] Processing report ${report.reportID} for project ${report.project}`
     );
-    if (!report.files) return;
+    if (!report.files) {
+      throw new Error(
+        `report ${report.reportID} has no files - report.json is missing or malformed`
+      );
+    }
 
     const config = await this.getConfig();
 
@@ -239,6 +278,7 @@ export class TestManagementService {
     const currentReportCommit: string | null = reportMetadata?.gitCommit?.hash ?? null;
 
     const files = report.files;
+    const dailyTotals: RunDeltaInput[] = [];
     const transaction = () => {
       for (const file of files) {
         if (!file.tests) continue;
@@ -247,14 +287,23 @@ export class TestManagementService {
           const testId = test.testId ?? '';
           const fileId = file.fileId ?? '';
           const filePath = file.fileName ?? 'unknown';
+          const runCreatedAt =
+            test.createdAt ??
+            (report.startTime ? new Date(report.startTime).toISOString() : report.createdAt);
 
-          testDb.createTest({
-            testId,
-            fileId,
-            filePath,
-            project: report.project,
-            title: test.title || 'Unknown Test',
-          });
+          testDb.createTest(
+            {
+              testId,
+              fileId,
+              filePath,
+              project: report.project,
+              title: test.title || 'Unknown Test',
+              projectName: test.projectName ?? null,
+              suitePath: normalizeStringArray(test.path),
+              tags: normalizeTags(test.tags),
+            },
+            runCreatedAt
+          );
 
           const state = testDb.getTestState(testId, fileId, report.project);
           const stayQuarantined = state
@@ -280,16 +329,24 @@ export class TestManagementService {
             reportId: report.reportID,
             outcome: test.outcome || 'unknown',
             duration: test.duration,
-            createdAt:
-              test.createdAt ??
-              (report.startTime ? new Date(report.startTime).toISOString() : report.createdAt),
+            createdAt: runCreatedAt,
             failureDetails: failureDetails ?? undefined,
             failureCategory: classification?.category,
             failureCategorySource: classification?.source,
             errorSignature: errorSignature ?? undefined,
             hasTrace,
+            annotations: normalizeAnnotations(test.annotations),
           };
 
+          testDb.createTestRun(testRun);
+          dailyTotals.push({
+            project: report.project,
+            outcome: testRun.outcome,
+            duration: testRun.duration ?? null,
+            createdAt: testRun.createdAt,
+            testId,
+            fileId,
+          });
           const flakinessScore = this.computeFlakiness(
             testId,
             fileId,
@@ -297,7 +354,6 @@ export class TestManagementService {
             state?.flakinessResetAt,
             config
           );
-          testDb.createTestRun(testRun);
           testDb.refreshTestStatCols(testId, fileId, report.project);
           testDb.setFlakinessScore(testId, fileId, report.project, flakinessScore);
 
@@ -322,6 +378,7 @@ export class TestManagementService {
         }
       }
       regressionsDb.detectForReport(report.reportID, currentReportCommit);
+      dailyTotalsDb.applyReportRuns(report.reportID, report.project, dailyTotals);
     };
 
     try {
@@ -333,11 +390,19 @@ export class TestManagementService {
       );
     }
 
-    if (llmService.isConfigured()) {
-      const cfg = await service.getConfig();
-      if (cfg.llm?.featureEnabled !== false && cfg.llm?.autoAnalyzeNewReports) {
-        this.queueLlmAnalysis(report.reportID, report.project);
-      }
+    const { error: llmError } = await withError(
+      (async () => {
+        if (!llmService.isConfigured()) return;
+        const cfg = await service.getConfig();
+        if (cfg.llm?.featureEnabled !== false && cfg.llm?.autoAnalyzeNewReports) {
+          this.queueLlmAnalysis(report.reportID, report.project);
+        }
+      })()
+    );
+    if (llmError) {
+      console.error(
+        `[testManagement] failed to queue LLM analysis for ${report.reportID}: ${llmError.message}`
+      );
     }
   }
 
@@ -388,7 +453,7 @@ export class TestManagementService {
         duration?: number;
         attachments?: Array<{ name: string; contentType: string; path: string }>;
       }>;
-      location?: { file: string; line: number; column: number };
+      location?: SourceLocation;
       attachments?: Array<{ name: string; path: string; contentType: string }>;
     },
     filePath: string,
@@ -438,7 +503,7 @@ export class TestManagementService {
     config: TestManagementConfig
   ): number {
     const windowDays = config.flakinessEvaluationWindowDays ?? 30;
-    const minRuns = config.flakinessMinRuns ?? 1;
+    const minRuns = config.flakinessMinRuns ?? FLAKINESS_THRESHOLDS.MIN_RUNS;
 
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - windowDays);
@@ -552,7 +617,11 @@ export class TestManagementService {
       resolvedSince?: string;
       slim?: boolean;
     }
-  ): Promise<{ data: TestWithQuarantineInfoRow[]; total: number }> {
+  ): Promise<{
+    data: TestWithQuarantineInfoRow[];
+    total: number;
+    reportRefs: TestReportRef[];
+  }> {
     let tierOpt:
       | {
           warningThreshold: number;
@@ -585,19 +654,44 @@ export class TestManagementService {
       resolvedSince: options?.resolvedSince,
     });
 
-    if (rows.length === 0) return { data: [], total };
+    if (rows.length === 0) return { data: [], total, reportRefs: [] };
 
-    const skipRuns = options?.slim === true;
-    const runsByKey = skipRuns
+    const skipHistory = options?.slim === true;
+    const runsByKey = skipHistory
       ? undefined
       : testQueriesDb.getRunsForLanes(
           rows.map((r) => ({ testId: r.testId, fileId: r.fileId, project: r.project })),
           options?.from || options?.to ? { from: options?.from, to: options?.to } : undefined
         );
 
+    const reportRefs: TestReportRef[] = [];
+    const refIndexByReportId = new Map<string, number>();
+    if (runsByKey) {
+      const createdAtByReportId = new Map<string, string>();
+      for (const runs of runsByKey.values()) {
+        for (const run of runs) {
+          if (!createdAtByReportId.has(run.reportId)) {
+            createdAtByReportId.set(run.reportId, run.createdAt);
+          }
+        }
+      }
+      const labels = reportDb.getLabelsByIds([...createdAtByReportId.keys()]);
+      for (const [reportId, createdAt] of createdAtByReportId) {
+        const label = labels.get(reportId);
+        refIndexByReportId.set(reportId, reportRefs.length);
+        reportRefs.push({
+          reportId,
+          createdAt,
+          displayNumber: label?.displayNumber ?? undefined,
+          title: label?.title ?? undefined,
+        });
+      }
+    }
+
     const data: TestWithQuarantineInfoRow[] = rows.map((row) => {
       const key = `${row.testId}::${row.fileId}::${row.project}`;
       const isQuarantined = Boolean(row.quarantined);
+      const runs = runsByKey?.get(key);
       return {
         testId: row.testId,
         fileId: row.fileId,
@@ -609,14 +703,28 @@ export class TestManagementService {
         lastRunAt: row.lastRunAt ?? undefined,
         flakinessScore: row.flakinessScore ?? undefined,
         flakinessResetAt: row.flakinessResetAt ?? undefined,
+        tags: parseJsonColumn<string[] | undefined>(row.tags, undefined),
+        annotations: parseJsonColumn<TestAnnotation[] | undefined>(
+          row.latestAnnotations,
+          undefined
+        ),
         isQuarantined,
         quarantinedAt: isQuarantined && row.latestNonSkippedAt ? row.latestNonSkippedAt : undefined,
         quarantineReason: isQuarantined && row.quarantineReason ? row.quarantineReason : undefined,
-        runs: runsByKey?.get(key) ?? [],
+        ...(runs
+          ? {
+              history: runs.map((run) => ({
+                report: refIndexByReportId.get(run.reportId) ?? 0,
+                outcome: run.outcome,
+              })),
+              historyPassRate: historyPassRate(runs),
+              emaDuration: exponentialMovingAverageDuration(runs),
+            }
+          : {}),
       };
     });
 
-    return { data, total };
+    return { data, total, reportRefs };
   }
 
   async getTestsSummary(

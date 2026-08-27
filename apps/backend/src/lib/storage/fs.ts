@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import type { AttachmentCleanupKind } from '@playwright-reports/shared';
 import getFolderSize from 'get-folder-size';
 import { Open } from 'unzipper';
 import { env } from '../../config/env.js';
@@ -12,6 +13,7 @@ import { parse } from '../parser/index.js';
 import { generatePlaywrightReport } from '../pw.js';
 import { processWithConcurrency, Semaphore } from '../utils/semaphore.js';
 import { withError } from '../withError.js';
+import { collectAttachments, deleteEntries, summarizeAttachments } from './attachments.js';
 import {
   CWD,
   DATA_FOLDER,
@@ -24,12 +26,15 @@ import { createDirectory } from './folders.js';
 import { bytesToString } from './format.js';
 import { safeZipEntryPath } from './streamUtils.js';
 import type {
+  AttachmentDeleteResult,
+  AttachmentSizes,
   ByteRange,
   ReadFileResult,
   ReportHistory,
   ReportPath,
   ReportUploadMetadata,
   Storage,
+  StorageEntry,
 } from './types.js';
 import { resolveFileRange, unsatisfiableRangeResult } from './types.js';
 
@@ -76,8 +81,14 @@ async function pathIsFile(target: string): Promise<boolean> {
   }
 }
 
-async function reportExists(reportId: string): Promise<boolean> {
-  return pathIsFile(path.join(REPORTS_FOLDER, reportId, 'index.html'));
+function resolveReportFolder(reportId: string, storagePath?: string | null): string | null {
+  const resolved = path.resolve(REPORTS_FOLDER, storagePath || reportId);
+  return resolved.startsWith(REPORTS_FOLDER + path.sep) ? resolved : null;
+}
+
+async function reportExists(reportId: string, storagePath?: string | null): Promise<boolean> {
+  const folder = resolveReportFolder(reportId, storagePath);
+  return folder ? pathIsFile(path.join(folder, 'index.html')) : false;
 }
 
 async function resultExists(resultId: string): Promise<boolean> {
@@ -94,19 +105,23 @@ async function deleteResult(resultId: string) {
   await withError(fs.unlink(`${resultPath}.zip`));
 }
 
-async function deleteReports(reports: ReportPath[]) {
-  const paths = reports.map((report) => report.reportID);
-
-  await processWithConcurrency(paths, 10, async (id) => {
-    const { error } = await withError(deleteReport(id));
+async function deleteReports(reports: ReportPath[]): Promise<string[]> {
+  const outcomes = await processWithConcurrency(reports, 10, async (report) => {
+    const { error } = await withError(deleteReport(report.reportID, report.storagePath));
     if (error) {
-      console.warn(`[fs] failed to delete report ${id}:`, error);
+      console.warn(`[fs] failed to delete report ${report.reportID}:`, error);
+      return null;
     }
+    return report.reportID;
   });
+  return outcomes.filter((id): id is string => id !== null);
 }
 
-async function deleteReport(reportId: string) {
-  const reportPath = path.join(REPORTS_FOLDER, reportId);
+async function deleteReport(reportId: string, storagePath?: string | null) {
+  const reportPath = resolveReportFolder(reportId, storagePath);
+  if (!reportPath) {
+    throw new Error(`report ${reportId} resolves outside the reports root, refusing to delete`);
+  }
 
   await fs.rm(reportPath, { recursive: true, force: true });
 }
@@ -258,6 +273,51 @@ async function listKeys(prefix: string): Promise<string[]> {
   return keys;
 }
 
+async function listEntries(prefix: string): Promise<StorageEntry[]> {
+  const keys = await listKeys(prefix);
+  return processWithConcurrency(keys, 10, async (key) => {
+    const { result: stat, error } = await withError(fs.stat(path.join(CWD, key)));
+    if (error || !stat) {
+      console.warn(`[fs] could not stat ${key}, counting as 0 bytes`);
+      return { key, size: 0 };
+    }
+    return { key, size: stat.size };
+  });
+}
+
+async function reportAttachmentSizes(
+  reportId: string,
+  storagePath: string | null
+): Promise<AttachmentSizes> {
+  return summarizeAttachments(listEntries, reportId, storagePath);
+}
+
+async function deleteReportAttachments(
+  reportId: string,
+  storagePath: string | null,
+  kinds: AttachmentCleanupKind[]
+): Promise<AttachmentDeleteResult> {
+  if (!resolveReportFolder(reportId, storagePath)) {
+    throw new Error(`report ${reportId} resolves outside the reports root, refusing to delete`);
+  }
+  const { entries, traceDirectory } = await collectAttachments(
+    listEntries,
+    reportId,
+    storagePath,
+    kinds
+  );
+
+  const result = await deleteEntries(entries, 10, 'fs', (key) =>
+    fs.rm(path.join(CWD, key), { force: true })
+  );
+
+  if (traceDirectory) {
+    await withError(fs.rm(path.join(CWD, traceDirectory), { recursive: true, force: true }));
+  }
+
+  return result;
+}
+
 function resolveWithinData(key: string): string | null {
   const resolved = path.resolve(CWD, key);
   const root = path.resolve(DATA_FOLDER);
@@ -299,6 +359,8 @@ export const FS: Storage = {
   generateReport,
   uploadReportFromZipFile,
   listKeys,
+  deleteReportAttachments,
+  reportAttachmentSizes,
   readToString,
   readToBuffer,
   cleanupGeneratedReport: noopCleanupGeneratedReport,

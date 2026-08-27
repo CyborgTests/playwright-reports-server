@@ -1,9 +1,9 @@
 import { formatDuration, type LlmCircuitStatus } from '@playwright-reports/shared';
 import { AlertTriangle } from 'lucide-react';
-import { useCountdown } from '@/hooks/useCountdown';
+import { useTimeUntil } from '@/hooks/useTimeUntil';
 
 export function CircuitBanner({ circuit }: Readonly<{ circuit?: LlmCircuitStatus }>) {
-  const retryInMs = useCountdown(circuit?.state === 'open' ? circuit.retryInMs : null);
+  const retryInMs = useTimeUntil(circuit?.state === 'open' ? circuit.retryAt : null);
   if (!circuit || circuit.state === 'closed') return null;
 
   const message =

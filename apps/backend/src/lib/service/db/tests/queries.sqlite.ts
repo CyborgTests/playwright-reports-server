@@ -1,7 +1,16 @@
+import type {
+  ReportFile,
+  ReportStats,
+  ReportTest,
+  ReportTestFailure,
+  TestAnnotation,
+} from '@playwright-reports/shared';
+import { countOutcomes } from '@playwright-reports/shared';
 import { sql } from 'kysely';
 import type { DerivedPageOptions } from '../queries/testAnalytics.js';
 import * as testQueries from '../queries/testAnalytics.js';
 import { singletonOf } from '../singleton.js';
+import { parseJsonColumn } from '../utils.js';
 import { testDb } from './crud.sqlite.js';
 import {
   type DerivedPageRow,
@@ -11,6 +20,19 @@ import {
   type TestRunRow,
   type TestWithQuarantineInfoRow,
 } from './shared.js';
+
+export interface CrossProjectOccurrenceRow {
+  project: string;
+  fileId: string;
+  flakinessScore: number | null;
+  quarantined: number;
+  totalRuns: number;
+  lastRunAt: string | null;
+  expected: number;
+  unexpected: number;
+  flaky: number;
+  skipped: number;
+}
 
 export class TestQueriesDatabase extends TestDbBase {
   private readonly testDetailStatsStmt = this.db.prepare(TEST_DETAIL_STATS_SQL);
@@ -127,8 +149,12 @@ export class TestQueriesDatabase extends TestDbBase {
     const state = testDb.getTestState(testId, fileId, project);
     const isQuarantined = Boolean(state?.quarantined);
 
+    const { tags, latestAnnotations, ...rest } = test;
+
     return {
-      ...test,
+      ...rest,
+      tags: parseJsonColumn<string[] | undefined>(tags, undefined),
+      annotations: parseJsonColumn<TestAnnotation[] | undefined>(latestAnnotations, undefined),
       totalRuns: stats.totalRuns || 0,
       lastRunAt: stats.lastRunAt || undefined,
       flakinessScore: state?.flakinessScore ?? undefined,
@@ -142,14 +168,7 @@ export class TestQueriesDatabase extends TestDbBase {
   public getCrossProjectOccurrences(
     testId: string,
     excludeProject: string
-  ): Array<{
-    project: string;
-    fileId: string;
-    flakinessScore: number | null;
-    quarantined: number;
-    totalRuns: number;
-    lastRunAt: string | null;
-  }> {
+  ): CrossProjectOccurrenceRow[] {
     const compiled = this.k
       .selectFrom('tests as t')
       .leftJoin('test_runs as tr', (join) =>
@@ -165,19 +184,20 @@ export class TestQueriesDatabase extends TestDbBase {
         't.quarantined as quarantined',
         eb.fn.count<number>('tr.runId').as('totalRuns'),
         eb.fn.max<string | null>('tr.createdAt').as('lastRunAt'),
+        sql<number>`SUM(CASE WHEN tr.outcome IN ('expected','passed') THEN 1 ELSE 0 END)`.as(
+          'expected'
+        ),
+        sql<number>`SUM(CASE WHEN tr.outcome = 'flaky' THEN 1 ELSE 0 END)`.as('flaky'),
+        sql<number>`SUM(CASE WHEN tr.outcome = 'skipped' THEN 1 ELSE 0 END)`.as('skipped'),
+        sql<number>`SUM(CASE WHEN tr.outcome NOT IN ('expected','passed','flaky','skipped') THEN 1 ELSE 0 END)`.as(
+          'unexpected'
+        ),
       ])
       .where('t.testId', '=', testId)
       .where('t.project', '!=', excludeProject)
       .groupBy(['t.project', 't.fileId', 't.flakinessScore', 't.quarantined'])
       .compile();
-    return this.db.prepare(compiled.sql).all(...compiled.parameters) as Array<{
-      project: string;
-      fileId: string;
-      flakinessScore: number | null;
-      quarantined: number;
-      totalRuns: number;
-      lastRunAt: string | null;
-    }>;
+    return this.db.prepare(compiled.sql).all(...compiled.parameters) as CrossProjectOccurrenceRow[];
   }
 
   // Delegate to testQueries (kept as raw SQL by design - see file header).
@@ -199,6 +219,149 @@ export class TestQueriesDatabase extends TestDbBase {
   ): { total: number; flakyTests: TestWithQuarantineInfoRow[] } {
     return testQueries.getTestsSummary(this.db, project, warningThreshold);
   }
+
+  public getLaneFailureHistory(
+    testId: string,
+    fileId: string,
+    project: string,
+    errorSignature: string | null,
+    excludeReportId: string,
+    before: string
+  ): ReportTestFailure['history'] {
+    const lane = [testId, fileId, project] as const;
+    const counts = this.db
+      .prepare(
+        `SELECT COUNT(*) AS totalFailures,
+                COUNT(DISTINCT error_signature) AS distinctErrors,
+                SUM(CASE WHEN error_signature = ? AND reportId <> ? THEN 1 ELSE 0 END) AS priorOccurrenceCount
+           FROM test_runs
+          WHERE testId = ? AND fileId = ? AND project = ? AND error_signature IS NOT NULL`
+      )
+      .get(errorSignature, excludeReportId, ...lane) as {
+      totalFailures: number;
+      distinctErrors: number;
+      priorOccurrenceCount: number | null;
+    };
+
+    const previous = this.db
+      .prepare(
+        `SELECT error_signature AS signature, createdAt
+           FROM test_runs
+          WHERE testId = ? AND fileId = ? AND project = ?
+            AND createdAt < ? AND error_signature IS NOT NULL
+          ORDER BY createdAt DESC
+          LIMIT 1`
+      )
+      .get(...lane, before) as { signature: string; createdAt: string } | undefined;
+
+    const firstOccurrence = errorSignature
+      ? ((this.db
+          .prepare(
+            `SELECT tr.reportId, tr.createdAt, r.displayNumber, r.title
+               FROM test_runs tr
+               JOIN reports r ON r.reportID = tr.reportId
+              WHERE tr.testId = ? AND tr.fileId = ? AND tr.project = ?
+                AND tr.error_signature = ? AND tr.reportId <> ?
+              ORDER BY tr.createdAt ASC
+              LIMIT 1`
+          )
+          .get(...lane, errorSignature, excludeReportId) as
+          | ReportTestFailure['history']['firstOccurrence']
+          | undefined) ?? null)
+      : null;
+
+    return {
+      priorOccurrenceCount: errorSignature ? (counts.priorOccurrenceCount ?? 0) : null,
+      firstOccurrence,
+      distinctErrors: counts.distinctErrors,
+      totalFailures: counts.totalFailures,
+      previousFailure: previous
+        ? {
+            at: previous.createdAt,
+            sameError: errorSignature ? previous.signature === errorSignature : null,
+          }
+        : null,
+    };
+  }
+
+  public getReportFileTree(reportId: string): ReportFile[] {
+    const rows = this.db
+      .prepare(
+        `SELECT tr.testId, tr.fileId, tr.outcome, tr.duration, tr.annotations,
+                t.filePath, t.title, t.projectName, t.suitePath, t.tags
+           FROM test_runs tr
+           LEFT JOIN tests t
+             ON t.testId = tr.testId AND t.fileId = tr.fileId AND t.project = tr.project
+          WHERE tr.reportId = ?
+          ORDER BY COALESCE(t.filePath, tr.fileId), t.title, tr.testId`
+      )
+      .all(reportId) as Array<{
+      testId: string;
+      fileId: string;
+      outcome: string;
+      duration: number | null;
+      annotations: string | null;
+      filePath: string | null;
+      title: string | null;
+      projectName: string | null;
+      suitePath: string | null;
+      tags: string | null;
+    }>;
+
+    const byFile = new Map<string, ReportFile & { stats: Required<Omit<ReportStats, 'ok'>> }>();
+    for (const row of rows) {
+      let file = byFile.get(row.fileId);
+      if (!file) {
+        file = {
+          fileId: row.fileId,
+          fileName: row.filePath ?? 'unknown',
+          stats: { total: 0, expected: 0, unexpected: 0, flaky: 0, skipped: 0 },
+          tests: [],
+        };
+        byFile.set(row.fileId, file);
+      }
+
+      file.tests.push({
+        testId: row.testId,
+        title: row.title ?? 'Unknown Test',
+        projectName: row.projectName ?? undefined,
+        duration: row.duration ?? 0,
+        outcome: row.outcome as ReportTest['outcome'],
+        path: parseJsonColumn<string[] | undefined>(row.suitePath, undefined),
+        tags: parseJsonColumn<string[] | undefined>(row.tags, undefined),
+        annotations: parseJsonColumn<ReportTest['annotations']>(row.annotations, undefined),
+      });
+    }
+
+    for (const file of byFile.values()) {
+      file.stats = countOutcomes(file.tests.map((test) => test.outcome));
+    }
+    return [...byFile.values()].sort(compareBySeverity);
+  }
+}
+
+type FileStats = Required<Omit<ReportStats, 'ok'>>;
+
+function passRate(stats: FileStats): number {
+  const executed = stats.expected + stats.unexpected + stats.flaky;
+  return executed === 0 ? 0 : stats.expected / executed;
+}
+
+function severityRank(stats: FileStats): number {
+  if (stats.unexpected > 0) return 0;
+  if (stats.flaky > 0) return 1;
+  return stats.expected > 0 ? 2 : 3;
+}
+
+function compareBySeverity(
+  a: ReportFile & { stats: FileStats },
+  b: ReportFile & { stats: FileStats }
+) {
+  const byRank = severityRank(a.stats) - severityRank(b.stats);
+  if (byRank !== 0) return byRank;
+  const byRate = passRate(a.stats) - passRate(b.stats);
+  if (byRate !== 0) return byRate;
+  return a.fileName.localeCompare(b.fileName);
 }
 
 export const testQueriesDb = singletonOf('testQueries', () => new TestQueriesDatabase());

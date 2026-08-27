@@ -12,6 +12,8 @@
  * machines / CI runners still hash to the same value.
  */
 
+import type { SourceLocation } from '@playwright-reports/shared';
+
 const FRAME_LINE_RE = /\s*at\s+(?:(?:[^()]+)\s+\()?([^:]+):(\d+)(?::\d+)?\)?$/;
 
 const SKIP_PATTERNS = [
@@ -50,7 +52,7 @@ export function extractAppCodeFrame(stack: string | undefined): string | undefin
 export function extractFrameFromFailure(parsed: {
   stackTrace?: string;
   message?: string;
-  location?: { file: string; line: number };
+  location?: SourceLocation;
 }): string | undefined {
   const fromStack = extractAppCodeFrame(parsed.stackTrace) ?? extractAppCodeFrame(parsed.message);
   if (fromStack) return fromStack;

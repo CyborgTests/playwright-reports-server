@@ -24,7 +24,7 @@ import type { FailedTestRun, TestMeta } from './types.js';
 import { testKey } from './types.js';
 import { UnionFind } from './union-find.js';
 
-export type ReportUrlLookup = (reportId: string) => string | undefined;
+export type ReportUrlLookup = (reportId: string) => string | null | undefined;
 
 interface AnnotatedRun {
   run: FailedTestRun;

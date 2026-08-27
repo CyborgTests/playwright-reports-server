@@ -67,3 +67,16 @@ export const withBase = (path: string): string => {
   const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
   return path.startsWith('/') ? `${cleanBaseUrl}${path}` : `${cleanBaseUrl}/${path}`;
 };
+
+export const servedReportPath = (reportId: string): string => `/api/serve/${reportId}/index.html`;
+
+const testAnchor = (reportUrl: string, testId: string): string =>
+  `${withBase(reportUrl)}#?testId=${encodeURIComponent(testId)}`;
+
+export const servedTestUrl = (
+  reportUrl: string | null | undefined,
+  testId: string
+): string | undefined => (reportUrl ? testAnchor(reportUrl, testId) : undefined);
+
+export const servedTestHref = (reportId: string, testId: string): string =>
+  testAnchor(servedReportPath(reportId), testId);

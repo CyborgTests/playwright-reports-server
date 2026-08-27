@@ -183,7 +183,9 @@ function snapshotGroup(
   const empty =
     children.length === 0 || (contributing.length > 0 && contributing.every((c) => c.empty));
 
-  const passRate = weightedAverage(children.map((c) => ({ value: c.passRate, weight: c.weight })));
+  const passRate = weightedAverage(
+    children.filter((c) => !c.empty).map((c) => ({ value: c.passRate, weight: c.weight }))
+  );
   const grade = gradeFor(passRate, resolved.bands);
   const isOk = empty ? false : children.every((c) => c.weight <= 0 || c.isOk);
 
@@ -250,7 +252,7 @@ export class QualityDashboardsService {
     );
 
     const passRate = weightedAverage(
-      rootChildren.map((c) => ({ value: c.passRate, weight: c.weight }))
+      rootChildren.filter((c) => !c.empty).map((c) => ({ value: c.passRate, weight: c.weight }))
     );
     const grade = gradeFor(passRate, rootInheritance.bands);
     const contributing = rootChildren.filter((c) => c.weight > 0);

@@ -1,10 +1,11 @@
 // Intentionally NOT migrated to the Kysely.compile().
 // Uses complex analytics queries with:
-//   - dynamic CTEs (agg_w / recent_w) whose WHERE conditions vary by call site
+//   - dynamic CTEs (window_w / cat_w) whose WHERE conditions vary by call site
 //   - window functions (ROW_NUMBER OVER PARTITION BY) inside subqueries
 //   - dynamic ORDER BY clauses with several CASE/COALESCE switches
 //   - UNION ALL VALUES tuple lists for lane lookup
 import type Database from 'better-sqlite3';
+import { FAILED_OUTCOMES } from '../../../failure-clustering/types.js';
 import type {
   DerivedPageRow,
   Test,
@@ -12,7 +13,8 @@ import type {
   TestWithQuarantineInfoRow,
 } from '../tests.sqlite.js';
 import { convertDbRowToTestRun, type TestRunDbRow } from '../tests.sqlite.js';
-import { chunk } from '../utils.js';
+
+const FAILED_OUTCOMES_SQL = [...FAILED_OUTCOMES].map((o) => `'${o}'`).join(', ');
 
 export interface DerivedPageOptions {
   status?: 'all' | 'quarantined' | 'not-quarantined';
@@ -31,6 +33,10 @@ export interface DerivedPageOptions {
   regressedOnly?: boolean;
   regressedSince?: string;
   resolvedSince?: string;
+}
+
+function escapeLikeTerm(term: string): string {
+  return term.replace(/[\\%_]/g, '\\$&');
 }
 
 function scopedRunFilter(
@@ -70,8 +76,8 @@ export function getDerivedPage(
   const ctes: string[] = [];
   const cteParams: Array<string | number> = [];
   if (windowed) {
-    // Build the window filter's SQL and its bind params together so the three
-    // reuses (agg_w / recent_w / cat_w) can't desync: each CTE appends exactly
+    // Build the window filter's SQL and its bind params together so the two
+    // reuses (window_w / cat_w) can't desync: each CTE appends exactly
     // the params for the `?` placeholders it just emitted.
     const windowFilter = (
       failureCategory?: string
@@ -97,24 +103,18 @@ export function getDerivedPage(
       return { sql: conds.join(' AND '), params };
     };
 
-    const aggFilter = windowFilter();
-    ctes.push(`agg_w AS (
-      SELECT testId, fileId, project, COUNT(*) AS totalRuns, MAX(createdAt) AS lastRunAt
-      FROM test_runs WHERE ${aggFilter.sql}
-      GROUP BY testId, fileId, project
-    )`);
-    cteParams.push(...aggFilter.params);
-
-    const recentFilter = windowFilter();
-    ctes.push(`recent_w AS (
+    const windowAggregateFilter = windowFilter();
+    ctes.push(`window_w AS (
       SELECT testId, fileId, project,
+             COUNT(*) AS totalRuns,
+             MAX(createdAt) AS lastRunAt,
              CAST(SUM(CASE WHEN outcome IN ('expected', 'passed') THEN 1 ELSE 0 END) AS REAL)
                / NULLIF(COUNT(*), 0) AS recentPassRate,
              AVG(CASE WHEN duration >= 0 THEN duration END) AS avgDuration
-      FROM test_runs WHERE ${recentFilter.sql}
+      FROM test_runs WHERE ${windowAggregateFilter.sql}
       GROUP BY testId, fileId, project
     )`);
-    cteParams.push(...recentFilter.params);
+    cteParams.push(...windowAggregateFilter.params);
 
     if (options.failureCategory) {
       const catFilter = windowFilter(options.failureCategory);
@@ -126,12 +126,12 @@ export function getDerivedPage(
     }
   }
 
-  const totalRunsExpr = windowed ? 'COALESCE(agg_w.totalRuns, 0)' : 'COALESCE(t.totalRuns, 0)';
-  const lastRunAtExpr = windowed ? 'agg_w.lastRunAt' : 't.latestRunAt';
+  const totalRunsExpr = windowed ? 'COALESCE(window_w.totalRuns, 0)' : 'COALESCE(t.totalRuns, 0)';
+  const lastRunAtExpr = windowed ? 'window_w.lastRunAt' : 't.latestRunAt';
   const passRateExpr = windowed
-    ? 'COALESCE(recent_w.recentPassRate, 1.0)'
+    ? 'COALESCE(window_w.recentPassRate, 1.0)'
     : 'COALESCE(t.recentPassRate, 1.0)';
-  const avgDurationExpr = windowed ? 'recent_w.avgDuration' : 't.avgDuration';
+  const avgDurationExpr = windowed ? 'window_w.avgDuration' : 't.avgDuration';
 
   const whereConds: string[] = [];
   const whereParams: Array<string | number> = [];
@@ -141,7 +141,7 @@ export function getDerivedPage(
     whereParams.push(project as string);
   }
   if (windowed && !options.resolvedSince && !options.regressedSince) {
-    whereConds.push('agg_w.totalRuns IS NOT NULL AND agg_w.totalRuns > 0');
+    whereConds.push('window_w.totalRuns IS NOT NULL AND window_w.totalRuns > 0');
   }
   if (options.status === 'quarantined') {
     whereConds.push('COALESCE(t.quarantined, 0) = 1');
@@ -180,23 +180,19 @@ export function getDerivedPage(
   if (options.search) {
     const term = options.search.trim();
     if (term.length >= 3) {
-      // FTS5 with the trigram tokenizer accelerates substring search
-      // ("contains" anywhere in title or filePath) via an inverted index.
-      // The user's input is quoted as a phrase so any FTS5 query-syntax
-      // metacharacters (-, :, (, NEAR, etc.) are treated as literal text.
-      const phrase = `"${term.replace(/"/g, '""')}"`;
       whereConds.push(
         `(t.testId, t.fileId, t.project) IN (
           SELECT testId, fileId, project FROM tests_fts WHERE tests_fts MATCH ?
         )`
       );
-      whereParams.push(phrase);
+      whereParams.push(`"${term.replace(/"/g, '""')}"`);
     } else if (term.length > 0) {
-      // Trigram FTS can't tokenize inputs shorter than 3 chars, so fall
-      // back to a LIKE scan for very short search prefixes.
-      const like = `%${term.toLowerCase()}%`;
-      whereConds.push('(LOWER(t.title) LIKE ? OR LOWER(t.filePath) LIKE ?)');
-      whereParams.push(like, like);
+      const like = `%${escapeLikeTerm(term.toLowerCase())}%`;
+      whereConds.push(
+        `(LOWER(t.title) LIKE ? ESCAPE '\\' OR LOWER(t.filePath) LIKE ? ESCAPE '\\'
+          OR LOWER(t.tags) LIKE ? ESCAPE '\\')`
+      );
+      whereParams.push(like, like, like);
     }
   }
 
@@ -251,11 +247,9 @@ export function getDerivedPage(
   const whereSql = whereConds.length ? `WHERE ${whereConds.join(' AND ')}` : '';
   const windowJoins = windowed
     ? `
-      LEFT JOIN agg_w
-        ON agg_w.testId = t.testId AND agg_w.fileId = t.fileId AND agg_w.project = t.project
-      LEFT JOIN recent_w
-        ON recent_w.testId = t.testId AND recent_w.fileId = t.fileId
-          AND recent_w.project = t.project`
+      LEFT JOIN window_w
+        ON window_w.testId = t.testId AND window_w.fileId = t.fileId
+          AND window_w.project = t.project`
     : '';
   const baseFrom = `FROM tests t ${windowJoins} ${whereSql}`;
 
@@ -270,7 +264,7 @@ export function getDerivedPage(
 
   const rowsSql = `${cteHead}
     SELECT
-      t.testId, t.fileId, t.filePath, t.project, t.title, t.createdAt,
+      t.testId, t.fileId, t.filePath, t.project, t.title, t.createdAt, t.tags, t.latestAnnotations,
       ${totalRunsExpr} AS totalRuns,
       ${lastRunAtExpr} AS lastRunAt,
       t.latestOutcome AS latestOutcome,
@@ -303,100 +297,56 @@ export function getDerivedPage(
   return { rows, total };
 }
 
-const LANE_CHUNK_SIZE = 5000;
+export const LANE_HISTORY_LIMIT = 30;
 
 export function getRunsForLanes(
   db: Database.Database,
   lanes: Array<{ testId: string; fileId: string; project: string }>,
   opts?: { from?: string; to?: string }
 ): Map<string, TestRunRow[]> {
-  if (lanes.length === 0) return new Map();
-
   const map = new Map<string, TestRunRow[]>();
-  for (const batch of chunk(lanes, LANE_CHUNK_SIZE)) {
-    runsForLaneChunk(db, batch, opts, map);
-  }
-  return map;
-}
+  if (lanes.length === 0) return map;
 
-function runsForLaneChunk(
-  db: Database.Database,
-  lanes: Array<{ testId: string; fileId: string; project: string }>,
-  opts: { from?: string; to?: string } | undefined,
-  out: Map<string, TestRunRow[]>
-): void {
-  const windowed = !!(opts?.from || opts?.to);
-  const laneRows = lanes
-    .map(() => 'SELECT ? AS testId, ? AS fileId, ? AS project')
-    .join(' UNION ALL ');
-  const params: Array<string | number> = lanes.flatMap((l) => [l.testId, l.fileId, l.project]);
-
-  let sql: string;
-  if (windowed) {
-    const winConds = ["tr.outcome != 'skipped'"];
-    if (opts?.from) {
-      winConds.push('tr.createdAt >= ?');
-      params.push(opts.from);
-    }
-    if (opts?.to) {
-      winConds.push('tr.createdAt < ?');
-      params.push(opts.to);
-    }
-    sql = `
-      WITH lanes(testId, fileId, project) AS (${laneRows})
-      SELECT tr.testId, tr.fileId, tr.project, tr.runId, tr.outcome,
-             tr.duration, tr.createdAt, tr.failure_category, tr.reportId
-      FROM test_runs tr
-      JOIN lanes l
-        ON l.testId = tr.testId AND l.fileId = tr.fileId AND l.project = tr.project
-      WHERE ${winConds.join(' AND ')}
-      ORDER BY tr.testId, tr.fileId, tr.project, tr.createdAt DESC
-    `;
-  } else {
-    sql = `
-      WITH lanes(testId, fileId, project) AS (${laneRows})
-      SELECT testId, fileId, project, runId, outcome, duration, createdAt,
-             failure_category, reportId
-      FROM (
-        SELECT tr.testId, tr.fileId, tr.project, tr.runId, tr.outcome,
-               tr.duration, tr.createdAt, tr.failure_category, tr.reportId,
-               ROW_NUMBER() OVER (
-                 PARTITION BY tr.testId, tr.fileId, tr.project
-                 ORDER BY tr.createdAt DESC
-               ) AS rn
-        FROM test_runs tr
-        JOIN lanes l
-          ON l.testId = tr.testId AND l.fileId = tr.fileId AND l.project = tr.project
-      )
-      WHERE rn <= 50
-      ORDER BY testId, fileId, project, createdAt DESC
-    `;
-  }
+  const conditions = ['testId = ?', 'fileId = ?', 'project = ?'];
+  if (opts?.from) conditions.push('createdAt >= ?');
+  if (opts?.to) conditions.push('createdAt < ?');
+  const statement = db.prepare(
+    `SELECT runId, outcome, duration, createdAt, failure_category, reportId
+     FROM test_runs
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY createdAt DESC
+     LIMIT ${LANE_HISTORY_LIMIT}`
+  );
+  const windowParameters = [opts?.from, opts?.to].filter((v): v is string => !!v);
 
   type LaneRunRow = Pick<
     TestRunDbRow,
-    'testId' | 'fileId' | 'project' | 'runId' | 'outcome' | 'duration' | 'createdAt' | 'reportId'
+    'runId' | 'outcome' | 'duration' | 'createdAt' | 'reportId'
   > & { failure_category: string | null };
-  const runRows = db.prepare(sql).all(...params) as LaneRunRow[];
-  for (const row of runRows) {
-    const key = `${row.testId}::${row.fileId}::${row.project}`;
-    let bucket = out.get(key);
-    if (!bucket) {
-      bucket = [];
-      out.set(key, bucket);
-    }
-    bucket.push({
-      runId: row.runId,
-      testId: row.testId,
-      fileId: row.fileId,
-      project: row.project,
-      reportId: row.reportId,
-      outcome: row.outcome,
-      duration: row.duration ?? undefined,
-      createdAt: row.createdAt,
-      failureCategory: row.failure_category || undefined,
-    });
+
+  for (const lane of lanes) {
+    const rows = statement.all(
+      lane.testId,
+      lane.fileId,
+      lane.project,
+      ...windowParameters
+    ) as LaneRunRow[];
+    map.set(
+      `${lane.testId}::${lane.fileId}::${lane.project}`,
+      rows.map((row) => ({
+        runId: row.runId,
+        testId: lane.testId,
+        fileId: lane.fileId,
+        project: lane.project,
+        reportId: row.reportId,
+        outcome: row.outcome,
+        duration: row.duration ?? undefined,
+        createdAt: row.createdAt,
+        failureCategory: row.failure_category || undefined,
+      }))
+    );
   }
+  return map;
 }
 
 export function getTestsSummary(
@@ -437,61 +387,6 @@ export function getTestsSummary(
   return { total: totalRow?.total ?? 0, flakyTests };
 }
 
-export function getDurationAggregates(
-  db: Database.Database,
-  project: string | undefined,
-  from?: string,
-  to?: string
-): { avgDuration: number; p95Duration: number; count: number } {
-  const { where, params } = scopedRunFilter(project, from, to);
-  const agg = db
-    .prepare(`SELECT AVG(duration) AS avg, COUNT(*) AS count FROM test_runs ${where}`)
-    .get(...params) as { avg: number | null; count: number };
-  const count = agg?.count ?? 0;
-  if (count === 0) {
-    return { avgDuration: 0, p95Duration: 0, count: 0 };
-  }
-  // traverse p95 from desc offset as we display slowest records only.
-  const ascOffset = Math.min(count - 1, Math.floor(count * 0.95));
-  const descOffset = count - 1 - ascOffset;
-  const p95Row = db
-    .prepare(`SELECT duration FROM test_runs ${where} ORDER BY duration DESC LIMIT 1 OFFSET ?`)
-    .get(...params, descOffset) as { duration: number | null } | undefined;
-  return {
-    avgDuration: agg.avg ?? 0,
-    p95Duration: p95Row?.duration ?? 0,
-    count,
-  };
-}
-
-export function getSlowestTests(
-  db: Database.Database,
-  project: string | undefined,
-  from: string | undefined,
-  to: string | undefined,
-  limit: number
-): Array<{ step: string; duration: number; testId: string }> {
-  const { where, params } = scopedRunFilter(project, from, to, { alias: 'tr' });
-  const sql = `
-    SELECT t.title AS step, tr.duration AS duration, tr.testId AS testId
-    FROM test_runs tr
-    JOIN tests t ON t.testId = tr.testId AND t.fileId = tr.fileId AND t.project = tr.project
-    ${where}
-    ORDER BY tr.duration DESC
-    LIMIT ?
-  `;
-  const rows = db.prepare(sql).all(...params, limit) as Array<{
-    step: string | null;
-    duration: number;
-    testId: string;
-  }>;
-  return rows.map((r) => ({
-    step: r.step ?? 'Unknown Test',
-    duration: r.duration,
-    testId: r.testId,
-  }));
-}
-
 export function getSlowCountsByReport(
   db: Database.Database,
   project: string | undefined,
@@ -517,26 +412,30 @@ export function getFlakySummaryInWindow(
   warningThreshold: number
 ): { total: number; flakyCount: number } {
   const scoped = project && project !== 'all';
-  const projectClause = scoped ? 'AND tr.project = ?' : '';
 
-  const row = db
+  const flakyRow = db
     .prepare(
-      `SELECT
-         COUNT(DISTINCT tr.testId) AS total,
-         COUNT(DISTINCT CASE
-           WHEN t.testId IS NOT NULL AND COALESCE(t.flakinessScore, 0) >= ?
-           THEN tr.testId END) AS flakyCount
-       FROM test_runs tr
-       LEFT JOIN tests t
-         ON t.testId = tr.testId AND t.fileId = tr.fileId AND t.project = tr.project
-       WHERE tr.outcome != 'skipped' AND tr.createdAt >= ? AND tr.createdAt < ? ${projectClause}`
+      `SELECT COUNT(DISTINCT t.testId) AS flakyCount
+       FROM tests t
+       WHERE COALESCE(t.flakinessScore, 0) >= ? ${scoped ? 'AND t.project = ?' : ''}
+         AND EXISTS (
+           SELECT 1 FROM test_runs tr
+           WHERE tr.testId = t.testId AND tr.fileId = t.fileId AND tr.project = t.project
+             AND tr.outcome != 'skipped' AND tr.createdAt >= ? AND tr.createdAt < ?
+         )`
     )
-    .get(...(scoped ? [warningThreshold, from, to, project] : [warningThreshold, from, to])) as {
-    total: number;
+    .get(...(scoped ? [warningThreshold, project, from, to] : [warningThreshold, from, to])) as {
     flakyCount: number;
   };
 
-  return { total: row?.total ?? 0, flakyCount: row?.flakyCount ?? 0 };
+  const totalRow = db
+    .prepare(
+      `SELECT COUNT(DISTINCT testId) AS total FROM test_runs
+       WHERE outcome != 'skipped' AND createdAt >= ? AND createdAt < ? ${scoped ? 'AND project = ?' : ''}`
+    )
+    .get(...(scoped ? [from, to, project] : [from, to])) as { total: number };
+
+  return { total: totalRow?.total ?? 0, flakyCount: flakyRow?.flakyCount ?? 0 };
 }
 
 export function getTopFailingTestsInWindow(
@@ -628,13 +527,13 @@ export function getFlakiestTestsInWindow(
   }>;
 }
 
-export function getTestRunsInWindow(
+export function getFailedTestRunsInWindow(
   db: Database.Database,
   project: string | undefined,
   from: string,
   to: string
 ): TestRunRow[] {
-  const conditions: string[] = ["tr.outcome != 'skipped'"];
+  const conditions: string[] = [`tr.outcome IN (${FAILED_OUTCOMES_SQL})`];
   const params: string[] = [];
 
   conditions.push('tr.createdAt >= ?');

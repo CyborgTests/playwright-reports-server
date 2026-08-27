@@ -1,4 +1,5 @@
 import type { ServerConfig } from '@playwright-reports/shared';
+import { CLEANUP_KINDS, CLEANUP_RULES, CLEANUP_SCHEDULE_KEYS } from '@playwright-reports/shared';
 import type { EditableSettingsSection } from './types';
 
 export interface ServerSectionFiles {
@@ -65,16 +66,13 @@ function serializeServer(
 
 function serializeCron(fd: FormData, temp: ServerConfig): void {
   const cron = temp.cron ?? {};
-  fd.append(
-    'resultExpireDays',
-    cron.resultExpireDays !== undefined ? cron.resultExpireDays.toString() : ''
-  );
-  fd.append('resultExpireCronSchedule', cron.resultExpireCronSchedule ?? '');
-  fd.append(
-    'reportExpireDays',
-    cron.reportExpireDays !== undefined ? cron.reportExpireDays.toString() : ''
-  );
-  fd.append('reportExpireCronSchedule', cron.reportExpireCronSchedule ?? '');
+  for (const kind of CLEANUP_KINDS) {
+    const key = CLEANUP_RULES[kind].daysKey;
+    fd.append(key, cron[key]?.toString() ?? '');
+  }
+  for (const key of CLEANUP_SCHEDULE_KEYS) {
+    fd.append(key, cron[key] ?? '');
+  }
 }
 
 function serializeTestManagement(fd: FormData, temp: ServerConfig): void {

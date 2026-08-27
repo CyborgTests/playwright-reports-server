@@ -1,8 +1,19 @@
 import { type PassThrough, Readable } from 'node:stream';
-import type { ReportInfo, ReportPath, ServerDataInfo, UUID } from '@playwright-reports/shared';
+import type {
+  AttachmentCleanupKind,
+  ReportInfo,
+  ServerDataInfo,
+  UUID,
+} from '@playwright-reports/shared';
 import type { Pagination } from '../pagination.js';
 
-export type { ReportPath, ServerDataInfo };
+export type { ServerDataInfo };
+
+export interface ReportPath {
+  reportID: string;
+  project?: string;
+  storagePath?: string | null;
+}
 
 export interface ByteRange {
   /** First byte offset to serve (defaults to 0). Mutually exclusive with suffixLength. */
@@ -91,16 +102,34 @@ export function unsatisfiableRangeResult(
   };
 }
 
+export type AttachmentSizes = Partial<
+  Record<AttachmentCleanupKind, { bytes: number; count: number }>
+>;
+export interface AttachmentDeleteResult {
+  freed: number;
+  failed: number;
+}
+export interface StorageEntry {
+  key: string;
+  size: number;
+}
+
 export interface Storage {
-  reportExists: (reportId: string) => Promise<boolean>;
+  reportExists: (reportId: string, storagePath: string | null) => Promise<boolean>;
   resultExists: (resultId: string) => Promise<boolean>;
+  deleteReportAttachments: (
+    reportId: string,
+    storagePath: string | null,
+    kinds: AttachmentCleanupKind[]
+  ) => Promise<AttachmentDeleteResult>;
+  reportAttachmentSizes: (reportId: string, storagePath: string | null) => Promise<AttachmentSizes>;
   readFile: (
     targetPath: string,
     contentType: string | null,
     range?: ByteRange
   ) => Promise<ReadFileResult | null>;
   deleteResults: (resultIDs: string[]) => Promise<void>;
-  deleteReports: (reports: ReportPath[]) => Promise<void>;
+  deleteReports: (reports: ReportPath[]) => Promise<string[]>;
   saveResult: (filename: string, stream: PassThrough) => Promise<void>;
   generateReport: (
     resultsIds: string[],
@@ -184,7 +213,7 @@ export type Report = {
   title?: string;
   displayNumber?: number;
   project: string;
-  reportUrl: string;
+  reportUrl: string | null;
   createdAt: string;
   size: string;
   sizeBytes: number;

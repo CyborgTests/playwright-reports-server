@@ -8,7 +8,6 @@ export function parseJsonColumn<T>(value: string | null | undefined, fallback: T
 }
 
 export function chunk<T>(items: readonly T[], size: number): T[][] {
-  if (size <= 0) return [items.slice()];
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) {
     out.push(items.slice(i, i + size));

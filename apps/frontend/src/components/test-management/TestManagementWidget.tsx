@@ -1,9 +1,4 @@
-import {
-  type DateRange,
-  FLAKINESS_THRESHOLDS,
-  type TestFilters,
-  type TestWithQuarantineInfo,
-} from '@playwright-reports/shared';
+import { type DateRange, FLAKINESS_THRESHOLDS, type TestFilters } from '@playwright-reports/shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -16,7 +11,7 @@ import { buildFilterParams, parseTestFilters } from './filter-params';
 import { TestFilters as TestFiltersComponent } from './TestFilters';
 import { DeleteTestDialog, QuarantineDialog } from './TestManagementDialogs';
 import { TestRow } from './TestRow';
-import { useTestMutations, useTestsQuery } from './useTestManagement';
+import { type TestRowItem, useTestMutations, useTestsQuery } from './useTestManagement';
 
 interface TestManagementWidgetProps {
   project?: string;
@@ -33,10 +28,10 @@ export default function TestManagementWidget({
     () => parseTestFilters(searchParams, project),
     [project, searchParams]
   );
-  const [quarantineTest, setQuarantineTest] = useState<TestWithQuarantineInfo | null>(null);
+  const [quarantineTest, setQuarantineTest] = useState<TestRowItem | null>(null);
   const [quarantineReason, setQuarantineReason] = useState('');
   const [isQuarantineModalOpen, setIsQuarantineModalOpen] = useState(false);
-  const [deleteTest, setDeleteTest] = useState<TestWithQuarantineInfo | null>(null);
+  const [deleteTest, setDeleteTest] = useState<TestRowItem | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   const handleFiltersChange = useCallback(
@@ -83,7 +78,7 @@ export default function TestManagementWidget({
   });
 
   const handleResetFlakiness = useCallback(
-    (test: TestWithQuarantineInfo) => {
+    (test: TestRowItem) => {
       resetFlakinessMutation({
         path: `/api/test/${test.testId}/flakiness-reset?project=${encodeURIComponent(test.project)}`,
       });
@@ -92,7 +87,7 @@ export default function TestManagementWidget({
   );
 
   const handleClearFlakinessReset = useCallback(
-    (test: TestWithQuarantineInfo) => {
+    (test: TestRowItem) => {
       clearFlakinessResetMutation({
         path: `/api/test/${test.testId}/flakiness-reset?project=${encodeURIComponent(test.project)}`,
       });
@@ -130,7 +125,7 @@ export default function TestManagementWidget({
       ? 'opened'
       : null;
 
-  const handleQuarantineAction = useCallback((test: TestWithQuarantineInfo) => {
+  const handleQuarantineAction = useCallback((test: TestRowItem) => {
     setQuarantineTest(test);
     if (!test.isQuarantined) {
       setQuarantineReason('');
@@ -141,7 +136,7 @@ export default function TestManagementWidget({
   const latestReportByProject = useMemo(() => {
     const map = new Map<string, { createdAt: string; reportId: string }>();
     for (const test of tests) {
-      const latestRun = test.runs?.at(0);
+      const latestRun = test.history?.at(0);
       if (!latestRun?.createdAt) continue;
       const current = map.get(test.project);
       if (!current || latestRun.createdAt > current.createdAt) {
@@ -151,14 +146,14 @@ export default function TestManagementWidget({
     return map;
   }, [tests]);
 
-  const isStale = (test: TestWithQuarantineInfo) => {
-    const latestRun = test.runs?.at(0);
+  const isStale = (test: TestRowItem) => {
+    const latestRun = test.history?.at(0);
     if (!latestRun) return true;
     const latest = latestReportByProject.get(test.project);
     return latest ? latestRun.reportId !== latest.reportId : false;
   };
 
-  const handleDeleteAction = useCallback((test: TestWithQuarantineInfo) => {
+  const handleDeleteAction = useCallback((test: TestRowItem) => {
     setDeleteTest(test);
     setIsDeleteModalOpen(true);
   }, []);

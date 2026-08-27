@@ -1,4 +1,3 @@
-import { sql } from 'kysely';
 import type { ProjectCoverageScope } from '../../../llm/prompts/index.js';
 import { getDatabase } from '../db.js';
 import { getKysely } from '../kysely.js';
@@ -66,27 +65,25 @@ export function computeProjectCoverageScope(
     db.prepare(qFailCompiled.sql).get(...qFailCompiled.parameters) as { c: number }
   ).c;
 
-  const distinctCompiled = k
-    .selectFrom('test_runs')
-    .select(() => sql<number>`COUNT(DISTINCT testId || '::' || fileId || '::' || project)`.as('c'))
-    .where('reportId', 'in', reportIds)
-    .compile();
-  const windowDistinctTests = (
-    db.prepare(distinctCompiled.sql).get(...distinctCompiled.parameters) as { c: number }
-  ).c;
+  const distinctTestsIn = (ids: string[]): number => {
+    const compiled = k
+      .selectFrom((eb) =>
+        eb
+          .selectFrom('test_runs')
+          .select(['testId', 'fileId', 'project'])
+          .distinct()
+          .where('reportId', 'in', ids)
+          .as('distinct_runs')
+      )
+      .select((eb) => eb.fn.countAll<number>().as('c'))
+      .compile();
+    return (db.prepare(compiled.sql).get(...compiled.parameters) as { c: number }).c;
+  };
+  const windowDistinctTests = distinctTestsIn(reportIds);
 
   let priorDistinctTests: number | undefined;
   if (priorReportIds && priorReportIds.length > 0) {
-    const priorCompiled = k
-      .selectFrom('test_runs')
-      .select(() =>
-        sql<number>`COUNT(DISTINCT testId || '::' || fileId || '::' || project)`.as('c')
-      )
-      .where('reportId', 'in', priorReportIds)
-      .compile();
-    priorDistinctTests = (
-      db.prepare(priorCompiled.sql).get(...priorCompiled.parameters) as { c: number }
-    ).c;
+    priorDistinctTests = distinctTestsIn(priorReportIds);
   }
 
   type NearFlakeRow = {

@@ -468,7 +468,6 @@ export async function processTestAnalysis(task: LlmTaskRow): Promise<void> {
       fileId,
       project,
       resolved.currentErrorSignature,
-      resolved.heuristicCategory,
       reportId
     );
 

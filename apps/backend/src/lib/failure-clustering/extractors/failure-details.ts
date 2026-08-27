@@ -5,15 +5,11 @@
  * times per run. This helper parses once and tolerates malformed rows.
  */
 
+import type { SourceLocation } from '@playwright-reports/shared';
+
 const MESSAGE_MAX_CHARS = 10_000;
 
 const PAGE_CONTEXT_MARKER_RE = /^#\s+(?:Page snapshot|Page Context|Test source|Local context)\b/im;
-
-export interface FailureLocation {
-  file: string;
-  line: number;
-  column?: number;
-}
 
 export interface FailureAttachment {
   name: string;
@@ -25,7 +21,7 @@ export interface ParsedFailureDetails {
   message: string;
   stackTrace?: string;
   filePath: string;
-  location?: FailureLocation;
+  location?: SourceLocation;
   attachments?: FailureAttachment[];
 }
 
@@ -42,7 +38,7 @@ export function parseFailureDetails(details: string | undefined): ParsedFailureD
       message?: string;
       stackTrace?: string;
       filePath?: string;
-      location?: FailureLocation;
+      location?: SourceLocation;
       attachments?: FailureAttachment[];
     };
     return {

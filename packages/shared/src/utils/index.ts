@@ -1,3 +1,5 @@
+import type { ReportStats } from '../types/index.js';
+
 // get unique list of projects from items with project property
 export function getUniqueProjectsList(items: { project: string }[]): string[] {
   const projects = new Set<string>();
@@ -76,4 +78,24 @@ export function sqliteTimestampToIso(ts: string): string | null {
 // parse timestamp to ms
 export function parseSqliteTimestamp(ts: string): number {
   return new Date(sqliteTimestampToIso(ts) ?? ts).getTime();
+}
+
+export function canonicalOutcome(
+  outcome: string | undefined
+): 'expected' | 'unexpected' | 'flaky' | 'skipped' {
+  if (outcome === 'expected' || outcome === 'passed') return 'expected';
+  if (outcome === 'flaky') return 'flaky';
+  if (outcome === 'skipped') return 'skipped';
+  return 'unexpected';
+}
+
+export function countOutcomes(
+  outcomes: Iterable<string | undefined>
+): Required<Omit<ReportStats, 'ok'>> {
+  const stats = { total: 0, expected: 0, unexpected: 0, flaky: 0, skipped: 0 };
+  for (const outcome of outcomes) {
+    stats.total++;
+    stats[canonicalOutcome(outcome)]++;
+  }
+  return stats;
 }

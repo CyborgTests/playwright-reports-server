@@ -2,9 +2,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { serveReportRoute } from '../constants.js';
 import { parse } from '../parser/index.js';
-import { DATA_FOLDER, DATA_PATH } from './constants.js';
+import { processWithConcurrency } from '../utils/semaphore.js';
+import { withError } from '../withError.js';
+import { DATA_FOLDER, DATA_PATH, reportPrefix } from './constants.js';
 import { bytesToString } from './format.js';
-import type { ReportUploadMetadata } from './types.js';
+import type { ReportPath, ReportUploadMetadata, StorageEntry } from './types.js';
 
 // Remote keys must use forward slashes regardless of host OS, so the remote key
 // is built with `path.posix.join` while the local path uses the platform
@@ -25,7 +27,6 @@ export async function parseRemoteReportMetadata(
   reportId: string,
   reportPath: string,
   metadata?: ReportUploadMetadata,
-  // Optionally provide the file's content directly (when it lives remotely, not on disk).
   htmlContent?: string,
   sizeBytes?: number
 ): Promise<ReportUploadMetadata> {
@@ -50,4 +51,26 @@ export async function parseRemoteReportMetadata(
   }
 
   return content;
+}
+
+export async function deleteReportsByPrefix(
+  reports: ReportPath[],
+  label: string,
+  listEntries: (prefix: string) => Promise<StorageEntry[]>,
+  clear: (keys: string[]) => Promise<unknown>
+): Promise<string[]> {
+  const outcomes = await processWithConcurrency(reports, 10, async (report) => {
+    const entries = await listEntries(reportPrefix(report.reportID, report.storagePath));
+    if (entries.length === 0) {
+      console.warn(`[${label}] report ${report.reportID} listed no objects, not confirming`);
+      return null;
+    }
+    const { error } = await withError(clear(entries.map((entry) => entry.key)));
+    if (error) {
+      console.warn(`[${label}] failed to delete report ${report.reportID}: ${error.message}`);
+      return null;
+    }
+    return report.reportID;
+  });
+  return outcomes.filter((id): id is string => id !== null);
 }

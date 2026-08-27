@@ -54,6 +54,7 @@ A real risk not already covered: a correlation linking groups that the grouping 
 
 <linking>
 Each test line shows \`[testId: TEST_ID]\` inline. When you name a test, link it as \`[test title](pwrs:test/TEST_ID?project={{project}})\` using that ID verbatim. Link a test only when its line carries a \`[testId: …]\` tag.
+Never copy a data line as-is: no backticks around a test title or run label, and never leave a [testId: …] / [reportId: …] tag in your output.
 </linking>
 `;
 

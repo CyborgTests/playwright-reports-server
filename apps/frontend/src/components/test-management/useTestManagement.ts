@@ -1,7 +1,13 @@
-import type { DateRange, TestFilters, TestWithQuarantineInfo } from '@playwright-reports/shared';
+import type {
+  DateRange,
+  TestFilters,
+  TestsPageResponse,
+  TestWithQuarantineInfo,
+} from '@playwright-reports/shared';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
+import type { SparklineRun } from '@/components/analytics/TrendSparklineHistory';
 import { authHeadersForSession, useAuth } from '@/hooks/useAuth';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import useMutation from '@/hooks/useMutation';
@@ -11,7 +17,35 @@ import { withBase } from '@/lib/url';
 
 const PAGE_SIZE = 25;
 
-type TestsPage = { data: TestWithQuarantineInfo[]; total: number };
+export type TestRowItem = Omit<TestWithQuarantineInfo, 'history'> & {
+  history?: SparklineRun[];
+};
+
+type TestsPage = { data: TestRowItem[]; total: number };
+
+function resolveHistory(body: TestsPageResponse): TestsPage {
+  const refs = body.reportRefs ?? [];
+  return {
+    total: body.total,
+    data: body.data.map((test) => {
+      const { history, ...rest } = test;
+      if (!history) return rest;
+      const resolved: SparklineRun[] = [];
+      for (const point of history) {
+        const ref = refs[point.report];
+        if (!ref) continue;
+        resolved.push({
+          reportId: ref.reportId,
+          createdAt: ref.createdAt,
+          reportDisplayNumber: ref.displayNumber,
+          reportTitle: ref.title,
+          outcome: point.outcome,
+        });
+      }
+      return { ...rest, history: resolved };
+    }),
+  };
+}
 
 export function useTestsQuery({
   filters,
@@ -77,7 +111,7 @@ export function useTestsQuery({
         headers: authHeadersForSession(session),
       });
       if (!res.ok) throw new Error('Failed to fetch tests');
-      return res.json();
+      return resolveHistory((await res.json()) as TestsPageResponse);
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
