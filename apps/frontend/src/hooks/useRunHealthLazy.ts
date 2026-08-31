@@ -19,7 +19,8 @@ export function useRunHealthLazy(
   dateRange: DateRange | undefined,
   failedOnly: boolean,
   initialMetrics: RunHealthMetric[],
-  totalRuns: number
+  totalRuns: number,
+  environment?: string
 ) {
   const from = dateRange?.from;
   const to = dateRange?.to;
@@ -31,6 +32,7 @@ export function useRunHealthLazy(
       if (from) params.set('from', from);
       if (to) params.set('to', to);
       if (failedOnly) params.set('failedOnly', 'true');
+      if (environment && environment !== 'all') params.set('environment', environment);
       params.set('before', before);
       params.set('limit', String(PAGE_SIZE));
       const res = await fetch(withBase(`/api/analytics/run-health?${params.toString()}`), {
@@ -40,10 +42,10 @@ export function useRunHealthLazy(
       const body = (await res.json()) as { success: boolean; data: RunHealthPageResponse };
       return { items: body.data.metrics, hasMore: body.data.hasMore };
     },
-    [project, from, to, failedOnly]
+    [project, from, to, failedOnly, environment]
   );
 
-  const scopeKey = `${project ?? ''}|${from ?? ''}|${to ?? ''}|${failedOnly ? 1 : 0}`;
+  const scopeKey = `${project ?? ''}|${from ?? ''}|${to ?? ''}|${failedOnly ? 1 : 0}|${environment ?? ''}`;
   const { items, loadPrevious, hasMore, isLoadingPrevious } = useLazyPrevious<RunHealthMetric>({
     initial: initialMetrics,
     total: totalRuns,

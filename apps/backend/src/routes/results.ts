@@ -29,6 +29,7 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
             pagination,
             project: query.project,
             tags,
+            environment: query.environment,
             search: query.search,
             from: query.from,
             to: query.to,
@@ -80,6 +81,19 @@ export async function registerResultRoutes(fastify: FastifyInstance) {
       }
 
       return tags;
+    });
+
+    fastify.get('/api/result/environments', async (request, reply) => {
+      const query = request.query as { project?: string };
+      const { result: environments, error } = await withError(
+        service.getResultsEnvironments(query.project)
+      );
+
+      if (error) {
+        return reply.status(400).send({ error: error.message });
+      }
+
+      return environments;
     });
 
     fastify.delete(

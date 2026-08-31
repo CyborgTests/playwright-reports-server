@@ -60,6 +60,7 @@ export interface ResultsRow {
   size: string | null;
   sizeBytes: number;
   metadata: string;
+  environment: string | null;
   updatedAt: WithDefault<string | null>;
 }
 
@@ -73,6 +74,7 @@ export interface ReportsRow {
   size: string | null;
   sizeBytes: number;
   metadata: string;
+  environment: string | null;
   passRate: number | null;
   statTotal: number | null;
   statExpected: number | null;

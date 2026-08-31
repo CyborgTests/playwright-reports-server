@@ -179,6 +179,7 @@ export interface ClusterReport {
 
 export interface ClusterOptions {
   project?: string;
+  environment?: string;
   from?: string;
   to?: string;
   reportId?: string;

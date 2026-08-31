@@ -12,6 +12,7 @@ const FailureAnalysisSummary = lazy(() =>
 interface FailureCategoriesSectionProps {
   project?: string;
   dateRange?: DateRange;
+  environment?: string;
   onCategoryClick: (category: string) => void;
   reportIds: string[];
 }
@@ -24,6 +25,7 @@ interface FailureCategoriesSectionProps {
 export function FailureCategoriesSection({
   project,
   dateRange,
+  environment,
   onCategoryClick,
   reportIds,
 }: Readonly<FailureCategoriesSectionProps>) {
@@ -34,12 +36,13 @@ export function FailureCategoriesSection({
     setDeferred(false);
     const t = setTimeout(() => setDeferred(true), 250);
     return () => clearTimeout(t);
-  }, [project, dateRange?.from, dateRange?.to]);
+  }, [project, dateRange?.from, dateRange?.to, environment]);
 
   const { data: failureCategories, isPending: isFailureCategoriesLoading } = useFailureCategories(
     project,
     dateRange,
-    deferred
+    deferred,
+    environment
   );
 
   const totalFailures = failureCategories?.totalFailures ?? 0;

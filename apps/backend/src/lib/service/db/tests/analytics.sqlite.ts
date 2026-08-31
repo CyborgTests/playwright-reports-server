@@ -30,9 +30,10 @@ export class TestAnalyticsDatabase extends TestDbBase {
   public getFailedTestRunsInWindow(
     project: string | undefined,
     from: string,
-    to: string
+    to: string,
+    environment?: string
   ): TestRunRow[] {
-    return testQueries.getFailedTestRunsInWindow(this.db, project, from, to);
+    return testQueries.getFailedTestRunsInWindow(this.db, project, from, to, environment);
   }
   public getTopFailingTestsInWindow(
     project: string | undefined,

@@ -104,13 +104,20 @@ export class AnalyticsService {
     project?: string,
     from?: string,
     to?: string,
-    failedOnly = false
+    failedOnly = false,
+    environment?: string
   ): Promise<AnalyticsData> {
-    const cacheKey = [project ?? 'all', from ?? '', to ?? '', failedOnly ? '1' : '0'].join('|');
+    const cacheKey = [
+      project ?? 'all',
+      environment ?? '',
+      from ?? '',
+      to ?? '',
+      failedOnly ? '1' : '0',
+    ].join('|');
     const cached = analyticsCache.get(cacheKey);
     if (cached && cached.expires > Date.now()) return cached.value;
 
-    const value = await this.computeAnalyticsData(project, from, to, failedOnly);
+    const value = await this.computeAnalyticsData(project, from, to, failedOnly, environment);
 
     analyticsCache.set(cacheKey, { expires: Date.now() + ANALYTICS_CACHE_TTL_MS, value });
     while (analyticsCache.size > ANALYTICS_CACHE_MAX_ENTRIES) {
@@ -125,9 +132,16 @@ export class AnalyticsService {
     project?: string,
     from?: string,
     to?: string,
-    failedOnly = false
+    failedOnly = false,
+    environment?: string
   ): Promise<AnalyticsData> {
-    const fetchScope = await this.fetchReportsForScope(project, from, to, failedOnly);
+    const fetchScope = await this.fetchReportsForScope(
+      project,
+      from,
+      to,
+      failedOnly,
+      environment
+    );
     const { displayReports, recentForTrend, olderTrendAggregate, olderRange, isBounded } =
       this.partitionReports(
         fetchScope.reports,
@@ -209,7 +223,8 @@ export class AnalyticsService {
     project: string | undefined,
     from: string | undefined,
     to: string | undefined,
-    failedOnly: boolean
+    failedOnly: boolean,
+    environment?: string
   ): Promise<{
     reports: ReportAnalyticsRow[];
     displayAggregate: ReportAggregate;
@@ -222,10 +237,14 @@ export class AnalyticsService {
           reportDb.getByProjectForAnalytics(project, {
             failedOnly,
             limit: ANALYTICS_FETCH_CAP,
+            environment,
           })
         ),
         Promise.resolve(
-          reportDb.aggregateForAnalytics(project, undefined, undefined, { failedOnly })
+          reportDb.aggregateForAnalytics(project, undefined, undefined, {
+            failedOnly,
+            environment,
+          })
         ),
       ]);
       return {
@@ -236,7 +255,12 @@ export class AnalyticsService {
       };
     }
 
-    const reports = reportDb.getByProjectForAnalytics(project, { from, to, failedOnly });
+    const reports = reportDb.getByProjectForAnalytics(project, {
+      from,
+      to,
+      failedOnly,
+      environment,
+    });
     const displayAggregate = reportAggregateFromRows(reports);
 
     const fromMs = from ? new Date(from).getTime() : Number.NEGATIVE_INFINITY;
@@ -254,6 +278,7 @@ export class AnalyticsService {
     const compTo = new Date(fromMs).toISOString();
     const olderAggregate = reportDb.aggregateForAnalytics(project, compFrom, compTo, {
       failedOnly,
+      environment,
     });
     return {
       reports,
@@ -410,6 +435,7 @@ export class AnalyticsService {
       failedOnly?: boolean;
       before?: string;
       limit?: number;
+      environment?: string;
     }
   ): Promise<RunHealthMetric[]> {
     const limit = Math.min(
@@ -422,6 +448,7 @@ export class AnalyticsService {
       failedOnly: opts.failedOnly ?? false,
       before: opts.before,
       limit,
+      environment: opts.environment,
     });
     return this.reportsToRunHealth(reports);
   }

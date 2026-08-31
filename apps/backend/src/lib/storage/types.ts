@@ -166,6 +166,7 @@ export interface ReadResultsInput {
   project?: string;
   testRun?: string;
   tags?: string[];
+  environment?: string;
   search?: string;
   from?: string;
   to?: string;
@@ -183,6 +184,7 @@ export interface ReadReportsInput {
   ids?: string[];
   search?: string;
   tags?: string[];
+  environment?: string;
   from?: string;
   to?: string;
   passRate?: 'passing' | 'failing' | 'below-threshold';

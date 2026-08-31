@@ -54,3 +54,21 @@ test('/api/report/list search return No Result  by not existing reportId', async
   expect(response.status()).toBe(200);
   expect(json).toEqual({ reports: [], total: 0 });
 });
+
+test('/api/report/environments returns distinct values', async ({ request }) => {
+  const environments = await request.get('/api/report/environments?project=Smoke');
+  expect(environments.status()).toBe(200);
+  const values = await environments.json();
+  expect(Array.isArray(values)).toBe(true);
+});
+
+test('/api/report/list filter by environment=unknown includes reports without env', async ({
+  request,
+}) => {
+  const api = new ReportController(request);
+  const { response, json } = await api.list({ environment: 'unknown', limit: 100 });
+  expect(response.status()).toBe(200);
+  for (const report of json.reports ?? []) {
+    expect(report.environment ?? null).toBeNull();
+  }
+});

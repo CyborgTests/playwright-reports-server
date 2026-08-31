@@ -123,6 +123,7 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
             project: query.project,
             search: query.search,
             tags,
+            environment: query.environment,
             from: query.from,
             to: query.to,
             passRate,
@@ -397,6 +398,19 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
       }
 
       return tags;
+    });
+
+    fastify.get('/api/report/environments', async (request, reply) => {
+      const query = request.query as { project?: string };
+      const { result: environments, error } = await withError(
+        service.getReportsEnvironments(query.project)
+      );
+
+      if (error) {
+        return reply.status(400).send({ error: error.message });
+      }
+
+      return environments;
     });
 
     fastify.post(

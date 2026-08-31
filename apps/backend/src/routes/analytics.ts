@@ -25,15 +25,17 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         from,
         to,
         failedOnly,
+        environment,
       } = request.query as {
         project?: string;
         from?: string;
         to?: string;
         failedOnly?: string;
+        environment?: string;
       };
       const failedOnlyFlag = failedOnly === 'true' || failedOnly === '1';
       const { result: analyticsData, error } = await withError(
-        analyticsService.getAnalyticsData(project, from, to, failedOnlyFlag)
+        analyticsService.getAnalyticsData(project, from, to, failedOnlyFlag, environment)
       );
 
       if (error) {
@@ -55,13 +57,19 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         project = 'all',
         from,
         to,
+        environment,
       } = request.query as {
         project?: string;
         from?: string;
         to?: string;
+        environment?: string;
       };
       const projectKey = project && project !== 'all' ? project : undefined;
-      const cats = await failureSummaryDb.getAggregatedCategories(projectKey, 10, { from, to });
+      const cats = await failureSummaryDb.getAggregatedCategories(projectKey, 10, {
+        from,
+        to,
+        environment,
+      });
       // UI renders 5 top errors and 5 examples each — trim server-side.
       const data = {
         ...cats,
@@ -85,6 +93,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         failedOnly,
         before,
         limit,
+        environment,
       } = request.query as {
         project?: string;
         from?: string;
@@ -92,6 +101,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
         failedOnly?: string;
         before?: string;
         limit?: string;
+        environment?: string;
       };
       const failedOnlyFlag = failedOnly === 'true' || failedOnly === '1';
       const parsedLimit = limit ? Number.parseInt(limit, 10) : 100;
@@ -104,6 +114,7 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
           failedOnly: failedOnlyFlag,
           before,
           limit: pageLimit,
+          environment,
         })
       );
 

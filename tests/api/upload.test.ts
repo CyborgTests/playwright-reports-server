@@ -40,6 +40,31 @@ test('/api/result/upload passes custom result metadata to the generated report',
   expect(json.reports.map((r: { reportID: string }) => r.reportID)).toContain(reportId);
 });
 
+test('/api/result/upload passes environment metadata to report and list filter', async ({ api }) => {
+  const testRun = randomUUID();
+
+  const { body } = await api.result.upload('./tests/testdata/correct_blob.zip', {
+    project: 'Smoke',
+    testRun,
+    environment: 'qa',
+    triggerReportGeneration: true,
+  });
+
+  const reportId = body.data.generatedReport?.reportId ?? '';
+  expect(reportId).toBeTruthy();
+
+  const { json: report } = await api.report.get(reportId);
+  expect(report.environment).toBe('qa');
+
+  const byParam = await api.report.list({ environment: 'qa', limit: 100 });
+  expect(byParam.response.status()).toBe(200);
+  expect(byParam.json.reports.map((r: { reportID: string }) => r.reportID)).toContain(reportId);
+
+  const byTag = await api.report.list({ tags: 'environment:qa', limit: 100 });
+  expect(byTag.response.status()).toBe(200);
+  expect(byTag.json.reports.map((r: { reportID: string }) => r.reportID)).toContain(reportId);
+});
+
 test('/api/result/upload keeps shard-specific fields off the merged report', async ({ api }) => {
   const testRun = randomUUID();
   const branch = `branch-${randomUUID()}`;

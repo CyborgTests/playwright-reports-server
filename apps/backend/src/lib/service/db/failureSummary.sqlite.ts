@@ -86,6 +86,7 @@ function runAggregateWorker(workerData: {
   limit: number;
   from?: string;
   to?: string;
+  environment?: string;
 }): Promise<WorkerResult> {
   const workerPath = resolveAggregateWorkerPath();
   return new Promise((resolve, reject) => {
@@ -256,9 +257,9 @@ export class FailureSummaryDatabase {
   public async getAggregatedCategories(
     project?: string,
     limit = 10,
-    opts?: { from?: string; to?: string }
+    opts?: { from?: string; to?: string; environment?: string }
   ): Promise<WorkerResult> {
-    const cacheKey = `${project ?? ''}|${limit}|${opts?.from ?? ''}|${opts?.to ?? ''}`;
+    const cacheKey = `${project ?? ''}|${limit}|${opts?.from ?? ''}|${opts?.to ?? ''}|${opts?.environment ?? ''}`;
     const cached = this.aggregatedCategoriesCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.value;
@@ -270,6 +271,7 @@ export class FailureSummaryDatabase {
       limit,
       from: opts?.from,
       to: opts?.to,
+      environment: opts?.environment,
     });
     this.pruneAggregatedCategoriesCache();
     this.aggregatedCategoriesCache.set(cacheKey, {

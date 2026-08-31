@@ -37,6 +37,7 @@ export const ListReportsQuerySchema = z.object({
   project: z.string().default(''),
   search: z.string().default(''),
   tags: z.string().optional(), // comma-separated
+  environment: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
   passRate: z.enum(['all', 'passing', 'failing', 'below-threshold']).optional(),
@@ -97,6 +98,7 @@ export const ListResultsQuerySchema = z.object({
   project: z.string().default(''),
   search: z.string().default(''),
   tags: z.string().optional(), // comma-separated
+  environment: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
   usage: z.enum(['all', 'used', 'unused']).optional(),

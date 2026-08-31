@@ -289,6 +289,10 @@ class Service {
     return reportDb.getDistinctTags(project);
   }
 
+  public async getReportsEnvironments(project?: string): Promise<string[]> {
+    return reportDb.getDistinctEnvironments(project);
+  }
+
   public async getResults(input?: ReadResultsInput): Promise<ReadResultsOutput> {
     return resultDb.query(input);
   }
@@ -348,6 +352,10 @@ class Service {
 
   public async getResultsTags(project?: string): Promise<string[]> {
     return resultDb.getDistinctTags(project);
+  }
+
+  public async getResultsEnvironments(project?: string): Promise<string[]> {
+    return resultDb.getDistinctEnvironments(project);
   }
 
   public async getServerInfo(): Promise<ServerDataInfo> {

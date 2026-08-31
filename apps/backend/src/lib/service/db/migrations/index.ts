@@ -10,6 +10,7 @@ import * as testsFtsTagsAnnotations from './0006_tests_fts_tags_annotations.js';
 import * as reportCleanupState from './0007_report_cleanup_state.js';
 import * as dailyTestTotals from './0008_daily_test_totals.js';
 import * as githubSyncFailedArtifacts from './0009_github_sync_failed_artifacts.js';
+import * as environmentColumn from './0010_environment_column.js';
 
 const MIGRATIONS: Record<string, Migration> = {
   '0001_baseline': { up: baseline.up, down: baseline.down },
@@ -32,6 +33,10 @@ const MIGRATIONS: Record<string, Migration> = {
   '0009_github_sync_failed_artifacts': {
     up: githubSyncFailedArtifacts.up,
     down: githubSyncFailedArtifacts.down,
+  },
+  '0010_environment_column': {
+    up: environmentColumn.up,
+    down: environmentColumn.down,
   },
 };
 
