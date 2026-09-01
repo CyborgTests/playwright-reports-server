@@ -1,7 +1,7 @@
+import { normalizeEnvironment } from '@playwright-reports/shared';
 import { type ExpressionBuilder, type SelectQueryBuilder, sql } from 'kysely';
 import { defaultProjectName } from '../../constants.js';
 import type { ReadResultsInput, ReadResultsOutput, Result } from '../../storage/types.js';
-import { normalizeEnvironment } from '@playwright-reports/shared';
 import { dataEvents } from '../dataEvents.js';
 import { getDatabase } from './db.js';
 import { applyResultEnvironmentFilter, distinctEnvironments } from './environmentFilter.js';

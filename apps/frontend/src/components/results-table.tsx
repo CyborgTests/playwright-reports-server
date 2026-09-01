@@ -25,10 +25,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import useQuery from '@/hooks/useQuery';
 import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
 import { defaultProjectName } from '@/lib/constants';
-import {
-  DEFAULT_ENVIRONMENT_FILTER,
-  environmentFilterQueryValue,
-} from '@/lib/environment';
+import { DEFAULT_ENVIRONMENT_FILTER, environmentFilterQueryValue } from '@/lib/environment';
 import { withQueryParams } from '@/lib/network';
 import { withBase } from '@/lib/url';
 import FormattedDate from './date-format';

@@ -1,8 +1,8 @@
 import type { ReportHistory } from '@playwright-reports/shared';
 import { ENV_UNKNOWN_FILTER } from '@playwright-reports/shared';
 import { Link } from 'react-router-dom';
-import { extractReportTags } from '@/lib/report-tags';
 import { getEnvironmentLabel } from '@/lib/environment';
+import { extractReportTags } from '@/lib/report-tags';
 import { withBase } from '@/lib/url';
 
 interface ReportMetadataProps {

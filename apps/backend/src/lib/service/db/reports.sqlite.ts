@@ -1,8 +1,8 @@
 import {
   ATTACHMENT_CLEANUP_KINDS,
   type AttachmentCleanupKind,
-  type ReportStats,
   normalizeEnvironment,
+  type ReportStats,
 } from '@playwright-reports/shared';
 import { type ExpressionBuilder, type SelectQueryBuilder, sql } from 'kysely';
 import { defaultProjectName, serveReportRoute } from '../../constants.js';

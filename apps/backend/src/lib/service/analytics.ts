@@ -135,13 +135,7 @@ export class AnalyticsService {
     failedOnly = false,
     environment?: string
   ): Promise<AnalyticsData> {
-    const fetchScope = await this.fetchReportsForScope(
-      project,
-      from,
-      to,
-      failedOnly,
-      environment
-    );
+    const fetchScope = await this.fetchReportsForScope(project, from, to, failedOnly, environment);
     const { displayReports, recentForTrend, olderTrendAggregate, olderRange, isBounded } =
       this.partitionReports(
         fetchScope.reports,

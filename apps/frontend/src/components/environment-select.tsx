@@ -1,7 +1,4 @@
-import {
-  DEFAULT_ENVIRONMENT_FILTER,
-  ENV_UNKNOWN_FILTER,
-} from '@playwright-reports/shared';
+import { DEFAULT_ENVIRONMENT_FILTER, ENV_UNKNOWN_FILTER } from '@playwright-reports/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import useQuery from '../hooks/useQuery';

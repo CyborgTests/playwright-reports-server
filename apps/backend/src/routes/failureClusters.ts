@@ -15,18 +15,27 @@ export async function registerFailureClusterRoutes(fastify: FastifyInstance) {
     '/api/analytics/failure-clusters',
     { preHandler: authorize(CAPABILITIES.view) },
     async (request, reply) => {
-      const { project, from, to, reportId, testId, fileId, clusterId, includeResolved, environment } =
-        request.query as {
-          project?: string;
-          from?: string;
-          to?: string;
-          reportId?: string;
-          testId?: string;
-          fileId?: string;
-          clusterId?: string;
-          includeResolved?: string;
-          environment?: string;
-        };
+      const {
+        project,
+        from,
+        to,
+        reportId,
+        testId,
+        fileId,
+        clusterId,
+        includeResolved,
+        environment,
+      } = request.query as {
+        project?: string;
+        from?: string;
+        to?: string;
+        reportId?: string;
+        testId?: string;
+        fileId?: string;
+        clusterId?: string;
+        includeResolved?: string;
+        environment?: string;
+      };
 
       const { result: report, error } = await withError(
         getFailureClusters({
