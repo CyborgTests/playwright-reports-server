@@ -25,10 +25,12 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import useQuery from '@/hooks/useQuery';
 import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
 import { defaultProjectName } from '@/lib/constants';
+import { DEFAULT_ENVIRONMENT_FILTER, environmentFilterQueryValue } from '@/lib/environment';
 import { withQueryParams } from '@/lib/network';
 import { withBase } from '@/lib/url';
 import FormattedDate from './date-format';
 import DeleteResultsButton from './delete-results-button';
+import EnvironmentSelect from './environment-select';
 import PaginatedControls from './paginated-controls';
 import TablePaginationOptions from './table-pagination-options';
 
@@ -178,6 +180,9 @@ export default function ResultsTable({
   const [usage, setUsage] = useState<UsageFilter>(
     () => (searchParams.get('usage') as UsageFilter) || 'all'
   );
+  const [environment, setEnvironment] = useState(
+    () => searchParams.get('environment') ?? DEFAULT_ENVIRONMENT_FILTER
+  );
 
   // Reflect filter state into URL search params so the view is shareable.
   useSyncSearchParams({
@@ -185,6 +190,7 @@ export default function ResultsTable({
     from: dateRange.from ?? null,
     to: dateRange.to ?? null,
     usage: usage !== 'all' ? usage : null,
+    environment: environmentFilterQueryValue(environment) ?? null,
   });
 
   const debouncedSearch = useDebouncedValue(search, 300);
@@ -199,8 +205,21 @@ export default function ResultsTable({
         ...(dateRange.from && { from: dateRange.from }),
         ...(dateRange.to && { to: dateRange.to }),
         ...(usage && usage !== 'all' && { usage }),
+        ...(environmentFilterQueryValue(environment) && {
+          environment: environmentFilterQueryValue(environment),
+        }),
       }),
-    [rowsPerPage, page, project, selectedTags, debouncedSearch, dateRange.from, dateRange.to, usage]
+    [
+      rowsPerPage,
+      page,
+      project,
+      selectedTags,
+      debouncedSearch,
+      dateRange.from,
+      dateRange.to,
+      usage,
+      environment,
+    ]
   );
 
   const {
@@ -267,6 +286,11 @@ export default function ResultsTable({
     setPage(1);
   }, []);
 
+  const onEnvironmentChange = useCallback((value: string) => {
+    setEnvironment(value);
+    setPage(1);
+  }, []);
+
   const pages = useMemo(() => {
     return total ? Math.ceil(total / rowsPerPage) : 0;
   }, [total, rowsPerPage]);
@@ -327,18 +351,28 @@ export default function ResultsTable({
         selectedDateRange={dateRange}
         actions={actions}
         extraFilters={
-          <Select value={usage} onValueChange={(v) => onUsageChange(v as UsageFilter)}>
-            <SelectTrigger className="w-full sm:w-48" aria-label="Filter by usage">
-              <SelectValue placeholder="Usage" />
-            </SelectTrigger>
-            <SelectContent>
-              {usageOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <>
+            <EnvironmentSelect
+              entity="result"
+              selectedEnvironment={environment}
+              project={project}
+              onSelect={onEnvironmentChange}
+              showLabel={false}
+              className="w-full sm:w-48"
+            />
+            <Select value={usage} onValueChange={(v) => onUsageChange(v as UsageFilter)}>
+              <SelectTrigger className="w-full sm:w-48" aria-label="Filter by usage">
+                <SelectValue placeholder="Usage" />
+              </SelectTrigger>
+              <SelectContent>
+                {usageOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
         }
       />
       <div className="rounded-md border border-border/50 overflow-x-auto">

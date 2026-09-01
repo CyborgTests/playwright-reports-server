@@ -8,6 +8,7 @@ export const API_ENDPOINTS = {
   REPORTS_LIST: '/api/report/list',
   REPORTS_DETAIL: '/api/report/:id',
   REPORTS_PROJECTS: '/api/report/projects',
+  REPORTS_ENVIRONMENTS: '/api/report/environments',
   REPORTS_GENERATE: '/api/report/generate',
   REPORTS_DELETE: '/api/report/delete',
   REPORTS_EDIT: '/api/report/edit',
@@ -17,6 +18,7 @@ export const API_ENDPOINTS = {
   RESULTS_LIST: '/api/result/list',
   RESULTS_PROJECTS: '/api/result/projects',
   RESULTS_TAGS: '/api/result/tags',
+  RESULTS_ENVIRONMENTS: '/api/result/environments',
   RESULTS_DELETE: '/api/result/delete',
   RESULTS_UPLOAD: '/api/result/upload',
 

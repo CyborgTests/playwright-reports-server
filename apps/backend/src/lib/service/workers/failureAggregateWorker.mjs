@@ -8,7 +8,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { gunzipSync } from 'node:zlib';
 import Database from 'better-sqlite3';
 
-const { dbPath, project, limit, from, to } = workerData;
+const { dbPath, project, limit, from, to, environment } = workerData;
 
 const PAGE_CONTEXT_HEADER = '\n\n# Page Context';
 
@@ -50,31 +50,40 @@ try {
 
   const MAX_ROWS_SCANNED = 10_000;
 
-  const conditions = ['failure_category IS NOT NULL'];
+  const conditions = ['tr.failure_category IS NOT NULL'];
   const params = [];
   if (from) {
-    conditions.push('createdAt >= ?');
+    conditions.push('tr.createdAt >= ?');
     params.push(from);
   }
   if (to) {
-    conditions.push('createdAt < ?');
+    conditions.push('tr.createdAt < ?');
     params.push(to);
   }
   if (project && project !== 'all') {
-    conditions.push('project = ?');
+    conditions.push('tr.project = ?');
     params.push(project);
+  }
+  if (environment && environment !== 'all') {
+    if (environment === 'unknown') {
+      conditions.push('r.environment IS NULL');
+    } else {
+      conditions.push('r.environment = ?');
+      params.push(environment);
+    }
   }
   params.push(MAX_ROWS_SCANNED);
 
   const rows = db
     .prepare(
-      `SELECT testId, fileId, project, reportId, outcome,
-              failure_category AS category, error_signature AS signature,
-              failure_details, createdAt
-       FROM test_runs
+      `SELECT tr.testId, tr.fileId, tr.project, tr.reportId, tr.outcome,
+              tr.failure_category AS category, tr.error_signature AS signature,
+              tr.failure_details, tr.createdAt
+       FROM test_runs tr
+       LEFT JOIN reports r ON r.reportID = tr.reportId
        WHERE ${conditions.join(' AND ')}
-       ORDER BY CASE WHEN outcome IN ('failed', 'unexpected') THEN 0 ELSE 1 END ASC,
-                createdAt DESC
+       ORDER BY CASE WHEN tr.outcome IN ('failed', 'unexpected') THEN 0 ELSE 1 END ASC,
+                tr.createdAt DESC
        LIMIT ?`
     )
     .all(...params);

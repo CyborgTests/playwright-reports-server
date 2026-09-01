@@ -24,11 +24,17 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import useQuery from '@/hooks/useQuery';
 import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
 import { defaultProjectName } from '@/lib/constants';
+import {
+  DEFAULT_ENVIRONMENT_FILTER,
+  environmentFilterQueryValue,
+  getEnvironmentLabel,
+} from '@/lib/environment';
 import { withQueryParams } from '@/lib/network';
 import { withBase } from '@/lib/url';
 import FormattedDate from './date-format';
 import DeleteReportButton from './delete-report-button';
 import EditReportButton from './edit-report-button';
+import EnvironmentSelect from './environment-select';
 import { BranchIcon, FolderIcon, LinkIcon } from './icons';
 import PaginatedControls from './paginated-controls';
 import PassRateBar from './pass-rate-bar';
@@ -66,14 +72,8 @@ type ReportMetadataFields = {
   [key: string]: unknown;
 };
 
-const UNKNOWN_ENV_VALUES = new Set(['', 'unknown', 'n/a', 'na', 'none', 'null', 'undefined']);
-
-function getEnvironmentLabel(item: ReportHistory): string | null {
-  const raw = (item as ReportHistory & ReportMetadataFields).environment;
-  if (raw === undefined || raw === null) return null;
-  const value = String(raw).trim();
-  if (!value || UNKNOWN_ENV_VALUES.has(value.toLowerCase())) return null;
-  return value;
+function reportEnvironmentLabel(item: ReportHistory): string | null {
+  return getEnvironmentLabel((item as ReportHistory & ReportMetadataFields).environment);
 }
 
 const getMetadataItems = (item: ReportHistory): MetadataItem[] => {
@@ -142,11 +142,11 @@ const getMetadataItems = (item: ReportHistory): MetadataItem[] => {
 };
 
 function ReportEnvCell({ report }: Readonly<{ report: ReportHistory }>) {
-  const environment = getEnvironmentLabel(report);
+  const environment = reportEnvironmentLabel(report);
   if (!environment) {
     return (
       <span className="inline-flex items-center rounded-md border border-dashed border-border/70 px-2 py-0.5 text-xs italic text-muted-foreground/80">
-        no env
+        Unknown
       </span>
     );
   }
@@ -356,6 +356,9 @@ export default function ReportsTable({
   const [passRate, setPassRate] = useState<PassRateFilter>(
     () => (searchParams.get('passRate') as PassRateFilter) || 'all'
   );
+  const [environment, setEnvironment] = useState(
+    () => searchParams.get('environment') ?? DEFAULT_ENVIRONMENT_FILTER
+  );
 
   // Reflect filter state into URL search params so the view is shareable.
   useSyncSearchParams({
@@ -363,6 +366,7 @@ export default function ReportsTable({
     from: dateRange.from ?? null,
     to: dateRange.to ?? null,
     passRate: passRate && passRate !== 'all' ? passRate : null,
+    environment: environmentFilterQueryValue(environment) ?? null,
     project: project && project !== defaultProjectName ? project : null,
     search: search.trim() || null,
     page: page > 1 ? String(page) : null,
@@ -381,6 +385,9 @@ export default function ReportsTable({
         ...(dateRange.from && { from: dateRange.from }),
         ...(dateRange.to && { to: dateRange.to }),
         ...(passRate && passRate !== 'all' && { passRate }),
+        ...(environmentFilterQueryValue(environment) && {
+          environment: environmentFilterQueryValue(environment),
+        }),
       }),
     [
       rowsPerPage,
@@ -391,6 +398,7 @@ export default function ReportsTable({
       dateRange.from,
       dateRange.to,
       passRate,
+      environment,
     ]
   );
 
@@ -487,6 +495,11 @@ export default function ReportsTable({
     setPage(1);
   }, []);
 
+  const onEnvironmentChange = useCallback((value: string) => {
+    setEnvironment(value);
+    setPage(1);
+  }, []);
+
   useEffect(() => {
     if (error) toast.error(error.message);
   }, [error]);
@@ -517,6 +530,16 @@ export default function ReportsTable({
         selectedDateRange={dateRange}
         selectedPassRate={passRate}
         actions={actions}
+        extraFilters={
+          <EnvironmentSelect
+            entity="report"
+            selectedEnvironment={environment}
+            project={project}
+            onSelect={onEnvironmentChange}
+            showLabel={false}
+            className="w-full sm:w-48"
+          />
+        }
       />
       <div className="rounded-md border border-border/50 overflow-x-auto">
         <Table>

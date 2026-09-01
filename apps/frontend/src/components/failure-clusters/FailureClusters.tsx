@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import DateRangeSelect from '@/components/date-range-select';
+import EnvironmentSelect from '@/components/environment-select';
 import { ClusterCard } from '@/components/failure-clusters/cluster-card';
 import { subtitle, title } from '@/components/primitives';
 import ProjectSelect from '@/components/project-select';
@@ -16,6 +17,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import useQuery from '@/hooks/useQuery';
 import { defaultProjectName } from '@/lib/constants';
+import { DEFAULT_ENVIRONMENT_FILTER, environmentFilterQueryValue } from '@/lib/environment';
 import { buildUrl } from '@/lib/url';
 
 interface ClusterReportEnvelope {
@@ -41,6 +43,9 @@ export default function FailureClusters() {
   const [includeResolved, setIncludeResolved] = useState(
     searchParams.get('includeResolved') === '1' || !!searchParams.get('clusterId')
   );
+  const [environment, setEnvironment] = useState(
+    () => searchParams.get('environment') ?? DEFAULT_ENVIRONMENT_FILTER
+  );
 
   useEffect(() => {
     const next = new URLSearchParams();
@@ -50,10 +55,21 @@ export default function FailureClusters() {
     if (dateRange.from) next.set('from', dateRange.from);
     if (dateRange.to) next.set('to', dateRange.to);
     if (includeResolved) next.set('includeResolved', '1');
+    const env = environmentFilterQueryValue(environment);
+    if (env) next.set('environment', env);
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [project, reportId, clusterId, dateRange, includeResolved, searchParams, setSearchParams]);
+  }, [
+    project,
+    reportId,
+    clusterId,
+    dateRange,
+    includeResolved,
+    environment,
+    searchParams,
+    setSearchParams,
+  ]);
 
   const hasFilters =
     project !== defaultProjectName ||
@@ -61,7 +77,8 @@ export default function FailureClusters() {
     !!clusterId ||
     !!dateRange.from ||
     !!dateRange.to ||
-    includeResolved;
+    includeResolved ||
+    environment !== DEFAULT_ENVIRONMENT_FILTER;
 
   const clearFilters = useCallback(() => {
     setProject(defaultProjectName);
@@ -69,6 +86,7 @@ export default function FailureClusters() {
     setClusterId(undefined);
     setDateRange({ from: undefined, to: undefined });
     setIncludeResolved(false);
+    setEnvironment(DEFAULT_ENVIRONMENT_FILTER);
   }, []);
 
   const queryUrl = useMemo(() => {
@@ -79,13 +97,23 @@ export default function FailureClusters() {
     if (reportId) params.reportId = reportId;
     if (clusterId) params.clusterId = clusterId;
     if (includeResolved) params.includeResolved = '1';
+    const env = environmentFilterQueryValue(environment);
+    if (env) params.environment = env;
     return buildUrl('/api/analytics/failure-clusters', params);
-  }, [project, dateRange.from, dateRange.to, reportId, clusterId, includeResolved]);
+  }, [project, dateRange.from, dateRange.to, reportId, clusterId, includeResolved, environment]);
 
   const { data, error, isLoading, isFetching, refetch } = useQuery<ClusterReportEnvelope>(
     queryUrl,
     {
-      dependencies: [project, dateRange.from, dateRange.to, reportId, clusterId, includeResolved],
+      dependencies: [
+        project,
+        dateRange.from,
+        dateRange.to,
+        reportId,
+        clusterId,
+        includeResolved,
+        environment,
+      ],
       select: (raw: unknown) => raw as ClusterReportEnvelope,
       staleTime: 20_000,
     }
@@ -109,6 +137,13 @@ export default function FailureClusters() {
             entity="report"
             selectedProject={project}
             onSelect={setProject}
+            className="w-56"
+          />
+          <EnvironmentSelect
+            entity="report"
+            selectedEnvironment={environment}
+            project={project}
+            onSelect={setEnvironment}
             className="w-56"
           />
           <ReportPicker

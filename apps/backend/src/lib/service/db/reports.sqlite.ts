@@ -1,6 +1,7 @@
 import {
   ATTACHMENT_CLEANUP_KINDS,
   type AttachmentCleanupKind,
+  normalizeEnvironment,
   type ReportStats,
 } from '@playwright-reports/shared';
 import { type ExpressionBuilder, type SelectQueryBuilder, sql } from 'kysely';
@@ -15,6 +16,7 @@ import type {
 import { dataEvents } from '../dataEvents.js';
 import { dailyTotalsDb } from './dailyTotals.sqlite.js';
 import { getDatabase } from './db.js';
+import { applyReportEnvironmentFilter, distinctEnvironments } from './environmentFilter.js';
 import { type Database, getKysely, type ReportsRow } from './kysely.js';
 import { projectSummaryDb } from './projectSummary.sqlite.js';
 import { singletonOf } from './singleton.js';
@@ -199,9 +201,17 @@ const FAILED_ONLY_SQL = sql<boolean>`(COALESCE(statUnexpected, 0) > 0 OR COALESC
 function applyReportFilters<O>(
   q: SelectQueryBuilder<Database, 'reports', O>,
   project: string | undefined,
-  opts?: { from?: string; to?: string; failedOnly?: boolean; before?: string; limit?: number }
+  opts?: {
+    from?: string;
+    to?: string;
+    failedOnly?: boolean;
+    before?: string;
+    limit?: number;
+    environment?: string;
+  }
 ): SelectQueryBuilder<Database, 'reports', O> {
   if (project && project !== defaultProjectName) q = q.where('project', '=', project);
+  q = applyReportEnvironmentFilter(q, opts?.environment);
   if (opts?.from) q = q.where('createdAt', '>=', opts.from);
   if (opts?.to) q = q.where('createdAt', '<', opts.to);
   if (opts?.before) q = q.where('createdAt', '<', opts.before);
@@ -267,6 +277,7 @@ export class ReportDatabase {
       | { hash?: string; shortHash?: string; branch?: string; subject?: string }
       | undefined;
     const ci = report.metadata?.ci as { buildHref?: string } | undefined;
+    const environment = normalizeEnvironment((metadata as { environment?: unknown }).environment);
 
     // kysely doesn't model INSERT OR REPLACE well; use ON CONFLICT REPLACE shape.
     const compiled = this.k
@@ -281,6 +292,7 @@ export class ReportDatabase {
         size: size || null,
         sizeBytes: sizeBytes || 0,
         metadata: JSON.stringify(metadata),
+        environment,
         passRate: computePassRateFromStats(stats),
         statTotal: stats?.total ?? null,
         statExpected: stats?.expected ?? null,
@@ -311,6 +323,7 @@ export class ReportDatabase {
           size: eb.ref('excluded.size'),
           sizeBytes: eb.ref('excluded.sizeBytes'),
           metadata: eb.ref('excluded.metadata'),
+          environment: eb.ref('excluded.environment'),
           passRate: eb.ref('excluded.passRate'),
           statTotal: eb.ref('excluded.statTotal'),
           statExpected: eb.ref('excluded.statExpected'),
@@ -378,11 +391,13 @@ export class ReportDatabase {
         }
 
         const nextProject = setProject ? (patch.project as string) : row.project;
+        const environment = normalizeEnvironment(metadata.environment);
         const compiled = this.k
           .updateTable('reports')
           .set({
             project: nextProject,
             metadata: JSON.stringify(metadata),
+            environment,
             updatedAt: new Date().toISOString(),
           })
           .where('reportID', '=', id)
@@ -572,6 +587,10 @@ export class ReportDatabase {
     return distinctTags(this.db, { entity: 'report', project });
   }
 
+  public getDistinctEnvironments(project?: string): string[] {
+    return distinctEnvironments(this.db, { entity: 'report', project });
+  }
+
   public getNewestReportBefore(project: string, beforeISO: string): ReportHistory | undefined {
     const compiled = this.k
       .selectFrom('reports')
@@ -634,7 +653,14 @@ export class ReportDatabase {
 
   public getByProjectForAnalytics(
     project?: string,
-    opts?: { from?: string; to?: string; failedOnly?: boolean; before?: string; limit?: number }
+    opts?: {
+      from?: string;
+      to?: string;
+      failedOnly?: boolean;
+      before?: string;
+      limit?: number;
+      environment?: string;
+    }
   ): ReportAnalyticsRow[] {
     const q = applyReportFilters(
       this.k.selectFrom('reports').select(REPORT_ANALYTICS_COLUMNS).orderBy('createdAt', 'desc'),
@@ -921,7 +947,7 @@ export class ReportDatabase {
     project?: string,
     from?: string,
     to?: string,
-    options: { failedOnly?: boolean } = {}
+    options: { failedOnly?: boolean; environment?: string } = {}
   ): {
     count: number;
     totalTests: number;
@@ -943,7 +969,7 @@ export class ReportDatabase {
           sql<number>`COALESCE(SUM(durationMs), 0)`.as('sumDuration'),
         ]),
       project,
-      { from, to, failedOnly: options.failedOnly }
+      { from, to, failedOnly: options.failedOnly, environment: options.environment }
     ).compile();
 
     const row = this.db.prepare(compiled.sql).get(...compiled.parameters) as {
@@ -1003,6 +1029,7 @@ export class ReportDatabase {
       }
       if (input?.from) q = q.where('createdAt', '>=', input.from);
       if (input?.to) q = q.where('createdAt', '<', input.to);
+      q = applyReportEnvironmentFilter(q, input?.environment);
       if (input?.tags?.length) {
         for (const tag of input.tags) {
           const colonIndex = tag.indexOf(':');
@@ -1067,7 +1094,11 @@ export class ReportDatabase {
       ).count;
     };
 
-    const hasScanFilter = !!input?.search?.trim() || (input?.tags?.length ?? 0) > 0;
+    const hasScanFilter =
+      !!input?.search?.trim() ||
+      (input?.tags?.length ?? 0) > 0 ||
+      !!input?.environment ||
+      input?.regressionsOnly;
 
     let listSelect = applyWhere(this.k.selectFrom('reports').select(REPORT_LIST_COLUMNS));
     if (hasScanFilter) {
@@ -1133,6 +1164,7 @@ export class ReportDatabase {
         stats,
         storagePath: row.storagePath ?? undefined,
         ...metadata,
+        ...(row.environment != null ? { environment: row.environment } : {}),
       } as unknown as ReportHistory;
       if (parseCache.size >= PARSE_CACHE_MAX) {
         const oldest = parseCache.keys().next().value;

@@ -1,8 +1,10 @@
+import { normalizeEnvironment } from '@playwright-reports/shared';
 import { type ExpressionBuilder, type SelectQueryBuilder, sql } from 'kysely';
 import { defaultProjectName } from '../../constants.js';
 import type { ReadResultsInput, ReadResultsOutput, Result } from '../../storage/types.js';
 import { dataEvents } from '../dataEvents.js';
 import { getDatabase } from './db.js';
+import { applyResultEnvironmentFilter, distinctEnvironments } from './environmentFilter.js';
 import { type Database, getKysely, type ResultsRow } from './kysely.js';
 import { singletonOf } from './singleton.js';
 import { distinctTags, replaceResultTags } from './tagsSync.js';
@@ -47,6 +49,7 @@ export class ResultDatabase {
 
   private insertResult(result: Result): void {
     const { resultID, project, title, createdAt, size, sizeBytes, ...metadata } = result;
+    const environment = normalizeEnvironment((metadata as { environment?: unknown }).environment);
     const compiled = this.k
       .insertInto('results')
       .values({
@@ -57,6 +60,7 @@ export class ResultDatabase {
         size: size || null,
         sizeBytes: sizeBytes || 0,
         metadata: JSON.stringify(metadata),
+        environment,
         updatedAt: new Date().toISOString(),
       })
       .onConflict((oc) =>
@@ -67,6 +71,7 @@ export class ResultDatabase {
           size: eb.ref('excluded.size'),
           sizeBytes: eb.ref('excluded.sizeBytes'),
           metadata: eb.ref('excluded.metadata'),
+          environment: eb.ref('excluded.environment'),
           updatedAt: eb.ref('excluded.updatedAt'),
         }))
       )
@@ -110,6 +115,10 @@ export class ResultDatabase {
 
   public getDistinctTags(project?: string): string[] {
     return distinctTags(this.db, { entity: 'result', project });
+  }
+
+  public getDistinctEnvironments(project?: string): string[] {
+    return distinctEnvironments(this.db, { entity: 'result', project });
   }
 
   public getByID(resultID: string): Result | undefined {
@@ -251,6 +260,7 @@ export class ResultDatabase {
       }
       if (input?.from) q = q.where('createdAt', '>=', input.from);
       if (input?.to) q = q.where('createdAt', '<', input.to);
+      q = applyResultEnvironmentFilter(q, input?.environment);
       if (input?.usage === 'used') {
         q = q.where('resultID', 'in', (eb: ExpressionBuilder<Database, 'results'>) =>
           eb.selectFrom('report_results').select('resultId').distinct()
@@ -273,7 +283,10 @@ export class ResultDatabase {
     };
 
     const hasScanFilter =
-      !!input?.search?.trim() || (input?.tags?.length ?? 0) > 0 || !!input?.testRun;
+      !!input?.search?.trim() ||
+      (input?.tags?.length ?? 0) > 0 ||
+      !!input?.testRun ||
+      !!input?.environment;
 
     let listSelect = applyWhere(this.k.selectFrom('results').selectAll());
     if (hasScanFilter) {
@@ -314,6 +327,7 @@ export class ResultDatabase {
       size: row.size || undefined,
       sizeBytes: row.sizeBytes,
       ...metadata,
+      ...(row.environment != null ? { environment: row.environment } : {}),
     } as unknown as Result;
   }
 }

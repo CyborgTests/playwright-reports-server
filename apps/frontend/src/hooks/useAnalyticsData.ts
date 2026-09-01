@@ -2,17 +2,23 @@ import type { AnalyticsData, DateRange } from '@playwright-reports/shared';
 import { withQueryParams } from '../lib/network';
 import useQuery from './useQuery';
 
-export function useAnalyticsData(project?: string, dateRange?: DateRange, failedOnly = false) {
+export function useAnalyticsData(
+  project?: string,
+  dateRange?: DateRange,
+  failedOnly = false,
+  environment?: string
+) {
   const baseUrl = '/api/analytics';
   const params: Record<string, string> = {};
   if (project) params.project = project;
   if (dateRange?.from) params.from = dateRange.from;
   if (dateRange?.to) params.to = dateRange.to;
   if (failedOnly) params.failedOnly = 'true';
+  if (environment && environment !== 'all') params.environment = environment;
   const url = withQueryParams(baseUrl, params) ?? baseUrl;
 
   return useQuery<AnalyticsData>(url, {
-    dependencies: [project, dateRange?.from, dateRange?.to, failedOnly],
+    dependencies: [project, dateRange?.from, dateRange?.to, failedOnly, environment],
     staleTime: 5 * 60 * 1000,
     select: (response: unknown) => {
       if (

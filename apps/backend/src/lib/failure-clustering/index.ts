@@ -24,6 +24,7 @@ const cache = new Map<string, CacheEntry>();
 function cacheKey(opts: ClusterOptions): string {
   return [
     opts.project ?? 'all',
+    opts.environment ?? '',
     opts.from ?? '',
     opts.to ?? '',
     opts.reportId ?? '',
@@ -60,7 +61,12 @@ export async function getFailureClusters(opts: ClusterOptions): Promise<ClusterR
 
   const window = resolveWindow(opts);
   const projectKey = opts.project && opts.project !== 'all' ? opts.project : undefined;
-  const failedRuns = testAnalyticsDb.getFailedTestRunsInWindow(projectKey, window.from, window.to);
+  const failedRuns = testAnalyticsDb.getFailedTestRunsInWindow(
+    projectKey,
+    window.from,
+    window.to,
+    opts.environment
+  );
   const metaByKey = loadTestMeta(failedRuns);
   const resolveReportUrl = makeReportUrlResolver();
 

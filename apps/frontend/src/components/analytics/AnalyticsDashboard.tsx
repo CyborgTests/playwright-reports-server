@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import DateRangeSelect, { readStoredDateRange } from '@/components/date-range-select';
+import EnvironmentSelect from '@/components/environment-select';
 import LazyVisible from '@/components/lazy-visible';
 import ProjectSelect, { readStoredProject } from '@/components/project-select';
 import TestManagementWidget from '@/components/test-management/TestManagementWidget';
@@ -12,6 +13,7 @@ import { useAnalyticsData } from '@/hooks/useAnalyticsData';
 import { useRunHealthLazy } from '@/hooks/useRunHealthLazy';
 import { useSyncSearchParams } from '@/hooks/useSyncSearchParams';
 import { defaultProjectName } from '@/lib/constants';
+import { DEFAULT_ENVIRONMENT_FILTER, environmentFilterQueryValue } from '@/lib/environment';
 import { cn } from '@/lib/utils';
 import { FailureCategoriesSection } from './FailureCategoriesSection';
 import { HealthGrid } from './HealthGrid';
@@ -32,6 +34,8 @@ interface DashboardSectionNavProps {
   onDateRangeChange: (range: DateRange) => void;
   project: string;
   onProjectChange: (project: string) => void;
+  environment: string;
+  onEnvironmentChange: (environment: string) => void;
   regressions?: RegressionsAggregate;
   isLoadingRegressions?: boolean;
   onActiveRegressionsClick: () => void;
@@ -54,6 +58,9 @@ export default function AnalyticsDashboard() {
   const [failedOnly, setFailedOnly] = useState(
     () => searchParams.get('failedOnly') === '1' || searchParams.get('failedOnly') === 'true'
   );
+  const [environment, setEnvironment] = useState(
+    () => searchParams.get('environment') ?? DEFAULT_ENVIRONMENT_FILTER
+  );
 
   // Reflect filter state into URL search params so the view is shareable.
   useSyncSearchParams({
@@ -61,13 +68,14 @@ export default function AnalyticsDashboard() {
     from: dateRange.from ?? null,
     to: dateRange.to ?? null,
     failedOnly: failedOnly ? '1' : null,
+    environment: environmentFilterQueryValue(environment) ?? null,
   });
 
   const {
     data: analyticsData,
     error,
     isPending,
-  } = useAnalyticsData(project, dateRange, failedOnly);
+  } = useAnalyticsData(project, dateRange, failedOnly, environment);
 
   const initialRunHealth = analyticsData?.runHealthMetrics ?? [];
   const totalRunsCount = analyticsData?.overviewStats?.totalRuns ?? initialRunHealth.length;
@@ -76,11 +84,16 @@ export default function AnalyticsDashboard() {
     dateRange,
     failedOnly,
     initialRunHealth,
-    totalRunsCount
+    totalRunsCount,
+    environment
   );
 
   const onProjectChange = useCallback((project: string) => {
     setProject(project);
+  }, []);
+
+  const onEnvironmentChange = useCallback((value: string) => {
+    setEnvironment(value);
   }, []);
 
   const onDateRangeChange = useCallback((range: DateRange) => {
@@ -232,6 +245,8 @@ export default function AnalyticsDashboard() {
         onDateRangeChange={onDateRangeChange}
         project={project}
         onProjectChange={onProjectChange}
+        environment={environment}
+        onEnvironmentChange={onEnvironmentChange}
         regressions={regressions}
         isLoadingRegressions={isLoading}
         onActiveRegressionsClick={handleActiveRegressionsClick}
@@ -269,6 +284,7 @@ export default function AnalyticsDashboard() {
         <FailureCategoriesSection
           project={project}
           dateRange={dateRange}
+          environment={environment}
           onCategoryClick={handleCategoryClick}
           reportIds={runHealthMetrics.map((m) => m.runId)}
         />
@@ -301,6 +317,8 @@ function DashboardSectionNav({
   onDateRangeChange,
   project,
   onProjectChange,
+  environment,
+  onEnvironmentChange,
   regressions,
   isLoadingRegressions,
   onActiveRegressionsClick,
@@ -382,6 +400,14 @@ function DashboardSectionNav({
             entity="report"
             onSelect={onProjectChange}
             selectedProject={project}
+            showLabel={false}
+            className="h-9 w-full sm:w-44 sm:min-w-32"
+          />
+          <EnvironmentSelect
+            entity="report"
+            onSelect={onEnvironmentChange}
+            selectedEnvironment={environment}
+            project={project}
             showLabel={false}
             className="h-9 w-full sm:w-44 sm:min-w-32"
           />

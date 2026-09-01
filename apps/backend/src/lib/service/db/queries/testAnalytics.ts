@@ -531,7 +531,8 @@ export function getFailedTestRunsInWindow(
   db: Database.Database,
   project: string | undefined,
   from: string,
-  to: string
+  to: string,
+  environment?: string
 ): TestRunRow[] {
   const conditions: string[] = [`tr.outcome IN (${FAILED_OUTCOMES_SQL})`];
   const params: string[] = [];
@@ -544,6 +545,15 @@ export function getFailedTestRunsInWindow(
   if (project && project !== 'all') {
     conditions.push('tr.project = ?');
     params.push(project);
+  }
+
+  if (environment && environment !== 'all') {
+    if (environment === 'unknown') {
+      conditions.push('r.environment IS NULL');
+    } else {
+      conditions.push('r.environment = ?');
+      params.push(environment);
+    }
   }
 
   const sql = `
