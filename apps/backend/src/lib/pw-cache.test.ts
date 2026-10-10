@@ -12,7 +12,9 @@ const originalCwd = process.cwd();
 const tmpRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'pw-cache-test-')));
 process.chdir(tmpRoot);
 
-const { installPlaywrightVersion, isValidPlaywrightVersion } = await import('./pw-cache.js');
+const { installPlaywrightVersion, isValidPlaywrightVersion, supportsPerfetto } = await import(
+  './pw-cache.js'
+);
 
 const versionsFolder = path.join(tmpRoot, 'data', 'playwright-versions');
 const cacheDirOf = (version: string) => path.join(versionsFolder, version);
@@ -65,6 +67,20 @@ describe('isValidPlaywrightVersion', () => {
     assert.equal(isValidPlaywrightVersion('latest'), false);
     assert.equal(isValidPlaywrightVersion('1.62'), false);
     assert.equal(isValidPlaywrightVersion('^1.62.0'), false);
+  });
+});
+
+describe('supportsPerfetto', () => {
+  it('is true for the bundled CLI and for 1.63 and newer', () => {
+    assert.equal(supportsPerfetto(undefined), true);
+    assert.equal(supportsPerfetto('1.63.0'), true);
+    assert.equal(supportsPerfetto('1.65.0-alpha-2026-10-10'), true);
+    assert.equal(supportsPerfetto('2.0.0'), true);
+  });
+
+  it('is false for older versions', () => {
+    assert.equal(supportsPerfetto('1.62.0'), false);
+    assert.equal(supportsPerfetto('1.46.1'), false);
   });
 });
 
