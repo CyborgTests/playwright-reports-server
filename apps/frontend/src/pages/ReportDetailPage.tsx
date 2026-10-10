@@ -11,6 +11,7 @@ import ReportFailureSummary from '@/components/report-details/ReportFailureSumma
 import ReportMetadata from '@/components/report-details/report-metadata';
 import { CompareToPicker } from '@/components/reports-compare/compare-to-picker';
 import { ServedReportLink } from '@/components/served-report-link';
+import { TimelineButton } from '@/components/timeline-button';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Spinner } from '@/components/ui/spinner';
@@ -175,6 +176,9 @@ function ReportDetailPage() {
                 Download PDF
               </Button>
             </a>
+          )}
+          {id && report?.reportUrl && (
+            <TimelineButton reportId={id} title={report.title ?? `Report ${id}`} />
           )}
           {report && <ServedReportLink reportUrl={report.reportUrl} />}
         </div>
