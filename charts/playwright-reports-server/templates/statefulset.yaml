@@ -1,0 +1,200 @@
+{{- include "prs.validate" . }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "prs.fullname" . }}
+  labels:
+    {{- include "prs.labels" . | nindent 4 }}
+spec:
+  # SQLite metadata: a single writer, never two pods at once.
+  replicas: 1
+  serviceName: {{ include "prs.fullname" . }}-headless
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "prs.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- if and .Values.auth.enabled (not .Values.auth.existingSecret) }}
+        checksum/auth: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "prs.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "prs.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: server
+          image: {{ include "prs.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 3001
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "3001"
+            - name: HOST
+              value: "0.0.0.0"
+            # Report generation npm-installs the reporter's Playwright version; HOME is read-only.
+            - name: npm_config_cache
+              value: /tmp/.npm
+            - name: npm_config_update_notifier
+              value: "false"
+            - name: LOG_LEVEL
+              value: {{ .Values.logLevel | quote }}
+            - name: DATA_STORAGE
+              value: {{ .Values.storage.type | quote }}
+            - name: UI_AUTH_EXPIRE_HOURS
+              value: {{ .Values.auth.sessionHours | quote }}
+            - name: COOKIE_SECURE
+              value: {{ .Values.auth.cookieSecure | quote }}
+            {{- if .Values.auth.enabled }}
+            - name: API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "prs.authSecretName" . }}
+                  key: {{ .Values.auth.apiTokenKey }}
+            - name: AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "prs.authSecretName" . }}
+                  key: {{ .Values.auth.authSecretKey }}
+            {{- end }}
+            {{- with .Values.auth.root.existingSecret }}
+            - name: ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: {{ $.Values.auth.root.usernameKey }}
+            - name: ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: {{ $.Values.auth.root.passwordKey }}
+            {{- end }}
+            {{- if eq .Values.storage.type "s3" }}
+            {{- with .Values.storage.s3 }}
+            - name: S3_ENDPOINT
+              value: {{ .endpoint | quote }}
+            {{- if .port }}
+            - name: S3_PORT
+              value: {{ .port | quote }}
+            {{- end }}
+            - name: S3_REGION
+              value: {{ .region | quote }}
+            - name: S3_BUCKET
+              value: {{ .bucket | quote }}
+            - name: S3_USE_SSL
+              value: {{ .useSSL | quote }}
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret }}
+                  key: {{ .accessKeyKey }}
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret }}
+                  key: {{ .secretKeyKey }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: app-tmp
+              mountPath: /app/.tmp
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- if not (include "prs.dataClaimTemplate" .) }}
+        - name: data
+          {{- if and (eq .Values.storage.type "fs") .Values.storage.fs.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.storage.fs.persistence.existingClaim }}
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.storage.scratchSize }}
+          {{- end }}
+        {{- end }}
+        - name: app-tmp
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if include "prs.dataClaimTemplate" . }}
+  {{- with .Values.storage.fs.persistence }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "prs.selectorLabels" $ | nindent 10 }}
+        {{- with .annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .accessModes | nindent 10 }}
+        {{- with .storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .size }}
+  {{- end }}
+  {{- end }}

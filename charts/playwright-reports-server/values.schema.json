@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": { "type": "object" },
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "imagePullSecrets": { "type": "array" },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "existingSecret": { "type": "string" },
+        "apiTokenKey": { "type": "string", "minLength": 1 },
+        "authSecretKey": { "type": "string", "minLength": 1 },
+        "apiToken": { "type": "string" },
+        "authSecret": { "type": "string" },
+        "sessionHours": { "type": "integer", "minimum": 1 },
+        "cookieSecure": { "type": "boolean" },
+        "root": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "existingSecret": { "type": "string" },
+            "usernameKey": { "type": "string" },
+            "passwordKey": { "type": "string" }
+          }
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["fs", "s3"] },
+        "fs": {
+          "type": "object",
+          "properties": {
+            "persistence": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "existingClaim": { "type": "string" },
+                "storageClass": { "type": "string" },
+                "accessModes": { "type": "array", "items": { "type": "string" } },
+                "size": { "type": "string" },
+                "annotations": { "type": "object" }
+              }
+            }
+          }
+        },
+        "s3": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "endpoint": { "type": "string" },
+            "port": { "type": ["string", "integer"] },
+            "region": { "type": "string" },
+            "bucket": { "type": "string" },
+            "useSSL": { "type": "boolean" },
+            "existingSecret": { "type": "string" },
+            "accessKeyKey": { "type": "string" },
+            "secretKeyKey": { "type": "string" }
+          }
+        },
+        "scratchSize": { "type": "string" }
+      }
+    },
+    "logLevel": { "type": "string", "enum": ["trace", "debug", "info", "warn", "error", "fatal"] },
+    "extraEnv": { "type": "array" },
+    "extraEnvFrom": { "type": "array" },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "port": { "type": "integer" }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "className": { "type": "string" },
+        "annotations": { "type": "object" },
+        "hosts": { "type": "array" },
+        "tls": { "type": "array" }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" },
+        "annotations": { "type": "object" }
+      }
+    },
+    "podAnnotations": { "type": "object" },
+    "podLabels": { "type": "object" },
+    "podSecurityContext": { "type": "object" },
+    "securityContext": { "type": "object" },
+    "resources": { "type": "object" },
+    "startupProbe": { "type": "object" },
+    "livenessProbe": { "type": "object" },
+    "readinessProbe": { "type": "object" },
+    "nodeSelector": { "type": "object" },
+    "tolerations": { "type": "array" },
+    "affinity": { "type": "object" }
+  }
+}

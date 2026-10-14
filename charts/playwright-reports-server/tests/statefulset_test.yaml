@@ -1,0 +1,221 @@
+suite: statefulset
+templates:
+  - statefulset.yaml
+  - secret.yaml
+set:
+  auth.apiToken: token
+  auth.authSecret: secret
+tests:
+  - it: runs a single-replica StatefulSet governed by the headless Service (SQLite)
+    template: statefulset.yaml
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.serviceName
+          value: RELEASE-NAME-playwright-reports-server-headless
+
+  - it: defaults the image tag to v<appVersion>
+    template: statefulset.yaml
+    chart:
+      appVersion: 6.1.1
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/cyborgtests/playwright-reports-server:v6.1.1
+
+  - it: reads API_TOKEN and AUTH_SECRET from the chart Secret, never inline
+    template: statefulset.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: API_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-playwright-reports-server-auth
+                key: API_TOKEN
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: API_TOKEN
+            value: token
+
+  - it: uses an existing auth Secret and creates none
+    set:
+      auth.existingSecret: my-auth
+      auth.apiToken: ""
+      auth.authSecret: ""
+    asserts:
+      - template: secret.yaml
+        hasDocuments:
+          count: 0
+      - template: statefulset.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTH_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: my-auth
+                key: AUTH_SECRET
+
+  - it: refuses auth without a Secret or values
+    template: statefulset.yaml
+    set:
+      auth.apiToken: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: auth.enabled needs auth.existingSecret, or both auth.apiToken and auth.authSecret
+
+  - it: open mode sets no API_TOKEN
+    template: statefulset.yaml
+    set:
+      auth.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: API_TOKEN
+          any: true
+
+  - it: fs storage gets /app/data from the claim template
+    template: statefulset.yaml
+    set:
+      storage.fs.persistence.size: 20Gi
+      storage.fs.persistence.storageClass: fast
+    asserts:
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.name
+          value: data
+      - equal:
+          path: spec.volumeClaimTemplates[0].spec.resources.requests.storage
+          value: 20Gi
+      - equal:
+          path: spec.volumeClaimTemplates[0].spec.storageClassName
+          value: fast
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+          any: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: data
+            mountPath: /app/data
+
+  - it: fs storage on an existing claim has no claim template
+    template: statefulset.yaml
+    set:
+      storage.fs.persistence.existingClaim: mine
+    asserts:
+      - notExists:
+          path: spec.volumeClaimTemplates
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            persistentVolumeClaim:
+              claimName: mine
+
+  - it: fs storage without persistence falls back to a scratch volume
+    template: statefulset.yaml
+    set:
+      storage.fs.persistence.enabled: false
+    asserts:
+      - notExists:
+          path: spec.volumeClaimTemplates
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            emptyDir:
+              sizeLimit: 5Gi
+
+  - it: s3 storage wires the bucket from a Secret and uses a scratch volume
+    template: statefulset.yaml
+    set:
+      storage.type: s3
+      storage.s3.endpoint: s3.example.com
+      storage.s3.bucket: reports
+      storage.s3.existingSecret: s3-creds
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: S3_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: s3-creds
+                key: S3_SECRET_KEY
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: S3_BUCKET
+            value: reports
+      - notExists:
+          path: spec.volumeClaimTemplates
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            emptyDir:
+              sizeLimit: 5Gi
+
+  - it: s3 storage requires an endpoint and a credentials Secret
+    template: statefulset.yaml
+    set:
+      storage.type: s3
+    asserts:
+      - failedTemplate:
+          errorMessage: storage.s3.endpoint is required with storage.type=s3
+
+  - it: rejects an unknown storage type (values schema)
+    template: statefulset.yaml
+    set:
+      storage.type: azure
+    asserts:
+      - failedTemplate:
+          errorPattern: "storage/type.*must be one of"
+
+  - it: runs non-root with a read-only root filesystem and writable data/tmp volumes
+    template: statefulset.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1001
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+
+  - it: keeps the npm cache on the writable /tmp (report generation installs Playwright)
+    template: statefulset.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: npm_config_cache
+            value: /tmp/.npm
+
+  - it: break-glass admin only when its Secret is given
+    template: statefulset.yaml
+    set:
+      auth.root.existingSecret: root
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: root
+                key: ROOT_PASSWORD
