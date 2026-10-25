@@ -1,0 +1,22 @@
+Playwright Reports Server {{ .Chart.AppVersion }} ({{ .Values.storage.type }} storage)
+
+{{- if .Values.ingress.enabled }}
+URL:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else }}
+Local access:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "prs.fullname" . }} 3001:{{ .Values.service.port }}
+  open http://localhost:3001
+{{- end }}
+
+{{- if .Values.auth.enabled }}
+
+First start: the UI asks for the API token (Secret {{ include "prs.authSecretName" . }}, key {{ .Values.auth.apiTokenKey }})
+to create the first admin. Then Settings -> General (server base URL) and Settings -> Single Sign-On.
+Reporters upload with an API key created in Settings -> API Keys.
+{{- else }}
+
+WARNING: auth.enabled=false, anyone reaching the server is an admin.
+{{- end }}

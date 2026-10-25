@@ -1,0 +1,19 @@
+apiVersion: v2
+name: playwright-reports-server
+description: Self-hosted home for Playwright test results (reports, history, flakiness, analytics)
+type: application
+version: 0.1.0
+appVersion: "6.1.1"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/CyborgTests/playwright-reports-server
+icon: https://raw.githubusercontent.com/CyborgTests/playwright-reports-server/main/apps/backend/public/logo.svg
+sources:
+  - https://github.com/CyborgTests/playwright-reports-server
+keywords:
+  - playwright
+  - testing
+  - reports
+  - e2e
+maintainers:
+  - name: CyborgTests
+    url: https://github.com/CyborgTests

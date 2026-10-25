@@ -52,6 +52,28 @@ docker run -d --name pw-reports \
   ghcr.io/cyborgtests/playwright-reports-server:latest
 ```
 
+## Kubernetes (Helm)
+
+A chart lives in [`charts/playwright-reports-server`](https://github.com/CyborgTests/playwright-reports-server/tree/main/charts/playwright-reports-server).
+It runs the server as a single-replica StatefulSet (SQLite has one writer), as the image's
+non-root user with a read-only root filesystem, and takes secrets from Kubernetes Secrets only.
+
+```bash
+kubectl create secret generic pw-reports-auth \
+  --from-literal=API_TOKEN="$(openssl rand -hex 32)" \
+  --from-literal=AUTH_SECRET="$(openssl rand -base64 32)"
+
+helm install pw-reports oci://ghcr.io/cyborgtests/charts/playwright-reports-server \
+  --set auth.existingSecret=pw-reports-auth
+```
+
+- `storage.type: fs` (default): `/app/data` on a PersistentVolumeClaim from the StatefulSet. Prefer
+  a block storage class: SQLite does not like network file systems.
+- `storage.type: s3`: reports in the bucket, Litestream keeps the metadata DB there, the pod only
+  needs a scratch volume. Keys come from an existing Secret (`storage.s3.existingSecret`).
+
+All values are listed in the chart [README](https://github.com/CyborgTests/playwright-reports-server/blob/main/charts/playwright-reports-server/README.md).
+
 ## Health and logs
 
 ```bash

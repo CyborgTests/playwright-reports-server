@@ -1,0 +1,179 @@
+# -- Override the chart name.
+nameOverride: ""
+# -- Override the full release name.
+fullnameOverride: ""
+
+image:
+  # -- Image repository.
+  repository: ghcr.io/cyborgtests/playwright-reports-server
+  # -- Image tag. Defaults to `v<Chart.appVersion>`.
+  tag: ""
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+
+# -- Image pull secrets.
+imagePullSecrets: []
+
+# The server keeps its metadata in SQLite: it runs as a single-replica
+# StatefulSet. With `storage.type: s3` Litestream replicates the database
+# to the bucket, so the pod only needs a scratch volume.
+
+auth:
+  # -- Turn authentication on (sets `API_TOKEN`). Off = open mode, everyone is an admin.
+  enabled: true
+  # -- Existing Secret holding `API_TOKEN` and `AUTH_SECRET` (keys below). Recommended.
+  existingSecret: ""
+  # -- Key of the API token (master switch, bootstrap secret of the first admin) in the Secret.
+  apiTokenKey: API_TOKEN
+  # -- Key of the secret encrypting stored secrets (SSO client secrets, tokens) in the Secret.
+  authSecretKey: AUTH_SECRET
+  # -- API token, when `existingSecret` is empty (a Secret is created).
+  apiToken: ""
+  # -- Encryption secret, when `existingSecret` is empty (a Secret is created).
+  authSecret: ""
+  # -- Idle session lifetime in hours (sliding, 30-day absolute cap).
+  sessionHours: 12
+  # -- Secure flag on auth cookies. Keep true behind TLS.
+  cookieSecure: true
+  root:
+    # -- Existing Secret with a break-glass admin (recovery only; leave empty normally).
+    existingSecret: ""
+    # -- Key of the break-glass username.
+    usernameKey: ROOT_USERNAME
+    # -- Key of the break-glass password.
+    passwordKey: ROOT_PASSWORD
+
+storage:
+  # -- `fs` (persistent volume) or `s3` (S3-compatible bucket; metadata replicated by Litestream).
+  type: fs
+  fs:
+    persistence:
+      # -- Persist `/app/data` on a PersistentVolumeClaim (fs storage), created from the StatefulSet `volumeClaimTemplates`.
+      enabled: true
+      # -- Use an existing claim instead of the claim template.
+      existingClaim: ""
+      # -- Storage class of the claim template ("" = cluster default). Immutable once installed.
+      storageClass: ""
+      # -- Access modes of the claim template. Immutable once installed.
+      accessModes:
+        - ReadWriteOnce
+      # -- Size of the claim template. Immutable once installed (resize the PVC itself).
+      size: 10Gi
+      # -- Annotations of the claim template.
+      annotations: {}
+  s3:
+    # -- S3 endpoint, hostname only (no scheme).
+    endpoint: ""
+    # -- Custom port of the endpoint (self-hosted object storage).
+    port: ""
+    # -- Region (`auto` for Google Cloud Storage).
+    region: us-east-1
+    # -- Bucket (pre-created).
+    bucket: playwright-reports-server
+    # -- Use HTTPS to the endpoint.
+    useSSL: true
+    # -- Existing Secret with the access and secret keys (required with `storage.type: s3`).
+    existingSecret: ""
+    # -- Key of the access key in the Secret.
+    accessKeyKey: S3_ACCESS_KEY
+    # -- Key of the secret key in the Secret.
+    secretKeyKey: S3_SECRET_KEY
+  # -- Size of the scratch volume for `/app/data` with `storage.type: s3` (merges, uploads in flight).
+  scratchSize: 5Gi
+
+# -- Log level.
+logLevel: info
+
+# -- Extra environment variables (list of EnvVar).
+extraEnv: []
+# -- Extra environment sources (list of EnvFromSource).
+extraEnvFrom: []
+
+service:
+  # -- Service type.
+  type: ClusterIP
+  # -- Service port.
+  port: 3001
+
+ingress:
+  # -- Create an Ingress.
+  enabled: false
+  # -- Ingress class name.
+  className: ""
+  # -- Ingress annotations.
+  annotations: {}
+  # -- Hosts and paths.
+  hosts:
+    - host: playwright-reports.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- TLS configuration.
+  tls: []
+
+serviceAccount:
+  # -- Create a ServiceAccount.
+  create: true
+  # -- ServiceAccount name (generated when empty).
+  name: ""
+  # -- ServiceAccount annotations.
+  annotations: {}
+
+# -- Pod annotations.
+podAnnotations: {}
+# -- Pod labels.
+podLabels: {}
+
+# -- Pod security context (the image runs as appuser 1001:1001).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  fsGroup: 1001
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container security context. The root filesystem is read-only: `/app/data`, `/app/.tmp` and `/tmp` are volumes.
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# -- Resources. Merging reports can use a lot of memory for large suites.
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+# -- Startup probe (first start may replay the Litestream replica).
+startupProbe:
+  httpGet:
+    path: /api/ping
+    port: http
+  periodSeconds: 5
+  failureThreshold: 60
+# -- Liveness probe.
+livenessProbe:
+  httpGet:
+    path: /api/ping
+    port: http
+  periodSeconds: 30
+  timeoutSeconds: 5
+# -- Readiness probe.
+readinessProbe:
+  httpGet:
+    path: /api/ping
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+
+# -- Node selector.
+nodeSelector: {}
+# -- Tolerations.
+tolerations: []
+# -- Affinity.
+affinity: {}
