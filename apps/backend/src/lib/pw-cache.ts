@@ -21,6 +21,13 @@ export const isValidPlaywrightVersion = (version?: string): boolean => {
   return /^\d+\.\d+\.\d+(-[\w.-]+)?$/.test(version ?? '');
 };
 
+// The perfetto reporter first shipped in 1.63. An unset/invalid version means the bundled CLI.
+export const supportsPerfetto = (version?: string): boolean => {
+  if (!version || !isValidPlaywrightVersion(version)) return true;
+  const [major, minor] = version.split('.').map(Number);
+  return major > 1 || minor >= 63;
+};
+
 const cachedCliPath = (version: string): string =>
   path.join(PW_VERSIONS_FOLDER, version, 'node_modules', 'playwright', 'cli.js');
 

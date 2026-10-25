@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import util from 'node:util';
 import { defaultConfig } from './config.js';
-import { resolvePlaywrightCli } from './pw-cache.js';
+import { resolvePlaywrightCli, supportsPerfetto } from './pw-cache.js';
 import { normalizeReporterPaths, validateReporterPaths } from './pw-reporters.js';
 import { siteConfigDb } from './service/db/index.js';
 import { REPORTS_FOLDER, TMP_FOLDER } from './storage/constants.js';
@@ -37,6 +37,7 @@ export const generatePlaywrightReport = async (
   );
 
   const reporters = ['html'];
+  if (supportsPerfetto(playwrightVersion)) reporters.push('perfetto');
   if (customReporters.length > 0) {
     const { valid, missing } = validateReporterPaths(customReporters);
     for (const { input, resolved } of missing) {
@@ -53,7 +54,7 @@ export const generatePlaywrightReport = async (
   await fs.writeFile(configPath, `export default { testDir: 'rootTestsDir' };`);
 
   const args = [cliPath, 'merge-reports'];
-  for (const r of reporters) args.push('--reporter', r);
+  args.push('--reporter', reporters.join(','));
   args.push('--config', configPath, tempFolder);
 
   try {
@@ -63,6 +64,7 @@ export const generatePlaywrightReport = async (
         ...process.env,
         PW_TEST_HTML_REPORT_OPEN: 'never',
         PLAYWRIGHT_HTML_REPORT: reportPath,
+        PLAYWRIGHT_PERFETTO_OUTPUT_FILE: path.join(reportPath, 'perfetto.json.gz'),
       },
     });
   } catch (error) {
