@@ -50,7 +50,7 @@ export default defineConfig({
   webServer: {
     command: 'npm run dev:backend',
     url: 'http://localhost:3001/api/info',
-    reuseExistingServer: true,
+    reuseExistingServer: process.env.CI !== 'true',
     timeout: 120000,
     stdout: 'pipe',
     stderr: 'pipe',
