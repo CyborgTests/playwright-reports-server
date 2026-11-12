@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
-import { test } from './fixtures/base';
+import { test } from '../src/fixtures/base';
 
 test('/api/result/upload should accept correct zip blob', async ({ uploadedResult }) => {
   const { response, body } = uploadedResult;
