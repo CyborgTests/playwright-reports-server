@@ -130,6 +130,6 @@ jobs:
       - name: API tests
         run: pnpm run test:api
       - name: Install browsers
-        run: pnpm exec playwright install chrome --with-deps
+        run: pnpm exec playwright install chromium --with-deps
       - name: Execute E2E tests
         run: pnpm run test:e2e
