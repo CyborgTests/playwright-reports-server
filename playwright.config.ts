@@ -1,9 +1,10 @@
 import { loadEnvFile } from 'node:process';
-import { defineConfig, devices } from '@playwright/test';
-
 try { loadEnvFile() } catch {
   console.info('No .env file found, skipping loading environment variables from file.');
 }
+
+import { BACKEND_URL, FRONTEND_URL } from './tests/src/environment';
+import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
@@ -36,13 +37,13 @@ export default defineConfig({
       name: 'api',
       testDir: './tests/api',
       testMatch: /.*\.test\.ts/,
-      use: { baseURL: 'http://localhost:3001', ...devices['Desktop Chrome'] },
+      use: { baseURL: BACKEND_URL, ...devices['Desktop Chrome'] },
     },
   {
       name: 'e2e',
       testDir: './tests/e2e',
       testMatch: /.*\.test\.ts/,
-      use: { baseURL: 'http://localhost:3000', ...devices['Desktop Chrome']},
+      use: { baseURL: BACKEND_URL, ...devices['Desktop Chrome']},
     },
   ],
   /* Run your local dev server before starting the tests */
