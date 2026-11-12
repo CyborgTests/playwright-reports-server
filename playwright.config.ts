@@ -1,4 +1,7 @@
+import { loadEnvFile } from 'node:process';
 import { defineConfig, devices } from '@playwright/test';
+
+loadEnvFile();
 
 export default defineConfig({
   testDir: './tests',
@@ -15,8 +18,8 @@ export default defineConfig({
         url: 'https://demo-playwright-reports-server.koyeb.app',
         reportPath: 'test-results/blob.zip',
         resultDetails: {
-          testsType: 'API',
-          project: 'Backend Tests',
+          testsType: process.env.TEST_TYPE ?? 'unknown',
+          project: 'CyborgTestsServer'
         },
       },
     ],
@@ -24,6 +27,7 @@ export default defineConfig({
   ],
   use: {
     trace: 'on-first-retry',
+    headless: process.env.CI === 'true',
   },
   projects: [
     {
@@ -31,6 +35,12 @@ export default defineConfig({
       testDir: './tests/api',
       testMatch: /.*\.test\.ts/,
       use: { baseURL: 'http://localhost:3001', ...devices['Desktop Chrome'] },
+    },
+  {
+      name: 'e2e',
+      testDir: './tests/e2e',
+      testMatch: /.*\.test\.ts/,
+      use: { baseURL: 'http://localhost:3000', ...devices['Desktop Chrome']},
     },
   ],
   /* Run your local dev server before starting the tests */

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect } from "@playwright/test";
-import { test } from "./fixtures/base";
+import { test } from "../src/fixtures/base";
 
 test("/api/report/generate for single result should generate report", async ({
 	api,

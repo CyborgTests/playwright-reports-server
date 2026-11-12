@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import { test } from './fixtures/base';
+import { test } from '../src/fixtures/base';
 
 test('/api/result/delete delete result', async ({ request, uploadedResult }) => {
   const { body } = uploadedResult;
