@@ -1,7 +1,9 @@
 import { loadEnvFile } from 'node:process';
 import { defineConfig, devices } from '@playwright/test';
 
-loadEnvFile();
+try { loadEnvFile() } catch {
+  console.info('No .env file found, skipping loading environment variables from file.');
+}
 
 export default defineConfig({
   testDir: './tests',
