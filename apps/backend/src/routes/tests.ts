@@ -30,6 +30,132 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
         summary: 'List tests and their run history',
         security: [{ sessionCookie: [] }, { bearerAuth: [] }] as const,
         querystring: z.toJSONSchema(TestsQuerySchema, { target: 'openapi-3.0', io: 'input' }),
+        response: {
+          200: {
+            type: 'object',
+            required: ['success', 'data', 'total', 'reportRefs'],
+            properties: {
+              success: { type: 'boolean', enum: [true] },
+              data: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['testId', 'fileId', 'filePath', 'project', 'title', 'createdAt'],
+                  properties: {
+                    testId: { type: 'string' },
+                    fileId: { type: 'string' },
+                    filePath: { type: 'string' },
+                    project: { type: 'string' },
+                    title: { type: 'string' },
+                    createdAt: { type: 'string' },
+                    isQuarantined: { type: 'boolean' },
+                    quarantinedAt: { type: 'string' },
+                    quarantineReason: { type: 'string' },
+                    flakinessScore: { type: 'number' },
+                    flakinessResetAt: { type: 'string' },
+                    totalRuns: { type: 'integer' },
+                    history: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        required: ['report', 'outcome'],
+                        properties: {
+                          report: { type: 'integer' },
+                          outcome: { type: 'string' },
+                        },
+                      },
+                    },
+                    historyPassRate: { type: 'number' },
+                    emaDuration: { type: 'number' },
+                    lastRunAt: { type: 'string' },
+                    tags: { type: 'array', items: { type: 'string' } },
+                    annotations: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        required: ['type'],
+                        properties: {
+                          type: { type: 'string' },
+                          description: { type: 'string' },
+                        },
+                      },
+                    },
+                    regression: {
+                      type: 'object',
+                      required: ['regressedAt', 'daysOpen', 'failureCount', 'flakyCount'],
+                      properties: {
+                        regressedAt: { type: 'string' },
+                        regressedAtCommit: { type: 'string' },
+                        lastGreenCommit: { type: 'string' },
+                        daysOpen: { type: 'number' },
+                        failureCount: { type: 'number' },
+                        flakyCount: { type: 'number' },
+                      },
+                    },
+                    regressionHighlights: {
+                      type: 'object',
+                      properties: {
+                        newAtReportId: { type: 'string' },
+                        resolvedAtReportId: { type: 'string' },
+                      },
+                    },
+                  },
+                },
+              },
+              total: { type: 'integer' },
+              reportRefs: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['reportId', 'createdAt'],
+                  properties: {
+                    reportId: { type: 'string' },
+                    createdAt: { type: 'string' },
+                    displayNumber: { type: 'integer' },
+                    title: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+          400: {
+            type: 'object',
+            required: ['success', 'error', 'issues'],
+            properties: {
+              success: { type: 'boolean', enum: [false] },
+              error: { type: 'string' },
+              issues: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['field', 'message'],
+                  properties: {
+                    field: { type: 'string' },
+                    message: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+          401: {
+            type: 'object',
+            required: ['error'],
+            properties: { error: { type: 'string' } },
+          },
+          403: {
+            type: 'object',
+            required: ['error'],
+            properties: { error: { type: 'string' } },
+          },
+          500: {
+            type: 'object',
+            required: ['success', 'error'],
+            properties: {
+              success: { type: 'boolean', enum: [false] },
+              error: { type: 'string' },
+            },
+          },
+        },
       },
     };
 

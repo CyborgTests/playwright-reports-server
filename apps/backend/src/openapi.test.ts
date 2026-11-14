@@ -51,6 +51,38 @@ test('OpenAPI serves the tagged tests endpoint with query and auth metadata', as
       ]
     );
     assert.deepEqual(operation.security, [{ sessionCookie: [] }, { bearerAuth: [] }]);
+    assert.deepEqual(Object.keys(operation.responses).sort(), ['200', '400', '401', '403', '500']);
+
+    const successSchema = operation.responses['200'].content['application/json'].schema;
+    assert.deepEqual(Object.keys(successSchema.properties).sort(), [
+      'data',
+      'reportRefs',
+      'success',
+      'total',
+    ]);
+    assert.deepEqual(successSchema.required, ['success', 'data', 'total', 'reportRefs']);
+    assert.deepEqual(Object.keys(successSchema.properties.data.items.properties).sort(), [
+      'annotations',
+      'createdAt',
+      'emaDuration',
+      'fileId',
+      'filePath',
+      'flakinessResetAt',
+      'flakinessScore',
+      'history',
+      'historyPassRate',
+      'isQuarantined',
+      'lastRunAt',
+      'project',
+      'quarantineReason',
+      'quarantinedAt',
+      'regression',
+      'regressionHighlights',
+      'tags',
+      'testId',
+      'title',
+      'totalRuns',
+    ]);
     assert.equal(spec.paths['/api/auth/signin'], undefined);
   } finally {
     await fastify.close();
