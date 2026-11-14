@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test';
-import { ReportController } from './controllers/report.controller';
-import { test } from './fixtures/base';
+import { ReportController } from '../src/controllers/report.controller';
+import { test } from '../src/fixtures/base';
 
 test('/api/report/list shows report list', async ({ request }) => {
   const reportList = await request.get('/api/report/list');

@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test';
-import { ResultController } from './controllers/result.controller';
-import { test } from './fixtures/base';
+import { ResultController } from '../src/controllers/result.controller';
+import { test } from '../src/fixtures/base';
 
 test('/api/result/list shows result list', async ({ request }) => {
   const resultList = await request.get('/api/result/list');

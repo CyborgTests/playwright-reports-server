@@ -15,8 +15,8 @@ importers:
         specifier: workspace:*
         version: link:packages/reporter
       '@playwright/test':
-        specifier: ^1.59.1
-        version: 1.59.1
+        specifier: ^1.65.0
+        version: 1.65.0
       '@types/node':
         specifier: ^22.19.17
         version: 22.19.17
@@ -277,13 +277,13 @@ importers:
 
   packages/reporter:
     dependencies:
+      '@playwright/test':
+        specifier: ^1.65.0
+        version: 1.65.0
       archiver:
         specifier: ^7.0.1
         version: 7.0.1
     devDependencies:
-      '@playwright/test':
-        specifier: ^1.59.1
-        version: 1.59.1
       '@types/archiver':
         specifier: ^6.0.3
         version: 6.0.4
@@ -1258,13 +1258,13 @@ packages:
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
     engines: {node: '>=14'}
 
-  '@playwright/test@1.59.1':
-    resolution: {integrity: sha512-PG6q63nQg5c9rIi4/Z5lR5IVF7yU5MqmKaPOe0HSc0O2cX1fPi96sUQu5j7eo4gKCkB2AnNGoWt7y4/Xx3Kcqg==}
-    engines: {node: '>=18'}
-    hasBin: true
-
   '@playwright/test@1.64.0':
     resolution: {integrity: sha512-oTN9FNYuN6bqQMwiho6jJKLCG2/QOYCixGXuCjRmzOq23eODeukuY2XiAVoVpAECbuezMt1MHQjAiQxK8F+Y+g==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  '@playwright/test@1.65.0':
+    resolution: {integrity: sha512-iGURLGuKDLakSEl7Pgfv8h7f+XLT+V861Wfhz0zlEl5nyFuKUopdkFBPKqTllTUp06aOwPuH8iuUEb3yp3MpbQ==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -2014,6 +2014,9 @@ packages:
   '@smithy/smithy-client@4.12.13':
     resolution: {integrity: sha512-y/Pcj1V9+qG98gyu1gvftHB7rDpdh+7kIBIggs55yGm3JdtBV8GT8IFF3a1qxZ79QnaJHX9GXzvBG6tAd+czJA==}
     engines: {node: '>=18.0.0'}
+    deprecated: |-
+      Deprecated due to a bug in custom logger data redaction. Upgrade to the latest version. If you used a custom logger with
+        this version, review your logs and rotate any credentials or other secrets. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/types@4.14.1':
     resolution: {integrity: sha512-59b5HtSVrVR/eYNei3BUj3DCPKD/G7EtDDe7OEJE7i7FtQFugYo6MxbotS8mVJkLNVf8gYaAlEBwwtJ9HzhWSg==}
@@ -2800,11 +2803,6 @@ packages:
     resolution: {integrity: sha512-VWSRii4t0AFm6ixFFmLLx1t7wS1gh+ckoa84aOeapGum0h+EZd1EhEumSB+ZdDLnEPuucsVB9oB7cxJHap6Afg==}
     engines: {node: '>=14.14'}
 
-  fsevents@2.3.2:
-    resolution: {integrity: sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==}
-    engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
-    os: [darwin]
-
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
@@ -3343,23 +3341,23 @@ packages:
     resolution: {integrity: sha512-TfySrs/5nm8fQJDcBDuUng3VOUKsd7S+zqvbOTiGXHfxX4wK31ard+hoNuvkicM/2YFzlpDgABOevKSsB4G/FA==}
     engines: {node: '>= 6'}
 
-  playwright-core@1.59.1:
-    resolution: {integrity: sha512-HBV/RJg81z5BiiZ9yPzIiClYV/QMsDCKUyogwH9p3MCP6IYjUFu/MActgYAvK0oWyV9NlwM3GLBjADyWgydVyg==}
-    engines: {node: '>=18'}
-    hasBin: true
-
   playwright-core@1.64.0:
     resolution: {integrity: sha512-T9r+MZkTECl2+oUcZ26YgZzTrYidTsIhYYkJix+6iDOymOb1FB2RLLSOxRGnZGv5DStt+aduIVbt+E8WygXYpg==}
     engines: {node: '>=20'}
     hasBin: true
 
-  playwright@1.59.1:
-    resolution: {integrity: sha512-C8oWjPR3F81yljW9o5OxcWzfh6avkVwDD2VYdwIGqTkl+OGFISgypqzfu7dOe4QNLL2aqcWBmI3PMtLIK233lw==}
-    engines: {node: '>=18'}
+  playwright-core@1.65.0:
+    resolution: {integrity: sha512-vNSKgH6YqtN7cdT/L334zo0a+YwkrpicyrHJlWWPIm/Q+Nn2SWInil01oT0mbu96U4GgoRtCYQD9CzJQgju+lA==}
+    engines: {node: '>=20'}
     hasBin: true
 
   playwright@1.64.0:
     resolution: {integrity: sha512-kVzTnYFYEyQ9RGzBjNCd2+yEqWmVbxl3AHPynv3qQ6JTjv4a+kwRcnqQwIpuP3NnrnIrE/Q6wWAIAvMfIE2/Yg==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  playwright@1.65.0:
+    resolution: {integrity: sha512-F3AMWcR44qMBt4kq+6Kb6mX7bjGXshktKFOPULd7reED6ZJWevjbNRqysP7q+AATE9kdPEZBibex1BYsvpVoeA==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -5145,13 +5143,13 @@ snapshots:
   '@pkgjs/parseargs@0.11.0':
     optional: true
 
-  '@playwright/test@1.59.1':
-    dependencies:
-      playwright: 1.59.1
-
   '@playwright/test@1.64.0':
     dependencies:
       playwright: 1.64.0
+
+  '@playwright/test@1.65.0':
+    dependencies:
+      playwright: 1.65.0
 
   '@radix-ui/number@1.1.1': {}
 
@@ -6818,9 +6816,6 @@ snapshots:
       jsonfile: 6.2.0
       universalify: 2.0.1
 
-  fsevents@2.3.2:
-    optional: true
-
   fsevents@2.3.3:
     optional: true
 
@@ -7553,19 +7548,17 @@ snapshots:
 
   pirates@4.0.7: {}
 
-  playwright-core@1.59.1: {}
-
   playwright-core@1.64.0: {}
 
-  playwright@1.59.1:
-    dependencies:
-      playwright-core: 1.59.1
-    optionalDependencies:
-      fsevents: 2.3.2
+  playwright-core@1.65.0: {}
 
   playwright@1.64.0:
     dependencies:
       playwright-core: 1.64.0
+
+  playwright@1.65.0:
+    dependencies:
+      playwright-core: 1.65.0
 
   postcss-import@15.1.0(postcss@8.5.13):
     dependencies:
