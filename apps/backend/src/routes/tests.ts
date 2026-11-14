@@ -1,5 +1,6 @@
 import { CAPABILITIES, ROOT_CAUSE_CATEGORIES } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { buildTestAnalysisRequest } from '../lib/llm/queue/index.js';
 import { getTaskEtaFinishAt } from '../lib/llm/queueEta.js';
 import { QuarantineUpdateSchema, TestsQuerySchema } from '../lib/schemas/index.js';
@@ -22,7 +23,17 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
     fastify.addHook('preHandler', authorize(CAPABILITIES.view));
 
-    fastify.get('/api/tests', async (request: FastifyRequest, reply: FastifyReply) => {
+    const testsRouteOptions = {
+      attachValidation: true,
+      schema: {
+        tags: ['Tests'],
+        summary: 'List tests and their run history',
+        security: [{ sessionCookie: [] }, { bearerAuth: [] }] as const,
+        querystring: z.toJSONSchema(TestsQuerySchema, { target: 'openapi-3.0', io: 'input' }),
+      },
+    };
+
+    const listTests = async (request: FastifyRequest, reply: FastifyReply) => {
       const parsed = TestsQuerySchema.safeParse(request.query);
       if (!parsed.success) {
         return reply.status(400).send({
@@ -93,7 +104,9 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
           error: 'Failed to fetch tests',
         });
       }
-    });
+    };
+
+    fastify.get('/api/tests', testsRouteOptions, listTests);
 
     fastify.get('/api/test/:testId', async (request: FastifyRequest, reply: FastifyReply) => {
       const { testId } = request.params as { testId: string };

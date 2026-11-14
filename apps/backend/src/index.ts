@@ -4,12 +4,16 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyCors from '@fastify/cors';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
+import fastifySwagger from '@fastify/swagger';
+import fastifySwaggerUi from '@fastify/swagger-ui';
 import Fastify from 'fastify';
 import { env } from './config/env.js';
+import { SESSION_COOKIE } from './lib/auth/resolve.js';
 import { llmAnalysisQueue } from './lib/llm/queue/index.js';
 import { lifecycle } from './lib/service/lifecycle.js';
 import { closeAllSseStreams } from './lib/sse.js';
 import { registerApiRoutes } from './routes/index.js';
+import { APP_VERSION } from './version.js';
 
 const logByEnv = {
   dev: {
@@ -40,6 +44,31 @@ async function start() {
     logger: logByEnv[env.isDev ? 'dev' : 'prod'],
     bodyLimit: 4294967294, // ~4GB, effectively unlimited
   });
+
+  await fastify.register(fastifySwagger, {
+    openapi: {
+      info: {
+        title: 'Playwright Reports Server API',
+        version: APP_VERSION,
+      },
+      tags: [{ name: 'Tests', description: 'Test inventory and run history' }],
+      components: {
+        securitySchemes: {
+          sessionCookie: {
+            type: 'apiKey',
+            in: 'cookie',
+            name: SESSION_COOKIE,
+          },
+          bearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+          },
+        },
+      },
+    },
+    hideUntagged: true,
+  });
+  await fastify.register(fastifySwaggerUi, { routePrefix: '/documentation' });
 
   await fastify.register(fastifyCompress, { global: true, threshold: 1024 });
 
