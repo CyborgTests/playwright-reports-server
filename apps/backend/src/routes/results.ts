@@ -4,97 +4,238 @@ import { pipeline } from 'node:stream/promises';
 import type { Result } from '@playwright-reports/shared';
 import { CAPABILITIES, NON_REPORT_RESULT_FIELDS } from '@playwright-reports/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { parseOffsetQuery } from '../lib/pagination.js';
 import { DeleteResultsRequestSchema, ListResultsQuerySchema } from '../lib/schemas/index.js';
 import { reportResultsDb } from '../lib/service/db/index.js';
 import { service } from '../lib/service/index.js';
 import { DEFAULT_STREAM_CHUNK_SIZE } from '../lib/storage/constants.js';
-import { ValidationError, validateSchema } from '../lib/validation/index.js';
+import {
+  ValidationError,
+  validateSchema,
+  validationErrorDetails,
+} from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
 import { authorize } from './auth.js';
+
+const resultAuthErrorSchema = {
+  type: 'object',
+  required: ['error'],
+  properties: { error: { type: 'string' } },
+};
+
+const resultErrorSchema = {
+  type: 'object',
+  required: ['error'],
+  properties: {
+    error: { type: 'string' },
+    details: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          field: { type: 'string' },
+          message: { type: 'string' },
+        },
+      },
+    },
+  },
+};
+
+const resultListResponseSchema = {
+  type: 'object',
+  required: ['results', 'total'],
+  properties: {
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['resultID', 'project', 'createdAt', 'sizeBytes', 'linkedReports'],
+        properties: {
+          resultID: { type: 'string' },
+          project: { type: 'string' },
+          title: { type: 'string' },
+          createdAt: { type: 'string' },
+          size: { type: 'string' },
+          sizeBytes: { type: 'number' },
+          environment: { type: 'string' },
+          linkedReports: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['reportID', 'displayNumber'],
+              properties: {
+                reportID: { type: 'string' },
+                displayNumber: { type: 'integer', nullable: true },
+              },
+            },
+          },
+        },
+        additionalProperties: true,
+      },
+    },
+    total: { type: 'integer' },
+  },
+};
+
+const resultCatalogResponseSchema = {
+  200: { type: 'array', items: { type: 'string' } },
+  400: resultErrorSchema,
+  401: resultAuthErrorSchema,
+  403: resultAuthErrorSchema,
+  500: resultErrorSchema,
+};
+
+const resultSecurity = [{ sessionCookie: [] }, { bearerAuth: [] }] as const;
 
 export async function registerResultRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
     fastify.addHook('preHandler', authorize(CAPABILITIES.view));
 
-    fastify.get('/api/result/list', async (request, reply) => {
-      try {
-        const query = validateSchema(ListResultsQuerySchema, request.query);
-        const pagination = parseOffsetQuery(query);
-        const tags = query.tags ? query.tags.split(',').filter(Boolean) : [];
-        const usage = query.usage && query.usage !== 'all' ? query.usage : undefined;
+    fastify.get(
+      '/api/result/list',
+      {
+        attachValidation: true,
+        schema: {
+          tags: ['Results'],
+          summary: 'List uploaded results',
+          security: resultSecurity,
+          querystring: z.toJSONSchema(ListResultsQuerySchema, {
+            target: 'openapi-3.0',
+            io: 'input',
+          }),
+          response: {
+            200: resultListResponseSchema,
+            400: resultErrorSchema,
+            401: resultAuthErrorSchema,
+            403: resultAuthErrorSchema,
+            500: resultErrorSchema,
+          },
+        },
+      },
+      async (request, reply) => {
+        if (request.validationError) {
+          return reply.status(400).send({
+            error: 'Validation failed',
+            details: validationErrorDetails(request.validationError),
+          });
+        }
 
-        const { result, error } = await withError(
-          service.getResults({
-            pagination,
-            project: query.project,
-            tags,
-            environment: query.environment,
-            search: query.search,
-            from: query.from,
-            to: query.to,
-            usage,
-          })
+        try {
+          const query = request.query as z.output<typeof ListResultsQuerySchema>;
+          const pagination = parseOffsetQuery(query);
+          const tags = query.tags ? query.tags.split(',').filter(Boolean) : [];
+          const usage = query.usage && query.usage !== 'all' ? query.usage : undefined;
+
+          const { result, error } = await withError(
+            service.getResults({
+              pagination,
+              project: query.project,
+              tags,
+              environment: query.environment,
+              search: query.search,
+              from: query.from,
+              to: query.to,
+              usage,
+            })
+          );
+
+          if (error) {
+            return reply.status(400).send({ error: error.message });
+          }
+
+          if (result?.results?.length) {
+            const ids = result.results.map((r) => r.resultID);
+            const reportsByResult = reportResultsDb.getReportsForResultIds(ids);
+            for (const row of result.results) {
+              const linked = reportsByResult.get(row.resultID) ?? [];
+              (row as Record<string, unknown>).linkedReports = linked.map((r) => ({
+                reportID: r.reportID,
+                displayNumber: r.displayNumber,
+              }));
+            }
+          }
+
+          return result;
+        } catch (error) {
+          if (error instanceof ValidationError) {
+            return reply.status(400).send({ error: error.message, details: error.details });
+          }
+          console.error('[routes] list results error:', error);
+          return reply.status(500).send({ error: 'Internal server error' });
+        }
+      }
+    );
+
+    fastify.get(
+      '/api/result/projects',
+      {
+        schema: {
+          tags: ['Results'],
+          summary: 'List result projects',
+          security: resultSecurity,
+          response: resultCatalogResponseSchema,
+        },
+      },
+      async (_request, reply) => {
+        const { result: projects, error } = await withError(service.getResultsProjects());
+
+        if (error) {
+          return reply.status(400).send({ error: error.message });
+        }
+
+        return projects;
+      }
+    );
+
+    fastify.get(
+      '/api/result/tags',
+      {
+        schema: {
+          tags: ['Results'],
+          summary: 'List result tags',
+          security: resultSecurity,
+          response: resultCatalogResponseSchema,
+        },
+      },
+      async (_request, reply) => {
+        const { result: tags, error } = await withError(service.getResultsTags());
+
+        if (error) {
+          return reply.status(400).send({ error: error.message });
+        }
+
+        return tags;
+      }
+    );
+
+    fastify.get(
+      '/api/result/environments',
+      {
+        schema: {
+          tags: ['Results'],
+          summary: 'List result environments',
+          security: resultSecurity,
+          querystring: {
+            type: 'object',
+            properties: { project: { type: 'string' } },
+          },
+          response: resultCatalogResponseSchema,
+        },
+      },
+      async (request, reply) => {
+        const query = request.query as { project?: string };
+        const { result: environments, error } = await withError(
+          service.getResultsEnvironments(query.project)
         );
 
         if (error) {
           return reply.status(400).send({ error: error.message });
         }
 
-        if (result?.results?.length) {
-          const ids = result.results.map((r) => r.resultID);
-          const reportsByResult = reportResultsDb.getReportsForResultIds(ids);
-          for (const row of result.results) {
-            const linked = reportsByResult.get(row.resultID) ?? [];
-            (row as Record<string, unknown>).linkedReports = linked.map((r) => ({
-              reportID: r.reportID,
-              displayNumber: r.displayNumber,
-            }));
-          }
-        }
-
-        return result;
-      } catch (error) {
-        if (error instanceof ValidationError) {
-          return reply.status(400).send({ error: error.message, details: error.details });
-        }
-        console.error('[routes] list results error:', error);
-        return reply.status(500).send({ error: 'Internal server error' });
+        return environments;
       }
-    });
-
-    fastify.get('/api/result/projects', async (_request, reply) => {
-      const { result: projects, error } = await withError(service.getResultsProjects());
-
-      if (error) {
-        return reply.status(400).send({ error: error.message });
-      }
-
-      return projects;
-    });
-
-    fastify.get('/api/result/tags', async (_request, reply) => {
-      const { result: tags, error } = await withError(service.getResultsTags());
-
-      if (error) {
-        return reply.status(400).send({ error: error.message });
-      }
-
-      return tags;
-    });
-
-    fastify.get('/api/result/environments', async (request, reply) => {
-      const query = request.query as { project?: string };
-      const { result: environments, error } = await withError(
-        service.getResultsEnvironments(query.project)
-      );
-
-      if (error) {
-        return reply.status(400).send({ error: error.message });
-      }
-
-      return environments;
-    });
+    );
 
     fastify.delete(
       '/api/result/delete',
