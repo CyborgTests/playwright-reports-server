@@ -16,8 +16,80 @@ import {
   isRootCauseCategory,
   testManagementService,
 } from '../lib/service/test-management/index.js';
+import { validationErrorDetails } from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
 import { authorize } from './auth.js';
+
+export function formatTestsQueryValidationError(
+  validationError: FastifyRequest['validationError']
+) {
+  return {
+    success: false,
+    error: 'Invalid query parameters',
+    issues: validationErrorDetails(validationError),
+  };
+}
+
+const testRunResponseSchema = {
+  type: 'object',
+  required: ['runId', 'testId', 'fileId', 'project', 'reportId', 'outcome', 'createdAt'],
+  properties: {
+    runId: { type: 'string' },
+    testId: { type: 'string' },
+    fileId: { type: 'string' },
+    project: { type: 'string' },
+    reportId: { type: 'string' },
+    outcome: { type: 'string' },
+    duration: { type: 'number' },
+    createdAt: { type: 'string' },
+    failureDetails: { type: 'string' },
+    failureCategory: { type: 'string' },
+    failureCategorySource: {
+      type: 'string',
+      enum: ['heuristic', 'llm', 'manual', 'consensus'],
+    },
+    errorSignature: { type: 'string' },
+    reportTitle: { type: 'string' },
+    reportDisplayNumber: { type: 'integer' },
+    hasTrace: { type: 'boolean' },
+  },
+  additionalProperties: true,
+};
+
+const testResponseSchema = {
+  type: 'object',
+  required: ['testId', 'fileId', 'filePath', 'project', 'title', 'createdAt', 'runs'],
+  properties: {
+    testId: { type: 'string' },
+    fileId: { type: 'string' },
+    filePath: { type: 'string' },
+    project: { type: 'string' },
+    title: { type: 'string' },
+    createdAt: { type: 'string' },
+    flakinessResetAt: { type: 'string' },
+    projectName: { type: 'string', nullable: true },
+    suitePath: { type: 'string', nullable: true },
+    tags: { type: 'string', nullable: true },
+    latestAnnotations: { type: 'string', nullable: true },
+    runs: { type: 'array', items: testRunResponseSchema },
+  },
+  additionalProperties: true,
+};
+
+const testErrorResponseSchema = {
+  type: 'object',
+  required: ['success', 'error'],
+  properties: {
+    success: { type: 'boolean', enum: [false] },
+    error: { type: 'string' },
+  },
+};
+
+const authErrorResponseSchema = {
+  type: 'object',
+  required: ['error'],
+  properties: { error: { type: 'string' } },
+};
 
 export async function registerTestsRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
@@ -160,15 +232,10 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
     };
 
     const listTests = async (request: FastifyRequest, reply: FastifyReply) => {
-      const parsed = TestsQuerySchema.safeParse(request.query);
-      if (!parsed.success) {
-        return reply.status(400).send({
-          success: false,
-          error: 'Invalid query parameters',
-          issues: parsed.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })),
-        });
+      if (request.validationError) {
+        return reply.status(400).send(formatTestsQueryValidationError(request.validationError));
       }
-      const query = parsed.data;
+      const query = request.query as z.infer<typeof TestsQuerySchema>;
       const { project, from, to, search, slim: slimRaw } = query;
 
       try {
@@ -234,59 +301,137 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
 
     fastify.get('/api/tests', testsRouteOptions, listTests);
 
-    fastify.get('/api/test/:testId', async (request: FastifyRequest, reply: FastifyReply) => {
-      const { testId } = request.params as { testId: string };
-      const { project } = request.query as { project?: string };
+    fastify.get(
+      '/api/test/:testId',
+      {
+        schema: {
+          tags: ['Tests'],
+          summary: 'Get test details and recent runs',
+          security: [{ sessionCookie: [] }, { bearerAuth: [] }] as const,
+          params: {
+            type: 'object',
+            required: ['testId'],
+            properties: { testId: { type: 'string' } },
+          },
+          querystring: {
+            type: 'object',
+            properties: { project: { type: 'string' } },
+          },
+          response: {
+            200: {
+              type: 'object',
+              required: ['success', 'data'],
+              properties: {
+                success: { type: 'boolean', enum: [true] },
+                data: testResponseSchema,
+              },
+            },
+            401: authErrorResponseSchema,
+            403: authErrorResponseSchema,
+            404: testErrorResponseSchema,
+            500: testErrorResponseSchema,
+          },
+        },
+      },
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { testId } = request.params as { testId: string };
+        const { project } = request.query as { project?: string };
 
-      const lane = testDb.findByTestId(testId, project);
-      if (!lane) {
-        return reply.status(404).send({ success: false, error: 'Test not found' });
+        const lane = testDb.findByTestId(testId, project);
+        if (!lane) {
+          return reply.status(404).send({ success: false, error: 'Test not found' });
+        }
+
+        const { result: test, error } = await withError(
+          testManagementService.getTest(lane.testId, lane.fileId, lane.project)
+        );
+
+        if (error) {
+          fastify.log.error(error);
+          return reply.status(500).send({
+            success: false,
+            error: 'Failed to fetch test details',
+          });
+        }
+
+        if (!test) {
+          return reply.status(404).send({
+            success: false,
+            error: 'Test not found',
+          });
+        }
+
+        return reply.send({ success: true, data: test });
       }
+    );
 
-      const { result: test, error } = await withError(
-        testManagementService.getTest(lane.testId, lane.fileId, lane.project)
-      );
+    fastify.get(
+      '/api/test/:testId/runs',
+      {
+        attachValidation: true,
+        schema: {
+          tags: ['Tests'],
+          summary: 'Get a page of test runs',
+          security: [{ sessionCookie: [] }, { bearerAuth: [] }] as const,
+          params: {
+            type: 'object',
+            required: ['testId'],
+            properties: { testId: { type: 'string' } },
+          },
+          querystring: {
+            type: 'object',
+            properties: {
+              project: { type: 'string', default: 'all' },
+              before: { type: 'string' },
+              limit: { type: 'integer', minimum: 1, default: 100 },
+            },
+          },
+          response: {
+            200: {
+              type: 'object',
+              required: ['success', 'data'],
+              properties: {
+                success: { type: 'boolean', enum: [true] },
+                data: {
+                  type: 'object',
+                  required: ['runs', 'hasMore'],
+                  properties: {
+                    runs: { type: 'array', items: testRunResponseSchema },
+                    hasMore: { type: 'boolean' },
+                  },
+                },
+              },
+            },
+            401: authErrorResponseSchema,
+            403: authErrorResponseSchema,
+            404: testErrorResponseSchema,
+            500: testErrorResponseSchema,
+          },
+        },
+      },
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const { testId } = request.params as { testId: string };
+        const {
+          project = 'all',
+          before,
+          limit,
+        } = request.query as { project?: string; before?: string; limit?: string };
+        const parsedLimit = limit ? Number.parseInt(limit, 10) : 100;
+        const pageLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 100;
 
-      if (error) {
-        fastify.log.error(error);
-        return reply.status(500).send({
-          success: false,
-          error: 'Failed to fetch test details',
-        });
+        const { result: runs, error } = await withError(
+          testManagementService.getTestRunsPage(testId, project, { before, limit: pageLimit })
+        );
+        if (error) {
+          fastify.log.error(error);
+          return reply.status(500).send({ success: false, error: 'Failed to fetch test runs' });
+        }
+        if (!runs) {
+          return reply.status(404).send({ success: false, error: 'Test not found' });
+        }
+        return reply.send({ success: true, data: { runs, hasMore: runs.length >= pageLimit } });
       }
-
-      if (!test) {
-        return reply.status(404).send({
-          success: false,
-          error: 'Test not found',
-        });
-      }
-
-      return reply.send({ success: true, data: test });
-    });
-
-    fastify.get('/api/test/:testId/runs', async (request: FastifyRequest, reply: FastifyReply) => {
-      const { testId } = request.params as { testId: string };
-      const {
-        project = 'all',
-        before,
-        limit,
-      } = request.query as { project?: string; before?: string; limit?: string };
-      const parsedLimit = limit ? Number.parseInt(limit, 10) : 100;
-      const pageLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 100;
-
-      const { result: runs, error } = await withError(
-        testManagementService.getTestRunsPage(testId, project, { before, limit: pageLimit })
-      );
-      if (error) {
-        fastify.log.error(error);
-        return reply.status(500).send({ success: false, error: 'Failed to fetch test runs' });
-      }
-      if (!runs) {
-        return reply.status(404).send({ success: false, error: 'Test not found' });
-      }
-      return reply.send({ success: true, data: { runs, hasMore: runs.length >= pageLimit } });
-    });
+    );
 
     fastify.delete(
       '/api/test/:testId',

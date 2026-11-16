@@ -1,3 +1,4 @@
+import type { FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 
 export class ValidationError extends Error {
@@ -24,6 +25,18 @@ export function zodErrorResponse(error: z.ZodError): {
     error: issues.map((i) => (i.field ? `${i.field}: ${i.message}` : i.message)).join('; '),
     issues,
   };
+}
+
+export function validationErrorDetails(
+  validationError: FastifyRequest['validationError']
+): Array<{ field: string; message: string }> {
+  const issues = validationError?.validation as
+    | Array<{ instancePath?: string; message?: string }>
+    | undefined;
+  return (issues ?? []).map((issue) => ({
+    field: (issue.instancePath ?? '').split('/').filter(Boolean).join('.'),
+    message: issue.message ?? 'Invalid value',
+  }));
 }
 
 export function validateSchema<T extends z.ZodType>(schema: T, data: unknown): z.infer<T> {

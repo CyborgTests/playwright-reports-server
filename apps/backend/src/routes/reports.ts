@@ -7,6 +7,7 @@ import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { CAPABILITIES, type ReportTestFailure } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { serveReportRoute } from '../lib/constants.js';
 import { parseFailureDetails } from '../lib/failure-clustering/extractors/failure-details.js';
 import { getReportEtaFinishAt } from '../lib/llm/queueEta.js';
@@ -25,7 +26,7 @@ import {
   ExportReportPdfQuerySchema,
   GenerateReportRequestSchema,
   GetReportParamsSchema,
-  GetReportTestParamsSchema,
+  type GetReportTestParamsSchema,
   ListReportsQuerySchema,
   UploadReportRequestSchema,
 } from '../lib/schemas/index.js';
@@ -43,11 +44,396 @@ import { processReportOrRollback, service } from '../lib/service/index.js';
 import { compareReports } from '../lib/service/reportCompare.js';
 import { attachmentKindOf } from '../lib/storage/attachments.js';
 import { storage } from '../lib/storage/index.js';
-import { ValidationError, validateSchema } from '../lib/validation/index.js';
+import {
+  ValidationError,
+  validateSchema,
+  validationErrorDetails,
+} from '../lib/validation/index.js';
 import { withError } from '../lib/withError.js';
 import { authorize } from './auth.js';
 
 const COMPARE_KEYWORDS = new Set(['latest', 'prev', 'previous']);
+
+const reportAuthErrorSchema = {
+  type: 'object',
+  required: ['error'],
+  properties: { error: { type: 'string' } },
+};
+
+const reportErrorSchema = {
+  type: 'object',
+  required: ['error'],
+  properties: {
+    error: { type: 'string' },
+    details: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          field: { type: 'string' },
+          message: { type: 'string' },
+        },
+      },
+    },
+  },
+  additionalProperties: true,
+};
+
+const regressionTestRefSchema = {
+  type: 'object',
+  required: ['testId', 'fileId', 'project', 'title', 'filePath'],
+  properties: {
+    testId: { type: 'string' },
+    fileId: { type: 'string' },
+    project: { type: 'string' },
+    title: { type: 'string' },
+    filePath: { type: 'string' },
+  },
+};
+
+const reportListResponseSchema = {
+  type: 'object',
+  required: ['reports', 'total'],
+  properties: {
+    reports: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['reportID', 'project', 'reportUrl', 'createdAt', 'sizeBytes', 'stats'],
+        properties: {
+          reportID: { type: 'string' },
+          title: { type: 'string' },
+          displayNumber: { type: 'integer' },
+          project: { type: 'string' },
+          reportUrl: { type: 'string', nullable: true },
+          createdAt: { type: 'string' },
+          size: { type: 'string' },
+          sizeBytes: { type: 'number' },
+          stats: {
+            type: 'object',
+            required: ['total'],
+            properties: {
+              total: { type: 'integer' },
+              expected: { type: 'integer' },
+              unexpected: { type: 'integer' },
+              flaky: { type: 'integer' },
+              skipped: { type: 'integer' },
+              ok: { type: 'boolean' },
+            },
+          },
+          metadata: { type: 'object', additionalProperties: true },
+          environment: { type: 'string' },
+          regressions: {
+            type: 'object',
+            required: ['newHere', 'resolvedHere'],
+            properties: {
+              newHere: { type: 'integer' },
+              resolvedHere: { type: 'integer' },
+              newTests: { type: 'array', items: regressionTestRefSchema },
+              resolvedTests: {
+                type: 'array',
+                items: regressionTestRefSchema,
+              },
+            },
+          },
+        },
+        additionalProperties: true,
+      },
+    },
+    total: { type: 'integer' },
+  },
+};
+
+const reportDetailResponseSchema = {
+  ...reportListResponseSchema.properties.reports.items,
+  properties: {
+    ...reportListResponseSchema.properties.reports.items.properties,
+    duration: { type: 'number' },
+    previousReportId: { type: 'string', nullable: true },
+    storagePath: { type: 'string', nullable: true },
+    files: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          fileId: { type: 'string' },
+          fileName: { type: 'string' },
+          stats: reportListResponseSchema.properties.reports.items.properties.stats,
+          tests: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                testId: { type: 'string' },
+                title: { type: 'string' },
+                outcome: { type: 'string' },
+                duration: { type: 'number' },
+                project: { type: 'string' },
+                tags: { type: 'array', items: { type: 'string' } },
+              },
+              additionalProperties: true,
+            },
+          },
+        },
+        additionalProperties: true,
+      },
+    },
+  },
+  additionalProperties: true,
+};
+
+const compareReportRefSchema = {
+  type: 'object',
+  required: ['reportID', 'project', 'createdAt', 'reportUrl'],
+  properties: {
+    reportID: { type: 'string' },
+    title: { type: 'string' },
+    displayNumber: { type: 'integer' },
+    project: { type: 'string' },
+    createdAt: { type: 'string' },
+    reportUrl: { type: 'string', nullable: true },
+    stats: reportListResponseSchema.properties.reports.items.properties.stats,
+  },
+};
+
+const compareTestEntrySchema = {
+  type: 'object',
+  required: ['testId', 'fileId', 'project', 'title', 'filePath'],
+  properties: {
+    testId: { type: 'string' },
+    fileId: { type: 'string' },
+    project: { type: 'string' },
+    title: { type: 'string' },
+    filePath: { type: 'string' },
+    outcomeA: { type: 'string', enum: ['pass', 'fail', 'flaky', 'skipped', 'unknown'] },
+    outcomeB: { type: 'string', enum: ['pass', 'fail', 'flaky', 'skipped', 'unknown'] },
+    rawOutcomeA: { type: 'string' },
+    rawOutcomeB: { type: 'string' },
+    durationA: { type: 'number' },
+    durationB: { type: 'number' },
+  },
+};
+
+const compareSummarySchema = {
+  type: 'object',
+  required: [
+    'totalA',
+    'totalB',
+    'newlyFailedCount',
+    'fixedCount',
+    'stillFailingCount',
+    'flakyToPassCount',
+    'passToFlakyCount',
+    'newTestsCount',
+    'removedTestsCount',
+    'durationRegressionsCount',
+    'durationImprovementsCount',
+    'regressionsOpenedBetween',
+    'regressionsResolvedBetween',
+  ],
+  properties: {
+    totalA: { type: 'integer' },
+    totalB: { type: 'integer' },
+    newlyFailedCount: { type: 'integer' },
+    fixedCount: { type: 'integer' },
+    stillFailingCount: { type: 'integer' },
+    flakyToPassCount: { type: 'integer' },
+    passToFlakyCount: { type: 'integer' },
+    newTestsCount: { type: 'integer' },
+    removedTestsCount: { type: 'integer' },
+    durationRegressionsCount: { type: 'integer' },
+    durationImprovementsCount: { type: 'integer' },
+    regressionsOpenedBetween: { type: 'integer' },
+    regressionsResolvedBetween: { type: 'integer' },
+  },
+};
+
+const reportCompareResponseSchema = {
+  type: 'object',
+  required: [
+    'reportA',
+    'reportB',
+    'summary',
+    'newlyFailed',
+    'fixed',
+    'stillFailing',
+    'flakyToPass',
+    'passToFlaky',
+    'newTests',
+    'removedTests',
+    'durationDeltas',
+  ],
+  properties: {
+    reportA: compareReportRefSchema,
+    reportB: compareReportRefSchema,
+    summary: compareSummarySchema,
+    newlyFailed: { type: 'array', items: compareTestEntrySchema },
+    fixed: { type: 'array', items: compareTestEntrySchema },
+    stillFailing: { type: 'array', items: compareTestEntrySchema },
+    flakyToPass: { type: 'array', items: compareTestEntrySchema },
+    passToFlaky: { type: 'array', items: compareTestEntrySchema },
+    newTests: { type: 'array', items: compareTestEntrySchema },
+    removedTests: { type: 'array', items: compareTestEntrySchema },
+    durationDeltas: {
+      type: 'array',
+      items: {
+        ...compareTestEntrySchema,
+        required: [
+          ...compareTestEntrySchema.required,
+          'durationA',
+          'durationB',
+          'deltaMs',
+          'deltaPct',
+        ],
+        properties: {
+          ...compareTestEntrySchema.properties,
+          durationA: { type: 'number' },
+          durationB: { type: 'number' },
+          deltaMs: { type: 'number' },
+          deltaPct: { type: 'number' },
+        },
+      },
+    },
+  },
+};
+
+const failureSummaryRowSchema = {
+  type: 'object',
+  required: [
+    'reportId',
+    'project',
+    'totalFailures',
+    'categories',
+    'llmSummary',
+    'llmSummaryStructured',
+    'llmModel',
+    'createdAt',
+    'updatedAt',
+  ],
+  properties: {
+    reportId: { type: 'string' },
+    project: { type: 'string' },
+    totalFailures: { type: 'integer' },
+    categories: { type: 'object', additionalProperties: { type: 'integer' } },
+    llmSummary: { type: 'string', nullable: true },
+    llmSummaryStructured: { type: 'object', nullable: true, additionalProperties: true },
+    llmModel: { type: 'string', nullable: true },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string', nullable: true },
+  },
+};
+
+const reportTestFailureResponseSchema = {
+  type: 'object',
+  required: [
+    'message',
+    'stackTrace',
+    'location',
+    'artifactsAvailable',
+    'removedAttachmentKinds',
+    'attachments',
+    'traceViewerBase',
+    'history',
+    'crossProject',
+  ],
+  properties: {
+    message: { type: 'string', nullable: true },
+    stackTrace: { type: 'string', nullable: true },
+    location: {
+      type: 'object',
+      nullable: true,
+      required: ['file'],
+      properties: {
+        file: { type: 'string' },
+        line: { type: 'integer' },
+        column: { type: 'integer' },
+      },
+    },
+    artifactsAvailable: { type: 'boolean' },
+    removedAttachmentKinds: { type: 'array', items: { type: 'string' } },
+    attachments: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['name', 'contentType', 'url'],
+        properties: {
+          name: { type: 'string' },
+          contentType: { type: 'string' },
+          url: { type: 'string' },
+        },
+      },
+    },
+    traceViewerBase: { type: 'string', nullable: true },
+    history: {
+      type: 'object',
+      required: [
+        'priorOccurrenceCount',
+        'firstOccurrence',
+        'distinctErrors',
+        'totalFailures',
+        'previousFailure',
+      ],
+      properties: {
+        priorOccurrenceCount: { type: 'integer', nullable: true },
+        firstOccurrence: {
+          type: 'object',
+          nullable: true,
+          required: ['reportId', 'createdAt', 'displayNumber', 'title'],
+          properties: {
+            reportId: { type: 'string' },
+            createdAt: { type: 'string' },
+            displayNumber: { type: 'integer', nullable: true },
+            title: { type: 'string', nullable: true },
+          },
+        },
+        distinctErrors: { type: 'integer' },
+        totalFailures: { type: 'integer' },
+        previousFailure: {
+          type: 'object',
+          nullable: true,
+          required: ['at', 'sameError'],
+          properties: {
+            at: { type: 'string' },
+            sameError: { type: 'boolean', nullable: true },
+          },
+        },
+      },
+    },
+    crossProject: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['project', 'isQuarantined', 'lastRunAt', 'stats'],
+        properties: {
+          project: { type: 'string' },
+          isQuarantined: { type: 'boolean' },
+          lastRunAt: { type: 'string', nullable: true },
+          stats: {
+            type: 'object',
+            required: ['total', 'expected', 'unexpected', 'flaky', 'skipped'],
+            properties: {
+              total: { type: 'integer' },
+              expected: { type: 'integer' },
+              unexpected: { type: 'integer' },
+              flaky: { type: 'integer' },
+              skipped: { type: 'integer' },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
+const reportCatalogResponseSchema = {
+  200: { type: 'array', items: { type: 'string' } },
+  400: reportErrorSchema,
+  401: reportAuthErrorSchema,
+  403: reportAuthErrorSchema,
+  500: reportErrorSchema,
+};
+
+const reportSecurity = [{ sessionCookie: [] }, { bearerAuth: [] }] as const;
 
 interface ReportMetadataExtras {
   playwrightVersion?: string;
@@ -110,110 +496,198 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
     fastify.addHook('preHandler', authorize(CAPABILITIES.view));
 
-    fastify.get('/api/report/list', async (request, reply) => {
-      try {
-        const query = validateSchema(ListReportsQuerySchema, request.query);
-        const pagination = parseOffsetQuery(query);
-        const tags = query.tags ? query.tags.split(',').filter(Boolean) : undefined;
-        const passRate = query.passRate && query.passRate !== 'all' ? query.passRate : undefined;
-
-        const { result: reports, error } = await withError(
-          service.getReports({
-            pagination,
-            project: query.project,
-            search: query.search,
-            tags,
-            environment: query.environment,
-            from: query.from,
-            to: query.to,
-            passRate,
-            regressionsOnly: query.regressionsOnly,
-          })
-        );
-
-        if (error) {
-          return reply.status(400).send({ error: error.message });
+    fastify.get(
+      '/api/report/list',
+      {
+        attachValidation: true,
+        schema: {
+          tags: ['Reports'],
+          summary: 'List reports',
+          security: reportSecurity,
+          querystring: z.toJSONSchema(ListReportsQuerySchema, {
+            target: 'openapi-3.0',
+            io: 'input',
+          }),
+          response: {
+            200: reportListResponseSchema,
+            400: reportErrorSchema,
+            401: reportAuthErrorSchema,
+            403: reportAuthErrorSchema,
+            500: reportErrorSchema,
+          },
+        },
+      },
+      async (request, reply) => {
+        if (request.validationError) {
+          return reply.status(400).send({
+            error: 'Validation failed',
+            details: validationErrorDetails(request.validationError),
+          });
         }
 
-        if (reports?.reports?.length) {
-          const ids = reports.reports.map((r) => r.reportID);
-          const countsByReport = regressionsDb.countsForReports(ids);
-          for (const r of reports.reports) {
-            const counts = countsByReport.get(r.reportID);
-            if (counts && (counts.newHere > 0 || counts.resolvedHere > 0)) {
-              r.regressions = counts;
+        try {
+          const input = request.query as z.input<typeof ListReportsQuerySchema>;
+          const query: z.output<typeof ListReportsQuerySchema> = {
+            ...input,
+            project: input.project ?? '',
+            search: input.search ?? '',
+            regressionsOnly: input.regressionsOnly === 'true' || input.regressionsOnly === '1',
+            limit: input.limit === undefined ? undefined : Number(input.limit),
+            offset: input.offset === undefined ? undefined : Number(input.offset),
+          };
+          const pagination = parseOffsetQuery(query);
+          const tags = query.tags ? query.tags.split(',').filter(Boolean) : undefined;
+          const passRate = query.passRate && query.passRate !== 'all' ? query.passRate : undefined;
+
+          const { result: reports, error } = await withError(
+            service.getReports({
+              pagination,
+              project: query.project,
+              search: query.search,
+              tags,
+              environment: query.environment,
+              from: query.from,
+              to: query.to,
+              passRate,
+              regressionsOnly: query.regressionsOnly,
+            })
+          );
+
+          if (error) {
+            return reply.status(400).send({ error: error.message });
+          }
+
+          if (reports?.reports?.length) {
+            const ids = reports.reports.map((r) => r.reportID);
+            const countsByReport = regressionsDb.countsForReports(ids);
+            for (const r of reports.reports) {
+              const counts = countsByReport.get(r.reportID);
+              if (counts && (counts.newHere > 0 || counts.resolvedHere > 0)) {
+                r.regressions = counts;
+              }
             }
           }
-        }
 
-        return reports;
-      } catch (error) {
-        if (error instanceof ValidationError) {
-          return reply.status(400).send({ error: error.message, details: error.details });
-        }
-        console.error('[routes] list reports error:', error);
-        return reply.status(500).send({ error: 'Internal server error' });
-      }
-    });
-
-    fastify.get('/api/report/compare', async (request, reply) => {
-      try {
-        const query = validateSchema(CompareReportsQuerySchema, request.query);
-        const { resolved, error: resolveError } = resolveCompareKeywords(
-          [query.a, query.b],
-          query.project
-        );
-        if (resolveError) {
-          return reply.status(400).send({ error: resolveError });
-        }
-        const [resolvedA, resolvedB] = resolved;
-        const { result, error } = compareReports(resolvedA, resolvedB);
-
-        if (error || !result) {
-          const message = error ?? 'Failed to compare reports';
-          const status = message.includes('not found') || message.includes('itself') ? 400 : 500;
-          return reply.status(status).send({ error: message });
-        }
-
-        return result;
-      } catch (error) {
-        if (error instanceof ValidationError) {
-          return reply.status(400).send({ error: error.message, details: error.details });
-        }
-        console.error('[routes] compare reports error:', error);
-        return reply.status(500).send({ error: 'Internal server error' });
-      }
-    });
-
-    fastify.get('/api/report/:id', async (request, reply) => {
-      try {
-        const params = validateSchema(GetReportParamsSchema, request.params);
-        const { result: report, error } = await withError(service.getReport(params.id));
-
-        if (error) {
-          return reply.status(404).send({ error: error.message });
-        }
-
-        if (report) {
-          const counts = regressionsDb.countsForReport(report.reportID);
-          if (counts.newHere > 0 || counts.resolvedHere > 0) {
-            const details = regressionsDb.detailsForReports([report.reportID], 500);
-            const entry = details.get(report.reportID);
-            report.regressions = {
-              ...counts,
-              newTests: entry && entry.newHere.length > 0 ? entry.newHere : undefined,
-              resolvedTests:
-                entry && entry.resolvedHere.length > 0 ? entry.resolvedHere : undefined,
-            };
+          return reports;
+        } catch (error) {
+          if (error instanceof ValidationError) {
+            return reply.status(400).send({ error: error.message, details: error.details });
           }
+          console.error('[routes] list reports error:', error);
+          return reply.status(500).send({ error: 'Internal server error' });
+        }
+      }
+    );
+
+    fastify.get(
+      '/api/report/compare',
+      {
+        attachValidation: true,
+        schema: {
+          tags: ['Reports'],
+          summary: 'Compare two reports',
+          security: reportSecurity,
+          querystring: z.toJSONSchema(CompareReportsQuerySchema, {
+            target: 'openapi-3.0',
+            io: 'input',
+          }),
+          response: {
+            200: reportCompareResponseSchema,
+            400: reportErrorSchema,
+            401: reportAuthErrorSchema,
+            403: reportAuthErrorSchema,
+            500: reportErrorSchema,
+          },
+        },
+      },
+      async (request, reply) => {
+        if (request.validationError) {
+          return reply.status(400).send({
+            error: 'Validation failed',
+            details: validationErrorDetails(request.validationError),
+          });
         }
 
-        return report;
-      } catch (error) {
-        console.error('[routes] get report error:', error);
-        return reply.status(500).send({ error: 'Internal server error' });
+        try {
+          const query = request.query as z.infer<typeof CompareReportsQuerySchema>;
+          const { resolved, error: resolveError } = resolveCompareKeywords(
+            [query.a, query.b],
+            query.project
+          );
+          if (resolveError) {
+            return reply.status(400).send({ error: resolveError });
+          }
+          const [resolvedA, resolvedB] = resolved;
+          const { result, error } = compareReports(resolvedA, resolvedB);
+
+          if (error || !result) {
+            const message = error ?? 'Failed to compare reports';
+            const status = message.includes('not found') || message.includes('itself') ? 400 : 500;
+            return reply.status(status).send({ error: message });
+          }
+
+          return result;
+        } catch (error) {
+          if (error instanceof ValidationError) {
+            return reply.status(400).send({ error: error.message, details: error.details });
+          }
+          console.error('[routes] compare reports error:', error);
+          return reply.status(500).send({ error: 'Internal server error' });
+        }
       }
-    });
+    );
+
+    fastify.get(
+      '/api/report/:id',
+      {
+        schema: {
+          tags: ['Reports'],
+          summary: 'Get report details',
+          security: reportSecurity,
+          params: {
+            type: 'object',
+            required: ['id'],
+            properties: { id: { type: 'string' } },
+          },
+          response: {
+            200: reportDetailResponseSchema,
+            401: reportAuthErrorSchema,
+            403: reportAuthErrorSchema,
+            404: reportErrorSchema,
+            500: reportErrorSchema,
+          },
+        },
+      },
+      async (request, reply) => {
+        try {
+          const params = request.params as z.infer<typeof GetReportParamsSchema>;
+          const { result: report, error } = await withError(service.getReport(params.id));
+
+          if (error) {
+            return reply.status(404).send({ error: error.message });
+          }
+
+          if (report) {
+            const counts = regressionsDb.countsForReport(report.reportID);
+            if (counts.newHere > 0 || counts.resolvedHere > 0) {
+              const details = regressionsDb.detailsForReports([report.reportID], 500);
+              const entry = details.get(report.reportID);
+              report.regressions = {
+                ...counts,
+                newTests: entry && entry.newHere.length > 0 ? entry.newHere : undefined,
+                resolvedTests:
+                  entry && entry.resolvedHere.length > 0 ? entry.resolvedHere : undefined,
+              };
+            }
+          }
+
+          return report;
+        } catch (error) {
+          console.error('[routes] get report error:', error);
+          return reply.status(500).send({ error: 'Internal server error' });
+        }
+      }
+    );
 
     fastify.get('/api/report/:id/export.pdf', async (request, reply) => {
       try {
@@ -379,39 +853,80 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
       }
     });
 
-    fastify.get('/api/report/projects', async (_request, reply) => {
-      const { result: projects, error } = await withError(service.getReportsProjects());
+    fastify.get(
+      '/api/report/projects',
+      {
+        schema: {
+          tags: ['Reports'],
+          summary: 'List report projects',
+          security: reportSecurity,
+          response: reportCatalogResponseSchema,
+        },
+      },
+      async (_request, reply) => {
+        const { result: projects, error } = await withError(service.getReportsProjects());
 
-      if (error) {
-        return reply.status(400).send({ error: error.message });
+        if (error) {
+          return reply.status(400).send({ error: error.message });
+        }
+
+        return projects;
       }
+    );
 
-      return projects;
-    });
+    fastify.get(
+      '/api/report/tags',
+      {
+        schema: {
+          tags: ['Reports'],
+          summary: 'List report tags',
+          security: reportSecurity,
+          querystring: {
+            type: 'object',
+            properties: { project: { type: 'string' } },
+          },
+          response: reportCatalogResponseSchema,
+        },
+      },
+      async (request, reply) => {
+        const query = request.query as { project?: string };
+        const { result: tags, error } = await withError(service.getReportsTags(query.project));
 
-    fastify.get('/api/report/tags', async (request, reply) => {
-      const query = request.query as { project?: string };
-      const { result: tags, error } = await withError(service.getReportsTags(query.project));
+        if (error) {
+          return reply.status(400).send({ error: error.message });
+        }
 
-      if (error) {
-        return reply.status(400).send({ error: error.message });
+        return tags;
       }
+    );
 
-      return tags;
-    });
+    fastify.get(
+      '/api/report/environments',
+      {
+        schema: {
+          tags: ['Reports'],
+          summary: 'List report environments',
+          security: reportSecurity,
+          querystring: {
+            type: 'object',
+            properties: { project: { type: 'string' } },
+          },
+          response: reportCatalogResponseSchema,
+        },
+      },
+      async (request, reply) => {
+        const query = request.query as { project?: string };
+        const { result: environments, error } = await withError(
+          service.getReportsEnvironments(query.project)
+        );
 
-    fastify.get('/api/report/environments', async (request, reply) => {
-      const query = request.query as { project?: string };
-      const { result: environments, error } = await withError(
-        service.getReportsEnvironments(query.project)
-      );
+        if (error) {
+          return reply.status(400).send({ error: error.message });
+        }
 
-      if (error) {
-        return reply.status(400).send({ error: error.message });
+        return environments;
       }
-
-      return environments;
-    });
+    );
 
     fastify.post(
       '/api/report/generate',
@@ -553,103 +1068,195 @@ export async function registerReportRoutes(fastify: FastifyInstance) {
     );
 
     // GET /api/report/:id/failure-summary - get stored failure summary for a report
-    fastify.get('/api/report/:id/failure-summary', async (request, reply) => {
-      try {
-        const { id } = (request as { params: { id: string } }).params;
-        const summary = failureSummaryDb.getSummary(id);
-
-        const hasFailures = testDb.reportHasFailures(id);
-
-        const pendingAnalysisCount = llmTasksDb.getInflightCountForReport(id);
-
-        return reply.send({
-          success: true,
-          data: summary ?? null,
-          hasFailures,
-          pendingAnalysisCount,
-          pendingEtaFinishAt: getReportEtaFinishAt(id),
-        });
-      } catch (error) {
-        fastify.log.error(error);
-        return reply.status(500).send({
-          success: false,
-          error: 'Failed to fetch failure summary',
-        });
-      }
-    });
-
-    fastify.get('/api/report/:id/test/:testId/failure', async (request, reply) => {
-      try {
-        const params = validateSchema(GetReportTestParamsSchema, request.params);
-        const run = testDb.getRunByReportAndTest(params.id, params.testId);
-        if (!run) {
-          return reply.status(404).send({ success: false, error: 'Test run not found' });
-        }
-
-        const parsed = parseFailureDetails(run.failureDetails);
-        const artifactState = reportDb.getArtifactState(params.id);
-        const artifactsAvailable = !artifactState?.artifactsMissingAt;
-        const removedKinds = artifactState ? removedAttachmentKinds(artifactState) : [];
-        const base = `${serveReportRoute}/${params.id}`;
-        const attachments = artifactsAvailable
-          ? (parsed?.attachments ?? [])
-              .filter((attachment) => attachment?.path && attachment.contentType)
-              .filter((attachment) => {
-                const kind = attachmentKindOf(attachment.path);
-                return !kind || !removedKinds.includes(kind);
-              })
-              .map((attachment) => ({
-                name: attachment.name,
-                contentType: attachment.contentType,
-                url: `${base}/${attachment.path}`,
-              }))
-          : [];
-
-        const data: ReportTestFailure = {
-          message: parsed?.message ?? null,
-          stackTrace: parsed?.stackTrace ?? null,
-          location: parsed?.location ?? null,
-          artifactsAvailable,
-          removedAttachmentKinds: removedKinds,
-          attachments,
-          traceViewerBase:
-            artifactsAvailable && !removedKinds.includes('trace')
-              ? `${base}/trace/index.html`
-              : null,
-          history: testQueriesDb.getLaneFailureHistory(
-            params.testId,
-            run.fileId,
-            run.project,
-            run.errorSignature ?? null,
-            params.id,
-            run.createdAt
-          ),
-          crossProject: testQueriesDb
-            .getCrossProjectOccurrences(params.testId, run.project)
-            .map((row) => ({
-              project: row.project,
-              isQuarantined: Boolean(row.quarantined),
-              lastRunAt: row.lastRunAt ?? null,
-              stats: {
-                total: row.totalRuns ?? 0,
-                expected: row.expected ?? 0,
-                unexpected: row.unexpected ?? 0,
-                flaky: row.flaky ?? 0,
-                skipped: row.skipped ?? 0,
+    fastify.get(
+      '/api/report/:id/failure-summary',
+      {
+        schema: {
+          tags: ['Reports'],
+          summary: 'Get stored failure analysis summary',
+          security: reportSecurity,
+          params: {
+            type: 'object',
+            required: ['id'],
+            properties: { id: { type: 'string' } },
+          },
+          response: {
+            200: {
+              type: 'object',
+              required: ['success', 'data', 'hasFailures', 'pendingAnalysisCount'],
+              properties: {
+                success: { type: 'boolean', enum: [true] },
+                data: { ...failureSummaryRowSchema, nullable: true },
+                hasFailures: { type: 'boolean' },
+                pendingAnalysisCount: { type: 'integer' },
+                pendingEtaFinishAt: { type: 'string', nullable: true },
               },
-            }))
-            .sort((a, b) => b.stats.total - a.stats.total || a.project.localeCompare(b.project)),
-        };
+            },
+            401: reportAuthErrorSchema,
+            403: reportAuthErrorSchema,
+            500: {
+              type: 'object',
+              required: ['success', 'error'],
+              properties: {
+                success: { type: 'boolean', enum: [false] },
+                error: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      async (request, reply) => {
+        try {
+          const { id } = request.params as { id: string };
+          const summary = failureSummaryDb.getSummary(id);
 
-        return reply.send({ success: true, data });
-      } catch (error) {
-        if (error instanceof ValidationError) {
-          return reply.status(400).send({ success: false, error: error.message });
+          const hasFailures = testDb.reportHasFailures(id);
+
+          const pendingAnalysisCount = llmTasksDb.getInflightCountForReport(id);
+
+          return reply.send({
+            success: true,
+            data: summary ?? null,
+            hasFailures,
+            pendingAnalysisCount,
+            pendingEtaFinishAt: getReportEtaFinishAt(id),
+          });
+        } catch (error) {
+          fastify.log.error(error);
+          return reply.status(500).send({
+            success: false,
+            error: 'Failed to fetch failure summary',
+          });
         }
-        fastify.log.error(error);
-        return reply.status(500).send({ success: false, error: 'Failed to fetch test failure' });
       }
-    });
+    );
+
+    fastify.get(
+      '/api/report/:id/test/:testId/failure',
+      {
+        schema: {
+          tags: ['Reports'],
+          summary: 'Get failure details for a test in a report',
+          security: reportSecurity,
+          params: {
+            type: 'object',
+            required: ['id', 'testId'],
+            properties: {
+              id: { type: 'string' },
+              testId: { type: 'string' },
+            },
+          },
+          response: {
+            200: {
+              type: 'object',
+              required: ['success', 'data'],
+              properties: {
+                success: { type: 'boolean', enum: [true] },
+                data: reportTestFailureResponseSchema,
+              },
+            },
+            400: {
+              type: 'object',
+              required: ['success', 'error'],
+              properties: {
+                success: { type: 'boolean', enum: [false] },
+                error: { type: 'string' },
+              },
+            },
+            401: reportAuthErrorSchema,
+            403: reportAuthErrorSchema,
+            404: {
+              type: 'object',
+              required: ['success', 'error'],
+              properties: {
+                success: { type: 'boolean', enum: [false] },
+                error: { type: 'string' },
+              },
+            },
+            500: {
+              type: 'object',
+              required: ['success', 'error'],
+              properties: {
+                success: { type: 'boolean', enum: [false] },
+                error: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      async (request, reply) => {
+        try {
+          const params = request.params as z.infer<typeof GetReportTestParamsSchema>;
+          const run = testDb.getRunByReportAndTest(params.id, params.testId);
+          if (!run) {
+            return reply.status(404).send({ success: false, error: 'Test run not found' });
+          }
+
+          const parsed = parseFailureDetails(run.failureDetails);
+          const artifactState = reportDb.getArtifactState(params.id);
+          const artifactsAvailable = !artifactState?.artifactsMissingAt;
+          const removedKinds = artifactState ? removedAttachmentKinds(artifactState) : [];
+          const base = `${serveReportRoute}/${params.id}`;
+          const attachments = artifactsAvailable
+            ? (parsed?.attachments ?? [])
+                .filter((attachment) => attachment?.path && attachment.contentType)
+                .filter((attachment) => {
+                  const kind = attachmentKindOf(attachment.path);
+                  return !kind || !removedKinds.includes(kind);
+                })
+                .map((attachment) => ({
+                  name: attachment.name,
+                  contentType: attachment.contentType,
+                  url: `${base}/${attachment.path}`,
+                }))
+            : [];
+
+          const data: ReportTestFailure = {
+            message: parsed?.message ?? null,
+            stackTrace: parsed?.stackTrace ?? null,
+            location: parsed?.location ?? null,
+            artifactsAvailable,
+            removedAttachmentKinds: removedKinds,
+            attachments,
+            traceViewerBase:
+              artifactsAvailable && !removedKinds.includes('trace')
+                ? `${base}/trace/index.html`
+                : null,
+            history: testQueriesDb.getLaneFailureHistory(
+              params.testId,
+              run.fileId,
+              run.project,
+              run.errorSignature ?? null,
+              params.id,
+              run.createdAt
+            ),
+            crossProject: testQueriesDb
+              .getCrossProjectOccurrences(params.testId, run.project)
+              .map((row) => ({
+                project: row.project,
+                isQuarantined: Boolean(row.quarantined),
+                lastRunAt: row.lastRunAt ?? null,
+                stats: {
+                  total: row.totalRuns ?? 0,
+                  expected: row.expected ?? 0,
+                  unexpected: row.unexpected ?? 0,
+                  flaky: row.flaky ?? 0,
+                  skipped: row.skipped ?? 0,
+                },
+              }))
+              .sort((a, b) => b.stats.total - a.stats.total || a.project.localeCompare(b.project)),
+          };
+
+          return reply.send({ success: true, data });
+        } catch (error) {
+          if (error instanceof ValidationError) {
+            return reply.status(400).send({ success: false, error: error.message });
+          }
+          fastify.log.error(error);
+          return reply.status(500).send({ success: false, error: 'Failed to fetch test failure' });
+        }
+      }
+    );
 
     fastify.post(
       '/api/report/:id/analyze',

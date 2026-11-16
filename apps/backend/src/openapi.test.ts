@@ -4,7 +4,7 @@ import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import Fastify from 'fastify';
 import { SESSION_COOKIE } from './lib/auth/resolve.js';
-import { registerTestsRoutes } from './routes/tests.js';
+import { formatTestsQueryValidationError, registerTestsRoutes } from './routes/tests.js';
 import { APP_VERSION } from './version.js';
 
 test('OpenAPI serves the tagged tests endpoint with query and auth metadata', async () => {
@@ -87,4 +87,23 @@ test('OpenAPI serves the tagged tests endpoint with query and auth metadata', as
   } finally {
     await fastify.close();
   }
+});
+
+test('Fastify query validation errors keep the tests API error response shape', () => {
+  const validationError = Object.assign(new Error('querystring validation failed'), {
+    validation: [
+      { instancePath: '/limit', message: 'must be integer' },
+      { instancePath: '/status', message: 'must be equal to one of the allowed values' },
+    ],
+    validationContext: 'querystring',
+  });
+
+  assert.deepEqual(formatTestsQueryValidationError(validationError), {
+    success: false,
+    error: 'Invalid query parameters',
+    issues: [
+      { field: 'limit', message: 'must be integer' },
+      { field: 'status', message: 'must be equal to one of the allowed values' },
+    ],
+  });
 });

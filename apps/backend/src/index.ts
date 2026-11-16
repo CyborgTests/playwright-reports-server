@@ -51,7 +51,11 @@ async function start() {
         title: 'Playwright Reports Server API',
         version: APP_VERSION,
       },
-      tags: [{ name: 'Tests', description: 'Test inventory and run history' }],
+      tags: [
+        { name: 'Tests', description: 'Test inventory and run history' },
+        { name: 'Reports', description: 'Playwright report history and metadata' },
+        { name: 'Results', description: 'Uploaded Playwright result archives' },
+      ],
       components: {
         securitySchemes: {
           sessionCookie: {
