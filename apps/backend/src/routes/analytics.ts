@@ -15,10 +15,277 @@ import { authorize } from './auth.js';
 
 const STALENESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
+const analyticsAuthErrorSchema = {
+  type: 'object',
+  required: ['error'],
+  properties: { error: { type: 'string' } },
+};
+
+const analyticsErrorSchema = {
+  type: 'object',
+  required: ['success', 'error'],
+  properties: {
+    success: { type: 'boolean', enum: [false] },
+    error: { type: 'string' },
+  },
+};
+
+const statDeltaSchema = {
+  type: 'object',
+  required: ['percent', 'trend'],
+  properties: {
+    percent: { type: 'number', nullable: true },
+    trend: { type: 'string', enum: ['up', 'down', 'stable'] },
+  },
+};
+
+const overviewStatsSchema = {
+  type: 'object',
+  required: [
+    'totalTests',
+    'totalRuns',
+    'passRate',
+    'averageTestDuration',
+    'averageTestRunDuration',
+    'passRateTrend',
+    'flakyTestsTrend',
+  ],
+  properties: {
+    totalTests: { type: 'integer' },
+    totalRuns: { type: 'integer' },
+    passRate: { type: 'number' },
+    averageTestDuration: { type: 'number' },
+    averageTestRunDuration: { type: 'number' },
+    passRateTrend: { type: 'string', enum: ['up', 'down', 'stable'] },
+    flakyTestsTrend: { type: 'string', enum: ['up', 'down', 'stable'] },
+    deltas: {
+      type: 'object',
+      properties: {
+        passRate: statDeltaSchema,
+        flakyTests: statDeltaSchema,
+        averageTestDuration: statDeltaSchema,
+        averageTestRunDuration: statDeltaSchema,
+      },
+    },
+  },
+};
+
+const runHealthMetricSchema = {
+  type: 'object',
+  required: ['runId', 'timestamp', 'totalTests', 'passed', 'failed', 'flaky', 'duration'],
+  properties: {
+    runId: { type: 'string' },
+    timestamp: { type: 'string', format: 'date-time' },
+    totalTests: { type: 'integer' },
+    passed: { type: 'integer' },
+    failed: { type: 'integer' },
+    flaky: { type: 'integer' },
+    duration: { type: 'number' },
+    title: { type: 'string' },
+    displayNumber: { type: 'integer' },
+    newRegressions: { type: 'integer' },
+    resolvedRegressions: { type: 'integer' },
+  },
+};
+
+const analyticsDataSchema = {
+  type: 'object',
+  required: ['overviewStats', 'runHealthMetrics', 'trendMetrics', 'testsSummary', 'regressions'],
+  properties: {
+    overviewStats: overviewStatsSchema,
+    runHealthMetrics: { type: 'array', items: runHealthMetricSchema },
+    trendMetrics: {
+      type: 'object',
+      required: ['durationTrend', 'flakyCountTrend', 'slowCountTrend'],
+      properties: {
+        durationTrend: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['date', 'duration'],
+            properties: { date: { type: 'string' }, duration: { type: 'number' } },
+          },
+        },
+        flakyCountTrend: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['date', 'count'],
+            properties: { date: { type: 'string' }, count: { type: 'integer' } },
+          },
+        },
+        slowCountTrend: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['date', 'count'],
+            properties: { date: { type: 'string' }, count: { type: 'integer' } },
+          },
+        },
+      },
+    },
+    testsSummary: {
+      type: 'object',
+      required: ['total', 'flakyCount'],
+      properties: { total: { type: 'integer' }, flakyCount: { type: 'integer' } },
+    },
+    regressions: {
+      type: 'object',
+      required: [
+        'active',
+        'newInWindow',
+        'resolvedInWindow',
+        'medianMttrDays',
+        'topFiles',
+        'topCommits',
+      ],
+      properties: {
+        active: { type: 'integer' },
+        newInWindow: { type: 'integer' },
+        resolvedInWindow: { type: 'integer' },
+        medianMttrDays: { type: 'number', nullable: true },
+        topFiles: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['filePath', 'count'],
+            properties: { filePath: { type: 'string' }, count: { type: 'integer' } },
+          },
+        },
+        topCommits: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['commit', 'count'],
+            properties: { commit: { type: 'string' }, count: { type: 'integer' } },
+          },
+        },
+      },
+    },
+  },
+};
+
+const failureCategoriesDataSchema = {
+  type: 'object',
+  required: ['categories', 'totalFailures', 'topErrors'],
+  properties: {
+    categories: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['category', 'count', 'percentage'],
+        properties: {
+          category: { type: 'string' },
+          count: { type: 'integer' },
+          percentage: { type: 'number' },
+        },
+      },
+    },
+    totalFailures: { type: 'integer' },
+    topErrors: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['message', 'category', 'count', 'signature', 'regressedTestCount'],
+        properties: {
+          message: { type: 'string' },
+          category: { type: 'string' },
+          count: { type: 'integer' },
+          signature: { type: 'string' },
+          sampleReportId: { type: 'string' },
+          sampleReportUrl: { type: 'string' },
+          sampleTestId: { type: 'string' },
+          regressedTestCount: { type: 'integer' },
+          affectedTests: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['testId', 'title', 'project', 'reportId'],
+              properties: {
+                testId: { type: 'string' },
+                title: { type: 'string' },
+                filePath: { type: 'string' },
+                project: { type: 'string' },
+                reportId: { type: 'string' },
+                reportUrl: { type: 'string' },
+                isRegressed: { type: 'boolean' },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
+const projectSummaryDataSchema = {
+  type: 'object',
+  nullable: true,
+  required: [
+    'project',
+    'summary',
+    'structured',
+    'model',
+    'lastReportId',
+    'reportCount',
+    'firstReportAt',
+    'lastReportAt',
+    'createdAt',
+    'updatedAt',
+    'isStale',
+    'isTooStale',
+  ],
+  properties: {
+    project: { type: 'string' },
+    summary: { type: 'string' },
+    structured: { type: 'object', nullable: true, additionalProperties: true },
+    model: { type: 'string', nullable: true },
+    lastReportId: { type: 'string', nullable: true },
+    reportCount: { type: 'integer', nullable: true },
+    firstReportAt: { type: 'string', nullable: true },
+    lastReportAt: { type: 'string', nullable: true },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+    isStale: { type: 'boolean' },
+    isTooStale: { type: 'boolean' },
+    currentLatestReportAt: { type: 'string' },
+  },
+};
+
 export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
   fastify.get(
     '/api/analytics',
-    { preHandler: authorize(CAPABILITIES.view) },
+    {
+      preHandler: authorize(CAPABILITIES.view),
+      schema: {
+        tags: ['Analytics'],
+        summary: 'Get overview, trends, and regression analytics',
+        security: [{ sessionCookie: [] }, { bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          properties: {
+            project: { type: 'string', default: 'all' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+            failedOnly: { type: 'string' },
+            environment: { type: 'string' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            required: ['success', 'data'],
+            properties: {
+              success: { type: 'boolean', enum: [true] },
+              data: analyticsDataSchema,
+            },
+          },
+          401: analyticsAuthErrorSchema,
+          403: analyticsAuthErrorSchema,
+          500: analyticsErrorSchema,
+        },
+      },
+    },
     async (request, reply) => {
       const {
         project = 'all',
@@ -51,7 +318,36 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     '/api/analytics/failure-categories',
-    { preHandler: authorize(CAPABILITIES.view) },
+    {
+      preHandler: authorize(CAPABILITIES.view),
+      schema: {
+        tags: ['Analytics'],
+        summary: 'Get aggregated failure categories and top errors',
+        security: [{ sessionCookie: [] }, { bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          properties: {
+            project: { type: 'string', default: 'all' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+            environment: { type: 'string' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            required: ['success', 'data'],
+            properties: {
+              success: { type: 'boolean', enum: [true] },
+              data: failureCategoriesDataSchema,
+            },
+          },
+          401: analyticsAuthErrorSchema,
+          403: analyticsAuthErrorSchema,
+          500: analyticsErrorSchema,
+        },
+      },
+    },
     async (request) => {
       const {
         project = 'all',
@@ -84,7 +380,47 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     '/api/analytics/run-health',
-    { preHandler: authorize(CAPABILITIES.view) },
+    {
+      attachValidation: true,
+      preHandler: authorize(CAPABILITIES.view),
+      schema: {
+        tags: ['Analytics'],
+        summary: 'Get a page of report run health metrics',
+        security: [{ sessionCookie: [] }, { bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          properties: {
+            project: { type: 'string', default: 'all' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+            failedOnly: { type: 'string' },
+            before: { type: 'string' },
+            limit: { type: 'integer', minimum: 1, maximum: 500, default: 100 },
+            environment: { type: 'string' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            required: ['success', 'data'],
+            properties: {
+              success: { type: 'boolean', enum: [true] },
+              data: {
+                type: 'object',
+                required: ['metrics', 'hasMore'],
+                properties: {
+                  metrics: { type: 'array', items: runHealthMetricSchema },
+                  hasMore: { type: 'boolean' },
+                },
+              },
+            },
+          },
+          401: analyticsAuthErrorSchema,
+          403: analyticsAuthErrorSchema,
+          500: analyticsErrorSchema,
+        },
+      },
+    },
     async (request, reply) => {
       const {
         project = 'all',
@@ -131,7 +467,33 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     '/api/analytics/project-summary',
-    { preHandler: authorize(CAPABILITIES.view) },
+    {
+      preHandler: authorize(CAPABILITIES.view),
+      schema: {
+        tags: ['Analytics'],
+        summary: 'Get the cached LLM project summary and freshness state',
+        security: [{ sessionCookie: [] }, { bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          properties: { project: { type: 'string', default: 'all' } },
+        },
+        response: {
+          200: {
+            type: 'object',
+            required: ['success', 'data', 'pendingAnalysisCount', 'pendingEtaFinishAt'],
+            properties: {
+              success: { type: 'boolean', enum: [true] },
+              data: projectSummaryDataSchema,
+              pendingAnalysisCount: { type: 'integer' },
+              pendingEtaFinishAt: { type: 'string', nullable: true },
+            },
+          },
+          401: analyticsAuthErrorSchema,
+          403: analyticsAuthErrorSchema,
+          500: analyticsErrorSchema,
+        },
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const { project } = request.query as { project?: string };
@@ -201,7 +563,58 @@ export async function registerAnalyticsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     '/api/analytics/failure-categories/llm',
-    { preHandler: authorize(CAPABILITIES.contentLlm) },
+    {
+      attachValidation: true,
+      preHandler: authorize(CAPABILITIES.contentLlm),
+      schema: {
+        tags: ['Analytics'],
+        summary: 'Generate or enqueue a project failure analysis',
+        description:
+          'Optional JSON body: { "reportIds": string[] }. Uses the latest project reports when omitted or when no string IDs are present. Non-string entries are ignored. When selected reports are all green and green-window analysis is disabled, returns a cached all-green summary without creating a task.',
+        security: [{ sessionCookie: [] }, { bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          properties: { project: { type: 'string' } },
+        },
+        response: {
+          200: {
+            oneOf: [
+              {
+                type: 'object',
+                required: ['success', 'data'],
+                properties: {
+                  success: { type: 'boolean', enum: [true] },
+                  data: {
+                    type: 'object',
+                    required: ['allGreen'],
+                    properties: { allGreen: { type: 'boolean', enum: [true] } },
+                  },
+                },
+              },
+              {
+                type: 'object',
+                required: ['success', 'data'],
+                properties: {
+                  success: { type: 'boolean', enum: [true] },
+                  data: {
+                    type: 'object',
+                    required: ['taskId', 'deduped'],
+                    properties: {
+                      taskId: { type: 'string' },
+                      deduped: { type: 'boolean' },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+          400: analyticsErrorSchema,
+          401: analyticsAuthErrorSchema,
+          403: analyticsAuthErrorSchema,
+          500: analyticsErrorSchema,
+        },
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const { project } = request.query as { project?: string };

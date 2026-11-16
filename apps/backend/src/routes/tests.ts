@@ -91,6 +91,223 @@ const authErrorResponseSchema = {
   properties: { error: { type: 'string' } },
 };
 
+const testMutationSuccessSchema = {
+  type: 'object',
+  required: ['success'],
+  properties: { success: { type: 'boolean', enum: [true] } },
+};
+
+const testValidationErrorResponseSchema = {
+  ...testErrorResponseSchema,
+  properties: {
+    ...testErrorResponseSchema.properties,
+    issues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['field', 'message'],
+        properties: {
+          field: { type: 'string' },
+          message: { type: 'string' },
+        },
+      },
+    },
+  },
+};
+
+const testIdParamsSchema = {
+  type: 'object',
+  required: ['testId'],
+  properties: { testId: { type: 'string' } },
+};
+
+const testProjectQuerySchema = {
+  type: 'object',
+  required: ['project'],
+  properties: { project: { type: 'string' } },
+};
+
+const testMutationErrorsSchema = {
+  400: testErrorResponseSchema,
+  401: authErrorResponseSchema,
+  403: authErrorResponseSchema,
+  404: testErrorResponseSchema,
+  500: testErrorResponseSchema,
+};
+
+const quarantineUpdateJsonSchema = {
+  ...z.toJSONSchema(QuarantineUpdateSchema, { target: 'openapi-3.0', io: 'input' }),
+  description: 'When isQuarantined is true, reason must contain a non-whitespace value.',
+};
+
+const updateFailureCategoryJsonSchema = {
+  type: 'object',
+  required: ['reportId', 'category'],
+  properties: {
+    reportId: { type: 'string' },
+    category: { type: 'string', enum: ROOT_CAUSE_CATEGORIES },
+  },
+};
+
+const testDetailResponseSchema = {
+  type: 'object',
+  required: [
+    'testId',
+    'fileId',
+    'filePath',
+    'project',
+    'title',
+    'createdAt',
+    'isQuarantined',
+    'stats',
+    'runs',
+    'failureGroups',
+    'crossProject',
+  ],
+  properties: {
+    testId: { type: 'string' },
+    fileId: { type: 'string' },
+    filePath: { type: 'string' },
+    project: { type: 'string' },
+    title: { type: 'string' },
+    createdAt: { type: 'string' },
+    isQuarantined: { type: 'boolean' },
+    quarantineReason: { type: 'string' },
+    quarantinedAt: { type: 'string' },
+    flakinessScore: { type: 'number' },
+    flakinessResetAt: { type: 'string' },
+    stats: {
+      type: 'object',
+      required: ['totalRuns', 'passed', 'failed', 'flaky', 'skipped', 'passRate'],
+      properties: {
+        totalRuns: { type: 'integer' },
+        passed: { type: 'integer' },
+        failed: { type: 'integer' },
+        flaky: { type: 'integer' },
+        skipped: { type: 'integer' },
+        passRate: { type: 'number' },
+        firstRunAt: { type: 'string' },
+        lastRunAt: { type: 'string' },
+        duration: {
+          type: 'object',
+          required: ['mean', 'median', 'p95', 'stdDev', 'min', 'max'],
+          properties: {
+            mean: { type: 'number' },
+            median: { type: 'number' },
+            p95: { type: 'number' },
+            stdDev: { type: 'number' },
+            min: { type: 'number' },
+            max: { type: 'number' },
+          },
+        },
+      },
+    },
+    runs: { type: 'array', items: testRunResponseSchema },
+    failureGroups: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['signature', 'count', 'sampleMessage', 'firstSeen', 'lastSeen', 'recentReports'],
+        properties: {
+          signature: { type: 'string' },
+          category: { type: 'string' },
+          count: { type: 'integer' },
+          sampleMessage: { type: 'string' },
+          firstSeen: { type: 'string' },
+          lastSeen: { type: 'string' },
+          recentReports: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['reportId'],
+              properties: {
+                reportId: { type: 'string' },
+                title: { type: 'string' },
+                displayNumber: { type: 'integer' },
+              },
+            },
+          },
+        },
+      },
+    },
+    crossProject: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['project', 'fileId', 'totalRuns', 'isQuarantined'],
+        properties: {
+          project: { type: 'string' },
+          fileId: { type: 'string' },
+          totalRuns: { type: 'integer' },
+          flakinessScore: { type: 'number' },
+          isQuarantined: { type: 'boolean' },
+          lastRunAt: { type: 'string' },
+        },
+      },
+    },
+    regression: {
+      type: 'object',
+      required: ['regressedAt', 'daysOpen', 'failureCount', 'flakyCount'],
+      properties: {
+        regressedAt: { type: 'string' },
+        regressedAtCommit: { type: 'string' },
+        lastGreenCommit: { type: 'string' },
+        daysOpen: { type: 'number' },
+        failureCount: { type: 'number' },
+        flakyCount: { type: 'number' },
+      },
+    },
+  },
+};
+
+const testAnalysisRowSchema = {
+  type: 'object',
+  required: [
+    'id',
+    'testId',
+    'fileId',
+    'project',
+    'reportId',
+    'attempt',
+    'analysis',
+    'category',
+    'model',
+    'reusedFromAnalysisId',
+    'createdAt',
+    'updatedAt',
+    'inputTokens',
+    'outputTokens',
+    'totalTokens',
+  ],
+  properties: {
+    id: { type: 'string' },
+    testId: { type: 'string' },
+    fileId: { type: 'string' },
+    project: { type: 'string' },
+    reportId: { type: 'string' },
+    attempt: { type: 'integer' },
+    analysis: { type: 'string', nullable: true },
+    category: { type: 'string', nullable: true },
+    model: { type: 'string', nullable: true },
+    reusedFromAnalysisId: { type: 'string', nullable: true },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string', nullable: true },
+    inputTokens: { type: 'integer', nullable: true },
+    outputTokens: { type: 'integer', nullable: true },
+    totalTokens: { type: 'integer', nullable: true },
+  },
+};
+
+const analysisPendingSchema = {
+  type: 'object',
+  required: ['taskId', 'status', 'etaFinishAt'],
+  properties: {
+    taskId: { type: 'string' },
+    status: { type: 'string' },
+    etaFinishAt: { type: 'string', nullable: true },
+  },
+};
+
 export async function registerTestsRoutes(fastify: FastifyInstance) {
   await fastify.register(async (fastify) => {
     fastify.addHook('preHandler', authorize(CAPABILITIES.view));
@@ -435,7 +652,21 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
 
     fastify.delete(
       '/api/test/:testId',
-      { preHandler: authorize(CAPABILITIES.contentTests) },
+      {
+        attachValidation: true,
+        preHandler: authorize(CAPABILITIES.contentTests),
+        schema: {
+          tags: ['Tests'],
+          summary: 'Delete a test and its run history',
+          security: [{ sessionCookie: [] }, { bearerAuth: [] }] as const,
+          params: testIdParamsSchema,
+          querystring: testProjectQuerySchema,
+          response: {
+            200: testMutationSuccessSchema,
+            ...testMutationErrorsSchema,
+          },
+        },
+      },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { project } = request.query as { project: string };
@@ -466,7 +697,42 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
 
     fastify.patch(
       '/api/test/:testId',
-      { preHandler: authorize(CAPABILITIES.contentTests) },
+      {
+        attachValidation: true,
+        preHandler: authorize(CAPABILITIES.contentTests),
+        schema: {
+          tags: ['Tests'],
+          summary: 'Update test quarantine status',
+          security: [{ sessionCookie: [] }, { bearerAuth: [] }] as const,
+          params: testIdParamsSchema,
+          querystring: testProjectQuerySchema,
+          body: quarantineUpdateJsonSchema,
+          response: {
+            200: {
+              type: 'object',
+              required: ['success', 'data'],
+              properties: {
+                success: { type: 'boolean', enum: [true] },
+                data: {
+                  type: 'object',
+                  required: ['testId', 'fileId', 'isQuarantined'],
+                  properties: {
+                    testId: { type: 'string' },
+                    fileId: { type: 'string' },
+                    isQuarantined: { type: 'boolean' },
+                    reason: { type: 'string' },
+                  },
+                },
+              },
+            },
+            400: testValidationErrorResponseSchema,
+            401: authErrorResponseSchema,
+            403: authErrorResponseSchema,
+            404: testErrorResponseSchema,
+            500: testErrorResponseSchema,
+          },
+        },
+      },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { project } = request.query as { project: string };
@@ -527,7 +793,21 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
 
     fastify.post(
       '/api/test/:testId/flakiness-reset',
-      { preHandler: authorize(CAPABILITIES.contentTests) },
+      {
+        attachValidation: true,
+        preHandler: authorize(CAPABILITIES.contentTests),
+        schema: {
+          tags: ['Tests'],
+          summary: 'Reset test flakiness history',
+          security: [{ sessionCookie: [] }, { bearerAuth: [] }] as const,
+          params: testIdParamsSchema,
+          querystring: testProjectQuerySchema,
+          response: {
+            200: testMutationSuccessSchema,
+            ...testMutationErrorsSchema,
+          },
+        },
+      },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { project } = request.query as { project?: string };
@@ -560,7 +840,21 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
 
     fastify.delete(
       '/api/test/:testId/flakiness-reset',
-      { preHandler: authorize(CAPABILITIES.contentTests) },
+      {
+        attachValidation: true,
+        preHandler: authorize(CAPABILITIES.contentTests),
+        schema: {
+          tags: ['Tests'],
+          summary: 'Clear the test flakiness reset point',
+          security: [{ sessionCookie: [] }, { bearerAuth: [] }] as const,
+          params: testIdParamsSchema,
+          querystring: testProjectQuerySchema,
+          response: {
+            200: testMutationSuccessSchema,
+            ...testMutationErrorsSchema,
+          },
+        },
+      },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { project } = request.query as { project?: string };
@@ -593,6 +887,36 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
 
     fastify.get(
       '/api/test/:testId/detail',
+      {
+        schema: {
+          tags: ['Tests'],
+          summary: 'Get detailed test statistics and failure history',
+          security: [{ sessionCookie: [] }, { bearerAuth: [] }] as const,
+          params: {
+            type: 'object',
+            required: ['testId'],
+            properties: { testId: { type: 'string' } },
+          },
+          querystring: {
+            type: 'object',
+            properties: { project: { type: 'string' } },
+          },
+          response: {
+            200: {
+              type: 'object',
+              required: ['success', 'data'],
+              properties: {
+                success: { type: 'boolean', enum: [true] },
+                data: testDetailResponseSchema,
+              },
+            },
+            401: authErrorResponseSchema,
+            403: authErrorResponseSchema,
+            404: testErrorResponseSchema,
+            500: testErrorResponseSchema,
+          },
+        },
+      },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { project } = request.query as { project?: string };
@@ -622,6 +946,37 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
     // GET /api/test/:testId/analysis - pre-computed LLM analysis for a test
     fastify.get(
       '/api/test/:testId/analysis',
+      {
+        schema: {
+          tags: ['Tests'],
+          summary: 'Get the latest analysis for a test in a project',
+          security: [{ sessionCookie: [] }, { bearerAuth: [] }] as const,
+          params: {
+            type: 'object',
+            required: ['testId'],
+            properties: { testId: { type: 'string' } },
+          },
+          querystring: {
+            type: 'object',
+            required: ['project'],
+            properties: { project: { type: 'string' } },
+          },
+          response: {
+            200: {
+              type: 'object',
+              required: ['success', 'data'],
+              properties: {
+                success: { type: 'boolean', enum: [true] },
+                data: { ...testAnalysisRowSchema, nullable: true },
+              },
+            },
+            400: testErrorResponseSchema,
+            401: authErrorResponseSchema,
+            403: authErrorResponseSchema,
+            500: testErrorResponseSchema,
+          },
+        },
+      },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { project } = request.query as { project: string };
@@ -654,6 +1009,50 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
     // GET /api/test-analysis/:testId - get LLM analysis for a test run (used by Playwright report viewer)
     fastify.get(
       '/api/test-analysis/:testId',
+      {
+        schema: {
+          tags: ['Tests'],
+          summary: 'Get test analysis and pending analysis status',
+          security: [{ sessionCookie: [] }, { bearerAuth: [] }] as const,
+          params: {
+            type: 'object',
+            required: ['testId'],
+            properties: { testId: { type: 'string' } },
+          },
+          querystring: {
+            type: 'object',
+            properties: { reportId: { type: 'string' } },
+          },
+          response: {
+            200: {
+              type: 'object',
+              required: ['success', 'data'],
+              properties: {
+                success: { type: 'boolean', enum: [true] },
+                data: {
+                  anyOf: [
+                    testAnalysisRowSchema,
+                    {
+                      type: 'object',
+                      required: ['analysis', 'model', 'category'],
+                      properties: {
+                        analysis: { type: 'string' },
+                        model: { type: 'string', nullable: true },
+                        category: { type: 'string', nullable: true },
+                      },
+                    },
+                    { type: 'object', nullable: true },
+                  ],
+                },
+                pending: { ...analysisPendingSchema, nullable: true },
+              },
+            },
+            401: authErrorResponseSchema,
+            403: authErrorResponseSchema,
+            500: testErrorResponseSchema,
+          },
+        },
+      },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { reportId } = request.query as { reportId?: string };
@@ -723,7 +1122,44 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
 
     fastify.patch(
       '/api/test-analysis/:testId',
-      { preHandler: authorize(CAPABILITIES.contentTests) },
+      {
+        attachValidation: true,
+        preHandler: authorize(CAPABILITIES.contentTests),
+        schema: {
+          tags: ['Tests'],
+          summary: 'Set the root-cause category for a test analysis',
+          security: [{ sessionCookie: [] }, { bearerAuth: [] }] as const,
+          params: testIdParamsSchema,
+          querystring: {
+            type: 'object',
+            properties: { project: { type: 'string' } },
+          },
+          body: updateFailureCategoryJsonSchema,
+          response: {
+            200: {
+              type: 'object',
+              required: ['success', 'data'],
+              properties: {
+                success: { type: 'boolean', enum: [true] },
+                data: {
+                  type: 'object',
+                  required: ['testId', 'reportId', 'category'],
+                  properties: {
+                    testId: { type: 'string' },
+                    reportId: { type: 'string' },
+                    category: { type: 'string', enum: ROOT_CAUSE_CATEGORIES },
+                  },
+                },
+              },
+            },
+            400: testErrorResponseSchema,
+            401: authErrorResponseSchema,
+            403: authErrorResponseSchema,
+            404: testErrorResponseSchema,
+            500: testErrorResponseSchema,
+          },
+        },
+      },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { project } = request.query as { project?: string };
@@ -784,6 +1220,64 @@ export async function registerTestsRoutes(fastify: FastifyInstance) {
     // uses this path. Response `source` field is `'stored'` or `'fresh'`.
     fastify.get(
       '/api/test-analysis/:testId/prompt',
+      {
+        schema: {
+          tags: ['Tests'],
+          summary: 'Get a stored or freshly generated analysis prompt',
+          security: [{ sessionCookie: [] }, { bearerAuth: [] }] as const,
+          params: {
+            type: 'object',
+            required: ['testId'],
+            properties: { testId: { type: 'string' } },
+          },
+          querystring: {
+            type: 'object',
+            required: ['reportId'],
+            properties: {
+              reportId: { type: 'string' },
+              refresh: { type: 'string', enum: ['1', 'true'] },
+            },
+          },
+          response: {
+            200: {
+              type: 'object',
+              required: ['success', 'data'],
+              properties: {
+                success: { type: 'boolean', enum: [true] },
+                data: {
+                  anyOf: [
+                    {
+                      type: 'object',
+                      required: ['prompt', 'source', 'taskId', 'model', 'completedAt'],
+                      properties: {
+                        prompt: { type: 'string' },
+                        source: { type: 'string', enum: ['stored'] },
+                        taskId: { type: 'string' },
+                        model: { type: 'string', nullable: true },
+                        completedAt: { type: 'string', nullable: true },
+                      },
+                    },
+                    {
+                      type: 'object',
+                      required: ['prompt', 'source'],
+                      properties: {
+                        prompt: { type: 'string' },
+                        source: { type: 'string', enum: ['fresh'] },
+                        heuristicCategory: { type: 'string' },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+            400: testErrorResponseSchema,
+            401: authErrorResponseSchema,
+            403: authErrorResponseSchema,
+            404: testErrorResponseSchema,
+            500: testErrorResponseSchema,
+          },
+        },
+      },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const { testId } = request.params as { testId: string };
         const { reportId, refresh } = request.query as { reportId?: string; refresh?: string };

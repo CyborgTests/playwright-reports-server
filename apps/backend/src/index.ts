@@ -55,6 +55,7 @@ async function start() {
         { name: 'Tests', description: 'Test inventory and run history' },
         { name: 'Reports', description: 'Playwright report history and metadata' },
         { name: 'Results', description: 'Uploaded Playwright result archives' },
+        { name: 'Analytics', description: 'Report, test-run, and failure analytics' },
       ],
       components: {
         securitySchemes: {
