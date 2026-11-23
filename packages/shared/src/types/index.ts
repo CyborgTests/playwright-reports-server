@@ -9,7 +9,15 @@ export interface DateRange {
   to?: string;
 }
 
-export type LLMProviderType = 'openai' | 'anthropic';
+export const LLM_PROVIDER_TYPES = [
+  'openai',
+  'anthropic',
+  'azure-foundry',
+  'bedrock',
+  'cursor',
+] as const;
+
+export type LLMProviderType = (typeof LLM_PROVIDER_TYPES)[number];
 
 export type LLMMultimodalMode = 'auto' | 'force' | 'disabled';
 

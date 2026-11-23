@@ -99,3 +99,20 @@ export function parseAnthropicModels(data: unknown): DiscoveredModel[] {
   }
   return models;
 }
+
+/** Cursor `GET /v1/models` returns `{ items: [{ id, displayName, ... }] }`. */
+export function parseCursorModels(data: unknown): DiscoveredModel[] {
+  const root = asRecord(data);
+  const list = Array.isArray(root?.items) ? root.items : [];
+  const models: DiscoveredModel[] = [];
+  for (const item of list) {
+    const entry = asRecord(item);
+    const id = entry && typeof entry.id === 'string' ? entry.id : null;
+    if (!entry || !id) continue;
+    models.push({
+      id,
+      name: typeof entry.displayName === 'string' ? entry.displayName : undefined,
+    });
+  }
+  return models;
+}

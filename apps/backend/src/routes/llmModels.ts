@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { CAPABILITIES } from '@playwright-reports/shared';
+import { CAPABILITIES, LLM_PROVIDER_TYPES, type LLMProviderType } from '@playwright-reports/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { decryptToken, encryptToken } from '../lib/githubSync/encryption.js';
@@ -12,9 +12,9 @@ import { authorize } from './auth.js';
 
 const MASK_RE = /^\*+$/;
 
-const ModelBodySchema = z.object({
+export const ModelBodySchema = z.object({
   label: z.string().min(1, 'label is required'),
-  provider: z.enum(['openai', 'anthropic']),
+  provider: z.enum(LLM_PROVIDER_TYPES),
   baseUrl: z.string().min(1, 'baseUrl is required'),
   apiKey: z.string().optional(),
   model: z.string().min(1, 'model is required'),
@@ -42,7 +42,7 @@ const ReorderSchema = z.object({
 const DiscoverSchema = z.union([
   z.object({ modelId: z.string().min(1) }),
   z.object({
-    provider: z.enum(['openai', 'anthropic']),
+    provider: z.enum(LLM_PROVIDER_TYPES),
     baseUrl: z.string().min(1),
     apiKey: z.string().optional(),
   }),
@@ -125,12 +125,12 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
           .send({ success: false, error: parsed.error.issues[0]?.message ?? 'invalid' });
       }
       const body = parsed.data;
-      let creds: { provider: 'openai' | 'anthropic'; baseUrl: string; apiKey?: string };
+      let creds: { provider: LLMProviderType; baseUrl: string; apiKey?: string };
       if ('modelId' in body) {
         const source = llmModelsDb.get(body.modelId);
         if (!source) return reply.status(404).send({ success: false, error: 'model not found' });
         creds = {
-          provider: source.provider as 'openai' | 'anthropic',
+          provider: source.provider as LLMProviderType,
           baseUrl: source.baseUrl,
           apiKey: decryptToken(source.apiKeyCipher) ?? '',
         };
@@ -298,7 +298,7 @@ export async function registerLlmModelsRoutes(fastify: FastifyInstance) {
         if (!model) return reply.status(404).send({ error: 'model not found' });
 
         const result = await llmService.testConnection({
-          provider: model.provider as 'openai' | 'anthropic',
+          provider: model.provider as LLMProviderType,
           baseUrl: model.baseUrl,
           apiKey: decryptToken(model.apiKeyCipher) ?? '',
           model: model.model,

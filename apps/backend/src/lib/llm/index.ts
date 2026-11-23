@@ -1,7 +1,9 @@
 import type { DiscoveredModel } from '@playwright-reports/shared';
 import { withProbeSlot } from './probeThrottle.js';
 import { AnthropicProvider } from './providers/anthropic.js';
-import { OpenAIProvider } from './providers/openai.js';
+import type { LLMProvider } from './providers/base.js';
+import { CursorProvider } from './providers/cursor.js';
+import { AzureFoundryProvider, BedrockProvider, OpenAIProvider } from './providers/openai.js';
 import type {
   LLMProviderConfig,
   LLMResponse,
@@ -17,9 +19,29 @@ export interface SegmentedSendOptions {
 
 const MULTIMODAL_BLOCKLIST_TTL_MS = 60 * 60 * 1000;
 
+/** The only place a provider type maps to an implementation. Unknown types throw. */
+export function createProvider(config: LLMProviderConfig): LLMProvider {
+  switch (config.provider) {
+    case 'openai':
+      return new OpenAIProvider(config);
+    case 'anthropic':
+      return new AnthropicProvider(config);
+    case 'azure-foundry':
+      return new AzureFoundryProvider(config);
+    case 'bedrock':
+      return new BedrockProvider(config);
+    case 'cursor':
+      return new CursorProvider(config);
+    default: {
+      const unknown: never = config.provider;
+      throw new Error(`Unknown LLM provider: ${unknown}`);
+    }
+  }
+}
+
 export class LLMService {
   private static instance: LLMService;
-  private provider: OpenAIProvider | AnthropicProvider | null = null;
+  private provider: LLMProvider | null = null;
   private config: LLMProviderConfig | null = null;
   private multimodalBlocklist = new Map<string, number>();
 
@@ -61,7 +83,8 @@ export class LLMService {
     }
 
     if (!this.provider) {
-      this.provider = this.createProvider();
+      if (!this.config) throw new Error('LLM config not initialized');
+      this.provider = createProvider(this.config);
       await this.provider.validateConfig();
     }
   }
@@ -135,8 +158,7 @@ export class LLMService {
       maxRetries: this.config?.maxRetries ?? 3,
       retryDelayMs: this.config?.retryDelayMs ?? 1000,
     };
-    const provider =
-      merged.provider === 'anthropic' ? new AnthropicProvider(merged) : new OpenAIProvider(merged);
+    const provider = createProvider(merged);
     const finalPrompt = merged.multimodalMode === 'disabled' ? this.stripImages(prompt) : prompt;
     return provider.sendSegmentedMessage(finalPrompt, options);
   }
@@ -201,21 +223,6 @@ export class LLMService {
     return this.provider.countTokens(prompt);
   }
 
-  private createProvider(): OpenAIProvider | AnthropicProvider {
-    if (!this.config) {
-      throw new Error('LLM config not initialized');
-    }
-
-    switch (this.config.provider) {
-      case 'openai':
-        return new OpenAIProvider(this.config);
-      case 'anthropic':
-        return new AnthropicProvider(this.config);
-      default:
-        throw new Error(`Unknown LLM provider: ${this.config.provider}`);
-    }
-  }
-
   getConfig(): Omit<LLMProviderConfig, 'apiKey'> | Record<string, never> {
     if (!this.config || !this.isConfigured()) {
       return {};
@@ -261,10 +268,7 @@ export class LLMService {
     };
 
     try {
-      const provider =
-        config.provider === 'anthropic'
-          ? new AnthropicProvider(config)
-          : new OpenAIProvider(config);
+      const provider = createProvider(config);
       const models = await withProbeSlot(config.baseUrl, () => provider.discoverModels());
       return { success: true, models };
     } catch (err) {
@@ -293,18 +297,9 @@ export class LLMService {
       return { success: false, error: 'Base URL is required' };
     }
 
-    let provider: OpenAIProvider | AnthropicProvider;
+    let provider: LLMProvider;
     try {
-      switch (merged.provider) {
-        case 'openai':
-          provider = new OpenAIProvider(merged);
-          break;
-        case 'anthropic':
-          provider = new AnthropicProvider(merged);
-          break;
-        default:
-          return { success: false, error: `Unknown provider: ${merged.provider}` };
-      }
+      provider = createProvider(merged);
     } catch (err) {
       return {
         success: false,
@@ -324,11 +319,9 @@ export class LLMService {
         }
         // Skip the /models GET when a model is already named - the probe covers it.
         const models = merged.model ? [] : await provider.getAvailableModels();
-        if (merged.provider === 'openai') {
-          const probe = await this.probeOpenAIChatCompletions(merged, models);
-          if (!probe.ok) {
-            return { success: false, error: probe.error };
-          }
+        const probe = await provider.probe(merged.model || models[0]);
+        if (!probe.ok) {
+          return { success: false, error: probe.error };
         }
         return { success: true, models };
       });
@@ -338,89 +331,6 @@ export class LLMService {
         error: err instanceof Error ? err.message : 'Connection test failed',
       };
     }
-  }
-
-  private async probeOpenAIChatCompletions(
-    merged: LLMProviderConfig,
-    knownModels: string[]
-  ): Promise<{ ok: true } | { ok: false; error: string }> {
-    const model = merged.model || knownModels[0];
-    if (!model) {
-      return {
-        ok: false,
-        error: 'No model available to verify the chat completions endpoint.',
-      };
-    }
-
-    const url = `${merged.baseUrl.replace(/\/+$/, '')}/chat/completions`;
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (merged.apiKey) headers.Authorization = `Bearer ${merged.apiKey}`;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'user', content: 'ping' }],
-          max_tokens: 1,
-          temperature: 0,
-        }),
-        signal: controller.signal,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: `Could not reach /chat/completions: ${message}` };
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch {
-      body = null;
-    }
-
-    if (!response.ok) {
-      const errorObj =
-        body && typeof body === 'object' && 'error' in body
-          ? (body as { error: unknown }).error
-          : null;
-      const looksOpenAI =
-        errorObj !== null &&
-        typeof errorObj === 'object' &&
-        ('message' in (errorObj as object) || 'type' in (errorObj as object));
-      if (looksOpenAI) return { ok: true };
-
-      return {
-        ok: false,
-        error: `Server responded ${response.status} at /chat/completions but the body is not in OpenAI format. Check that the base URL points to an OpenAI-compatible endpoint (typically ending in /v1).`,
-      };
-    }
-
-    const choices =
-      body && typeof body === 'object' && 'choices' in body
-        ? (body as { choices: unknown }).choices
-        : null;
-    const firstChoice = Array.isArray(choices) ? (choices[0] as Record<string, unknown>) : null;
-    const looksValid = !!(
-      firstChoice &&
-      typeof firstChoice === 'object' &&
-      'message' in firstChoice
-    );
-    if (!looksValid) {
-      return {
-        ok: false,
-        error:
-          'The /chat/completions response is not in OpenAI format. Confirm the base URL points to an OpenAI-compatible API (typically ending in /v1).',
-      };
-    }
-
-    return { ok: true };
   }
 }
 

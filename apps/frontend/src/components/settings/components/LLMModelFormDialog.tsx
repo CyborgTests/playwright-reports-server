@@ -21,7 +21,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { type FormState, MULTIMODAL_MODES, PROVIDERS, TASK_TEMP_DEFAULTS } from './llm-model-form';
+import {
+  baseUrlForProvider,
+  type FormState,
+  MULTIMODAL_MODES,
+  PROVIDERS,
+  providerOption,
+  TASK_TEMP_DEFAULTS,
+} from './llm-model-form';
 
 const NONE_GROUP = '__none__';
 
@@ -47,6 +54,7 @@ export function LLMModelFormDialog({
   onAddMoreFromProvider?: () => void;
 }>) {
   const selectedGroup = groups.find((g) => g.id === form.concurrencyGroupId) ?? null;
+  const provider = providerOption(form.provider);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -79,7 +87,14 @@ export function LLMModelFormDialog({
               <Label htmlFor="lm-provider">Provider</Label>
               <Select
                 value={form.provider}
-                onValueChange={(v) => setForm({ ...form, provider: v as LLMProviderType })}
+                onValueChange={(v) => {
+                  const next = v as LLMProviderType;
+                  setForm({
+                    ...form,
+                    provider: next,
+                    baseUrl: baseUrlForProvider(form.baseUrl, form.provider, next),
+                  });
+                }}
               >
                 <SelectTrigger id="lm-provider">
                   <SelectValue />
@@ -109,8 +124,9 @@ export function LLMModelFormDialog({
               id="lm-base-url"
               value={form.baseUrl}
               onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
-              placeholder="https://api.anthropic.com or http://localhost:1234/v1"
+              placeholder={provider.baseUrlPlaceholder}
             />
+            {provider.hint && <p className="text-xs text-muted-foreground">{provider.hint}</p>}
           </div>
           <div className="space-y-1">
             <Label htmlFor="lm-key">API key {editingId && '(leave blank to keep current)'}</Label>
@@ -119,7 +135,7 @@ export function LLMModelFormDialog({
               type="password"
               value={form.apiKey}
               onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
-              placeholder={editingId ? '••••••••' : 'sk-...'}
+              placeholder={editingId ? '••••••••' : provider.keyPlaceholder}
             />
             <p className="text-xs text-muted-foreground">Stored encrypted at rest.</p>
           </div>

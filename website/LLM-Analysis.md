@@ -8,12 +8,15 @@ Failure analysis is optional and **off by default**. Configure a provider in `Se
 
 ## Providers
 
-Two API formats. Pick whichever matches the token you're holding:
+Two generic API formats, plus three named providers whose auth, URL, or protocol differ:
 
 - **Anthropic**: `https://api.anthropic.com/v1` (or a drop-in clone), auth via `x-api-key`. Uses the messages API with prompt caching. !NB - openRouter with opus or sonnet is still not an `anthropic` api format.  
-- **OpenAI-compatible**: any base URL implementing `/chat/completions` and `/models` with `Authorization: Bearer <key>`. That covers OpenAI itself, Azure OpenAI, OpenRouter, Groq, Together, Ollama, LM Studio, oMLX, vLLM, llama.cpp servers, and the long tail of "we promise to be cheaper" providers.
+- **OpenAI-compatible**: any base URL implementing `/chat/completions` and `/models` with `Authorization: Bearer <key>`. That covers OpenAI itself, OpenRouter, Groq, Together, Ollama, LM Studio, oMLX, vLLM, llama.cpp servers, and the long tail of "we promise to be cheaper" providers.
+- **Azure AI Foundry**: Azure OpenAI v1 / Microsoft Foundry. Paste the resource endpoint (`https://<resource>.cognitiveservices.azure.com`, `.openai.azure.com` or `.services.ai.azure.com`); the server appends `/openai/v1` if it is missing. **Model is the deployment name**, not the catalog model id. The key is sent as both `api-key` and `Authorization: Bearer`. API keys only (no Entra ID / managed identity).
+- **AWS Bedrock**: the OpenAI-compatible Bedrock Runtime endpoint `https://bedrock-runtime.<region>.amazonaws.com/openai/v1` with a Bedrock API key as Bearer. Model is the Bedrock model or inference profile id (e.g. `anthropic.claude-sonnet-4-5-v1:0` or `global.…`). Bedrock may not serve `/models`, so Import can come back empty - type the model id by hand; Test connection still pings `/chat/completions`. The native Converse API (SigV4 with access keys) is not supported.
+- **Cursor**: the official [Cloud Agents API](https://cursor.com/docs/cloud-agent/api/endpoints) at `https://api.cursor.com` with a `crsr_…` key. Cursor has no chat-completions endpoint, so each analysis creates a no-repo Cloud Agent, polls its run until it finishes, reads the final reply, and deletes the agent. Tradeoffs: 30-60s+ per call instead of a few seconds, usage is billed as Cloud Agent usage on your Cursor plan, `temperature` and `max output tokens` are ignored, token counts are estimated, and at most 5 screenshots go per prompt. Start with `Parallel requests = 1`. Calls still time out after 5 minutes. Test connection checks the key (`GET /v1/me`) and that the model id is in `GET /v1/models`; it does not start an agent. Leave Model empty to use your Cursor default model.
 
-> "Provider" here means the **API format**, not the brand on the payment check, e.g. if you're gambling tokens with OpenRouter - pick OpenAI-compatible;
+> "Provider" here means the **API format**, not the brand on the payment check, e.g. if you're gambling tokens with OpenRouter - pick OpenAI-compatible. Foundry, Bedrock and Cursor are separate entries only because a plain OpenAI-compatible setup breaks on them (URL suffix, auth header, missing `/models`, or no chat endpoint at all).
 
 ## The model registry
 
@@ -146,7 +149,7 @@ For Anthropic, context windows are hardcoded. Every current Claude model is 200k
 ### Quirk 3: token counting
 
 - **Anthropic** uses the free `/messages/count_tokens` endpoint. Counts are exact.
-- **OpenAI-compatible** estimates at 4 chars/token plus 1200 tokens per attached image. Expect ~10% drift. If you want exact, that's between you and your provider.
+- **OpenAI-compatible** (and Foundry, Bedrock, Cursor) estimates at 4 chars/token plus 1200 tokens per attached image. Expect ~10% drift. If you want exact, that's between you and your provider.
 
 ### Quirk 4: the queue is single-threaded by default
 
