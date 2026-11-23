@@ -1,6 +1,8 @@
 import type { DiscoveredModel } from '@playwright-reports/shared';
 import { withProbeSlot } from './probeThrottle.js';
 import { AnthropicProvider } from './providers/anthropic.js';
+import type { LLMProvider } from './providers/base.js';
+import { CursorProvider } from './providers/cursor.js';
 import { OpenAIProvider } from './providers/openai.js';
 import type {
   LLMProviderConfig,
@@ -17,9 +19,25 @@ export interface SegmentedSendOptions {
 
 const MULTIMODAL_BLOCKLIST_TTL_MS = 60 * 60 * 1000;
 
+/** The only place a provider type maps to an implementation. Unknown types throw. */
+export function createProvider(config: LLMProviderConfig): LLMProvider {
+  switch (config.provider) {
+    case 'openai':
+      return new OpenAIProvider(config);
+    case 'anthropic':
+      return new AnthropicProvider(config);
+    case 'cursor':
+      return new CursorProvider(config);
+    default: {
+      const unknown: never = config.provider;
+      throw new Error(`Unknown LLM provider: ${unknown}`);
+    }
+  }
+}
+
 export class LLMService {
   private static instance: LLMService;
-  private provider: OpenAIProvider | AnthropicProvider | null = null;
+  private provider: LLMProvider | null = null;
   private config: LLMProviderConfig | null = null;
   private multimodalBlocklist = new Map<string, number>();
 
@@ -61,7 +79,8 @@ export class LLMService {
     }
 
     if (!this.provider) {
-      this.provider = this.createProvider();
+      if (!this.config) throw new Error('LLM config not initialized');
+      this.provider = createProvider(this.config);
       await this.provider.validateConfig();
     }
   }
@@ -135,8 +154,7 @@ export class LLMService {
       maxRetries: this.config?.maxRetries ?? 3,
       retryDelayMs: this.config?.retryDelayMs ?? 1000,
     };
-    const provider =
-      merged.provider === 'anthropic' ? new AnthropicProvider(merged) : new OpenAIProvider(merged);
+    const provider = createProvider(merged);
     const finalPrompt = merged.multimodalMode === 'disabled' ? this.stripImages(prompt) : prompt;
     return provider.sendSegmentedMessage(finalPrompt, options);
   }
@@ -201,21 +219,6 @@ export class LLMService {
     return this.provider.countTokens(prompt);
   }
 
-  private createProvider(): OpenAIProvider | AnthropicProvider {
-    if (!this.config) {
-      throw new Error('LLM config not initialized');
-    }
-
-    switch (this.config.provider) {
-      case 'openai':
-        return new OpenAIProvider(this.config);
-      case 'anthropic':
-        return new AnthropicProvider(this.config);
-      default:
-        throw new Error(`Unknown LLM provider: ${this.config.provider}`);
-    }
-  }
-
   getConfig(): Omit<LLMProviderConfig, 'apiKey'> | Record<string, never> {
     if (!this.config || !this.isConfigured()) {
       return {};
@@ -261,10 +264,7 @@ export class LLMService {
     };
 
     try {
-      const provider =
-        config.provider === 'anthropic'
-          ? new AnthropicProvider(config)
-          : new OpenAIProvider(config);
+      const provider = createProvider(config);
       const models = await withProbeSlot(config.baseUrl, () => provider.discoverModels());
       return { success: true, models };
     } catch (err) {
@@ -293,18 +293,9 @@ export class LLMService {
       return { success: false, error: 'Base URL is required' };
     }
 
-    let provider: OpenAIProvider | AnthropicProvider;
+    let provider: LLMProvider;
     try {
-      switch (merged.provider) {
-        case 'openai':
-          provider = new OpenAIProvider(merged);
-          break;
-        case 'anthropic':
-          provider = new AnthropicProvider(merged);
-          break;
-        default:
-          return { success: false, error: `Unknown provider: ${merged.provider}` };
-      }
+      provider = createProvider(merged);
     } catch (err) {
       return {
         success: false,
@@ -324,6 +315,8 @@ export class LLMService {
         }
         // Skip the /models GET when a model is already named - the probe covers it.
         const models = merged.model ? [] : await provider.getAvailableModels();
+        const error = await provider.checkConnection();
+        if (error) return { success: false, error };
         if (merged.provider === 'openai') {
           const probe = await this.probeOpenAIChatCompletions(merged, models);
           if (!probe.ok) {

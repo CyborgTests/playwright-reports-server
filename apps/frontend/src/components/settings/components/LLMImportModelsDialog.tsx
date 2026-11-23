@@ -24,7 +24,7 @@ import { Switch } from '@/components/ui/switch';
 import { LLM_MODELS_PATH } from '@/hooks/useLlmModels';
 import useMutation from '@/hooks/useMutation';
 import { errorMessage } from '@/lib/api';
-import { PROVIDERS } from './llm-model-form';
+import { baseUrlForProvider, PROVIDERS, providerOption } from './llm-model-form';
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const OPENROUTER_KEYS_URL = 'https://openrouter.ai/keys';
@@ -236,7 +236,14 @@ export function LLMImportModelsDialog({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="imp-provider">Provider</Label>
-                <Select value={provider} onValueChange={(v) => setProvider(v as LLMProviderType)}>
+                <Select
+                  value={provider}
+                  onValueChange={(v) => {
+                    const next = v as LLMProviderType;
+                    setBaseUrl(baseUrlForProvider(baseUrl, provider, next));
+                    setProvider(next);
+                  }}
+                >
                   <SelectTrigger id="imp-provider">
                     <SelectValue />
                   </SelectTrigger>
@@ -255,18 +262,24 @@ export function LLMImportModelsDialog({
                   id="imp-base"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder={OPENROUTER_BASE_URL}
+                  placeholder={
+                    provider === 'openai'
+                      ? OPENROUTER_BASE_URL
+                      : providerOption(provider).baseUrlPlaceholder
+                  }
                 />
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(OPENROUTER_BASE_URL);
-                    toast.success('Copied');
-                  }}
-                >
-                  e.g. {OPENROUTER_BASE_URL}
-                </button>
+                {provider === 'openai' && (
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(OPENROUTER_BASE_URL);
+                      toast.success('Copied');
+                    }}
+                  >
+                    e.g. {OPENROUTER_BASE_URL}
+                  </button>
+                )}
               </div>
             </div>
             <div className="space-y-1">
@@ -276,16 +289,18 @@ export function LLMImportModelsDialog({
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-..."
+                placeholder={providerOption(provider).keyPlaceholder}
               />
-              <a
-                href={OPENROUTER_KEYS_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-primary hover:underline"
-              >
-                e.g. OpenRouter →
-              </a>
+              {provider === 'openai' && (
+                <a
+                  href={OPENROUTER_KEYS_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-primary hover:underline"
+                >
+                  e.g. OpenRouter →
+                </a>
+              )}
             </div>
             {discoverError && <p className="text-sm text-destructive">{discoverError}</p>}
           </div>

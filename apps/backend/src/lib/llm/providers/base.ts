@@ -182,6 +182,11 @@ export abstract class LLMProvider extends BaseProvider {
     }
   }
 
+  /** Extra provider-specific test-connection check. Returns an error message or null. */
+  async checkConnection(): Promise<string | null> {
+    return null;
+  }
+
   async getAvailableModels(): Promise<string[]> {
     try {
       const response = await this.withTimeout((signal) =>
