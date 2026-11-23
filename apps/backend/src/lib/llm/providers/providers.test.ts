@@ -5,12 +5,7 @@ import { createProvider, llmService } from '../index.js';
 import type { LLMProviderConfig, SegmentedPrompt } from '../types/index.js';
 import { AnthropicProvider } from './anthropic.js';
 import { CursorProvider } from './cursor.js';
-import {
-  AzureFoundryProvider,
-  BedrockProvider,
-  normalizeFoundryBaseUrl,
-  OpenAIProvider,
-} from './openai.js';
+import { OpenAIProvider } from './openai.js';
 
 interface Call {
   method: string;
@@ -81,8 +76,6 @@ describe('createProvider', () => {
   const expected: Record<LLMProviderType, unknown> = {
     openai: OpenAIProvider,
     anthropic: AnthropicProvider,
-    'azure-foundry': AzureFoundryProvider,
-    bedrock: BedrockProvider,
     cursor: CursorProvider,
   };
 
@@ -98,83 +91,6 @@ describe('createProvider', () => {
       () => createProvider(config('nope' as LLMProviderType, 'https://x')),
       /Unknown LLM provider: nope/
     );
-  });
-});
-
-describe('Azure AI Foundry', () => {
-  it('appends /openai/v1 to a resource root', () => {
-    for (const input of [
-      'https://r.cognitiveservices.azure.com',
-      'https://r.cognitiveservices.azure.com/',
-      'https://r.cognitiveservices.azure.com/openai',
-      'https://r.cognitiveservices.azure.com/openai/v1/',
-    ]) {
-      assert.equal(
-        normalizeFoundryBaseUrl(input),
-        'https://r.cognitiveservices.azure.com/openai/v1'
-      );
-    }
-  });
-
-  it('sends chat completions to {base}/openai/v1 with api-key and Bearer headers', async () => {
-    const calls = mockFetch({
-      'POST https://r.openai.azure.com/openai/v1/chat/completions': okChat,
-    });
-    const res = await createProvider(
-      config('azure-foundry', 'https://r.openai.azure.com/', 'text-analysis')
-    ).sendSegmentedMessage(prompt);
-
-    assert.equal(res.content, 'hi');
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].headers['api-key'], 'secret');
-    assert.equal(calls[0].headers.Authorization, 'Bearer secret');
-    assert.equal((calls[0].body as { model: string }).model, 'text-analysis');
-  });
-
-  it('discovers models from {base}/openai/v1/models', async () => {
-    mockFetch({
-      'GET https://r.services.ai.azure.com/openai/v1/models': () =>
-        json({ object: 'list', data: [{ id: 'gpt-4.1' }] }),
-    });
-    const res = await llmService.discoverModels({
-      provider: 'azure-foundry',
-      baseUrl: 'https://r.services.ai.azure.com',
-      apiKey: 'secret',
-    });
-    assert.deepEqual(
-      res.models?.map((m) => m.id),
-      ['gpt-4.1']
-    );
-  });
-});
-
-describe('AWS Bedrock (OpenAI-compatible)', () => {
-  const base = 'https://bedrock-runtime.eu-west-1.amazonaws.com/openai/v1';
-
-  it('uses Bearer auth against the regional /openai/v1 endpoint', async () => {
-    const calls = mockFetch({ [`POST ${base}/chat/completions`]: okChat });
-    await createProvider(config('bedrock', base)).sendSegmentedMessage(prompt);
-    assert.equal(calls[0].url, `${base}/chat/completions`);
-    assert.equal(calls[0].headers.Authorization, 'Bearer secret');
-    assert.equal(calls[0].headers['api-key'], undefined);
-  });
-
-  it('passes test-connection when /models is 404 but chat/completions answers', async () => {
-    mockFetch({
-      [`GET ${base}/models`]: () => json({ message: 'not found' }, 404),
-      [`POST ${base}/chat/completions`]: okChat,
-    });
-    const res = await llmService.testConnection(config('bedrock', base, 'anthropic.claude-x'));
-    assert.equal(res.success, true, res.error);
-  });
-
-  it('fails test-connection on 401 from chat/completions', async () => {
-    mockFetch({
-      [`GET ${base}/models`]: () => json({ message: 'not found' }, 404),
-      [`POST ${base}/chat/completions`]: () => json({ error: { message: 'bad key' } }, 401),
-    });
-    const res = await llmService.testConnection(config('bedrock', base, 'anthropic.claude-x'));
-    assert.equal(res.success, false);
   });
 });
 
@@ -291,5 +207,99 @@ describe('Cursor', () => {
       createProvider(config('cursor', api)).sendSegmentedMessage(prompt),
       /status ERROR/
     );
+  });
+  it('fails on an HTTP error from POST /v1/agents', async () => {
+    mockFetch({ [`POST ${api}/v1/agents`]: () => json({ code: 'unauthorized' }, 401) });
+    await assert.rejects(createProvider(config('cursor', api)).sendSegmentedMessage(prompt), {
+      code: 'authentication',
+    });
+  });
+
+  it('throws when the run is FINISHED but has no result', async () => {
+    mockFetch({
+      [`POST ${api}/v1/agents`]: () =>
+        json({ agent: { id: 'bc-3' }, run: { id: 'run-3', status: 'FINISHED' } }, 201),
+    });
+    await assert.rejects(
+      createProvider(config('cursor', api)).sendSegmentedMessage(prompt),
+      /status FINISHED and no result/
+    );
+  });
+
+  it('omits images and model when absent, trims images to 5, sums tokens', async () => {
+    const finished = () =>
+      json({ agent: { id: 'bc-4' }, run: { id: 'r', status: 'FINISHED', result: 'ok' } }, 201);
+    const calls = mockFetch({ [`POST ${api}/v1/agents`]: finished });
+    const provider = createProvider(config('cursor', `${api}//`, ''));
+
+    const res = await provider.sendSegmentedMessage({ segments: [prompt.segments[0]] });
+    assert.deepEqual(calls[0].body, { prompt: { text: 'You are a test analyst.' } });
+    assert.equal(calls[0].url, `${api}/v1/agents`);
+    assert.equal(res.model, 'cursor-default');
+    assert.equal(res.usage.totalTokens, res.usage.inputTokens + res.usage.outputTokens);
+
+    const img = { data: 'aGk=', mediaType: 'image/png' };
+    await provider.sendSegmentedMessage({
+      segments: [
+        { id: 'u', role: 'user', stable: false, content: 'x', images: Array(6).fill(img) },
+      ],
+    });
+    const body = calls.find((c, i) => i > 0 && c.method === 'POST')?.body as {
+      prompt: { images: unknown[] };
+    };
+    assert.equal(body.prompt.images.length, 5);
+  });
+
+  it('checkConnection: empty model is fine, a display name gets the id hint, unknown fails', async () => {
+    const calls = mockFetch({
+      [`GET ${api}/v1/models`]: () =>
+        json({ items: [{ id: 'grok-4.6', displayName: 'Grok 4.6' }] }),
+    });
+    const check = (model: string) =>
+      new CursorProvider(config('cursor', api, model)).checkConnection();
+    assert.equal(await check(''), null);
+    assert.equal(calls.length, 0);
+    assert.equal(await check('grok-4.6'), null);
+    assert.match(String(await check('grok 4.6')), /Use the model id "grok-4.6"/);
+    assert.match(String(await check('gpt-nope')), /does not list model "gpt-nope"/);
+  });
+
+  it('test-connection passes with no model (Cursor picks its default)', async () => {
+    mockFetch({
+      [`GET ${api}/v1/me`]: () => json({ apiKeyName: 'k' }),
+      [`GET ${api}/v1/models`]: () => json({ items: [] }),
+    });
+    const res = await llmService.testConnection(config('cursor', api, ''));
+    assert.equal(res.success, true, res.error);
+  });
+
+  it('maps a network failure on send to a network error', async () => {
+    globalThis.fetch = (async () => {
+      throw new TypeError('fetch failed');
+    }) as typeof fetch;
+    await assert.rejects(createProvider(config('cursor', api)).sendSegmentedMessage(prompt), {
+      code: 'network',
+      message: /fetch failed/,
+    });
+  });
+
+  it('skips /v1/models items without a string id', async () => {
+    mockFetch({
+      [`GET ${api}/v1/models`]: () =>
+        json({ items: [{ displayName: 'x' }, { id: 7 }, { id: 'ok' }] }),
+    });
+    assert.deepEqual(
+      (await new CursorProvider(config('cursor', api)).discoverModels()).map((m) => m.id),
+      ['ok']
+    );
+    mockFetch({ [`GET ${api}/v1/models`]: () => json({ items: 'nope' }) });
+    assert.deepEqual(await new CursorProvider(config('cursor', api)).discoverModels(), []);
+  });
+
+  it('validateConfig returns false on a network error', async () => {
+    globalThis.fetch = (async () => {
+      throw new TypeError('fetch failed');
+    }) as typeof fetch;
+    assert.equal(await new CursorProvider(config('cursor', api)).validateConfig(), false);
   });
 });

@@ -26,22 +26,6 @@ export const PROVIDERS: ProviderOption[] = [
     keyPlaceholder: 'sk-ant-...',
   },
   {
-    key: 'azure-foundry',
-    label: 'Azure AI Foundry',
-    defaultBaseUrl: '',
-    baseUrlPlaceholder: 'https://<resource>.cognitiveservices.azure.com/openai/v1',
-    keyPlaceholder: 'Foundry resource key',
-    hint: 'Resource endpoint (.cognitiveservices.azure.com, .openai.azure.com or .services.ai.azure.com); /openai/v1 is appended if missing. Model = Foundry deployment name, not the catalog model id.',
-  },
-  {
-    key: 'bedrock',
-    label: 'AWS Bedrock',
-    defaultBaseUrl: 'https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1',
-    baseUrlPlaceholder: 'https://bedrock-runtime.<region>.amazonaws.com/openai/v1',
-    keyPlaceholder: 'Bedrock API key',
-    hint: 'Bedrock OpenAI-compatible endpoint; set your region in the URL. Model = Bedrock model or inference profile id (e.g. anthropic.claude-sonnet-4-5-v1:0 or global.…).',
-  },
-  {
     key: 'cursor',
     label: 'Cursor',
     defaultBaseUrl: 'https://api.cursor.com',

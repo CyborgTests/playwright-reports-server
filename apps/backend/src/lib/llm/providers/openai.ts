@@ -1,7 +1,7 @@
 import type { DiscoveredModel } from '@playwright-reports/shared';
 import { parseOpenAiCompatibleModels } from '../discovery.js';
-import type { LLMProviderConfig, LLMRequest, LLMResponse, PromptSegment } from '../types/index.js';
-import { LLMProvider, type ProbeResult } from './base.js';
+import type { LLMRequest, LLMResponse, PromptSegment } from '../types/index.js';
+import { LLMProvider } from './base.js';
 import type {
   OpenAIImagePart,
   OpenAIMessageContent,
@@ -114,95 +114,6 @@ export class OpenAIProvider extends LLMProvider {
     };
   }
 
-  /**
-   * POST a 1-token ping to /chat/completions. An OpenAI-shaped error body (other
-   * than 401/403) still counts as reachable, e.g. a model that rejects max_tokens.
-   */
-  async probe(model: string | undefined): Promise<ProbeResult> {
-    if (!model) {
-      return {
-        ok: false,
-        error: 'No model available to verify the chat completions endpoint.',
-      };
-    }
-
-    const url = `${this.config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'user', content: 'ping' }],
-          max_tokens: 1,
-          temperature: 0,
-        }),
-        signal: controller.signal,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: `Could not reach /chat/completions: ${message}` };
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch {
-      body = null;
-    }
-
-    // Bedrock may 404 /models before checking auth, so reject auth errors here too.
-    if (response.status === 401 || response.status === 403) {
-      return {
-        ok: false,
-        error: `Authentication failed (${response.status}) at /chat/completions.`,
-      };
-    }
-
-    if (!response.ok) {
-      const errorObj =
-        body && typeof body === 'object' && 'error' in body
-          ? (body as { error: unknown }).error
-          : null;
-      const looksOpenAI =
-        errorObj !== null &&
-        typeof errorObj === 'object' &&
-        ('message' in (errorObj as object) || 'type' in (errorObj as object));
-      if (looksOpenAI) return { ok: true };
-
-      return {
-        ok: false,
-        error: `Server responded ${response.status} at /chat/completions but the body is not in OpenAI format. Check that the base URL points to an OpenAI-compatible endpoint (typically ending in /v1).`,
-      };
-    }
-
-    const choices =
-      body && typeof body === 'object' && 'choices' in body
-        ? (body as { choices: unknown }).choices
-        : null;
-    const firstChoice = Array.isArray(choices) ? (choices[0] as Record<string, unknown>) : null;
-    const looksValid = !!(
-      firstChoice &&
-      typeof firstChoice === 'object' &&
-      'message' in firstChoice
-    );
-    if (!looksValid) {
-      return {
-        ok: false,
-        error:
-          'The /chat/completions response is not in OpenAI format. Confirm the base URL points to an OpenAI-compatible API (typically ending in /v1).',
-      };
-    }
-
-    return { ok: true };
-  }
-
   protected extractModelIds(data: OpenAIModelList): string[] {
     return data.data?.map((model) => model.id) || [];
   }
@@ -248,48 +159,6 @@ export class OpenAIProvider extends LLMProvider {
       return null;
     } catch {
       return null;
-    }
-  }
-}
-
-/** Foundry's v1 API lives under `/openai/v1`; accept a pasted resource root too. */
-export function normalizeFoundryBaseUrl(baseUrl: string): string {
-  const trimmed = baseUrl.trim().replace(/\/+$/, '');
-  if (trimmed.endsWith('/openai/v1')) return trimmed;
-  if (trimmed.endsWith('/openai')) return `${trimmed}/v1`;
-  return `${trimmed}/openai/v1`;
-}
-
-/** Azure AI Foundry / Azure OpenAI v1: OpenAI wire format, `model` = deployment name. */
-export class AzureFoundryProvider extends OpenAIProvider {
-  constructor(config: LLMProviderConfig) {
-    super({ ...config, baseUrl: normalizeFoundryBaseUrl(config.baseUrl) });
-  }
-
-  protected getDefaultHeaders(): Record<string, string> {
-    // Foundry accepts either header; sending both covers keys and proxies that only honor one.
-    return this.config.apiKey
-      ? { Authorization: `Bearer ${this.config.apiKey}`, 'api-key': this.config.apiKey }
-      : {};
-  }
-}
-
-/**
- * AWS Bedrock OpenAI-compatible endpoint
- * (`https://bedrock-runtime.<region>.amazonaws.com/openai/v1`) with a Bedrock API key as Bearer.
- */
-export class BedrockProvider extends OpenAIProvider {
-  /** Bedrock may not serve /models; only an auth failure there fails the check. */
-  async validateConfig(): Promise<boolean> {
-    try {
-      const response = await this.withTimeout(
-        (signal) =>
-          fetch(this.getModelsEndpoint(), { method: 'GET', headers: this.getHeaders(), signal }),
-        5000
-      );
-      return response.ok || response.status === 404;
-    } catch {
-      return false;
     }
   }
 }

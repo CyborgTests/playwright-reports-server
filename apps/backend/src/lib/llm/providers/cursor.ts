@@ -8,7 +8,7 @@ import type {
   SegmentedPrompt,
 } from '../types/index.js';
 import { LLMProviderError } from '../types/index.js';
-import { LLMProvider, type ProbeResult } from './base.js';
+import { LLMProvider } from './base.js';
 
 /** Cursor accepts at most 5 images per prompt. */
 const MAX_IMAGES = 5;
@@ -50,12 +50,12 @@ export class CursorProvider extends LLMProvider {
     return { Authorization: `Bearer ${this.config.apiKey}` };
   }
 
-  /** GET /v1/me: proves the key is valid without starting an agent. */
+  /** GET /v1/me: proves the key is valid without starting an agent. Uses the request
+   *  timeout, not the base 5 s: the first call to Cursor can take ~8 s. */
   async validateConfig(): Promise<boolean> {
     try {
-      const response = await this.withTimeout(
-        (signal) => fetch(`${this.config.baseUrl}/v1/me`, { headers: this.getHeaders(), signal }),
-        5000
+      const response = await this.withTimeout((signal) =>
+        fetch(`${this.config.baseUrl}/v1/me`, { headers: this.getHeaders(), signal })
       );
       return response.ok;
     } catch {
@@ -63,15 +63,15 @@ export class CursorProvider extends LLMProvider {
     }
   }
 
-  /** The model id must be in the Cloud Agents catalog. Empty = Cursor's default model. */
-  async probe(model: string | undefined): Promise<ProbeResult> {
-    if (!model) return { ok: true };
-    const ids = await this.getAvailableModels();
-    if (ids.includes(model)) return { ok: true };
-    return {
-      ok: false,
-      error: `Cursor does not list model "${model}" in GET /v1/models. Use Import models to pick a valid id.`,
-    };
+  /** The model must be a Cloud Agents id, not a display name. */
+  override async checkConnection(): Promise<string | null> {
+    const { model } = this.config;
+    if (!model) return null; // empty = Cursor's default model
+    const models = await this.discoverModels();
+    if (models.some((m) => m.id === model)) return null;
+    const byName = models.find((m) => m.name?.toLowerCase() === model.toLowerCase());
+    if (byName) return `"${model}" is a display name. Use the model id "${byName.id}".`;
+    return `Cursor does not list model "${model}" in GET /v1/models. Pick an id from the list.`;
   }
 
   async sendSegmentedMessage(prompt: SegmentedPrompt): Promise<LLMResponse> {
@@ -87,6 +87,7 @@ export class CursorProvider extends LLMProvider {
       ...(this.config.model ? { model: { id: this.config.model } } : {}),
     };
 
+    // No retryRequest here: a retry would start a second (billed) agent.
     const run = await this.withTimeout(async (signal) => {
       const created = await this.call<{ agent: { id: string }; run: CursorRun }>(
         'POST',
@@ -108,10 +109,7 @@ export class CursorProvider extends LLMProvider {
         return current;
       } finally {
         // One agent per request: remove it even on timeout/cancel. Best effort.
-        fetch(`${this.config.baseUrl}/v1/agents/${agentId}`, {
-          method: 'DELETE',
-          headers: this.getHeaders(),
-        }).catch(() => undefined);
+        this.call('DELETE', `/v1/agents/${agentId}`).catch(() => undefined);
       }
     });
 
@@ -133,9 +131,9 @@ export class CursorProvider extends LLMProvider {
   }
 
   private async call<T>(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'DELETE',
     path: string,
-    signal: AbortSignal,
+    signal?: AbortSignal,
     body?: unknown
   ): Promise<T> {
     let response: Response;
@@ -147,7 +145,7 @@ export class CursorProvider extends LLMProvider {
         signal,
       });
     } catch (err) {
-      if (signal.aborted) throw err;
+      if (signal?.aborted) throw err;
       throw new LLMProviderError(
         `Network error: ${err instanceof Error ? err.message : String(err)}`,
         'network'

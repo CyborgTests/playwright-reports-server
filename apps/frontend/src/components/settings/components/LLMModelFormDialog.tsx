@@ -29,6 +29,7 @@ import {
   providerOption,
   TASK_TEMP_DEFAULTS,
 } from './llm-model-form';
+import { ModelIdInput } from './ModelIdInput';
 
 const NONE_GROUP = '__none__';
 
@@ -55,6 +56,13 @@ export function LLMModelFormDialog({
 }>) {
   const selectedGroup = groups.find((g) => g.id === form.concurrencyGroupId) ?? null;
   const provider = providerOption(form.provider);
+  // A typed key wins; when editing without one, the server uses the stored key.
+  let discoverBody: Record<string, unknown> | null = null;
+  if (form.apiKey && form.baseUrl) {
+    discoverBody = { provider: form.provider, baseUrl: form.baseUrl, apiKey: form.apiKey };
+  } else if (editingId) {
+    discoverBody = { modelId: editingId };
+  }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -110,11 +118,11 @@ export function LLMModelFormDialog({
             </div>
             <div className="space-y-1">
               <Label htmlFor="lm-model">Model</Label>
-              <Input
+              <ModelIdInput
                 id="lm-model"
                 value={form.model}
-                onChange={(e) => setForm({ ...form, model: e.target.value })}
-                placeholder="e.g. claude-opus-4-8"
+                onChange={(model) => setForm({ ...form, model })}
+                discoverBody={discoverBody}
               />
             </div>
           </div>

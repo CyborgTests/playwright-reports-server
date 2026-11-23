@@ -3,8 +3,6 @@ import { withError } from '../../withError.js';
 import type { LLMRequest, LLMResponse, SegmentedPrompt } from '../types/index.js';
 import { BaseLLMProvider as BaseProvider, LLMProviderError } from '../types/index.js';
 
-export type ProbeResult = { ok: true } | { ok: false; error: string };
-
 export interface SendOptions {
   temperature?: number;
   maxTokens?: number;
@@ -184,9 +182,9 @@ export abstract class LLMProvider extends BaseProvider {
     }
   }
 
-  /** Connection-test check that runs after validateConfig. Default: nothing extra. */
-  async probe(_model: string | undefined): Promise<ProbeResult> {
-    return { ok: true };
+  /** Extra provider-specific test-connection check. Returns an error message or null. */
+  async checkConnection(): Promise<string | null> {
+    return null;
   }
 
   async getAvailableModels(): Promise<string[]> {
